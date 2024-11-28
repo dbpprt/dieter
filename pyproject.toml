@@ -1,0 +1,57 @@
+[tool.poetry]
+name = "browser-agent"
+version = "0.1.0"
+description = "Browser automation agent"
+authors = ["dbpprt"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.12"
+playwright = "^1.49.0"
+langchain = "^0.3.8"
+langchain-community = "^0.3.8"
+openai = "^1.55.1"
+langchain-openai = "^0.2.9"
+transformers = "^4.46.3"
+torch = "^2.5.1"
+ultralytics = "^8.3.38"
+opencv-python = "^4.9.0"
+pyyaml = "^6.0.1"
+paddleocr = "^2.9.1"
+paddlepaddle = "^2.6.2"
+ocrmac = "^1.0.0"
+torchvision = "^0.20.1"
+rich = "^13.9.4"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.1.1"
+ruff = "^0.3.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+browser-agent = "src.cli:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+]
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

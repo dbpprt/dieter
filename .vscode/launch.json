@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: python -m src",
+            "type": "python",
+            "request": "launch",
+            "pythonPath": "${workspaceFolder}/.venv/bin/python",
+            "cwd": "${workspaceFolder}",
+            "module": "src",
+            "args": [
+                "--verbose"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ]
+}

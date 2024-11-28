@@ -1,0 +1,23 @@
+# OpenRouter Configuration
+api_key: "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"  # Add your OpenRouter API key here
+base_url: "https://openrouter.ai/api/v1"
+model_name: "google/gemini-flash-1.5"  # OpenRouter model format
+
+# Number of message pairs to keep in conversation history
+# Set to null for unlimited history, or a number for limited history
+max_history_size: 4
+
+# Browser Configuration
+browser:
+  width: 1024
+  height: 768
+  browser_type: "chromium"  # chromium, firefox, or webkit
+  data_dir: ".data/browser"
+  device_scale_factor: 2
+  is_mobile: true
+  has_touch: true
+  extensions:
+    ublock_origin:  # Extension ID/name used for directory naming
+      url: "https://github.com/gorhill/uBlock/releases/download/1.61.2/uBlock0_1.61.2.chromium.zip"
+      extract_dir: "uBlock0.chromium"  # Subdirectory name after extraction, if any
+      enabled: true
