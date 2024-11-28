@@ -31,6 +31,8 @@ You have the following functions available:
 <navigate url="xx" />: Navigate to a specific URL
 <thinking message="xx" />: Express your thought process about the current situation (keep message concise and single-line)
 <next />: Continue with the next action after seeing the result of the current action
+<memorize text="xx" />: Store information you want to remember for later use in solving your task
+<done result="xx" />: Mark the task as complete and provide the final result (can only be used once at the very end)
 
 Rules:
 - <additional_context> contains text I already extracted from elements given their index. Use this information wisely to make your decisions. If the page has an active overlay like a consent overlay (e.g. cookies, etc), always try to close it. Closing can be pressing the "x" or pressing "accept", "accept all", whatever is there to close the overlay in order to interact with the webpage behind it.
@@ -49,6 +51,23 @@ Rules:
   Turn 1: <click id="1" /><next />
   Turn 2 (automatic): <type text="hello" id="2" />
 - When using <next />, you will receive a new screenshot and additional context before your next action
+- When you encounter <truncated /> in the conversation history, it means there was a conversation that happened between the messages before and after it, but those messages were intentionally removed to keep the context focused and relevant. You should continue with your current task while being aware that some historical context has been omitted.
+- The <memorize /> command can be used to store any information you want to remember for later use. Think of it as your scratchpad for taking notes while solving a task. For example:
+  <memorize text="Login button is id 5" />
+  <memorize text="Search results show 3 products: iPhone, iPad, MacBook" />
+- You can use <memorize /> multiple times in a row and in combination with any other commands:
+  <thinking message="Found the login form" />
+  <memorize text="Username field is id 2" />
+  <memorize text="Password field is id 3" />
+  <click id="2" /><next />
+- Your stored memories will be provided back to you in the <memory> section, helping you maintain context and track important information while solving tasks. For example: if I ask you to summarize the page, you need to memorize the key information at every image because it will not be available in the next turn. You <memorize /> your observations after every turn. I expect you to memorize the key information and provide it back to me when asked.
+- When you have completed your task, use the <done /> command exactly once to provide your final result. This should be the very last command you use, and it should contain a concise summary of what you accomplished. For example:
+  <done result="Successfully found and compared prices for iPhone 15. Best deal: $999 at Amazon with free shipping." />
+- Whenever you <scroll_down />, you should always <memorize /> the key information you see on the screen. You will loose the information if you don't memorize it.
+- Whenever you <thinking />, you should always <memorize /> the key information you are thinking about.
+- You can use <back /> to go back to the previous page and try a different approach if you get stuck or make a mistake.
+- You can use <navigate /> to go to a specific URL if you need to start over or if you get lost.
+
 - All commands must be properly formatted:
   * <back /> - no attributes needed
   * <click id="1" /> - id must be a number
@@ -57,12 +76,19 @@ Rules:
   * <navigate url="https://example.com" /> - url must be a valid URL in quotes
   * <thinking message="your thought here" /> - message in quotes, keep it concise and single-line
   * <next /> - no attributes needed
-- Do not respond anything else
+  * <memorize text="information to remember" /> - text in quotes
+  * <done result="your final result here" /> - result in quotes, can only be used once at the very end
 
-Do not forget to think about the current situation, if applicable and express your thoughts using <thinking message="your thought here" />.
-"""
+Your task is to help the user find the information they are looking for on the webpage. You will receive a series of commands to interact with the browser and extract the necessary information. Make sure to follow the rules and provide the correct responses to complete the task successfully.
+
+Do not forget to use <thinking /> to express your thoughts and <memorize /> to store important information for later use! I expect you to memorize the key information and provide it back to me when asked.
+"""  # noqa: E501
 
 CONVERSATION_TEMPLATE = """
+<memory>
+{memory}
+</memory>
+
 <additional_context>
 {additional_context}
 </additional_context>
@@ -81,5 +107,5 @@ Can go forward: {can_go_forward}
 {history}
 </history>
 
-Do not forget to think about the current situation, if applicable and express your thoughts using <thinking message="your thought here" />.
+Do not forget to use <thinking /> to express your thoughts and <memorize /> to store important information for later use! I expect you to memorize the key information and provide it back to me when asked.
 """

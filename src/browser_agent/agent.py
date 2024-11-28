@@ -47,6 +47,8 @@ class BrowserAgent:
         self.browser_manager = BrowserManager(self.config)
         self.status = Status("", console=self.console)
         self.conversation_history: List = []
+        self.memories: List[str] = []
+        self.task_completed = False
 
         signal.signal(signal.SIGINT, lambda s, f: self._handle_shutdown())
         signal.signal(signal.SIGTERM, lambda s, f: self._handle_shutdown())
@@ -79,8 +81,10 @@ class BrowserAgent:
     def _create_context(self, page_state: PageState, is_first_turn: bool) -> str:
         template = BROWSER_PROMPT_TEMPLATE if is_first_turn else CONVERSATION_TEMPLATE
         parsed_content = "\n".join(f"id: {i} {content}" for i, content in enumerate(page_state.parsed_content))
+        memory_text = "\n".join(self.memories) if self.memories else ""
 
         return template.format(
+            memory=memory_text,
             additional_context=parsed_content,
             history=page_state.history_text,
             current_url=self.browser_manager.current_url,
@@ -113,12 +117,33 @@ class BrowserAgent:
                 self.status.update("")
 
     def _execute_browser_command(self, command: Command, page_state: Optional[PageState]) -> bool:
+        if command.memories:
+            for memory in command.memories:
+                self.memories.append(memory)
+                self.console.print(Panel(Text(f"Memorized: {memory}", style="cyan"), box=ROUNDED, border_style="cyan"))
+
+        # Always show thinking message if present, regardless of command type
+        if command.message:
+            self.console.print(Panel(Text(command.message, style="blue"), box=ROUNDED, border_style="blue"))
+
         if command.type == 'thinking':
-            if command.message:
-                self.console.print(Panel(Text(command.message, style="blue"), box=ROUNDED, border_style="blue"))
             return command.has_next
 
-        command_info = f"{command.type} {command.element_id or ''} {command.text or ''} {command.url or ''} {command.message or ''}".strip()
+        if command.type == 'done':
+            self.task_completed = True
+            result_text = Text()
+            result_text.append("✨ Task completed!\n\n", style="bold green")
+            result_text.append(command.result, style="green")
+            self.console.print(Panel(
+                result_text,
+                box=ROUNDED,
+                border_style="green",
+                title="Result",
+                expand=True
+            ))
+            return False
+
+        command_info = f"{command.type} {command.element_id or ''} {command.text or ''} {command.url or ''}"
         self.logger.debug("Executing command: %s", command_info)
         self.console.print(Panel(Text(f"Executing command: {command_info}", style="yellow"), box=ROUNDED, border_style="yellow"))
 
@@ -152,7 +177,7 @@ class BrowserAgent:
 
         try:
             command = CommandParser.parse(response)
-            page_state = None if command.type == 'thinking' else self.analyzer.capture_state()
+            page_state = None if command.type in ('thinking', 'done') else self.analyzer.capture_state()
             continue_automatically = self._execute_browser_command(command, page_state)
             is_thinking = command.type == 'thinking'
             return continue_automatically, is_thinking
@@ -173,6 +198,9 @@ class BrowserAgent:
             model_state = ModelState()
 
             while True:
+                if self.task_completed:
+                    break
+
                 user_input = ""
                 if not model_state.continue_automatically:
                     user_input = CustomPrompt.ask(Text("Enter your instruction", style="bright_white bold"), console=self.console)
