@@ -1,4 +1,5 @@
 """Browser extension management."""
+
 import logging
 import shutil
 import urllib.request
@@ -11,6 +12,7 @@ from typing import Dict, Optional
 @dataclass
 class ExtensionConfig:
     """Browser extension configuration."""
+
     url: str
     extract_dir: Optional[str] = None
     enabled: bool = True
@@ -23,10 +25,7 @@ class ExtensionManager:
         self.logger = logging.getLogger(__name__)
         self.extensions_dir = data_dir / "extensions"
         self.extensions_dir.mkdir(parents=True, exist_ok=True)
-        self.extensions_config = {
-            name: ExtensionConfig(**config)
-            for name, config in extensions_config.items()
-        }
+        self.extensions_config = {name: ExtensionConfig(**config) for name, config in extensions_config.items()}
 
     def setup_extensions(self) -> Dict[str, str]:
         """Set up enabled extensions.
@@ -46,8 +45,7 @@ class ExtensionManager:
                     extension_paths[ext_name] = ext_path
                     self.logger.debug(f"Successfully set up extension {ext_name} at {ext_path}")
             except Exception as e:
-                self.logger.error(
-                    f"Failed to setup extension {ext_name}: {str(e)}")
+                self.logger.error(f"Failed to setup extension {ext_name}: {str(e)}")
 
         return extension_paths
 
@@ -83,7 +81,7 @@ class ExtensionManager:
             urllib.request.urlretrieve(config.url, zip_path)
 
             # Extract the ZIP file
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(ext_dir)
 
             # Clean up the zip file
@@ -95,9 +93,9 @@ class ExtensionManager:
             self.logger.debug(f"Successfully extracted extension to {ext_path}")
             return str(ext_path.absolute())
 
-        except Exception as e:
+        except Exception as err:
             if zip_path.exists():
                 zip_path.unlink()
             if ext_dir.exists():
                 shutil.rmtree(ext_dir)
-            raise Exception(f"Failed to setup extension: {str(e)}")
+            raise Exception(f"Failed to setup extension: {str(err)}") from err

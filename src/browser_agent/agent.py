@@ -1,4 +1,5 @@
 """Browser agent that orchestrates LLM-guided browser automation."""
+
 import logging
 import signal
 import sys
@@ -15,14 +16,13 @@ from rich.panel import Panel
 from rich.status import Status
 from rich.text import Text
 
-from src.prompts.browser import CONVERSATION_TEMPLATE
-from src.prompts.browser import PROMPT_TEMPLATE as BROWSER_PROMPT_TEMPLATE
+from src.prompts.browser import CONVERSATION_TEMPLATE, PROMPT_TEMPLATE as BROWSER_PROMPT_TEMPLATE
 from src.utils.rich import CustomPrompt
 
 from .analysis import PageAnalyzer, PageState
 from .browser import BrowserManager
 from .commands import Command, CommandParser
-from .config import load_config
+from .config import Config
 from .interaction import BrowserInteraction
 
 
@@ -34,15 +34,15 @@ class ModelState:
 
 
 class BrowserAgent:
-    def __init__(self, config_path: str = "src/config.yaml"):
+    def __init__(self, config: Config):
         self.logger = logging.getLogger(__name__)
         self.console = Console()
-        self.config = load_config(config_path)
+        self.config = config
         self.chat = ChatOpenAI(
             openai_api_key=self.config.api_key,
             openai_api_base=self.config.base_url,
             model_name=self.config.model_name,
-            temperature=0.7
+            temperature=0.7,
         )
         self.browser_manager = BrowserManager(self.config)
         self.status = Status("", console=self.console)
@@ -70,7 +70,7 @@ class BrowserAgent:
         context = self._create_context(page_state, model_state.is_first_turn)
         content = [
             {"type": "text", "text": context},
-            {"type": "image_url", "image_url": f"data:image/png;base64,{page_state.encoded_image}"}
+            {"type": "image_url", "image_url": f"data:image/png;base64,{page_state.encoded_image}"},
         ]
 
         if user_input:
@@ -93,7 +93,7 @@ class BrowserAgent:
             viewport_height=page_state.viewport_info.viewport_height,
             can_scroll_down=page_state.viewport_info.can_scroll_down,
             can_go_back=page_state.navigation_state.can_go_back,
-            can_go_forward=page_state.navigation_state.can_go_forward
+            can_go_forward=page_state.navigation_state.can_go_forward,
         )
 
     def _get_llm_response(self, message_content: List[dict]) -> str:
@@ -103,7 +103,7 @@ class BrowserAgent:
         if self.config.max_history_size is not None:
             if len(self.conversation_history) > self.config.max_history_size:
                 first_message = self.conversation_history[0]
-                last_messages = self.conversation_history[-self.config.max_history_size:]
+                last_messages = self.conversation_history[-self.config.max_history_size :]
                 truncation_message = HumanMessage(content=[{"type": "text", "text": "<truncated />"}])
                 messages_for_call = [first_message, truncation_message] + last_messages
 
@@ -126,41 +126,43 @@ class BrowserAgent:
         if command.message:
             self.console.print(Panel(Text(command.message, style="blue"), box=ROUNDED, border_style="blue"))
 
-        if command.type == 'thinking':
+        if command.type == "thinking":
             return command.has_next
 
-        if command.type == 'done':
+        if command.type == "done":
             self.task_completed = True
             result_text = Text()
             result_text.append("✨ Task completed!\n\n", style="bold green")
             result_text.append(command.result, style="green")
-            self.console.print(Panel(
-                result_text,
-                box=ROUNDED,
-                border_style="green",
-                title="Result",
-                expand=True
-            ))
+            self.console.print(Panel(result_text, box=ROUNDED, border_style="green", title="Result", expand=True))
             return False
 
         command_info = f"{command.type} {command.element_id or ''} {command.text or ''} {command.url or ''}"
         self.logger.debug("Executing command: %s", command_info)
-        self.console.print(Panel(Text(f"Executing command: {command_info}", style="yellow"), box=ROUNDED, border_style="yellow"))
+        self.console.print(
+            Panel(Text(f"Executing command: {command_info}", style="yellow"), box=ROUNDED, border_style="yellow")
+        )
 
         try:
             match command.type:
-                case 'back':
+                case "back":
                     self.interaction.navigate_back()
-                case 'click':
+                case "click":
                     self.interaction.click(command.element_id, page_state.label_coordinates, page_state.screenshot)
-                case 'scroll_down':
+                case "scroll_down":
                     if page_state.viewport_info.can_scroll_down:
-                        self.interaction.scroll('down')
-                case 'scroll_up':
-                    self.interaction.scroll('up')
-                case 'type':
-                    self.interaction.type_text(command.text, command.element_id, page_state.label_coordinates, page_state.screenshot, command.enter)
-                case 'navigate':
+                        self.interaction.scroll("down")
+                case "scroll_up":
+                    self.interaction.scroll("up")
+                case "type":
+                    self.interaction.type_text(
+                        command.text,
+                        command.element_id,
+                        page_state.label_coordinates,
+                        page_state.screenshot,
+                        command.enter,
+                    )
+                case "navigate":
                     self.browser_manager.navigate(command.url)
                 case _:
                     raise ValueError(f"Unknown command type: {command.type}")
@@ -177,9 +179,9 @@ class BrowserAgent:
 
         try:
             command = CommandParser.parse(response)
-            page_state = None if command.type in ('thinking', 'done') else self.analyzer.capture_state()
+            page_state = None if command.type in ("thinking", "done") else self.analyzer.capture_state()
             continue_automatically = self._execute_browser_command(command, page_state)
-            is_thinking = command.type == 'thinking'
+            is_thinking = command.type == "thinking"
             return continue_automatically, is_thinking
         except ValueError:
             self.logger.debug("No command found in response, displaying as markdown")
@@ -193,7 +195,13 @@ class BrowserAgent:
             self.analyzer = PageAnalyzer(self.browser_manager.page, self.status)
 
             self.logger.debug("Browser session started")
-            self.console.print(Panel(Text("Browser session started. Type 'q' to quit.", style="bold green"), box=ROUNDED, border_style="green"))
+            self.console.print(
+                Panel(
+                    Text("Browser session started. Type 'q' to quit.", style="bold green"),
+                    box=ROUNDED,
+                    border_style="green",
+                )
+            )
 
             model_state = ModelState()
 
@@ -203,14 +211,18 @@ class BrowserAgent:
 
                 user_input = ""
                 if not model_state.continue_automatically:
-                    user_input = CustomPrompt.ask(Text("Enter your instruction", style="bright_white bold"), console=self.console)
-                    if user_input.lower() == 'q':
+                    user_input = CustomPrompt.ask(
+                        Text("Enter your instruction", style="bright_white bold"), console=self.console
+                    )
+                    if user_input.lower() == "q":
                         break
 
                 message_content = self._build_message_content(user_input, model_state)
                 response = self._get_llm_response(message_content)
 
-                model_state.continue_automatically, model_state.is_thinking = self._process_model_response(response, model_state)
+                model_state.continue_automatically, model_state.is_thinking = self._process_model_response(
+                    response, model_state
+                )
                 model_state.is_first_turn = False
 
         except KeyboardInterrupt:

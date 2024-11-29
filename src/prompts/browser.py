@@ -108,4 +108,4 @@ Can go forward: {can_go_forward}
 </history>
 
 Do not forget to use <thinking /> to express your thoughts and <memorize /> to store important information for later use! I expect you to memorize the key information and provide it back to me when asked.
-"""
+"""  # noqa: E501

@@ -60,3 +60,8 @@ weights/
 
 .debug_click.png
 .screenshot.png
+
+# Config
+config.yaml
+# But keep the template
+!config.yaml.template

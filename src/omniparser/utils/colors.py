@@ -1,9 +1,11 @@
 """Color utilities for image processing and visualization."""
+
 from typing import List, Tuple
 
 
 class Color:
     """RGB color representation with BGR conversion capability."""
+
     BLACK: Tuple[int, int, int] = (0, 0, 0)
     WHITE: Tuple[int, int, int] = (255, 255, 255)
 
@@ -22,10 +24,11 @@ class Color:
 
 class ColorPalette:
     """Predefined color palette for visualization."""
+
     COLORS: List[Tuple[int, int, int]] = [
-        (255, 0, 0),    # Red
-        (0, 255, 0),    # Green
-        (0, 0, 255),    # Blue
+        (255, 0, 0),  # Red
+        (0, 255, 0),  # Green
+        (0, 0, 255),  # Blue
         (255, 255, 0),  # Yellow
         (255, 0, 255),  # Magenta
         (0, 255, 255),  # Cyan

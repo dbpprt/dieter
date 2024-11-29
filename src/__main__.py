@@ -1,4 +1,5 @@
 """Main entry point for the application."""
+
 import logging
 
 from .cli import main

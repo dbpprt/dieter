@@ -1,4 +1,5 @@
 """Logging configuration for the application."""
+
 import logging
 import os
 
@@ -25,7 +26,7 @@ def configure_logging(verbose: bool = False) -> None:
         show_time=False,
         show_path=verbose,
         enable_link_path=verbose,
-        level=logging.DEBUG if verbose else logging.WARNING
+        level=logging.DEBUG if verbose else logging.WARNING,
     )
     rich_handler.setFormatter(logging.Formatter("%(message)s"))
     root_logger.addHandler(rich_handler)
@@ -43,4 +44,4 @@ def configure_logging(verbose: bool = False) -> None:
         logger.setLevel(logging.DEBUG if verbose else logging.WARNING)
 
     # Disable matplotlib font manager logging as it's particularly noisy
-    logging.getLogger('matplotlib.font_manager').disabled = True
+    logging.getLogger("matplotlib.font_manager").disabled = True

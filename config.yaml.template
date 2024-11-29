@@ -1,5 +1,5 @@
 # OpenRouter Configuration
-api_key: "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"  # Add your OpenRouter API key here
+api_key: ${OPENROUTER_API_KEY}  # Set via environment variable OPENROUTER_API_KEY
 base_url: "https://openrouter.ai/api/v1"
 model_name: "google/gemini-flash-1.5"  # OpenRouter model format
 

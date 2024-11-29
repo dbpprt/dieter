@@ -1,4 +1,5 @@
 """Utilities for handling bounding boxes and detections."""
+
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -8,6 +9,7 @@ import numpy as np
 @dataclass
 class Detections:
     """Container for detection results with bounding boxes, class IDs, and confidence scores."""
+
     xyxy: np.ndarray
     class_id: Optional[np.ndarray] = None
     confidence: Optional[np.ndarray] = None
@@ -53,20 +55,10 @@ def is_box_inside(box1: List[float], box2: List[float], threshold: float = 0.95)
 def process_box_with_ocr(box: Dict, ocr_boxes: List[Dict]) -> Optional[Dict]:
     """Process a detection box with OCR boxes to determine type and content."""
     for ocr_box in ocr_boxes:
-        if is_box_inside(ocr_box['bbox'], box['bbox']):
-            return {
-                'type': 'text',
-                'bbox': box['bbox'],
-                'interactivity': True,
-                'content': ocr_box['content']
-            }
-        elif is_box_inside(box['bbox'], ocr_box['bbox']):
-            return {
-                'type': 'icon',
-                'bbox': box['bbox'],
-                'interactivity': True,
-                'content': None
-            }
+        if is_box_inside(ocr_box["bbox"], box["bbox"]):
+            return {"type": "text", "bbox": box["bbox"], "interactivity": True, "content": ocr_box["content"]}
+        elif is_box_inside(box["bbox"], ocr_box["bbox"]):
+            return {"type": "icon", "bbox": box["bbox"], "interactivity": True, "content": None}
     return None
 
 
@@ -77,7 +69,7 @@ def remove_overlapping_boxes(boxes: List[Dict], iou_threshold: float, ocr_boxes:
         filtered_boxes.extend(ocr_boxes)
 
     # First, sort boxes by area (largest first) to prioritize larger boxes
-    sorted_boxes = sorted(boxes, key=lambda x: calculate_box_area(x['bbox']), reverse=True)
+    sorted_boxes = sorted(boxes, key=lambda x: calculate_box_area(x["bbox"]), reverse=True)
     used_indices = set()
 
     for i, box1 in enumerate(sorted_boxes):
@@ -88,7 +80,7 @@ def remove_overlapping_boxes(boxes: List[Dict], iou_threshold: float, ocr_boxes:
         for j, box2 in enumerate(sorted_boxes):
             if i != j and j not in used_indices:
                 # Use standard IoU without max ratio
-                if calculate_iou(box1['bbox'], box2['bbox'], return_max=False) > iou_threshold:
+                if calculate_iou(box1["bbox"], box2["bbox"], return_max=False) > iou_threshold:
                     # Mark both boxes as used if they overlap significantly
                     used_indices.add(j)
                     is_valid = False
@@ -101,14 +93,9 @@ def remove_overlapping_boxes(boxes: List[Dict], iou_threshold: float, ocr_boxes:
             if processed_box:
                 filtered_boxes.append(processed_box)
             else:
-                filtered_boxes.append({
-                    'type': 'icon',
-                    'bbox': box1['bbox'],
-                    'interactivity': True,
-                    'content': None
-                })
+                filtered_boxes.append({"type": "icon", "bbox": box1["bbox"], "interactivity": True, "content": None})
         else:
-            filtered_boxes.append(box1['bbox'])
+            filtered_boxes.append(box1["bbox"])
 
         used_indices.add(i)
 

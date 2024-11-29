@@ -1,6 +1,8 @@
 {
     "editor.formatOnSave": true,
-    "editor.rulers": [120],
+    "editor.rulers": [
+        120
+    ],
     "editor.codeActionsOnSave": {
         "source.organizeImports": "explicit",
         "source.fixAll.ruff": "explicit"
@@ -11,5 +13,6 @@
         "editor.formatOnType": true
     },
     "files.trimTrailingWhitespace": true,
-    "files.insertFinalNewline": true
+    "files.insertFinalNewline": true,
+    "editor.wordWrap": "on"
 }

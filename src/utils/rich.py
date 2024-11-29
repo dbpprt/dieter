@@ -1,4 +1,5 @@
 """Rich text utilities for terminal UI."""
+
 from typing import Optional, TextIO
 
 from rich.console import Console
@@ -9,16 +10,11 @@ from rich.text import Text
 
 class CustomPrompt(Prompt):
     """Enhanced prompt with custom styling for better readability."""
+
     prompt_suffix = " ❯ "
 
     @classmethod
-    def get_input(
-        cls,
-        console: Console,
-        prompt: Text,
-        password: bool = False,
-        stream: Optional[TextIO] = None
-    ) -> str:
+    def get_input(cls, console: Console, prompt: Text, password: bool = False, stream: Optional[TextIO] = None) -> str:
         """Get user input with styled prompt.
 
         Args:
@@ -34,6 +30,6 @@ class CustomPrompt(Prompt):
             ("╭─", "bright_black"),
             *prompt,
             ("\n╰", "bright_black"),
-            (cls.prompt_suffix, Style(color="bright_blue", bold=True))
+            (cls.prompt_suffix, Style(color="bright_blue", bold=True)),
         )
         return console.input(styled_prompt, password=password)

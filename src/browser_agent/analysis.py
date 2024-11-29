@@ -1,4 +1,5 @@
 """Page analysis and state tracking."""
+
 import base64
 import io
 import logging
@@ -18,6 +19,7 @@ from .interaction import NavigationState, ViewportInfo
 @dataclass
 class PageState:
     """Complete state of a page at a point in time."""
+
     encoded_image: str
     label_coordinates: Dict
     parsed_content: List[str]
@@ -30,6 +32,7 @@ class PageState:
 @dataclass
 class HistoryEntry:
     """Single entry in page history."""
+
     url: str
     title: str
 
@@ -64,7 +67,7 @@ class PageAnalyzer:
             # Save debug screenshot with optimization
             image_bytes = base64.b64decode(encoded_image)
             annotated_image = Image.open(io.BytesIO(image_bytes))
-            annotated_image.save('.screenshot.png', optimize=True)
+            annotated_image.save(".screenshot.png", optimize=True)
             self.logger.debug("Debug screenshot saved")
 
             self.logger.debug("Page state capture completed")
@@ -75,7 +78,7 @@ class PageAnalyzer:
                 screenshot=screenshot,
                 history_text=self._format_history(),
                 viewport_info=viewport_info,
-                navigation_state=nav_state
+                navigation_state=nav_state,
             )
 
         except TimeoutError:
@@ -93,7 +96,7 @@ class PageAnalyzer:
 
         image_bytes = base64.b64decode(encoded_image)
         annotated_image = Image.open(io.BytesIO(image_bytes))
-        annotated_image.save('.screenshot.png', optimize=True)
+        annotated_image.save(".screenshot.png", optimize=True)
 
         self.logger.debug("Current state capture completed")
         return PageState(
@@ -103,30 +106,31 @@ class PageAnalyzer:
             screenshot=screenshot,
             history_text=self._format_history(),
             viewport_info=viewport_info,
-            navigation_state=nav_state
+            navigation_state=nav_state,
         )
 
     def _capture_screenshot(self) -> Image.Image:
         """Capture page screenshot."""
         self.logger.debug("Taking page screenshot")
-        screenshot_bytes = self.page.screenshot(type='png')
+        screenshot_bytes = self.page.screenshot(type="png")
         return Image.open(io.BytesIO(screenshot_bytes))
 
     def _process_image(
         self,
         screenshot: Image.Image,
         confidence_threshold: float = 0.15,  # Increased from 0.05 to reduce false positives
-        iou_threshold: float = 0.3  # Increased from 0.1 for better overlap detection
+        iou_threshold: float = 0.3,  # Increased from 0.1 for better overlap detection
     ) -> Tuple[str, Dict, List[str]]:
         """Process screenshot with omniparser."""
-        self.logger.debug("Processing screenshot with omniparser (confidence: %.2f, iou: %.2f)",
-                         confidence_threshold, iou_threshold)
+        self.logger.debug(
+            "Processing screenshot with omniparser (confidence: %.2f, iou: %.2f)", confidence_threshold, iou_threshold
+        )
         self.status.update("Processing image...")
         result = omniparser.process_image(
             image=screenshot,
             confidence_threshold=confidence_threshold,
             iou_threshold=iou_threshold,
-            image_size=screenshot.size[0]
+            image_size=screenshot.size[0],
         )
         self.logger.debug("Image processing completed")
         return result
@@ -134,10 +138,7 @@ class PageAnalyzer:
     def _update_history(self) -> None:
         """Update page history."""
         try:
-            current = HistoryEntry(
-                url=self.page.url,
-                title=self.page.title()
-            )
+            current = HistoryEntry(url=self.page.url, title=self.page.title())
             self.logger.debug("Current page: %s - %s", current.title, current.url)
 
             if not self.history or self.history[-1] != current:
@@ -165,6 +166,6 @@ class PageAnalyzer:
         """Wait for page load with timeout."""
         try:
             self.logger.debug("Waiting for page load (timeout: %dms)", timeout)
-            self.page.wait_for_load_state('domcontentloaded', timeout=timeout)
+            self.page.wait_for_load_state("domcontentloaded", timeout=timeout)
         except TimeoutError:
             self.logger.warning("Page load timeout after %dms", timeout)

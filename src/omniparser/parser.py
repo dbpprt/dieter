@@ -1,4 +1,5 @@
 """Image processing and element detection."""
+
 import base64
 import io
 import logging
@@ -29,13 +30,11 @@ class OmniParser:
         self.model = YOLO(self.model_path)
 
     def detect_text(
-        self,
-        image: Image.Image,
-        output_format: str = 'xyxy'
+        self, image: Image.Image, output_format: str = "xyxy"
     ) -> Tuple[List[str], List[Tuple[float, float, float, float]]]:
         """Detect text in an image using OCR."""
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
         ocr = ocrmac.OCR(image)
         ocr_results = ocr.recognize()
@@ -53,7 +52,7 @@ class OmniParser:
             w = int(w_rel * img_width)
             h = int(h_rel * img_height)
 
-            if output_format == 'xywh':
+            if output_format == "xywh":
                 boxes.append((x, y, w, h))
             else:
                 boxes.append((x, y, x + w, y + h))
@@ -61,19 +60,11 @@ class OmniParser:
         return texts, boxes
 
     def detect_objects(
-        self,
-        image: Image.Image,
-        confidence_threshold: float = 0.3,
-        iou_threshold: float = 0.7,
-        image_size: int = 2048
+        self, image: Image.Image, confidence_threshold: float = 0.3, iou_threshold: float = 0.7, image_size: int = 2048
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Detect objects in an image using YOLO."""
         result = self.model.predict(
-            source=image,
-            conf=confidence_threshold,
-            iou=iou_threshold,
-            imgsz=image_size,
-            verbose=False
+            source=image, conf=confidence_threshold, iou=iou_threshold, imgsz=image_size, verbose=False
         )[0]
 
         return result.boxes.xyxy, result.boxes.conf
@@ -84,11 +75,11 @@ class OmniParser:
         confidence_threshold: float = 0.3,
         iou_threshold: float = 0.7,
         normalize_coordinates: bool = False,
-        image_size: int = 2048
+        image_size: int = 2048,
     ) -> Tuple[str, Dict, List[str]]:
         """Process an image to detect both text and objects."""
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        if image.mode != "RGB":
+            image = image.convert("RGB")
 
         # Configure visualization parameters based on image size
         scale_factor = image.size[0] / 3200
@@ -99,17 +90,12 @@ class OmniParser:
 
         # Detect text and objects
         try:
-            texts, text_boxes = self.detect_text(image, output_format='xyxy')
+            texts, text_boxes = self.detect_text(image, output_format="xyxy")
         except Exception as e:
             logger.error("OCR detection failed: %s", str(e))
             texts, text_boxes = [], []
 
-        object_boxes, confidence_scores = self.detect_objects(
-            image,
-            confidence_threshold,
-            iou_threshold,
-            image_size
-        )
+        object_boxes, confidence_scores = self.detect_objects(image, confidence_threshold, iou_threshold, image_size)
 
         # Normalize coordinates
         width, height = image.size
@@ -118,7 +104,7 @@ class OmniParser:
         if text_boxes:
             text_boxes = torch.tensor(text_boxes) / torch.tensor([width, height, width, height])
             text_elements = [
-                {'type': 'text', 'bbox': box.tolist(), 'interactivity': False, 'content': text}
+                {"type": "text", "bbox": box.tolist(), "interactivity": False, "content": text}
                 for box, text in zip(text_boxes, texts, strict=False)
             ]
         else:
@@ -126,22 +112,18 @@ class OmniParser:
 
         object_boxes = object_boxes / torch.tensor([width, height, width, height]).to(object_boxes.device)
         object_elements = [
-            {'type': 'icon', 'bbox': box.tolist(), 'interactivity': True, 'content': None}
-            for box in object_boxes
+            {"type": "icon", "bbox": box.tolist(), "interactivity": True, "content": None} for box in object_boxes
         ]
 
         # Process and filter detections
         filtered_elements = remove_overlapping_boxes(
-            boxes=object_elements,
-            iou_threshold=iou_threshold,
-            ocr_boxes=text_elements
+            boxes=object_elements, iou_threshold=iou_threshold, ocr_boxes=text_elements
         )
 
         # Sort elements (text first, then icons)
-        sorted_elements = sorted(filtered_elements, key=lambda x: x['content'] is None)
+        sorted_elements = sorted(filtered_elements, key=lambda x: x["content"] is None)
         icon_start_idx = next(
-            (i for i, elem in enumerate(sorted_elements) if elem['content'] is None),
-            len(sorted_elements)
+            (i for i, elem in enumerate(sorted_elements) if elem["content"] is None), len(sorted_elements)
         )
 
         # Prepare boxes for visualization
@@ -150,7 +132,7 @@ class OmniParser:
             element_boxes = torch.zeros((0, 4))
             box_labels = []
         else:
-            element_boxes = torch.tensor([elem['bbox'] for elem in sorted_elements])
+            element_boxes = torch.tensor([elem["bbox"] for elem in sorted_elements])
             if len(element_boxes) > 0:
                 # Convert to absolute coordinates for visualization
                 element_boxes = element_boxes * torch.tensor([width, height, width, height])
@@ -172,14 +154,11 @@ class OmniParser:
             text_scale=text_scale,
             text_thickness=text_thickness,
             text_padding=text_padding,
-            thickness=box_thickness
+            thickness=box_thickness,
         )
 
         annotated_image = annotator.annotate(
-            scene=image_array,
-            detections=detections,
-            labels=box_labels,
-            image_size=(width, height)
+            scene=image_array, detections=detections, labels=box_labels, image_size=(width, height)
         )
 
         # Convert coordinates to xywh format for return
@@ -189,15 +168,14 @@ class OmniParser:
         # Normalize coordinates if requested
         if normalize_coordinates:
             label_coords = {
-                k: [v[0]/width, v[1]/height, v[2]/width, v[3]/height]
-                for k, v in label_coords.items()
+                k: [v[0] / width, v[1] / height, v[2] / width, v[3] / height] for k, v in label_coords.items()
             }
 
         # Encode the annotated image
         output_image = Image.fromarray(annotated_image)
         buffer = io.BytesIO()
         output_image.save(buffer, format="PNG")
-        encoded_image = base64.b64encode(buffer.getvalue()).decode('ascii')
+        encoded_image = base64.b64encode(buffer.getvalue()).decode("ascii")
 
         return encoded_image, label_coords, content_descriptions
 

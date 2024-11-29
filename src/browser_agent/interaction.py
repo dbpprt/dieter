@@ -1,4 +1,5 @@
 """Browser interaction handling."""
+
 import logging
 from dataclasses import dataclass
 from typing import Dict, Tuple
@@ -12,13 +13,14 @@ from rich.status import Status
 @dataclass
 class ViewportInfo:
     """Information about the current viewport state."""
+
     scroll_y: int
     scroll_height: int
     viewport_height: int
     can_scroll_down: bool
 
     @classmethod
-    def from_page(cls, page: Page) -> 'ViewportInfo':
+    def from_page(cls, page: Page) -> "ViewportInfo":
         """Create ViewportInfo from page metrics."""
         metrics = page.evaluate("""() => {
             const scrollY = window.scrollY;
@@ -37,17 +39,16 @@ class ViewportInfo:
 @dataclass
 class NavigationState:
     """Information about navigation capabilities."""
+
     can_go_back: bool
     can_go_forward: bool
 
     @classmethod
-    def from_page(cls, page: Page) -> 'NavigationState':
+    def from_page(cls, page: Page) -> "NavigationState":
         """Create NavigationState from page state."""
         return cls(
             can_go_back=page.evaluate("() => window.history.length > 1"),
-            can_go_forward=page.evaluate(
-                "() => window.history.length > 1 && window.history.state !== null"
-            )
+            can_go_forward=page.evaluate("() => window.history.length > 1 && window.history.state !== null"),
         )
 
 
@@ -61,11 +62,7 @@ class BrowserInteraction:
         self.console = Console()
 
     def find_element_coordinates(
-        self,
-        element_id: str,
-        label_coordinates: Dict,
-        screenshot: Image.Image,
-        bbox_format: str = 'xywh'
+        self, element_id: str, label_coordinates: Dict, screenshot: Image.Image, bbox_format: str = "xywh"
     ) -> Tuple[int, int]:
         """Calculate viewport coordinates for an element."""
         if element_id not in label_coordinates:
@@ -76,16 +73,16 @@ class BrowserInteraction:
             raise ValueError("Could not get viewport dimensions")
 
         # Calculate scaling factors
-        scale_x = viewport['width'] / screenshot.size[0]
-        scale_y = viewport['height'] / screenshot.size[1]
+        scale_x = viewport["width"] / screenshot.size[0]
+        scale_y = viewport["height"] / screenshot.size[1]
 
         # Get element box coordinates
         box = label_coordinates[element_id]
 
         # Calculate center point
-        if bbox_format == 'xywh':
-            center_x = box[0] + box[2]/2
-            center_y = box[1] + box[3]/2
+        if bbox_format == "xywh":
+            center_x = box[0] + box[2] / 2
+            center_y = box[1] + box[3] / 2
         else:
             center_x = (box[0] + box[2]) / 2
             center_y = (box[1] + box[3]) / 2
@@ -98,11 +95,8 @@ class BrowserInteraction:
         debug_image = screenshot.copy()
         draw = ImageDraw.Draw(debug_image)
         dot_size = 5
-        draw.ellipse(
-            [center_x-dot_size, center_y-dot_size, center_x+dot_size, center_y+dot_size],
-            fill='red'
-        )
-        debug_image.save('.debug_click.png')
+        draw.ellipse([center_x - dot_size, center_y - dot_size, center_x + dot_size, center_y + dot_size], fill="red")
+        debug_image.save(".debug_click.png")
 
         self.logger.debug("Click coordinates calculated: (%d, %d)", viewport_x, viewport_y)
         if logging.getLogger().getEffectiveLevel() <= logging.INFO:
@@ -110,12 +104,7 @@ class BrowserInteraction:
 
         return viewport_x, viewport_y
 
-    def click(
-        self,
-        element_id: str,
-        label_coordinates: Dict,
-        screenshot: Image.Image
-    ) -> None:
+    def click(self, element_id: str, label_coordinates: Dict, screenshot: Image.Image) -> None:
         """Click an element on the page."""
         self.logger.debug("Attempting to click element %s", element_id)
         x, y = self.find_element_coordinates(element_id, label_coordinates, screenshot)
@@ -127,12 +116,7 @@ class BrowserInteraction:
         self.logger.info("Clicked element %s at (%d, %d)", element_id, x, y)
 
     def type_text(
-        self,
-        text: str,
-        element_id: str,
-        label_coordinates: Dict,
-        screenshot: Image.Image,
-        enter: bool = False
+        self, text: str, element_id: str, label_coordinates: Dict, screenshot: Image.Image, enter: bool = False
     ) -> None:
         """Type text into an element."""
         self.logger.debug("Attempting to type text into element %s", element_id)
@@ -146,7 +130,7 @@ class BrowserInteraction:
         self.page.keyboard.type(text)
 
         if enter:
-            self.page.keyboard.press('Enter')
+            self.page.keyboard.press("Enter")
 
         self._wait_for_load()
 
@@ -156,7 +140,7 @@ class BrowserInteraction:
     def scroll(self, direction: str) -> None:
         """Scroll the page up or down."""
         self.logger.debug("Scrolling %s", direction)
-        key = 'PageDown' if direction == 'down' else 'PageUp'
+        key = "PageDown" if direction == "down" else "PageUp"
 
         self.status.update(f"Scrolling {direction}...")
         self.page.keyboard.press(key)
@@ -169,7 +153,7 @@ class BrowserInteraction:
         self.logger.debug("Navigating back in history")
         self.status.update("Navigating back...")
 
-        self.page.go_back(wait_until='domcontentloaded', timeout=5000)
+        self.page.go_back(wait_until="domcontentloaded", timeout=5000)
         self._wait_for_load()
 
         self.logger.info("Navigated back")
@@ -178,7 +162,7 @@ class BrowserInteraction:
         """Wait for page to load, with timeout handling."""
         try:
             self.logger.debug("Waiting for page load (timeout: %dms)", timeout)
-            self.page.wait_for_load_state('domcontentloaded', timeout=timeout)
+            self.page.wait_for_load_state("domcontentloaded", timeout=timeout)
         except TimeoutError:
             self.logger.warning("Page load timeout after %dms", timeout)
 
