@@ -21,3 +21,7 @@ browser:
       url: "https://github.com/gorhill/uBlock/releases/download/1.61.2/uBlock0_1.61.2.chromium.zip"
       extract_dir: "uBlock0.chromium"  # Subdirectory name after extraction, if any
       enabled: true
+
+# OmniParser Configuration
+omniparser:
+  weights_path: "weights/omniparser/icon_detect/best.pt"  # Path to YOLO weights file

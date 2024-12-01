@@ -2,13 +2,13 @@
 
 import argparse
 import logging
+from dataclasses import replace
 
 from rich.console import Console
 
 from .browser_agent.agent import BrowserAgent
 from .browser_agent.config import load_config
 from .logging_config import configure_logging
-
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -18,11 +18,21 @@ def parse_args() -> argparse.Namespace:
         "-v",
         "--verbose",
         action="store_true",
-        default=False,  # Explicitly set default to False
+        default=False,
         help="Enable verbose logging (default: False)",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--instruction",
+        type=str,
+        help="Initial instruction to run in non-interactive mode",
+    )
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        help="Override model name from config",
+    )
 
+    return parser.parse_args()
 
 def main() -> None:
     """Main entry point for the CLI."""
@@ -35,10 +45,14 @@ def main() -> None:
         logger.debug("Loading configuration from: %s", args.config)
         config = load_config(args.config)
 
+        if args.model_name:
+            logger.warning(f"Config override: model_name = {args.model_name} (was: {config.model_name})")
+            config = replace(config, model_name=args.model_name)
+
         logger.debug("Initializing browser agent")
         agent = BrowserAgent(config)
         logger.info("Starting browser agent session")
-        agent.run()
+        agent.run(initial_instruction=args.instruction)
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt, shutting down...")
     except Exception as e:
@@ -46,7 +60,6 @@ def main() -> None:
         console.print(f"[red]Error: {str(e)}[/red]")
     finally:
         logger.debug("Cleanup complete")
-
 
 if __name__ == "__main__":
     main()

@@ -11,8 +11,8 @@ from playwright.sync_api import Page, TimeoutError
 from rich.console import Console
 from rich.status import Status
 
-import src.omniparser as omniparser
-
+from src.omniparser import OmniParser
+from .config import OmniParserConfig
 from .interaction import NavigationState, ViewportInfo
 
 
@@ -40,13 +40,14 @@ class HistoryEntry:
 class PageAnalyzer:
     """Analyzes and tracks page state."""
 
-    def __init__(self, page: Page, status: Status, max_history: int = 5):
+    def __init__(self, page: Page, status: Status, omniparser_config: OmniParserConfig, max_history: int = 5):
         self.logger = logging.getLogger(__name__)
         self.page = page
         self.status = status
         self.console = Console()
         self.history: List[HistoryEntry] = []
         self.max_history = max_history
+        self.parser = OmniParser(omniparser_config.weights_path)
 
     def capture_state(self) -> PageState:
         """Capture and analyze current page state."""
@@ -126,7 +127,7 @@ class PageAnalyzer:
             "Processing screenshot with omniparser (confidence: %.2f, iou: %.2f)", confidence_threshold, iou_threshold
         )
         self.status.update("Processing image...")
-        result = omniparser.process_image(
+        result = self.parser.process_image(
             image=screenshot,
             confidence_threshold=confidence_threshold,
             iou_threshold=iou_threshold,

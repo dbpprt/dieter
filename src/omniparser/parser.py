@@ -178,8 +178,3 @@ class OmniParser:
         encoded_image = base64.b64encode(buffer.getvalue()).decode("ascii")
 
         return encoded_image, label_coords, content_descriptions
-
-
-# Initialize global parser instance
-parser = OmniParser()
-process_image = parser.process_image

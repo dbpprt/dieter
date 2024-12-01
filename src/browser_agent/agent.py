@@ -50,6 +50,14 @@ class BrowserAgent:
         self.memories: List[str] = []
         self.task_completed = False
 
+        self.browser_manager.setup()
+        self.interaction = BrowserInteraction(self.browser_manager.page, self.status)
+        self.analyzer = PageAnalyzer(
+            self.browser_manager.page,
+            self.status,
+            self.config.omniparser,
+        )
+
         signal.signal(signal.SIGINT, lambda s, f: self._handle_shutdown())
         signal.signal(signal.SIGTERM, lambda s, f: self._handle_shutdown())
 
@@ -188,12 +196,8 @@ class BrowserAgent:
             self.console.print(Panel(Markdown(response), box=ROUNDED, border_style="blue"))
             return False, True
 
-    def run(self) -> None:
+    def run(self, initial_instruction: Optional[str] = None) -> None:
         try:
-            self.browser_manager.setup()
-            self.interaction = BrowserInteraction(self.browser_manager.page, self.status)
-            self.analyzer = PageAnalyzer(self.browser_manager.page, self.status)
-
             self.logger.debug("Browser session started")
             self.console.print(
                 Panel(
@@ -204,6 +208,8 @@ class BrowserAgent:
             )
 
             model_state = ModelState()
+            if initial_instruction:
+                model_state.continue_automatically = True
 
             while True:
                 if self.task_completed:
@@ -216,6 +222,9 @@ class BrowserAgent:
                     )
                     if user_input.lower() == "q":
                         break
+                elif initial_instruction:
+                    user_input = initial_instruction
+                    initial_instruction = None  # Clear it so it's only used once
 
                 message_content = self._build_message_content(user_input, model_state)
                 response = self._get_llm_response(message_content)

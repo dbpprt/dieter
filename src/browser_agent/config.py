@@ -20,12 +20,18 @@ class BrowserConfig:
 
 
 @dataclass
+class OmniParserConfig:
+    weights_path: str = "weights/omniparser/icon_detect/best.pt"
+
+
+@dataclass
 class Config:
     api_key: str = ""
     base_url: str = "https://openrouter.ai/api/v1"
     model_name: str = ""
     max_history_size: Optional[int] = 4
     browser: BrowserConfig = field(default_factory=BrowserConfig)
+    omniparser: OmniParserConfig = field(default_factory=OmniParserConfig)
 
 
 def substitute_env_vars(value: str) -> str:
@@ -68,6 +74,7 @@ def load_config(config_path: str = "config.yaml") -> Config:
             config_data = process_config_values(config_data)
 
             browser_config = config_data.get("browser", {})
+            omniparser_config = config_data.get("omniparser", {})
             return Config(
                 api_key=config_data.get("api_key", ""),
                 base_url=config_data.get("base_url", "https://openrouter.ai/api/v1"),
@@ -82,6 +89,9 @@ def load_config(config_path: str = "config.yaml") -> Config:
                     is_mobile=browser_config.get("is_mobile", True),
                     has_touch=browser_config.get("has_touch", True),
                     extensions=browser_config.get("extensions"),
+                ),
+                omniparser=OmniParserConfig(
+                    weights_path=omniparser_config.get("weights_path", "weights/omniparser/icon_detect/best.pt"),
                 ),
             )
     except Exception as e:
