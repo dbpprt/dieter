@@ -4,7 +4,9 @@
     <p><strong>Vision-Guided Browser Automation Agent</strong></p>
   </div>
   <div style="flex: 0 0 600px;">
-    <video src="https://github.com/dbpprt/dieter/raw/refs/heads/main/assets/demo.mp4" width="600"/>
+    <a href="https://www.youtube.com/watch?v=ZOplZbU67-4">
+      <img src="assets/demo.gif" alt="Demo" width="600"/>
+    </a>
   </div>
 </div>
 
@@ -270,4 +272,4 @@ This README is AI-generated based on analysis of the `dieter` source code.
 
 ---
 
-Built with ❤️ using Python, OmniParser, and Apple Vision Framework
+Built with ❤️ by Claude using Python, OmniParser, and Apple Vision Framework
