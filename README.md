@@ -2,6 +2,9 @@
 <a href="https://www.youtube.com/watch?v=ZOplZbU67-4">
 <img src="assets/demo.gif" width="100%" alt="dieter demo">
 </a>
+
+**[https://www.youtube.com/watch?v=ZOplZbU67-4](https://www.youtube.com/watch?v=ZOplZbU67-4)**
+
 </div>
 
 ## Overview
