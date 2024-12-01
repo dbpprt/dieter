@@ -216,6 +216,13 @@ poetry run python -m src --model-name "anthropic/claude-3.5-sonnet:beta"
    - Navigation handling
    - State verification after actions
 
+## Roadmap
+
+- [ ] Implement support for additional OCR engines to eliminate macOS dependency
+- [ ] Integrate Claude MCP protocol
+- [ ] Benchmark performance of local models
+- [ ] Publish as a pip installable package
+
 ## FAQ
 
 ### Why macOS Only?
