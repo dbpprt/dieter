@@ -1,13 +1,7 @@
-<div align="center" style="display: flex; align-items: center; justify-content: center; gap: 2rem;">
-  <div style="flex: 0 0 200px;">
-    <img src="assets/logo.png" alt="dieter Logo" width="200"/>
-    <p><strong>Vision-Guided Browser Automation Agent</strong></p>
-  </div>
-  <div style="flex: 0 0 600px;">
-    <a href="https://www.youtube.com/watch?v=ZOplZbU67-4">
-      <img src="assets/demo.gif" alt="Demo" width="600"/>
-    </a>
-  </div>
+<div align="center">
+<a href="https://www.youtube.com/watch?v=ZOplZbU67-4">
+<img src="assets/demo.gif" width="100%" alt="dieter demo">
+</a>
 </div>
 
 ## Overview
