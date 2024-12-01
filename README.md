@@ -13,6 +13,8 @@
 
 `dieter` is a sophisticated browser automation agent that combines Large Language Models (LLM) with computer vision to interact with web interfaces. Unlike traditional automation tools that rely on selectors or XPath, `dieter` understands web pages visually - similar to how humans do.
 
+Note: **This README is AI-generated based on analysis of the `dieter` source code.**
+
 ## Key Features
 
 - **Vision-Based Interaction**: Uses OmniParser's pretrained YOLO model to identify clickable elements and interactive components
@@ -259,6 +261,7 @@ This system allows `dieter` to maintain relevant context while preventing contex
 This project is under the MIT License - see LICENSE file for details.
 
 Note about OmniParser licensing:
+
 - OmniParser's icon_detect model is under AGPL license
 - OmniParser's icon_caption_blip2 and icon_caption_florence models are under MIT license
 
