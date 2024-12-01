@@ -91,12 +91,13 @@ class BrowserInteraction:
         viewport_x = int(center_x * scale_x)
         viewport_y = int(center_y * scale_y)
 
-        # Save debug visualization
-        debug_image = screenshot.copy()
-        draw = ImageDraw.Draw(debug_image)
-        dot_size = 5
-        draw.ellipse([center_x - dot_size, center_y - dot_size, center_x + dot_size, center_y + dot_size], fill="red")
-        debug_image.save(".debug_click.png")
+        # Save debug visualization only when verbose logging is enabled
+        if self.logger.isEnabledFor(logging.DEBUG):
+            debug_image = screenshot.copy()
+            draw = ImageDraw.Draw(debug_image)
+            dot_size = 5
+            draw.ellipse([center_x - dot_size, center_y - dot_size, center_x + dot_size, center_y + dot_size], fill="red")
+            debug_image.save(".debug_click.png")
 
         self.logger.debug("Click coordinates calculated: (%d, %d)", viewport_x, viewport_y)
         if logging.getLogger().getEffectiveLevel() <= logging.INFO:

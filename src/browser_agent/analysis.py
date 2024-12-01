@@ -65,11 +65,12 @@ class PageAnalyzer:
             viewport_info = ViewportInfo.from_page(self.page)
             nav_state = NavigationState.from_page(self.page)
 
-            # Save debug screenshot with optimization
-            image_bytes = base64.b64decode(encoded_image)
-            annotated_image = Image.open(io.BytesIO(image_bytes))
-            annotated_image.save(".screenshot.png", optimize=True)
-            self.logger.debug("Debug screenshot saved")
+            # Save debug screenshot only when verbose logging is enabled
+            if self.logger.isEnabledFor(logging.DEBUG):
+                image_bytes = base64.b64decode(encoded_image)
+                annotated_image = Image.open(io.BytesIO(image_bytes))
+                annotated_image.save(".screenshot.png", optimize=True)
+                self.logger.debug("Debug screenshot saved")
 
             self.logger.debug("Page state capture completed")
             return PageState(
@@ -95,9 +96,11 @@ class PageAnalyzer:
         viewport_info = ViewportInfo.from_page(self.page)
         nav_state = NavigationState.from_page(self.page)
 
-        image_bytes = base64.b64decode(encoded_image)
-        annotated_image = Image.open(io.BytesIO(image_bytes))
-        annotated_image.save(".screenshot.png", optimize=True)
+        # Save debug screenshot only when verbose logging is enabled
+        if self.logger.isEnabledFor(logging.DEBUG):
+            image_bytes = base64.b64decode(encoded_image)
+            annotated_image = Image.open(io.BytesIO(image_bytes))
+            annotated_image.save(".screenshot.png", optimize=True)
 
         self.logger.debug("Current state capture completed")
         return PageState(
