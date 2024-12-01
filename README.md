@@ -1,12 +1,11 @@
-# `dieter`
-
-<div align="center">
-  <img src="assets/logo.png" alt="dieter Logo" width="200"/>
-  <p><strong>Vision-Guided Browser Automation Agent</strong></p>
-</div>
-
-<div align="center">
-  <video src="assets/demo.mov" width="600"/>
+<div align="center" style="display: flex; align-items: center; justify-content: center; gap: 2rem;">
+  <div style="flex: 0 0 200px;">
+    <img src="assets/logo.png" alt="dieter Logo" width="200"/>
+    <p><strong>Vision-Guided Browser Automation Agent</strong></p>
+  </div>
+  <div style="flex: 0 0 600px;">
+    <video src="assets/demo.mp4" width="600" autoplay loop muted/>
+  </div>
 </div>
 
 ## Overview
