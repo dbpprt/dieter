@@ -4,7 +4,7 @@
     <p><strong>Vision-Guided Browser Automation Agent</strong></p>
   </div>
   <div style="flex: 0 0 600px;">
-    <video src="assets/demo.mp4" width="600" autoplay loop muted/>
+    https://github.com/dbpprt/dieter/assets/demo.mp4
   </div>
 </div>
 
