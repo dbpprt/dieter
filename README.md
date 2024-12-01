@@ -191,8 +191,15 @@ poetry run python -m src --model-name "anthropic/claude-3.5-sonnet:beta"
 
    - Captures screenshot of current page
    - Detects interactive elements using OmniParser's YOLO model
-   - Performs OCR on text content
-   - Tracks viewport and navigation state
+   - Performs OCR on text content using Apple's Vision framework
+
+   Here's an example of how the OCR system processes a webpage:
+
+   <div align="center">
+   <img src="assets/screenshot.png" width="100%" alt="OCR text detection">
+   </div>
+
+   The pink boxes with unique IDs annotate each detected text element on the page. Since the model has no spatial understanding of the image and cannot reliably predict x,y coordinates, these IDs allow the model to reference specific elements when deciding which ones to interact with.
 
 2. **Decision Making**:
 
