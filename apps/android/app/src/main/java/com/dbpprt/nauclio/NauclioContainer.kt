@@ -5,6 +5,7 @@ import com.dbpprt.nauclio.connection.NauclioConnectionManager
 import com.dbpprt.nauclio.data.NauclioRepository
 import com.dbpprt.nauclio.data.GrpcNauclioRepository
 import com.dbpprt.nauclio.settings.AppPreferences
+import com.dbpprt.nauclio.update.AppUpdateManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -14,6 +15,7 @@ class NauclioContainer(context: Context) {
     val repository: NauclioRepository = GrpcNauclioRepository(context)
     val connectionManager = NauclioConnectionManager(context, repository)
     val appPreferences = AppPreferences(context)
+    val appUpdateManager = AppUpdateManager(context)
     private val _openRequest = MutableStateFlow<NauclioOpenRequest?>(null)
     val openRequest = _openRequest.asStateFlow()
 

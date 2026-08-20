@@ -54,6 +54,14 @@ overflow menu. Project chat sections show the five most recent entries until
 expanded. Model reasoning traces are hidden by default and can be enabled
 globally under App Settings > Chat display.
 
+The app checks the latest public `dbpprt/nauclio` GitHub release when it
+starts. When a newer semantic version includes `Nauclio-Android.apk`, Nauclio
+offers to download it, verifies GitHub's published SHA-256 asset digest, and
+hands the APK to Android's package installer. Android requires the user to
+allow Nauclio as an install source and confirm each installation; background
+or silent replacement is intentionally not attempted. A manual check is
+available under App Settings > Updates.
+
 ## Build
 
 Android Studio's bundled JDK and the default macOS Android SDK are detected by:

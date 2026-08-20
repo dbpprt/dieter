@@ -76,6 +76,7 @@ import com.dbpprt.nauclio.NauclioContainer
 import com.dbpprt.nauclio.connection.ConnectionPhase
 import com.dbpprt.nauclio.connection.EndpointPhase
 import com.dbpprt.nauclio.settings.NavigationStyle
+import com.dbpprt.nauclio.update.AppUpdateManager
 import com.dbpprt.nauclio.ui.theme.NauclioAegean
 import com.dbpprt.nauclio.ui.theme.NauclioSeafoam
 import com.dbpprt.nauclio.ui.theme.NauclioMuted
@@ -113,7 +114,13 @@ fun NauclioApp(container: NauclioContainer) {
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { model.start() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { container.appUpdateManager.refreshInstallerPermission() }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { model.stop() }
+    LaunchedEffect(container.appUpdateManager) {
+        if (container.appUpdateManager.automaticChecksEnabled) {
+            container.appUpdateManager.checkForUpdates()
+        }
+    }
     LaunchedEffect(openRequest) {
         val request = openRequest ?: return@LaunchedEffect
         if (request.showConnection) model.showConnectionDialogIfNeeded()
@@ -148,7 +155,7 @@ fun NauclioApp(container: NauclioContainer) {
         val expanded = maxWidth >= 840.dp
         if (state.appSurface != null) {
             Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
-                AppSurfaceContent(state, model, Modifier.fillMaxSize(), padding)
+                AppSurfaceContent(state, model, container.appUpdateManager, Modifier.fillMaxSize(), padding)
             }
         } else if (expanded) {
             Surface(
@@ -251,6 +258,7 @@ fun NauclioApp(container: NauclioContainer) {
             }
         }
     }
+    AppUpdateDialog(container.appUpdateManager)
 }
 
 @Composable
@@ -417,6 +425,7 @@ private fun DestinationContent(
 private fun AppSurfaceContent(
     state: NauclioUiState,
     model: NauclioViewModel,
+    updateManager: AppUpdateManager,
     modifier: Modifier,
     contentPadding: androidx.compose.foundation.layout.PaddingValues,
 ) {
@@ -433,7 +442,7 @@ private fun AppSurfaceContent(
             )
             AppSurface.WORKSPACE -> WorkspaceManagementScreen(state, model, contentPadding = contentPadding)
             AppSurface.NEW_PROJECT -> NewProjectScreen(state, model, contentPadding = contentPadding)
-            AppSurface.APP_SETTINGS -> AppSettingsScreen(state, model, contentPadding = contentPadding)
+            AppSurface.APP_SETTINGS -> AppSettingsScreen(state, model, updateManager, contentPadding = contentPadding)
             null -> Unit
         }
     }

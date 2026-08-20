@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +49,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -63,11 +65,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dbpprt.nauclio.connection.ConnectionPhase
 import com.dbpprt.nauclio.data.NAUCLIO_ENDPOINTS
 import com.dbpprt.nauclio.data.NauclioEndpoint
 import com.dbpprt.nauclio.data.nauclioEndpointFromAddress
 import com.dbpprt.nauclio.settings.NavigationStyle
+import com.dbpprt.nauclio.update.AppUpdateManager
+import com.dbpprt.nauclio.update.AppUpdateState
 import com.dbpprt.nauclio.ui.theme.NauclioDivider
 import com.dbpprt.nauclio.ui.theme.NauclioSeafoam
 import com.dbpprt.nauclio.ui.theme.NauclioAegean
@@ -79,6 +84,7 @@ import com.dbpprt.nauclio.ui.theme.NauclioText
 
 private const val CONNECTIONS_TAB = 0
 private const val DISPLAY_TAB = 1
+private const val UPDATES_TAB = 2
 
 private data class ConnectionDraft(val id: String, val label: String, val address: String)
 
@@ -86,6 +92,7 @@ private data class ConnectionDraft(val id: String, val label: String, val addres
 fun AppSettingsScreen(
     state: NauclioUiState,
     model: NauclioViewModel,
+    updateManager: AppUpdateManager,
     contentPadding: PaddingValues,
 ) {
     val endpointKey = state.configuredConnections.joinToString("|") { "${it.id}:${it.label}:${it.address}" }
@@ -96,7 +103,7 @@ fun AppSettingsScreen(
             },
         )
     }
-    var selectedTab by remember { mutableStateOf(CONNECTIONS_TAB) }
+    var selectedTab by remember { mutableIntStateOf(CONNECTIONS_TAB) }
     var confirmation by remember { mutableStateOf<String?>(null) }
     val parsed = drafts.map { draft ->
         runCatching { nauclioEndpointFromAddress(draft.id, draft.label, draft.address) }
@@ -119,11 +126,12 @@ fun AppSettingsScreen(
         ) {
             SettingsTab("Connections", selectedTab == CONNECTIONS_TAB) { selectedTab = CONNECTIONS_TAB }
             SettingsTab("Display", selectedTab == DISPLAY_TAB) { selectedTab = DISPLAY_TAB }
+            SettingsTab("Updates", selectedTab == UPDATES_TAB) { selectedTab = UPDATES_TAB }
         }
         SurfaceErrorBanner(state.error, model::clearError)
         Box(Modifier.weight(1f)) {
-            if (selectedTab == CONNECTIONS_TAB) {
-                ConnectionsSettings(
+            when (selectedTab) {
+                CONNECTIONS_TAB -> ConnectionsSettings(
                     state = state,
                     model = model,
                     drafts = drafts,
@@ -134,8 +142,8 @@ fun AppSettingsScreen(
                         confirmation = null
                     },
                 )
-            } else {
-                DisplaySettings(state, model)
+                DISPLAY_TAB -> DisplaySettings(state, model)
+                else -> UpdateSettings(updateManager)
             }
         }
         if (selectedTab == CONNECTIONS_TAB) {
@@ -489,6 +497,82 @@ private fun SettingsSectionHeader(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, color = NauclioAegean, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Text(subtitle, color = NauclioMuted, fontSize = 14.sp, lineHeight = 20.sp)
+    }
+}
+
+@Composable
+private fun UpdateSettings(manager: AppUpdateManager) {
+    val state by manager.state.collectAsStateWithLifecycle()
+    val busy = state is AppUpdateState.Checking || state is AppUpdateState.Downloading
+    val status = when (val current = state) {
+        AppUpdateState.Idle -> if (manager.automaticChecksEnabled) {
+            "Checks automatically when Nauclio starts."
+        } else {
+            "Use Check now in development builds."
+        }
+        AppUpdateState.Checking -> "Checking GitHub…"
+        is AppUpdateState.UpToDate -> "${current.version} is current."
+        is AppUpdateState.Available -> "${current.release.version} is available."
+        is AppUpdateState.Downloading -> {
+            val percent = ((current.bytesDownloaded * 100) / current.release.sizeBytes).coerceIn(0, 100)
+            "Downloading ${current.release.version} · $percent%"
+        }
+        is AppUpdateState.ReadyToInstall -> "${current.release.version} is downloaded and verified."
+        is AppUpdateState.Failed -> current.message
+    }
+    val hasPrompt = when (state) {
+        is AppUpdateState.Available,
+        is AppUpdateState.ReadyToInstall,
+        is AppUpdateState.Failed,
+        -> true
+        else -> false
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().testTag("settings-updates-content"),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            SettingsSectionHeader(
+                title = "App updates",
+                subtitle = "Checks the official dbpprt/nauclio GitHub releases and verifies the APK checksum before install.",
+            )
+        }
+        item {
+            Surface(color = NauclioSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Nauclio ${manager.currentVersion}", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                    Text(
+                        status,
+                        color = if (state is AppUpdateState.Failed) MaterialTheme.colorScheme.error else NauclioMuted,
+                        fontSize = 14.sp,
+                        lineHeight = 20.sp,
+                    )
+                    Button(
+                        onClick = {
+                            if (hasPrompt) manager.showPrompt()
+                            else manager.checkForUpdates(force = true, showErrors = true)
+                        },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("check-app-update"),
+                    ) {
+                        if (busy) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(
+                            when {
+                                state is AppUpdateState.Checking -> "Checking…"
+                                state is AppUpdateState.Downloading -> "Downloading…"
+                                hasPrompt -> "View update"
+                                else -> "Check now"
+                            },
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
