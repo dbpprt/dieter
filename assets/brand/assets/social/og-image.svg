@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Nauclio — One command deck. Every coding agent.">
+  <defs>
+    <radialGradient id="background" cx="78%" cy="46%" r="72%">
+      <stop stop-color="#183D67"/>
+      <stop offset="0.42" stop-color="#0B1F3A"/>
+      <stop offset="1" stop-color="#050B14"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#2563EB"/>
+      <stop offset="0.55" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#5EEAD4"/>
+    </linearGradient>
+    <linearGradient id="icon-ring" x1="170" y1="145" x2="854" y2="880" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE"/>
+      <stop offset="0.48" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#1546C8"/>
+    </linearGradient>
+    <linearGradient id="icon-head" x1="402" y1="190" x2="624" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5EEAD4"/>
+      <stop offset="0.52" stop-color="#22D3EE"/>
+      <stop offset="1" stop-color="#2588F5"/>
+    </linearGradient>
+    <g id="icon-session">
+      <rect x="402" y="190" width="220" height="205" rx="28" fill="#0B1F3A" stroke="#1E6BF1" stroke-width="14"/>
+      <path d="M402 218a28 28 0 0 1 28-28h164a28 28 0 0 1 28 28v48H402z" fill="url(#icon-head)"/>
+      <circle cx="438" cy="228" r="10" fill="#071426"/>
+      <circle cx="470" cy="228" r="10" fill="#071426"/>
+      <circle cx="502" cy="228" r="10" fill="#071426"/>
+    </g>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#background)"/>
+  <circle cx="938" cy="315" r="226" fill="#22D3EE" opacity="0.12" filter="url(#glow)"/>
+  <text x="82" y="160" fill="#5EEAD4" font-family="JetBrains Mono, SFMono-Regular, monospace" font-size="22" font-weight="600" letter-spacing="3">NAUCLIO</text>
+  <text x="82" y="282" fill="#F5FAFF" font-family="Sora, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="72" font-weight="650" letter-spacing="-4">One command deck.</text>
+  <text x="82" y="372" fill="#F5FAFF" font-family="Sora, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="72" font-weight="650" letter-spacing="-4">Every coding agent.</text>
+  <text x="86" y="452" fill="#9DB0C3" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="27">Any harness. Any machine. Any device.</text>
+  <rect x="82" y="511" width="236" height="6" rx="3" fill="url(#accent)"/>
+  <g transform="translate(752 126) scale(.369)">
+    <rect width="1024" height="1024" rx="226" fill="#071426"/>
+    <circle cx="512" cy="512" r="365" fill="none" stroke="url(#icon-ring)" stroke-width="64"/>
+    <g fill="none" stroke="#1F5BD7" stroke-width="66" stroke-linecap="round">
+      <path d="M512 512L799 346"/>
+      <path d="M512 512L225 346"/>
+      <path d="M512 512V843"/>
+    </g>
+    <use href="#icon-session"/>
+    <use href="#icon-session" transform="rotate(120 512 512)"/>
+    <use href="#icon-session" transform="rotate(240 512 512)"/>
+    <circle cx="512" cy="512" r="91" fill="url(#icon-ring)"/>
+    <circle cx="512" cy="512" r="58" fill="#071426"/>
+    <g fill="#5EEAD4">
+      <rect x="481" y="110" width="62" height="62" rx="14"/>
+      <rect x="184" y="688" width="62" height="62" rx="14" transform="rotate(60 215 719)"/>
+      <rect x="778" y="688" width="62" height="62" rx="14" transform="rotate(-60 809 719)"/>
+    </g>
+  </g>
+</svg>

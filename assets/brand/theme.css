@@ -1,0 +1,159 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&family=Sora:wght@500;600;700&display=swap");
+
+:root {
+  color-scheme: light;
+
+  --nauclio-abyss: #071426;
+  --nauclio-current: #0b1f3a;
+  --nauclio-cobalt: #2563eb;
+  --nauclio-aegean: #22d3ee;
+  --nauclio-seafoam: #5eead4;
+  --nauclio-foam: #f7fafc;
+  --nauclio-mist: #eaf2f8;
+  --nauclio-slate: #526174;
+  --nauclio-coral: #fb7185;
+  --nauclio-amber: #f59e0b;
+
+  --color-background: #f7fafc;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-text: #071426;
+  --color-text-muted: #526174;
+  --color-border: #d8e4ee;
+  --color-primary: #155eef;
+  --color-primary-hover: #104dcc;
+  --color-primary-text: #ffffff;
+  --color-accent: #0f91a8;
+  --color-focus: #2563eb;
+  --color-success: #087f6f;
+  --color-warning: #9a5b00;
+  --color-danger: #c93654;
+
+  --gradient-brand: linear-gradient(125deg, #2563eb 0%, #22d3ee 58%, #5eead4 100%);
+  --gradient-surface: linear-gradient(145deg, #ffffff 0%, #eaf2f8 100%);
+
+  --font-display: "Sora", "Avenir Next", "Helvetica Neue", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-xl: 32px;
+  --shadow-sm: 0 1px 2px rgb(7 20 38 / 0.08);
+  --shadow-md: 0 14px 38px rgb(7 20 38 / 0.12);
+  --shadow-glow: 0 0 42px rgb(34 211 238 / 0.18);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-background: #050b14;
+  --color-surface: #0b1628;
+  --color-surface-raised: #12243c;
+  --color-text: #f5faff;
+  --color-text-muted: #9db0c3;
+  --color-border: #20364f;
+  --color-primary: #56c7ff;
+  --color-primary-hover: #7bd7ff;
+  --color-primary-text: #071426;
+  --color-accent: #5eead4;
+  --color-focus: #22d3ee;
+  --color-success: #5eead4;
+  --color-warning: #f8bd55;
+  --color-danger: #fb8da1;
+
+  --gradient-surface: linear-gradient(145deg, #12243c 0%, #091426 100%);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 18px 52px rgb(0 0 0 / 0.38);
+  --shadow-glow: 0 0 56px rgb(34 211 238 / 0.16);
+}
+
+html {
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-text);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+.nauclio-display {
+  font-family: var(--font-display);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+}
+
+.nauclio-mono {
+  font-family: var(--font-mono);
+}
+
+.nauclio-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1.05rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+  font: 600 0.925rem/1 var(--font-body);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.nauclio-button:hover {
+  background: var(--color-primary-hover);
+}
+
+.nauclio-button--secondary {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.nauclio-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.nauclio-terminal {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--nauclio-abyss);
+  color: #dff8ff;
+  box-shadow: var(--shadow-md);
+}
+
+.nauclio-terminal__bar {
+  display: flex;
+  gap: 7px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #20364f;
+  background: #0b1f3a;
+}
+
+.nauclio-terminal__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--nauclio-aegean);
+}
+
+.nauclio-terminal__body {
+  padding: 20px;
+  font: 500 0.84rem/1.7 var(--font-mono);
+}

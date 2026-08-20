@@ -1,0 +1,1238 @@
+/*
+ * Copyright 2024, gRPC Authors All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+private import DequeModule
+package import GRPCCore
+private import Synchronization
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+package final class GRPCChannel: ClientTransport {
+  package typealias Bytes = GRPCNIOTransportBytes
+
+  private enum Input: Sendable {
+    /// Close the channel, if possible.
+    case close
+    /// Handle the result of a name resolution.
+    case handleResolutionResult(NameResolutionResult)
+    /// Handle the event from the underlying connection object.
+    case handleLoadBalancerEvent(LoadBalancerEvent, LoadBalancerID)
+  }
+
+  /// Events which can happen to the channel.
+  private let _connectivityState:
+    (
+      stream: AsyncStream<ConnectivityState>,
+      continuation: AsyncStream<ConnectivityState>.Continuation
+    )
+
+  /// Inputs which this channel should react to.
+  private let input: (stream: AsyncStream<Input>, continuation: AsyncStream<Input>.Continuation)
+
+  /// A resolver providing resolved names to the channel.
+  private let resolver: NameResolver
+
+  /// Backoff used if the resolver throws.
+  private let resolverBackoff: Backoff
+
+  /// The state of the channel.
+  private let state: Mutex<StateMachine>
+
+  /// The maximum number of times to attempt to create a stream per RPC.
+  ///
+  /// This is the value used by other gRPC implementations.
+  private static let maxStreamCreationAttempts = 5
+
+  /// A factory for connections.
+  private let connector: any HTTP2Connector
+
+  /// The percent-encoded server authority. If `nil`, a value will be computed based on the endpoint
+  /// being connected to.
+  private let authority: String?
+
+  /// The connection backoff configuration used by the subchannel when establishing a connection.
+  private let backoff: Backoff
+
+  /// The default compression algorithm used for requests.
+  private let defaultCompression: CompressionAlgorithm
+
+  /// The set of enabled compression algorithms.
+  private let enabledCompression: CompressionAlgorithmSet
+
+  /// The default service config to use.
+  ///
+  /// Used when the resolver doesn't provide one.
+  private let defaultServiceConfig: ServiceConfig
+
+  // These are both read frequently and updated infrequently so may be a bottleneck.
+  private let _methodConfig: Mutex<MethodConfigs>
+  private let _retryThrottle: Mutex<RetryThrottle?>
+
+  package init(
+    resolver: NameResolver,
+    connector: any HTTP2Connector,
+    config: Config,
+    defaultServiceConfig: ServiceConfig
+  ) {
+    self.resolver = resolver
+    self.resolverBackoff = Backoff(config.resolverBackoff)
+
+    self.state = Mutex(StateMachine())
+    self._connectivityState = AsyncStream.makeStream()
+    self.input = AsyncStream.makeStream()
+    self.connector = connector
+
+    // Determine the authority to use for the ":authority" pseudo-header and in the TLS SNI
+    // extension. This value will be used for all subchannels and connections. If no authority
+    // is set then one will be derived for each address being connected to.
+    if let authority = config.http2.authority ?? resolver.authority {
+      self.authority = PercentEncoding.encodeAuthority(authority)
+    } else {
+      self.authority = nil
+    }
+
+    self.backoff = Backoff(config.backoff)
+    self.defaultCompression = config.compression.algorithm
+    self.enabledCompression = config.compression.enabledAlgorithms
+    self.defaultServiceConfig = defaultServiceConfig
+
+    let throttle = defaultServiceConfig.retryThrottling.map { RetryThrottle(policy: $0) }
+    self._retryThrottle = Mutex(throttle)
+
+    let methodConfig = MethodConfigs(serviceConfig: defaultServiceConfig)
+    self._methodConfig = Mutex(methodConfig)
+  }
+
+  /// The connectivity state of the channel.
+  package var connectivityState: AsyncStream<ConnectivityState> {
+    self._connectivityState.stream
+  }
+
+  /// Returns a throttle which gRPC uses to determine whether retries can be executed.
+  package var retryThrottle: RetryThrottle? {
+    self._retryThrottle.withLock { $0 }
+  }
+
+  /// Returns the configuration for a given method.
+  ///
+  /// - Parameter descriptor: The method to lookup configuration for.
+  /// - Returns: Configuration for the method, if it exists.
+  package func config(forMethod descriptor: MethodDescriptor) -> MethodConfig? {
+    self._methodConfig.withLock { $0[descriptor] }
+  }
+
+  /// Establishes and maintains a connection to the remote destination.
+  package func connect() async {
+    self.state.withLock { $0.start() }
+    self._connectivityState.continuation.yield(.idle)
+
+    await withDiscardingTaskGroup { group in
+      var resolverWithBackoff: Optional<ResolverWithBackoff>
+
+      // The resolver can either push or pull values. If it pushes values the channel should
+      // listen for new results. Otherwise the channel will pull values as and when necessary.
+      switch self.resolver.updateMode.value {
+      case .push:
+        resolverWithBackoff = nil
+
+        let handle = group.addCancellableTask {
+          var resolver = ResolverWithBackoff(
+            resolver: self.resolver.names,
+            backoff: self.resolverBackoff
+          )
+
+          var continueResolving = true
+          while continueResolving {
+            switch await resolver.resolve() {
+            case .resolved(let result):
+              self.input.continuation.yield(.handleResolutionResult(result))
+
+            case .backoff(let delay, let error):
+              // An error may result in RPCs being failed (if there's no load balancer yet).
+              switch self.state.withLock({ $0.resolverFailed(with: error) }) {
+              case .fail(let continuations, let error):
+                for continuation in continuations {
+                  continuation.resume(throwing: error)
+                }
+              case .none:
+                ()
+              }
+
+              do {
+                try await Task.sleep(nanoseconds: delay.grpcNanoseconds)
+              } catch {
+                // Only throws on cancellation, stop resolving.
+                continueResolving = false
+              }
+
+            case .cancelled:
+              continueResolving = false
+            }
+          }
+
+          // Cancelled, so begin graceful shutdown.
+          self.beginGracefulShutdown()
+        }
+
+        // When the channel is closed gracefully, the task group running the load balancer mustn't
+        // be cancelled (otherwise in-flight RPCs would fail), but the push based resolver will
+        // continue indefinitely. Store its handle and cancel it on close when closing the channel.
+        self.state.withLock { state in
+          state.setNameResolverTaskHandle(handle)
+        }
+
+      case .pull:
+        var resolver: ResolverWithBackoff? = ResolverWithBackoff(
+          resolver: self.resolver.names,
+          backoff: self.resolverBackoff
+        )
+        await self.resolve(using: &resolver, handlingResultIn: &group)
+        resolverWithBackoff = resolver
+      }
+
+      // Resolver is setup, start handling events.
+      for await input in self.input.stream {
+        switch input {
+        case .close:
+          self.handleClose(in: &group)
+
+        case .handleResolutionResult(let result):
+          self.handleNameResolutionResult(result, in: &group)
+
+        case .handleLoadBalancerEvent(let event, let id):
+          await self.handleLoadBalancerEvent(
+            event,
+            loadBalancerID: id,
+            in: &group,
+            resolver: &resolverWithBackoff
+          )
+        }
+      }
+    }
+
+    if Task.isCancelled {
+      self._connectivityState.continuation.finish()
+    }
+  }
+
+  /// Signal to the transport that no new streams may be created and that connections should be
+  /// closed when all streams are closed.
+  package func beginGracefulShutdown() {
+    self.input.continuation.yield(.close)
+  }
+
+  /// Opens a stream using the transport, and uses it as input into a user-provided closure, alongside the client's context.
+  package func withStream<T: Sendable>(
+    descriptor: MethodDescriptor,
+    options: CallOptions,
+    _ closure: (_ stream: RPCStream<Inbound, Outbound>, _ context: ClientContext) async throws -> T
+  ) async throws -> T {
+    // Merge options from the call with those from the service config.
+    let methodConfig = self.config(forMethod: descriptor)
+    var options = options
+    options.formUnion(with: methodConfig)
+
+    for attempt in 1 ... Self.maxStreamCreationAttempts {
+      switch await self.makeStream(descriptor: descriptor, options: options) {
+      case .created(let stream):
+        return try await stream.execute { inbound, outbound in
+          let rpcStream = RPCStream(
+            descriptor: stream.context.descriptor,
+            inbound: RPCAsyncSequence<RPCResponsePart, any Error>(wrapping: inbound),
+            outbound: RPCWriter.Closable(wrapping: outbound)
+          )
+          return try await closure(rpcStream, stream.context)
+        }
+
+      case .tryAgain(let error):
+        if error is CancellationError || attempt == Self.maxStreamCreationAttempts {
+          throw error
+        } else {
+          continue
+        }
+
+      case .stopTrying(let error):
+        throw error
+      }
+    }
+
+    fatalError("Internal inconsistency")
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension GRPCChannel {
+  package struct Config: Sendable {
+    /// Configuration for HTTP/2 connections.
+    package var http2: HTTP2ClientTransport.Config.HTTP2
+
+    /// Configuration for backoff used when establishing a connection.
+    package var backoff: HTTP2ClientTransport.Config.Backoff
+
+    /// Configuration for backoff used when resolving names.
+    package var resolverBackoff: HTTP2ClientTransport.Config.Backoff
+
+    /// Configuration for connection management.
+    package var connection: HTTP2ClientTransport.Config.Connection
+
+    /// Compression configuration.
+    package var compression: HTTP2ClientTransport.Config.Compression
+
+    package init(
+      http2: HTTP2ClientTransport.Config.HTTP2,
+      backoff: HTTP2ClientTransport.Config.Backoff,
+      resolverBackoff: HTTP2ClientTransport.Config.Backoff,
+      connection: HTTP2ClientTransport.Config.Connection,
+      compression: HTTP2ClientTransport.Config.Compression
+    ) {
+      self.http2 = http2
+      self.backoff = backoff
+      self.resolverBackoff = resolverBackoff
+      self.connection = connection
+      self.compression = compression
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension GRPCChannel {
+  enum MakeStreamResult {
+    /// A stream was created, use it.
+    case created(Connection.Stream)
+    /// An error occurred while trying to create a stream, try again if possible.
+    case tryAgain(any Error)
+    /// An unrecoverable error occurred (e.g. the channel is closed), fail the RPC and don't retry.
+    case stopTrying(any Error)
+  }
+
+  private func makeStream(
+    descriptor: MethodDescriptor,
+    options: CallOptions
+  ) async -> MakeStreamResult {
+    let waitForReady = options.waitForReady ?? false
+    switch self.state.withLock({ $0.makeStream(waitForReady: waitForReady) }) {
+    case .useLoadBalancer(let loadBalancer):
+      return await self.makeStream(
+        descriptor: descriptor,
+        options: options,
+        loadBalancer: loadBalancer
+      )
+
+    case .joinQueue:
+      do {
+        let loadBalancer = try await self.enqueue(waitForReady: waitForReady)
+        return await self.makeStream(
+          descriptor: descriptor,
+          options: options,
+          loadBalancer: loadBalancer
+        )
+      } catch {
+        // All errors from enqueue are non-recoverable: either the channel is shutting down or
+        // the request has been cancelled.
+        return .stopTrying(error)
+      }
+
+    case .failRPC(let reason):
+      let message: String
+      let cause: RPCError?
+
+      switch reason {
+      case .transientFailure(let error):
+        message = "Channel is in a transient failure state and 'wait for ready' isn't enabled."
+        cause = error
+      case .shutdown:
+        message = "Channel is shutting down."
+        cause = nil
+      }
+
+      return .stopTrying(RPCError(code: .unavailable, message: message, cause: cause))
+    }
+  }
+
+  private func makeStream(
+    descriptor: MethodDescriptor,
+    options: CallOptions,
+    loadBalancer: LoadBalancer
+  ) async -> MakeStreamResult {
+    guard let subchannel = loadBalancer.pickSubchannel() else {
+      return .tryAgain(
+        RPCError(code: .unavailable, message: "Channel isn't ready, no subchannel available.")
+      )
+    }
+
+    let methodConfig = self.config(forMethod: descriptor)
+    var options = options
+    options.formUnion(with: methodConfig)
+
+    do {
+      let stream = try await subchannel.makeStream(descriptor: descriptor, options: options)
+      return .created(stream)
+    } catch {
+      return .tryAgain(error)
+    }
+  }
+
+  private func enqueue(waitForReady: Bool) async throws -> LoadBalancer {
+    let id = QueueEntryID()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        let onEnqueue = self.state.withLock { state in
+          state.enqueue(continuation: continuation, waitForReady: waitForReady, id: id)
+        }
+
+        switch onEnqueue {
+        case .poke(let loadBalancer):
+          // Attempting to pick a subchannel will trigger a connect event if the subchannel is idle.
+          _ = loadBalancer.pickSubchannel()
+
+        case .use(let loadBalancer):
+          // Became ready after being told to join the queue.
+          continuation.resume(with: .success(loadBalancer))
+
+        case .enqueued:
+          if Task.isCancelled {
+            let dequeued = self.state.withLock { state in
+              state.dequeueContinuation(id: id)
+            }
+            dequeued?.resume(throwing: CancellationError())
+          }
+
+        case .rejected:
+          let error = RPCError(code: .unavailable, message: "channel is shutdown")
+          continuation.resume(throwing: error)
+        }
+      }
+    } onCancel: {
+      let continuation = self.state.withLock { state in
+        state.dequeueContinuation(id: id)
+      }
+
+      continuation?.resume(throwing: CancellationError())
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension GRPCChannel {
+  private func handleClose(in group: inout DiscardingTaskGroup) {
+    switch self.state.withLock({ $0.close() }) {
+    case .close(let current, let next, let resolver, let continuations):
+      resolver?.cancel()
+      current.close()
+      next?.close()
+      for continuation in continuations {
+        continuation.resume(throwing: RPCError(code: .unavailable, message: "channel is closed"))
+      }
+      self._connectivityState.continuation.yield(.shutdown)
+
+    case .cancelAll(let continuations):
+      for continuation in continuations {
+        continuation.resume(throwing: RPCError(code: .unavailable, message: "channel is closed"))
+      }
+      self._connectivityState.continuation.yield(.shutdown)
+      group.cancelAll()
+
+    case .none:
+      ()
+    }
+  }
+
+  private func handleNameResolutionResult(
+    _ result: NameResolutionResult,
+    in group: inout DiscardingTaskGroup
+  ) {
+    // Ignore empty endpoint lists.
+    if result.endpoints.isEmpty { return }
+
+    switch result.serviceConfig ?? .success(self.defaultServiceConfig) {
+    case .success(let config):
+      // Update per RPC configuration.
+      let methodConfig = MethodConfigs(serviceConfig: config)
+      self._methodConfig.withLock { $0 = methodConfig }
+
+      let retryThrottle = config.retryThrottling.map { RetryThrottle(policy: $0) }
+      self._retryThrottle.withLock { $0 = retryThrottle }
+
+      // Update the load balancer.
+      self.updateLoadBalancer(serviceConfig: config, endpoints: result.endpoints, in: &group)
+
+    case .failure:
+      self.beginGracefulShutdown()
+    }
+  }
+
+  enum SupportedLoadBalancerConfig {
+    case roundRobin
+    case pickFirst(ServiceConfig.LoadBalancingConfig.PickFirst)
+
+    init?(_ config: ServiceConfig.LoadBalancingConfig) {
+      if let pickFirst = config.pickFirst {
+        self = .pickFirst(pickFirst)
+      } else if config.roundRobin != nil {
+        self = .roundRobin
+      } else {
+        return nil
+      }
+    }
+
+    func matches(loadBalancer: LoadBalancer) -> Bool {
+      switch (self, loadBalancer) {
+      case (.roundRobin, .roundRobin):
+        return true
+      case (.pickFirst, .pickFirst):
+        return true
+      case (.roundRobin, .pickFirst),
+        (.pickFirst, .roundRobin):
+        return false
+      }
+    }
+  }
+
+  private func updateLoadBalancer(
+    serviceConfig: ServiceConfig,
+    endpoints: [Endpoint],
+    in group: inout DiscardingTaskGroup
+  ) {
+    assert(!endpoints.isEmpty, "endpoints must be non-empty")
+
+    // Find the first supported config.
+    var configFromServiceConfig: SupportedLoadBalancerConfig?
+    for config in serviceConfig.loadBalancingConfig {
+      if let config = SupportedLoadBalancerConfig(config) {
+        configFromServiceConfig = config
+        break
+      }
+    }
+
+    let onUpdatePolicy: GRPCChannel.StateMachine.OnChangeLoadBalancer
+    var endpoints = endpoints
+
+    // Fallback to pick-first if no other config applies.
+    let loadBalancerConfig = configFromServiceConfig ?? .pickFirst(.init(shuffleAddressList: false))
+    switch loadBalancerConfig {
+    case .roundRobin:
+      onUpdatePolicy = self.state.withLock { state in
+        state.changeLoadBalancerKind(to: loadBalancerConfig) {
+          let loadBalancer = RoundRobinLoadBalancer(
+            connector: self.connector,
+            authority: self.authority,
+            backoff: self.backoff,
+            defaultCompression: self.defaultCompression,
+            enabledCompression: self.enabledCompression
+          )
+          return .roundRobin(loadBalancer)
+        }
+      }
+
+    case .pickFirst(let pickFirst):
+      if pickFirst.shuffleAddressList {
+        endpoints[0].addresses.shuffle()
+      }
+
+      onUpdatePolicy = self.state.withLock { state in
+        state.changeLoadBalancerKind(to: loadBalancerConfig) {
+          let loadBalancer = PickFirstLoadBalancer(
+            connector: self.connector,
+            authority: self.authority,
+            backoff: self.backoff,
+            defaultCompression: self.defaultCompression,
+            enabledCompression: self.enabledCompression
+          )
+          return .pickFirst(loadBalancer)
+        }
+      }
+    }
+
+    self.handleLoadBalancerChange(onUpdatePolicy, endpoints: endpoints, in: &group)
+  }
+
+  private func handleLoadBalancerChange(
+    _ update: StateMachine.OnChangeLoadBalancer,
+    endpoints: [Endpoint],
+    in group: inout DiscardingTaskGroup
+  ) {
+    assert(!endpoints.isEmpty, "endpoints must be non-empty")
+
+    switch update {
+    case .runLoadBalancer(let new, let old):
+      old?.close()
+      switch new {
+      case .roundRobin(let loadBalancer):
+        loadBalancer.updateAddresses(endpoints)
+      case .pickFirst(let loadBalancer):
+        loadBalancer.updateEndpoint(endpoints.first!)
+      }
+
+      group.addTask {
+        await new.run()
+      }
+
+      group.addTask {
+        for await event in new.events {
+          self.input.continuation.yield(.handleLoadBalancerEvent(event, new.id))
+        }
+      }
+
+    case .updateLoadBalancer(let existing):
+      switch existing {
+      case .roundRobin(let loadBalancer):
+        loadBalancer.updateAddresses(endpoints)
+      case .pickFirst(let loadBalancer):
+        loadBalancer.updateEndpoint(endpoints.first!)
+      }
+
+    case .none:
+      ()
+    }
+  }
+
+  private func handleLoadBalancerEvent(
+    _ event: LoadBalancerEvent,
+    loadBalancerID: LoadBalancerID,
+    in group: inout DiscardingTaskGroup,
+    resolver: inout ResolverWithBackoff?
+  ) async {
+    switch event {
+    case .connectivityStateChanged(let connectivityState):
+      let actions = self.state.withLock { state in
+        state.loadBalancerStateChanged(to: connectivityState, id: loadBalancerID)
+      }
+
+      if let newState = actions.publishState {
+        self._connectivityState.continuation.yield(newState)
+      }
+
+      if let subchannel = actions.close {
+        subchannel.close()
+      }
+
+      if let resumable = actions.resumeContinuations {
+        for continuation in resumable.continuations {
+          continuation.resume(with: resumable.result)
+        }
+      }
+
+      if actions.finish {
+        // Fully closed.
+        self._connectivityState.continuation.finish()
+        self.input.continuation.finish()
+      }
+
+    case .requiresNameResolution:
+      await self.resolve(using: &resolver, handlingResultIn: &group)
+    }
+  }
+
+  private func resolve(
+    iterator: inout RPCAsyncSequence<NameResolutionResult, any Error>.AsyncIterator?,
+    in group: inout DiscardingTaskGroup
+  ) async {
+    guard var iterator = iterator else { return }
+
+    do {
+      if let result = try await iterator.next() {
+        self.handleNameResolutionResult(result, in: &group)
+      } else {
+        self.beginGracefulShutdown()
+      }
+    } catch {
+      self.beginGracefulShutdown()
+    }
+  }
+
+  private func resolve(
+    using resolver: inout ResolverWithBackoff?,
+    handlingResultIn group: inout DiscardingTaskGroup
+  ) async {
+    loop: while !Task.isCancelled {
+      switch await resolver?.resolve() {
+      case .resolved(let result):
+        self.handleNameResolutionResult(result, in: &group)
+        break loop
+
+      case .backoff(let duration, let error):
+        // An error may result in RPCs being failed (if there's no load balancer yet).
+        switch self.state.withLock({ $0.resolverFailed(with: error) }) {
+        case .fail(let continuations, let error):
+          for continuation in continuations {
+            continuation.resume(throwing: error)
+          }
+        case .none:
+          ()
+        }
+
+        try? await Task.sleep(nanoseconds: duration.grpcNanoseconds)
+
+      case .cancelled, .none:
+        break loop
+      }
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension GRPCChannel {
+  struct StateMachine {
+    enum State {
+      case notRunning(NotRunning)
+      case running(Running)
+      case stopping(Stopping)
+      case stopped
+      case _modifying
+
+      struct NotRunning {
+        /// Queue of requests waiting for a load-balancer.
+        var queue: RequestQueue<LoadBalancer>
+        /// A handle to the name resolver task.
+        var nameResolverHandle: CancellableTaskHandle?
+        /// The latest error from resolving, if one has happened.
+        var resolutionState: ResolutionState
+
+        enum ResolutionState {
+          /// The resolver hasn't completed yet.
+          case idle
+          /// The resolver failed with the following error or returned nil.
+          case failed((any Error)?)
+        }
+
+        init() {
+          self.queue = RequestQueue()
+          self.resolutionState = .idle
+        }
+      }
+
+      struct Running {
+        /// The connectivity state of the channel.
+        var connectivityState: ConnectivityState
+        /// The load-balancer currently in use.
+        var current: LoadBalancer
+        /// The next load-balancer to use. This will be promoted to `current` when it enters the
+        /// ready state.
+        var next: LoadBalancer?
+        /// Previously created load-balancers which are in the process of shutting down.
+        var past: [LoadBalancerID: LoadBalancer]
+        /// Queue of requests wait for a load-balancer.
+        var queue: RequestQueue<LoadBalancer>
+        /// A handle to the name resolver task.
+        var nameResolverHandle: CancellableTaskHandle?
+
+        init(
+          from state: NotRunning,
+          loadBalancer: LoadBalancer
+        ) {
+          self.connectivityState = .idle
+          self.current = loadBalancer
+          self.next = nil
+          self.past = [:]
+          self.queue = state.queue
+          self.nameResolverHandle = state.nameResolverHandle
+        }
+      }
+
+      struct Stopping {
+        /// Previously created load-balancers which are in the process of shutting down.
+        var past: [LoadBalancerID: LoadBalancer]
+
+        init(from state: Running) {
+          self.past = state.past
+        }
+
+        init(loadBalancers: [LoadBalancerID: LoadBalancer]) {
+          self.past = loadBalancers
+        }
+      }
+    }
+
+    /// The current state.
+    private var state: State
+    /// Whether the channel is running.
+    private var running: Bool
+
+    init() {
+      self.state = .notRunning(State.NotRunning())
+      self.running = false
+    }
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension GRPCChannel.StateMachine {
+  mutating func start() {
+    precondition(!self.running, "channel must only be started once")
+    self.running = true
+  }
+
+  mutating func setNameResolverTaskHandle(_ handle: CancellableTaskHandle) {
+    switch self.state {
+    case .notRunning(var state):
+      state.nameResolverHandle = handle
+      self.state = .notRunning(state)
+    case .running, .stopping, .stopped, ._modifying:
+      fatalError("Invalid state")
+    }
+  }
+
+  enum OnResolverFailed {
+    case fail([CheckedContinuation<LoadBalancer, any Error>], any Error)
+    case none
+  }
+
+  mutating func resolverFailed(with error: (any Error)?) -> OnResolverFailed {
+    switch self.state {
+    case .notRunning(var state):
+      self.state = ._modifying
+      state.resolutionState = .failed(error)
+      let continuations = state.queue.removeFastFailingEntries()
+      self.state = .notRunning(state)
+      let rpcError = RPCError(
+        code: .unavailable,
+        message: "Failed to resolve server name",
+        cause: error
+      )
+      return .fail(continuations, rpcError)
+
+    case .running, .stopped, .stopping:
+      // We only care about the not-running state for resolution failures because there's
+      // no load balancer to provide connectivity states to fail RPCs at that point.
+      return .none
+
+    case ._modifying:
+      fatalError("Invalid state")
+    }
+  }
+
+  enum OnChangeLoadBalancer {
+    case runLoadBalancer(LoadBalancer, stop: LoadBalancer?)
+    case updateLoadBalancer(LoadBalancer)
+    case none
+  }
+
+  mutating func changeLoadBalancerKind(
+    to newLoadBalancerKind: GRPCChannel.SupportedLoadBalancerConfig,
+    _ makeLoadBalancer: () -> LoadBalancer
+  ) -> OnChangeLoadBalancer {
+    let onChangeLoadBalancer: OnChangeLoadBalancer
+
+    switch self.state {
+    case .notRunning(let state):
+      let loadBalancer = makeLoadBalancer()
+      let state = State.Running(from: state, loadBalancer: loadBalancer)
+      self.state = .running(state)
+      onChangeLoadBalancer = .runLoadBalancer(state.current, stop: nil)
+
+    case .running(var state):
+      self.state = ._modifying
+
+      if let next = state.next {
+        if newLoadBalancerKind.matches(loadBalancer: next) {
+          onChangeLoadBalancer = .updateLoadBalancer(next)
+        } else {
+          // The 'next' didn't become ready in time. Close it and replace it with a load-balancer
+          // of the next kind.
+          let nextNext = makeLoadBalancer()
+          let previous = state.next
+          state.next = nextNext
+          state.past[next.id] = next
+          onChangeLoadBalancer = .runLoadBalancer(nextNext, stop: previous)
+        }
+      } else {
+        if newLoadBalancerKind.matches(loadBalancer: state.current) {
+          onChangeLoadBalancer = .updateLoadBalancer(state.current)
+        } else {
+          // Create the 'next' load-balancer, it'll replace 'current' when it becomes ready.
+          let next = makeLoadBalancer()
+          state.next = next
+          onChangeLoadBalancer = .runLoadBalancer(next, stop: nil)
+        }
+      }
+
+      self.state = .running(state)
+
+    case .stopping, .stopped:
+      onChangeLoadBalancer = .none
+
+    case ._modifying:
+      fatalError("Invalid state")
+    }
+
+    return onChangeLoadBalancer
+  }
+
+  struct ConnectivityStateChangeActions {
+    var close: LoadBalancer? = nil
+    var publishState: ConnectivityState? = nil
+    var resumeContinuations: ResumableContinuations? = nil
+    var finish: Bool = false
+
+    struct ResumableContinuations {
+      var continuations: [CheckedContinuation<LoadBalancer, any Error>]
+      var result: Result<LoadBalancer, any Error>
+    }
+  }
+
+  mutating func loadBalancerStateChanged(
+    to connectivityState: ConnectivityState,
+    id: LoadBalancerID
+  ) -> ConnectivityStateChangeActions {
+    var actions = ConnectivityStateChangeActions()
+
+    switch self.state {
+    case .running(var state):
+      self.state = ._modifying
+
+      if id == state.current.id {
+        // No change in state, ignore.
+        if state.connectivityState == connectivityState {
+          self.state = .running(state)
+          break
+        }
+
+        state.connectivityState = connectivityState
+        actions.publishState = connectivityState
+
+        switch connectivityState {
+        case .ready:
+          // Current load-balancer became ready; resume all continuations in the queue.
+          let continuations = state.queue.removeAll()
+          actions.resumeContinuations = ConnectivityStateChangeActions.ResumableContinuations(
+            continuations: continuations,
+            result: .success(state.current)
+          )
+
+        case .transientFailure(let cause):
+          // Current load-balancer failed. Remove all the 'fast-failing' continuations in the
+          // queue, these are RPCs which set the 'wait for ready' option to false. The rest of
+          // the entries in the queue will wait for a load-balancer to become ready.
+          let continuations = state.queue.removeFastFailingEntries()
+          actions.resumeContinuations = ConnectivityStateChangeActions.ResumableContinuations(
+            continuations: continuations,
+            result: .failure(cause)
+          )
+
+        case .shutdown:  // shutdown includes shutting down
+          // Current load-balancer failed. Remove all the 'fast-failing' continuations in the
+          // queue, these are RPCs which set the 'wait for ready' option to false. The rest of
+          // the entries in the queue will wait for a load-balancer to become ready.
+          let continuations = state.queue.removeFastFailingEntries()
+          actions.resumeContinuations = ConnectivityStateChangeActions.ResumableContinuations(
+            continuations: continuations,
+            result: .failure(
+              RPCError(
+                code: .unavailable,
+                message: "Subchannel shutdown and 'wait for ready' isn't enabled."
+              )
+            )
+          )
+
+        case .idle, .connecting:
+          ()  // Ignore.
+        }
+      } else if let next = state.next, next.id == id {
+        // State change came from the next LB, if it's now ready promote it to be the current.
+        switch connectivityState {
+        case .ready:
+          // Next load-balancer is ready, promote it to current.
+          let previous = state.current
+          state.past[previous.id] = previous
+          state.current = next
+          state.next = nil
+
+          actions.close = previous
+
+          if state.connectivityState != connectivityState {
+            actions.publishState = connectivityState
+          }
+
+          actions.resumeContinuations = ConnectivityStateChangeActions.ResumableContinuations(
+            continuations: state.queue.removeAll(),
+            result: .success(next)
+          )
+
+        case .idle, .connecting, .transientFailure, .shutdown:
+          ()
+        }
+      } else {
+        // In this case the LB is neither current nor next.
+        switch connectivityState {
+        case .shutdown:
+          state.past.removeValue(forKey: id)
+        case .idle, .connecting, .ready, .transientFailure:
+          ()
+        }
+      }
+
+      self.state = .running(state)
+
+    case .stopping(var state):
+      self.state = ._modifying
+
+      // Remove the load balancer if it's now shutdown.
+      switch connectivityState {
+      case .shutdown:
+        state.past.removeValue(forKey: id)
+      case .idle, .connecting, .ready, .transientFailure:
+        ()
+      }
+
+      // If that was the last load-balancer then finish the input streams so that the channel
+      // eventually finishes.
+      if state.past.isEmpty {
+        actions.finish = true
+        self.state = .stopped
+      } else {
+        self.state = .stopping(state)
+      }
+
+    case .notRunning, .stopped:
+      ()
+
+    case ._modifying:
+      fatalError("Invalid state")
+    }
+
+    return actions
+  }
+
+  enum OnMakeStream {
+    /// Use the given load-balancer to make a stream.
+    case useLoadBalancer(LoadBalancer)
+    /// Join the queue and wait until a load-balancer becomes ready.
+    case joinQueue
+    /// Fail the stream request, the channel isn't in a suitable state.
+    case failRPC(FailureReason)
+
+    enum FailureReason {
+      case transientFailure(RPCError)
+      case shutdown
+    }
+  }
+
+  func makeStream(waitForReady: Bool) -> OnMakeStream {
+    let onMakeStream: OnMakeStream
+
+    switch self.state {
+    case .notRunning:
+      onMakeStream = .joinQueue
+
+    case .running(let state):
+      switch state.connectivityState {
+      case .idle, .connecting:
+        onMakeStream = .joinQueue
+      case .ready:
+        onMakeStream = .useLoadBalancer(state.current)
+      case .transientFailure(let error):
+        onMakeStream = waitForReady ? .joinQueue : .failRPC(.transientFailure(error))
+      case .shutdown:
+        onMakeStream = .failRPC(.shutdown)
+      }
+
+    case .stopping, .stopped:
+      onMakeStream = .failRPC(.shutdown)
+
+    case ._modifying:
+      fatalError("Invalid state")
+    }
+
+    return onMakeStream
+  }
+
+  enum OnEnqueue {
+    // Ask the LB to pick a subchannel to trigger a connect.
+    case poke(LoadBalancer)
+    // Use the LB immediately, it's ready.
+    case use(LoadBalancer)
+    // The continuation was enqueued, wait.
+    case enqueued
+    // The request to enqueue was rejected because the channel is shutting down or
+    // shutdown, fail the continuation.
+    case rejected
+  }
+
+  mutating func enqueue(
+    continuation: CheckedContinuation<LoadBalancer, any Error>,
+    waitForReady: Bool,
+    id: QueueEntryID
+  ) -> OnEnqueue {
+    switch self.state {
+    case .notRunning(var state):
+      self.state = ._modifying
+      state.queue.append(continuation: continuation, waitForReady: waitForReady, id: id)
+      self.state = .notRunning(state)
+      return .enqueued
+    case .running(var state):
+      self.state = ._modifying
+      if state.connectivityState == .ready {
+        // Became ready between being told to join the queue and creating a continuation.
+        self.state = .running(state)
+        return .use(state.current)
+      } else {
+        state.queue.append(continuation: continuation, waitForReady: waitForReady, id: id)
+        self.state = .running(state)
+        // If idle then return the current load balancer so that it can be told to start connecting.
+        return state.connectivityState == .idle ? .poke(state.current) : .enqueued
+      }
+    case .stopping, .stopped:
+      return .rejected
+    case ._modifying:
+      fatalError("Invalid state")
+    }
+  }
+
+  mutating func dequeueContinuation(
+    id: QueueEntryID
+  ) -> CheckedContinuation<LoadBalancer, any Error>? {
+    switch self.state {
+    case .notRunning(var state):
+      self.state = ._modifying
+      let continuation = state.queue.removeEntry(withID: id)
+      self.state = .notRunning(state)
+      return continuation
+
+    case .running(var state):
+      self.state = ._modifying
+      let continuation = state.queue.removeEntry(withID: id)
+      self.state = .running(state)
+      return continuation
+
+    case .stopping, .stopped:
+      return nil
+
+    case ._modifying:
+      fatalError("Invalid state")
+    }
+  }
+
+  enum OnClose {
+    case none
+    case cancelAll([RequestQueue<LoadBalancer>.Continuation])
+    case close(
+      LoadBalancer,
+      LoadBalancer?,
+      CancellableTaskHandle?,
+      [RequestQueue<LoadBalancer>.Continuation]
+    )
+  }
+
+  mutating func close() -> OnClose {
+    let onClose: OnClose
+
+    switch self.state {
+    case .notRunning(var state):
+      self.state = .stopped
+      onClose = .cancelAll(state.queue.removeAll())
+
+    case .running(var state):
+      let continuations = state.queue.removeAll()
+      onClose = .close(state.current, state.next, state.nameResolverHandle, continuations)
+
+      state.past[state.current.id] = state.current
+      if let next = state.next {
+        state.past[next.id] = next
+      }
+
+      self.state = .stopping(State.Stopping(loadBalancers: state.past))
+
+    case .stopping, .stopped:
+      onClose = .none
+
+    case ._modifying:
+      fatalError("Invalid state")
+    }
+
+    return onClose
+  }
+}
+
+@available(gRPCSwiftNIOTransport 2.0, *)
+extension GRPCChannel {
+  struct ResolverWithBackoff {
+    private let resolver: RPCAsyncSequence<NameResolutionResult, any Error>
+    private let backoff: Backoff
+    private var state: ResolverState
+
+    private enum ResolverState {
+      /// No attempts have been made yet.
+      case idle
+      /// The last resolution attempt was succesful.
+      case iterating(RPCAsyncSequence<NameResolutionResult, any Error>.AsyncIterator)
+      /// The last resolution attempt was unsuccessful and the resolver is in a backing off
+      /// period before trying again.
+      case backingOff(Backoff.Iterator)
+    }
+
+    init(
+      resolver: RPCAsyncSequence<NameResolutionResult, any Error>,
+      backoff: Backoff
+    ) {
+      self.resolver = resolver
+      self.backoff = backoff
+      self.state = .idle
+    }
+
+    enum ResolutionResult {
+      /// The resolver successfuly produced a result.
+      case resolved(NameResolutionResult)
+      /// The resolver threw an error or unexpectedely terminated with the given error. Wait the
+      /// backoff period before trying again.
+      case backoff(Duration, (any Error)?)
+      /// The current task has been cancelled. Stop trying to resolve.
+      case cancelled
+    }
+
+    mutating func resolve() async -> ResolutionResult {
+      if Task.isCancelled {
+        return .cancelled
+      }
+
+      let state: ResolverState
+      let result: ResolutionResult
+
+      switch self.state {
+      case .idle:
+        (state, result) = await self.next(resolver: nil, backoff: nil)
+      case .iterating(let iterator):
+        (state, result) = await self.next(resolver: iterator, backoff: nil)
+      case .backingOff(let backoff):
+        (state, result) = await self.next(resolver: nil, backoff: backoff)
+      }
+
+      self.state = state
+      return result
+    }
+
+    private func next(
+      resolver: RPCAsyncSequence<NameResolutionResult, any Error>.AsyncIterator?,
+      backoff: consuming Backoff.Iterator?
+    ) async -> (ResolverState, ResolutionResult) {
+      var resolver = resolver ?? self.resolver.makeAsyncIterator()
+
+      do {
+        if let result = try await resolver.next() {
+          return (.iterating(resolver), .resolved(result))
+        } else {
+          var backoff = backoff ?? self.backoff.makeIterator()
+          let delay = backoff.next()
+          return (.backingOff(backoff), .backoff(delay, nil))
+        }
+      } catch is CancellationError {
+        return (.idle, .cancelled)
+      } catch {
+        var backoff = backoff ?? self.backoff.makeIterator()
+        let delay = backoff.next()
+        return (.backingOff(backoff), .backoff(delay, error))
+      }
+    }
+  }
+}

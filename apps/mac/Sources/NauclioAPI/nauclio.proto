@@ -1,0 +1,923 @@
+syntax = "proto3";
+
+package nauclio.v1;
+
+option go_package = "github.com/dbpprt/nauclio/internal/gen/nauclio/v1;naucliov1";
+option java_multiple_files = true;
+option java_outer_classname = "NauclioProto";
+option java_package = "com.dbpprt.nauclio.v1";
+
+import "google/protobuf/empty.proto";
+
+service NauclioService {
+  rpc Health(google.protobuf.Empty) returns (HealthResponse);
+  rpc GetRuntimeStatus(google.protobuf.Empty) returns (RuntimeStatus);
+  rpc GetState(GetStateRequest) returns (State);
+  rpc WatchState(WatchStateRequest) returns (stream State);
+  // WatchSync is the daemon-wide durable change stream used by native
+  // clients. Views are rendered from the client projection rather than by
+  // opening per-view RPCs.
+  rpc WatchSync(SyncRequest) returns (stream SyncFrame);
+  rpc GetHarnesses(google.protobuf.Empty) returns (HarnessCatalog);
+  rpc GetSettings(google.protobuf.Empty) returns (Settings);
+  rpc GetSettingsOptions(google.protobuf.Empty) returns (SettingsOptions);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
+  rpc GetPromptSettings(google.protobuf.Empty) returns (PromptSettings);
+  rpc UpdatePromptSettings(UpdatePromptSettingsRequest) returns (PromptSettings);
+  rpc SetProjectPromptTemplate(SetScopedPromptTemplateRequest) returns (Project);
+  rpc SetBoardPromptTemplate(SetScopedPromptTemplateRequest) returns (Board);
+  rpc PreviewPrompt(PreviewPromptRequest) returns (PromptPreview);
+
+  rpc ListDirectories(ListDirectoriesRequest) returns (DirectoryListing);
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
+  rpc UpdateProject(UpdateProjectRequest) returns (Project);
+  rpc ArchiveProject(ArchiveProjectRequest) returns (Project);
+  rpc ListArchivedProjects(google.protobuf.Empty) returns (ProjectsResponse);
+  rpc CreateBoard(CreateBoardRequest) returns (Board);
+  rpc RenameBoard(RenameBoardRequest) returns (Board);
+  rpc SetBoardArchivePolicy(SetBoardArchivePolicyRequest) returns (Board);
+  rpc ListArchivedCards(BoardRef) returns (CardsResponse);
+  rpc CreateBoardLabel(CreateBoardLabelRequest) returns (Board);
+  rpc UpdateBoardLabel(UpdateBoardLabelRequest) returns (Board);
+  rpc DeleteBoardLabel(DeleteBoardLabelRequest) returns (Board);
+
+  rpc CreateCard(CreateConversationRequest) returns (Card);
+  rpc CreateChat(CreateConversationRequest) returns (Card);
+  rpc ListChats(ListChatsRequest) returns (ChatsResponse);
+  rpc GetCard(GetCardRequest) returns (CardDetail);
+  rpc GetConversation(GetConversationRequest) returns (ConversationSnapshot);
+  rpc PollConversation(PollConversationRequest) returns (ConversationUpdate);
+  rpc WatchConversation(WatchConversationRequest) returns (stream ConversationUpdate);
+  rpc GetToolOutput(GetToolOutputRequest) returns (ToolOutput);
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc AddComment(AddCommentRequest) returns (Comment);
+  rpc MoveCard(MoveCardRequest) returns (Card);
+  rpc SetCardLabels(SetCardLabelsRequest) returns (Card);
+  rpc CancelCard(GetCardRequest) returns (google.protobuf.Empty);
+  rpc RenameCard(RenameCardRequest) returns (Card);
+  rpc UpdateCard(UpdateCardRequest) returns (Card);
+  rpc ArchiveCard(ArchiveCardRequest) returns (Card);
+  rpc PinChat(PinChatRequest) returns (Card);
+
+  rpc ListFiles(ListFilesRequest) returns (FileList);
+  rpc ReadFile(ReadFileRequest) returns (FileDocument);
+  rpc SaveFile(SaveFileRequest) returns (FileDocument);
+  rpc CreateFile(CreateFileRequest) returns (FileEntry);
+  rpc MoveFile(MoveFileRequest) returns (MoveFileResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (google.protobuf.Empty);
+
+  rpc ListSchedules(ListSchedulesRequest) returns (SchedulesResponse);
+  rpc PreviewSchedule(PreviewScheduleRequest) returns (SchedulePreview);
+  rpc CreateSchedule(SaveScheduleRequest) returns (Schedule);
+  rpc UpdateSchedule(SaveScheduleRequest) returns (Schedule);
+  rpc DeleteSchedule(ScheduleRef) returns (google.protobuf.Empty);
+  rpc RunSchedule(ScheduleRef) returns (ScheduleRun);
+  rpc SetScheduleEnabled(SetScheduleEnabledRequest) returns (Schedule);
+  rpc ListScheduleRuns(ListScheduleRunsRequest) returns (ScheduleRunsResponse);
+}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  string store_path = 3;
+}
+
+message RuntimeStatus {
+  bool ready = 1;
+  string mode = 2;
+  bool sandboxed = 3;
+  bool node_required = 4;
+}
+
+message GetStateRequest {
+  string project_id = 1;
+  string board_id = 2;
+  string lane = 3;
+  string runtime = 4;
+  string query = 5;
+  string label_id = 6;
+  int32 limit = 7;
+}
+
+message WatchStateRequest {
+  GetStateRequest filter = 1;
+  int32 interval_ms = 2;
+}
+
+message State {
+  string store_path = 1;
+  repeated Project projects = 2;
+  Project project = 3;
+  repeated Board boards = 4;
+  repeated Card cards = 5;
+  repeated Card chats = 6;
+}
+
+message SyncCursor {
+  string epoch = 1;
+  uint64 sequence = 2;
+  int32 projection_version = 3;
+}
+
+message SyncRequest {
+  SyncCursor after = 1;
+  int32 conversation_limit = 2;
+  int32 heartbeat_ms = 3;
+}
+
+message SyncEvent {
+  uint64 sequence = 1;
+  string kind = 2;
+  string created_at = 3;
+  string command_id = 4;
+}
+
+// GlobalSnapshot is deliberately bounded: it contains the Nauclio-owned UI
+// projection and recent conversation tails, while full tool payloads, files,
+// and older history remain lazy.
+message GlobalSnapshot {
+  State state = 1;
+  repeated ConversationSnapshot conversations = 2;
+  repeated Schedule schedules = 3;
+  repeated ScheduleRun schedule_runs = 4;
+  Settings settings = 5;
+}
+
+message SyncFrame {
+  SyncCursor cursor = 1;
+  SyncEvent event = 2;
+  GlobalSnapshot snapshot = 3;
+  bool reset = 4;
+  bool heartbeat = 5;
+  repeated SyncEvent events = 6;
+}
+
+message ProjectsResponse {
+  repeated Project projects = 1;
+}
+
+message CardsResponse {
+  repeated Card cards = 1;
+}
+
+message Project {
+  string id = 1;
+  string name = 2;
+  string path = 3;
+  string summary = 4;
+  string prompt = 5;
+  bool archived = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  int32 board_count = 9;
+  int32 card_count = 10;
+  int32 chat_count = 11;
+  string prompt_template = 12;
+}
+
+message Board {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string workflow = 4;
+  string description = 5;
+  string done_archive_policy = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  repeated Label labels = 9;
+  repeated Lane lanes = 10;
+  string prompt_template = 11;
+}
+
+message Label {
+  string id = 1;
+  string name = 2;
+  string color = 3;
+  string instructions = 4;
+}
+
+message Lane {
+  string id = 1;
+  string name = 2;
+}
+
+message Card {
+  string id = 1;
+  string scope = 2;
+  string project_id = 3;
+  string board_id = 4;
+  string lane = 5;
+  int64 position = 6;
+  string title = 7;
+  string initial_prompt = 8;
+  string initial_prompt_sent_at = 9;
+  string phase_changed_at = 10;
+  string provider = 11;
+  string model = 12;
+  string effort = 13;
+  string runtime = 14;
+  string summary = 15;
+  string runtime_updated_at = 16;
+  string last_activity_at = 17;
+  bool archived = 18;
+  bool done_archive_exempt = 19;
+  bool pinned = 20;
+  string created_at = 21;
+  string updated_at = 22;
+  repeated string label_ids = 23;
+  int32 comment_count = 24;
+  CardOrigin origin = 25;
+  repeated Subagent active_subagents = 26;
+  map<string, string> provider_options = 27;
+}
+
+message CardOrigin {
+  string kind = 1;
+  string schedule_id = 2;
+  string schedule_run_id = 3;
+  string scheduled_for = 4;
+}
+
+message CardDetail {
+  Card card = 1;
+  Project project = 2;
+  Board board = 3;
+  repeated Comment comments = 4;
+}
+
+message Comment {
+  string id = 1;
+  string card_id = 2;
+  Author author = 3;
+  string body = 4;
+  string created_at = 5;
+}
+
+message Author {
+  string kind = 1;
+  string name = 2;
+  string project_id = 3;
+  string card_id = 4;
+  string provider = 5;
+  string model = 6;
+}
+
+message Conversation {
+  int32 projection_version = 1;
+  string card_id = 2;
+  string status = 3;
+  repeated UiMessage messages = 4;
+  repeated PendingTool pending_tools = 5;
+  repeated QueuedMessage queue = 6;
+  int64 last_seq = 7;
+  string updated_at = 8;
+  repeated Subagent subagents = 9;
+  repeated TaskPlan task_plans = 10;
+  repeated MessagePart draft_attachments = 11;
+}
+
+message Subagent {
+  string id = 1;
+  string provider = 2;
+  string message_id = 3;
+  string parent_tool_call_id = 4;
+  string name = 5;
+  string agent_type = 6;
+  string agent_source = 7;
+  string description = 8;
+  string task = 9;
+  string assignment = 10;
+  string status = 11;
+  string model = 12;
+  string activity = 13;
+  string current_tool = 14;
+  string current_tool_args = 15;
+  int64 tool_count = 16;
+  int64 requests = 17;
+  int64 tokens = 18;
+  int64 context_tokens = 19;
+  int64 context_window = 20;
+  double cost = 21;
+  int64 duration_ms = 22;
+  repeated string recent_output = 23;
+  string retry = 24;
+  string error = 25;
+  bool detached = 26;
+  bool transcript_available = 27;
+  string started_at = 28;
+  string updated_at = 29;
+  string ended_at = 30;
+}
+
+message TaskPlan {
+  string id = 1;
+  string provider = 2;
+  string message_id = 3;
+  int64 revision = 4;
+  string state = 5;
+  string explanation = 6;
+  string source = 7;
+  repeated TaskPlanPhase phases = 8;
+  string updated_at = 9;
+}
+
+message TaskPlanPhase {
+  string name = 1;
+  repeated TaskPlanItem tasks = 2;
+}
+
+message TaskPlanItem {
+  string id = 1;
+  string content = 2;
+  string active_form = 3;
+  string status = 4;
+  string blocker = 5;
+  string priority = 6;
+  int64 order = 7;
+}
+
+message UiMessage {
+  string id = 1;
+  string role = 2;
+  bytes metadata_json = 3;
+  repeated MessagePart parts = 4;
+}
+
+message MessagePart {
+  string type = 1;
+  string text = 2;
+  string media_type = 3;
+  string filename = 4;
+  string url = 5;
+  string state = 6;
+  string tool_call_id = 7;
+  string tool_name = 8;
+  bytes input_json = 9;
+  bytes output_json = 10;
+  string error_text = 11;
+  bytes data = 12;
+  bool has_input = 13;
+  bool has_output = 14;
+  int64 input_size = 15;
+  int64 output_size = 16;
+  string input_preview = 17;
+  string output_preview = 18;
+  string payload_revision = 19;
+}
+
+message PendingTool {
+  string id = 1;
+  string tool_call_id = 2;
+  string tool_name = 3;
+  bytes input_json = 4;
+  bool has_input = 5;
+  int64 input_size = 6;
+  string input_preview = 7;
+  string payload_revision = 8;
+}
+
+message QueuedMessage {
+  string id = 1;
+  string text = 2;
+  repeated MessagePart parts = 3;
+  string created_at = 4;
+}
+
+message ConversationPage {
+  int32 start = 1;
+  int32 end = 2;
+  int32 total = 3;
+  bool has_more = 4;
+}
+
+message ConversationSnapshot {
+  CardDetail detail = 1;
+  Conversation conversation = 2;
+  ConversationPage page = 3;
+}
+
+message HarnessCatalog {
+  repeated Harness harnesses = 1;
+}
+
+message Harness {
+  string id = 1;
+  string name = 2;
+  string default_model = 3;
+  repeated HarnessModel models = 4;
+  EffortConfig effort = 5;
+  repeated HarnessCapability capabilities = 6;
+  repeated ProviderOption options = 7;
+}
+
+message ProviderOption {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string type = 4;
+  string default_value = 5;
+  repeated ProviderOptionChoice choices = 6;
+}
+
+message ProviderOptionChoice {
+  string value = 1;
+  string name = 2;
+}
+
+message HarnessCapability {
+  string id = 1;
+  string level = 2;
+}
+
+message HarnessModel {
+  string id = 1;
+  string name = 2;
+  int32 context_window = 3;
+  string default_effort = 4;
+  repeated string efforts = 5;
+}
+
+message EffortConfig {
+  string label = 1;
+  repeated EffortOption options = 2;
+}
+
+message Settings {
+  int32 global_parallel_limit = 1;
+  map<string, int32> agent_parallel_limits = 2;
+  map<string, int32> board_parallel_limits = 3;
+  string updated_at = 4;
+}
+
+message SettingsOptions {
+  repeated Project projects = 1;
+  repeated Board boards = 2;
+  HarnessCatalog agents = 3;
+}
+
+message UpdateSettingsRequest {
+  Settings settings = 1;
+}
+
+message PromptSettings {
+  string prompt_template = 1;
+  string board_skill_template = 2;
+  string chat_skill_template = 3;
+  repeated string variables = 4;
+}
+
+message UpdatePromptSettingsRequest {
+  string prompt_template = 1;
+  string board_skill_template = 2;
+  string chat_skill_template = 3;
+}
+
+message SetScopedPromptTemplateRequest {
+  string scope_id = 1;
+  bool inherit = 2;
+  string prompt_template = 3;
+}
+
+message PreviewPromptRequest {
+  string project_id = 1;
+  string board_id = 2;
+  string card_id = 3;
+  repeated string label_ids = 4;
+  string scope = 5;
+}
+
+message PromptPreview {
+  string source = 1;
+  string prompt_template = 2;
+  string context = 3;
+  string skill = 4;
+  string instructions = 5;
+  repeated Label applied_labels = 6;
+  int32 characters = 7;
+  int32 estimated_tokens = 8;
+}
+
+message ListDirectoriesRequest {
+  string path = 1;
+}
+
+message DirectoryEntry {
+  string name = 1;
+  string path = 2;
+  bool git_repository = 3;
+  bool hidden = 4;
+}
+
+message DirectoryLocation {
+  string name = 1;
+  string path = 2;
+  string kind = 3;
+}
+
+message DirectoryListing {
+  string path = 1;
+  string parent = 2;
+  string name = 3;
+  bool git_repository = 4;
+  string separator = 5;
+  repeated DirectoryEntry entries = 6;
+  repeated DirectoryLocation locations = 7;
+}
+
+message CreateProjectRequest {
+  string mode = 1;
+  string path = 2;
+  string name = 3;
+  string summary = 4;
+  string prompt = 5;
+  string board_name = 6;
+  string workflow = 7;
+}
+
+message CreateProjectResponse {
+  Project project = 1;
+  Board board = 2;
+}
+
+message UpdateProjectRequest {
+  string project_id = 1;
+  optional string name = 2;
+  optional string summary = 3;
+  optional string prompt = 4;
+}
+
+message ArchiveProjectRequest {
+  string project_id = 1;
+  bool archived = 2;
+}
+
+message CreateBoardRequest {
+  string project_id = 1;
+  string name = 2;
+  string workflow = 3;
+  string description = 4;
+  string done_archive_policy = 5;
+}
+
+message RenameBoardRequest {
+  string board_id = 1;
+  string name = 2;
+}
+
+message BoardRef {
+  string board_id = 1;
+}
+
+message SetBoardArchivePolicyRequest {
+  string board_id = 1;
+  string done_archive_policy = 2;
+}
+
+message CreateBoardLabelRequest {
+  string board_id = 1;
+  string name = 2;
+  string color = 3;
+  string instructions = 4;
+}
+
+message UpdateBoardLabelRequest {
+  string board_id = 1;
+  string label_id = 2;
+  string name = 3;
+  string color = 4;
+  string instructions = 5;
+}
+
+message DeleteBoardLabelRequest {
+  string board_id = 1;
+  string label_id = 2;
+}
+
+message EffortOption {
+  string id = 1;
+  string name = 2;
+}
+
+message CreateConversationRequest {
+  string project_id = 1;
+  string board_id = 2;
+  string lane = 3;
+  string title = 4;
+  string prompt = 5;
+  string provider = 6;
+  string model = 7;
+  string effort = 8;
+  repeated string label_ids = 9;
+  bool defer_start = 10;
+  map<string, string> provider_options = 11;
+  string client_id = 12;
+  string command_id = 13;
+  repeated MessagePart attachments = 14;
+}
+
+message ListChatsRequest {
+  bool include_archived = 1;
+}
+
+message ChatsResponse {
+  repeated Project projects = 1;
+  repeated Card chats = 2;
+}
+
+message GetCardRequest {
+  string card_id = 1;
+}
+
+message GetConversationRequest {
+  string card_id = 1;
+  int32 limit = 2;
+  optional int32 before = 3;
+}
+
+message WatchConversationRequest {
+  string card_id = 1;
+  int32 limit = 2;
+  int32 interval_ms = 3;
+  int64 after_seq = 4;
+}
+
+// Browser clients use bounded unary polling instead of holding a server stream
+// open. This avoids exhausting the HTTP/1.1 connection pool while preserving
+// the same sequence and ConversationUpdate semantics as WatchConversation.
+message PollConversationRequest {
+  string card_id = 1;
+  int32 limit = 2;
+  optional int64 after_seq = 3;
+}
+
+// A fresh or stale cursor receives a bounded snapshot. A matching after_seq
+// waits for the next delta, so reconnecting clients do not receive the same
+// initial tail twice.
+message ConversationUpdate {
+  ConversationSnapshot snapshot = 1;
+  repeated UiMessage changed_messages = 2;
+  repeated string removed_message_ids = 3;
+  string status = 4;
+  repeated PendingTool pending_tools = 5;
+  repeated QueuedMessage queue = 6;
+  int64 last_seq = 7;
+  string updated_at = 8;
+  CardDetail detail = 9;
+  ConversationPage page = 10;
+  repeated Subagent subagents = 11;
+  repeated TaskPlan task_plans = 12;
+  repeated MessagePart draft_attachments = 13;
+}
+
+message GetToolOutputRequest {
+  string card_id = 1;
+  string message_id = 2;
+  string tool_call_id = 3;
+  string revision = 4;
+}
+
+// Full tool payloads are intentionally separate from conversation tails and
+// are fetched only when a user expands one tool call.
+message ToolOutput {
+  string card_id = 1;
+  string message_id = 2;
+  string tool_call_id = 3;
+  string tool_name = 4;
+  string state = 5;
+  bytes input_json = 6;
+  bytes output_json = 7;
+  string error_text = 8;
+  string revision = 9;
+}
+
+message SendMessageRequest {
+  string card_id = 1;
+  repeated MessagePart parts = 2;
+  string provider = 3;
+  string model = 4;
+  string effort = 5;
+  map<string, string> provider_options = 6;
+  string client_id = 7;
+  string command_id = 8;
+  string message_id = 9;
+}
+
+message SendMessageResponse {
+  bool sent = 1;
+  bool queued = 2;
+  string message_id = 3;
+}
+
+message AddCommentRequest {
+  string card_id = 1;
+  string message = 2;
+  string name = 3;
+}
+
+message MoveCardRequest {
+  string card_id = 1;
+  string lane = 2;
+  optional int64 position = 3;
+}
+
+message SetCardLabelsRequest {
+  string card_id = 1;
+  repeated string label_ids = 2;
+}
+
+message RenameCardRequest {
+  string card_id = 1;
+  string title = 2;
+}
+
+message UpdateCardRequest {
+  string card_id = 1;
+  string title = 2;
+  string initial_prompt = 3;
+}
+
+message ArchiveCardRequest {
+  string card_id = 1;
+  bool archived = 2;
+}
+
+message PinChatRequest {
+  string card_id = 1;
+  bool pinned = 2;
+}
+
+message ListFilesRequest {
+  string project_id = 1;
+  string path = 2;
+  bool show_hidden = 3;
+}
+
+message FileEntry {
+  string name = 1;
+  string path = 2;
+  string kind = 3;
+  int64 size = 4;
+  string modified_at = 5;
+  bool hidden = 6;
+  bool symlink = 7;
+}
+
+message FileList {
+  string path = 1;
+  repeated FileEntry entries = 2;
+}
+
+message ReadFileRequest {
+  string project_id = 1;
+  string path = 2;
+}
+
+message FileDocument {
+  string path = 1;
+  string name = 2;
+  bool binary = 3;
+  int64 size = 4;
+  string modified_at = 5;
+  string revision = 6;
+  string mime_type = 7;
+  string content = 8;
+  bytes data = 9;
+}
+
+message SaveFileRequest {
+  string project_id = 1;
+  string path = 2;
+  string content = 3;
+  string revision = 4;
+}
+
+message CreateFileRequest {
+  string project_id = 1;
+  string path = 2;
+  string kind = 3;
+  string content = 4;
+}
+
+message MoveFileRequest {
+  string project_id = 1;
+  string source = 2;
+  string destination = 3;
+}
+
+message MoveFileResponse {
+  string source = 1;
+  string destination = 2;
+}
+
+message DeleteFileRequest {
+  string project_id = 1;
+  string path = 2;
+  bool recursive = 3;
+}
+
+message ListSchedulesRequest {
+  string project_id = 1;
+}
+
+message SchedulesResponse {
+  repeated Schedule schedules = 1;
+}
+
+message Schedule {
+  string id = 1;
+  string project_id = 2;
+  string board_id = 3;
+  string name = 4;
+  string description = 5;
+  string cron = 6;
+  string timezone = 7;
+  bool enabled = 8;
+  string action = 9;
+  string title_template = 10;
+  string prompt_template = 11;
+  string provider = 12;
+  string model = 13;
+  string effort = 14;
+  repeated string label_ids = 15;
+  string open_card_policy = 16;
+  string misfire_policy = 17;
+  string busy_policy = 18;
+  string next_run_at = 19;
+  string last_run_at = 20;
+  string created_at = 21;
+  string updated_at = 22;
+  repeated string next_runs = 23;
+  map<string, string> provider_options = 24;
+}
+
+message ScheduleDraft {
+  string project_id = 1;
+  string board_id = 2;
+  string name = 3;
+  string description = 4;
+  string cron = 5;
+  string timezone = 6;
+  bool enabled = 7;
+  string action = 8;
+  string title_template = 9;
+  string prompt_template = 10;
+  string provider = 11;
+  string model = 12;
+  string effort = 13;
+  repeated string label_ids = 14;
+  string open_card_policy = 15;
+  string misfire_policy = 16;
+  string busy_policy = 17;
+  map<string, string> provider_options = 18;
+}
+
+message SaveScheduleRequest {
+  string schedule_id = 1;
+  ScheduleDraft schedule = 2;
+}
+
+message PreviewScheduleRequest {
+  string cron = 1;
+  string timezone = 2;
+  int32 count = 3;
+}
+
+message SchedulePreview {
+  repeated string times = 1;
+}
+
+message ScheduleRef {
+  string schedule_id = 1;
+}
+
+message SetScheduleEnabledRequest {
+  string schedule_id = 1;
+  bool enabled = 2;
+}
+
+message ListScheduleRunsRequest {
+  string schedule_id = 1;
+  int32 limit = 2;
+}
+
+message ScheduleRun {
+  string id = 1;
+  string schedule_id = 2;
+  string project_id = 3;
+  string board_id = 4;
+  string card_id = 5;
+  string scheduled_for = 6;
+  bool manual = 7;
+  string action = 8;
+  string status = 9;
+  int32 attempt = 10;
+  string message = 11;
+  string created_at = 12;
+  string updated_at = 13;
+  string started_at = 14;
+  string finished_at = 15;
+}
+
+message ScheduleRunsResponse {
+  repeated ScheduleRun runs = 1;
+}

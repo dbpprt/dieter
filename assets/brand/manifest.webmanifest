@@ -1,0 +1,21 @@
+{
+  "name": "Nauclio",
+  "short_name": "Nauclio",
+  "description": "One command deck for every coding agent.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#071426",
+  "theme_color": "#071426",
+  "icons": [
+    {
+      "src": "assets/png/app-icon-dark-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/png/app-icon-dark-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

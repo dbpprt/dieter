@@ -1,0 +1,160 @@
+version: 1
+
+# This is the release default embedded in the Nauclio binary. To customize the
+# catalog without rebuilding Nauclio, copy this file to
+# $NAUCLIO_HOME/harnesses.yaml (normally ~/.nauclio/harnesses.yaml), or pass a
+# different file with --harness-config / NAUCLIO_HARNESS_CONFIG.
+harnesses:
+  - id: codex
+    name: Codex
+    adapter: codex
+    capabilities:
+      - id: task-plan
+        level: snapshots
+    defaultModel: gpt-5.6-sol
+    effort:
+      label: Reasoning
+      # Keep this list aligned with @ai-sdk/harness-codex's accepted values.
+      options:
+        - id: low
+          name: Low
+        - id: medium
+          name: Medium
+        - id: high
+          name: High
+    models:
+      - id: gpt-5.6-sol
+        name: GPT-5.6 Sol
+        defaultEffort: low
+      - id: gpt-5.6-terra
+        name: GPT-5.6 Terra
+        defaultEffort: medium
+      - id: gpt-5.6-luna
+        name: GPT-5.6 Luna
+        defaultEffort: medium
+      - id: gpt-5.5
+        name: GPT-5.5
+        defaultEffort: medium
+      - id: gpt-5.4
+        name: GPT-5.4
+        defaultEffort: medium
+      - id: gpt-5.3-codex
+        name: GPT-5.3 Codex
+        defaultEffort: medium
+      - id: gpt-5.3-codex-spark
+        name: GPT-5.3 Codex Spark
+        defaultEffort: high
+
+  - id: claude-code
+    name: Claude Code
+    adapter: claude-code
+    capabilities:
+      - id: subagents
+        level: lifecycle
+      - id: task-plan
+        level: snapshots
+    defaultModel: sonnet
+    effort:
+      label: Thinking
+      options:
+        - id: low
+          name: Low
+        - id: medium
+          name: Medium
+        - id: high
+          name: High
+        - id: xhigh
+          name: Extra high
+        - id: max
+          name: Max
+    models:
+      # Stable aliases follow the model selected by the installed adapter.
+      - id: sonnet
+        name: Sonnet
+      - id: opus
+        name: Opus
+      - id: haiku
+        name: Haiku
+      # Keep existing Nauclio conversations resumable after a registry upgrade.
+      - id: claude-sonnet-4-5
+        name: Claude Sonnet 4.5
+      - id: claude-opus-4-1
+        name: Claude Opus 4.1
+
+  - id: pi
+    name: Pi
+    adapter: pi
+    capabilities:
+      - id: task-plan
+        level: host-tool
+    defaultModel: default
+    effort:
+      label: Thinking
+      options:
+        - id: "off"
+          name: "Off"
+        - id: minimal
+          name: Minimal
+        - id: low
+          name: Low
+        - id: medium
+          name: Medium
+        - id: high
+          name: High
+        - id: xhigh
+          name: Extra high
+    models:
+      - id: default
+        name: Configured default
+        runtimeModel: ""
+      # Pi resolves provider-qualified IDs from ~/.pi/agent/models.json.
+      - id: box/qwen3_6_27b
+        name: Qwen 3.6 27B · Box
+        contextWindow: 262144
+        defaultEffort: medium
+
+  - id: omp
+    name: Oh My Pi
+    adapter: omp-acp
+    capabilities:
+      - id: subagents
+        level: progress
+      - id: task-plan
+        level: phases
+    options:
+      - id: advisor
+        name: Advisor
+        description: Ask OMP's advisor for an independent review during the turn.
+        type: boolean
+        default: "false"
+    defaultModel: default
+    effort:
+      label: Thinking
+      options:
+        - id: "off"
+          name: "Off"
+        - id: minimal
+          name: Minimal
+        - id: low
+          name: Low
+        - id: medium
+          name: Medium
+        - id: high
+          name: High
+        - id: xhigh
+          name: Extra high
+        - id: max
+          name: Max
+        - id: auto
+          name: Auto
+    models:
+      - id: default
+        name: Configured default
+        runtimeModel: ""
+      # OMP owns provider routing and resolves these IDs from its own config.
+      - id: openrouter/deepseek/deepseek-v4-flash-0731
+        name: DeepSeek V4 Flash 0731 · OpenRouter
+        contextWindow: 1048576
+      - id: box/qwen3_6_27b
+        name: Qwen 3.6 27B · Box
+        contextWindow: 262144

@@ -1,0 +1,11 @@
+.git
+.nauclio
+.kanna
+apps
+bin
+config
+tmp
+**/node_modules
+**/.build
+**/build
+*.log

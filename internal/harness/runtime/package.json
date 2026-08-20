@@ -1,0 +1,21 @@
+{
+  "name": "nauclio-harness-runtime",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test *.test.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/harness": "1.0.72",
+    "@ai-sdk/harness-acp": "1.0.9",
+    "@ai-sdk/harness-claude-code": "1.0.75",
+    "@ai-sdk/harness-codex": "1.0.74",
+    "@ai-sdk/harness-pi": "1.0.74",
+    "ai": "7.0.59",
+    "ws": "8.21.0",
+    "zod": "4.1.8"
+  }
+}

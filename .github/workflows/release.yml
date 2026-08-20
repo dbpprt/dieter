@@ -1,0 +1,394 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Choose release version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      number: ${{ steps.version.outputs.number }}
+      android_code: ${{ steps.version.outputs.android_code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Derive version from the latest release line
+        id: version
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          latest="$(git tag --list 'v*' |
+            awk '/^v[0-9]+\.[0-9]+\.[0-9]+$/' |
+            sort -V | tail -n 1)"
+          if [ -z "${latest}" ]; then
+            latest="v0.0.0"
+          fi
+          IFS=. read -r major minor patch <<< "${latest#v}"
+          next_patch="${RUN_NUMBER}"
+          if [ "${next_patch}" -le "${patch}" ]; then
+            next_patch=$((patch + RUN_NUMBER))
+          fi
+          number="${major}.${minor}.${next_patch}"
+          echo "tag=v${number}" >> "${GITHUB_OUTPUT}"
+          echo "number=${number}" >> "${GITHUB_OUTPUT}"
+          echo "android_code=${RUN_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "Releasing v${number} from ${GITHUB_SHA}."
+
+  go-binaries:
+    name: ${{ matrix.asset }}
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - asset: nauclio-linux-amd64
+            target: ./cmd/nauclio
+            binary: nauclio
+            goos: linux
+            goarch: amd64
+          - asset: nauclio-linux-arm64
+            target: ./cmd/nauclio
+            binary: nauclio
+            goos: linux
+            goarch: arm64
+          - asset: nauclio-darwin-arm64
+            target: ./cmd/nauclio
+            binary: nauclio
+            goos: darwin
+            goarch: arm64
+          - asset: nauclio-gateway-linux-amd64
+            target: ./cmd/nauclio-gateway
+            binary: nauclio-gateway
+            goos: linux
+            goarch: amd64
+          - asset: nauclio-gateway-linux-arm64
+            target: ./cmd/nauclio-gateway
+            binary: nauclio-gateway
+            goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build and package
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          ASSET: ${{ matrix.asset }}
+          BINARY: ${{ matrix.binary }}
+          TARGET: ${{ matrix.target }}
+          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p "stage/${ASSET}" dist
+          ldflags="-s -w"
+          if [ "${BINARY}" = "nauclio" ]; then
+            ldflags="${ldflags} -X github.com/dbpprt/nauclio/internal/cli.Version=${RELEASE_VERSION}"
+          fi
+          go build -trimpath -ldflags "${ldflags}" \
+            -o "stage/${ASSET}/${BINARY}" "${TARGET}"
+          cp LICENSE "stage/${ASSET}/LICENSE"
+          tar -C stage -czf "dist/${ASSET}.tar.gz" "${ASSET}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  android:
+    name: Android release APK
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-37.1" "build-tools;37.0.0"
+      - name: Restore Android release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_KEYSTORE_BASE64}"
+          printf '%s' "${ANDROID_KEYSTORE_BASE64}" |
+            base64 --decode > "${RUNNER_TEMP}/nauclio-android-release.jks"
+      - name: Build signed release APK
+        env:
+          NAUCLIO_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/nauclio-android-release.jks
+          NAUCLIO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          NAUCLIO_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          NAUCLIO_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          NAUCLIO_RELEASE_VERSION: ${{ needs.version.outputs.number }}
+          NAUCLIO_RELEASE_VERSION_CODE: ${{ needs.version.outputs.android_code }}
+        working-directory: apps/android
+        run: ./gradlew --no-daemon :app:assembleRelease
+      - name: Package APK
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp apps/android/app/build/outputs/apk/release/app-release.apk \
+            dist/Nauclio-Android.apk
+      - name: Verify APK signature
+        run: |
+          "${ANDROID_HOME}/build-tools/37.0.0/apksigner" verify \
+            --verbose --print-certs dist/Nauclio-Android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nauclio-android
+          path: dist/Nauclio-Android.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    name: macOS app (Apple Silicon)
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select Xcode 26.3
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Build release app
+        env:
+          CONFIGURATION: release
+        run: apps/mac/scripts/build.sh
+      - name: Set app version
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.number }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          plist="apps/mac/build/Nauclio.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c \
+            "Set :CFBundleShortVersionString ${RELEASE_VERSION}" "${plist}"
+          /usr/libexec/PlistBuddy -c \
+            "Set :CFBundleVersion ${BUILD_NUMBER}" "${plist}"
+          codesign --force --deep --sign - apps/mac/build/Nauclio.app
+      - name: Check signing configuration
+        id: signing
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          configured=0
+          missing=0
+          for name in CERTIFICATE_BASE64 CERTIFICATE_PASSWORD NOTARY_KEY_BASE64 NOTARY_KEY_ID NOTARY_ISSUER_ID; do
+            if [ -n "${!name}" ]; then
+              configured=$((configured + 1))
+            else
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "${configured}" -eq 0 ]; then
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "Developer ID credentials are not configured; publishing the existing ad-hoc-signed app."
+          elif [ "${missing}" -ne 0 ]; then
+            echo "Developer ID signing is only partially configured." >&2
+            exit 1
+          else
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          fi
+      - name: Sign and notarize app
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          signing_keychain="${RUNNER_TEMP}/nauclio-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          certificate_path="${RUNNER_TEMP}/developer-id.p12"
+          notary_key_path="${RUNNER_TEMP}/notary-key.p8"
+          submission_path="${RUNNER_TEMP}/Nauclio-notarization.zip"
+          cleanup() {
+            security delete-keychain "${signing_keychain}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          printf '%s' "${CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
+          printf '%s' "${NOTARY_KEY_BASE64}" | base64 -D > "${notary_key_path}"
+          security create-keychain -p "${keychain_password}" "${signing_keychain}"
+          security set-keychain-settings -lut 21600 "${signing_keychain}"
+          security unlock-keychain -p "${keychain_password}" "${signing_keychain}"
+          security import "${certificate_path}" \
+            -k "${signing_keychain}" -P "${CERTIFICATE_PASSWORD}" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: -s \
+            -k "${keychain_password}" "${signing_keychain}"
+          identity="$(security find-identity -v -p codesigning "${signing_keychain}" |
+            awk '/Developer ID Application/ {print $2; exit}')"
+          test -n "${identity}"
+
+          codesign --force --deep --options runtime --timestamp \
+            --sign "${identity}" apps/mac/build/Nauclio.app
+          codesign --verify --deep --strict --verbose=2 apps/mac/build/Nauclio.app
+          ditto -c -k --sequesterRsrc --keepParent \
+            apps/mac/build/Nauclio.app "${submission_path}"
+          xcrun notarytool submit "${submission_path}" \
+            --key "${notary_key_path}" \
+            --key-id "${NOTARY_KEY_ID}" \
+            --issuer "${NOTARY_ISSUER_ID}" \
+            --wait
+          xcrun stapler staple apps/mac/build/Nauclio.app
+          xcrun stapler validate apps/mac/build/Nauclio.app
+          spctl --assess --type execute --verbose=4 apps/mac/build/Nauclio.app
+      - name: Package app bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            apps/mac/build/Nauclio.app dist/Nauclio-macOS-arm64.zip
+          codesign --verify --deep --strict --verbose=2 apps/mac/build/Nauclio.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nauclio-macos-arm64
+          path: dist/Nauclio-macOS-arm64.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Publish release
+    needs: [version, go-binaries, android, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists." >&2
+            exit 1
+          fi
+          gh release create "${RELEASE_TAG}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "Nauclio ${RELEASE_TAG}" \
+            --notes "Automated signed build from ${GITHUB_SHA}." \
+            --generate-notes
+      - name: Keep only the newest two releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "${tag}" ] || continue
+            delete_args=()
+            if [[ "${tag}" == main-* ]]; then
+              delete_args+=(--cleanup-tag)
+            fi
+            gh release delete "${tag}" \
+              --repo "${GITHUB_REPOSITORY}" --yes "${delete_args[@]}"
+          done < <(
+            gh release list --repo "${GITHUB_REPOSITORY}" --limit 1000 \
+              --json tagName,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .[2:] | .[].tagName'
+          )
+
+  homebrew:
+    name: Publish Homebrew packages
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nauclio-darwin-arm64
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: nauclio-macos-arm64
+          path: dist
+      - name: Publish public daemon and app packages and update the tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPOSITORY: dbpprt/homebrew-tap
+          VERSION: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN}"
+          daemon_asset="dist/nauclio-darwin-arm64.tar.gz"
+          app_asset="dist/Nauclio-macOS-arm64.zip"
+          test -f "${daemon_asset}"
+          test -f "${app_asset}"
+          daemon_sha256="$(sha256sum "${daemon_asset}" | awk '{print $1}')"
+          app_sha256="$(sha256sum "${app_asset}" | awk '{print $1}')"
+
+          if gh release view "${VERSION}" --repo "${TAP_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${VERSION}" "${daemon_asset}" "${app_asset}" \
+              --repo "${TAP_REPOSITORY}" --clobber
+          else
+            gh release create "${VERSION}" "${daemon_asset}" "${app_asset}" \
+              --repo "${TAP_REPOSITORY}" \
+              --title "Nauclio ${VERSION}" \
+              --notes "Apple Silicon daemon and macOS app packages for Nauclio ${VERSION}."
+          fi
+
+          gh auth setup-git
+          git clone "https://github.com/${TAP_REPOSITORY}.git" tap
+          ruby tap/scripts/update_formula.rb "${VERSION}" "${daemon_sha256}"
+          ruby tap/scripts/update_cask.rb "${VERSION}" "${app_sha256}"
+          cd tap
+          if ! git diff --quiet -- Formula/nauclio.rb Casks/nauclio-app.rb; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Formula/nauclio.rb Casks/nauclio-app.rb
+            git commit \
+              -m "Update Nauclio to ${VERSION}" \
+              -m "🌸 Shipped with Kanna — https://kanna.sh" \
+              -m $'Co-Authored-By: Kanna <noreply@kanna.sh>\nKanna-Agent: codex/gpt-5.6-sol'
+            git push origin main
+          fi
+
+          while IFS= read -r tag; do
+            [ -n "${tag}" ] || continue
+            gh release delete "${tag}" \
+              --repo "${TAP_REPOSITORY}" --cleanup-tag --yes
+          done < <(
+            gh release list --repo "${TAP_REPOSITORY}" --limit 1000 \
+              --json tagName,createdAt \
+              --jq 'sort_by(.createdAt) | reverse | .[2:] | .[].tagName'
+          )

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nauclio CLI"
+  short_description: "Operate local harness conversation boards directly"
+  default_prompt: "Use $nauclio-cli to work inside a Nauclio conversation card or administer its Git project and fixed workflow."

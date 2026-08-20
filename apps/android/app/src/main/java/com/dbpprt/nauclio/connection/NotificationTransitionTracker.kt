@@ -1,0 +1,69 @@
+package com.dbpprt.nauclio.connection
+
+import com.dbpprt.nauclio.v1.Card
+import com.dbpprt.nauclio.v1.ConversationSnapshot
+
+sealed interface NauclioNotificationEvent {
+    val card: Card
+
+    data class ChatFinished(
+        override val card: Card,
+        val subagentCount: Int,
+        val completedSubagentCount: Int,
+    ) : NauclioNotificationEvent
+
+    data class ReadyForReview(override val card: Card) : NauclioNotificationEvent
+}
+
+/** Emits only state transitions, never stale terminal notifications on startup. */
+class NotificationTransitionTracker {
+    private var initialized = false
+    private var previousCards: Map<String, Card> = emptyMap()
+    private var previousConversations: Map<String, ConversationSnapshot> = emptyMap()
+
+    fun update(
+        cards: List<Card>,
+        chats: List<Card>,
+        conversations: Map<String, ConversationSnapshot>,
+        notificationBoardIds: Set<String> = emptySet(),
+    ): List<NauclioNotificationEvent> {
+        val current = (cards + chats).associateBy(Card::getId)
+        val events = if (!initialized) {
+            emptyList()
+        } else {
+            buildList {
+                chats.forEach { chat ->
+                    val previous = previousCards[chat.id] ?: return@forEach
+                    if (isActiveRuntime(previous.runtime) && !isActiveRuntime(chat.runtime)) {
+                        val subagents = previousConversations[chat.id]?.conversation?.subagentsList.orEmpty()
+                        add(
+                            NauclioNotificationEvent.ChatFinished(
+                                card = chat,
+                                subagentCount = subagents.size,
+                                completedSubagentCount = subagents.count { it.status in TERMINAL_SUBAGENT_STATES },
+                            ),
+                        )
+                    }
+                }
+                cards.forEach { card ->
+                    val previous = previousCards[card.id] ?: return@forEach
+                    if (
+                        card.boardId in notificationBoardIds &&
+                        !previous.lane.equals("review", true) &&
+                        card.lane.equals("review", true)
+                    ) {
+                        add(NauclioNotificationEvent.ReadyForReview(card))
+                    }
+                }
+            }
+        }
+        initialized = true
+        previousCards = current
+        previousConversations = conversations
+        return events
+    }
+
+    companion object {
+        private val TERMINAL_SUBAGENT_STATES = setOf("completed", "failed", "aborted", "cancelled")
+    }
+}

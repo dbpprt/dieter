@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Nauclio">
+  <rect width="128" height="128" rx="29" fill="#071426"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="64" cy="64" r="43" stroke="#2D83F4" stroke-width="9"/>
+    <path d="M64 64L98 45M64 64L30 45M64 64V103" stroke="#2563EB" stroke-width="9"/>
+  </g>
+  <g fill="#22D3EE" stroke="#071426" stroke-width="2">
+    <rect x="49" y="25" width="30" height="24" rx="5"/>
+    <rect x="49" y="25" width="30" height="24" rx="5" transform="rotate(120 64 64)"/>
+    <rect x="49" y="25" width="30" height="24" rx="5" transform="rotate(240 64 64)"/>
+  </g>
+  <circle cx="64" cy="64" r="12" fill="#5EEAD4"/>
+  <circle cx="64" cy="64" r="6" fill="#071426"/>
+</svg>

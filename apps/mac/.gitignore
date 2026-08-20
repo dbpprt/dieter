@@ -1,0 +1,4 @@
+.build/
+build/
+*.xcworkspace/xcuserdata/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/

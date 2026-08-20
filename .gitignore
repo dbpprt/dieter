@@ -1,0 +1,49 @@
+# Go build and test output
+/nauclio
+/nauclio-gateway
+/bin/
+/coverage.out
+*.test
+*.prof
+
+# Logs and local environment files
+*.log
+.env
+.env.*
+!.env.example
+
+# JavaScript dependencies and caches
+/internal/harness/runtime/node_modules/
+/internal/harness/runtime/.npm/
+/apps/android/.kotlin/
+
+# Nauclio state, when NAUCLIO_HOME points at the checkout
+/.nauclio/
+/.kanna/
+
+# Local scratch output
+/tmp/
+/newsos.zip
+
+# Local design review exports (curated references live under apps/)
+/[Aa]rchive.zip
+/Native Android PWA redesign.pdf
+/screenshots/
+/screenshots-android/
+
+# Editor and operating-system state
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local signing credentials and platform metadata
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+keystore.properties
+**/.swiftpm/configuration/
+**/.swiftpm/security/

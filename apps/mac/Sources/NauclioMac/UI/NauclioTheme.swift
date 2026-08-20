@@ -1,0 +1,298 @@
+import SwiftUI
+
+private extension Color {
+    init(rgb: UInt32) {
+        self.init(
+            red: Double((rgb >> 16) & 0xff) / 255,
+            green: Double((rgb >> 8) & 0xff) / 255,
+            blue: Double(rgb & 0xff) / 255
+        )
+    }
+}
+
+enum NauclioTheme {
+    static let background = Color(rgb: 0x050B14)
+    static let sidebar = Color(rgb: 0x071426)
+    static let surface = Color(rgb: 0x0B1628)
+    static let raised = Color(rgb: 0x12243C)
+    static let elevated = Color(rgb: 0x19314D)
+    static let input = Color(rgb: 0x030810)
+    static let border = Color(rgb: 0x20364F)
+    static let strongBorder = Color(rgb: 0x315271)
+    static let text = Color(rgb: 0xF5FAFF)
+    static let subtle = Color(rgb: 0x9DB0C3)
+    static let tertiary = Color(rgb: 0x71859A)
+    static let cobalt = Color(rgb: 0x2563EB)
+    static let aegean = Color(rgb: 0x22D3EE)
+    static let primary = Color(rgb: 0x56C7FF)
+    static let seafoam = Color(rgb: 0x5EEAD4)
+    static let amber = Color(rgb: 0xF59E0B)
+    static let coral = Color(rgb: 0xFB7185)
+}
+
+enum NauclioMetrics {
+    static let browserWidth: CGFloat = 320
+    static let browserMaximumWidth: CGFloat = 340
+    static let sidebarExpandedWidth: CGFloat = 224
+    static let sidebarCollapsedWidth: CGFloat = 58
+    static let navigationRowHeight: CGFloat = 32
+    static let controlRadius: CGFloat = 7
+    static let cardRadius: CGFloat = 10
+}
+
+struct FluidPaneChrome<Primary: View, Secondary: View>: View {
+    let background: Color
+    let spacing: CGFloat
+    private let hasSecondary: Bool
+    let primary: Primary
+    let secondary: Secondary
+
+    init(
+        background: Color = NauclioTheme.sidebar,
+        spacing: CGFloat = 8,
+        @ViewBuilder primary: () -> Primary,
+        @ViewBuilder secondary: () -> Secondary
+    ) {
+        self.background = background
+        self.spacing = spacing
+        hasSecondary = true
+        self.primary = primary()
+        self.secondary = secondary()
+    }
+
+    init(
+        background: Color = NauclioTheme.sidebar,
+        @ViewBuilder primary: () -> Primary
+    ) where Secondary == EmptyView {
+        self.background = background
+        spacing = 0
+        hasSecondary = false
+        self.primary = primary()
+        secondary = EmptyView()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: hasSecondary ? spacing : 0) {
+            primary.frame(maxWidth: .infinity, alignment: .leading)
+            if hasSecondary { secondary.frame(maxWidth: .infinity, alignment: .leading) }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(background)
+        .overlay(alignment: .bottom) { Rectangle().fill(NauclioTheme.border).frame(height: 1) }
+    }
+}
+
+struct PaneTitleBlock: View {
+    let title: String
+    var subtitle: String = ""
+    var symbol: String? = nil
+    var prominent = false
+
+    var body: some View {
+        HStack(spacing: 9) {
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: prominent ? 14 : 12, weight: .semibold))
+                    .foregroundStyle(NauclioTheme.aegean)
+                    .frame(width: prominent ? 20 : 17)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: prominent ? 17 : 14, weight: .bold))
+                    .lineLimit(1)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: prominent ? 10 : 9.5, weight: .medium))
+                        .foregroundStyle(NauclioTheme.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct NauclioFlowLayout: Layout {
+    var horizontalSpacing: CGFloat = 7
+    var verticalSpacing: CGFloat = 7
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) -> CGSize {
+        let maximumWidth = proposal.width ?? .greatestFiniteMagnitude
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var usedWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let nextX = x == 0 ? 0 : x + horizontalSpacing
+            if x > 0, nextX + size.width > maximumWidth {
+                y += rowHeight + verticalSpacing
+                x = size.width
+                rowHeight = size.height
+            } else {
+                x = nextX + size.width
+                rowHeight = max(rowHeight, size.height)
+            }
+            usedWidth = max(usedWidth, x)
+        }
+
+        return CGSize(width: min(usedWidth, maximumWidth), height: y + rowHeight)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let nextX = x == bounds.minX ? x : x + horizontalSpacing
+            if x > bounds.minX, nextX + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + verticalSpacing
+                rowHeight = 0
+            } else {
+                x = nextX
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+struct SurfaceModifier: ViewModifier {
+    var radius: CGFloat = 12
+    func body(content: Content) -> some View {
+        content
+            .background(NauclioTheme.surface.opacity(0.82))
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+}
+
+extension View {
+    func nauclioSurface(radius: CGFloat = 12) -> some View { modifier(SurfaceModifier(radius: radius)) }
+}
+
+struct StatusPill: View {
+    let text: String
+    var color: Color = NauclioTheme.subtle
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text(label)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(color)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(color.opacity(0.12), in: Capsule())
+    }
+
+    private var label: String {
+        let value = text.isEmpty ? "idle" : text
+        return value.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+struct NauclioIconButtonStyle: ButtonStyle {
+    var active = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(active ? Color.white : NauclioTheme.subtle)
+            .frame(width: 30, height: 28)
+            .background(active ? NauclioTheme.elevated : NauclioTheme.surface.opacity(0.82), in: RoundedRectangle(cornerRadius: NauclioMetrics.controlRadius))
+            .opacity(configuration.isPressed ? 0.72 : 1)
+    }
+}
+
+struct NauclioPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 13).frame(height: 30)
+            .background(NauclioTheme.cobalt, in: RoundedRectangle(cornerRadius: NauclioMetrics.controlRadius))
+            .opacity(configuration.isPressed ? 0.76 : 1)
+    }
+}
+
+struct NauclioSecondaryButtonStyle: ButtonStyle {
+    var destructive = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(destructive ? NauclioTheme.coral : NauclioTheme.subtle)
+            .padding(.horizontal, 12).frame(height: 30)
+            .background(NauclioTheme.surface.opacity(configuration.isPressed ? 0.6 : 0.9), in: RoundedRectangle(cornerRadius: NauclioMetrics.controlRadius))
+    }
+}
+
+struct NauclioChipLabel: View {
+    let title: String
+    var symbol: String? = nil
+    var tint: Color = NauclioTheme.subtle
+    var maximumTitleWidth: CGFloat? = nil
+    var showsDisclosure = true
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .semibold)) }
+            Text(title)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: maximumTitleWidth, alignment: .leading)
+            if showsDisclosure {
+                Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).opacity(0.65)
+            }
+        }
+        .font(.caption2.weight(.medium)).foregroundStyle(tint)
+        .padding(.horizontal, 9).frame(height: 28)
+        .background(NauclioTheme.surface.opacity(0.9), in: RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+struct NauclioSearchField: View {
+    @Binding var text: String
+    let placeholder: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).foregroundStyle(NauclioTheme.tertiary)
+            TextField(placeholder, text: $text).textFieldStyle(.plain).font(.system(size: 12))
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 10)) }
+                    .buttonStyle(.plain).foregroundStyle(NauclioTheme.tertiary)
+            }
+        }
+        .padding(.horizontal, 10).frame(height: 32)
+        .background(NauclioTheme.surface, in: RoundedRectangle(cornerRadius: NauclioMetrics.controlRadius))
+        .overlay(RoundedRectangle(cornerRadius: NauclioMetrics.controlRadius).stroke(NauclioTheme.border))
+    }
+}
+
+func runtimeColor(_ runtime: String) -> Color {
+    switch runtime.lowercased() {
+    case "running", "active", "working": NauclioTheme.primary
+    case "review", "waiting", "needs_input": NauclioTheme.amber
+    case "completed", "done", "idle": NauclioTheme.seafoam
+    case "failed", "error", "cancelled": NauclioTheme.coral
+    default: NauclioTheme.subtle
+    }
+}
