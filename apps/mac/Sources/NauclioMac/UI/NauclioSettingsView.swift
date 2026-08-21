@@ -501,11 +501,11 @@ struct ConnectionSettings: View {
             HStack(spacing: 10) {
                 Circle().fill(store.phase.isConnected ? NauclioTheme.seafoam : NauclioTheme.amber).frame(width: 8, height: 8)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(store.endpoint.daemonID == nil ? "Waiting for an online machine" : "Current route · \(store.endpoint.name)").font(.system(size: 12, weight: .semibold))
-                    Text(activeMachineDetail).font(.caption2).foregroundStyle(NauclioTheme.tertiary)
+                    Text("\(store.projects.count) projects across \(store.machines.count) machines").font(.system(size: 12, weight: .semibold))
+                    Text("Project actions are routed to their host automatically.").font(.caption2).foregroundStyle(NauclioTheme.tertiary)
                 }
                 Spacer()
-                if store.endpoint.daemonID != nil { Button("Reconnect") { Task { await store.connect() } } }
+                Button("Reconnect") { Task { await store.connect() } }
             }
         }
     }
@@ -555,7 +555,6 @@ struct ConnectionSettings: View {
                         Text(machineSummary(machine)).font(.caption2).foregroundStyle(NauclioTheme.tertiary)
                     }
                     Spacer()
-                    if machine.id == store.endpoint.id { Text("Current route").font(.caption2).foregroundStyle(NauclioTheme.seafoam) }
                     Button { pendingRename = machine } label: { Image(systemName: "pencil") }.buttonStyle(.plain).help("Rename machine")
                     Button(role: .destructive) { pendingRevoke = machine } label: { Image(systemName: "trash") }.buttonStyle(.plain).help("Revoke machine")
                 }
@@ -578,15 +577,9 @@ struct ConnectionSettings: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(NauclioEndpoint.parse(address)?.secure != true)
             }
-            Text("Gateway sessions are stored in a user-only local file. Nauclio prefers verified direct TLS to a discovered machine and otherwise uses the gateway's encrypted relay.")
+            Text("Gateway sessions are stored in the macOS Keychain. Nauclio prefers verified direct TLS to a discovered machine and otherwise uses the gateway's encrypted relay.")
                 .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
         }
-    }
-
-    private var activeMachineDetail: String {
-        guard store.endpoint.daemonID != nil else { return "Nauclio will route through the first available machine" }
-        guard let status = store.connectionStatus(for: store.endpoint) else { return store.endpoint.online ? "Connecting…" : MachinePresenceText.lastSeen(store.endpoint.lastSeenAt) }
-        return "\(status.route.rawValue) connection · \(status.latencyMilliseconds) ms"
     }
 
     private func machineSummary(_ machine: NauclioEndpoint) -> String {

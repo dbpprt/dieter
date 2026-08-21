@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.AtomicFile
 import android.util.Base64
 import com.dbpprt.nauclio.v1.GlobalSnapshot
+import com.dbpprt.nauclio.v1.State
 import com.dbpprt.nauclio.v1.SyncCursor
 import org.json.JSONArray
 import org.json.JSONObject
@@ -16,7 +17,8 @@ enum class OutboxKind { CREATE_CARD, CREATE_CHAT, SEND_MESSAGE }
 data class AndroidOutboxEntry(
     val commandId: String,
     val clientId: String,
-    val daemonId: String,
+    /** Gateway-scoped daemon endpoint ID (`<gateway credential ID>#<daemon ID>`). */
+    val endpointId: String,
     val kind: OutboxKind,
     val request: ByteArray,
     val optimisticId: String,
@@ -24,6 +26,17 @@ data class AndroidOutboxEntry(
     val attempts: Int = 0,
     val lastError: String? = null,
     val createdAtMillis: Long = System.currentTimeMillis(),
+)
+
+data class CachedProjectHost(
+    val endpointId: String,
+    val daemonId: String,
+    val hostname: String,
+)
+
+data class CachedMachineDirectory(
+    val state: State,
+    val hosts: Map<String, CachedProjectHost>,
 )
 
 /** Atomic, disposable native projection plus the durable client outbox. */
@@ -52,6 +65,49 @@ class NauclioSyncStore(context: Context) {
     }
 
     @Synchronized
+    fun loadMachineDirectory(scope: String): CachedMachineDirectory? {
+        val raw = read(projectionFile(scope, "machine-directory.json")) ?: return null
+        return runCatching {
+            val root = JSONObject(raw.toString(Charsets.UTF_8))
+            val state = State.parseFrom(Base64.decode(root.getString("state"), Base64.NO_WRAP))
+            val hosts = root.getJSONArray("hosts")
+            val byProject = buildMap {
+                for (index in 0 until hosts.length()) {
+                    val item = hosts.getJSONObject(index)
+                    put(
+                        item.getString("projectId"),
+                        CachedProjectHost(
+                            endpointId = item.getString("endpointId"),
+                            daemonId = item.getString("daemonId"),
+                            hostname = item.getString("hostname"),
+                        ),
+                    )
+                }
+            }
+            CachedMachineDirectory(state, byProject)
+        }.getOrNull()
+    }
+
+    @Synchronized
+    fun saveMachineDirectory(scope: String, state: State, hosts: Map<String, CachedProjectHost>) {
+        val encodedHosts = JSONArray().apply {
+            hosts.toSortedMap().forEach { (projectId, host) ->
+                put(
+                    JSONObject()
+                        .put("projectId", projectId)
+                        .put("endpointId", host.endpointId)
+                        .put("daemonId", host.daemonId)
+                        .put("hostname", host.hostname),
+                )
+            }
+        }
+        val root = JSONObject()
+            .put("state", Base64.encodeToString(state.toByteArray(), Base64.NO_WRAP))
+            .put("hosts", encodedHosts)
+        write(projectionFile(scope, "machine-directory.json"), root.toString().toByteArray())
+    }
+
+    @Synchronized
     fun loadOutbox(): MutableList<AndroidOutboxEntry> {
         val raw = read(outboxFile) ?: return mutableListOf()
         return runCatching {
@@ -61,7 +117,7 @@ class NauclioSyncStore(context: Context) {
                 AndroidOutboxEntry(
                     commandId = item.getString("commandId"),
                     clientId = item.getString("clientId"),
-                    daemonId = item.getString("daemonId"),
+                    endpointId = item.optString("endpointId").ifBlank { item.getString("daemonId") },
                     kind = OutboxKind.valueOf(item.getString("kind")),
                     request = Base64.decode(item.getString("request"), Base64.NO_WRAP),
                     optimisticId = item.getString("optimisticId"),
@@ -82,7 +138,7 @@ class NauclioSyncStore(context: Context) {
                 JSONObject()
                     .put("commandId", entry.commandId)
                     .put("clientId", entry.clientId)
-                    .put("daemonId", entry.daemonId)
+                    .put("endpointId", entry.endpointId)
                     .put("kind", entry.kind.name)
                     .put("request", Base64.encodeToString(entry.request, Base64.NO_WRAP))
                     .put("optimisticId", entry.optimisticId)

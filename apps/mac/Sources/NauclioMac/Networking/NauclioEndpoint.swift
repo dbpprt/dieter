@@ -83,6 +83,7 @@ enum ConnectionPhase: Equatable, Sendable {
     case connecting
     case connected(version: String)
     case authenticationRequired
+    case incompatible(found: String)
     case failed(String)
 
     var label: String {
@@ -91,6 +92,7 @@ enum ConnectionPhase: Equatable, Sendable {
         case .connecting: "Connecting…"
         case .connected: "Connected"
         case .authenticationRequired: "Sign in required"
+        case .incompatible: "Update required"
         case .failed: "Connection failed"
         }
     }

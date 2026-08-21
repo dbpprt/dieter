@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dbpprt.nauclio.connection.ConnectionPhase
+import com.dbpprt.nauclio.connection.isLoopbackHost
 import com.dbpprt.nauclio.data.NAUCLIO_ENDPOINTS
 import com.dbpprt.nauclio.data.NauclioEndpoint
 import com.dbpprt.nauclio.data.nauclioEndpointFromAddress
@@ -98,10 +99,13 @@ fun AppSettingsScreen(
     val endpointKey = state.configuredConnections.joinToString("|") { "${it.id}:${it.label}:${it.address}" }
     var drafts by remember(endpointKey) {
         mutableStateOf(
-            state.configuredConnections.distinctBy { it.address }.mapIndexed { index, endpoint ->
-                ConnectionDraft("gateway_$index", if (index == 0) "Nauclio Gateway" else "Gateway ${index + 1}", endpoint.address)
+            state.configuredConnections.distinctBy { it.address }.map { endpoint ->
+                ConnectionDraft(endpoint.id, endpoint.label, endpoint.address)
             },
         )
+    }
+    var activeDraftId by remember(endpointKey, state.activeGatewayId) {
+        mutableStateOf(state.activeGatewayId.takeIf { active -> drafts.any { it.id == active } } ?: drafts.firstOrNull()?.id.orEmpty())
     }
     var selectedTab by remember { mutableIntStateOf(CONNECTIONS_TAB) }
     var confirmation by remember { mutableStateOf<String?>(null) }
@@ -111,6 +115,7 @@ fun AppSettingsScreen(
     val validationError = when {
         drafts.isEmpty() -> "Keep at least one connection."
         parsed.any { it.isFailure } -> parsed.first { it.isFailure }.exceptionOrNull()?.message
+        parsed.mapNotNull { it.getOrNull() }.any { !it.secure && !isLoopbackHost(it.host) } -> "Remote gateways must use HTTPS."
         parsed.mapNotNull { it.getOrNull()?.address?.lowercase() }.distinct().size != drafts.size -> "Connection addresses must be unique."
         else -> null
     }
@@ -137,6 +142,8 @@ fun AppSettingsScreen(
                     drafts = drafts,
                     validationError = validationError,
                     confirmation = confirmation,
+                    activeGatewayId = activeDraftId,
+                    onSelectGateway = { activeDraftId = it },
                     onDraftsChanged = {
                         drafts = it
                         confirmation = null
@@ -151,14 +158,17 @@ fun AppSettingsScreen(
                 validationError = validationError,
                 onDefaults = {
                     drafts = NAUCLIO_ENDPOINTS.map { ConnectionDraft(it.id, it.label, it.address) }
+                    activeDraftId = NAUCLIO_ENDPOINTS.first().id
                     model.resetConnectionTargets()
                     confirmation = "Default connections restored."
                 },
                 onSave = {
                     val endpoints: List<NauclioEndpoint> = parsed.mapNotNull { it.getOrNull() }
-                    model.updateConnectionTargets(endpoints)
+                    val activeGatewayId = activeDraftId.takeIf { active -> endpoints.any { it.id == active } }
+                        ?: endpoints.first().id
+                    model.updateConnectionTargets(endpoints, activeGatewayId)
                     confirmation = if (state.desiredConnected) {
-                        "Saved. Reconnecting in the new order."
+                        "Saved. Reconnecting to the active gateway."
                     } else {
                         "Connections saved."
                     }
@@ -206,6 +216,8 @@ private fun ConnectionsSettings(
     drafts: List<ConnectionDraft>,
     validationError: String?,
     confirmation: String?,
+    activeGatewayId: String,
+    onSelectGateway: (String) -> Unit,
     onDraftsChanged: (List<ConnectionDraft>) -> Unit,
 ) {
     LazyColumn(
@@ -215,7 +227,7 @@ private fun ConnectionsSettings(
     ) {
         item {
             Text(
-                "Sign in once at a gateway, then choose any enrolled daemon. Nauclio prefers a verified direct TLS route and falls back to its encrypted relay.",
+                "Sign in once at a gateway. Nauclio shows projects from every enrolled machine and routes each action automatically, preferring verified direct TLS before its encrypted relay.",
                 color = NauclioMuted,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -237,6 +249,8 @@ private fun ConnectionsSettings(
                     draft = draft,
                     index = index,
                     count = drafts.size,
+                    active = draft.id == activeGatewayId,
+                    onSelect = { onSelectGateway(draft.id) },
                     onChange = { updated ->
                         onDraftsChanged(drafts.toMutableList().also { it[index] = updated })
                     },
@@ -378,6 +392,8 @@ private fun ConnectionEditorCard(
     draft: ConnectionDraft,
     index: Int,
     count: Int,
+    active: Boolean,
+    onSelect: () -> Unit,
     onChange: (ConnectionDraft) -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
@@ -395,7 +411,13 @@ private fun ConnectionEditorCard(
             ) {
                 Icon(Icons.Outlined.DragIndicator, contentDescription = null, tint = NauclioMuted, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Connection ${index + 1}", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text(draft.label.ifBlank { "Gateway ${index + 1}" }, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(if (active) "Active gateway" else "Separate deployment", color = if (active) NauclioSeafoam else NauclioMuted, fontSize = 11.sp)
+                }
+                if (!active) {
+                    TextButton(onClick = onSelect) { Text("Use") }
+                }
                 IconButton(onClick = onMoveUp, enabled = index > 0, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Outlined.ArrowUpward, "Move connection up", modifier = Modifier.size(18.dp))
                 }

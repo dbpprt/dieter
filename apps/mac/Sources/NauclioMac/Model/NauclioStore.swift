@@ -6,6 +6,8 @@ import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
+private let nauclioExpectedAPIVersion = "2"
+
 enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case board = "Board"
     case chats = "All chats"
@@ -40,6 +42,17 @@ private struct DataPlaneConnection {
     let rpc: NauclioRPC
     let task: Task<Void, Never>
     let connection: MachineConnectionStatus
+}
+
+private enum NauclioStoreConnectionError: LocalizedError {
+    case incompatible(found: String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .incompatible(found):
+            "Nauclio API \(found.isEmpty ? "unknown" : found) is incompatible; macOS requires \(nauclioExpectedAPIVersion)."
+        }
+    }
 }
 
 enum MachineConnectionRoute: String, Sendable {
@@ -251,6 +264,7 @@ final class NauclioStore {
     private let syncPersistence = NauclioSyncPersistence()
     private let syncClientID = NauclioSyncPersistence.installationID()
     private var syncDiskState = NauclioSyncDiskState.empty
+    private var syncProjection = NauclioSyncProjection.empty
 
     init() {
         readChatActivity = UserDefaults.standard.dictionary(forKey: "NauclioReadChatActivity") as? [String: String] ?? [:]
@@ -455,6 +469,7 @@ final class NauclioStore {
             connectionTask = dataPlane.task
             machineConnectionStatuses[target.id] = dataPlane.connection
             endpoint = target
+            activateSyncProjection(for: target)
             persistEndpoints()
             // Do not use `async let` in this throwing `do` scope. Swift 6.1–6.3 can
             // destroy failed child tasks out of allocation order (Swift #81771),
@@ -475,6 +490,9 @@ final class NauclioStore {
                 optionsTask.cancel()
             }
             let initialHealth = try await healthTask.value
+            guard initialHealth.status == "ok", initialHealth.version == nauclioExpectedAPIVersion else {
+                throw NauclioStoreConnectionError.incompatible(found: initialHealth.version)
+            }
             let initialRuntime = try await runtimeTask.value
             let initialState = try await stateTask.value
             let initialHarnesses = try await harnessesTask.value
@@ -486,6 +504,7 @@ final class NauclioStore {
             self.harnessCatalog = initialHarnesses
             self.boardSettings = initialSettings
             self.settingsOptions = initialOptions
+            await refreshMachineDirectory()
             phase = .connected(version: initialHealth.version)
             startMachineDirectoryRefresh()
             startGlobalSync()
@@ -498,6 +517,12 @@ final class NauclioStore {
             rpc?.shutdown()
             rpc = nil
             guard generation == connectionGeneration else { return }
+            if let connectionError = error as? NauclioStoreConnectionError,
+               case let .incompatible(found) = connectionError {
+                phase = .incompatible(found: found)
+                errorMessage = error.localizedDescription
+                return
+            }
             if !gatewayAuthenticated, let rpcError = error as? RPCError, rpcError.code == .unauthenticated {
                 phase = .authenticationRequired
                 errorMessage = nil
@@ -519,7 +544,7 @@ final class NauclioStore {
         gatewayAccessToken: String?
     ) async throws -> DataPlaneConnection {
         guard let daemonID = target.daemonID else {
-            throw NSError(domain: "NauclioGateway", code: 5, userInfo: [NSLocalizedDescriptionKey: "Select a Nauclio daemon before opening its workspace."])
+            throw NSError(domain: "NauclioGateway", code: 5, userInfo: [NSLocalizedDescriptionKey: "No routed Nauclio machine is available."])
         }
         let route = try await gateway.route(daemonID: daemonID)
         if !route.directCandidates.isEmpty {
@@ -528,29 +553,33 @@ final class NauclioStore {
                 throw NSError(domain: "NauclioGateway", code: 2, userInfo: [NSLocalizedDescriptionKey: "Gateway returned an unsupported daemon token."])
             }
             for candidate in route.directCandidates.sorted(by: { $0.priority > $1.priority }) {
-                let direct = try NauclioRPC(
-                    endpoint: target,
-                    direct: .init(
-                        host: candidate.host,
-                        port: Int(candidate.port),
-                        daemonID: daemonID,
-                        daemonCAPEM: route.daemonCaPem,
-                        accessToken: token.accessToken
-                    )
-                )
-                let directTask = startConnectionTask(for: direct)
                 do {
-                    let started = Date()
-                    _ = try await direct.health(timeout: .seconds(2))
-                    scheduleDirectRefresh(expiresAt: token.expiresAt, target: target)
-                    return DataPlaneConnection(
-                        rpc: direct,
-                        task: directTask,
-                        connection: .init(route: .local, latencyMilliseconds: Self.latencyMilliseconds(since: started))
+                    let direct = try NauclioRPC(
+                        endpoint: target,
+                        direct: .init(
+                            host: candidate.host,
+                            port: Int(candidate.port),
+                            daemonID: daemonID,
+                            daemonCAPEM: route.daemonCaPem,
+                            accessToken: token.accessToken
+                        )
                     )
+                    let directTask = startConnectionTask(for: direct)
+                    let started = Date()
+                    do {
+                        _ = try await direct.health(timeout: .seconds(2))
+                        scheduleDirectRefresh(expiresAt: token.expiresAt, target: target)
+                        return DataPlaneConnection(
+                            rpc: direct,
+                            task: directTask,
+                            connection: .init(route: .local, latencyMilliseconds: Self.latencyMilliseconds(since: started))
+                        )
+                    } catch {
+                        directTask.cancel()
+                        direct.shutdown()
+                    }
                 } catch {
-                    directTask.cancel()
-                    direct.shutdown()
+                    continue
                 }
             }
         }
@@ -618,7 +647,16 @@ final class NauclioStore {
     }
 
     func completeAuthentication(url: URL) {
-        authentication.complete(url: url)
+        guard !authentication.complete(url: url) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                guard let endpoint = try await self.authentication.resumePending(url: url) else { return }
+                await self.connect(to: endpoint)
+            } catch {
+                self.errorMessage = "Could not finish sign-in: \(error.localizedDescription)"
+            }
+        }
     }
 
     func signOut() async {
@@ -668,6 +706,9 @@ final class NauclioStore {
         if !gatewayOrigins.contains(where: { $0.credentialID == gateway.credentialID }) {
             gatewayOrigins.append(gateway)
         }
+        if gateway.credentialID != activeGateway.credentialID {
+            clearDeploymentWorkspace()
+        }
         endpoint = gateway
         await connect(to: gateway)
     }
@@ -678,8 +719,27 @@ final class NauclioStore {
         } else {
             gatewayOrigins.append(endpoint)
         }
+        if endpoint.credentialID != activeGateway.credentialID {
+            clearDeploymentWorkspace()
+        }
         persistEndpoints()
         await connect(to: endpoint)
+    }
+
+    private func clearDeploymentWorkspace() {
+        state = Nauclio_V1_State()
+        projectDirectory.removeAll()
+        projectEndpointIDs.removeAll()
+        navigationBoards.removeAll()
+        navigationCards.removeAll()
+        chats.removeAll()
+        chatProjects.removeAll()
+        schedules.removeAll()
+        scheduleRuns.removeAll()
+        selectedProjectID = ""
+        selectedBoardID = ""
+        closeConversation()
+        syncProjection = .empty
     }
 
     func deleteEndpoint(_ endpoint: NauclioEndpoint) {
@@ -758,6 +818,7 @@ final class NauclioStore {
 
         for snapshot in snapshots {
             machineConnectionStatuses[snapshot.endpoint.id] = snapshot.connection
+            persistMachineSnapshot(snapshot)
             for project in snapshot.projects {
                 nextProjects[project.id] = project
                 nextProjectEndpoints[project.id] = snapshot.endpoint.id
@@ -778,18 +839,35 @@ final class NauclioStore {
             .reduce(into: [String: Nauclio_V1_Card]()) { $0[$1.id] = $1 }
             .values
             .sorted { ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt) }
+        updateSelectedState()
         if let selectedChatID, let selected = chats.first(where: { $0.id == selectedChatID }) {
             markChatRead(selected)
         }
+        try? await syncPersistence.save(syncDiskState)
+    }
+
+    private func persistMachineSnapshot(_ machine: MachineSnapshot) {
+        var projection = syncDiskState.projections[machine.endpoint.id] ?? .empty
+        var snapshot = projection.snapshot
+            .flatMap { try? Nauclio_V1_GlobalSnapshot(serializedBytes: $0) }
+            ?? Nauclio_V1_GlobalSnapshot()
+        snapshot.state.projects = machine.projects
+        snapshot.state.boards = machine.boards
+        snapshot.state.cards = machine.cards
+        snapshot.state.chats = machine.chats
+        projection.snapshot = try? snapshot.serializedData()
+        syncDiskState.projections[machine.endpoint.id] = projection
+        if machine.endpoint.id == endpoint.id { syncProjection = projection }
     }
 
     private func startMachineDirectoryRefresh() {
         machineDirectoryTask?.cancel()
         machineDirectoryTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await NauclioTaskSleep.seconds(5)
+                try? await NauclioTaskSleep.seconds(15)
                 guard !Task.isCancelled, let self else { return }
                 await self.refreshDaemonPresence()
+                await self.refreshMachineDirectory()
             }
         }
     }
@@ -964,48 +1042,93 @@ final class NauclioStore {
     private func restorePersistentSync() async {
         let restored = await syncPersistence.load()
         syncDiskState = restored
-        if let raw = restored.cursor, let cursor = try? Nauclio_V1_SyncCursor(serializedBytes: raw) {
-            syncDiskState.cursor = try? cursor.serializedData()
+        let activePrefix = activeGateway.credentialID + "#"
+        let deploymentProjections = restored.projections
+            .filter { $0.key.hasPrefix(activePrefix) }
+            .sorted { $0.key < $1.key }
+        for (endpointID, projection) in deploymentProjections {
+            if let raw = projection.snapshot,
+               let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) {
+                applyGlobalSnapshot(snapshot, endpointID: endpointID)
+            }
         }
-        if let raw = restored.snapshot, let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) {
-            applyGlobalSnapshot(snapshot)
+        if deploymentProjections.isEmpty,
+           let raw = restored.snapshot,
+           let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) {
+            applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
         }
         rebuildOutboxOverlays()
+    }
+
+    private func activateSyncProjection(for endpoint: NauclioEndpoint) {
+        if let persisted = syncDiskState.projections[endpoint.id] {
+            syncProjection = persisted
+        } else {
+            syncProjection = NauclioSyncProjection(cursor: syncDiskState.cursor, snapshot: syncDiskState.snapshot)
+            syncDiskState.projections[endpoint.id] = syncProjection
+            syncDiskState.cursor = nil
+            syncDiskState.snapshot = nil
+        }
+        if let daemonID = endpoint.daemonID {
+            for index in syncDiskState.outbox.indices where syncDiskState.outbox[index].endpointID == daemonID {
+                syncDiskState.outbox[index].endpointID = endpoint.id
+            }
+        }
+        if let raw = syncProjection.snapshot,
+           let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) {
+            applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
+        } else {
+            updateSelectedState()
+        }
+    }
+
+    private func persistActiveProjection(endpointID: String) {
+        guard endpoint.id == endpointID else { return }
+        syncDiskState.projections[endpointID] = syncProjection
     }
 
     private func startGlobalSync() {
         syncTask?.cancel()
         guard let rpc else { return }
+        let endpointID = endpoint.id
         var request = Nauclio_V1_SyncRequest()
-        request.conversationLimit = 100
+        request.conversationLimit = 0
         request.heartbeatMs = 15_000
-        if syncDiskState.snapshot != nil,
-           let raw = syncDiskState.cursor, let cursor = try? Nauclio_V1_SyncCursor(serializedBytes: raw) {
+        if syncProjection.snapshot != nil,
+           let raw = syncProjection.cursor, let cursor = try? Nauclio_V1_SyncCursor(serializedBytes: raw) {
             request.after = cursor
         }
         syncTask = Task { [weak self] in
             do {
                 try await rpc.watchSync(request) { [weak self] frame in
-                    await self?.applySyncFrame(frame)
+                    await self?.applySyncFrame(frame, endpointID: endpointID)
                 }
             } catch where Self.isExpectedCancellation(error) { }
             catch { self?.connectionStopped(error, client: rpc) }
         }
     }
 
-    private func applySyncFrame(_ frame: Nauclio_V1_SyncFrame) async {
+    private func applySyncFrame(_ frame: Nauclio_V1_SyncFrame, endpointID: String) async {
+        guard endpoint.id == endpointID else { return }
         if frame.hasSnapshot {
-            syncDiskState.snapshot = try? frame.snapshot.serializedData()
-            applyGlobalSnapshot(frame.snapshot)
+            syncProjection.snapshot = try? frame.snapshot.serializedData()
+            applyGlobalSnapshot(frame.snapshot, endpointID: endpointID)
+        } else if frame.hasDelta,
+                  let raw = syncProjection.snapshot,
+                  let current = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) {
+            let next = GlobalProjectionReducer.applying(frame.delta, to: current)
+            syncProjection.snapshot = try? next.serializedData()
+            applyGlobalSnapshot(next, endpointID: endpointID)
         }
         if frame.hasCursor {
-            syncDiskState.cursor = try? frame.cursor.serializedData()
+            syncProjection.cursor = try? frame.cursor.serializedData()
         }
+        persistActiveProjection(endpointID: endpointID)
         reconcileOutboxWithProjection()
         try? await syncPersistence.save(syncDiskState)
     }
 
-    private func applyGlobalSnapshot(_ snapshot: Nauclio_V1_GlobalSnapshot) {
+    private func applyGlobalSnapshot(_ snapshot: Nauclio_V1_GlobalSnapshot, endpointID: String) {
         var global = snapshot.state
         let boardProjection = OptimisticWorkspaceProjection.reconcileBoards(global.boards, pending: pendingBoards)
         global.boards = boardProjection.boards
@@ -1030,38 +1153,38 @@ final class NauclioStore {
             }
             notificationStatuses[card.id] = card.runtime
         }
+        let previousProjectIDs = Set(projectEndpointIDs.compactMap { $0.value == endpointID ? $0.key : nil })
+        for projectID in previousProjectIDs {
+            projectDirectory.removeValue(forKey: projectID)
+            projectEndpointIDs.removeValue(forKey: projectID)
+            navigationBoards.removeValue(forKey: projectID)
+            navigationCards.removeValue(forKey: projectID)
+        }
         for project in global.projects {
             projectDirectory[project.id] = project
-            projectEndpointIDs[project.id] = endpoint.id
+            projectEndpointIDs[project.id] = endpointID
             navigationBoards[project.id] = global.boards.filter { $0.projectID == project.id }
             navigationCards[project.id] = global.cards.filter { $0.projectID == project.id }
         }
-        if selectedProjectID.isEmpty || !global.projects.contains(where: { $0.id == selectedProjectID }) {
-            selectedProjectID = global.projects.first?.id ?? ""
-        }
-        var selected = global
-        if let project = global.projects.first(where: { $0.id == selectedProjectID }) { selected.project = project }
-        selected.boards = global.boards.filter { $0.projectID == selectedProjectID }
-        selected.cards = global.cards.filter { $0.projectID == selectedProjectID }
-        selected.chats = global.chats.filter { $0.projectID == selectedProjectID }
-        state = selected
-        if selectedBoardID.isEmpty || !selected.boards.contains(where: { $0.id == selectedBoardID }) {
-            selectedBoardID = selected.boards.first?.id ?? ""
-        }
-        chatProjects = global.projects
-        chats = global.chats.sorted {
+        chats.removeAll { previousProjectIDs.contains($0.projectID) }
+        chats.append(contentsOf: global.chats)
+        chats = Array(chats.reduce(into: [String: Nauclio_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
             ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt)
         }
-        schedules = snapshot.schedules.filter { $0.projectID == selectedProjectID }
-        if selectedScheduleID == nil || !schedules.contains(where: { $0.id == selectedScheduleID }) {
-            selectedScheduleID = schedules.first?.id
+        chatProjects = projects
+        updateSelectedState(base: global)
+        if projectEndpointIDs[selectedProjectID] == endpointID {
+            schedules = snapshot.schedules.filter { $0.projectID == selectedProjectID }
+            if selectedScheduleID == nil || !schedules.contains(where: { $0.id == selectedScheduleID }) {
+                selectedScheduleID = schedules.first?.id
+            }
+            if let selectedScheduleID {
+                scheduleRuns = snapshot.scheduleRuns.filter { $0.scheduleID == selectedScheduleID }
+            } else {
+                scheduleRuns = []
+            }
+            boardSettings = snapshot.settings
         }
-        if let selectedScheduleID {
-            scheduleRuns = snapshot.scheduleRuns.filter { $0.scheduleID == selectedScheduleID }
-        } else {
-            scheduleRuns = []
-        }
-        boardSettings = snapshot.settings
         if let selectedID = selectedCardID ?? selectedChatID,
            let projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID }) {
             conversation = projected
@@ -1071,8 +1194,24 @@ final class NauclioStore {
         rebuildOutboxOverlays()
     }
 
+    private func updateSelectedState(base: Nauclio_V1_State? = nil) {
+        if selectedProjectID.isEmpty || projectDirectory[selectedProjectID] == nil {
+            selectedProjectID = projects.first?.id ?? ""
+        }
+        var selected = base ?? state
+        selected.projects = projects
+        selected.project = projectDirectory[selectedProjectID] ?? Nauclio_V1_Project()
+        selected.boards = navigationBoards[selectedProjectID] ?? []
+        selected.cards = navigationCards[selectedProjectID] ?? []
+        selected.chats = chats.filter { $0.projectID == selectedProjectID }
+        state = selected
+        if selectedBoardID.isEmpty || !selected.boards.contains(where: { $0.id == selectedBoardID }) {
+            selectedBoardID = selected.boards.first?.id ?? ""
+        }
+    }
+
     private func projectedConversation(cardID: String) -> Nauclio_V1_ConversationSnapshot? {
-        guard let raw = syncDiskState.snapshot,
+        guard let raw = syncProjection.snapshot,
               let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) else { return nil }
         return snapshot.conversations.first { $0.detail.card.id == cardID }
     }
@@ -1122,13 +1261,12 @@ final class NauclioStore {
     }
 
     private func reconcileOutboxWithProjection() {
-        guard let raw = syncDiskState.snapshot,
+        guard let raw = syncProjection.snapshot,
               let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) else { return }
         let cardIDs = Set((snapshot.state.cards + snapshot.state.chats).map(\.id))
-        let messageIDs = Set(snapshot.conversations.flatMap { $0.conversation.messages.map(\.id) })
         syncDiskState.outbox.removeAll { entry in
             guard let serverID = entry.serverID else { return false }
-            return entry.kind == .sendMessage ? messageIDs.contains(serverID) : cardIDs.contains(serverID)
+            return entry.kind == .sendMessage || cardIDs.contains(serverID)
         }
         rebuildOutboxOverlays()
     }
@@ -1147,7 +1285,7 @@ final class NauclioStore {
             while !Task.isCancelled {
                 guard let rpc = self.rpc, self.phase.isConnected else { return }
                 guard let index = self.syncDiskState.outbox.firstIndex(where: {
-                    $0.daemonID == (self.endpoint.daemonID ?? self.endpoint.id) && $0.serverID == nil
+                    $0.endpointID == self.endpoint.id && $0.serverID == nil
                 }) else { return }
                 var entry = self.syncDiskState.outbox[index]
                 do {
@@ -1164,7 +1302,14 @@ final class NauclioStore {
                         entry.serverID = response.messageID.isEmpty ? entry.optimisticID : response.messageID
                     }
                     entry.lastError = nil
-                    self.syncDiskState.outbox[index] = entry
+                    if entry.kind == .sendMessage {
+                        // SendMessage returning means the durable daemon accepted
+                        // the command. Conversation content arrives on its own
+                        // per-card stream, not the metadata-only global stream.
+                        self.syncDiskState.outbox.remove(at: index)
+                    } else {
+                        self.syncDiskState.outbox[index] = entry
+                    }
                     self.reconcileOutboxWithProjection()
                     try? await self.syncPersistence.save(self.syncDiskState)
                 } catch {
@@ -1180,9 +1325,9 @@ final class NauclioStore {
     }
 
     func refreshState() async {
-        guard let raw = syncDiskState.snapshot,
+        guard let raw = syncProjection.snapshot,
               let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) else { return }
-        applyGlobalSnapshot(snapshot)
+        applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
     }
 
     private func stateFilter() -> Nauclio_V1_GetStateRequest {
@@ -1229,26 +1374,61 @@ final class NauclioStore {
     }
 
     func openConversation(cardID: String, chat: Bool = false) async {
-        if let card = chats.first(where: { $0.id == cardID }), !card.projectID.isEmpty,
-           !(await ensureProjectConnection(card.projectID)) { return }
+        let card = chats.first(where: { $0.id == cardID })
+            ?? navigationCards.values.lazy.compactMap({ $0.first(where: { $0.id == cardID }) }).first
+        if let projectID = card?.projectID, !projectID.isEmpty,
+           !(await ensureProjectConnection(projectID)) { return }
         selectedCardID = chat ? nil : cardID
         selectedChatID = chat ? cardID : nil
         if chat { newChatProjectID = "" }
         conversationLoading = true
         conversationTask?.cancel()
-        guard let snapshot = projectedConversation(cardID: cardID) ?? (conversation?.detail.card.id == cardID ? conversation : nil) else {
+        if let cached = projectedConversation(cardID: cardID) {
+            acceptConversation(cached, chat: chat)
+        }
+        guard let rpc else {
             conversationLoading = false
-            errorMessage = "This conversation has not synchronized yet. Nauclio will open it automatically when its global event arrives."
+            errorMessage = "The project host is not connected."
             return
         }
-        conversation = snapshot; selectedDetail = snapshot.detail; conversationLoading = false
+        do {
+            let snapshot = try await rpc.conversation(cardID: cardID)
+            guard (selectedCardID ?? selectedChatID) == cardID else { return }
+            acceptConversation(snapshot, chat: chat)
+            let after = snapshot.conversation.lastSeq
+            conversationTask = Task { [weak self] in
+                do {
+                    try await rpc.watchConversation(cardID: cardID, after: after) { [weak self] update in
+                        await self?.applyConversationUpdate(update, cardID: cardID)
+                    }
+                } catch where Self.isExpectedCancellation(error) { }
+                catch {
+                    guard let self, (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
+                    self.errorMessage = "Conversation updates paused: \(error.localizedDescription)"
+                }
+            }
+        } catch {
+            conversationLoading = false
+            errorMessage = "Could not open this conversation: \(error.localizedDescription)"
+        }
+    }
+
+    private func acceptConversation(_ snapshot: Nauclio_V1_ConversationSnapshot, chat: Bool) {
+        conversation = snapshot
+        selectedDetail = snapshot.detail
+        conversationLoading = false
         composerProvider = snapshot.detail.card.provider
         composerModel = snapshot.detail.card.model
         composerEffort = snapshot.detail.card.effort
         let selectedHarness = harnessCatalog.harnesses.first { $0.id == composerProvider }
         composerProviderOptions = ProviderOptionValues.defaults(for: selectedHarness)
         composerProviderOptions.merge(snapshot.detail.card.providerOptions) { _, saved in saved }
-        if chat, let card = chats.first(where: { $0.id == cardID }) { markChatRead(card) }
+        if chat, let card = chats.first(where: { $0.id == snapshot.detail.card.id }) { markChatRead(card) }
+    }
+
+    private func applyConversationUpdate(_ update: Nauclio_V1_ConversationUpdate, cardID: String) {
+        guard (selectedCardID ?? selectedChatID) == cardID else { return }
+        apply(update)
     }
 
     func closeConversation() {
@@ -1290,6 +1470,8 @@ final class NauclioStore {
     func sendComposer() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!text.isEmpty || !composerAttachments.isEmpty), let id = selectedCardID ?? selectedChatID else { return }
+        if let projectID = selectedCard?.projectID, !projectID.isEmpty,
+           !(await ensureProjectConnection(projectID)) { return }
         composerText = ""
         let attachments = composerAttachments; composerAttachments = []
         var parts = attachments
@@ -1306,7 +1488,7 @@ final class NauclioStore {
             syncDiskState.outbox.append(NauclioOutboxEntry(
                 commandID: request.commandID,
                 clientID: syncClientID,
-                daemonID: endpoint.daemonID ?? endpoint.id,
+                endpointID: endpoint.id,
                 kind: .sendMessage,
                 request: try request.serializedData(),
                 optimisticID: request.messageID,
@@ -1484,6 +1666,7 @@ final class NauclioStore {
         labelIDs: [String] = []
     ) async {
         let destinationProjectID = projectID ?? selectedProjectID
+        guard await ensureProjectConnection(destinationProjectID) else { return }
         var request = Nauclio_V1_CreateConversationRequest()
         request.projectID = destinationProjectID; request.boardID = chat ? "" : selectedBoardID
         request.lane = lane ?? selectedBoard?.lanes.first?.id ?? "backlog"; request.title = title; request.prompt = prompt
@@ -1499,7 +1682,7 @@ final class NauclioStore {
             syncDiskState.outbox.append(NauclioOutboxEntry(
                 commandID: request.commandID,
                 clientID: syncClientID,
-                daemonID: target?.daemonID ?? endpoint.daemonID ?? endpoint.id,
+                endpointID: target?.id ?? endpoint.id,
                 kind: chat ? .createChat : .createCard,
                 request: try request.serializedData(),
                 optimisticID: optimisticID,

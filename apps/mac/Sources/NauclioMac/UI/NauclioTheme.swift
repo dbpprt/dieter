@@ -10,9 +10,9 @@ private extension Color {
     }
 }
 
-/// Neutral near-black surfaces with a single violet accent, matching the
-/// desktop design references. Hairlines are low-opacity white so panes read
-/// as one fluent surface instead of outlined boxes.
+/// Neutral near-black surfaces with Nauclio's cobalt, Aegean, and seafoam
+/// brand accents. Hairlines are low-opacity white so panes read as one fluent
+/// surface instead of outlined boxes.
 enum NauclioTheme {
     static let background = Color(rgb: 0x0C0C10)
     static let sidebar = Color(rgb: 0x111116)
@@ -25,15 +25,15 @@ enum NauclioTheme {
     static let text = Color(rgb: 0xF4F4F7)
     static let subtle = Color(rgb: 0xA6A6B4)
     static let tertiary = Color(rgb: 0x6F6F7C)
-    static let cobalt = Color(rgb: 0x6D5AE7)
-    static let aegean = Color(rgb: 0x9D91F5)
-    static let primary = Color(rgb: 0x8F7FF7)
-    static let seafoam = Color(rgb: 0x3DD68C)
+    static let cobalt = Color(rgb: 0x2563EB)
+    static let aegean = Color(rgb: 0x22D3EE)
+    static let primary = Color(rgb: 0x2563EB)
+    static let seafoam = Color(rgb: 0x5EEAD4)
     static let amber = Color(rgb: 0xE8A33D)
     static let coral = Color(rgb: 0xF26D80)
 
     /// Background for the selected navigation or list row.
-    static let selection = Color(rgb: 0x6D5AE7).opacity(0.22)
+    static let selection = Color(rgb: 0x2563EB).opacity(0.22)
 }
 
 enum NauclioMetrics {

@@ -6,7 +6,6 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -354,11 +353,9 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                 }
             }
             state.endpointConnections.forEach { endpoint ->
-                val activeRoute = endpoint.phase == EndpointPhase.CONNECTED
                 Surface(
                     color = NauclioSurfaceHigh,
                     shape = RoundedCornerShape(15.dp),
-                    border = if (activeRoute) BorderStroke(1.dp, NauclioSeafoam.copy(alpha = 0.8f)) else null,
                 ) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
@@ -382,8 +379,8 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                             Text(endpoint.address, color = NauclioMuted, fontSize = 11.sp)
                         }
                         Text(
-                            if (activeRoute) "Active route · ${endpoint.detail}" else endpoint.detail,
-                            color = if (activeRoute) NauclioSeafoam else NauclioMuted,
+                            endpoint.detail,
+                            color = if (endpoint.phase == EndpointPhase.CONNECTED) NauclioSeafoam else NauclioMuted,
                             fontSize = 10.sp,
                         )
                     }

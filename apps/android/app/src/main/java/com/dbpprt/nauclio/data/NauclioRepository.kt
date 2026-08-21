@@ -360,7 +360,7 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
         endpoint: NauclioEndpoint,
         operation: suspend NauclioServiceGrpcKt.NauclioServiceCoroutineStub.() -> T,
     ): T {
-        requireNotNull(endpoint.daemonId) { "Select a Nauclio daemon first" }
+        requireNotNull(endpoint.daemonId) { "No routed Nauclio machine is available" }
         val builder = AndroidChannelBuilder.forAddress(endpoint.host, endpoint.port)
             .context(appContext)
             .maxInboundMessageSize(16 * 1024 * 1024)
@@ -379,7 +379,7 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
 
     override suspend fun prepareDaemon(): String {
         val endpoint = activeEndpoint
-        val daemonId = endpoint.daemonId ?: error("Select a Nauclio daemon first")
+        val daemonId = endpoint.daemonId ?: error("No routed Nauclio machine is available")
         synchronized(lock) {
             channel?.shutdownNow()
             channel = null
@@ -389,6 +389,7 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
         val route = gatewayStub().resolveDaemonRoute(DaemonRef.newBuilder().setDaemonId(daemonId).build())
         if (route.directCandidatesCount > 0) {
             val access = gatewayStub().exchangeDaemonToken(ExchangeDaemonTokenRequest.newBuilder().setDaemonId(daemonId).build())
+            require(access.tokenType == "Bearer") { "Gateway returned an unsupported daemon token" }
             for (candidate in route.directCandidatesList.sortedByDescending { it.priority }) {
                 val direct = runCatching {
                     directChannel(candidate.host, candidate.port, daemonId, route.daemonCaPem.toByteArray())

@@ -62,12 +62,24 @@ import UniformTypeIdentifiers
 func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
     struct StoredIdentity: Decodable {
         let id: String
+        let certificatePem: Data
         let daemonCaPem: Data
     }
 
     let port = try #require(Int(ProcessInfo.processInfo.environment["NAUCLIO_LIVE_DIRECT_PORT"] ?? ""))
     let identityURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".nauclio/daemon/identity.json")
     let identity = try JSONDecoder().decode(StoredIdentity.self, from: Data(contentsOf: identityURL))
+    let certificateBody = try #require(String(data: identity.certificatePem, encoding: .utf8))
+        .replacingOccurrences(of: "-----BEGIN CERTIFICATE-----", with: "")
+        .replacingOccurrences(of: "-----END CERTIFICATE-----", with: "")
+        .components(separatedBy: .whitespacesAndNewlines)
+        .joined()
+    let certificateDER = try #require(Data(base64Encoded: certificateBody))
+    #expect(NauclioRPC.verifyDaemonCertificateChain(
+        [certificateDER],
+        daemonCAPEM: identity.daemonCaPem,
+        daemonID: identity.id
+    ))
     let endpoint = NauclioEndpoint(name: "Live direct route", host: "127.0.0.1", port: port, daemonID: identity.id)
     let client = try NauclioRPC(
         endpoint: endpoint,
@@ -93,6 +105,41 @@ func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
         // Reaching it proves IP target selection, TLS, CA validation, HTTP/2,
         // and gRPC framing all completed successfully.
         #expect(error.code == .unauthenticated)
+    }
+}
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["NAUCLIO_LIVE_DIRECT_PORT"] != nil))
+func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
+    struct StoredIdentity: Decodable {
+        let id: String
+        let daemonCaPem: Data
+    }
+
+    let port = try #require(Int(ProcessInfo.processInfo.environment["NAUCLIO_LIVE_DIRECT_PORT"] ?? ""))
+    let identityURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".nauclio/daemon/identity.json")
+    let identity = try JSONDecoder().decode(StoredIdentity.self, from: Data(contentsOf: identityURL))
+    let endpoint = NauclioEndpoint(name: "Wrong identity", host: "127.0.0.1", port: port, daemonID: "wrong-daemon")
+    let client = try NauclioRPC(
+        endpoint: endpoint,
+        direct: .init(
+            host: endpoint.host,
+            port: endpoint.port,
+            daemonID: "wrong-daemon",
+            daemonCAPEM: identity.daemonCaPem,
+            accessToken: "deliberately-invalid-test-token"
+        )
+    )
+    let connection = Task { try? await client.run() }
+    defer {
+        connection.cancel()
+        client.shutdown()
+    }
+
+    do {
+        _ = try await client.health(timeout: .seconds(2))
+        Issue.record("A direct route accepted a certificate for another daemon")
+    } catch let error as RPCError {
+        #expect(error.code != .unauthenticated)
     }
 }
 
@@ -407,6 +454,7 @@ func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
     #expect(ConnectionPhase.authenticationRequired.needsConnectionOverlay)
     #expect(!ConnectionPhase.connecting.needsConnectionOverlay)
     #expect(!ConnectionPhase.disconnected.needsConnectionOverlay)
+    #expect(ConnectionPhase.incompatible(found: "1").label == "Update required")
 }
 
 @Test func machineRoutingAutomaticallyUsesAnOnlineTarget() {
@@ -469,23 +517,56 @@ func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
     let entry = NauclioOutboxEntry(
         commandID: request.commandID,
         clientID: request.clientID,
-        daemonID: "daemon-one",
+        endpointID: "https://nauclio.example:443#daemon-one",
         kind: .sendMessage,
         request: try request.serializedData(),
         optimisticID: request.messageID,
         attempts: 0,
         createdAt: Date(timeIntervalSince1970: 1)
     )
-    try await persistence.save(.init(cursor: try cursor.serializedData(), snapshot: try snapshot.serializedData(), outbox: [entry]))
+    let endpointID = "https://nauclio.example:443#daemon-one"
+    try await persistence.save(.init(
+        projections: [endpointID: .init(cursor: try cursor.serializedData(), snapshot: try snapshot.serializedData())],
+        outbox: [entry]
+    ))
 
     let restored = await NauclioSyncPersistence(root: root).load()
-    let cursorData = try #require(restored.cursor)
-    let snapshotData = try #require(restored.snapshot)
+    let projection = try #require(restored.projections[endpointID])
+    let cursorData = try #require(projection.cursor)
+    let snapshotData = try #require(projection.snapshot)
     let restoredCursor = try Nauclio_V1_SyncCursor(serializedBytes: cursorData)
     let restoredSnapshot = try Nauclio_V1_GlobalSnapshot(serializedBytes: snapshotData)
     #expect(restoredCursor.sequence == 42)
     #expect(restoredSnapshot.state.projects.first?.id == "p_one")
     #expect(restored.outbox.first?.optimisticID == "msg_one")
+    #expect(restored.outbox.first?.endpointID == endpointID)
+}
+
+@Test func globalProjectionReducerAppliesMetadataChangesAndTombstones() {
+    var retained = Nauclio_V1_Project(); retained.id = "p_keep"; retained.name = "Before"
+    var removed = Nauclio_V1_Project(); removed.id = "p_remove"
+    var oldCard = Nauclio_V1_Card(); oldCard.id = "c_remove"; oldCard.projectID = retained.id
+    var snapshot = Nauclio_V1_GlobalSnapshot()
+    snapshot.state.projects = [retained, removed]
+    snapshot.state.cards = [oldCard]
+
+    retained.name = "After"
+    var added = Nauclio_V1_Project(); added.id = "p_add"; added.name = "Added"
+    var chat = Nauclio_V1_Card(); chat.id = "chat_add"; chat.projectID = added.id
+    var settings = Nauclio_V1_Settings(); settings.globalParallelLimit = 7
+    var delta = Nauclio_V1_GlobalDelta()
+    delta.projects = [retained, added]
+    delta.removedProjectIds = [removed.id]
+    delta.removedCardIds = [oldCard.id]
+    delta.chats = [chat]
+    delta.settings = settings
+
+    let reduced = GlobalProjectionReducer.applying(delta, to: snapshot)
+    #expect(reduced.state.projects.map(\.id) == ["p_keep", "p_add"])
+    #expect(reduced.state.projects.first?.name == "After")
+    #expect(reduced.state.cards.isEmpty)
+    #expect(reduced.state.chats.map(\.id) == ["chat_add"])
+    #expect(reduced.settings.globalParallelLimit == 7)
 }
 
 @Test func messageDeliveryReceiptsFollowOutboxAndSyncAcknowledgements() {

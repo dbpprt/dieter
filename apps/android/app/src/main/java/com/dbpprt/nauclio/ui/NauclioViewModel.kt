@@ -50,14 +50,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
 import java.time.ZoneId
 
 private const val CONVERSATION_PAGE_SIZE = 30
@@ -99,6 +96,7 @@ data class NauclioUiState(
     val configuredConnections: List<EndpointConnection> = NAUCLIO_ENDPOINTS.map {
         EndpointConnection(it.id, it.label, it.address)
     },
+    val activeGatewayId: String = NAUCLIO_ENDPOINTS.first().id,
     val loading: Boolean = true,
     val working: Boolean = false,
     val error: String? = null,
@@ -283,14 +281,15 @@ class NauclioViewModel(
         appPreferences.setBoardNotificationsEnabled(_state.value.selectedBoardId, enabled)
     }
 
-    fun updateConnectionTargets(endpoints: List<NauclioEndpoint>) {
+    fun updateConnectionTargets(endpoints: List<NauclioEndpoint>, activeGatewayId: String) {
         try {
-            connectionManager.updateEndpoints(endpoints)
+            connectionManager.updateEndpoints(endpoints, activeGatewayId)
             _state.update {
                 it.copy(
                     configuredConnections = endpoints.map { endpoint ->
                         EndpointConnection(endpoint.id, endpoint.label, endpoint.address)
                     },
+                    activeGatewayId = activeGatewayId,
                     error = null,
                 )
             }
@@ -306,10 +305,13 @@ class NauclioViewModel(
                 configuredConnections = NAUCLIO_ENDPOINTS.map { endpoint ->
                     EndpointConnection(endpoint.id, endpoint.label, endpoint.address)
                 },
+                activeGatewayId = NAUCLIO_ENDPOINTS.first().id,
                 error = null,
             )
         }
     }
+
+    fun selectGateway(id: String) = connectionManager.selectGateway(id)
 
     fun showConnectionDialog() {
         connectionDialogManuallyRequested = true
@@ -358,7 +360,9 @@ class NauclioViewModel(
         _state.update { current ->
             val selectedCardId = resolveConversationId(current.selectedCardId, connection.resolvedConversationIds)
             current.copy(
-                endpoint = connection.endpoint?.address ?: current.endpoint,
+                endpoint = connection.endpoint?.address
+                    ?: connection.configuredConnections.firstOrNull { it.id == connection.activeGatewayId }?.address
+                    ?: current.endpoint,
                 connectionPhase = connection.phase,
                 connectionDialogVisible = when {
                     !connection.desiredConnected -> true
@@ -369,6 +373,7 @@ class NauclioViewModel(
                 desiredConnected = connection.desiredConnected,
                 backgroundSyncEnabled = connection.backgroundSyncEnabled,
                 configuredConnections = connection.configuredConnections,
+                activeGatewayId = connection.activeGatewayId,
                 endpointConnections = connection.endpointConnections,
                 loading = connection.desiredConnected && remote == null && connection.phase != ConnectionPhase.UNAVAILABLE,
                 runtimeStatus = connection.runtimeStatus,
@@ -683,6 +688,11 @@ class NauclioViewModel(
         if (!foreground) return
         conversationJob?.cancel()
         conversationJob = viewModelScope.launch {
+            val projectId = (_state.value.cards + _state.value.chats + _state.value.spaceCards)
+                .firstOrNull { it.id == cardId }
+                ?.projectId
+                .orEmpty()
+            connectionManager.ensureProjectRoute(projectId)
             repository.watchConversation(cardId, CONVERSATION_PAGE_SIZE)
                 .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
                 .collectLatest { snapshot ->
@@ -710,6 +720,7 @@ class NauclioViewModel(
                 conversationJob?.cancel()
                 _state.update { it.copy(conversationRefreshing = true, error = null) }
                 try {
+                    connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
                     val snapshot = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
                     if (_state.value.selectedCardId != cardId) return@withLock
                     _state.update { current ->
@@ -748,6 +759,7 @@ class NauclioViewModel(
         viewModelScope.launch {
             _state.update { it.copy(historyLoading = true) }
             try {
+                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
                 val page = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE, before = current.historyStart)
                 _state.update { latest ->
                     val liveIds = latest.conversation?.conversation?.messagesList.orEmpty().mapTo(mutableSetOf()) { it.id }
@@ -771,6 +783,7 @@ class NauclioViewModel(
 
     suspend fun loadToolOutput(messageId: String, part: MessagePart): ToolOutput {
         val cardId = _state.value.selectedCardId ?: error("No conversation is selected")
+        connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
         return repository.toolOutput(cardId, messageId, part.toolCallId, part.payloadRevision)
     }
 
@@ -972,6 +985,7 @@ class NauclioViewModel(
     private suspend fun loadFiles(path: String = _state.value.filePath) {
         val projectId = _state.value.selectedProjectId
         if (projectId.isBlank()) return
+        connectionManager.ensureProjectRoute(projectId)
         val list = repository.files(projectId, path, _state.value.showHiddenFiles)
         _state.update { it.copy(filePath = list.path, files = list.entriesList, fileDocument = null, fileDraft = "", fileDirty = false) }
     }
@@ -1025,6 +1039,7 @@ class NauclioViewModel(
     fun previewSchedule(cron: String, timezone: String) {
         viewModelScope.launch {
             try {
+                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
                 val result = repository.previewSchedule(cron, timezone)
                 _state.update { it.copy(schedulePreview = result.timesList, error = null) }
             } catch (error: Throwable) {
@@ -1071,6 +1086,7 @@ class NauclioViewModel(
     fun loadAdministration() {
         viewModelScope.launch {
             try {
+                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
                 val (settings, options, archivedProjects) = coroutineScope {
                     val settings = async { repository.settings() }
                     val options = async { repository.settingsOptions() }
@@ -1096,6 +1112,7 @@ class NauclioViewModel(
     fun listDirectories(path: String = "") {
         viewModelScope.launch {
             try {
+                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
                 _state.update { it.copy(directoryListing = repository.listDirectories(path)) }
             } catch (error: Throwable) {
                 _state.update { it.copy(error = readableError(error)) }
@@ -1203,6 +1220,7 @@ class NauclioViewModel(
             mutationMutex.withLock {
                 _state.update { it.copy(working = true, error = null) }
                 try {
+                    connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
                     block()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -1250,17 +1268,6 @@ class NauclioViewModel(
 
     private suspend fun refreshStateOnce() {
         connectionManager.state.value.selectedState?.let(::applyRemoteState)
-    }
-
-    private suspend fun awaitProjectConnection(projectId: String) {
-        if (projectId.isBlank()) return
-        val host = _state.value.projectHosts[projectId] ?: return
-        connectionManager.selectProject(projectId)
-        withTimeout(20_000) {
-            connectionManager.state.filter { connection ->
-                connection.phase == ConnectionPhase.CONNECTED && connection.endpoint?.daemonId == host.daemonId
-            }.first()
-        }
     }
 
     private suspend fun <T> runFeatureCall(apply: (T) -> Unit, block: suspend () -> T) {
