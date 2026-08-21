@@ -95,6 +95,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.dbpprt.nauclio.ui.theme.NauclioAbyss
 
 @Composable
 fun NewConversationScreen(
@@ -371,7 +372,7 @@ private fun NewChatBody(
                 onClick = { if (canSubmit) onSubmit() },
                 modifier = Modifier.size(52.dp).testTag("create-chat"),
                 containerColor = NauclioAegean,
-                contentColor = Color(0xFF071426),
+                contentColor = NauclioAbyss,
             ) { Icon(Icons.AutoMirrored.Filled.Send, "Start chat") }
         }
     }

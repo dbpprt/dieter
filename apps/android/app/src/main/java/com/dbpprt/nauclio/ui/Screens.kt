@@ -79,6 +79,7 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewKanban
@@ -166,6 +167,7 @@ import com.dbpprt.nauclio.ui.theme.NauclioAegean
 import com.dbpprt.nauclio.ui.theme.NauclioCobalt
 import com.dbpprt.nauclio.ui.theme.NauclioMuted
 import com.dbpprt.nauclio.ui.theme.NauclioOutline
+import com.dbpprt.nauclio.ui.theme.NauclioPrimary
 import com.dbpprt.nauclio.ui.theme.NauclioSurface
 import com.dbpprt.nauclio.ui.theme.NauclioSurfaceHigh
 import com.dbpprt.nauclio.v1.Board
@@ -192,8 +194,32 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import com.dbpprt.nauclio.ui.theme.NauclioAmberTint
+import com.dbpprt.nauclio.ui.theme.NauclioIndigoTintDeep
+import com.dbpprt.nauclio.ui.theme.NauclioLavenderTint
+import com.dbpprt.nauclio.ui.theme.NauclioRunning
+import com.dbpprt.nauclio.ui.theme.NauclioAbyss
 
 private const val PROJECT_CHAT_PREVIEW_COUNT = 5
+
+/** Dashed rounded outline used by the reference design for "add" affordances and empty states. */
+internal fun Modifier.dashedBorder(
+    color: Color,
+    cornerRadius: androidx.compose.ui.unit.Dp = 20.dp,
+    strokeWidth: androidx.compose.ui.unit.Dp = 1.dp,
+): Modifier = drawBehind {
+    val stroke = androidx.compose.ui.graphics.drawscope.Stroke(
+        width = strokeWidth.toPx(),
+        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
+            floatArrayOf(9.dp.toPx(), 7.dp.toPx()),
+        ),
+    )
+    drawRoundRect(
+        color = color,
+        style = stroke,
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius.toPx()),
+    )
+}
 
 private data class DraggedBoardLabel(val id: String, val name: String, val color: String)
 
@@ -297,6 +323,9 @@ private fun SpacesOverview(state: NauclioUiState, model: NauclioViewModel, modif
                 )
             }
             IconButton(onClick = { searchOpen = !searchOpen }) { Icon(Icons.Outlined.Search, "Search spaces") }
+            IconButton(onClick = { model.openSurface(AppSurface.APP_SETTINGS) }) {
+                Icon(Icons.Outlined.Settings, "App settings", tint = NauclioMuted)
+            }
         }
         if (searchOpen) CompactSearchField(query, { query = it }, "Search projects and boards")
         val showProjectHosts = state.projectHosts.values.map { it.daemonId }.distinct().size > 1
@@ -363,17 +392,18 @@ private fun SpacesOverview(state: NauclioUiState, model: NauclioViewModel, modif
                         onClick = { model.openSurface(AppSurface.NEW_PROJECT) },
                         color = Color.Transparent,
                         shape = RoundedCornerShape(18.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, NauclioOutline.copy(alpha = 0.72f)),
-                        modifier = Modifier.fillMaxWidth().testTag("add-git-project"),
+                        modifier = Modifier.fillMaxWidth()
+                            .dashedBorder(NauclioOutline.copy(alpha = 0.9f), cornerRadius = 18.dp)
+                            .testTag("add-git-project"),
                     ) {
                         Row(
-                            Modifier.fillMaxWidth().padding(vertical = 14.dp),
+                            Modifier.fillMaxWidth().padding(vertical = 15.dp),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Default.Add, null, tint = NauclioMuted, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Add, null, tint = NauclioAegean, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Add a Git project", color = NauclioMuted, fontWeight = FontWeight.Medium)
+                            Text("Add a Git project", color = NauclioAegean, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -420,7 +450,7 @@ private fun ProjectSpaceCard(
                 Column(Modifier.weight(1f)) {
                     Text(project.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(compactProjectPath(project.path), color = NauclioMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        Text(compactProjectPath(project.path), color = NauclioMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                         host?.let {
                             Spacer(Modifier.width(7.dp))
                             ProjectHostBadge(it)
@@ -660,6 +690,7 @@ private fun BoardQuickSwitcher(state: NauclioUiState, model: NauclioViewModel, o
                         color = NauclioMuted,
                         fontSize = 10.sp,
                         letterSpacing = 1.3.sp,
+                        fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(top = 8.dp, start = 4.dp),
                     )
                     boards.forEach { board ->
@@ -668,7 +699,14 @@ private fun BoardQuickSwitcher(state: NauclioUiState, model: NauclioViewModel, o
                         val reviews = cards.count { it.lane.contains("review", true) }
                         Row(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                                .then(if (selected) Modifier.border(1.dp, NauclioCobalt, RoundedCornerShape(16.dp)) else Modifier)
+                                .then(
+                                    if (selected) {
+                                        Modifier.background(NauclioLavenderTint.copy(alpha = 0.55f))
+                                            .border(1.dp, NauclioAegean.copy(alpha = 0.65f), RoundedCornerShape(16.dp))
+                                    } else {
+                                        Modifier
+                                    },
+                                )
                                 .clickable {
                                     onDismiss()
                                     model.openBoard(project.id, board.id)
@@ -717,7 +755,7 @@ private fun stableAccent(id: String): Color {
 private fun laneColor(lane: String): Color = when {
     lane.contains("review", true) -> NauclioAmber
     lane.contains("done", true) -> NauclioSeafoam
-    lane.contains("running", true) -> Color(0xFF22D3EE)
+    lane.contains("running", true) -> NauclioRunning
     else -> NauclioMuted.copy(alpha = 0.58f)
 }
 
@@ -784,8 +822,9 @@ private fun BoardList(state: NauclioUiState, model: NauclioViewModel, modifier: 
         FloatingActionButton(
             onClick = { model.openSurface(AppSurface.NEW_CARD) },
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).testTag("new-card"),
-            containerColor = NauclioAegean,
-            contentColor = Color(0xFF071426),
+            containerColor = NauclioPrimary,
+            contentColor = NauclioAbyss,
+            shape = RoundedCornerShape(24.dp),
         ) { Icon(Icons.Default.Add, contentDescription = "New card") }
         labelDragState.label?.let { label ->
             if (labelDragState.pointerInRoot.isSpecified) {
@@ -959,7 +998,11 @@ private fun ChatsList(state: NauclioUiState, model: NauclioViewModel, modifier: 
     var expandedProjects by remember { mutableStateOf(emptySet<String>()) }
     Box(modifier) {
         Column(Modifier.fillMaxSize()) {
-            SimpleScreenHeader("Chats")
+            SimpleScreenHeader("Chats") {
+                IconButton(onClick = { model.openSurface(AppSurface.APP_SETTINGS) }) {
+                    Icon(Icons.Outlined.Settings, "App settings", tint = NauclioMuted)
+                }
+            }
             SurfaceErrorBanner(state.error, model::clearError)
             CompactSearchField(query, { query = it }, "Search chats")
             val chats = state.chats
@@ -1047,11 +1090,11 @@ private fun ChatsList(state: NauclioUiState, model: NauclioViewModel, modifier: 
         ExtendedFloatingActionButton(
             onClick = { model.openSurface(AppSurface.NEW_CHAT) },
             icon = { Icon(Icons.Default.Add, null) },
-            text = { Text("New chat") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).height(48.dp),
-            containerColor = NauclioAegean,
-            contentColor = Color(0xFF071426),
-            shape = RoundedCornerShape(18.dp),
+            text = { Text("New chat", fontWeight = FontWeight.SemiBold) },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).height(52.dp),
+            containerColor = NauclioPrimary,
+            contentColor = NauclioAbyss,
+            shape = RoundedCornerShape(50),
         )
     }
 }
@@ -1069,7 +1112,7 @@ private fun ChatRow(chat: BoardCard, model: NauclioViewModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (chat.pinned) {
-                Surface(shape = CircleShape, color = Color(0xFF10223A), modifier = Modifier.size(36.dp)) {
+                Surface(shape = CircleShape, color = NauclioLavenderTint, modifier = Modifier.size(36.dp)) {
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PushPin, null, tint = NauclioAegean, modifier = Modifier.size(17.dp)) }
                 }
             } else {
@@ -1180,7 +1223,7 @@ private fun FileList(state: NauclioUiState, model: NauclioViewModel, modifier: M
     var menuOpen by remember { mutableStateOf(false) }
     Box(modifier) {
     Column(Modifier.fillMaxSize()) {
-        SimpleScreenHeader("Files", "${state.project?.name ?: "Project"} · ${state.files.size} loaded") {
+        SimpleScreenHeader("Files", "${state.project?.name?.lowercase() ?: "project"} · ${state.files.size} loaded") {
             IconButton(onClick = model::refresh) { Icon(Icons.Outlined.Refresh, "Refresh files") }
             Box {
                 IconButton(onClick = { menuOpen = true }) { Icon(Icons.Outlined.MoreVert, "File options") }
@@ -1193,6 +1236,11 @@ private fun FileList(state: NauclioUiState, model: NauclioViewModel, modifier: M
                     DropdownMenuItem(
                         text = { Text(if (state.showHiddenFiles) "Hide hidden files" else "Show hidden files") },
                         onClick = { menuOpen = false; model.setShowHiddenFiles(!state.showHiddenFiles) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("App settings") },
+                        leadingIcon = { Icon(Icons.Outlined.Settings, null) },
+                        onClick = { menuOpen = false; model.openSurface(AppSurface.APP_SETTINGS) },
                     )
                 }
             }
@@ -1216,7 +1264,7 @@ private fun FileList(state: NauclioUiState, model: NauclioViewModel, modifier: M
                 if (state.filePath.isBlank()) {
                     item(key = "project-root") {
                         Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(Color(0xFF152B45))
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(NauclioLavenderTint)
                                 .padding(horizontal = 12.dp, vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -1351,9 +1399,12 @@ fun SchedulesScreen(state: NauclioUiState, model: NauclioViewModel, contentPaddi
         Column(Modifier.fillMaxSize()) {
             SimpleScreenHeader(
                 "Schedules",
-                "${state.project?.name ?: "Project"} · ${state.schedules.count { it.enabled }} active · ${state.schedules.size} configured",
+                "${state.project?.name?.lowercase() ?: "project"} · ${state.schedules.count { it.enabled }} active · ${state.schedules.size} configured",
             ) {
                 IconButton(onClick = model::refresh) { Icon(Icons.Outlined.Refresh, "Refresh schedules") }
+                IconButton(onClick = { model.openSurface(AppSurface.APP_SETTINGS) }) {
+                    Icon(Icons.Outlined.Settings, "App settings", tint = NauclioMuted)
+                }
             }
             SurfaceErrorBanner(state.error, model::clearError)
             if (!state.connected && state.projects.isEmpty()) {
@@ -1375,8 +1426,11 @@ fun SchedulesScreen(state: NauclioUiState, model: NauclioViewModel, contentPaddi
             ExtendedFloatingActionButton(
                 onClick = { model.openSurface(AppSurface.SCHEDULE_EDITOR) },
                 icon = { Icon(Icons.Default.Add, null) },
-                text = { Text("New schedule") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).height(48.dp),
+                text = { Text("New schedule", fontWeight = FontWeight.SemiBold) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).height(52.dp),
+                containerColor = NauclioPrimary,
+                contentColor = NauclioAbyss,
+                shape = RoundedCornerShape(50),
             )
         }
     }
@@ -1385,33 +1439,32 @@ fun SchedulesScreen(state: NauclioUiState, model: NauclioViewModel, contentPaddi
 @Composable
 private fun ScheduleEmptyState(onCreate: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-            border = androidx.compose.foundation.BorderStroke(1.dp, NauclioOutline),
-            shape = RoundedCornerShape(20.dp),
+        Column(
+            Modifier.fillMaxWidth()
+                .dashedBorder(NauclioOutline.copy(alpha = 0.9f), cornerRadius = 24.dp)
+                .padding(horizontal = 28.dp, vertical = 34.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Column(
-                Modifier.padding(horizontal = 26.dp, vertical = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Surface(shape = RoundedCornerShape(14.dp), color = NauclioSurfaceHigh, modifier = Modifier.size(48.dp)) {
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.CalendarMonth, null, tint = NauclioAegean) }
+            Surface(shape = RoundedCornerShape(18.dp), color = NauclioLavenderTint, modifier = Modifier.size(64.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.CalendarMonth, null, tint = NauclioAegean, modifier = Modifier.size(28.dp))
                 }
-                Spacer(Modifier.height(14.dp))
-                Text("Automate recurring work", fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Create cards on a project calendar, then optionally start their local agents when capacity is available.",
-                    color = NauclioMuted,
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(14.dp))
-                Button(onClick = onCreate) {
-                    Icon(Icons.Default.Add, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Create the first schedule")
-                }
+            }
+            Spacer(Modifier.height(18.dp))
+            Text("Automate recurring work", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Create cards on a project calendar, then optionally start their local agents when capacity is available.",
+                color = NauclioMuted,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(18.dp))
+            Button(onClick = onCreate, shape = RoundedCornerShape(50)) {
+                Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Create the first schedule")
             }
         }
     }
@@ -1693,7 +1746,7 @@ private fun SubagentsBody(state: NauclioUiState, model: NauclioViewModel, modifi
             Text("${subagents.size} ${plural(subagents.size, "subagent")}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             if (active > 0) {
                 Spacer(Modifier.width(8.dp))
-                Text("● $active running", color = Color(0xFF56C7FF), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("● $active running", color = NauclioRunning, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.weight(1f))
             if (active > 0) {
@@ -1755,7 +1808,7 @@ private fun SubagentStatusCard(subagent: Subagent) {
     val title = subagentDisplayTitle(subagent)
     val elapsed = subagentElapsed(subagent)
     val tint = when {
-        running -> Color(0xFF56C7FF)
+        running -> NauclioRunning
         completed -> NauclioSeafoam
         else -> MaterialTheme.colorScheme.error
     }
@@ -2058,7 +2111,7 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
         if (state.selectedCard?.lane?.contains("review", ignoreCase = true) == true) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(16.dp)).background(Color(0xFF3A2906)).padding(12.dp),
+                    .clip(RoundedCornerShape(16.dp)).background(NauclioAmberTint).padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(Icons.Outlined.Schedule, null, tint = NauclioAmber)
@@ -2069,7 +2122,7 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
                 }
                 Button(
                     onClick = model::markDone,
-                    colors = ButtonDefaults.buttonColors(containerColor = NauclioAmber, contentColor = Color(0xFF071426)),
+                    colors = ButtonDefaults.buttonColors(containerColor = NauclioAmber, contentColor = NauclioAbyss),
                 ) { Text("Mark done") }
             }
         }
@@ -2232,7 +2285,7 @@ private fun StartCardBanner(starting: Boolean, error: String?, onStart: () -> Un
                 modifier = Modifier.testTag("start-card"),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = NauclioAegean,
-                    contentColor = Color(0xFF071426),
+                    contentColor = NauclioAbyss,
                 ),
             ) {
                 if (starting) {
@@ -2721,7 +2774,7 @@ private fun AttachmentPart(part: MessagePart) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF12243C)),
+                Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(NauclioLavenderTint),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(Icons.Outlined.Description, null, tint = NauclioAegean, modifier = Modifier.size(19.dp))
@@ -2953,7 +3006,7 @@ private fun CommentsBody(state: NauclioUiState, model: NauclioViewModel, modifie
                     ) {
                         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(shape = RoundedCornerShape(7.dp), color = Color(0xFF12243C)) {
+                                Surface(shape = RoundedCornerShape(7.dp), color = NauclioLavenderTint) {
                                     Text(
                                         if (state.selectedCard?.scope == "board") "BOARD COMMENT" else "CHAT NOTE",
                                         color = NauclioAegean,
@@ -3055,7 +3108,7 @@ private fun AttachmentSourceCard(
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Box(
-                Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF12243C)),
+                Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(NauclioLavenderTint),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(icon, null, tint = NauclioAegean, modifier = Modifier.size(21.dp))
@@ -3119,7 +3172,7 @@ internal fun ComposerAttachmentPreview(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF12243C)),
+                Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(NauclioLavenderTint),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(Icons.Outlined.Description, null, tint = NauclioAegean, modifier = Modifier.size(18.dp))
@@ -3296,13 +3349,18 @@ private fun MessageComposer(
             }
             val canSend = enabled && (value.isNotBlank() || attachments.isNotEmpty())
             Box(
-                Modifier.size(54.dp).clip(RoundedCornerShape(18.dp))
-                    .background(NauclioAegean)
+                Modifier.size(54.dp).clip(RoundedCornerShape(20.dp))
+                    .background(NauclioPrimary)
                     .clickable(enabled = canSend) { onSend(provider, selectedModel, effort) }
                     .testTag("send-message"),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = Color(0xFF071426), modifier = Modifier.size(23.dp))
+                Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    "Send",
+                    tint = if (canSend) NauclioAbyss else NauclioAbyss.copy(alpha = 0.55f),
+                    modifier = Modifier.size(23.dp),
+                )
             }
         }
     }
@@ -3346,6 +3404,7 @@ private fun JSONObject.longOrNull(key: String): Long? =
     if (has(key) && !isNull(key)) optLong(key) else null
 
 private fun formatTokenCount(tokens: Long): String = when {
+    tokens >= 1_000_000 -> String.format(Locale.US, "%.1fM", tokens / 1_000_000.0)
     tokens >= 100_000 -> "${tokens / 1_000}k"
     tokens >= 1_000 -> String.format(Locale.US, "%.1fk", tokens / 1_000.0)
     else -> tokens.toString()
@@ -3404,13 +3463,13 @@ private fun BoardLabelFilters(
             Surface(
                 onClick = { onSelect(labelId) },
                 modifier = dragModifier,
-                shape = RoundedCornerShape(12.dp),
-                color = if (selected) Color(0xFF173A5D) else Color.Transparent,
+                shape = RoundedCornerShape(50),
+                color = if (selected) NauclioLavenderTint else Color.Transparent,
                 contentColor = if (selected) MaterialTheme.colorScheme.onBackground else NauclioMuted,
                 border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, NauclioOutline.copy(alpha = 0.72f)),
             ) {
                 Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -3447,9 +3506,20 @@ private fun LaneTabs(state: NauclioUiState, model: NauclioViewModel, visibleCard
                 unselectedContentColor = NauclioMuted,
                 text = {
                     Text(
-                        "${lane.name} $count",
-                        fontSize = 12.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        buildAnnotatedString {
+                            pushStyle(
+                                SpanStyle(
+                                    color = if (selected) NauclioAegean else NauclioMuted,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                ),
+                            )
+                            append(lane.name)
+                            pop()
+                            pushStyle(SpanStyle(color = NauclioMuted.copy(alpha = 0.72f)))
+                            append(" $count")
+                            pop()
+                        },
+                        fontSize = 13.sp,
                     )
                 },
             )
@@ -3490,10 +3560,10 @@ private fun SwipeableWorkCard(
 
     Box(
         Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(17.dp))
+            .clip(RoundedCornerShape(20.dp))
             .background(NauclioSurfaceHigh)
             .then(
-                if (labelDropTargeted) Modifier.border(2.dp, NauclioSeafoam, RoundedCornerShape(17.dp))
+                if (labelDropTargeted) Modifier.border(2.dp, NauclioSeafoam, RoundedCornerShape(20.dp))
                 else Modifier,
             )
             .onGloballyPositioned { labelDragState.registerCard(card.id, it.boundsInRoot()) }
@@ -3708,14 +3778,14 @@ private fun WorkCard(
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().alpha(if (pending) 0.52f else 1f).then(
-            if (selected) Modifier.border(1.dp, NauclioCobalt, RoundedCornerShape(17.dp)) else Modifier,
+            if (selected) Modifier.border(1.dp, NauclioCobalt, RoundedCornerShape(20.dp)) else Modifier,
         ),
-        colors = CardDefaults.cardColors(containerColor = if (selected) Color(0xFF102A47) else NauclioSurfaceHigh),
-        shape = RoundedCornerShape(17.dp),
+        colors = CardDefaults.cardColors(containerColor = if (selected) NauclioIndigoTintDeep else NauclioSurfaceHigh),
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column {
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(verticalAlignment = Alignment.Top) {
@@ -3728,6 +3798,10 @@ private fun WorkCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.width(10.dp))
+                    labels.firstOrNull()?.let { label ->
+                        LabelPill(label.name, label.color)
+                        Spacer(Modifier.width(7.dp))
+                    }
                     Text(shortTimestamp(card.lastActivityAt.ifBlank { card.updatedAt }), color = NauclioMuted, fontSize = 12.sp)
                 }
                 if (card.summary.isNotBlank()) {
@@ -3740,18 +3814,18 @@ private fun WorkCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (labels.isNotEmpty()) {
+                if (labels.size > 1) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        labels.take(3).forEach { label -> LabelPill(label.name, label.color) }
+                        labels.drop(1).take(2).forEach { label -> LabelPill(label.name, label.color) }
                     }
                 }
                 if (!operationError.isNullOrBlank()) {
                     Text(operationError, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
-            HorizontalDivider(color = NauclioOutline.copy(alpha = 0.52f))
+            HorizontalDivider(color = NauclioOutline.copy(alpha = 0.38f))
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(card.provider.ifBlank { "agent" }, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
@@ -3856,11 +3930,15 @@ private fun EmptyList(title: String, body: String, icon: ImageVector, modifier: 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, null, Modifier.size(42.dp), tint = NauclioMuted)
-        Spacer(Modifier.height(12.dp))
-        Text(title, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(5.dp))
-        Text(body, color = NauclioMuted)
+        Surface(shape = RoundedCornerShape(18.dp), color = NauclioLavenderTint, modifier = Modifier.size(64.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, null, Modifier.size(28.dp), tint = NauclioAegean)
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Text(body, color = NauclioMuted, fontSize = 13.sp, lineHeight = 19.sp, textAlign = TextAlign.Center)
     }
 }
 

@@ -8,6 +8,11 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import com.dbpprt.nauclio.ui.theme.NauclioMuted
+import com.dbpprt.nauclio.ui.theme.NauclioSeafoam
+import com.dbpprt.nauclio.ui.theme.NauclioAmber
+import com.dbpprt.nauclio.ui.theme.NauclioCoral
+import com.dbpprt.nauclio.ui.theme.NauclioRunning
 
 internal const val MaxSyntaxHighlightCharacters = 200_000
 
@@ -439,21 +444,21 @@ private fun highlightedText(source: String, language: CodeLanguage): AnnotatedSt
 }
 
 private fun styleFor(kind: SyntaxKind): SpanStyle = when (kind) {
-    SyntaxKind.COMMENT -> SpanStyle(color = Color(0xFF9DB0C3), fontStyle = FontStyle.Italic)
-    SyntaxKind.STRING -> SpanStyle(color = Color(0xFF5EEAD4))
-    SyntaxKind.NUMBER -> SpanStyle(color = Color(0xFFFB7185))
-    SyntaxKind.KEYWORD -> SpanStyle(color = Color(0xFF56C7FF), fontWeight = FontWeight.SemiBold)
-    SyntaxKind.TYPE -> SpanStyle(color = Color(0xFFF59E0B))
-    SyntaxKind.FUNCTION -> SpanStyle(color = Color(0xFF22D3EE))
-    SyntaxKind.ANNOTATION -> SpanStyle(color = Color(0xFFFB7185))
-    SyntaxKind.PROPERTY -> SpanStyle(color = Color(0xFF22D3EE))
-    SyntaxKind.TAG -> SpanStyle(color = Color(0xFF56C7FF))
-    SyntaxKind.ATTRIBUTE -> SpanStyle(color = Color(0xFFF59E0B))
-    SyntaxKind.HEADING -> SpanStyle(color = Color(0xFF56C7FF), fontWeight = FontWeight.Bold)
-    SyntaxKind.LINK -> SpanStyle(color = Color(0xFF22D3EE))
-    SyntaxKind.EMPHASIS -> SpanStyle(color = Color(0xFFF59E0B), fontStyle = FontStyle.Italic)
-    SyntaxKind.VARIABLE -> SpanStyle(color = Color(0xFFF59E0B))
-    SyntaxKind.CONSTANT -> SpanStyle(color = Color(0xFFFB7185))
+    SyntaxKind.COMMENT -> SpanStyle(color = NauclioMuted, fontStyle = FontStyle.Italic)
+    SyntaxKind.STRING -> SpanStyle(color = NauclioSeafoam)
+    SyntaxKind.NUMBER -> SpanStyle(color = NauclioCoral)
+    SyntaxKind.KEYWORD -> SpanStyle(color = NauclioRunning, fontWeight = FontWeight.SemiBold)
+    SyntaxKind.TYPE -> SpanStyle(color = NauclioAmber)
+    SyntaxKind.FUNCTION -> SpanStyle(color = NauclioRunning)
+    SyntaxKind.ANNOTATION -> SpanStyle(color = NauclioCoral)
+    SyntaxKind.PROPERTY -> SpanStyle(color = NauclioRunning)
+    SyntaxKind.TAG -> SpanStyle(color = NauclioRunning)
+    SyntaxKind.ATTRIBUTE -> SpanStyle(color = NauclioAmber)
+    SyntaxKind.HEADING -> SpanStyle(color = NauclioRunning, fontWeight = FontWeight.Bold)
+    SyntaxKind.LINK -> SpanStyle(color = NauclioRunning)
+    SyntaxKind.EMPHASIS -> SpanStyle(color = NauclioAmber, fontStyle = FontStyle.Italic)
+    SyntaxKind.VARIABLE -> SpanStyle(color = NauclioAmber)
+    SyntaxKind.CONSTANT -> SpanStyle(color = NauclioCoral)
 }
 
 private fun words(value: String): Set<String> = value.split(' ').toSet()

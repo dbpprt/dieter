@@ -84,6 +84,11 @@ import com.dbpprt.nauclio.ui.theme.NauclioSurfaceHigh
 import com.dbpprt.nauclio.ui.theme.NauclioText
 import com.dbpprt.nauclio.ui.theme.NauclioOutline
 import kotlinx.coroutines.flow.distinctUntilChanged
+import com.dbpprt.nauclio.ui.theme.NauclioAbyss
+import com.dbpprt.nauclio.ui.theme.NauclioLavenderTint
+import com.dbpprt.nauclio.ui.theme.NauclioCoral
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontFamily
 
 private data class NavItem(
     val destination: Destination,
@@ -353,12 +358,18 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                 }
             }
             state.endpointConnections.forEach { endpoint ->
+                val endpointConnected = endpoint.phase == EndpointPhase.CONNECTED
                 Surface(
-                    color = NauclioSurfaceHigh,
-                    shape = RoundedCornerShape(15.dp),
+                    color = if (endpointConnected) NauclioSeafoam.copy(alpha = 0.08f) else NauclioSurfaceHigh,
+                    shape = RoundedCornerShape(16.dp),
+                    border = if (endpointConnected) {
+                        androidx.compose.foundation.BorderStroke(1.dp, NauclioSeafoam.copy(alpha = 0.45f))
+                    } else {
+                        null
+                    },
                 ) {
                     Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         when (endpoint.phase) {
@@ -367,7 +378,7 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                                 shape = RoundedCornerShape(50),
                                 color = when (endpoint.phase) {
                                     EndpointPhase.CONNECTED -> NauclioSeafoam
-                                    EndpointPhase.FAILED -> if (endpoint.online) MaterialTheme.colorScheme.error else NauclioMuted
+                                    EndpointPhase.FAILED -> if (endpoint.online) MaterialTheme.colorScheme.error else NauclioCoral.copy(alpha = 0.7f)
                                     else -> NauclioMuted.copy(alpha = 0.45f)
                                 },
                                 modifier = Modifier.size(8.dp),
@@ -376,11 +387,18 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                         Spacer(Modifier.width(11.dp))
                         Column(Modifier.weight(1f)) {
                             Text(endpoint.label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text(endpoint.address, color = NauclioMuted, fontSize = 11.sp)
+                            Text(
+                                endpoint.address,
+                                color = NauclioMuted,
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         Text(
                             endpoint.detail,
-                            color = if (endpoint.phase == EndpointPhase.CONNECTED) NauclioSeafoam else NauclioMuted,
+                            color = if (endpointConnected) NauclioSeafoam else NauclioMuted,
                             fontSize = 10.sp,
                         )
                     }
@@ -393,13 +411,18 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Stay connected in background", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Text("Persistent notification · live global event stream", color = NauclioMuted, fontSize = 11.sp)
+                    Text("Persistent notification · polls chats & subagents", color = NauclioMuted, fontSize = 11.sp)
                 }
                 Switch(checked = state.backgroundSyncEnabled, onCheckedChange = model::setBackgroundSyncEnabled)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.desiredConnected) {
-                    OutlinedButton(onClick = model::disconnect, modifier = Modifier.weight(1f)) { Text("Disconnect") }
+                    OutlinedButton(
+                        onClick = model::disconnect,
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = NauclioCoral),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, NauclioCoral.copy(alpha = 0.45f)),
+                    ) { Text("Disconnect") }
                     if (state.connectionPhase == ConnectionPhase.AUTH_REQUIRED) {
                         Button(onClick = model::signIn, modifier = Modifier.weight(1f)) { Text("Sign in with GitHub") }
                     } else {
@@ -476,25 +499,12 @@ private fun NauclioBottomBar(
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = NauclioText,
                     selectedTextColor = NauclioText,
-                    indicatorColor = NauclioSurfaceHigh,
+                    indicatorColor = NauclioLavenderTint,
                     unselectedIconColor = NauclioMuted,
                     unselectedTextColor = NauclioMuted,
                 ),
             )
         }
-        NavigationBarItem(
-            selected = false,
-            onClick = onSettings,
-            icon = { Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(22.dp)) },
-            label = { Text("Settings", fontSize = 11.sp) },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = NauclioText,
-                selectedTextColor = NauclioText,
-                indicatorColor = NauclioSurfaceHigh,
-                unselectedIconColor = NauclioMuted,
-                unselectedTextColor = NauclioMuted,
-            ),
-        )
     }
 }
 
@@ -509,7 +519,7 @@ private fun NauclioNavigationRail(
         Surface(
             onClick = onCreate,
             color = NauclioAegean,
-            contentColor = androidx.compose.ui.graphics.Color(0xFF071426),
+            contentColor = NauclioAbyss,
             shape = RoundedCornerShape(14.dp),
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp).size(48.dp),
         ) {

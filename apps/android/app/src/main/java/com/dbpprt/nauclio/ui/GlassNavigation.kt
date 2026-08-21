@@ -50,6 +50,12 @@ import com.dbpprt.nauclio.ui.theme.NauclioCobalt
 import com.dbpprt.nauclio.ui.theme.NauclioMuted
 import com.dbpprt.nauclio.ui.theme.NauclioOutline
 import com.dbpprt.nauclio.ui.theme.NauclioText
+import com.dbpprt.nauclio.ui.theme.NauclioPrimary
+import com.dbpprt.nauclio.ui.theme.NauclioAbyss
+
+internal val GlassFadeSoft = Color(0x6616151D)
+internal val GlassFadeStrong = Color(0xCC0D0C12)
+internal val GlassDockFill = Color(0xE6181722)
 
 private data class GlassDestination(val destination: Destination, val label: String, val icon: ImageVector)
 
@@ -75,13 +81,13 @@ fun GlassNavigationDock(
             Modifier.fillMaxWidth().height(82.dp)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, Color(0x660B1628), Color(0xCC071426)),
+                        listOf(Color.Transparent, GlassFadeSoft, GlassFadeStrong),
                     ),
                 ),
         )
         Box(Modifier.widthIn(max = 400.dp).fillMaxWidth().height(96.dp), contentAlignment = Alignment.BottomCenter) {
             Surface(
-                color = Color(0xE60B1628),
+                color = GlassDockFill,
                 contentColor = NauclioText,
                 shape = RoundedCornerShape(32.dp),
                 border = BorderStroke(1.dp, NauclioAegean.copy(alpha = 0.22f)),
@@ -156,11 +162,11 @@ private fun GlassDockItem(
                 Modifier.align(Alignment.TopCenter).offset(y = (-3).dp).zIndex(2f).size(62.dp)
                     .shadow(16.dp, CircleShape, ambientColor = NauclioCobalt, spotColor = NauclioAegean)
                     .clip(CircleShape)
-                    .background(Brush.linearGradient(listOf(Color(0xFF22D3EE), Color(0xFF2563EB))))
+                    .background(Brush.linearGradient(listOf(NauclioPrimary, NauclioCobalt)))
                     .border(1.dp, Color.White.copy(alpha = 0.46f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(item.icon, null, tint = Color(0xFF071426), modifier = Modifier.size(30.dp))
+                Icon(item.icon, null, tint = NauclioAbyss, modifier = Modifier.size(30.dp))
             }
             Text(
                 item.label,
@@ -182,7 +188,7 @@ private fun GlassDockItem(
                     ) {
                         Text(
                             badge.coerceAtMost(99).toString(),
-                            color = Color(0xFF071426),
+                            color = NauclioAbyss,
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),

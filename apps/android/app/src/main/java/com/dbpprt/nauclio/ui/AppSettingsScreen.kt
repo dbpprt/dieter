@@ -82,6 +82,9 @@ import com.dbpprt.nauclio.ui.theme.NauclioOutline
 import com.dbpprt.nauclio.ui.theme.NauclioSurface
 import com.dbpprt.nauclio.ui.theme.NauclioSurfaceHigh
 import com.dbpprt.nauclio.ui.theme.NauclioText
+import com.dbpprt.nauclio.ui.theme.NauclioBackground
+import com.dbpprt.nauclio.ui.theme.NauclioSeafoamTint
+import com.dbpprt.nauclio.ui.theme.NauclioAbyss
 
 private const val CONNECTIONS_TAB = 0
 private const val DISPLAY_TAB = 1
@@ -343,7 +346,7 @@ private fun ConnectionStatusCard(state: NauclioUiState, model: NauclioViewModel)
     val connected = state.connectionPhase == ConnectionPhase.CONNECTED
     Surface(
         onClick = model::showConnectionDialog,
-        color = if (connected) Color(0xFF0B2D32) else NauclioSurface,
+        color = if (connected) NauclioSeafoamTint else NauclioSurface,
         shape = RoundedCornerShape(24.dp),
         modifier = Modifier.fillMaxWidth(),
     ) {
@@ -662,11 +665,11 @@ private fun ReasoningTraceSetting(enabled: Boolean, onToggle: (Boolean) -> Unit)
 private fun GlassNavigationPreview() {
     Box(
         Modifier.fillMaxWidth().height(118.dp).clip(RoundedCornerShape(18.dp))
-            .background(Color(0xFF050B14)),
+            .background(NauclioBackground),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
-            color = Color(0xE60B1628),
+            color = GlassDockFill,
             border = BorderStroke(1.dp, NauclioOutline),
             shape = RoundedCornerShape(30.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp).height(64.dp),
@@ -689,7 +692,7 @@ private fun GlassNavigationPreview() {
                                     .border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Icon(icon, null, tint = Color(0xFF071426), modifier = Modifier.size(25.dp))
+                                Icon(icon, null, tint = NauclioAbyss, modifier = Modifier.size(25.dp))
                             }
                         } else {
                             Icon(icon, null, tint = NauclioMuted, modifier = Modifier.size(23.dp))

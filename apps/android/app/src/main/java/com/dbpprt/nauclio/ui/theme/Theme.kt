@@ -12,21 +12,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-val NauclioAbyss = Color(0xFF071426)
-val NauclioBackground = Color(0xFF050B14)
-val NauclioSurface = Color(0xFF0B1628)
-val NauclioSurfaceHigh = Color(0xFF12243C)
-val NauclioOutline = Color(0xFF20364F)
-val NauclioCobalt = Color(0xFF2563EB)
-val NauclioAegean = Color(0xFF22D3EE)
-val NauclioPrimary = Color(0xFF56C7FF)
-val NauclioSeafoam = Color(0xFF5EEAD4)
-val NauclioAmber = Color(0xFFF59E0B)
-val NauclioCoral = Color(0xFFFB7185)
-val NauclioText = Color(0xFFF5FAFF)
-val NauclioMuted = Color(0xFF9DB0C3)
-val NauclioDivider = Color(0xFF172D45)
-val NauclioScrim = Color(0xB3050B14)
+// Near-black canvas with a slight violet cast, per the Android design reference.
+val NauclioAbyss = Color(0xFF191634)
+val NauclioBackground = Color(0xFF0D0C12)
+val NauclioSurface = Color(0xFF16151D)
+val NauclioSurfaceHigh = Color(0xFF1E1D28)
+val NauclioOutline = Color(0xFF2C2A38)
+val NauclioCobalt = Color(0xFF5B54D8)
+val NauclioAegean = Color(0xFFB6ADF6)
+val NauclioPrimary = Color(0xFFCDC4F9)
+val NauclioSeafoam = Color(0xFF72D493)
+val NauclioRunning = Color(0xFF6FAAF2)
+val NauclioAmber = Color(0xFFE2BE6A)
+val NauclioCoral = Color(0xFFF1868E)
+val NauclioText = Color(0xFFF4F3F9)
+val NauclioMuted = Color(0xFFA19EB4)
+val NauclioDivider = Color(0xFF221F2E)
+val NauclioScrim = Color(0xB30D0C12)
+
+// Lavender-tinted fills used for selected chips, icon tiles, and highlights.
+val NauclioLavenderTint = Color(0xFF2A2740)
+val NauclioIndigoTintDeep = Color(0xFF221F3A)
+val NauclioAmberTint = Color(0xFF2C2410)
+val NauclioSeafoamTint = Color(0xFF15291D)
 
 private val colors = darkColorScheme(
     primary = NauclioPrimary,
@@ -42,15 +50,15 @@ private val colors = darkColorScheme(
     surfaceVariant = NauclioSurfaceHigh,
     onSurfaceVariant = NauclioMuted,
     surfaceContainerLowest = NauclioBackground,
-    surfaceContainerLow = Color(0xFF091221),
+    surfaceContainerLow = Color(0xFF121118),
     surfaceContainer = NauclioSurface,
     surfaceContainerHigh = NauclioSurfaceHigh,
-    surfaceContainerHighest = Color(0xFF19314D),
+    surfaceContainerHighest = Color(0xFF26242F),
     outline = NauclioOutline,
     outlineVariant = NauclioDivider,
     error = NauclioCoral,
-    onError = NauclioAbyss,
-    errorContainer = Color(0xFF4A1824),
+    onError = Color(0xFF33141B),
+    errorContainer = Color(0xFF3C1B23),
     onErrorContainer = Color(0xFFFFD9DF),
     scrim = NauclioScrim,
 )
@@ -71,10 +79,10 @@ private val boardTypography = Typography(
 )
 
 private val boardShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
+    extraSmall = RoundedCornerShape(10.dp),
     small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(22.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
     extraLarge = RoundedCornerShape(32.dp),
 )
 

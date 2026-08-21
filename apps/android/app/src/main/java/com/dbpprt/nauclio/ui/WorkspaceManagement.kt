@@ -68,6 +68,7 @@ import com.dbpprt.nauclio.v1.Settings
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.random.Random
+import com.dbpprt.nauclio.ui.theme.NauclioAbyss
 
 private enum class ManagementSection(val label: String) {
     PROJECT("Project"),
@@ -310,7 +311,7 @@ private fun LabelColorPicker(selectedColor: String, onSelected: (String) -> Unit
                             androidx.compose.material3.Icon(
                                 Icons.Default.Check,
                                 contentDescription = null,
-                                tint = if (color.luminance() > 0.32f) Color(0xFF071426) else Color.White,
+                                tint = if (color.luminance() > 0.32f) NauclioAbyss else Color.White,
                                 modifier = Modifier.size(20.dp),
                             )
                         }
