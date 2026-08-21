@@ -70,3 +70,11 @@ func TestMergeDiscoveredCatalogHidesCompatibilityModels(t *testing.T) {
 		t.Fatalf("unexpected effort catalog: %#v", merged.Effort)
 	}
 }
+
+func TestMergeDiscoveredCatalogSurvivesAnEmptyDiscovery(t *testing.T) {
+	adapter := Adapter{ID: "pi", DefaultModel: "default"}
+	merged := mergeDiscoveredAdapter(adapter, nil)
+	if merged.DefaultModel != "default" || len(merged.Models) != 0 || merged.Effort != nil {
+		t.Fatalf("unexpected merged adapter: %#v", merged)
+	}
+}

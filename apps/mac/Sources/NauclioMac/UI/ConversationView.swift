@@ -169,7 +169,7 @@ struct ConversationTimeline: View {
                             )
                         }
 
-                        ForEach(ConversationTimelineItem.group(messages)) { item in
+                        ForEach(ConversationTimelineItem.group(messages, showReasoning: store.showReasoning)) { item in
                             if item.isToolCallGroup {
                                 ToolCallGroupView(items: item.toolCalls).id(item.id)
                             } else if let message = item.messages.first {
@@ -362,7 +362,7 @@ struct MessageView: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(ConversationMessagePartGroup.group(message.parts).enumerated()), id: \.offset) { _, group in
+                ForEach(Array(ConversationMessagePartGroup.group(message.parts, showReasoning: store.showReasoning).enumerated()), id: \.offset) { _, group in
                     if group.isToolCallGroup {
                         ToolCallGroupView(items: group.parts.map {
                             ConversationToolCall(messageID: message.id, part: $0)
@@ -433,9 +433,10 @@ struct ConversationMessagePartGroup {
     var parts: [Nauclio_V1_MessagePart]
     let isToolCallGroup: Bool
 
-    static func group(_ parts: [Nauclio_V1_MessagePart]) -> [ConversationMessagePartGroup] {
+    static func group(_ parts: [Nauclio_V1_MessagePart], showReasoning: Bool = true) -> [ConversationMessagePartGroup] {
         var groups: [ConversationMessagePartGroup] = []
         for part in parts {
+            if isHidden(part, showReasoning: showReasoning) { continue }
             let isToolCall = isToolCall(part)
             if isToolCall, groups.last?.isToolCallGroup == true {
                 groups[groups.count - 1].parts.append(part)
@@ -447,10 +448,38 @@ struct ConversationMessagePartGroup {
     }
 
     static func isToolCall(_ part: Nauclio_V1_MessagePart) -> Bool {
-        toolTypes.contains(part.type.lowercased())
+        let type = part.type.lowercased()
+        return toolTypes.contains(type) || type.hasPrefix("tool-")
     }
 
-    private static let toolTypes: Set<String> = ["tool", "tool-call", "tool_call", "dynamic-tool"]
+    // Hidden parts must not split adjacent tool calls into separate groups,
+    // matching the Android timeline behavior.
+    static func isHidden(_ part: Nauclio_V1_MessagePart, showReasoning: Bool) -> Bool {
+        if isToolCall(part) { return false }
+        switch part.type.lowercased() {
+        case "reasoning", "thinking":
+            return !showReasoning || part.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case "step-start":
+            return true
+        case "image":
+            return part.url.isEmpty && part.data.isEmpty
+        case "file", "attachment":
+            return false
+        default:
+            return part.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    private static let toolTypes: Set<String> = ["tool", "tool_call", "dynamic-tool"]
+}
+
+extension Nauclio_V1_MessagePart {
+    // AI SDK static tool parts are typed "tool-<Name>" and may omit toolName.
+    var effectiveToolName: String {
+        if !toolName.isEmpty { return toolName }
+        if type.lowercased().hasPrefix("tool-") { return String(type.dropFirst("tool-".count)) }
+        return ""
+    }
 }
 
 struct ConversationToolCall: Identifiable {
@@ -480,13 +509,14 @@ struct ConversationTimelineItem: Identifiable {
         }
     }
 
-    static func group(_ messages: [Nauclio_V1_UiMessage]) -> [ConversationTimelineItem] {
+    static func group(_ messages: [Nauclio_V1_UiMessage], showReasoning: Bool = true) -> [ConversationTimelineItem] {
         var result: [ConversationTimelineItem] = []
         for message in messages {
             let toolOnly = message.role.lowercased() != "user" &&
                 message.parts.contains(where: ConversationMessagePartGroup.isToolCall) &&
                 message.parts.allSatisfy { part in
                     ConversationMessagePartGroup.isToolCall(part) ||
+                        ConversationMessagePartGroup.isHidden(part, showReasoning: showReasoning) ||
                         (part.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
                             part.data.isEmpty && part.url.isEmpty && part.filename.isEmpty)
                 }
@@ -632,7 +662,7 @@ struct ToolCallView: View {
                 HStack(spacing: 8) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .bold)).foregroundStyle(NauclioTheme.tertiary)
                     Image(systemName: completed ? "checkmark.circle" : "terminal").font(.system(size: 11, weight: .medium)).foregroundStyle(completed ? NauclioTheme.seafoam : NauclioTheme.aegean)
-                    Text(part.toolName.isEmpty ? "Command" : part.toolName).font(.caption.monospaced().weight(.medium)).lineLimit(1)
+                    Text(part.effectiveToolName.isEmpty ? "Command" : part.effectiveToolName).font(.caption.monospaced().weight(.medium)).lineLimit(1)
                     Spacer()
                     if loading { ProgressView().controlSize(.mini) }
                     else { Text(part.state.isEmpty ? (part.hasOutput_p ? "output available" : "tool") : part.state.replacingOccurrences(of: "_", with: " ")).font(.caption2).foregroundStyle(NauclioTheme.tertiary) }
@@ -671,7 +701,7 @@ private struct ToolCallGroupView: View {
     let items: [ConversationToolCall]
     @State private var expanded = false
 
-    private var title: String { ToolCallGroupSummary(toolNames: items.map(\.part.toolName)).title }
+    private var title: String { ToolCallGroupSummary(toolNames: items.map(\.part.effectiveToolName)).title }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {

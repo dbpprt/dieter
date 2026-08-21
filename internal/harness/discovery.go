@@ -117,7 +117,7 @@ func mergeDiscoveredAdapter(adapter Adapter, visible []Model) Adapter {
 			visible = append(visible, model)
 		}
 	}
-	if !known[adapter.DefaultModel] {
+	if !known[adapter.DefaultModel] && len(visible) > 0 {
 		adapter.DefaultModel = visible[0].ID
 	}
 	adapter.Models = visible

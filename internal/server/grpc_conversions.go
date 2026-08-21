@@ -307,7 +307,7 @@ func protoHarnessCatalog(values []harness.Adapter) *naucliov1.HarnessCatalog {
 			}
 			item.Models = append(item.Models, &naucliov1.HarnessModel{
 				Id: model.ID, Name: model.Name, ContextWindow: int32(model.ContextWindow),
-				DefaultEffort: model.DefaultEffort, Efforts: append([]string(nil), model.Efforts...),
+				DefaultEffort: model.DefaultEffort, Efforts: dedupeEfforts(model.Efforts),
 			})
 		}
 		if value.Effort != nil {
@@ -317,6 +317,21 @@ func protoHarnessCatalog(values []harness.Adapter) *naucliov1.HarnessCatalog {
 			}
 		}
 		result.Harnesses = append(result.Harnesses, item)
+	}
+	return result
+}
+
+// Discovered catalogs bypass the YAML loader's uniqueness validation; clients
+// render effort lists with identity-keyed controls that reject duplicates.
+func dedupeEfforts(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
 	}
 	return result
 }

@@ -372,6 +372,70 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(groups[3].isToolCallGroup)
 }
 
+@Test func hiddenReasoningDoesNotSplitAdjacentToolCallGroups() {
+    var reasoning = Nauclio_V1_MessagePart()
+    reasoning.type = "reasoning"
+    reasoning.text = "Thinking about the change"
+    var bash = Nauclio_V1_MessagePart()
+    bash.type = "dynamic-tool"
+    bash.toolName = "Bash"
+    var edit = Nauclio_V1_MessagePart()
+    edit.type = "dynamic-tool"
+    edit.toolName = "Edit"
+
+    let hidden = ConversationMessagePartGroup.group([reasoning, bash, reasoning, edit], showReasoning: false)
+    #expect(hidden.count == 1)
+    #expect(hidden[0].isToolCallGroup)
+    #expect(hidden[0].parts.map(\.toolName) == ["Bash", "Edit"])
+
+    let shown = ConversationMessagePartGroup.group([reasoning, bash, reasoning, edit], showReasoning: true)
+    #expect(shown.count == 4)
+    #expect(!shown[0].isToolCallGroup)
+    #expect(shown[1].isToolCallGroup)
+
+    var blank = Nauclio_V1_MessagePart()
+    blank.type = "reasoning"
+    blank.text = "  \n"
+    let blankShown = ConversationMessagePartGroup.group([bash, blank, edit], showReasoning: true)
+    #expect(blankShown.count == 1)
+    #expect(blankShown[0].parts.map(\.toolName) == ["Bash", "Edit"])
+}
+
+@Test func prefixedToolPartTypesGroupAndDeriveToolNames() {
+    var read = Nauclio_V1_MessagePart()
+    read.type = "tool-Read"
+    var bash = Nauclio_V1_MessagePart()
+    bash.type = "tool-Bash"
+    let groups = ConversationMessagePartGroup.group([read, bash])
+    #expect(groups.count == 1)
+    #expect(groups[0].isToolCallGroup)
+    #expect(read.effectiveToolName == "Read")
+    #expect(ToolCallGroupSummary(toolNames: [read, bash].map(\.effectiveToolName)).title == "1 command, 1 tool call")
+}
+
+@Test func reasoningOnlyMessagesMergeIntoToolTimelineGroupsWhenReasoningHidden() {
+    var reasoning = Nauclio_V1_MessagePart()
+    reasoning.type = "reasoning"
+    reasoning.text = "Deliberating"
+    var tool = Nauclio_V1_MessagePart()
+    tool.type = "dynamic-tool"
+    tool.toolCallID = "tool_1"
+    tool.toolName = "Bash"
+
+    var message = Nauclio_V1_UiMessage()
+    message.id = "message_1"
+    message.role = "assistant"
+    message.parts = [reasoning, tool]
+
+    let hidden = ConversationTimelineItem.group([message], showReasoning: false)
+    #expect(hidden.count == 1)
+    #expect(hidden[0].isToolCallGroup)
+
+    let shown = ConversationTimelineItem.group([message], showReasoning: true)
+    #expect(shown.count == 1)
+    #expect(!shown[0].isToolCallGroup)
+}
+
 @Test func adjacentToolOnlyAssistantMessagesCollapseIntoOneStableTimelineGroup() {
     var firstTool = Nauclio_V1_MessagePart()
     firstTool.type = "dynamic-tool"

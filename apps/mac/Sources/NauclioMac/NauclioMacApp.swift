@@ -16,9 +16,16 @@ struct NauclioMacApp: App {
                         await SidebarNavigationUISmokeRunner.run(store: store)
                         return
                     }
+                    let conversationSmoke = ProcessInfo.processInfo.arguments.contains("--conversation-ui-smoke")
+                    if conversationSmoke {
+                        ConversationUISmokeRunner.progress("task fired, connecting", in: ConversationUISmokeRunner.outputDirectory())
+                    }
                     await store.connect()
                     if ProcessInfo.processInfo.arguments.contains("--ui-smoke") {
                         await NativeUISmokeRunner.run(store: store)
+                    }
+                    if conversationSmoke {
+                        await ConversationUISmokeRunner.run(store: store)
                     }
                 }
                 .frame(minWidth: 1_080, minHeight: 680)

@@ -639,13 +639,22 @@ struct BoardCardView: View {
                 BoardCardDragPreview(card: card)
             }
             .dropDestination(for: String.self) { values, _ in
-                guard let value = values.first,
-                      let payload = BoardLabelDragPayload(value),
+                guard let value = values.first else { return false }
+                if let payload = BoardLabelDragPayload(value) {
+                    guard payload.boardID == store.selectedBoardID,
+                          store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true else { return false }
+                    let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
+                    guard ids != card.labelIds else { return true }
+                    Task { await store.setLabels(card, ids: ids) }
+                    return true
+                }
+                guard let payload = BoardCardDragPayload(value),
                       payload.boardID == store.selectedBoardID,
-                      store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true else { return false }
-                let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
-                guard ids != card.labelIds else { return true }
-                Task { await store.setLabels(card, ids: ids) }
+                      let dragged = store.state.cards.first(where: { $0.id == payload.cardID }) else { return false }
+                guard payload.cardID != card.id else { return true }
+                let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted { $0.position < $1.position }
+                let position = BoardDropOrdering.position(before: card.id, movingCardID: payload.cardID, cards: laneCards)
+                Task { await store.move(dragged, lane: card.lane, position: position) }
                 return true
             } isTargeted: { labelDropTargeted = $0 }
             .animation(.easeOut(duration: 0.14), value: labelDropTargeted)

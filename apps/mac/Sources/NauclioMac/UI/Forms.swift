@@ -311,7 +311,7 @@ struct HarnessFields: View {
 
 enum ProviderOptionValues {
     static func defaults(for harness: Nauclio_V1_Harness?) -> [String: String] {
-        Dictionary(uniqueKeysWithValues: (harness?.options ?? []).map { ($0.id, $0.defaultValue) })
+        Dictionary((harness?.options ?? []).map { ($0.id, $0.defaultValue) }, uniquingKeysWith: { first, _ in first })
     }
 }
 

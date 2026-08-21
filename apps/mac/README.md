@@ -82,6 +82,7 @@ card.
 ```sh
 swift test --package-path apps/mac
 apps/mac/scripts/ui-smoke.sh
+apps/mac/scripts/conversation-ui-smoke.sh
 apps/mac/scripts/sidebar-ui-smoke.sh
 apps/mac/scripts/accessibility-smoke.sh
 ```
@@ -96,6 +97,12 @@ Screen Recording permission.
 invoking terminal has Accessibility and Screen Recording access, it drives the
 packaged app through System Events and captures the board, a real chat
 conversation, files, schedules, and a real card conversation.
+
+`conversation-ui-smoke.sh` opens a real conversation that carries reasoning and
+tool parts, verifies that hiding reasoning consolidates adjacent tool calls into
+one collapsed group, and toggles the composer's reasoning switch repeatedly to
+prove the transcript survives it. Captures land under
+`apps/mac/.build/conversation-ui-smoke`.
 
 `sidebar-ui-smoke.sh` launches the packaged app twice against isolated local
 preferences. The first launch clicks a project collapse control and records an
