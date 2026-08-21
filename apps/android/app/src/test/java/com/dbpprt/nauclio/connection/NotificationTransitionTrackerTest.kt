@@ -39,6 +39,41 @@ class NotificationTransitionTrackerTest {
     }
 
     @Test
+    fun finishedChatCarriesTheFinalAssistantMessageAsResultPreview() {
+        val tracker = NotificationTransitionTracker()
+        val running = chat("chat", "running")
+        val conversation = ConversationSnapshot.newBuilder()
+            .setConversation(
+                Conversation.newBuilder()
+                    .addMessages(message("m1", "user", "please fix the bug"))
+                    .addMessages(message("m2", "assistant", "All tests pass now.")),
+            )
+            .build()
+        tracker.update(emptyList(), listOf(running), mapOf(running.id to conversation))
+
+        val events = tracker.update(emptyList(), listOf(chat("chat", "idle")), emptyMap())
+
+        val finished = events.single() as NauclioNotificationEvent.ChatFinished
+        assertEquals("All tests pass now.", finished.resultPreview)
+    }
+
+    @Test
+    fun longResultPreviewsKeepTheClosingWords() {
+        val text = "start words " + "filler ".repeat(80) + "closing words"
+        val snapshot = ConversationSnapshot.newBuilder()
+            .setConversation(
+                Conversation.newBuilder().addMessages(message("m", "assistant", text)),
+            )
+            .build()
+
+        val preview = conversationResultPreview(snapshot, maxLength = 60)
+
+        assertTrue(preview.length <= 60)
+        assertTrue(preview.startsWith("…"))
+        assertTrue(preview.endsWith("closing words"))
+    }
+
+    @Test
     fun enteringReviewEmitsOnce() {
         val tracker = NotificationTransitionTracker()
         tracker.update(listOf(boardCard("card", "running")), emptyList(), emptyMap())
@@ -100,4 +135,11 @@ class NotificationTransitionTrackerTest {
         .setId(id)
         .setStatus(status)
         .build()
+
+    private fun message(id: String, role: String, text: String): com.dbpprt.nauclio.v1.UiMessage =
+        com.dbpprt.nauclio.v1.UiMessage.newBuilder()
+            .setId(id)
+            .setRole(role)
+            .addParts(com.dbpprt.nauclio.v1.MessagePart.newBuilder().setType("text").setText(text))
+            .build()
 }

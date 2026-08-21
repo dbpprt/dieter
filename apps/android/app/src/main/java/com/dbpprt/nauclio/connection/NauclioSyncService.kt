@@ -11,7 +11,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.Build
 import android.os.IBinder
@@ -20,6 +24,8 @@ import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.view.View
+import android.widget.RemoteViews
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -184,6 +190,7 @@ class NauclioSyncService : Service() {
                 postedReviewCardIds += event.card.id
             }
         }
+        postNotification(RESULTS_SUMMARY_NOTIFICATION_ID, resultsGroupSummary())
     }
 
     private fun connectionNotification(state: NauclioConnectionState): Notification {
@@ -199,8 +206,11 @@ class NauclioSyncService : Service() {
             snapshot.conversation.subagentsList.count { it.status == "running" || it.status == "pending" }
         }
         val reviews = state.cards.count { it.lane.equals("review", true) }
+        val hostname = state.projectHosts.values.firstOrNull { host ->
+            host.online && (endpoint == null || host.endpointId == endpoint.id)
+        }?.hostname ?: state.projectHosts.values.firstOrNull { it.online }?.hostname
         val title = when (state.phase) {
-            ConnectionPhase.CONNECTED -> "Connected to Nauclio"
+            ConnectionPhase.CONNECTED -> "Connected to ${hostname ?: endpoint?.label ?: "Nauclio"}"
             ConnectionPhase.SYNCING -> "Synchronizing Nauclio"
             ConnectionPhase.RECONNECTING -> "Reconnecting to Nauclio"
             ConnectionPhase.AUTH_REQUIRED -> "Sign in to Nauclio"
@@ -208,9 +218,9 @@ class NauclioSyncService : Service() {
             ConnectionPhase.UNAVAILABLE -> "Nauclio is unavailable"
             else -> "Connecting to Nauclio"
         }
-        val endpointText = endpoint?.let { "${it.label} · ${it.address}" } ?: "Trying configured addresses"
-        val summary = if (connected) "$endpointText · live updates in background" else state.error ?: endpointText
-        val stats = "${state.boards.size} boards · $reviews review · $activeSubagents subagents"
+        val endpointText = endpoint?.let { "${it.label} · ${it.address.substringBefore(':')}" }
+            ?: "Trying configured addresses"
+        val summary = if (connected) "$endpointText · polling in background" else state.error ?: endpointText
         val builder = Notification.Builder(this, CONNECTION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -218,10 +228,11 @@ class NauclioSyncService : Service() {
             .setSubText(
                 when {
                     connected && activityPreview.totalCount > 0 -> activeNowLabel(activityPreview.totalCount)
-                    connected -> stats
+                    connected -> "Ongoing"
                     else -> null
                 },
             )
+            .setLargeIcon(connectionBadge(connected))
             .setColor(NOTIFICATION_ACCENT)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setOngoing(true)
@@ -230,12 +241,88 @@ class NauclioSyncService : Service() {
             .setContentIntent(openIntent(showConnection = true))
             .addAction(Notification.Action.Builder(null, "Disconnect", serviceIntent(ACTION_DISCONNECT, 11)).build())
             .addAction(Notification.Action.Builder(null, "Open", openIntent(showConnection = true)).build())
-        if (connected && activityPreview.totalCount > 0) {
-            builder.setStyle(connectionActivityStyle(activityPreview, stats))
-        } else {
-            builder.setStyle(Notification.BigTextStyle().bigText("$summary\n$stats"))
+        if (Build.VERSION.SDK_INT >= 36 && connected) {
+            // Surface live agent work as an Android 16 promoted Live Update chip.
+            builder.setRequestPromotedOngoing(true)
+            if (activityPreview.totalCount > 0) {
+                builder.setShortCriticalText("${activityPreview.totalCount} active")
+            }
         }
+        builder.setStyle(Notification.DecoratedCustomViewStyle())
+        builder.setCustomBigContentView(
+            connectionExpandedView(
+                title = title,
+                summary = summary,
+                boards = state.boards.size,
+                reviews = reviews,
+                subagents = activeSubagents,
+                preview = if (connected) activityPreview else null,
+            ),
+        )
         return builder.build()
+    }
+
+    /** Expanded shade body matching the design reference: stat pills plus live activity rows. */
+    private fun connectionExpandedView(
+        title: String,
+        summary: String,
+        boards: Int,
+        reviews: Int,
+        subagents: Int,
+        preview: ModelActivityPreview?,
+    ): RemoteViews {
+        val view = RemoteViews(packageName, R.layout.notification_connection_expanded)
+        view.setTextViewText(R.id.notification_title, title)
+        view.setTextViewText(R.id.notification_text, summary)
+        view.setTextViewText(R.id.notification_chip_boards, "$boards ${if (boards == 1) "board" else "boards"}")
+        if (reviews > 0) {
+            view.setTextViewText(R.id.notification_chip_reviews, "$reviews ${if (reviews == 1) "review" else "reviews"}")
+            view.setViewVisibility(R.id.notification_chip_reviews, View.VISIBLE)
+        }
+        if (subagents > 0) {
+            view.setTextViewText(R.id.notification_chip_subagents, "• $subagents ${if (subagents == 1) "subagent" else "subagents"}")
+            view.setViewVisibility(R.id.notification_chip_subagents, View.VISIBLE)
+        }
+        val rowIds = listOf(R.id.notification_activity_1, R.id.notification_activity_2, R.id.notification_activity_3)
+        val rows = preview?.rows.orEmpty()
+        if (rows.isNotEmpty()) {
+            view.setViewVisibility(R.id.notification_activity, View.VISIBLE)
+            rows.zip(rowIds).forEach { (row, id) ->
+                val modelLabel = if (row.modelLabel == "Main model") "Main" else row.modelLabel
+                view.setTextViewText(id, activityLine(row.cardTitle, "$modelLabel · ${row.detail}"))
+                view.setViewVisibility(id, View.VISIBLE)
+            }
+            val overflow = rows.size - minOf(rows.size, rowIds.size) + (preview?.overflowCount ?: 0)
+            if (overflow > 0) {
+                view.setTextViewText(R.id.notification_activity_more, "+$overflow more active")
+                view.setViewVisibility(R.id.notification_activity_more, View.VISIBLE)
+            }
+        }
+        return view
+    }
+
+    /** Rounded status tile shown as the large icon: green wifi when connected, muted when not. */
+    private fun connectionBadge(connected: Boolean): android.graphics.drawable.Icon {
+        val size = 192
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val tile = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (connected) Color.rgb(24, 46, 34) else Color.rgb(40, 39, 51)
+        }
+        canvas.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), 52f, 52f, tile)
+        val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (connected) Color.rgb(102, 199, 138) else Color.rgb(161, 158, 180)
+            style = Paint.Style.STROKE
+            strokeWidth = 14f
+            strokeCap = Paint.Cap.ROUND
+        }
+        val cx = size / 2f
+        val cy = size * 0.66f
+        listOf(30f, 54f).forEach { radius ->
+            canvas.drawArc(RectF(cx - radius, cy - radius, cx + radius, cy + radius), 215f, 110f, false, glyph)
+        }
+        canvas.drawCircle(cx, cy - 2f, 10f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = glyph.color })
+        return android.graphics.drawable.Icon.createWithBitmap(bitmap)
     }
 
     private fun runningChatNotification(chat: Card, snapshot: ConversationSnapshot?, session: String): Notification {
@@ -244,34 +331,32 @@ class NauclioSyncService : Service() {
             conversations = snapshot?.let { mapOf(chat.id to it) }.orEmpty(),
         )
         val activity = preview.rows.firstOrNull()?.detail ?: "Working on your request"
-        return Notification.Builder(this, RUNNING_CHAT_CHANNEL_ID)
+        val builder = Notification.Builder(this, RUNNING_CHAT_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(chat.title.ifBlank { "Running chat" })
             .setContentText(activity)
             .setSubText(activeNowLabel(preview.totalCount))
-            .setStyle(runningChatActivityStyle(chat, preview))
             .setColor(NOTIFICATION_ACCENT)
             .setCategory(Notification.CATEGORY_PROGRESS)
-            .setProgress(0, 0, true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setAutoCancel(false)
             .setOngoing(false)
             .setContentIntent(openIntent(cardId = chat.id))
             .setDeleteIntent(dismissIntent(chat, session))
-            .build()
+        if (Build.VERSION.SDK_INT >= 36 && preview.rows.size <= 1) {
+            // Android 16 ProgressStyle renders the fancy segmented live progress bar.
+            builder.setStyle(
+                Notification.ProgressStyle()
+                    .setProgressIndeterminate(true)
+                    .setStyledByProgress(false),
+            )
+        } else {
+            builder.setProgress(0, 0, true)
+            builder.setStyle(runningChatActivityStyle(chat, preview))
+        }
+        return builder.build()
     }
-
-    private fun connectionActivityStyle(preview: ModelActivityPreview, stats: String): Notification.InboxStyle =
-        Notification.InboxStyle()
-            .setBigContentTitle("Live model activity")
-            .also { style ->
-                preview.rows.forEach { row ->
-                    val modelLabel = if (row.modelLabel == "Main model") "Main" else row.modelLabel
-                    style.addLine(activityLine(row.cardTitle, "$modelLabel · ${row.detail}"))
-                }
-            }
-            .setSummaryText(activitySummary(preview, stats))
 
     private fun runningChatActivityStyle(chat: Card, preview: ModelActivityPreview): Notification.InboxStyle =
         Notification.InboxStyle()
@@ -287,8 +372,12 @@ class NauclioSyncService : Service() {
         .append("  ·  ")
         .append(detail)
 
-    private fun activitySummary(preview: ModelActivityPreview, trailingText: String): String =
-        if (preview.overflowCount > 0) "+${preview.overflowCount} more active · $trailingText" else trailingText
+    private fun activitySummary(preview: ModelActivityPreview, trailingText: CharSequence): CharSequence =
+        if (preview.overflowCount > 0) {
+            SpannableStringBuilder("+${preview.overflowCount} more active · ").append(trailingText)
+        } else {
+            trailingText
+        }
 
     private fun activeNowLabel(count: Int): String = "$count ${if (count == 1) "model" else "models"} active now"
 
@@ -301,25 +390,63 @@ class NauclioSyncService : Service() {
             runtime == "waiting_for_user" -> "Chat needs you"
             else -> "Chat finished"
         }
-        return Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
+        val chatTitle = event.card.title.ifBlank { "Standalone chat" }
+        val builder = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
-            .setContentText(event.card.title.ifBlank { "Standalone chat" })
-            .setSubText("Nauclio")
+            .setContentText(chatTitle)
+            .setColor(NOTIFICATION_ACCENT)
             .setCategory(Notification.CATEGORY_STATUS)
             .setAutoCancel(true)
+            .setGroup(RESULTS_GROUP)
             .setContentIntent(openIntent(cardId = event.card.id))
-            .build()
+        if (event.resultPreview.isNotBlank()) {
+            // Show the agent's closing words so the outcome is readable from the shade.
+            val expanded = SpannableStringBuilder()
+                .append(chatTitle, StyleSpan(Typeface.BOLD), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                .append("\n")
+                .append(event.resultPreview)
+            builder.setStyle(Notification.BigTextStyle().bigText(expanded))
+        }
+        return builder.build()
     }
 
-    private fun reviewNotification(card: Card, boardName: String): Notification = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
+    private fun reviewNotification(card: Card, boardName: String): Notification {
+        val cardTitle = card.title.ifBlank { "Nauclio conversation" }
+        val builder = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Ready for review")
+            .setContentText("$cardTitle · ${boardName.ifBlank { "Board" }}")
+            .setColor(REVIEW_ACCENT)
+            .setCategory(Notification.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .setGroup(RESULTS_GROUP)
+            .setContentIntent(openIntent(cardId = card.id))
+            .addAction(
+                Notification.Action.Builder(null, "Mark done", markDoneIntent(card)).build(),
+            )
+            .addAction(Notification.Action.Builder(null, "Open", openIntent(cardId = card.id)).build())
+        val summary = card.summary.trim()
+        if (summary.isNotBlank()) {
+            val expanded = SpannableStringBuilder()
+                .append(cardTitle, StyleSpan(Typeface.BOLD), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                .append(" · ").append(boardName.ifBlank { "Board" })
+                .append("\n")
+                .append(summary)
+            builder.setStyle(Notification.BigTextStyle().bigText(expanded))
+        }
+        return builder.build()
+    }
+
+    /** Collapses agent results into one tidy stack in the shade. */
+    private fun resultsGroupSummary(): Notification = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_notification)
-        .setContentTitle("Ready for review")
-        .setContentText(card.title.ifBlank { "Nauclio conversation" })
-        .setSubText(boardName.ifBlank { "Board" })
+        .setColor(NOTIFICATION_ACCENT)
         .setCategory(Notification.CATEGORY_STATUS)
+        .setGroup(RESULTS_GROUP)
+        .setGroupSummary(true)
         .setAutoCancel(true)
-        .setContentIntent(openIntent(cardId = card.id))
+        .setContentIntent(openIntent())
         .build()
 
     private fun openIntent(cardId: String = "", showConnection: Boolean = false): PendingIntent {
@@ -349,6 +476,17 @@ class NauclioSyncService : Service() {
             .setAction(ACTION_CHAT_NOTIFICATION_DISMISSED)
             .putExtra(EXTRA_CARD_ID, chat.id)
             .putExtra(EXTRA_SESSION, session),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    private fun markDoneIntent(card: Card): PendingIntent = PendingIntent.getBroadcast(
+        this,
+        reviewNotificationId(card.id),
+        Intent(this, NotificationActionReceiver::class.java)
+            .setAction(ACTION_MARK_CARD_DONE)
+            .putExtra(EXTRA_CARD_ID, card.id)
+            .putExtra(EXTRA_PROJECT_ID, card.projectId)
+            .putExtra(EXTRA_NOTIFICATION_ID, reviewNotificationId(card.id)),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -391,7 +529,10 @@ class NauclioSyncService : Service() {
         const val ACTION_DISCONNECT = "com.dbpprt.nauclio.action.DISCONNECT"
         const val ACTION_STOP_BACKGROUND = "com.dbpprt.nauclio.action.STOP_BACKGROUND"
         const val ACTION_CHAT_NOTIFICATION_DISMISSED = "com.dbpprt.nauclio.action.CHAT_NOTIFICATION_DISMISSED"
+        const val ACTION_MARK_CARD_DONE = "com.dbpprt.nauclio.action.MARK_CARD_DONE"
         const val EXTRA_CARD_ID = "card_id"
+        const val EXTRA_PROJECT_ID = "project_id"
+        const val EXTRA_NOTIFICATION_ID = "notification_id"
         const val EXTRA_SHOW_CONNECTION = "show_connection"
         const val EXTRA_SESSION = "session"
         const val NOTIFICATION_PREFERENCES = "nauclio_notification_state"
@@ -399,7 +540,10 @@ class NauclioSyncService : Service() {
         private const val CONNECTION_CHANNEL_ID = "nauclio_connection"
         private const val WAKE_LOCK_TIMEOUT_MS = 15 * 60 * 1_000L
         private const val WAKE_LOCK_RENEW_MS = 10 * 60 * 1_000L
+        private const val RESULTS_GROUP = "nauclio_agent_results"
+        private const val RESULTS_SUMMARY_NOTIFICATION_ID = 1002
         private val NOTIFICATION_ACCENT = Color.rgb(101, 84, 232)
+        private val REVIEW_ACCENT = Color.rgb(226, 190, 106)
         const val RUNNING_CHAT_CHANNEL_ID = "nauclio_agent_running"
         const val AGENT_RESULTS_CHANNEL_ID = "nauclio_agent_activity"
         const val CONNECTION_NOTIFICATION_ID = 1001

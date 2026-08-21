@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="nauclio_abyss">#071426</color>
+
+    <!-- Light-shade palette for the custom notification view; values-night overrides for dark. -->
+    <color name="notification_title">#DE000000</color>
+    <color name="notification_secondary">#8A000000</color>
+    <color name="notification_chip_neutral_bg">#FFE9E6F8</color>
+    <color name="notification_chip_neutral_text">#FF4B41A8</color>
+    <color name="notification_chip_review_bg">#FFF5EBD0</color>
+    <color name="notification_chip_review_text">#FF7E621A</color>
+    <color name="notification_chip_subagent_bg">#FFDEEAFB</color>
+    <color name="notification_chip_subagent_text">#FF1F5FB0</color>
 </resources>

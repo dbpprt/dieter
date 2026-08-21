@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark-shade palette for the custom notification view, mirroring the design reference. -->
+<resources>
+    <color name="notification_title">#FFFFFFFF</color>
+    <color name="notification_secondary">#B3FFFFFF</color>
+    <color name="notification_chip_neutral_bg">#FF2C2A40</color>
+    <color name="notification_chip_neutral_text">#FFCBC6EC</color>
+    <color name="notification_chip_review_bg">#FF3A311C</color>
+    <color name="notification_chip_review_text">#FFE2BE6A</color>
+    <color name="notification_chip_subagent_bg">#FF202E45</color>
+    <color name="notification_chip_subagent_text">#FF78ACF1</color>
+</resources>

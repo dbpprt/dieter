@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status bar icon: pure alpha mask (white on transparent) of the Nauclio wheel. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M12,1.8 A10.2,10.2 0 1 1 12,22.2 A10.2,10.2 0 1 1 12,1.8 Z M12,3.6 A8.4,8.4 0 1 1 12,20.4 A8.4,8.4 0 1 1 12,3.6 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.5,12 A1.5,1.5 0 1 1 13.5,12 A1.5,1.5 0 1 1 10.5,12 Z" />
+    <group
+        android:pivotX="12"
+        android:pivotY="12">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M10.2,5.2 L13.8,5.2 A0.9,0.9 0 0 1 14.7,6.1 L14.7,7.9 A0.9,0.9 0 0 1 13.8,8.8 L10.2,8.8 A0.9,0.9 0 0 1 9.3,7.9 L9.3,6.1 A0.9,0.9 0 0 1 10.2,5.2 Z" />
+    </group>
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:rotation="120">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M10.2,5.2 L13.8,5.2 A0.9,0.9 0 0 1 14.7,6.1 L14.7,7.9 A0.9,0.9 0 0 1 13.8,8.8 L10.2,8.8 A0.9,0.9 0 0 1 9.3,7.9 L9.3,6.1 A0.9,0.9 0 0 1 10.2,5.2 Z" />
+    </group>
+    <group
+        android:pivotX="12"
+        android:pivotY="12"
+        android:rotation="240">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M10.2,5.2 L13.8,5.2 A0.9,0.9 0 0 1 14.7,6.1 L14.7,7.9 A0.9,0.9 0 0 1 13.8,8.8 L10.2,8.8 A0.9,0.9 0 0 1 9.3,7.9 L9.3,6.1 A0.9,0.9 0 0 1 10.2,5.2 Z" />
+    </group>
+</vector>

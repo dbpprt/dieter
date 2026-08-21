@@ -45,6 +45,9 @@
             android:name=".connection.NotificationDismissedReceiver"
             android:exported="false" />
         <receiver
+            android:name=".connection.NotificationActionReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".connection.NauclioBootReceiver"
             android:enabled="true"
             android:exported="true">
