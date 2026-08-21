@@ -1014,6 +1014,7 @@ private struct ConversationComposer: View {
     @Environment(NauclioStore.self) private var store
     @Binding var fileImporterPresented: Bool
     @FocusState private var composerFocused: Bool
+    @State private var attachmentDropTargeted = false
 
     private var harness: Nauclio_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == store.composerProvider } }
     private var model: Nauclio_V1_HarnessModel? { harness?.models.first { $0.id == store.composerModel } }
@@ -1037,32 +1038,22 @@ private struct ConversationComposer: View {
                 }.foregroundStyle(NauclioTheme.amber)
             }
             VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .topLeading) {
-                    TextEditor(text: $store.composerText)
-                        .scrollContentBackground(.hidden)
-                        .font(.system(size: 14))
-                        .focused($composerFocused)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 7)
-                        .accessibilityIdentifier("conversation.composer")
-                        .onKeyPress(.return, phases: .down) { press in
-                            if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
-                                return .ignored
-                            }
-                            if hasDraft { Task { await store.sendComposer() } }
-                            return .handled
+                TextField("Message the local agent…", text: $store.composerText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .lineLimit(1...5)
+                    .focused($composerFocused)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .accessibilityIdentifier("conversation.composer")
+                    .onKeyPress(.return, phases: .down) { press in
+                        if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
+                            return .ignored
                         }
-
-                    if store.composerText.isEmpty {
-                        Text("Message the local agent…")
-                            .font(.system(size: 14))
-                            .foregroundStyle(NauclioTheme.tertiary)
-                            .padding(.leading, 16)
-                            .padding(.top, 14)
-                            .allowsHitTesting(false)
+                        if hasDraft { Task { await store.sendComposer() } }
+                        return .handled
                     }
-                }
-                .frame(height: composerEditorHeight, alignment: .topLeading)
+                    .frame(height: composerEditorHeight, alignment: .topLeading)
 
                 if !store.composerAttachments.isEmpty {
                     AttachmentPreviewStrip(attachments: $store.composerAttachments)
@@ -1102,13 +1093,17 @@ private struct ConversationComposer: View {
                 .padding(.bottom, 9)
 
             }
-            .background(NauclioTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(attachmentDropTargeted ? NauclioTheme.cobalt.opacity(0.12) : NauclioTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(composerFocused ? NauclioTheme.cobalt.opacity(0.55) : NauclioTheme.border, lineWidth: 1)
+                    .stroke(attachmentDropTargeted ? NauclioTheme.aegean : (composerFocused ? NauclioTheme.cobalt.opacity(0.55) : NauclioTheme.border), lineWidth: attachmentDropTargeted ? 1.5 : 1)
             }
             .shadow(color: Color.black.opacity(0.24), radius: 12, y: 5)
             .animation(.easeOut(duration: 0.16), value: composerFocused)
+            .animation(.easeOut(duration: 0.12), value: attachmentDropTargeted)
+            .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                store.addPastedAttachments(providers)
+            }
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(NauclioTheme.sidebar)

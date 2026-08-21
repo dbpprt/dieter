@@ -116,6 +116,28 @@ struct NauclioSyncDiskState: Codable, Sendable {
     static let empty = NauclioSyncDiskState()
 }
 
+enum NauclioSyncProjectionCache {
+    /// A directory poll is a fresh full metadata read, not a continuation of
+    /// the machine's WatchSync stream. Its snapshot must therefore never keep
+    /// the old stream cursor.
+    static func replacingMetadata(
+        in projection: NauclioSyncProjection,
+        projects: [Nauclio_V1_Project],
+        boards: [Nauclio_V1_Board],
+        cards: [Nauclio_V1_Card],
+        chats: [Nauclio_V1_Card]
+    ) -> NauclioSyncProjection {
+        var snapshot = projection.snapshot
+            .flatMap { try? Nauclio_V1_GlobalSnapshot(serializedBytes: $0) }
+            ?? Nauclio_V1_GlobalSnapshot()
+        snapshot.state.projects = projects
+        snapshot.state.boards = boards
+        snapshot.state.cards = cards
+        snapshot.state.chats = chats
+        return NauclioSyncProjection(cursor: nil, snapshot: try? snapshot.serializedData())
+    }
+}
+
 enum GlobalProjectionReducer {
     static func applying(
         _ delta: Nauclio_V1_GlobalDelta,

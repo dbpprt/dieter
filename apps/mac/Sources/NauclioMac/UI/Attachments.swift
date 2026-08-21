@@ -1,6 +1,7 @@
 import AppKit
 import NauclioAPI
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - ⌘V interception
 
@@ -11,6 +12,22 @@ extension View {
     /// pastes fall through to the focused control.
     func attachmentPasteCatcher(_ paste: @escaping (NSPasteboard) -> Bool) -> some View {
         background(AttachmentPasteMonitor(paste: paste).frame(width: 0, height: 0))
+    }
+
+    /// Accepts Finder files and dragged image data using the same item-provider
+    /// path as paste, while exposing target state for a visible drop affordance.
+    func attachmentDropTarget(
+        isTargeted: Binding<Bool>,
+        perform: @escaping ([NSItemProvider]) -> Void
+    ) -> some View {
+        onDrop(
+            of: [UTType.fileURL.identifier, UTType.image.identifier],
+            isTargeted: isTargeted
+        ) { providers in
+            guard !providers.isEmpty else { return false }
+            perform(providers)
+            return true
+        }
     }
 }
 

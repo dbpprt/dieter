@@ -87,6 +87,9 @@ import io.grpc.Status
 import io.grpc.stub.MetadataUtils
 import io.grpc.android.AndroidChannelBuilder
 import io.grpc.okhttp.OkHttpChannelBuilder
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
@@ -174,7 +177,7 @@ interface NauclioRepository {
     suspend fun runtimeStatus(): RuntimeStatus
     suspend fun state(filter: GetStateRequest = GetStateRequest.getDefaultInstance()): State
     fun watchState(filter: GetStateRequest = GetStateRequest.getDefaultInstance()): Flow<State>
-    fun watchSync(after: SyncCursor? = null, conversationLimit: Int = 0): Flow<SyncFrame>
+    fun watchSync(after: SyncCursor? = null, conversationLimit: Int = 0, recentConversationLimit: Int = 0): Flow<SyncFrame>
     suspend fun harnesses(): HarnessCatalog
     suspend fun settings(): Settings
     suspend fun settingsOptions(): SettingsOptions
@@ -296,6 +299,7 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
                 .context(appContext)
                 .maxInboundMessageSize(16 * 1024 * 1024)
                 .keepAliveTime(30, TimeUnit.SECONDS)
+                .keepAliveTimeout(5, TimeUnit.SECONDS)
                 .keepAliveWithoutCalls(true)
             if (!selectedEndpoint.secure) builder.usePlaintext()
             channel = builder.build()
@@ -309,6 +313,7 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
                 .context(appContext)
                 .maxInboundMessageSize(16 * 1024 * 1024)
                 .keepAliveTime(30, TimeUnit.SECONDS)
+                .keepAliveTimeout(5, TimeUnit.SECONDS)
                 .keepAliveWithoutCalls(true)
             if (!selectedEndpoint.secure) builder.usePlaintext()
             gatewayChannel = builder.build()
@@ -390,15 +395,27 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
         if (route.directCandidatesCount > 0) {
             val access = gatewayStub().exchangeDaemonToken(ExchangeDaemonTokenRequest.newBuilder().setDaemonId(daemonId).build())
             require(access.tokenType == "Bearer") { "Gateway returned an unsupported daemon token" }
-            for (candidate in route.directCandidatesList.sortedByDescending { it.priority }) {
-                val direct = runCatching {
-                    directChannel(candidate.host, candidate.port, daemonId, route.daemonCaPem.toByteArray())
-                }.getOrNull() ?: continue
-                val stub = NauclioServiceGrpcKt.NauclioServiceCoroutineStub(direct)
-                    .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(access.accessToken)))
-                    .withDeadlineAfter(2, TimeUnit.SECONDS)
-                val reachable = runCatching { stub.health(Empty.getDefaultInstance()).status == "ok" }.getOrDefault(false)
-                if (reachable && activeEndpoint.id == endpoint.id) {
+            // Probe every candidate concurrently so reconnecting costs one
+            // health round-trip instead of one per unreachable address.
+            val reachable = coroutineScope {
+                route.directCandidatesList.map { candidate ->
+                    async {
+                        val direct = runCatching {
+                            directChannel(candidate.host, candidate.port, daemonId, route.daemonCaPem.toByteArray())
+                        }.getOrNull() ?: return@async null
+                        val stub = NauclioServiceGrpcKt.NauclioServiceCoroutineStub(direct)
+                            .withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(access.accessToken)))
+                            .withDeadlineAfter(2, TimeUnit.SECONDS)
+                        val healthy = runCatching { stub.health(Empty.getDefaultInstance()).status == "ok" }.getOrDefault(false)
+                        if (healthy) candidate to direct else null.also { direct.shutdownNow() }
+                    }
+                }.awaitAll()
+            }.filterNotNull()
+            val chosen = reachable.maxByOrNull { (candidate, _) -> candidate.priority }
+            reachable.forEach { (candidate, direct) -> if (candidate !== chosen?.first) direct.shutdownNow() }
+            if (chosen != null) {
+                val (candidate, direct) = chosen
+                if (activeEndpoint.id == endpoint.id) {
                     val refreshAt = runCatching { Instant.parse(access.expiresAt).toEpochMilli() - 30_000 }.getOrNull()
                     synchronized(lock) {
                         channel = direct
@@ -435,6 +452,7 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
             }
             .maxInboundMessageSize(16 * 1024 * 1024)
             .keepAliveTime(30, TimeUnit.SECONDS)
+            .keepAliveTimeout(5, TimeUnit.SECONDS)
             .keepAliveWithoutCalls(true)
             .build()
     }
@@ -457,9 +475,10 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
         ).collect(::emit)
     }
 
-    override fun watchSync(after: SyncCursor?, conversationLimit: Int): Flow<SyncFrame> = flow {
+    override fun watchSync(after: SyncCursor?, conversationLimit: Int, recentConversationLimit: Int): Flow<SyncFrame> = flow {
         val request = SyncRequest.newBuilder()
             .setConversationLimit(conversationLimit.coerceIn(0, 100))
+            .setRecentConversationLimit(recentConversationLimit.coerceIn(0, 100))
             .setHeartbeatMs(15_000)
             .also { if (after != null) it.after = after }
             .build()

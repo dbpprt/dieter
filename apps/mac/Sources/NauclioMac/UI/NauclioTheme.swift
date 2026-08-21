@@ -226,6 +226,34 @@ struct StatusPill: View {
     }
 }
 
+/// A compact, continuously rotating activity arc for rows whose agent is
+/// currently working. Timeline-driven rotation stays alive when list rows are
+/// reused or rebuilt during state synchronization.
+struct NauclioActivityIndicator: View {
+    var color: Color = NauclioTheme.primary
+    var size: CGFloat = 11
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(color.opacity(0.35), lineWidth: 1.5)
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
+                Circle()
+                    .trim(from: 0.08, to: 0.72)
+                    .stroke(color, style: .init(lineWidth: 1.6, lineCap: .round))
+                    .rotationEffect(rotation(at: context.date))
+            }
+        }
+        .frame(width: size, height: size)
+    }
+
+    private func rotation(at date: Date) -> Angle {
+        guard !reduceMotion else { return .zero }
+        let progress = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+        return .degrees(progress * 360)
+    }
+}
+
 struct NauclioIconButtonStyle: ButtonStyle {
     var active = false
 

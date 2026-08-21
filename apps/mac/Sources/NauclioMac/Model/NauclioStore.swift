@@ -46,12 +46,24 @@ private struct DataPlaneConnection {
 
 private enum NauclioStoreConnectionError: LocalizedError {
     case incompatible(found: String)
+    case syncEnded
 
     var errorDescription: String? {
         switch self {
         case let .incompatible(found):
             "Nauclio API \(found.isEmpty ? "unknown" : found) is incompatible; macOS requires \(nauclioExpectedAPIVersion)."
+        case .syncEnded:
+            "Live updates stopped unexpectedly."
         }
+    }
+}
+
+enum SyncStreamLiveness {
+    static let timeout: TimeInterval = 45
+
+    static func shouldRestart(lastFrameAt: Date?, now: Date = Date()) -> Bool {
+        guard let lastFrameAt else { return true }
+        return now.timeIntervalSince(lastFrameAt) >= timeout
     }
 }
 
@@ -257,6 +269,7 @@ final class NauclioStore {
     private var pendingBoards: [String: Nauclio_V1_Board] = [:]
     private var pendingProjects: [String: Nauclio_V1_Project] = [:]
     private var notificationStatuses: [String: String] = [:]
+    private var lastSyncFrameAt: Date?
     private var persistConnectionSelection = true
     private var gatewayOrigins: [NauclioEndpoint]
     private var readChatActivity: [String: String]
@@ -378,11 +391,15 @@ final class NauclioStore {
     }
 
     var displayedCards: [Nauclio_V1_Card] {
-        state.cards.filter { card in
+        boardCards.filter { card in
             (runtimeFilter.isEmpty || card.runtime == runtimeFilter) &&
             (labelFilter.isEmpty || card.labelIds.contains(labelFilter)) &&
             (query.isEmpty || card.title.localizedCaseInsensitiveContains(query) || card.summary.localizedCaseInsensitiveContains(query))
         }
+    }
+
+    var boardCards: [Nauclio_V1_Card] {
+        state.cards.filter { selectedBoardID.isEmpty || $0.boardID == selectedBoardID }
     }
 
     func boards(for projectID: String) -> [Nauclio_V1_Board] {
@@ -504,11 +521,11 @@ final class NauclioStore {
             self.harnessCatalog = initialHarnesses
             self.boardSettings = initialSettings
             self.settingsOptions = initialOptions
-            await refreshMachineDirectory()
             phase = .connected(version: initialHealth.version)
-            startMachineDirectoryRefresh()
             startGlobalSync()
             startOutboxWorker()
+            await refreshMachineDirectory()
+            startMachineDirectoryRefresh()
         } catch {
             gatewayTask?.cancel()
             gatewayRPC?.shutdown()
@@ -698,6 +715,7 @@ final class NauclioStore {
         stateTask?.cancel(); conversationTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); reconnectTask?.cancel()
         reconnectTask = nil
         rpc?.shutdown(); rpc = nil
+        lastSyncFrameAt = nil
         phase = .disconnected
     }
 
@@ -794,7 +812,10 @@ final class NauclioStore {
     }
 
     func refreshMachineDirectory(includeArchivedChats: Bool = false) async {
-        let onlineMachines = machines.filter(\.online)
+        // The active machine is owned by WatchSync. Polling it here used to
+        // replace the live snapshot while retaining its cursor, so later
+        // deltas could be reduced against state from a different point in time.
+        let onlineMachines = machines.filter { $0.online && $0.id != endpoint.id }
         guard !onlineMachines.isEmpty else { return }
 
         var snapshots: [MachineSnapshot] = []
@@ -818,7 +839,7 @@ final class NauclioStore {
 
         for snapshot in snapshots {
             machineConnectionStatuses[snapshot.endpoint.id] = snapshot.connection
-            persistMachineSnapshot(snapshot)
+            persistInactiveMachineSnapshot(snapshot)
             for project in snapshot.projects {
                 nextProjects[project.id] = project
                 nextProjectEndpoints[project.id] = snapshot.endpoint.id
@@ -846,18 +867,15 @@ final class NauclioStore {
         try? await syncPersistence.save(syncDiskState)
     }
 
-    private func persistMachineSnapshot(_ machine: MachineSnapshot) {
-        var projection = syncDiskState.projections[machine.endpoint.id] ?? .empty
-        var snapshot = projection.snapshot
-            .flatMap { try? Nauclio_V1_GlobalSnapshot(serializedBytes: $0) }
-            ?? Nauclio_V1_GlobalSnapshot()
-        snapshot.state.projects = machine.projects
-        snapshot.state.boards = machine.boards
-        snapshot.state.cards = machine.cards
-        snapshot.state.chats = machine.chats
-        projection.snapshot = try? snapshot.serializedData()
-        syncDiskState.projections[machine.endpoint.id] = projection
-        if machine.endpoint.id == endpoint.id { syncProjection = projection }
+    private func persistInactiveMachineSnapshot(_ machine: MachineSnapshot) {
+        guard machine.endpoint.id != endpoint.id else { return }
+        syncDiskState.projections[machine.endpoint.id] = NauclioSyncProjectionCache.replacingMetadata(
+            in: syncDiskState.projections[machine.endpoint.id] ?? .empty,
+            projects: machine.projects,
+            boards: machine.boards,
+            cards: machine.cards,
+            chats: machine.chats
+        )
     }
 
     private func startMachineDirectoryRefresh() {
@@ -868,6 +886,9 @@ final class NauclioStore {
                 guard !Task.isCancelled, let self else { return }
                 await self.refreshDaemonPresence()
                 await self.refreshMachineDirectory()
+                if SyncStreamLiveness.shouldRestart(lastFrameAt: self.lastSyncFrameAt) {
+                    self.startGlobalSync()
+                }
             }
         }
     }
@@ -1090,6 +1111,7 @@ final class NauclioStore {
     private func startGlobalSync() {
         syncTask?.cancel()
         guard let rpc else { return }
+        lastSyncFrameAt = Date()
         let endpointID = endpoint.id
         var request = Nauclio_V1_SyncRequest()
         request.conversationLimit = 0
@@ -1103,6 +1125,8 @@ final class NauclioStore {
                 try await rpc.watchSync(request) { [weak self] frame in
                     await self?.applySyncFrame(frame, endpointID: endpointID)
                 }
+                guard !Task.isCancelled else { return }
+                self?.connectionStopped(NauclioStoreConnectionError.syncEnded, client: rpc)
             } catch where Self.isExpectedCancellation(error) { }
             catch { self?.connectionStopped(error, client: rpc) }
         }
@@ -1110,6 +1134,7 @@ final class NauclioStore {
 
     private func applySyncFrame(_ frame: Nauclio_V1_SyncFrame, endpointID: String) async {
         guard endpoint.id == endpointID else { return }
+        lastSyncFrameAt = Date()
         if frame.hasSnapshot {
             syncProjection.snapshot = try? frame.snapshot.serializedData()
             applyGlobalSnapshot(frame.snapshot, endpointID: endpointID)
@@ -1325,22 +1350,44 @@ final class NauclioStore {
     }
 
     func refreshState() async {
-        guard let raw = syncProjection.snapshot,
-              let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) else { return }
-        applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
+        guard let rpc else {
+            if let raw = syncProjection.snapshot,
+               let snapshot = try? Nauclio_V1_GlobalSnapshot(serializedBytes: raw) {
+                applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
+            }
+            return
+        }
+        do {
+            acceptState(try await rpc.state(stateRequest()))
+        } catch {
+            show(error)
+        }
     }
 
-    private func stateFilter() -> Nauclio_V1_GetStateRequest {
-        var filter = Nauclio_V1_GetStateRequest()
-        filter.projectID = selectedProjectID
-        filter.boardID = selectedBoardID
-        filter.runtime = runtimeFilter
-        filter.query = query
-        filter.limit = 500
-        return filter
+    private func stateRequest() -> Nauclio_V1_GetStateRequest {
+        var request = Nauclio_V1_GetStateRequest()
+        request.projectID = selectedProjectID
+        return request
     }
 
-    private func acceptState(_ next: Nauclio_V1_State) {
+    private func acceptState(_ received: Nauclio_V1_State) {
+        var next = received
+        let boardProjection = OptimisticWorkspaceProjection.reconcileBoards(next.boards, pending: pendingBoards)
+        next.boards = boardProjection.boards
+        pendingBoards = boardProjection.pending
+        let projectProjection = OptimisticWorkspaceProjection.reconcileProjects(next.projects, pending: pendingProjects)
+        next.projects = projectProjection.projects
+        pendingProjects = projectProjection.pending
+        let cardProjection = OptimisticCardProjection.reconcile(
+            cards: next.cards,
+            moves: pendingCardMoves,
+            labels: pendingCardLabelUpdates
+        )
+        next.cards = cardProjection.cards
+        pendingCardMoves = cardProjection.moves
+        pendingCardLabelUpdates = cardProjection.labels
+        movingCardIDs = Set(cardProjection.moves.keys)
+        labelUpdatingCardIDs = Set(cardProjection.labels.keys)
         for card in next.cards + next.chats {
             if let previous = notificationStatuses[card.id], previous != card.runtime,
                ["review", "waiting", "completed", "failed"].contains(card.runtime.lowercased()) {
@@ -1363,6 +1410,7 @@ final class NauclioStore {
         if selectedBoardID.isEmpty || !next.boards.contains(where: { $0.id == selectedBoardID }) {
             selectedBoardID = next.boards.first(where: { $0.projectID == selectedProjectID })?.id ?? next.boards.first?.id ?? ""
         }
+        rebuildOutboxOverlays()
     }
 
     func refreshNavigation() async {
@@ -1370,7 +1418,35 @@ final class NauclioStore {
     }
 
     func refreshChats(includeArchived: Bool = true) async {
-        await refreshState()
+        guard let rpc else { return }
+        do {
+            let response = try await rpc.chats(includeArchived: includeArchived)
+            for card in response.chats {
+                if let previous = notificationStatuses[card.id], previous != card.runtime,
+                   ["review", "waiting", "completed", "failed"].contains(card.runtime.lowercased()) {
+                    notify(title: card.title, body: "Status changed to \(card.runtime)")
+                }
+                notificationStatuses[card.id] = card.runtime
+            }
+            let previousProjectIDs = Set(projectEndpointIDs.compactMap { $0.value == endpoint.id ? $0.key : nil })
+            for project in response.projects {
+                projectDirectory[project.id] = project
+                projectEndpointIDs[project.id] = endpoint.id
+            }
+            chats.removeAll { previousProjectIDs.contains($0.projectID) }
+            chats.append(contentsOf: response.chats)
+            chats = Array(chats.reduce(into: [String: Nauclio_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
+                ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt)
+            }
+            chatProjects = projects
+            updateSelectedState()
+            rebuildOutboxOverlays()
+            if let selectedChatID, let selected = chats.first(where: { $0.id == selectedChatID }) {
+                markChatRead(selected)
+            }
+        } catch {
+            show(error)
+        }
     }
 
     func openConversation(cardID: String, chat: Bool = false) async {
@@ -1764,7 +1840,7 @@ final class NauclioStore {
     func move(_ card: Nauclio_V1_Card, lane: String, position: Int64? = nil) async {
         guard let rpc else { return }
         let original = state.cards.first(where: { $0.id == card.id }) ?? card
-        let optimisticPosition = position ?? ((state.cards.filter { $0.id != card.id && $0.lane == lane }.map(\.position).max() ?? 0) + 1_024)
+        let optimisticPosition = position ?? ((boardCards.filter { $0.id != card.id && $0.lane == lane }.map(\.position).max() ?? 0) + 1_024)
 
         let operationID = UUID()
         pendingCardMoves[card.id] = OptimisticCardMove(

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
@@ -17,7 +18,48 @@ func protoSyncEvent(event store.SyncEvent) *naucliov1.SyncEvent {
 	return &naucliov1.SyncEvent{Sequence: event.Sequence, Kind: event.Kind, CreatedAt: event.CreatedAt, CommandId: event.CommandID}
 }
 
-func (api *grpcAPI) globalSnapshot(limit int) (*naucliov1.GlobalSnapshot, error) {
+// activeSyncRuntime mirrors the client-side definition of "the model is doing
+// something right now" so running work is always part of the bounded stream.
+func activeSyncRuntime(runtime string) bool {
+	switch runtime {
+	case "running", "starting", "working", "streaming":
+		return true
+	}
+	return false
+}
+
+// syncConversationCards bounds the conversation payload of a sync stream:
+// every card with an active runtime plus the most recently active
+// conversations up to recent.
+func syncConversationCards(cards []*naucliov1.Card, recent int) []*naucliov1.Card {
+	selected := append([]*naucliov1.Card(nil), cards...)
+	sort.SliceStable(selected, func(left, right int) bool {
+		return syncActivityKey(selected[left]) > syncActivityKey(selected[right])
+	})
+	bounded := selected[:0]
+	remaining := recent
+	for _, card := range selected {
+		if activeSyncRuntime(card.GetRuntime()) {
+			bounded = append(bounded, card)
+			continue
+		}
+		if remaining > 0 {
+			bounded = append(bounded, card)
+			remaining--
+		}
+	}
+	return bounded
+}
+
+// syncActivityKey sorts RFC 3339 UTC timestamps lexicographically.
+func syncActivityKey(card *naucliov1.Card) string {
+	if key := card.GetLastActivityAt(); key != "" {
+		return key
+	}
+	return card.GetUpdatedAt()
+}
+
+func (api *grpcAPI) globalSnapshot(limit, recent int) (*naucliov1.GlobalSnapshot, error) {
 	if limit > 100 {
 		limit = 100
 	}
@@ -44,7 +86,11 @@ func (api *grpcAPI) globalSnapshot(limit int) (*naucliov1.GlobalSnapshot, error)
 	}
 	snapshot := &naucliov1.GlobalSnapshot{State: state}
 	if limit > 0 {
-		for _, card := range append(append([]*naucliov1.Card(nil), state.Cards...), state.Chats...) {
+		conversationCards := append(append([]*naucliov1.Card(nil), state.Cards...), state.Chats...)
+		if recent > 0 {
+			conversationCards = syncConversationCards(conversationCards, recent)
+		}
+		for _, card := range conversationCards {
 			conversation, conversationErr := api.conversationSnapshot(card.GetId(), limit, nil)
 			if conversationErr != nil {
 				return nil, conversationErr
@@ -180,6 +226,24 @@ func globalDelta(previous, current *naucliov1.GlobalSnapshot) *naucliov1.GlobalD
 	if !proto.Equal(previous.GetSettings(), current.GetSettings()) {
 		delta.Settings = current.GetSettings()
 	}
+
+	previousConversations := make(map[string]*naucliov1.ConversationSnapshot, len(previous.GetConversations()))
+	for _, value := range previous.GetConversations() {
+		previousConversations[value.GetDetail().GetCard().GetId()] = value
+	}
+	currentConversations := make(map[string]struct{}, len(current.GetConversations()))
+	for _, value := range current.GetConversations() {
+		id := value.GetDetail().GetCard().GetId()
+		currentConversations[id] = struct{}{}
+		if before := previousConversations[id]; before == nil || !proto.Equal(before, value) {
+			delta.Conversations = append(delta.Conversations, value)
+		}
+	}
+	for id := range previousConversations {
+		if _, ok := currentConversations[id]; !ok {
+			delta.RemovedConversationIds = append(delta.RemovedConversationIds, id)
+		}
+	}
 	return delta
 }
 
@@ -203,13 +267,15 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 	if !reset {
 		sequence = after.GetSequence()
 	}
-	metadataOnly := request.GetConversationLimit() == 0
+	// Delta framing applies to metadata-only clients and to bounded
+	// conversation subscribers; only the legacy full-snapshot mode is exempt.
+	deltaMode := request.GetConversationLimit() == 0 || request.GetRecentConversationLimit() > 0
 	var projection *naucliov1.GlobalSnapshot
-	if metadataOnly || reset || sequence == 0 {
+	if deltaMode || reset || sequence == 0 {
 		if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
 			return waitErr
 		}
-		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()))
+		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()))
 		if snapshotErr != nil {
 			return snapshotErr
 		}
@@ -221,7 +287,7 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 	}
 	if projection == nil {
 		var projectionErr error
-		projection, projectionErr = api.globalSnapshot(int(request.GetConversationLimit()))
+		projection, projectionErr = api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()))
 		if projectionErr != nil {
 			return projectionErr
 		}
@@ -236,7 +302,7 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 			if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
 				return waitErr
 			}
-			snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()))
+			snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()))
 			if snapshotErr != nil {
 				return snapshotErr
 			}
@@ -250,7 +316,7 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 		if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
 			return waitErr
 		}
-		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()))
+		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()))
 		if snapshotErr != nil {
 			return snapshotErr
 		}
@@ -259,7 +325,7 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 			Cursor: protoSyncCursor(store.SyncCursor{Epoch: current.Epoch, Sequence: last.Sequence}),
 			Event:  protoSyncEvent(last),
 		}
-		if request.GetConversationLimit() == 0 {
+		if deltaMode {
 			frame.Delta = globalDelta(projection, snapshot)
 		} else {
 			frame.Snapshot = snapshot

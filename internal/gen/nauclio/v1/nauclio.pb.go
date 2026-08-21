@@ -443,8 +443,13 @@ type SyncRequest struct {
 	After             *SyncCursor            `protobuf:"bytes,1,opt,name=after,proto3" json:"after,omitempty"`
 	ConversationLimit int32                  `protobuf:"varint,2,opt,name=conversation_limit,json=conversationLimit,proto3" json:"conversation_limit,omitempty"`
 	HeartbeatMs       int32                  `protobuf:"varint,3,opt,name=heartbeat_ms,json=heartbeatMs,proto3" json:"heartbeat_ms,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// When set together with conversation_limit, the stream stays bounded: it
+	// carries conversation snapshots only for cards with an active runtime plus
+	// the most recently active conversations up to this count, and conversation
+	// changes ride the delta frames instead of full snapshots.
+	RecentConversationLimit int32 `protobuf:"varint,4,opt,name=recent_conversation_limit,json=recentConversationLimit,proto3" json:"recent_conversation_limit,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *SyncRequest) Reset() {
@@ -494,6 +499,13 @@ func (x *SyncRequest) GetConversationLimit() int32 {
 func (x *SyncRequest) GetHeartbeatMs() int32 {
 	if x != nil {
 		return x.HeartbeatMs
+	}
+	return 0
+}
+
+func (x *SyncRequest) GetRecentConversationLimit() int32 {
+	if x != nil {
+		return x.RecentConversationLimit
 	}
 	return 0
 }
@@ -647,24 +659,27 @@ func (x *GlobalSnapshot) GetSettings() *Settings {
 
 // GlobalDelta carries only changed metadata after the initial bootstrap.
 // Removed IDs make the delta independently applicable to a persisted client
-// projection. Conversation content is intentionally not part of this stream.
+// projection. Conversation content appears here only for clients that opt in
+// via recent_conversation_limit; everyone else uses WatchConversation.
 type GlobalDelta struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	Projects              []*Project             `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
-	RemovedProjectIds     []string               `protobuf:"bytes,2,rep,name=removed_project_ids,json=removedProjectIds,proto3" json:"removed_project_ids,omitempty"`
-	Boards                []*Board               `protobuf:"bytes,3,rep,name=boards,proto3" json:"boards,omitempty"`
-	RemovedBoardIds       []string               `protobuf:"bytes,4,rep,name=removed_board_ids,json=removedBoardIds,proto3" json:"removed_board_ids,omitempty"`
-	Cards                 []*Card                `protobuf:"bytes,5,rep,name=cards,proto3" json:"cards,omitempty"`
-	RemovedCardIds        []string               `protobuf:"bytes,6,rep,name=removed_card_ids,json=removedCardIds,proto3" json:"removed_card_ids,omitempty"`
-	Chats                 []*Card                `protobuf:"bytes,7,rep,name=chats,proto3" json:"chats,omitempty"`
-	RemovedChatIds        []string               `protobuf:"bytes,8,rep,name=removed_chat_ids,json=removedChatIds,proto3" json:"removed_chat_ids,omitempty"`
-	Schedules             []*Schedule            `protobuf:"bytes,9,rep,name=schedules,proto3" json:"schedules,omitempty"`
-	RemovedScheduleIds    []string               `protobuf:"bytes,10,rep,name=removed_schedule_ids,json=removedScheduleIds,proto3" json:"removed_schedule_ids,omitempty"`
-	ScheduleRuns          []*ScheduleRun         `protobuf:"bytes,11,rep,name=schedule_runs,json=scheduleRuns,proto3" json:"schedule_runs,omitempty"`
-	RemovedScheduleRunIds []string               `protobuf:"bytes,12,rep,name=removed_schedule_run_ids,json=removedScheduleRunIds,proto3" json:"removed_schedule_run_ids,omitempty"`
-	Settings              *Settings              `protobuf:"bytes,13,opt,name=settings,proto3" json:"settings,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state                  protoimpl.MessageState  `protogen:"open.v1"`
+	Projects               []*Project              `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
+	RemovedProjectIds      []string                `protobuf:"bytes,2,rep,name=removed_project_ids,json=removedProjectIds,proto3" json:"removed_project_ids,omitempty"`
+	Boards                 []*Board                `protobuf:"bytes,3,rep,name=boards,proto3" json:"boards,omitempty"`
+	RemovedBoardIds        []string                `protobuf:"bytes,4,rep,name=removed_board_ids,json=removedBoardIds,proto3" json:"removed_board_ids,omitempty"`
+	Cards                  []*Card                 `protobuf:"bytes,5,rep,name=cards,proto3" json:"cards,omitempty"`
+	RemovedCardIds         []string                `protobuf:"bytes,6,rep,name=removed_card_ids,json=removedCardIds,proto3" json:"removed_card_ids,omitempty"`
+	Chats                  []*Card                 `protobuf:"bytes,7,rep,name=chats,proto3" json:"chats,omitempty"`
+	RemovedChatIds         []string                `protobuf:"bytes,8,rep,name=removed_chat_ids,json=removedChatIds,proto3" json:"removed_chat_ids,omitempty"`
+	Schedules              []*Schedule             `protobuf:"bytes,9,rep,name=schedules,proto3" json:"schedules,omitempty"`
+	RemovedScheduleIds     []string                `protobuf:"bytes,10,rep,name=removed_schedule_ids,json=removedScheduleIds,proto3" json:"removed_schedule_ids,omitempty"`
+	ScheduleRuns           []*ScheduleRun          `protobuf:"bytes,11,rep,name=schedule_runs,json=scheduleRuns,proto3" json:"schedule_runs,omitempty"`
+	RemovedScheduleRunIds  []string                `protobuf:"bytes,12,rep,name=removed_schedule_run_ids,json=removedScheduleRunIds,proto3" json:"removed_schedule_run_ids,omitempty"`
+	Settings               *Settings               `protobuf:"bytes,13,opt,name=settings,proto3" json:"settings,omitempty"`
+	Conversations          []*ConversationSnapshot `protobuf:"bytes,14,rep,name=conversations,proto3" json:"conversations,omitempty"`
+	RemovedConversationIds []string                `protobuf:"bytes,15,rep,name=removed_conversation_ids,json=removedConversationIds,proto3" json:"removed_conversation_ids,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *GlobalDelta) Reset() {
@@ -784,6 +799,20 @@ func (x *GlobalDelta) GetRemovedScheduleRunIds() []string {
 func (x *GlobalDelta) GetSettings() *Settings {
 	if x != nil {
 		return x.Settings
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetConversations() []*ConversationSnapshot {
+	if x != nil {
+		return x.Conversations
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetRemovedConversationIds() []string {
+	if x != nil {
+		return x.RemovedConversationIds
 	}
 	return nil
 }
@@ -8289,11 +8318,12 @@ const file_nauclio_v1_nauclio_proto_rawDesc = "" +
 	"SyncCursor\x12\x14\n" +
 	"\x05epoch\x18\x01 \x01(\tR\x05epoch\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12-\n" +
-	"\x12projection_version\x18\x03 \x01(\x05R\x11projectionVersion\"\x8d\x01\n" +
+	"\x12projection_version\x18\x03 \x01(\x05R\x11projectionVersion\"\xc9\x01\n" +
 	"\vSyncRequest\x12,\n" +
 	"\x05after\x18\x01 \x01(\v2\x16.nauclio.v1.SyncCursorR\x05after\x12-\n" +
 	"\x12conversation_limit\x18\x02 \x01(\x05R\x11conversationLimit\x12!\n" +
-	"\fheartbeat_ms\x18\x03 \x01(\x05R\vheartbeatMs\"y\n" +
+	"\fheartbeat_ms\x18\x03 \x01(\x05R\vheartbeatMs\x12:\n" +
+	"\x19recent_conversation_limit\x18\x04 \x01(\x05R\x17recentConversationLimit\"y\n" +
 	"\tSyncEvent\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x1d\n" +
@@ -8306,7 +8336,7 @@ const file_nauclio_v1_nauclio_proto_rawDesc = "" +
 	"\rconversations\x18\x02 \x03(\v2 .nauclio.v1.ConversationSnapshotR\rconversations\x122\n" +
 	"\tschedules\x18\x03 \x03(\v2\x14.nauclio.v1.ScheduleR\tschedules\x12<\n" +
 	"\rschedule_runs\x18\x04 \x03(\v2\x17.nauclio.v1.ScheduleRunR\fscheduleRuns\x120\n" +
-	"\bsettings\x18\x05 \x01(\v2\x14.nauclio.v1.SettingsR\bsettings\"\xf8\x04\n" +
+	"\bsettings\x18\x05 \x01(\v2\x14.nauclio.v1.SettingsR\bsettings\"\xfa\x05\n" +
 	"\vGlobalDelta\x12/\n" +
 	"\bprojects\x18\x01 \x03(\v2\x13.nauclio.v1.ProjectR\bprojects\x12.\n" +
 	"\x13removed_project_ids\x18\x02 \x03(\tR\x11removedProjectIds\x12)\n" +
@@ -8321,7 +8351,9 @@ const file_nauclio_v1_nauclio_proto_rawDesc = "" +
 	" \x03(\tR\x12removedScheduleIds\x12<\n" +
 	"\rschedule_runs\x18\v \x03(\v2\x17.nauclio.v1.ScheduleRunR\fscheduleRuns\x127\n" +
 	"\x18removed_schedule_run_ids\x18\f \x03(\tR\x15removedScheduleRunIds\x120\n" +
-	"\bsettings\x18\r \x01(\v2\x14.nauclio.v1.SettingsR\bsettings\"\xb2\x02\n" +
+	"\bsettings\x18\r \x01(\v2\x14.nauclio.v1.SettingsR\bsettings\x12F\n" +
+	"\rconversations\x18\x0e \x03(\v2 .nauclio.v1.ConversationSnapshotR\rconversations\x128\n" +
+	"\x18removed_conversation_ids\x18\x0f \x03(\tR\x16removedConversationIds\"\xb2\x02\n" +
 	"\tSyncFrame\x12.\n" +
 	"\x06cursor\x18\x01 \x01(\v2\x16.nauclio.v1.SyncCursorR\x06cursor\x12+\n" +
 	"\x05event\x18\x02 \x01(\v2\x15.nauclio.v1.SyncEventR\x05event\x126\n" +
@@ -9268,197 +9300,198 @@ var file_nauclio_v1_nauclio_proto_depIdxs = []int32{
 	97,  // 16: nauclio.v1.GlobalDelta.schedules:type_name -> nauclio.v1.Schedule
 	105, // 17: nauclio.v1.GlobalDelta.schedule_runs:type_name -> nauclio.v1.ScheduleRun
 	40,  // 18: nauclio.v1.GlobalDelta.settings:type_name -> nauclio.v1.Settings
-	5,   // 19: nauclio.v1.SyncFrame.cursor:type_name -> nauclio.v1.SyncCursor
-	7,   // 20: nauclio.v1.SyncFrame.event:type_name -> nauclio.v1.SyncEvent
-	8,   // 21: nauclio.v1.SyncFrame.snapshot:type_name -> nauclio.v1.GlobalSnapshot
-	7,   // 22: nauclio.v1.SyncFrame.events:type_name -> nauclio.v1.SyncEvent
-	9,   // 23: nauclio.v1.SyncFrame.delta:type_name -> nauclio.v1.GlobalDelta
-	13,  // 24: nauclio.v1.ProjectsResponse.projects:type_name -> nauclio.v1.Project
-	17,  // 25: nauclio.v1.CardsResponse.cards:type_name -> nauclio.v1.Card
-	15,  // 26: nauclio.v1.Board.labels:type_name -> nauclio.v1.Label
-	16,  // 27: nauclio.v1.Board.lanes:type_name -> nauclio.v1.Lane
-	18,  // 28: nauclio.v1.Card.origin:type_name -> nauclio.v1.CardOrigin
-	23,  // 29: nauclio.v1.Card.active_subagents:type_name -> nauclio.v1.Subagent
-	107, // 30: nauclio.v1.Card.provider_options:type_name -> nauclio.v1.Card.ProviderOptionsEntry
-	17,  // 31: nauclio.v1.CardDetail.card:type_name -> nauclio.v1.Card
-	13,  // 32: nauclio.v1.CardDetail.project:type_name -> nauclio.v1.Project
-	14,  // 33: nauclio.v1.CardDetail.board:type_name -> nauclio.v1.Board
-	20,  // 34: nauclio.v1.CardDetail.comments:type_name -> nauclio.v1.Comment
-	21,  // 35: nauclio.v1.Comment.author:type_name -> nauclio.v1.Author
-	27,  // 36: nauclio.v1.Conversation.messages:type_name -> nauclio.v1.UiMessage
-	29,  // 37: nauclio.v1.Conversation.pending_tools:type_name -> nauclio.v1.PendingTool
-	30,  // 38: nauclio.v1.Conversation.queue:type_name -> nauclio.v1.QueuedMessage
-	23,  // 39: nauclio.v1.Conversation.subagents:type_name -> nauclio.v1.Subagent
-	24,  // 40: nauclio.v1.Conversation.task_plans:type_name -> nauclio.v1.TaskPlan
-	28,  // 41: nauclio.v1.Conversation.draft_attachments:type_name -> nauclio.v1.MessagePart
-	25,  // 42: nauclio.v1.TaskPlan.phases:type_name -> nauclio.v1.TaskPlanPhase
-	26,  // 43: nauclio.v1.TaskPlanPhase.tasks:type_name -> nauclio.v1.TaskPlanItem
-	28,  // 44: nauclio.v1.UiMessage.parts:type_name -> nauclio.v1.MessagePart
-	28,  // 45: nauclio.v1.QueuedMessage.parts:type_name -> nauclio.v1.MessagePart
-	19,  // 46: nauclio.v1.ConversationSnapshot.detail:type_name -> nauclio.v1.CardDetail
-	22,  // 47: nauclio.v1.ConversationSnapshot.conversation:type_name -> nauclio.v1.Conversation
-	31,  // 48: nauclio.v1.ConversationSnapshot.page:type_name -> nauclio.v1.ConversationPage
-	34,  // 49: nauclio.v1.HarnessCatalog.harnesses:type_name -> nauclio.v1.Harness
-	38,  // 50: nauclio.v1.Harness.models:type_name -> nauclio.v1.HarnessModel
-	39,  // 51: nauclio.v1.Harness.effort:type_name -> nauclio.v1.EffortConfig
-	37,  // 52: nauclio.v1.Harness.capabilities:type_name -> nauclio.v1.HarnessCapability
-	35,  // 53: nauclio.v1.Harness.options:type_name -> nauclio.v1.ProviderOption
-	36,  // 54: nauclio.v1.ProviderOption.choices:type_name -> nauclio.v1.ProviderOptionChoice
-	63,  // 55: nauclio.v1.EffortConfig.options:type_name -> nauclio.v1.EffortOption
-	108, // 56: nauclio.v1.Settings.agent_parallel_limits:type_name -> nauclio.v1.Settings.AgentParallelLimitsEntry
-	109, // 57: nauclio.v1.Settings.board_parallel_limits:type_name -> nauclio.v1.Settings.BoardParallelLimitsEntry
-	13,  // 58: nauclio.v1.SettingsOptions.projects:type_name -> nauclio.v1.Project
-	14,  // 59: nauclio.v1.SettingsOptions.boards:type_name -> nauclio.v1.Board
-	33,  // 60: nauclio.v1.SettingsOptions.agents:type_name -> nauclio.v1.HarnessCatalog
-	40,  // 61: nauclio.v1.UpdateSettingsRequest.settings:type_name -> nauclio.v1.Settings
-	15,  // 62: nauclio.v1.PromptPreview.applied_labels:type_name -> nauclio.v1.Label
-	49,  // 63: nauclio.v1.DirectoryListing.entries:type_name -> nauclio.v1.DirectoryEntry
-	50,  // 64: nauclio.v1.DirectoryListing.locations:type_name -> nauclio.v1.DirectoryLocation
-	13,  // 65: nauclio.v1.CreateProjectResponse.project:type_name -> nauclio.v1.Project
-	14,  // 66: nauclio.v1.CreateProjectResponse.board:type_name -> nauclio.v1.Board
-	110, // 67: nauclio.v1.CreateConversationRequest.provider_options:type_name -> nauclio.v1.CreateConversationRequest.ProviderOptionsEntry
-	28,  // 68: nauclio.v1.CreateConversationRequest.attachments:type_name -> nauclio.v1.MessagePart
-	13,  // 69: nauclio.v1.ChatsResponse.projects:type_name -> nauclio.v1.Project
-	17,  // 70: nauclio.v1.ChatsResponse.chats:type_name -> nauclio.v1.Card
-	32,  // 71: nauclio.v1.ConversationUpdate.snapshot:type_name -> nauclio.v1.ConversationSnapshot
-	27,  // 72: nauclio.v1.ConversationUpdate.changed_messages:type_name -> nauclio.v1.UiMessage
-	29,  // 73: nauclio.v1.ConversationUpdate.pending_tools:type_name -> nauclio.v1.PendingTool
-	30,  // 74: nauclio.v1.ConversationUpdate.queue:type_name -> nauclio.v1.QueuedMessage
-	19,  // 75: nauclio.v1.ConversationUpdate.detail:type_name -> nauclio.v1.CardDetail
-	31,  // 76: nauclio.v1.ConversationUpdate.page:type_name -> nauclio.v1.ConversationPage
-	23,  // 77: nauclio.v1.ConversationUpdate.subagents:type_name -> nauclio.v1.Subagent
-	24,  // 78: nauclio.v1.ConversationUpdate.task_plans:type_name -> nauclio.v1.TaskPlan
-	28,  // 79: nauclio.v1.ConversationUpdate.draft_attachments:type_name -> nauclio.v1.MessagePart
-	28,  // 80: nauclio.v1.SendMessageRequest.parts:type_name -> nauclio.v1.MessagePart
-	111, // 81: nauclio.v1.SendMessageRequest.provider_options:type_name -> nauclio.v1.SendMessageRequest.ProviderOptionsEntry
-	17,  // 82: nauclio.v1.StartCardResponse.card:type_name -> nauclio.v1.Card
-	86,  // 83: nauclio.v1.FileList.entries:type_name -> nauclio.v1.FileEntry
-	97,  // 84: nauclio.v1.SchedulesResponse.schedules:type_name -> nauclio.v1.Schedule
-	112, // 85: nauclio.v1.Schedule.provider_options:type_name -> nauclio.v1.Schedule.ProviderOptionsEntry
-	113, // 86: nauclio.v1.ScheduleDraft.provider_options:type_name -> nauclio.v1.ScheduleDraft.ProviderOptionsEntry
-	98,  // 87: nauclio.v1.SaveScheduleRequest.schedule:type_name -> nauclio.v1.ScheduleDraft
-	105, // 88: nauclio.v1.ScheduleRunsResponse.runs:type_name -> nauclio.v1.ScheduleRun
-	114, // 89: nauclio.v1.NauclioService.Health:input_type -> google.protobuf.Empty
-	114, // 90: nauclio.v1.NauclioService.GetRuntimeStatus:input_type -> google.protobuf.Empty
-	2,   // 91: nauclio.v1.NauclioService.GetState:input_type -> nauclio.v1.GetStateRequest
-	3,   // 92: nauclio.v1.NauclioService.WatchState:input_type -> nauclio.v1.WatchStateRequest
-	6,   // 93: nauclio.v1.NauclioService.WatchSync:input_type -> nauclio.v1.SyncRequest
-	114, // 94: nauclio.v1.NauclioService.GetHarnesses:input_type -> google.protobuf.Empty
-	114, // 95: nauclio.v1.NauclioService.GetSettings:input_type -> google.protobuf.Empty
-	114, // 96: nauclio.v1.NauclioService.GetSettingsOptions:input_type -> google.protobuf.Empty
-	42,  // 97: nauclio.v1.NauclioService.UpdateSettings:input_type -> nauclio.v1.UpdateSettingsRequest
-	114, // 98: nauclio.v1.NauclioService.GetPromptSettings:input_type -> google.protobuf.Empty
-	44,  // 99: nauclio.v1.NauclioService.UpdatePromptSettings:input_type -> nauclio.v1.UpdatePromptSettingsRequest
-	45,  // 100: nauclio.v1.NauclioService.SetProjectPromptTemplate:input_type -> nauclio.v1.SetScopedPromptTemplateRequest
-	45,  // 101: nauclio.v1.NauclioService.SetBoardPromptTemplate:input_type -> nauclio.v1.SetScopedPromptTemplateRequest
-	46,  // 102: nauclio.v1.NauclioService.PreviewPrompt:input_type -> nauclio.v1.PreviewPromptRequest
-	48,  // 103: nauclio.v1.NauclioService.ListDirectories:input_type -> nauclio.v1.ListDirectoriesRequest
-	52,  // 104: nauclio.v1.NauclioService.CreateProject:input_type -> nauclio.v1.CreateProjectRequest
-	54,  // 105: nauclio.v1.NauclioService.UpdateProject:input_type -> nauclio.v1.UpdateProjectRequest
-	55,  // 106: nauclio.v1.NauclioService.ArchiveProject:input_type -> nauclio.v1.ArchiveProjectRequest
-	114, // 107: nauclio.v1.NauclioService.ListArchivedProjects:input_type -> google.protobuf.Empty
-	56,  // 108: nauclio.v1.NauclioService.CreateBoard:input_type -> nauclio.v1.CreateBoardRequest
-	57,  // 109: nauclio.v1.NauclioService.RenameBoard:input_type -> nauclio.v1.RenameBoardRequest
-	59,  // 110: nauclio.v1.NauclioService.SetBoardArchivePolicy:input_type -> nauclio.v1.SetBoardArchivePolicyRequest
-	58,  // 111: nauclio.v1.NauclioService.ListArchivedCards:input_type -> nauclio.v1.BoardRef
-	60,  // 112: nauclio.v1.NauclioService.CreateBoardLabel:input_type -> nauclio.v1.CreateBoardLabelRequest
-	61,  // 113: nauclio.v1.NauclioService.UpdateBoardLabel:input_type -> nauclio.v1.UpdateBoardLabelRequest
-	62,  // 114: nauclio.v1.NauclioService.DeleteBoardLabel:input_type -> nauclio.v1.DeleteBoardLabelRequest
-	64,  // 115: nauclio.v1.NauclioService.CreateCard:input_type -> nauclio.v1.CreateConversationRequest
-	64,  // 116: nauclio.v1.NauclioService.CreateChat:input_type -> nauclio.v1.CreateConversationRequest
-	65,  // 117: nauclio.v1.NauclioService.ListChats:input_type -> nauclio.v1.ListChatsRequest
-	67,  // 118: nauclio.v1.NauclioService.GetCard:input_type -> nauclio.v1.GetCardRequest
-	68,  // 119: nauclio.v1.NauclioService.GetConversation:input_type -> nauclio.v1.GetConversationRequest
-	70,  // 120: nauclio.v1.NauclioService.PollConversation:input_type -> nauclio.v1.PollConversationRequest
-	69,  // 121: nauclio.v1.NauclioService.WatchConversation:input_type -> nauclio.v1.WatchConversationRequest
-	72,  // 122: nauclio.v1.NauclioService.GetToolOutput:input_type -> nauclio.v1.GetToolOutputRequest
-	74,  // 123: nauclio.v1.NauclioService.SendMessage:input_type -> nauclio.v1.SendMessageRequest
-	76,  // 124: nauclio.v1.NauclioService.AddComment:input_type -> nauclio.v1.AddCommentRequest
-	77,  // 125: nauclio.v1.NauclioService.MoveCard:input_type -> nauclio.v1.MoveCardRequest
-	78,  // 126: nauclio.v1.NauclioService.StartCard:input_type -> nauclio.v1.StartCardRequest
-	80,  // 127: nauclio.v1.NauclioService.SetCardLabels:input_type -> nauclio.v1.SetCardLabelsRequest
-	67,  // 128: nauclio.v1.NauclioService.CancelCard:input_type -> nauclio.v1.GetCardRequest
-	81,  // 129: nauclio.v1.NauclioService.RenameCard:input_type -> nauclio.v1.RenameCardRequest
-	82,  // 130: nauclio.v1.NauclioService.UpdateCard:input_type -> nauclio.v1.UpdateCardRequest
-	83,  // 131: nauclio.v1.NauclioService.ArchiveCard:input_type -> nauclio.v1.ArchiveCardRequest
-	84,  // 132: nauclio.v1.NauclioService.PinChat:input_type -> nauclio.v1.PinChatRequest
-	85,  // 133: nauclio.v1.NauclioService.ListFiles:input_type -> nauclio.v1.ListFilesRequest
-	88,  // 134: nauclio.v1.NauclioService.ReadFile:input_type -> nauclio.v1.ReadFileRequest
-	90,  // 135: nauclio.v1.NauclioService.SaveFile:input_type -> nauclio.v1.SaveFileRequest
-	91,  // 136: nauclio.v1.NauclioService.CreateFile:input_type -> nauclio.v1.CreateFileRequest
-	92,  // 137: nauclio.v1.NauclioService.MoveFile:input_type -> nauclio.v1.MoveFileRequest
-	94,  // 138: nauclio.v1.NauclioService.DeleteFile:input_type -> nauclio.v1.DeleteFileRequest
-	95,  // 139: nauclio.v1.NauclioService.ListSchedules:input_type -> nauclio.v1.ListSchedulesRequest
-	100, // 140: nauclio.v1.NauclioService.PreviewSchedule:input_type -> nauclio.v1.PreviewScheduleRequest
-	99,  // 141: nauclio.v1.NauclioService.CreateSchedule:input_type -> nauclio.v1.SaveScheduleRequest
-	99,  // 142: nauclio.v1.NauclioService.UpdateSchedule:input_type -> nauclio.v1.SaveScheduleRequest
-	102, // 143: nauclio.v1.NauclioService.DeleteSchedule:input_type -> nauclio.v1.ScheduleRef
-	102, // 144: nauclio.v1.NauclioService.RunSchedule:input_type -> nauclio.v1.ScheduleRef
-	103, // 145: nauclio.v1.NauclioService.SetScheduleEnabled:input_type -> nauclio.v1.SetScheduleEnabledRequest
-	104, // 146: nauclio.v1.NauclioService.ListScheduleRuns:input_type -> nauclio.v1.ListScheduleRunsRequest
-	0,   // 147: nauclio.v1.NauclioService.Health:output_type -> nauclio.v1.HealthResponse
-	1,   // 148: nauclio.v1.NauclioService.GetRuntimeStatus:output_type -> nauclio.v1.RuntimeStatus
-	4,   // 149: nauclio.v1.NauclioService.GetState:output_type -> nauclio.v1.State
-	4,   // 150: nauclio.v1.NauclioService.WatchState:output_type -> nauclio.v1.State
-	10,  // 151: nauclio.v1.NauclioService.WatchSync:output_type -> nauclio.v1.SyncFrame
-	33,  // 152: nauclio.v1.NauclioService.GetHarnesses:output_type -> nauclio.v1.HarnessCatalog
-	40,  // 153: nauclio.v1.NauclioService.GetSettings:output_type -> nauclio.v1.Settings
-	41,  // 154: nauclio.v1.NauclioService.GetSettingsOptions:output_type -> nauclio.v1.SettingsOptions
-	40,  // 155: nauclio.v1.NauclioService.UpdateSettings:output_type -> nauclio.v1.Settings
-	43,  // 156: nauclio.v1.NauclioService.GetPromptSettings:output_type -> nauclio.v1.PromptSettings
-	43,  // 157: nauclio.v1.NauclioService.UpdatePromptSettings:output_type -> nauclio.v1.PromptSettings
-	13,  // 158: nauclio.v1.NauclioService.SetProjectPromptTemplate:output_type -> nauclio.v1.Project
-	14,  // 159: nauclio.v1.NauclioService.SetBoardPromptTemplate:output_type -> nauclio.v1.Board
-	47,  // 160: nauclio.v1.NauclioService.PreviewPrompt:output_type -> nauclio.v1.PromptPreview
-	51,  // 161: nauclio.v1.NauclioService.ListDirectories:output_type -> nauclio.v1.DirectoryListing
-	53,  // 162: nauclio.v1.NauclioService.CreateProject:output_type -> nauclio.v1.CreateProjectResponse
-	13,  // 163: nauclio.v1.NauclioService.UpdateProject:output_type -> nauclio.v1.Project
-	13,  // 164: nauclio.v1.NauclioService.ArchiveProject:output_type -> nauclio.v1.Project
-	11,  // 165: nauclio.v1.NauclioService.ListArchivedProjects:output_type -> nauclio.v1.ProjectsResponse
-	14,  // 166: nauclio.v1.NauclioService.CreateBoard:output_type -> nauclio.v1.Board
-	14,  // 167: nauclio.v1.NauclioService.RenameBoard:output_type -> nauclio.v1.Board
-	14,  // 168: nauclio.v1.NauclioService.SetBoardArchivePolicy:output_type -> nauclio.v1.Board
-	12,  // 169: nauclio.v1.NauclioService.ListArchivedCards:output_type -> nauclio.v1.CardsResponse
-	14,  // 170: nauclio.v1.NauclioService.CreateBoardLabel:output_type -> nauclio.v1.Board
-	14,  // 171: nauclio.v1.NauclioService.UpdateBoardLabel:output_type -> nauclio.v1.Board
-	14,  // 172: nauclio.v1.NauclioService.DeleteBoardLabel:output_type -> nauclio.v1.Board
-	17,  // 173: nauclio.v1.NauclioService.CreateCard:output_type -> nauclio.v1.Card
-	17,  // 174: nauclio.v1.NauclioService.CreateChat:output_type -> nauclio.v1.Card
-	66,  // 175: nauclio.v1.NauclioService.ListChats:output_type -> nauclio.v1.ChatsResponse
-	19,  // 176: nauclio.v1.NauclioService.GetCard:output_type -> nauclio.v1.CardDetail
-	32,  // 177: nauclio.v1.NauclioService.GetConversation:output_type -> nauclio.v1.ConversationSnapshot
-	71,  // 178: nauclio.v1.NauclioService.PollConversation:output_type -> nauclio.v1.ConversationUpdate
-	71,  // 179: nauclio.v1.NauclioService.WatchConversation:output_type -> nauclio.v1.ConversationUpdate
-	73,  // 180: nauclio.v1.NauclioService.GetToolOutput:output_type -> nauclio.v1.ToolOutput
-	75,  // 181: nauclio.v1.NauclioService.SendMessage:output_type -> nauclio.v1.SendMessageResponse
-	20,  // 182: nauclio.v1.NauclioService.AddComment:output_type -> nauclio.v1.Comment
-	17,  // 183: nauclio.v1.NauclioService.MoveCard:output_type -> nauclio.v1.Card
-	79,  // 184: nauclio.v1.NauclioService.StartCard:output_type -> nauclio.v1.StartCardResponse
-	17,  // 185: nauclio.v1.NauclioService.SetCardLabels:output_type -> nauclio.v1.Card
-	114, // 186: nauclio.v1.NauclioService.CancelCard:output_type -> google.protobuf.Empty
-	17,  // 187: nauclio.v1.NauclioService.RenameCard:output_type -> nauclio.v1.Card
-	17,  // 188: nauclio.v1.NauclioService.UpdateCard:output_type -> nauclio.v1.Card
-	17,  // 189: nauclio.v1.NauclioService.ArchiveCard:output_type -> nauclio.v1.Card
-	17,  // 190: nauclio.v1.NauclioService.PinChat:output_type -> nauclio.v1.Card
-	87,  // 191: nauclio.v1.NauclioService.ListFiles:output_type -> nauclio.v1.FileList
-	89,  // 192: nauclio.v1.NauclioService.ReadFile:output_type -> nauclio.v1.FileDocument
-	89,  // 193: nauclio.v1.NauclioService.SaveFile:output_type -> nauclio.v1.FileDocument
-	86,  // 194: nauclio.v1.NauclioService.CreateFile:output_type -> nauclio.v1.FileEntry
-	93,  // 195: nauclio.v1.NauclioService.MoveFile:output_type -> nauclio.v1.MoveFileResponse
-	114, // 196: nauclio.v1.NauclioService.DeleteFile:output_type -> google.protobuf.Empty
-	96,  // 197: nauclio.v1.NauclioService.ListSchedules:output_type -> nauclio.v1.SchedulesResponse
-	101, // 198: nauclio.v1.NauclioService.PreviewSchedule:output_type -> nauclio.v1.SchedulePreview
-	97,  // 199: nauclio.v1.NauclioService.CreateSchedule:output_type -> nauclio.v1.Schedule
-	97,  // 200: nauclio.v1.NauclioService.UpdateSchedule:output_type -> nauclio.v1.Schedule
-	114, // 201: nauclio.v1.NauclioService.DeleteSchedule:output_type -> google.protobuf.Empty
-	105, // 202: nauclio.v1.NauclioService.RunSchedule:output_type -> nauclio.v1.ScheduleRun
-	97,  // 203: nauclio.v1.NauclioService.SetScheduleEnabled:output_type -> nauclio.v1.Schedule
-	106, // 204: nauclio.v1.NauclioService.ListScheduleRuns:output_type -> nauclio.v1.ScheduleRunsResponse
-	147, // [147:205] is the sub-list for method output_type
-	89,  // [89:147] is the sub-list for method input_type
-	89,  // [89:89] is the sub-list for extension type_name
-	89,  // [89:89] is the sub-list for extension extendee
-	0,   // [0:89] is the sub-list for field type_name
+	32,  // 19: nauclio.v1.GlobalDelta.conversations:type_name -> nauclio.v1.ConversationSnapshot
+	5,   // 20: nauclio.v1.SyncFrame.cursor:type_name -> nauclio.v1.SyncCursor
+	7,   // 21: nauclio.v1.SyncFrame.event:type_name -> nauclio.v1.SyncEvent
+	8,   // 22: nauclio.v1.SyncFrame.snapshot:type_name -> nauclio.v1.GlobalSnapshot
+	7,   // 23: nauclio.v1.SyncFrame.events:type_name -> nauclio.v1.SyncEvent
+	9,   // 24: nauclio.v1.SyncFrame.delta:type_name -> nauclio.v1.GlobalDelta
+	13,  // 25: nauclio.v1.ProjectsResponse.projects:type_name -> nauclio.v1.Project
+	17,  // 26: nauclio.v1.CardsResponse.cards:type_name -> nauclio.v1.Card
+	15,  // 27: nauclio.v1.Board.labels:type_name -> nauclio.v1.Label
+	16,  // 28: nauclio.v1.Board.lanes:type_name -> nauclio.v1.Lane
+	18,  // 29: nauclio.v1.Card.origin:type_name -> nauclio.v1.CardOrigin
+	23,  // 30: nauclio.v1.Card.active_subagents:type_name -> nauclio.v1.Subagent
+	107, // 31: nauclio.v1.Card.provider_options:type_name -> nauclio.v1.Card.ProviderOptionsEntry
+	17,  // 32: nauclio.v1.CardDetail.card:type_name -> nauclio.v1.Card
+	13,  // 33: nauclio.v1.CardDetail.project:type_name -> nauclio.v1.Project
+	14,  // 34: nauclio.v1.CardDetail.board:type_name -> nauclio.v1.Board
+	20,  // 35: nauclio.v1.CardDetail.comments:type_name -> nauclio.v1.Comment
+	21,  // 36: nauclio.v1.Comment.author:type_name -> nauclio.v1.Author
+	27,  // 37: nauclio.v1.Conversation.messages:type_name -> nauclio.v1.UiMessage
+	29,  // 38: nauclio.v1.Conversation.pending_tools:type_name -> nauclio.v1.PendingTool
+	30,  // 39: nauclio.v1.Conversation.queue:type_name -> nauclio.v1.QueuedMessage
+	23,  // 40: nauclio.v1.Conversation.subagents:type_name -> nauclio.v1.Subagent
+	24,  // 41: nauclio.v1.Conversation.task_plans:type_name -> nauclio.v1.TaskPlan
+	28,  // 42: nauclio.v1.Conversation.draft_attachments:type_name -> nauclio.v1.MessagePart
+	25,  // 43: nauclio.v1.TaskPlan.phases:type_name -> nauclio.v1.TaskPlanPhase
+	26,  // 44: nauclio.v1.TaskPlanPhase.tasks:type_name -> nauclio.v1.TaskPlanItem
+	28,  // 45: nauclio.v1.UiMessage.parts:type_name -> nauclio.v1.MessagePart
+	28,  // 46: nauclio.v1.QueuedMessage.parts:type_name -> nauclio.v1.MessagePart
+	19,  // 47: nauclio.v1.ConversationSnapshot.detail:type_name -> nauclio.v1.CardDetail
+	22,  // 48: nauclio.v1.ConversationSnapshot.conversation:type_name -> nauclio.v1.Conversation
+	31,  // 49: nauclio.v1.ConversationSnapshot.page:type_name -> nauclio.v1.ConversationPage
+	34,  // 50: nauclio.v1.HarnessCatalog.harnesses:type_name -> nauclio.v1.Harness
+	38,  // 51: nauclio.v1.Harness.models:type_name -> nauclio.v1.HarnessModel
+	39,  // 52: nauclio.v1.Harness.effort:type_name -> nauclio.v1.EffortConfig
+	37,  // 53: nauclio.v1.Harness.capabilities:type_name -> nauclio.v1.HarnessCapability
+	35,  // 54: nauclio.v1.Harness.options:type_name -> nauclio.v1.ProviderOption
+	36,  // 55: nauclio.v1.ProviderOption.choices:type_name -> nauclio.v1.ProviderOptionChoice
+	63,  // 56: nauclio.v1.EffortConfig.options:type_name -> nauclio.v1.EffortOption
+	108, // 57: nauclio.v1.Settings.agent_parallel_limits:type_name -> nauclio.v1.Settings.AgentParallelLimitsEntry
+	109, // 58: nauclio.v1.Settings.board_parallel_limits:type_name -> nauclio.v1.Settings.BoardParallelLimitsEntry
+	13,  // 59: nauclio.v1.SettingsOptions.projects:type_name -> nauclio.v1.Project
+	14,  // 60: nauclio.v1.SettingsOptions.boards:type_name -> nauclio.v1.Board
+	33,  // 61: nauclio.v1.SettingsOptions.agents:type_name -> nauclio.v1.HarnessCatalog
+	40,  // 62: nauclio.v1.UpdateSettingsRequest.settings:type_name -> nauclio.v1.Settings
+	15,  // 63: nauclio.v1.PromptPreview.applied_labels:type_name -> nauclio.v1.Label
+	49,  // 64: nauclio.v1.DirectoryListing.entries:type_name -> nauclio.v1.DirectoryEntry
+	50,  // 65: nauclio.v1.DirectoryListing.locations:type_name -> nauclio.v1.DirectoryLocation
+	13,  // 66: nauclio.v1.CreateProjectResponse.project:type_name -> nauclio.v1.Project
+	14,  // 67: nauclio.v1.CreateProjectResponse.board:type_name -> nauclio.v1.Board
+	110, // 68: nauclio.v1.CreateConversationRequest.provider_options:type_name -> nauclio.v1.CreateConversationRequest.ProviderOptionsEntry
+	28,  // 69: nauclio.v1.CreateConversationRequest.attachments:type_name -> nauclio.v1.MessagePart
+	13,  // 70: nauclio.v1.ChatsResponse.projects:type_name -> nauclio.v1.Project
+	17,  // 71: nauclio.v1.ChatsResponse.chats:type_name -> nauclio.v1.Card
+	32,  // 72: nauclio.v1.ConversationUpdate.snapshot:type_name -> nauclio.v1.ConversationSnapshot
+	27,  // 73: nauclio.v1.ConversationUpdate.changed_messages:type_name -> nauclio.v1.UiMessage
+	29,  // 74: nauclio.v1.ConversationUpdate.pending_tools:type_name -> nauclio.v1.PendingTool
+	30,  // 75: nauclio.v1.ConversationUpdate.queue:type_name -> nauclio.v1.QueuedMessage
+	19,  // 76: nauclio.v1.ConversationUpdate.detail:type_name -> nauclio.v1.CardDetail
+	31,  // 77: nauclio.v1.ConversationUpdate.page:type_name -> nauclio.v1.ConversationPage
+	23,  // 78: nauclio.v1.ConversationUpdate.subagents:type_name -> nauclio.v1.Subagent
+	24,  // 79: nauclio.v1.ConversationUpdate.task_plans:type_name -> nauclio.v1.TaskPlan
+	28,  // 80: nauclio.v1.ConversationUpdate.draft_attachments:type_name -> nauclio.v1.MessagePart
+	28,  // 81: nauclio.v1.SendMessageRequest.parts:type_name -> nauclio.v1.MessagePart
+	111, // 82: nauclio.v1.SendMessageRequest.provider_options:type_name -> nauclio.v1.SendMessageRequest.ProviderOptionsEntry
+	17,  // 83: nauclio.v1.StartCardResponse.card:type_name -> nauclio.v1.Card
+	86,  // 84: nauclio.v1.FileList.entries:type_name -> nauclio.v1.FileEntry
+	97,  // 85: nauclio.v1.SchedulesResponse.schedules:type_name -> nauclio.v1.Schedule
+	112, // 86: nauclio.v1.Schedule.provider_options:type_name -> nauclio.v1.Schedule.ProviderOptionsEntry
+	113, // 87: nauclio.v1.ScheduleDraft.provider_options:type_name -> nauclio.v1.ScheduleDraft.ProviderOptionsEntry
+	98,  // 88: nauclio.v1.SaveScheduleRequest.schedule:type_name -> nauclio.v1.ScheduleDraft
+	105, // 89: nauclio.v1.ScheduleRunsResponse.runs:type_name -> nauclio.v1.ScheduleRun
+	114, // 90: nauclio.v1.NauclioService.Health:input_type -> google.protobuf.Empty
+	114, // 91: nauclio.v1.NauclioService.GetRuntimeStatus:input_type -> google.protobuf.Empty
+	2,   // 92: nauclio.v1.NauclioService.GetState:input_type -> nauclio.v1.GetStateRequest
+	3,   // 93: nauclio.v1.NauclioService.WatchState:input_type -> nauclio.v1.WatchStateRequest
+	6,   // 94: nauclio.v1.NauclioService.WatchSync:input_type -> nauclio.v1.SyncRequest
+	114, // 95: nauclio.v1.NauclioService.GetHarnesses:input_type -> google.protobuf.Empty
+	114, // 96: nauclio.v1.NauclioService.GetSettings:input_type -> google.protobuf.Empty
+	114, // 97: nauclio.v1.NauclioService.GetSettingsOptions:input_type -> google.protobuf.Empty
+	42,  // 98: nauclio.v1.NauclioService.UpdateSettings:input_type -> nauclio.v1.UpdateSettingsRequest
+	114, // 99: nauclio.v1.NauclioService.GetPromptSettings:input_type -> google.protobuf.Empty
+	44,  // 100: nauclio.v1.NauclioService.UpdatePromptSettings:input_type -> nauclio.v1.UpdatePromptSettingsRequest
+	45,  // 101: nauclio.v1.NauclioService.SetProjectPromptTemplate:input_type -> nauclio.v1.SetScopedPromptTemplateRequest
+	45,  // 102: nauclio.v1.NauclioService.SetBoardPromptTemplate:input_type -> nauclio.v1.SetScopedPromptTemplateRequest
+	46,  // 103: nauclio.v1.NauclioService.PreviewPrompt:input_type -> nauclio.v1.PreviewPromptRequest
+	48,  // 104: nauclio.v1.NauclioService.ListDirectories:input_type -> nauclio.v1.ListDirectoriesRequest
+	52,  // 105: nauclio.v1.NauclioService.CreateProject:input_type -> nauclio.v1.CreateProjectRequest
+	54,  // 106: nauclio.v1.NauclioService.UpdateProject:input_type -> nauclio.v1.UpdateProjectRequest
+	55,  // 107: nauclio.v1.NauclioService.ArchiveProject:input_type -> nauclio.v1.ArchiveProjectRequest
+	114, // 108: nauclio.v1.NauclioService.ListArchivedProjects:input_type -> google.protobuf.Empty
+	56,  // 109: nauclio.v1.NauclioService.CreateBoard:input_type -> nauclio.v1.CreateBoardRequest
+	57,  // 110: nauclio.v1.NauclioService.RenameBoard:input_type -> nauclio.v1.RenameBoardRequest
+	59,  // 111: nauclio.v1.NauclioService.SetBoardArchivePolicy:input_type -> nauclio.v1.SetBoardArchivePolicyRequest
+	58,  // 112: nauclio.v1.NauclioService.ListArchivedCards:input_type -> nauclio.v1.BoardRef
+	60,  // 113: nauclio.v1.NauclioService.CreateBoardLabel:input_type -> nauclio.v1.CreateBoardLabelRequest
+	61,  // 114: nauclio.v1.NauclioService.UpdateBoardLabel:input_type -> nauclio.v1.UpdateBoardLabelRequest
+	62,  // 115: nauclio.v1.NauclioService.DeleteBoardLabel:input_type -> nauclio.v1.DeleteBoardLabelRequest
+	64,  // 116: nauclio.v1.NauclioService.CreateCard:input_type -> nauclio.v1.CreateConversationRequest
+	64,  // 117: nauclio.v1.NauclioService.CreateChat:input_type -> nauclio.v1.CreateConversationRequest
+	65,  // 118: nauclio.v1.NauclioService.ListChats:input_type -> nauclio.v1.ListChatsRequest
+	67,  // 119: nauclio.v1.NauclioService.GetCard:input_type -> nauclio.v1.GetCardRequest
+	68,  // 120: nauclio.v1.NauclioService.GetConversation:input_type -> nauclio.v1.GetConversationRequest
+	70,  // 121: nauclio.v1.NauclioService.PollConversation:input_type -> nauclio.v1.PollConversationRequest
+	69,  // 122: nauclio.v1.NauclioService.WatchConversation:input_type -> nauclio.v1.WatchConversationRequest
+	72,  // 123: nauclio.v1.NauclioService.GetToolOutput:input_type -> nauclio.v1.GetToolOutputRequest
+	74,  // 124: nauclio.v1.NauclioService.SendMessage:input_type -> nauclio.v1.SendMessageRequest
+	76,  // 125: nauclio.v1.NauclioService.AddComment:input_type -> nauclio.v1.AddCommentRequest
+	77,  // 126: nauclio.v1.NauclioService.MoveCard:input_type -> nauclio.v1.MoveCardRequest
+	78,  // 127: nauclio.v1.NauclioService.StartCard:input_type -> nauclio.v1.StartCardRequest
+	80,  // 128: nauclio.v1.NauclioService.SetCardLabels:input_type -> nauclio.v1.SetCardLabelsRequest
+	67,  // 129: nauclio.v1.NauclioService.CancelCard:input_type -> nauclio.v1.GetCardRequest
+	81,  // 130: nauclio.v1.NauclioService.RenameCard:input_type -> nauclio.v1.RenameCardRequest
+	82,  // 131: nauclio.v1.NauclioService.UpdateCard:input_type -> nauclio.v1.UpdateCardRequest
+	83,  // 132: nauclio.v1.NauclioService.ArchiveCard:input_type -> nauclio.v1.ArchiveCardRequest
+	84,  // 133: nauclio.v1.NauclioService.PinChat:input_type -> nauclio.v1.PinChatRequest
+	85,  // 134: nauclio.v1.NauclioService.ListFiles:input_type -> nauclio.v1.ListFilesRequest
+	88,  // 135: nauclio.v1.NauclioService.ReadFile:input_type -> nauclio.v1.ReadFileRequest
+	90,  // 136: nauclio.v1.NauclioService.SaveFile:input_type -> nauclio.v1.SaveFileRequest
+	91,  // 137: nauclio.v1.NauclioService.CreateFile:input_type -> nauclio.v1.CreateFileRequest
+	92,  // 138: nauclio.v1.NauclioService.MoveFile:input_type -> nauclio.v1.MoveFileRequest
+	94,  // 139: nauclio.v1.NauclioService.DeleteFile:input_type -> nauclio.v1.DeleteFileRequest
+	95,  // 140: nauclio.v1.NauclioService.ListSchedules:input_type -> nauclio.v1.ListSchedulesRequest
+	100, // 141: nauclio.v1.NauclioService.PreviewSchedule:input_type -> nauclio.v1.PreviewScheduleRequest
+	99,  // 142: nauclio.v1.NauclioService.CreateSchedule:input_type -> nauclio.v1.SaveScheduleRequest
+	99,  // 143: nauclio.v1.NauclioService.UpdateSchedule:input_type -> nauclio.v1.SaveScheduleRequest
+	102, // 144: nauclio.v1.NauclioService.DeleteSchedule:input_type -> nauclio.v1.ScheduleRef
+	102, // 145: nauclio.v1.NauclioService.RunSchedule:input_type -> nauclio.v1.ScheduleRef
+	103, // 146: nauclio.v1.NauclioService.SetScheduleEnabled:input_type -> nauclio.v1.SetScheduleEnabledRequest
+	104, // 147: nauclio.v1.NauclioService.ListScheduleRuns:input_type -> nauclio.v1.ListScheduleRunsRequest
+	0,   // 148: nauclio.v1.NauclioService.Health:output_type -> nauclio.v1.HealthResponse
+	1,   // 149: nauclio.v1.NauclioService.GetRuntimeStatus:output_type -> nauclio.v1.RuntimeStatus
+	4,   // 150: nauclio.v1.NauclioService.GetState:output_type -> nauclio.v1.State
+	4,   // 151: nauclio.v1.NauclioService.WatchState:output_type -> nauclio.v1.State
+	10,  // 152: nauclio.v1.NauclioService.WatchSync:output_type -> nauclio.v1.SyncFrame
+	33,  // 153: nauclio.v1.NauclioService.GetHarnesses:output_type -> nauclio.v1.HarnessCatalog
+	40,  // 154: nauclio.v1.NauclioService.GetSettings:output_type -> nauclio.v1.Settings
+	41,  // 155: nauclio.v1.NauclioService.GetSettingsOptions:output_type -> nauclio.v1.SettingsOptions
+	40,  // 156: nauclio.v1.NauclioService.UpdateSettings:output_type -> nauclio.v1.Settings
+	43,  // 157: nauclio.v1.NauclioService.GetPromptSettings:output_type -> nauclio.v1.PromptSettings
+	43,  // 158: nauclio.v1.NauclioService.UpdatePromptSettings:output_type -> nauclio.v1.PromptSettings
+	13,  // 159: nauclio.v1.NauclioService.SetProjectPromptTemplate:output_type -> nauclio.v1.Project
+	14,  // 160: nauclio.v1.NauclioService.SetBoardPromptTemplate:output_type -> nauclio.v1.Board
+	47,  // 161: nauclio.v1.NauclioService.PreviewPrompt:output_type -> nauclio.v1.PromptPreview
+	51,  // 162: nauclio.v1.NauclioService.ListDirectories:output_type -> nauclio.v1.DirectoryListing
+	53,  // 163: nauclio.v1.NauclioService.CreateProject:output_type -> nauclio.v1.CreateProjectResponse
+	13,  // 164: nauclio.v1.NauclioService.UpdateProject:output_type -> nauclio.v1.Project
+	13,  // 165: nauclio.v1.NauclioService.ArchiveProject:output_type -> nauclio.v1.Project
+	11,  // 166: nauclio.v1.NauclioService.ListArchivedProjects:output_type -> nauclio.v1.ProjectsResponse
+	14,  // 167: nauclio.v1.NauclioService.CreateBoard:output_type -> nauclio.v1.Board
+	14,  // 168: nauclio.v1.NauclioService.RenameBoard:output_type -> nauclio.v1.Board
+	14,  // 169: nauclio.v1.NauclioService.SetBoardArchivePolicy:output_type -> nauclio.v1.Board
+	12,  // 170: nauclio.v1.NauclioService.ListArchivedCards:output_type -> nauclio.v1.CardsResponse
+	14,  // 171: nauclio.v1.NauclioService.CreateBoardLabel:output_type -> nauclio.v1.Board
+	14,  // 172: nauclio.v1.NauclioService.UpdateBoardLabel:output_type -> nauclio.v1.Board
+	14,  // 173: nauclio.v1.NauclioService.DeleteBoardLabel:output_type -> nauclio.v1.Board
+	17,  // 174: nauclio.v1.NauclioService.CreateCard:output_type -> nauclio.v1.Card
+	17,  // 175: nauclio.v1.NauclioService.CreateChat:output_type -> nauclio.v1.Card
+	66,  // 176: nauclio.v1.NauclioService.ListChats:output_type -> nauclio.v1.ChatsResponse
+	19,  // 177: nauclio.v1.NauclioService.GetCard:output_type -> nauclio.v1.CardDetail
+	32,  // 178: nauclio.v1.NauclioService.GetConversation:output_type -> nauclio.v1.ConversationSnapshot
+	71,  // 179: nauclio.v1.NauclioService.PollConversation:output_type -> nauclio.v1.ConversationUpdate
+	71,  // 180: nauclio.v1.NauclioService.WatchConversation:output_type -> nauclio.v1.ConversationUpdate
+	73,  // 181: nauclio.v1.NauclioService.GetToolOutput:output_type -> nauclio.v1.ToolOutput
+	75,  // 182: nauclio.v1.NauclioService.SendMessage:output_type -> nauclio.v1.SendMessageResponse
+	20,  // 183: nauclio.v1.NauclioService.AddComment:output_type -> nauclio.v1.Comment
+	17,  // 184: nauclio.v1.NauclioService.MoveCard:output_type -> nauclio.v1.Card
+	79,  // 185: nauclio.v1.NauclioService.StartCard:output_type -> nauclio.v1.StartCardResponse
+	17,  // 186: nauclio.v1.NauclioService.SetCardLabels:output_type -> nauclio.v1.Card
+	114, // 187: nauclio.v1.NauclioService.CancelCard:output_type -> google.protobuf.Empty
+	17,  // 188: nauclio.v1.NauclioService.RenameCard:output_type -> nauclio.v1.Card
+	17,  // 189: nauclio.v1.NauclioService.UpdateCard:output_type -> nauclio.v1.Card
+	17,  // 190: nauclio.v1.NauclioService.ArchiveCard:output_type -> nauclio.v1.Card
+	17,  // 191: nauclio.v1.NauclioService.PinChat:output_type -> nauclio.v1.Card
+	87,  // 192: nauclio.v1.NauclioService.ListFiles:output_type -> nauclio.v1.FileList
+	89,  // 193: nauclio.v1.NauclioService.ReadFile:output_type -> nauclio.v1.FileDocument
+	89,  // 194: nauclio.v1.NauclioService.SaveFile:output_type -> nauclio.v1.FileDocument
+	86,  // 195: nauclio.v1.NauclioService.CreateFile:output_type -> nauclio.v1.FileEntry
+	93,  // 196: nauclio.v1.NauclioService.MoveFile:output_type -> nauclio.v1.MoveFileResponse
+	114, // 197: nauclio.v1.NauclioService.DeleteFile:output_type -> google.protobuf.Empty
+	96,  // 198: nauclio.v1.NauclioService.ListSchedules:output_type -> nauclio.v1.SchedulesResponse
+	101, // 199: nauclio.v1.NauclioService.PreviewSchedule:output_type -> nauclio.v1.SchedulePreview
+	97,  // 200: nauclio.v1.NauclioService.CreateSchedule:output_type -> nauclio.v1.Schedule
+	97,  // 201: nauclio.v1.NauclioService.UpdateSchedule:output_type -> nauclio.v1.Schedule
+	114, // 202: nauclio.v1.NauclioService.DeleteSchedule:output_type -> google.protobuf.Empty
+	105, // 203: nauclio.v1.NauclioService.RunSchedule:output_type -> nauclio.v1.ScheduleRun
+	97,  // 204: nauclio.v1.NauclioService.SetScheduleEnabled:output_type -> nauclio.v1.Schedule
+	106, // 205: nauclio.v1.NauclioService.ListScheduleRuns:output_type -> nauclio.v1.ScheduleRunsResponse
+	148, // [148:206] is the sub-list for method output_type
+	90,  // [90:148] is the sub-list for method input_type
+	90,  // [90:90] is the sub-list for extension type_name
+	90,  // [90:90] is the sub-list for extension extendee
+	0,   // [0:90] is the sub-list for field type_name
 }
 
 func init() { file_nauclio_v1_nauclio_proto_init() }

@@ -168,11 +168,18 @@ struct ChatRow: View {
             }
         } label: {
             HStack(alignment: .top, spacing: 9) {
-                ZStack {
-                    Circle().stroke(runtimeColor(card.runtime).opacity(0.35), lineWidth: 1.5).frame(width: 11, height: 11)
-                    if ["running", "starting"].contains(card.runtime) { Circle().trim(from: 0.08, to: 0.72).stroke(runtimeColor(card.runtime), style: .init(lineWidth: 1.6, lineCap: .round)).frame(width: 11, height: 11) }
-                    else { Circle().fill(runtimeColor(card.runtime)).frame(width: 5, height: 5) }
-                }.padding(.top, 3)
+                Group {
+                    if ["running", "starting"].contains(card.runtime) {
+                        NauclioActivityIndicator(color: runtimeColor(card.runtime))
+                            .accessibilityLabel("Running")
+                    } else {
+                        ZStack {
+                            Circle().stroke(runtimeColor(card.runtime).opacity(0.35), lineWidth: 1.5).frame(width: 11, height: 11)
+                            Circle().fill(runtimeColor(card.runtime)).frame(width: 5, height: 5)
+                        }
+                    }
+                }
+                .padding(.top, 3)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(card.title.isEmpty ? "Untitled chat" : card.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
@@ -184,7 +191,13 @@ struct ChatRow: View {
                                 Circle().fill(NauclioTheme.primary).frame(width: 6, height: 6)
                                     .accessibilityLabel("Unread")
                             }
-                            Text(ChatActivityText.compact(card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt))
+                            TimelineView(.periodic(from: .now, by: 30)) { context in
+                                Text(ChatActivityText.compact(
+                                    card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt,
+                                    relativeTo: context.date
+                                ))
+                            }
+                            .fixedSize()
                         }
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(NauclioTheme.tertiary)
@@ -254,6 +267,7 @@ private struct StandaloneChatStartView: View {
     @State private var submitting = false
     @State private var attachments: [Nauclio_V1_MessagePart] = []
     @State private var fileImporterPresented = false
+    @State private var attachmentDropTargeted = false
 
     private let suggestions = [
         ("Explore the codebase", "Explore this codebase and explain its architecture, important entry points, and current risks."),
@@ -348,32 +362,31 @@ private struct StandaloneChatStartView: View {
                     }
                     .buttonStyle(NauclioIconButtonStyle())
                     .help("Attach images or files")
-                    ZStack(alignment: .topLeading) {
-                        TextEditor(text: $prompt)
-                            .scrollContentBackground(.hidden)
-                            .font(.system(size: 13))
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .accessibilityIdentifier("chats.new.prompt")
-                            .onKeyPress(.return, phases: .down) { press in
-                                if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
-                                    return .ignored
-                                }
-                                if !submitting, !projectID.isEmpty,
-                                   !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty {
-                                    Task { await submit() }
-                                }
-                                return .handled
+                    TextField("Ask anything, describe a task, or explore an idea…", text: $prompt, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .lineLimit(1...4)
+                        .padding(.horizontal, 13).padding(.vertical, 11)
+                        .accessibilityIdentifier("chats.new.prompt")
+                        .onKeyPress(.return, phases: .down) { press in
+                            if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
+                                return .ignored
                             }
-                        if prompt.isEmpty {
-                            Text("Ask anything, describe a task, or explore an idea…")
-                                .font(.system(size: 13)).foregroundStyle(NauclioTheme.tertiary)
-                                .padding(.leading, 13).padding(.top, 11)
-                                .allowsHitTesting(false)
+                            if !submitting, !projectID.isEmpty,
+                               !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty {
+                                Task { await submit() }
+                            }
+                            return .handled
                         }
-                    }
                         .frame(height: promptEditorHeight)
-                        .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NauclioTheme.cobalt.opacity(0.45), lineWidth: 1))
+                        .background(attachmentDropTargeted ? NauclioTheme.cobalt.opacity(0.12) : NauclioTheme.input, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(attachmentDropTargeted ? NauclioTheme.aegean : NauclioTheme.cobalt.opacity(0.45), lineWidth: attachmentDropTargeted ? 1.5 : 1))
+                        .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                            Task {
+                                do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
+                                catch { store.show(error) }
+                            }
+                        }
                     Button { Task { await submit() } } label: {
                         Image(systemName: submitting ? "hourglass" : "arrow.up").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                             .frame(width: 36, height: 36).background(NauclioTheme.cobalt, in: Circle())

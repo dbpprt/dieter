@@ -127,6 +127,11 @@ message SyncRequest {
   SyncCursor after = 1;
   int32 conversation_limit = 2;
   int32 heartbeat_ms = 3;
+  // When set together with conversation_limit, the stream stays bounded: it
+  // carries conversation snapshots only for cards with an active runtime plus
+  // the most recently active conversations up to this count, and conversation
+  // changes ride the delta frames instead of full snapshots.
+  int32 recent_conversation_limit = 4;
 }
 
 message SyncEvent {
@@ -149,7 +154,8 @@ message GlobalSnapshot {
 
 // GlobalDelta carries only changed metadata after the initial bootstrap.
 // Removed IDs make the delta independently applicable to a persisted client
-// projection. Conversation content is intentionally not part of this stream.
+// projection. Conversation content appears here only for clients that opt in
+// via recent_conversation_limit; everyone else uses WatchConversation.
 message GlobalDelta {
   repeated Project projects = 1;
   repeated string removed_project_ids = 2;
@@ -164,6 +170,8 @@ message GlobalDelta {
   repeated ScheduleRun schedule_runs = 11;
   repeated string removed_schedule_run_ids = 12;
   Settings settings = 13;
+  repeated ConversationSnapshot conversations = 14;
+  repeated string removed_conversation_ids = 15;
 }
 
 message SyncFrame {

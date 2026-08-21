@@ -1646,6 +1646,14 @@ private fun CardDetailScreen(
                 }
             }
         }
+        // Stale-while-revalidate affordance: the cached transcript stays
+        // interactive while this strip signals a live refresh is in flight.
+        if (state.conversationSyncing && snapshot != null) {
+            LinearProgressIndicator(
+                Modifier.fillMaxWidth().height(2.dp).testTag("conversation-syncing"),
+                color = NauclioAegean,
+            )
+        }
         if (showDetailTabs) {
             PrimaryTabRow(selectedTabIndex = state.detailTab, containerColor = MaterialTheme.colorScheme.background) {
                 detailSections.forEachIndexed { index, section ->
@@ -2056,14 +2064,18 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
                     itemsIndexed(messages, key = { index, message -> "${message.id}:$index" }) { _, message ->
                         val plan = plansByMessage[message.id]
                         val subagents = subagentsByMessage[message.id].orEmpty()
-                        MessageBlock(
-                            message,
-                            model,
-                            showAgentAvatar = card?.scope == "chat",
-                            showReasoningTraces = state.showReasoningTraces,
-                            plan = plan,
-                            subagents = subagents,
-                        )
+                        // animateItem eases freshly synced messages in instead
+                        // of teleporting the stale transcript to the new tail.
+                        Box(Modifier.animateItem()) {
+                            MessageBlock(
+                                message,
+                                model,
+                                showAgentAvatar = card?.scope == "chat",
+                                showReasoningTraces = state.showReasoningTraces,
+                                plan = plan,
+                                subagents = subagents,
+                            )
+                        }
                     }
                     if (showAgentWorking) {
                         item(key = "agent-working") {

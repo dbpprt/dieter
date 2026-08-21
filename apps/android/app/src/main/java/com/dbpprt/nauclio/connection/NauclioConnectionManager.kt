@@ -144,6 +144,9 @@ class NauclioConnectionManager(
     }
     private var connectionJob: Job? = null
     private var generation = 0L
+
+    @Volatile
+    private var lastSyncFrameAtMs = 0L
     private var selectedProjectId = ""
     private var appForeground = false
     private var serviceActive = false
@@ -182,6 +185,26 @@ class NauclioConnectionManager(
         }
         if (_state.value.desiredConnected && _state.value.backgroundSyncEnabled) NauclioSyncService.start(appContext)
         reconcile()
+        probeStaleConnection()
+    }
+
+    /**
+     * Doze can silently kill the transport underneath an "active" stream. When
+     * the app comes back with a connection that claims to be healthy but has
+     * not produced a sync frame in longer than the heartbeat interval, verify
+     * it with a short health check and rebuild immediately on failure instead
+     * of waiting for keepalive to notice.
+     */
+    private fun probeStaleConnection() {
+        val probedGeneration = synchronized(lock) { generation }
+        val lastFrame = lastSyncFrameAtMs
+        val stale = lastFrame > 0 && System.currentTimeMillis() - lastFrame > STALE_SYNC_PROBE_MS
+        if (!stale || _state.value.phase != ConnectionPhase.CONNECTED) return
+        scope.launch {
+            val healthy = runCatching { repository.health(timeoutSeconds = 2).status == "ok" }.getOrDefault(false)
+            val current = synchronized(lock) { generation }
+            if (!healthy && shouldRun() && current == probedGeneration) restart()
+        }
     }
 
     fun onAppBackgrounded() {
@@ -632,8 +655,13 @@ class NauclioConnectionManager(
     }
 
     private suspend fun collectGlobalSync(currentGeneration: Long) {
-        repository.watchSync(syncCursor, conversationLimit = 0).collect { frame ->
+        repository.watchSync(
+            syncCursor,
+            conversationLimit = SYNC_CONVERSATION_MESSAGES,
+            recentConversationLimit = SYNC_RECENT_CONVERSATIONS,
+        ).collect { frame ->
             if (currentGeneration != synchronized(lock) { generation }) return@collect
+            lastSyncFrameAtMs = System.currentTimeMillis()
             var projectionChanged = false
             if (frame.hasSnapshot()) {
                 globalSnapshot = frame.snapshot
@@ -826,6 +854,10 @@ class NauclioConnectionManager(
             .addAllSchedules(merge(snapshot.schedulesList, delta.schedulesList, delta.removedScheduleIdsList.toSet(), Schedule::getId))
             .clearScheduleRuns()
             .addAllScheduleRuns(merge(snapshot.scheduleRunsList, delta.scheduleRunsList, delta.removedScheduleRunIdsList.toSet(), ScheduleRun::getId))
+            .clearConversations()
+            .addAllConversations(
+                merge(snapshot.conversationsList, delta.conversationsList, delta.removedConversationIdsList.toSet()) { it.detail.card.id },
+            )
             .also { if (delta.hasSettings()) it.settings = delta.settings }
             .build()
     }
@@ -868,7 +900,17 @@ class NauclioConnectionManager(
             }
 
             val conversations = current.activeConversations.toMutableMap().apply {
-                snapshot.conversationsList.forEach { put(it.detail.card.id, it) }
+                snapshot.conversationsList.forEach { incoming ->
+                    val id = incoming.detail.card.id
+                    put(id, freshestConversation(get(id), incoming))
+                }
+                // Evict stale entries the stream no longer covers, but never
+                // the ones it is actively keeping warm.
+                val synced = snapshot.conversationsList.mapTo(hashSetOf()) { it.detail.card.id }
+                val iterator = keys.iterator()
+                while (size > MAX_ACTIVE_CONVERSATIONS && iterator.hasNext()) {
+                    if (iterator.next() !in synced) iterator.remove()
+                }
             }
             entries.forEach { entry ->
                 when (entry.kind) {
@@ -1014,8 +1056,8 @@ class NauclioConnectionManager(
         if (cardId.isBlank()) return
         _state.update { current ->
             val conversations = LinkedHashMap(current.activeConversations)
-            conversations[cardId] = snapshot
-            while (conversations.size > MAX_ACTIVE_CONVERSATIONS) {
+            conversations[cardId] = freshestConversation(conversations[cardId], snapshot)
+            while (conversations.size > MAX_ACTIVE_CONVERSATIONS && conversations.keys.first() != cardId) {
                 conversations.remove(conversations.keys.first())
             }
             current.copy(activeConversations = conversations)
@@ -1247,7 +1289,13 @@ class NauclioConnectionManager(
         private const val KEY_PREFERRED_DAEMON = "preferred_daemon"
         private const val MACHINE_DIRECTORY_REFRESH_MS = 15_000L
         private const val MAX_RESOLVED_CONVERSATIONS = 256
-        private const val MAX_ACTIVE_CONVERSATIONS = 8
+        private const val MAX_ACTIVE_CONVERSATIONS = 24
+        /** Messages per conversation carried by the global sync stream. */
+        private const val SYNC_CONVERSATION_MESSAGES = 30
+        /** Recently active conversations kept warm beyond the running ones. */
+        private const val SYNC_RECENT_CONVERSATIONS = 8
+        /** One missed heartbeat (15 s) plus slack marks the stream suspect. */
+        private const val STALE_SYNC_PROBE_MS = 20_000L
     }
 }
 

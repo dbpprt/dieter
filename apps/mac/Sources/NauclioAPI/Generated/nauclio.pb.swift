@@ -186,6 +186,12 @@ public nonisolated struct Nauclio_V1_SyncRequest: Sendable {
 
   public var heartbeatMs: Int32 = 0
 
+  /// When set together with conversation_limit, the stream stays bounded: it
+  /// carries conversation snapshots only for cards with an active runtime plus
+  /// the most recently active conversations up to this count, and conversation
+  /// changes ride the delta frames instead of full snapshots.
+  public var recentConversationLimit: Int32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -253,50 +259,97 @@ public nonisolated struct Nauclio_V1_GlobalSnapshot: Sendable {
 
 /// GlobalDelta carries only changed metadata after the initial bootstrap.
 /// Removed IDs make the delta independently applicable to a persisted client
-/// projection. Conversation content is intentionally not part of this stream.
-public nonisolated struct Nauclio_V1_GlobalDelta: Sendable {
+/// projection. Conversation content appears here only for clients that opt in
+/// via recent_conversation_limit; everyone else uses WatchConversation.
+public nonisolated struct Nauclio_V1_GlobalDelta: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var projects: [Nauclio_V1_Project] = []
+  public var projects: [Nauclio_V1_Project] {
+    get {_storage._projects}
+    set {_uniqueStorage()._projects = newValue}
+  }
 
-  public var removedProjectIds: [String] = []
+  public var removedProjectIds: [String] {
+    get {_storage._removedProjectIds}
+    set {_uniqueStorage()._removedProjectIds = newValue}
+  }
 
-  public var boards: [Nauclio_V1_Board] = []
+  public var boards: [Nauclio_V1_Board] {
+    get {_storage._boards}
+    set {_uniqueStorage()._boards = newValue}
+  }
 
-  public var removedBoardIds: [String] = []
+  public var removedBoardIds: [String] {
+    get {_storage._removedBoardIds}
+    set {_uniqueStorage()._removedBoardIds = newValue}
+  }
 
-  public var cards: [Nauclio_V1_Card] = []
+  public var cards: [Nauclio_V1_Card] {
+    get {_storage._cards}
+    set {_uniqueStorage()._cards = newValue}
+  }
 
-  public var removedCardIds: [String] = []
+  public var removedCardIds: [String] {
+    get {_storage._removedCardIds}
+    set {_uniqueStorage()._removedCardIds = newValue}
+  }
 
-  public var chats: [Nauclio_V1_Card] = []
+  public var chats: [Nauclio_V1_Card] {
+    get {_storage._chats}
+    set {_uniqueStorage()._chats = newValue}
+  }
 
-  public var removedChatIds: [String] = []
+  public var removedChatIds: [String] {
+    get {_storage._removedChatIds}
+    set {_uniqueStorage()._removedChatIds = newValue}
+  }
 
-  public var schedules: [Nauclio_V1_Schedule] = []
+  public var schedules: [Nauclio_V1_Schedule] {
+    get {_storage._schedules}
+    set {_uniqueStorage()._schedules = newValue}
+  }
 
-  public var removedScheduleIds: [String] = []
+  public var removedScheduleIds: [String] {
+    get {_storage._removedScheduleIds}
+    set {_uniqueStorage()._removedScheduleIds = newValue}
+  }
 
-  public var scheduleRuns: [Nauclio_V1_ScheduleRun] = []
+  public var scheduleRuns: [Nauclio_V1_ScheduleRun] {
+    get {_storage._scheduleRuns}
+    set {_uniqueStorage()._scheduleRuns = newValue}
+  }
 
-  public var removedScheduleRunIds: [String] = []
+  public var removedScheduleRunIds: [String] {
+    get {_storage._removedScheduleRunIds}
+    set {_uniqueStorage()._removedScheduleRunIds = newValue}
+  }
 
   public var settings: Nauclio_V1_Settings {
-    get {_settings ?? Nauclio_V1_Settings()}
-    set {_settings = newValue}
+    get {_storage._settings ?? Nauclio_V1_Settings()}
+    set {_uniqueStorage()._settings = newValue}
   }
   /// Returns true if `settings` has been explicitly set.
-  public var hasSettings: Bool {self._settings != nil}
+  public var hasSettings: Bool {_storage._settings != nil}
   /// Clears the value of `settings`. Subsequent reads from it will return its default value.
-  public mutating func clearSettings() {self._settings = nil}
+  public mutating func clearSettings() {_uniqueStorage()._settings = nil}
+
+  public var conversations: [Nauclio_V1_ConversationSnapshot] {
+    get {_storage._conversations}
+    set {_uniqueStorage()._conversations = newValue}
+  }
+
+  public var removedConversationIds: [String] {
+    get {_storage._removedConversationIds}
+    set {_uniqueStorage()._removedConversationIds = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _settings: Nauclio_V1_Settings? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct Nauclio_V1_SyncFrame: @unchecked Sendable {
@@ -3235,7 +3288,7 @@ nonisolated extension Nauclio_V1_SyncCursor: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Nauclio_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SyncRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}after\0\u{3}conversation_limit\0\u{3}heartbeat_ms\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}after\0\u{3}conversation_limit\0\u{3}heartbeat_ms\0\u{3}recent_conversation_limit\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -3246,6 +3299,7 @@ nonisolated extension Nauclio_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtob
       case 1: try { try decoder.decodeSingularMessageField(value: &self._after) }()
       case 2: try { try decoder.decodeSingularInt32Field(value: &self.conversationLimit) }()
       case 3: try { try decoder.decodeSingularInt32Field(value: &self.heartbeatMs) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.recentConversationLimit) }()
       default: break
       }
     }
@@ -3265,6 +3319,9 @@ nonisolated extension Nauclio_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtob
     if self.heartbeatMs != 0 {
       try visitor.visitSingularInt32Field(value: self.heartbeatMs, fieldNumber: 3)
     }
+    if self.recentConversationLimit != 0 {
+      try visitor.visitSingularInt32Field(value: self.recentConversationLimit, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -3272,6 +3329,7 @@ nonisolated extension Nauclio_V1_SyncRequest: SwiftProtobuf.Message, SwiftProtob
     if lhs._after != rhs._after {return false}
     if lhs.conversationLimit != rhs.conversationLimit {return false}
     if lhs.heartbeatMs != rhs.heartbeatMs {return false}
+    if lhs.recentConversationLimit != rhs.recentConversationLimit {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -3378,93 +3436,167 @@ nonisolated extension Nauclio_V1_GlobalSnapshot: SwiftProtobuf.Message, SwiftPro
 
 nonisolated extension Nauclio_V1_GlobalDelta: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GlobalDelta"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}projects\0\u{3}removed_project_ids\0\u{1}boards\0\u{3}removed_board_ids\0\u{1}cards\0\u{3}removed_card_ids\0\u{1}chats\0\u{3}removed_chat_ids\0\u{1}schedules\0\u{3}removed_schedule_ids\0\u{3}schedule_runs\0\u{3}removed_schedule_run_ids\0\u{1}settings\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}projects\0\u{3}removed_project_ids\0\u{1}boards\0\u{3}removed_board_ids\0\u{1}cards\0\u{3}removed_card_ids\0\u{1}chats\0\u{3}removed_chat_ids\0\u{1}schedules\0\u{3}removed_schedule_ids\0\u{3}schedule_runs\0\u{3}removed_schedule_run_ids\0\u{1}settings\0\u{1}conversations\0\u{3}removed_conversation_ids\0")
+
+  fileprivate class _StorageClass {
+    var _projects: [Nauclio_V1_Project] = []
+    var _removedProjectIds: [String] = []
+    var _boards: [Nauclio_V1_Board] = []
+    var _removedBoardIds: [String] = []
+    var _cards: [Nauclio_V1_Card] = []
+    var _removedCardIds: [String] = []
+    var _chats: [Nauclio_V1_Card] = []
+    var _removedChatIds: [String] = []
+    var _schedules: [Nauclio_V1_Schedule] = []
+    var _removedScheduleIds: [String] = []
+    var _scheduleRuns: [Nauclio_V1_ScheduleRun] = []
+    var _removedScheduleRunIds: [String] = []
+    var _settings: Nauclio_V1_Settings? = nil
+    var _conversations: [Nauclio_V1_ConversationSnapshot] = []
+    var _removedConversationIds: [String] = []
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _projects = source._projects
+      _removedProjectIds = source._removedProjectIds
+      _boards = source._boards
+      _removedBoardIds = source._removedBoardIds
+      _cards = source._cards
+      _removedCardIds = source._removedCardIds
+      _chats = source._chats
+      _removedChatIds = source._removedChatIds
+      _schedules = source._schedules
+      _removedScheduleIds = source._removedScheduleIds
+      _scheduleRuns = source._scheduleRuns
+      _removedScheduleRunIds = source._removedScheduleRunIds
+      _settings = source._settings
+      _conversations = source._conversations
+      _removedConversationIds = source._removedConversationIds
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.projects) }()
-      case 2: try { try decoder.decodeRepeatedStringField(value: &self.removedProjectIds) }()
-      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.boards) }()
-      case 4: try { try decoder.decodeRepeatedStringField(value: &self.removedBoardIds) }()
-      case 5: try { try decoder.decodeRepeatedMessageField(value: &self.cards) }()
-      case 6: try { try decoder.decodeRepeatedStringField(value: &self.removedCardIds) }()
-      case 7: try { try decoder.decodeRepeatedMessageField(value: &self.chats) }()
-      case 8: try { try decoder.decodeRepeatedStringField(value: &self.removedChatIds) }()
-      case 9: try { try decoder.decodeRepeatedMessageField(value: &self.schedules) }()
-      case 10: try { try decoder.decodeRepeatedStringField(value: &self.removedScheduleIds) }()
-      case 11: try { try decoder.decodeRepeatedMessageField(value: &self.scheduleRuns) }()
-      case 12: try { try decoder.decodeRepeatedStringField(value: &self.removedScheduleRunIds) }()
-      case 13: try { try decoder.decodeSingularMessageField(value: &self._settings) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeRepeatedMessageField(value: &_storage._projects) }()
+        case 2: try { try decoder.decodeRepeatedStringField(value: &_storage._removedProjectIds) }()
+        case 3: try { try decoder.decodeRepeatedMessageField(value: &_storage._boards) }()
+        case 4: try { try decoder.decodeRepeatedStringField(value: &_storage._removedBoardIds) }()
+        case 5: try { try decoder.decodeRepeatedMessageField(value: &_storage._cards) }()
+        case 6: try { try decoder.decodeRepeatedStringField(value: &_storage._removedCardIds) }()
+        case 7: try { try decoder.decodeRepeatedMessageField(value: &_storage._chats) }()
+        case 8: try { try decoder.decodeRepeatedStringField(value: &_storage._removedChatIds) }()
+        case 9: try { try decoder.decodeRepeatedMessageField(value: &_storage._schedules) }()
+        case 10: try { try decoder.decodeRepeatedStringField(value: &_storage._removedScheduleIds) }()
+        case 11: try { try decoder.decodeRepeatedMessageField(value: &_storage._scheduleRuns) }()
+        case 12: try { try decoder.decodeRepeatedStringField(value: &_storage._removedScheduleRunIds) }()
+        case 13: try { try decoder.decodeSingularMessageField(value: &_storage._settings) }()
+        case 14: try { try decoder.decodeRepeatedMessageField(value: &_storage._conversations) }()
+        case 15: try { try decoder.decodeRepeatedStringField(value: &_storage._removedConversationIds) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.projects.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.projects, fieldNumber: 1)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._projects.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._projects, fieldNumber: 1)
+      }
+      if !_storage._removedProjectIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedProjectIds, fieldNumber: 2)
+      }
+      if !_storage._boards.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._boards, fieldNumber: 3)
+      }
+      if !_storage._removedBoardIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedBoardIds, fieldNumber: 4)
+      }
+      if !_storage._cards.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._cards, fieldNumber: 5)
+      }
+      if !_storage._removedCardIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedCardIds, fieldNumber: 6)
+      }
+      if !_storage._chats.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._chats, fieldNumber: 7)
+      }
+      if !_storage._removedChatIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedChatIds, fieldNumber: 8)
+      }
+      if !_storage._schedules.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._schedules, fieldNumber: 9)
+      }
+      if !_storage._removedScheduleIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedScheduleIds, fieldNumber: 10)
+      }
+      if !_storage._scheduleRuns.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._scheduleRuns, fieldNumber: 11)
+      }
+      if !_storage._removedScheduleRunIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedScheduleRunIds, fieldNumber: 12)
+      }
+      try { if let v = _storage._settings {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
+      } }()
+      if !_storage._conversations.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._conversations, fieldNumber: 14)
+      }
+      if !_storage._removedConversationIds.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._removedConversationIds, fieldNumber: 15)
+      }
     }
-    if !self.removedProjectIds.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.removedProjectIds, fieldNumber: 2)
-    }
-    if !self.boards.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.boards, fieldNumber: 3)
-    }
-    if !self.removedBoardIds.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.removedBoardIds, fieldNumber: 4)
-    }
-    if !self.cards.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.cards, fieldNumber: 5)
-    }
-    if !self.removedCardIds.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.removedCardIds, fieldNumber: 6)
-    }
-    if !self.chats.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.chats, fieldNumber: 7)
-    }
-    if !self.removedChatIds.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.removedChatIds, fieldNumber: 8)
-    }
-    if !self.schedules.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.schedules, fieldNumber: 9)
-    }
-    if !self.removedScheduleIds.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.removedScheduleIds, fieldNumber: 10)
-    }
-    if !self.scheduleRuns.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.scheduleRuns, fieldNumber: 11)
-    }
-    if !self.removedScheduleRunIds.isEmpty {
-      try visitor.visitRepeatedStringField(value: self.removedScheduleRunIds, fieldNumber: 12)
-    }
-    try { if let v = self._settings {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 13)
-    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Nauclio_V1_GlobalDelta, rhs: Nauclio_V1_GlobalDelta) -> Bool {
-    if lhs.projects != rhs.projects {return false}
-    if lhs.removedProjectIds != rhs.removedProjectIds {return false}
-    if lhs.boards != rhs.boards {return false}
-    if lhs.removedBoardIds != rhs.removedBoardIds {return false}
-    if lhs.cards != rhs.cards {return false}
-    if lhs.removedCardIds != rhs.removedCardIds {return false}
-    if lhs.chats != rhs.chats {return false}
-    if lhs.removedChatIds != rhs.removedChatIds {return false}
-    if lhs.schedules != rhs.schedules {return false}
-    if lhs.removedScheduleIds != rhs.removedScheduleIds {return false}
-    if lhs.scheduleRuns != rhs.scheduleRuns {return false}
-    if lhs.removedScheduleRunIds != rhs.removedScheduleRunIds {return false}
-    if lhs._settings != rhs._settings {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._projects != rhs_storage._projects {return false}
+        if _storage._removedProjectIds != rhs_storage._removedProjectIds {return false}
+        if _storage._boards != rhs_storage._boards {return false}
+        if _storage._removedBoardIds != rhs_storage._removedBoardIds {return false}
+        if _storage._cards != rhs_storage._cards {return false}
+        if _storage._removedCardIds != rhs_storage._removedCardIds {return false}
+        if _storage._chats != rhs_storage._chats {return false}
+        if _storage._removedChatIds != rhs_storage._removedChatIds {return false}
+        if _storage._schedules != rhs_storage._schedules {return false}
+        if _storage._removedScheduleIds != rhs_storage._removedScheduleIds {return false}
+        if _storage._scheduleRuns != rhs_storage._scheduleRuns {return false}
+        if _storage._removedScheduleRunIds != rhs_storage._removedScheduleRunIds {return false}
+        if _storage._settings != rhs_storage._settings {return false}
+        if _storage._conversations != rhs_storage._conversations {return false}
+        if _storage._removedConversationIds != rhs_storage._removedConversationIds {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

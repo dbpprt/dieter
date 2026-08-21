@@ -16,6 +16,7 @@ struct NewConversationSheet: View {
     @State private var selectedLabelIDs: Set<String> = []
     @State private var attachments: [Nauclio_V1_MessagePart] = []
     @State private var fileImporterPresented = false
+    @State private var attachmentDropTargeted = false
     @State private var submitting = false
     @FocusState private var focusedField: Field?
 
@@ -57,28 +58,38 @@ struct NewConversationSheet: View {
                         .accessibilityIdentifier("new-card.title")
 
                     newCardLabel("Initial task")
-                    ZStack(alignment: .topLeading) {
-                        TextEditor(text: $prompt)
-                            .font(.system(size: 14)).lineSpacing(3)
-                            .scrollContentBackground(.hidden).focused($focusedField, equals: .prompt)
-                            .padding(.horizontal, 8).padding(.vertical, 7)
-                        if prompt.isEmpty {
-                            Text("Give the agent a concrete outcome, context, and acceptance criteria…")
-                                .font(.system(size: 14)).foregroundStyle(NauclioTheme.tertiary)
-                                .padding(.horizontal, 13).padding(.vertical, 14).allowsHitTesting(false)
+                    TextField("Give the agent a concrete outcome, context, and acceptance criteria…", text: $prompt, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14)).lineSpacing(3).lineLimit(1...7)
+                        .focused($focusedField, equals: .prompt)
+                        .padding(.horizontal, 13).padding(.vertical, 14)
+                        .frame(height: 135)
+                        .background(
+                            attachmentDropTargeted ? NauclioTheme.cobalt.opacity(0.12) : NauclioTheme.input,
+                            in: RoundedRectangle(cornerRadius: 10)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10).stroke(
+                                attachmentDropTargeted
+                                    ? NauclioTheme.aegean
+                                    : (focusedField == .prompt ? NauclioTheme.cobalt.opacity(0.72) : NauclioTheme.strongBorder),
+                                lineWidth: attachmentDropTargeted || focusedField == .prompt ? 1.5 : 1
+                            )
+                        )
+                        .accessibilityIdentifier("new-card.prompt")
+                        .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                            Task {
+                                do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
+                                catch { store.show(error) }
+                            }
                         }
-                    }
-                    .frame(height: 135)
-                    .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(focusedField == .prompt ? NauclioTheme.cobalt.opacity(0.72) : NauclioTheme.strongBorder, lineWidth: focusedField == .prompt ? 1.5 : 1))
-                    .accessibilityIdentifier("new-card.prompt")
 
                     HStack(spacing: 9) {
                         Button { fileImporterPresented = true } label: {
                             Label("Attach images or files", systemImage: "paperclip")
                         }
                         .buttonStyle(NauclioSecondaryButtonStyle())
-                        Text("or paste an image with ⌘V · 4 files, 6 MB total")
+                        Text("or drop files above · paste an image with ⌘V · 4 files, 6 MB total")
                             .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
                     }
                     if !attachments.isEmpty {
@@ -498,19 +509,13 @@ struct NewProjectSheet: View {
                         .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
 
                     projectLabel("Project instructions")
-                    ZStack(alignment: .topLeading) {
-                        TextEditor(text: $prompt)
-                            .font(.system(size: 13)).lineSpacing(3).scrollContentBackground(.hidden)
-                            .padding(.horizontal, 7).padding(.vertical, 6)
-                        if prompt.isEmpty {
-                            Text("How should agents work in this project?")
-                                .font(.system(size: 13)).foregroundStyle(NauclioTheme.tertiary)
-                                .padding(.horizontal, 12).padding(.vertical, 13).allowsHitTesting(false)
-                        }
-                    }
-                    .frame(height: 105)
-                    .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(NauclioTheme.strongBorder))
+                    TextField("How should agents work in this project?", text: $prompt, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13)).lineSpacing(3).lineLimit(1...5)
+                        .padding(.horizontal, 12).padding(.vertical, 13)
+                        .frame(height: 105)
+                        .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 9))
+                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(NauclioTheme.strongBorder))
                     Text("Stored centrally and included in every new card conversation for this project.")
                         .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
                 }
@@ -901,18 +906,13 @@ struct LabelsSheet: View {
                             TextField("Label name", text: $name)
                             TextField("#7c5cff", text: $color).font(.body.monospaced()).frame(width: 120)
                         }
-                        TextEditor(text: $instructions)
+                        TextField("Optional prompt added when this label is assigned…", text: $instructions, axis: .vertical)
+                            .textFieldStyle(.plain)
                             .font(.system(size: 12, design: .monospaced))
-                            .scrollContentBackground(.hidden)
-                            .padding(8).frame(height: 76)
+                            .lineLimit(1...4)
+                            .padding(12).frame(height: 76)
                             .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 8))
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(NauclioTheme.border))
-                            .overlay(alignment: .topLeading) {
-                                if instructions.isEmpty {
-                                    Text("Optional prompt added when this label is assigned…")
-                                        .font(.caption).foregroundStyle(NauclioTheme.tertiary).padding(12).allowsHitTesting(false)
-                                }
-                            }
                         HStack {
                             Text("The instruction is composed with global, project, and board prompts.")
                                 .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
@@ -983,18 +983,13 @@ private struct BoardLabelEditorRow: View {
                     .buttonStyle(.plain).help("Remove \(label.name)")
             }
             Text("AGENT INSTRUCTIONS").font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary)
-            TextEditor(text: $instructions)
+            TextField("Optional prompt added when this label is assigned…", text: $instructions, axis: .vertical)
+                .textFieldStyle(.plain)
                 .font(.system(size: 12, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .padding(8).frame(height: 76)
+                .lineLimit(1...4)
+                .padding(12).frame(height: 76)
                 .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(NauclioTheme.border))
-                .overlay(alignment: .topLeading) {
-                    if instructions.isEmpty {
-                        Text("Optional prompt added when this label is assigned…")
-                            .font(.caption).foregroundStyle(NauclioTheme.tertiary).padding(12).allowsHitTesting(false)
-                    }
-                }
             HStack {
                 Text("Applied only to cards carrying this label").font(.caption2).foregroundStyle(NauclioTheme.tertiary)
                 Spacer()

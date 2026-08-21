@@ -206,3 +206,116 @@ func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
 	}
 	stopRunner()
 }
+
+func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
+	t.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	data := store.New(t.TempDir())
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Transcripts", Path: testRepository(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, _ := newConnectTestClient(t, data, &fakeRunner{})
+
+	chat, err := client.CreateChat(ctx, connect.NewRequest(&naucliov1.CreateConversationRequest{
+		ProjectId: project.ID, Title: "Warm cache", Prompt: "Hold", Provider: "mock", Model: "mock", DeferStart: true,
+		ClientId: "android-installation", CommandId: "bounded-chat-1",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&naucliov1.SyncRequest{
+		ConversationLimit: 20, RecentConversationLimit: 5, HeartbeatMs: 1_000,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() {
+		t.Fatalf("bounded bootstrap: %v", stream.Err())
+	}
+	initial := stream.Msg()
+	if initial.GetSnapshot() == nil {
+		t.Fatalf("bounded subscribers must bootstrap from a snapshot: %#v", initial)
+	}
+	bootstrapped := false
+	for _, conversation := range initial.GetSnapshot().GetConversations() {
+		if conversation.GetDetail().GetCard().GetId() == chat.Msg.GetId() {
+			bootstrapped = true
+		}
+	}
+	if !bootstrapped {
+		t.Fatalf("bootstrap snapshot missed the recent conversation: %#v", initial.GetSnapshot().GetConversations())
+	}
+
+	if _, err = client.SendMessage(ctx, connect.NewRequest(&naucliov1.SendMessageRequest{
+		CardId: chat.Msg.GetId(), ClientId: "android-installation", CommandId: "bounded-message-1", MessageId: "msg_bounded_delta",
+		Provider: "mock", Model: "mock", Parts: []*naucliov1.MessagePart{{Type: "text", Text: "Reach the tail"}},
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for stream.Receive() {
+		frame := stream.Msg()
+		if frame.GetSnapshot() != nil {
+			t.Fatalf("bounded live frame duplicated the bootstrap snapshot: %#v", frame)
+		}
+		for _, conversation := range frame.GetDelta().GetConversations() {
+			if conversation.GetDetail().GetCard().GetId() != chat.Msg.GetId() {
+				continue
+			}
+			for _, message := range conversation.GetConversation().GetMessages() {
+				if message.GetId() == "msg_bounded_delta" {
+					found = true
+				}
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("sent message never arrived as a conversation delta: %v", stream.Err())
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		conversation, conversationErr := data.Conversation(chat.Msg.GetId())
+		if conversationErr != nil {
+			t.Fatal(conversationErr)
+		}
+		resolved, _ := data.ResolveCard(chat.Msg.GetId())
+		if conversation.Status == "idle" && resolved.Runtime == "idle" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("turn did not settle: %#v", conversation)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// runTurn closes its update channel after publishing the idle projections;
+	// allow the draining goroutine to observe that close before TempDir cleanup.
+	time.Sleep(100 * time.Millisecond)
+	if err := data.WaitForWriter(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSyncConversationCardsBoundsSelection(t *testing.T) {
+	cards := []*naucliov1.Card{
+		{Id: "c_idle_old", Runtime: "idle", LastActivityAt: "2026-01-01T00:00:00Z"},
+		{Id: "c_running_old", Runtime: "running", LastActivityAt: "2026-01-02T00:00:00Z"},
+		{Id: "c_idle_recent", Runtime: "idle", LastActivityAt: "2026-03-01T00:00:00Z"},
+		{Id: "c_idle_middle", Runtime: "idle", UpdatedAt: "2026-02-01T00:00:00Z"},
+	}
+	selected := syncConversationCards(cards, 1)
+	ids := make([]string, 0, len(selected))
+	for _, card := range selected {
+		ids = append(ids, card.GetId())
+	}
+	if len(ids) != 2 || ids[0] != "c_idle_recent" || ids[1] != "c_running_old" {
+		t.Fatalf("bounded selection=%v", ids)
+	}
+}

@@ -192,11 +192,11 @@ struct BoardHeader: View {
     @Environment(NauclioStore.self) private var store
 
     private var needsAttention: Int {
-        store.state.cards.filter { ["waiting_for_user", "review"].contains($0.runtime) }.count
+        store.boardCards.filter { ["waiting_for_user", "review"].contains($0.runtime) }.count
     }
 
     private var boardMetadata: String {
-        let count = store.state.cards.count
+        let count = store.boardCards.count
         var parts = ["board", "\(count) conversation\(count == 1 ? "" : "s")"]
         if needsAttention > 0 { parts.append("\(needsAttention) needs you") }
         return parts.joined(separator: " · ")
@@ -250,7 +250,7 @@ struct BoardHeader: View {
                 } label: {
                     HStack(spacing: 6) {
                         if store.labelFilter.isEmpty { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
-                        Text("All cards · \(store.state.cards.count)").lineLimit(1)
+                        Text("All cards · \(store.boardCards.count)").lineLimit(1)
                     }
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(store.labelFilter.isEmpty ? Color.white : NauclioTheme.subtle)
@@ -266,7 +266,7 @@ struct BoardHeader: View {
                                 BoardLabelShelfChip(
                                     label: label,
                                     boardID: board.id,
-                                    count: store.state.cards.filter { $0.labelIds.contains(label.id) }.count,
+                                    count: store.boardCards.filter { $0.labelIds.contains(label.id) }.count,
                                     selected: store.labelFilter == label.id
                                 ) {
                                     store.labelFilter = store.labelFilter == label.id ? "" : label.id
@@ -317,7 +317,7 @@ struct BoardHeader: View {
                     } label: {
                         HStack(spacing: 6) {
                             if store.labelFilter.isEmpty { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
-                            Text("All · \(store.state.cards.count)").lineLimit(1)
+                            Text("All · \(store.boardCards.count)").lineLimit(1)
                         }
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(store.labelFilter.isEmpty ? Color.white : NauclioTheme.subtle)
@@ -333,7 +333,7 @@ struct BoardHeader: View {
                                     BoardLabelShelfChip(
                                         label: label,
                                         boardID: board.id,
-                                        count: store.state.cards.filter { $0.labelIds.contains(label.id) }.count,
+                                        count: store.boardCards.filter { $0.labelIds.contains(label.id) }.count,
                                         selected: store.labelFilter == label.id
                                     ) {
                                         store.labelFilter = store.labelFilter == label.id ? "" : label.id

@@ -633,6 +633,48 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(reduced.settings.globalParallelLimit == 7)
 }
 
+@Test func directorySnapshotInvalidatesItsPreviousSyncCursor() throws {
+    var cursor = Nauclio_V1_SyncCursor()
+    cursor.epoch = "epoch-one"
+    cursor.sequence = 42
+    var previous = Nauclio_V1_GlobalSnapshot()
+    var settings = Nauclio_V1_Settings()
+    settings.globalParallelLimit = 7
+    previous.settings = settings
+    var stale = Nauclio_V1_Card()
+    stale.id = "stale-card"
+    previous.state.cards = [stale]
+
+    var fresh = Nauclio_V1_Card()
+    fresh.id = "fresh-card"
+    let replaced = NauclioSyncProjectionCache.replacingMetadata(
+        in: .init(cursor: try cursor.serializedData(), snapshot: try previous.serializedData()),
+        projects: [],
+        boards: [],
+        cards: [fresh],
+        chats: []
+    )
+
+    #expect(replaced.cursor == nil)
+    let data = try #require(replaced.snapshot)
+    let snapshot = try Nauclio_V1_GlobalSnapshot(serializedBytes: data)
+    #expect(snapshot.state.cards.map(\.id) == ["fresh-card"])
+    #expect(snapshot.settings.globalParallelLimit == 7)
+}
+
+@Test func syncStreamLivenessRestartsAfterThreeMissedHeartbeats() {
+    let lastFrame = Date(timeIntervalSince1970: 1_000)
+    #expect(!SyncStreamLiveness.shouldRestart(
+        lastFrameAt: lastFrame,
+        now: lastFrame.addingTimeInterval(SyncStreamLiveness.timeout - 0.01)
+    ))
+    #expect(SyncStreamLiveness.shouldRestart(
+        lastFrameAt: lastFrame,
+        now: lastFrame.addingTimeInterval(SyncStreamLiveness.timeout)
+    ))
+    #expect(SyncStreamLiveness.shouldRestart(lastFrameAt: nil, now: lastFrame))
+}
+
 @Test func messageDeliveryReceiptsFollowOutboxAndSyncAcknowledgements() {
     #expect(MessageDeliveryState(pending: true, accepted: false, failed: false) == .local)
     #expect(MessageDeliveryState(pending: true, accepted: true, failed: false) == .accepted)

@@ -55,9 +55,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import java.time.ZoneId
 
 private const val CONVERSATION_PAGE_SIZE = 30
+private const val HEDGE_FETCH_TIMEOUT_MS = 3_500L
+private const val FIRST_FRAME_DEADLINE_MS = 4_500L
 internal const val CONNECTION_DIALOG_GRACE_MS = 60_000L
 
 internal fun connectionDialogDelayMs(
@@ -123,6 +126,8 @@ data class NauclioUiState(
     val historyHasMore: Boolean = false,
     val historyLoading: Boolean = false,
     val conversationRefreshing: Boolean = false,
+    /** True while the open transcript is served from cache pending a live frame. */
+    val conversationSyncing: Boolean = false,
     val conversationScrollRequest: Long = 0,
     val detailTab: Int = 0,
     val filePath: String = "",
@@ -451,6 +456,7 @@ class NauclioViewModel(
             it.copy(
                 connectionPhase = ConnectionPhase.RECONNECTING,
                 loading = false,
+                conversationSyncing = it.selectedCardId != null,
                 connectionError = "$label connection interrupted; reconnecting…",
             )
         }
@@ -670,6 +676,7 @@ class NauclioViewModel(
                 historyHasMore = cached?.historyHasMore ?: false,
                 historyLoading = false,
                 conversationRefreshing = false,
+                conversationSyncing = true,
                 conversationScrollRequest = it.conversationScrollRequest + 1,
                 detailTab = 0,
                 error = null,
@@ -692,25 +699,71 @@ class NauclioViewModel(
                 .firstOrNull { it.id == cardId }
                 ?.projectId
                 .orEmpty()
-            connectionManager.ensureProjectRoute(projectId)
-            repository.watchConversation(cardId, CONVERSATION_PAGE_SIZE)
-                .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
-                .collectLatest { snapshot ->
-                    if (_state.value.selectedCardId != cardId) return@collectLatest
-                    connectionManager.acceptConversation(snapshot)
-                    _state.update { current ->
-                        current.copy(
-                            conversation = snapshot,
-                            connectionPhase = ConnectionPhase.CONNECTED,
-                            error = null,
-                            historyStart = if (current.historyTotal == 0) snapshot.page.start else current.historyStart,
-                            historyTotal = maxOf(current.historyTotal, snapshot.page.total),
-                            historyHasMore = if (current.olderMessages.isEmpty()) snapshot.page.hasMore else current.historyHasMore,
-                        )
-                    }
-                    rememberConversation(cardId)
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (_state.value.selectedCardId == cardId) {
+                    _state.update { it.copy(conversationSyncing = false, error = readableError(error)) }
                 }
+                return@launch
+            }
+            var delivered = false
+            // Hedged unary fetch: on a healthy link the stream answers first;
+            // on a dead-after-idle link this bounds time-to-fresh to seconds.
+            val hedge = launch {
+                val snapshot = runCatching {
+                    withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
+                }.getOrNull() ?: return@launch
+                if (!delivered) applyLiveConversation(cardId, snapshot)
+            }
+            // First-frame watchdog: a stream that stays silent this long on an
+            // allegedly healthy connection is riding a dead transport; rebuild
+            // the channel instead of waiting for keepalive to notice.
+            val watchdog = launch {
+                delay(FIRST_FRAME_DEADLINE_MS)
+                if (!delivered) repository.reconnect()
+            }
+            try {
+                repository.watchConversation(cardId, CONVERSATION_PAGE_SIZE)
+                    .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
+                    .collectLatest { snapshot ->
+                        if (_state.value.selectedCardId != cardId) return@collectLatest
+                        if (!delivered) {
+                            delivered = true
+                            hedge.cancel()
+                            watchdog.cancel()
+                        }
+                        applyLiveConversation(cardId, snapshot)
+                    }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                hedge.cancel()
+                watchdog.cancel()
+                if (_state.value.selectedCardId == cardId) {
+                    _state.update { it.copy(conversationSyncing = false, error = readableError(error)) }
+                }
+            }
         }
+    }
+
+    private fun applyLiveConversation(cardId: String, snapshot: ConversationSnapshot) {
+        if (_state.value.selectedCardId != cardId) return
+        connectionManager.acceptConversation(snapshot)
+        _state.update { current ->
+            current.copy(
+                conversation = snapshot,
+                conversationSyncing = false,
+                connectionPhase = ConnectionPhase.CONNECTED,
+                error = null,
+                historyStart = if (current.historyTotal == 0) snapshot.page.start else current.historyStart,
+                historyTotal = maxOf(current.historyTotal, snapshot.page.total),
+                historyHasMore = if (current.olderMessages.isEmpty()) snapshot.page.hasMore else current.historyHasMore,
+            )
+        }
+        rememberConversation(cardId)
     }
 
     fun forceRefreshConversation() {
@@ -733,6 +786,7 @@ class NauclioViewModel(
                             historyTotal = snapshot.page.total,
                             historyHasMore = if (older.isEmpty()) snapshot.page.hasMore else current.historyHasMore,
                             conversationRefreshing = false,
+                            conversationSyncing = false,
                             conversationScrollRequest = current.conversationScrollRequest + 1,
                             connectionPhase = ConnectionPhase.CONNECTED,
                             error = null,
