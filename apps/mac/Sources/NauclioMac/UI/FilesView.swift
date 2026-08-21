@@ -29,11 +29,11 @@ struct FilesView: View {
                     }
                 } secondary: {
                     HStack(spacing: 8) {
-                        Image(systemName: store.filePath.isEmpty ? "folder" : "folder.fill").font(.system(size: 11)).foregroundStyle(NauclioTheme.aegean)
+                        Image(systemName: store.filePath.isEmpty ? "folder" : "folder.fill").font(.system(size: 11)).foregroundStyle(NauclioTheme.tertiary)
                         Text(store.filePath.isEmpty ? store.selectedProject?.path ?? "Project root" : store.filePath)
-                            .font(.system(size: 10, weight: .medium)).foregroundStyle(NauclioTheme.tertiary).lineLimit(1).truncationMode(.middle)
+                            .font(.system(size: 11)).foregroundStyle(NauclioTheme.tertiary).lineLimit(1).truncationMode(.middle)
                         Spacer()
-                        if store.showHiddenFiles { Text("Hidden files").font(.system(size: 9, weight: .semibold)).foregroundStyle(NauclioTheme.aegean) }
+                        if store.showHiddenFiles { Text("Hidden files").font(.system(size: 10, weight: .semibold)).foregroundStyle(NauclioTheme.aegean) }
                     }
                 }
                 List {
@@ -67,7 +67,7 @@ struct FilesView: View {
                             }
                             .font(.system(size: 12, weight: store.fileDocument?.path == entry.path ? .semibold : .regular))
                             .padding(.horizontal, 8).frame(minHeight: 30)
-                            .background(store.fileDocument?.path == entry.path ? NauclioTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 7))
+                            .background(store.fileDocument?.path == entry.path ? NauclioTheme.selection : .clear, in: RoundedRectangle(cornerRadius: NauclioMetrics.controlRadius, style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -101,7 +101,7 @@ struct FilesView: View {
                             Spacer()
                             if !document.binary { Text("Editable") }
                         }
-                        .font(.system(size: 9, weight: .medium)).foregroundStyle(NauclioTheme.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(NauclioTheme.tertiary)
                     }
                     if let image = previewImage(document) {
                         ProjectImagePreview(image: image)
@@ -117,7 +117,7 @@ struct FilesView: View {
                                 Spacer()
                                 Text("\(store.fileEditorText.components(separatedBy: .newlines).count) lines")
                             }
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10))
                             .foregroundStyle(NauclioTheme.tertiary)
                             .padding(.horizontal, 12).frame(height: 25)
                             .background(NauclioTheme.sidebar)

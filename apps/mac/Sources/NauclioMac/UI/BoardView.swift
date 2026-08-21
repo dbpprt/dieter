@@ -216,7 +216,7 @@ struct BoardHeader: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 7) {
                         Text(store.selectedBoard?.name ?? "Board")
-                            .font(.system(size: 17, weight: .bold)).lineLimit(1)
+                            .font(NauclioFont.paneTitle).lineLimit(1)
                         Menu {
                             Button("Create board…") { store.createBoardPresented = true }
                             Button("Rename board…") {
@@ -231,7 +231,7 @@ struct BoardHeader: View {
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     }
                     Text(boardMetadata)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(NauclioFont.subtitle)
                         .foregroundStyle(NauclioTheme.tertiary).lineLimit(1)
                 }
                 .layoutPriority(1)
@@ -458,14 +458,24 @@ struct LaneColumn: View {
     let cards: [Nauclio_V1_Card]
     @State private var isDropTargeted = false
 
+    private var laneTint: Color {
+        switch lane.id.lowercased() {
+        case "running": NauclioTheme.primary
+        case "review": NauclioTheme.amber
+        case "done": NauclioTheme.seafoam
+        default: NauclioTheme.tertiary
+        }
+    }
+
     var body: some View {
         VStack(spacing: 10) {
-            HStack {
-                Text(lane.name).font(.subheadline.weight(.bold))
-                Text("\(cards.count)").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 7) {
+                Circle().fill(laneTint).frame(width: 6, height: 6)
+                Text(lane.name).font(.system(size: 12, weight: .semibold))
+                Text("\(cards.count)").font(.system(size: 12)).foregroundStyle(NauclioTheme.tertiary)
                 Spacer()
-                Button { store.createConversationPresented = true } label: { Image(systemName: "plus").font(.caption) }.buttonStyle(.plain)
-            }.padding(.horizontal, 4)
+                Button { store.createConversationPresented = true } label: { Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).foregroundStyle(NauclioTheme.tertiary) }.buttonStyle(.plain)
+            }.padding(.horizontal, 6).padding(.top, 2)
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(cards, id: \.id) { card in
@@ -488,8 +498,8 @@ struct LaneColumn: View {
             }
         }
         .padding(10)
-        .background(isDropTargeted ? NauclioTheme.cobalt.opacity(0.075) : NauclioTheme.surface.opacity(0.52), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(isDropTargeted ? NauclioTheme.aegean.opacity(0.32) : .clear))
+        .background(isDropTargeted ? NauclioTheme.cobalt.opacity(0.08) : NauclioTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isDropTargeted ? NauclioTheme.aegean.opacity(0.32) : NauclioTheme.border))
         .animation(.easeOut(duration: 0.14), value: isDropTargeted)
         .dropDestination(for: String.self) { values, _ in
             guard let value = values.first, let payload = BoardCardDragPayload(value),
@@ -575,31 +585,31 @@ struct BoardCardView: View {
         Button { Task { await store.openConversation(cardID: card.id) } } label: {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .top) {
-                    Text(card.title.isEmpty ? "Untitled card" : card.title).font(.subheadline.weight(.semibold)).multilineTextAlignment(.leading).lineLimit(3)
+                    Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.leading).lineLimit(3)
                     Spacer(minLength: 4)
-                    Circle().fill(runtimeColor(card.runtime)).frame(width: 7, height: 7).padding(.top, 5)
+                    Circle().fill(runtimeColor(card.runtime)).frame(width: 6, height: 6).padding(.top, 5)
                 }
-                if !card.summary.isEmpty { Text(card.summary).font(.caption).foregroundStyle(.secondary).lineLimit(3).multilineTextAlignment(.leading) }
+                if !card.summary.isEmpty { Text(card.summary).font(.system(size: 11)).foregroundStyle(NauclioTheme.subtle).lineLimit(3).multilineTextAlignment(.leading) }
                 if !labels.isEmpty {
                     FlowLabels(labels: labels)
                 }
-                HStack {
+                HStack(spacing: 7) {
                     StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
-                    if !card.model.isEmpty { Text(card.model).font(.caption2).foregroundStyle(.secondary).lineLimit(1) }
+                    if !card.model.isEmpty { Text(card.model).font(.system(size: 10)).foregroundStyle(NauclioTheme.tertiary).lineLimit(1) }
                     Spacer()
-                    if card.commentCount > 0 { Label("\(card.commentCount)", systemImage: "text.bubble").font(.caption2).foregroundStyle(.secondary) }
-                    if !card.activeSubagents.isEmpty { Label("\(card.activeSubagents.count)", systemImage: "person.2").font(.caption2).foregroundStyle(NauclioTheme.cobalt) }
+                    if card.commentCount > 0 { Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10)).foregroundStyle(NauclioTheme.tertiary) }
+                    if !card.activeSubagents.isEmpty { Label("\(card.activeSubagents.count)", systemImage: "person.2").font(.system(size: 10)).foregroundStyle(NauclioTheme.aegean) }
                 }
             }
             .padding(12)
             .background(
                 store.selectedCardID == card.id ? NauclioTheme.elevated.opacity(0.82) : (hovering ? NauclioTheme.raised.opacity(0.9) : NauclioTheme.surface),
-                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                in: RoundedRectangle(cornerRadius: NauclioMetrics.cardRadius, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: NauclioMetrics.cardRadius, style: .continuous)
                     .stroke(
-                        labelDropTargeted ? NauclioTheme.seafoam.opacity(0.9) : (store.selectedCardID == card.id ? NauclioTheme.aegean.opacity(0.42) : .clear),
+                        labelDropTargeted ? NauclioTheme.seafoam.opacity(0.9) : (store.selectedCardID == card.id ? NauclioTheme.aegean.opacity(0.45) : NauclioTheme.border),
                         lineWidth: labelDropTargeted ? 1.5 : 1
                     )
             )
@@ -673,8 +683,9 @@ struct FlowLabels: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(labels.prefix(3), id: \.id) { label in
-                HStack(spacing: 3) { Circle().fill(Color(hex: label.color) ?? NauclioTheme.cobalt).frame(width: 5, height: 5); Text(label.name) }
-                    .font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 5).padding(.vertical, 2)
+                HStack(spacing: 4) { Circle().fill(Color(hex: label.color) ?? NauclioTheme.cobalt).frame(width: 5, height: 5); Text(label.name) }
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(NauclioTheme.subtle)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(NauclioTheme.raised, in: Capsule())
             }
         }

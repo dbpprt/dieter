@@ -46,13 +46,13 @@ struct ChatsView: View {
                         let pinned = showArchived ? [] : visibleChats.filter(\.pinned)
                         if !pinned.isEmpty {
                             VStack(alignment: .leading, spacing: 4) {
-                                Label("PINNED", systemImage: "pin.fill").font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.horizontal, 8)
+                                Label("PINNED", systemImage: "pin.fill").font(NauclioFont.sectionLabel).foregroundStyle(NauclioTheme.tertiary).padding(.horizontal, 8)
                                 ForEach(pinned, id: \.id) { ChatRow(card: $0) }
                             }
                         }
 
                         Text(showArchived ? "ARCHIVED PROJECTS" : "PROJECTS")
-                            .font(.caption2.weight(.bold)).foregroundStyle(.secondary).padding(.horizontal, 8).padding(.top, 3)
+                            .font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary).padding(.horizontal, 8).padding(.top, 3)
 
                         ForEach(store.projects.filter { !$0.archived }, id: \.id) { project in
                             let projectChats = visibleChats.filter { $0.projectID == project.id && (showArchived || !$0.pinned) }
@@ -128,9 +128,9 @@ private struct ChatProjectGroup: View {
                 Button(action: toggleCollapsed) {
                     HStack(spacing: 7) {
                         Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(NauclioTheme.tertiary)
-                        Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(NauclioTheme.subtle)
-                        Text(project.name.uppercased()).font(.system(size: 9, weight: .bold)).tracking(0.7).lineLimit(1).foregroundStyle(NauclioTheme.subtle)
-                        Text("· \(chats.count)").font(.system(size: 9, weight: .medium)).foregroundStyle(NauclioTheme.tertiary)
+                        Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(NauclioTheme.tertiary)
+                        Text(project.name.uppercased()).font(NauclioFont.sectionLabel).tracking(0.8).lineLimit(1).foregroundStyle(NauclioTheme.subtle)
+                        Text("· \(chats.count)").font(.system(size: 10)).foregroundStyle(NauclioTheme.tertiary)
                     }
                 }.buttonStyle(.plain)
                 Spacer()
@@ -175,7 +175,7 @@ struct ChatRow: View {
                 }.padding(.top, 3)
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text(card.title.isEmpty ? "Untitled chat" : card.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Text(card.title.isEmpty ? "Untitled chat" : card.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                         if card.pinned { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(NauclioTheme.aegean) }
                         if card.archived { Image(systemName: "archivebox.fill").font(.system(size: 8)).foregroundStyle(NauclioTheme.tertiary) }
                         Spacer()
@@ -186,8 +186,8 @@ struct ChatRow: View {
                             }
                             Text(ChatActivityText.compact(card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt))
                         }
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(store.selectedChatID == card.id ? NauclioTheme.aegean : NauclioTheme.tertiary)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(NauclioTheme.tertiary)
                     }
                     HStack(spacing: 6) {
                         if ["running", "starting"].contains(card.runtime) { Text("Running").foregroundStyle(NauclioTheme.primary) }
@@ -196,12 +196,11 @@ struct ChatRow: View {
                             Text("· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")").foregroundStyle(NauclioTheme.subtle)
                         }
                     }
-                    .font(.system(size: 9, weight: .medium)).foregroundStyle(NauclioTheme.tertiary)
+                    .font(.system(size: 10, weight: .medium)).foregroundStyle(NauclioTheme.tertiary)
                 }
             }
             .padding(.horizontal, 9).padding(.vertical, 8)
-            .background(store.selectedChatID == card.id ? NauclioTheme.elevated.opacity(0.78) : (hovering ? NauclioTheme.surface.opacity(0.62) : .clear), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(store.selectedChatID == card.id ? NauclioTheme.aegean.opacity(0.25) : .clear))
+            .background(store.selectedChatID == card.id ? NauclioTheme.selection : (hovering ? NauclioTheme.surface.opacity(0.62) : .clear), in: RoundedRectangle(cornerRadius: NauclioMetrics.controlRadius, style: .continuous))
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .opacity(store.isPendingCard(card.id) ? 0.52 : 1)
@@ -266,6 +265,10 @@ private struct StandaloneChatStartView: View {
     private var project: Nauclio_V1_Project? { store.projects.first { $0.id == projectID } }
     private var harness: Nauclio_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == provider } }
     private var selectedModel: Nauclio_V1_HarnessModel? { harness?.models.first { $0.id == model } }
+    private var promptEditorHeight: CGFloat {
+        let lines = prompt.split(separator: "\n", omittingEmptySubsequences: false).count
+        return min(108, 42 + CGFloat(max(0, lines - 1)) * 18)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -288,21 +291,21 @@ private struct StandaloneChatStartView: View {
             }
 
             Spacer(minLength: 24)
-            VStack(spacing: 18) {
+            VStack(spacing: 16) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 15).fill(NauclioTheme.cobalt.opacity(0.14)).frame(width: 64, height: 64)
-                    Image(systemName: "bubble.left").font(.system(size: 25, weight: .medium)).foregroundStyle(NauclioTheme.aegean)
+                    RoundedRectangle(cornerRadius: 15, style: .continuous).fill(NauclioTheme.cobalt.opacity(0.16)).frame(width: 60, height: 60)
+                    Image(systemName: "bubble.left").font(.system(size: 23, weight: .medium)).foregroundStyle(NauclioTheme.aegean)
                 }
-                Text("What should we work on?").font(.system(size: 25, weight: .bold))
+                Text("What should we work on?").font(.system(size: 22, weight: .semibold))
                 Text("Start a standalone local conversation in one of your project folders.\nIt never becomes a nauclio card.")
                     .font(.system(size: 13)).foregroundStyle(NauclioTheme.subtle).multilineTextAlignment(.center).lineSpacing(3)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(suggestions, id: \.0) { suggestion in
                         Button { prompt = suggestion.1 } label: {
                             HStack { Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(NauclioTheme.aegean); Text(suggestion.0).font(.system(size: 12, weight: .medium)); Spacer() }
-                                .padding(.horizontal, 13).frame(height: 47)
-                                .background(NauclioTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 9))
-                                .overlay(RoundedRectangle(cornerRadius: 9).stroke(NauclioTheme.border))
+                                .padding(.horizontal, 13).frame(height: 46)
+                                .background(NauclioTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NauclioTheme.border))
                         }.buttonStyle(.plain)
                     }
                 }.frame(maxWidth: 590)
@@ -345,19 +348,38 @@ private struct StandaloneChatStartView: View {
                     }
                     .buttonStyle(NauclioIconButtonStyle())
                     .help("Attach images or files")
-                    TextField("Ask anything, describe a task, or explore an idea…", text: $prompt, axis: .vertical)
-                        .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...5)
-                        .padding(.horizontal, 13).padding(.vertical, 11)
-                        .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(NauclioTheme.cobalt.opacity(0.68), lineWidth: 1.5))
-                        .accessibilityIdentifier("chats.new.prompt")
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $prompt)
+                            .scrollContentBackground(.hidden)
+                            .font(.system(size: 13))
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .accessibilityIdentifier("chats.new.prompt")
+                            .onKeyPress(.return, phases: .down) { press in
+                                if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
+                                    return .ignored
+                                }
+                                if !submitting, !projectID.isEmpty,
+                                   !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty {
+                                    Task { await submit() }
+                                }
+                                return .handled
+                            }
+                        if prompt.isEmpty {
+                            Text("Ask anything, describe a task, or explore an idea…")
+                                .font(.system(size: 13)).foregroundStyle(NauclioTheme.tertiary)
+                                .padding(.leading, 13).padding(.top, 11)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                        .frame(height: promptEditorHeight)
+                        .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(NauclioTheme.cobalt.opacity(0.45), lineWidth: 1))
                     Button { Task { await submit() } } label: {
                         Image(systemName: submitting ? "hourglass" : "arrow.up").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
                             .frame(width: 36, height: 36).background(NauclioTheme.cobalt, in: Circle())
                             .shadow(color: NauclioTheme.cobalt.opacity(0.28), radius: 8, y: 2)
                     }
                     .buttonStyle(.plain)
-                    .keyboardShortcut(.return, modifiers: [])
                     .disabled(submitting || projectID.isEmpty || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty))
                     .accessibilityIdentifier("chats.new.send")
                 }

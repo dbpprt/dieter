@@ -35,9 +35,9 @@ struct NewConversationSheet: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("BOARD  /  AGENT WORKSPACE")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.8)
+                        .font(NauclioFont.sectionLabel).tracking(1.4)
                         .foregroundStyle(NauclioTheme.tertiary)
-                    Text("New conversation").font(.system(size: 22, weight: .bold))
+                    Text("New conversation").font(.system(size: 20, weight: .semibold))
                 }
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 12, weight: .bold)) }
@@ -420,9 +420,9 @@ struct NewProjectSheet: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("NEW WORKSPACE")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.8)
+                        .font(NauclioFont.sectionLabel).tracking(1.4)
                         .foregroundStyle(NauclioTheme.tertiary)
-                    Text("Add a Git project").font(.system(size: 22, weight: .bold))
+                    Text("Add a Git project").font(.system(size: 20, weight: .semibold))
                 }
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 12, weight: .bold)) }
@@ -432,7 +432,7 @@ struct NewProjectSheet: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
-                    projectLabel("Machine")
+                    projectLabel("Project host")
                     Menu {
                         ForEach(availableMachines) { machine in
                             Button {
@@ -446,7 +446,7 @@ struct NewProjectSheet: View {
                         HStack(spacing: 9) {
                             Circle().fill(selectedMachine?.online == true ? NauclioTheme.seafoam : NauclioTheme.tertiary).frame(width: 7, height: 7)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(selectedMachine?.name ?? "Choose a machine").font(.system(size: 13, weight: .semibold))
+                                Text(selectedMachine?.name ?? "Choose a project host").font(.system(size: 13, weight: .semibold))
                                 Text(selectedMachine?.online == true ? "Online · repository and agents run here" : "Offline")
                                     .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
                             }
@@ -458,7 +458,7 @@ struct NewProjectSheet: View {
                         .overlay(RoundedRectangle(cornerRadius: 9).stroke(NauclioTheme.strongBorder))
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden)
-                    Text("The repository path and every agent process belong to this daemon. Browsing below reads that machine's filesystem over Nauclio.")
+                    Text("The repository path and every agent process belong to this host. This placement choice does not filter the combined workspace.")
                         .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
 
                     projectLabel("Git working tree")
@@ -470,7 +470,7 @@ struct NewProjectSheet: View {
                         .buttonStyle(NauclioSecondaryButtonStyle())
                             .disabled(machineID.isEmpty || selectedMachine?.online != true)
                     }
-                    Text("The path is resolved and validated by the selected daemon; no local macOS file panel is used.")
+                    Text("The path is resolved and validated by the project host; no local macOS file panel is used.")
                         .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
 
                     HStack(alignment: .top, spacing: 12) {
@@ -624,7 +624,7 @@ private struct RemoteDirectoryBrowserSheet: View {
 
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("LOCATIONS").font(.system(size: 9, weight: .bold, design: .monospaced)).tracking(1.2).foregroundStyle(NauclioTheme.tertiary)
+                    Text("LOCATIONS").font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary)
                         .padding(.horizontal, 9).padding(.bottom, 3)
                     ForEach(listing?.locations ?? [], id: \.path) { location in
                         Button { Task { await load(location.path) } } label: {
@@ -876,16 +876,159 @@ struct LabelsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var color = "#7c5cff"
+    @State private var instructions = ""
+    @State private var pendingDelete: Nauclio_V1_Label?
+    @State private var creating = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            HStack { Text("Board labels").font(.title2.weight(.bold)); Spacer(); Button("Done") { dismiss() } }
-            ForEach(store.selectedBoard?.labels ?? [], id: \.id) { label in
-                HStack { Circle().fill(Color(hex: label.color) ?? NauclioTheme.cobalt).frame(width: 10, height: 10); Text(label.name); Text(label.color).font(.caption.monospaced()).foregroundStyle(.secondary); Spacer(); Button(role: .destructive) { Task { await store.deleteLabel(id: label.id) } } label: { Image(systemName: "trash") }.buttonStyle(.plain) }.padding(9).nauclioSurface(radius: 8)
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Board labels").font(.title2.weight(.bold))
+                    Text("Labels can add agent instructions to every card that carries them.")
+                        .font(.caption).foregroundStyle(NauclioTheme.tertiary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
             }
-            Divider()
-            HStack { TextField("Label name", text: $name); TextField("#7c5cff", text: $color).frame(width: 110); Button("Add") { Task { await store.createLabel(name: name, color: color); name = "" } }.disabled(name.isEmpty) }
-        }.padding(22).frame(width: 520, height: 450, alignment: .top)
+            .padding(20)
+            .background(NauclioTheme.sidebar)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if (store.selectedBoard?.labels ?? []).isEmpty {
+                        ContentUnavailableView(
+                            "No labels yet",
+                            systemImage: "tag",
+                            description: Text("Create one below, then assign it to cards from the board.")
+                        )
+                        .frame(maxWidth: .infinity).padding(.vertical, 16)
+                    }
+
+                    ForEach(store.selectedBoard?.labels ?? [], id: \.id) { label in
+                        BoardLabelEditorRow(label: label, requestDelete: { pendingDelete = label })
+                    }
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("NEW LABEL").font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary)
+                        HStack(spacing: 9) {
+                            Circle().fill(Color(hex: color) ?? NauclioTheme.cobalt).frame(width: 10, height: 10)
+                            TextField("Label name", text: $name)
+                            TextField("#7c5cff", text: $color).font(.body.monospaced()).frame(width: 120)
+                        }
+                        TextEditor(text: $instructions)
+                            .font(.system(size: 12, design: .monospaced))
+                            .scrollContentBackground(.hidden)
+                            .padding(8).frame(height: 76)
+                            .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(NauclioTheme.border))
+                            .overlay(alignment: .topLeading) {
+                                if instructions.isEmpty {
+                                    Text("Optional prompt added when this label is assigned…")
+                                        .font(.caption).foregroundStyle(NauclioTheme.tertiary).padding(12).allowsHitTesting(false)
+                                }
+                            }
+                        HStack {
+                            Text("The instruction is composed with global, project, and board prompts.")
+                                .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
+                            Spacer()
+                            Button("Create label") { Task { await createLabel() } }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(creating || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || Color(hex: color) == nil)
+                        }
+                    }
+                    .padding(14).nauclioSurface(radius: 10)
+                }
+                .padding(18)
+            }
+            .background(NauclioTheme.background)
+        }
+        .frame(width: 650, height: 620)
+        .confirmationDialog(
+            "Remove \(pendingDelete?.name ?? "label")?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
+        ) {
+            Button("Remove label", role: .destructive) {
+                guard let label = pendingDelete else { return }
+                pendingDelete = nil
+                Task { await store.deleteLabel(id: label.id) }
+            }
+        } message: {
+            Text("This removes the label from the board and every card. The label's agent instructions are removed too.")
+        }
+    }
+
+    private func createLabel() async {
+        creating = true
+        await store.createLabel(
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            color: color,
+            instructions: instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        name = ""
+        instructions = ""
+        creating = false
+    }
+}
+
+private struct BoardLabelEditorRow: View {
+    @Environment(NauclioStore.self) private var store
+    let label: Nauclio_V1_Label
+    let requestDelete: () -> Void
+    @State private var name: String
+    @State private var color: String
+    @State private var instructions: String
+    @State private var saving = false
+
+    init(label: Nauclio_V1_Label, requestDelete: @escaping () -> Void) {
+        self.label = label
+        self.requestDelete = requestDelete
+        _name = State(initialValue: label.name)
+        _color = State(initialValue: label.color)
+        _instructions = State(initialValue: label.instructions)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 9) {
+                Circle().fill(Color(hex: color) ?? NauclioTheme.cobalt).frame(width: 10, height: 10)
+                TextField("Label name", text: $name)
+                TextField("#7c5cff", text: $color).font(.body.monospaced()).frame(width: 120)
+                Button(role: .destructive, action: requestDelete) { Image(systemName: "trash") }
+                    .buttonStyle(.plain).help("Remove \(label.name)")
+            }
+            Text("AGENT INSTRUCTIONS").font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary)
+            TextEditor(text: $instructions)
+                .font(.system(size: 12, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(8).frame(height: 76)
+                .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(NauclioTheme.border))
+                .overlay(alignment: .topLeading) {
+                    if instructions.isEmpty {
+                        Text("Optional prompt added when this label is assigned…")
+                            .font(.caption).foregroundStyle(NauclioTheme.tertiary).padding(12).allowsHitTesting(false)
+                    }
+                }
+            HStack {
+                Text("Applied only to cards carrying this label").font(.caption2).foregroundStyle(NauclioTheme.tertiary)
+                Spacer()
+                Button(saving ? "Saving…" : "Save changes") { Task { await save() } }
+                    .disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || Color(hex: color) == nil)
+            }
+        }
+        .padding(14).nauclioSurface(radius: 10)
+    }
+
+    private func save() async {
+        saving = true
+        await store.updateLabel(
+            id: label.id,
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            color: color,
+            instructions: instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        saving = false
     }
 }
 

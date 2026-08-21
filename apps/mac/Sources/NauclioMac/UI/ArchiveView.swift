@@ -37,19 +37,22 @@ struct ArchiveView: View {
                 if scope == "Cards" {
                     ForEach(store.archivedCards, id: \.id) { card in
                         HStack { VStack(alignment: .leading) { Text(card.title).fontWeight(.semibold); Text(card.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2) }; Spacer(); Button("Restore") { Task { await store.archive(card, archived: false); await store.loadArchive() } }.buttonStyle(NauclioSecondaryButtonStyle()) }
-                            .padding(11).background(NauclioTheme.surface.opacity(0.48), in: RoundedRectangle(cornerRadius: 9))
+                            .padding(11).background(NauclioTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NauclioTheme.border))
                             .listRowSeparator(.hidden).listRowBackground(Color.clear)
                     }
                 } else if scope == "Chats" {
                     ForEach(store.chats.filter(\.archived), id: \.id) { card in
                         HStack { VStack(alignment: .leading) { Text(card.title).fontWeight(.semibold); Text(card.updatedAt).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await store.archive(card, archived: false); await store.loadArchive() } }.buttonStyle(NauclioSecondaryButtonStyle()) }
-                            .padding(11).background(NauclioTheme.surface.opacity(0.48), in: RoundedRectangle(cornerRadius: 9))
+                            .padding(11).background(NauclioTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NauclioTheme.border))
                             .listRowSeparator(.hidden).listRowBackground(Color.clear)
                     }
                 } else {
                     ForEach(store.archivedProjects, id: \.id) { project in
                         HStack { VStack(alignment: .leading) { Text(project.name).fontWeight(.semibold); Text(project.path).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await store.setProjectArchived(id: project.id, archived: false) } }.buttonStyle(NauclioSecondaryButtonStyle()) }
-                            .padding(11).background(NauclioTheme.surface.opacity(0.48), in: RoundedRectangle(cornerRadius: 9))
+                            .padding(11).background(NauclioTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NauclioTheme.border))
                             .listRowSeparator(.hidden).listRowBackground(Color.clear)
                     }
                 }

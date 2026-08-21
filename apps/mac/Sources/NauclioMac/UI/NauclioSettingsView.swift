@@ -33,33 +33,32 @@ enum NauclioSettingsSection: String, CaseIterable, Identifiable, Hashable {
 
 struct NauclioSettingsView: View {
     @Environment(NauclioStore.self) private var store
-    @State private var selection: NauclioSettingsSection? = .general
-
-    private var selectedSection: NauclioSettingsSection { selection ?? .general }
+    @State private var selection = NauclioSettingsSection.general
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             VStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Settings").font(.system(size: 18, weight: .bold))
-                    Text("Nauclio for macOS").font(.caption).foregroundStyle(NauclioTheme.tertiary)
+                    Text("Settings").font(NauclioFont.paneTitle)
+                    Text("Nauclio for macOS").font(NauclioFont.subtitle).foregroundStyle(NauclioTheme.tertiary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16).padding(.vertical, 15)
+                .padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 9)
 
-                Divider().overlay(NauclioTheme.border)
-
-                List(selection: $selection) {
+                VStack(spacing: 3) {
                     ForEach(NauclioSettingsSection.allCases) { section in
-                        Label(section.rawValue, systemImage: section.symbol)
-                            .font(.system(size: 12, weight: section == selectedSection ? .semibold : .medium))
-                            .foregroundStyle(section == selectedSection ? Color.white : NauclioTheme.subtle)
-                            .tag(section)
-                            .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
+                        Button {
+                            selection = section
+                        } label: {
+                            SettingsNavigationRow(section: section, selected: section == selection)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
                     }
                 }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
+                .padding(9)
+
+                Spacer(minLength: 10)
 
                 Divider().overlay(NauclioTheme.border)
 
@@ -72,21 +71,21 @@ struct NauclioSettingsView: View {
                 .padding(14)
             }
             .background(NauclioTheme.sidebar)
-            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 260)
-        } detail: {
+            .frame(width: 220)
+
+            Divider().overlay(NauclioTheme.border)
+
             VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(selectedSection.rawValue).font(.system(size: 22, weight: .bold))
-                    Text(selectedSection.subtitle).font(.caption).foregroundStyle(NauclioTheme.tertiary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(selection.rawValue).font(.system(size: 18, weight: .semibold))
+                    Text(selection.subtitle).font(NauclioFont.subtitle).foregroundStyle(NauclioTheme.tertiary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 22).padding(.vertical, 17)
+                .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 12)
                 .background(NauclioTheme.background)
 
-                Divider().overlay(NauclioTheme.border)
-
                 Group {
-                    switch selectedSection {
+                    switch selection {
                     case .general: GeneralSettings()
                     case .connection: ConnectionSettings()
                     case .prompts: PromptSettingsEditor()
@@ -97,8 +96,30 @@ struct NauclioSettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .background(NauclioTheme.background)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationSplitViewStyle(.balanced)
+        .background(NauclioTheme.background)
+    }
+}
+
+private struct SettingsNavigationRow: View {
+    let section: NauclioSettingsSection
+    let selected: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: section.symbol).frame(width: 17)
+            Text(section.rawValue)
+            Spacer()
+        }
+        .font(.system(size: 12, weight: selected ? .semibold : .medium))
+        .foregroundStyle(selected ? NauclioTheme.text : NauclioTheme.subtle)
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(
+            selected ? NauclioTheme.selection : Color.clear,
+            in: RoundedRectangle(cornerRadius: NauclioMetrics.controlRadius, style: .continuous)
+        )
     }
 }
 
@@ -280,7 +301,11 @@ struct PromptSettingsEditor: View {
         saving = true; defer { saving = false }
         var request = Nauclio_V1_SetScopedPromptTemplateRequest()
         request.scopeID = project.id; request.inherit = projectInherits; request.promptTemplate = projectTemplate
-        do { _ = try await rpc.setProjectPromptTemplate(request); await store.refreshState(); syncScopedTemplates(); await loadPreview() } catch { store.show(error) }
+        do {
+            store.acceptProject(try await rpc.setProjectPromptTemplate(request))
+            syncScopedTemplates()
+            await loadPreview()
+        } catch { store.show(error) }
     }
 
     private func saveBoard() async {
@@ -288,7 +313,11 @@ struct PromptSettingsEditor: View {
         saving = true; defer { saving = false }
         var request = Nauclio_V1_SetScopedPromptTemplateRequest()
         request.scopeID = board.id; request.inherit = boardInherits; request.promptTemplate = boardTemplate
-        do { _ = try await rpc.setBoardPromptTemplate(request); await store.refreshState(); syncScopedTemplates(); await loadPreview() } catch { store.show(error) }
+        do {
+            store.acceptBoard(try await rpc.setBoardPromptTemplate(request))
+            syncScopedTemplates()
+            await loadPreview()
+        } catch { store.show(error) }
     }
 
     private func saveLabel(_ label: Nauclio_V1_Label) async {
@@ -298,7 +327,11 @@ struct PromptSettingsEditor: View {
         request.boardID = board.id; request.labelID = label.id
         request.name = label.name; request.color = label.color
         request.instructions = labelInstructions[label.id, default: label.instructions]
-        do { _ = try await rpc.updateBoardLabel(request); await store.refreshState(); syncScopedTemplates(); await loadPreview() } catch { store.show(error) }
+        do {
+            store.acceptBoard(try await rpc.updateBoardLabel(request))
+            syncScopedTemplates()
+            await loadPreview()
+        } catch { store.show(error) }
     }
 
     private func loadPreview() async {
@@ -323,20 +356,91 @@ private extension View {
     }
 
     func promptSectionLabel() -> some View {
-        font(.system(size: 9, weight: .bold)).tracking(0.7).foregroundStyle(NauclioTheme.tertiary)
+        font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary)
+    }
+}
+
+private struct SettingsPage<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ScrollView {
+            content
+                .frame(maxWidth: 860, alignment: .leading)
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .background(NauclioTheme.background)
+    }
+}
+
+private struct SettingsPanel<Content: View>: View {
+    let title: String
+    var subtitle = ""
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title.uppercased()).font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary)
+                if !subtitle.isEmpty { Text(subtitle).font(.system(size: 11)).foregroundStyle(NauclioTheme.subtle) }
+            }
+            content
+        }
+        .padding(14)
+        .background(NauclioTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(NauclioTheme.border))
+    }
+}
+
+private struct SettingsValueRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title).foregroundStyle(NauclioTheme.subtle)
+            Spacer()
+            Text(value).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+        }
+        .font(.system(size: 12))
+        .padding(.vertical, 3)
     }
 }
 
 struct GeneralSettings: View {
     @Environment(NauclioStore.self) private var store
     @State private var archiveConfirmation = false
+
     var body: some View {
-        Form {
-            Section("Server") { LabeledContent("Store", value: store.health.storePath); LabeledContent("Runtime", value: store.runtime.mode); LabeledContent("Ready", value: store.runtime.ready ? "Yes" : "No"); LabeledContent("Sandboxed", value: store.runtime.sandboxed ? "Yes" : "No") }
-            Section("Client") { Toggle("Open Nauclio at login", isOn: .constant(false)).disabled(true); Text("The macOS client keeps no project metadata in working trees and communicates only through Nauclio's API.").font(.caption).foregroundStyle(.secondary) }
-            Section("Project") { Button("Archive current project…", role: .destructive) { archiveConfirmation = true }.disabled(store.selectedProjectID.isEmpty); Text("Archiving removes the project from active views without deleting its Nauclio data or Git working tree.").font(.caption).foregroundStyle(.secondary) }
-        }.formStyle(.grouped)
-            .confirmationDialog("Archive \(store.selectedProject?.name ?? "project")?", isPresented: $archiveConfirmation) { Button("Archive project", role: .destructive) { Task { await store.setProjectArchived(id: store.selectedProjectID, archived: true) } } }
+        SettingsPage {
+            VStack(spacing: 14) {
+                SettingsPanel(title: "Current project route", subtitle: "Nauclio routes each project to the machine that owns it.") {
+                    SettingsValueRow(title: "Store", value: store.health.storePath)
+                    Divider().overlay(NauclioTheme.border)
+                    SettingsValueRow(title: "Runtime", value: store.runtime.mode)
+                    SettingsValueRow(title: "Ready", value: store.runtime.ready ? "Yes" : "No")
+                    SettingsValueRow(title: "Sandboxed", value: store.runtime.sandboxed ? "Yes" : "No")
+                }
+                SettingsPanel(title: "Client") {
+                    Toggle("Open Nauclio at login", isOn: .constant(false)).disabled(true)
+                    Text("The macOS client keeps no project metadata in working trees and communicates only through Nauclio's authenticated API.")
+                        .font(.caption).foregroundStyle(NauclioTheme.tertiary)
+                }
+                SettingsPanel(title: "Current project", subtitle: store.selectedProject?.name ?? "No project selected") {
+                    HStack {
+                        Text("Archiving hides the project without deleting Nauclio data or its Git working tree.")
+                            .font(.caption).foregroundStyle(NauclioTheme.tertiary)
+                        Spacer()
+                        Button("Archive project…", role: .destructive) { archiveConfirmation = true }
+                            .disabled(store.selectedProjectID.isEmpty)
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Archive \(store.selectedProject?.name ?? "project")?", isPresented: $archiveConfirmation) {
+            Button("Archive project", role: .destructive) { Task { await store.setProjectArchived(id: store.selectedProjectID, archived: true) } }
+        }
     }
 }
 
@@ -348,34 +452,193 @@ struct ConnectionSettings: View {
     @State private var pendingRename: NauclioEndpoint?
 
     var body: some View {
-        Form {
-            Section("Active connection") { HStack { Circle().fill(store.phase.isConnected ? NauclioTheme.seafoam : NauclioTheme.coral).frame(width: 8, height: 8); VStack(alignment: .leading) { Text(store.endpoint.name).fontWeight(.semibold); Text(store.endpoint.address).font(.caption).foregroundStyle(.secondary) }; Spacer(); if store.phase == .authenticationRequired { Button("Sign in with GitHub") { Task { await store.signIn() } } } else { Button("Reconnect") { Task { await store.connect() } } } } }
-            Section("Available daemons") {
-                ForEach(store.endpoints) { endpoint in
-                    HStack { VStack(alignment: .leading) { Text(endpoint.name); Text(endpoint.address).font(.caption).foregroundStyle(.secondary) }; Spacer(); if endpoint == store.endpoint { Text("Active").font(.caption).foregroundStyle(NauclioTheme.seafoam) } else { Button("Connect") { Task { await store.setEndpoint(endpoint) } } }; if endpoint.daemonID != nil { Button { pendingRename = endpoint } label: { Image(systemName: "pencil") }.buttonStyle(.plain).help("Rename machine") }; Button(role: .destructive) { if endpoint.daemonID != nil { pendingRevoke = endpoint } else { store.deleteEndpoint(endpoint) } } label: { Image(systemName: "trash") }.buttonStyle(.plain).disabled(endpoint.daemonID == nil && store.endpoints.count == 1) }
+        SettingsPage {
+            VStack(spacing: 14) {
+                connectionExplanation
+                activeConnection
+                gatewayList
+                machineList
+                addGateway
+            }
+        }
+        .sheet(item: $pendingRename) { machine in RenameMachineSheet(machine: machine).environment(store) }
+        .confirmationDialog("Revoke \(pendingRevoke?.name ?? "machine")?", isPresented: Binding(get: { pendingRevoke != nil }, set: { if !$0 { pendingRevoke = nil } })) {
+            Button("Revoke machine", role: .destructive) {
+                if let endpoint = pendingRevoke { Task { await store.revokeDaemon(endpoint) } }
+                pendingRevoke = nil
+            }
+        } message: { Text("This machine will lose gateway and direct access until it is enrolled again.") }
+    }
+
+    private var connectionExplanation: some View {
+        SettingsPanel(title: "How connections work") {
+            HStack(spacing: 13) {
+                ConnectionConcept(symbol: "laptopcomputer", title: "This Mac", detail: "Nauclio app")
+                Image(systemName: "arrow.right").foregroundStyle(NauclioTheme.tertiary)
+                ConnectionConcept(symbol: "point.3.connected.trianglepath.dotted", title: "Gateway", detail: "Sign-in + discovery")
+                Image(systemName: "arrow.right").foregroundStyle(NauclioTheme.tertiary)
+                ConnectionConcept(symbol: "desktopcomputer", title: "All machines", detail: "Projects + agents")
+            }
+            Text("A gateway does not store projects or conversations. Nauclio combines every machine enrolled through the active gateway and automatically routes each project action to its owner.")
+                .font(.caption).foregroundStyle(NauclioTheme.tertiary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var activeConnection: some View {
+        SettingsPanel(title: "Automatic routing", subtitle: store.phase.label) {
+            HStack(spacing: 10) {
+                Image(systemName: "point.3.connected.trianglepath.dotted").foregroundStyle(NauclioTheme.aegean).frame(width: 18)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.activeGateway.name).font(.system(size: 12, weight: .semibold))
+                    Text("Gateway · \(store.activeGateway.address)").font(.caption2).foregroundStyle(NauclioTheme.tertiary)
+                }
+                Spacer()
+                if store.phase == .authenticationRequired {
+                    Button("Sign in with GitHub") { Task { await store.signIn() } }.buttonStyle(.borderedProminent)
                 }
             }
-            Section("Add gateway") { TextField("Name", text: $name); TextField("https://nauclio.example.com", text: $address); Button("Save and connect") { if let endpoint = NauclioEndpoint.parse(address, name: name.isEmpty ? "Custom" : name), endpoint.secure { Task { await store.saveEndpoint(endpoint) }; name = ""; address = "" } }.disabled(NauclioEndpoint.parse(address)?.secure != true) }
-            Section { Text("The gateway session is stored unencrypted in a user-only local file, not in Keychain. Nauclio discovers your daemons, prefers a verified direct TLS route, and falls back to the encrypted gateway relay.").font(.caption).foregroundStyle(.secondary) }
-        }.formStyle(.grouped)
-            .sheet(item: $pendingRename) { machine in RenameMachineSheet(machine: machine).environment(store) }
-            .confirmationDialog("Revoke \(pendingRevoke?.name ?? "daemon")?", isPresented: Binding(get: { pendingRevoke != nil }, set: { if !$0 { pendingRevoke = nil } })) {
-                Button("Revoke daemon", role: .destructive) {
-                    if let endpoint = pendingRevoke { Task { await store.revokeDaemon(endpoint) } }
-                    pendingRevoke = nil
+            Divider().overlay(NauclioTheme.border)
+            HStack(spacing: 10) {
+                Circle().fill(store.phase.isConnected ? NauclioTheme.seafoam : NauclioTheme.amber).frame(width: 8, height: 8)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.endpoint.daemonID == nil ? "Waiting for an online machine" : "Current route · \(store.endpoint.name)").font(.system(size: 12, weight: .semibold))
+                    Text(activeMachineDetail).font(.caption2).foregroundStyle(NauclioTheme.tertiary)
                 }
-            } message: { Text("This machine will lose gateway and direct access until it is enrolled again.") }
+                Spacer()
+                if store.endpoint.daemonID != nil { Button("Reconnect") { Task { await store.connect() } } }
+            }
+        }
+    }
+
+    private var gatewayList: some View {
+        SettingsPanel(title: "Gateways", subtitle: "Choose one to sign in and discover its enrolled machines.") {
+            ForEach(store.gateways) { gateway in
+                HStack(spacing: 10) {
+                    Image(systemName: "network").foregroundStyle(NauclioTheme.aegean).frame(width: 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(gateway.name).font(.system(size: 12, weight: .semibold))
+                            if gateway.credentialID == NauclioEndpoint.defaults.first?.credentialID {
+                                Text("PRIMARY").font(.system(size: 8, weight: .bold)).foregroundStyle(NauclioTheme.seafoam)
+                                    .padding(.horizontal, 5).frame(height: 16).background(NauclioTheme.seafoam.opacity(0.1), in: Capsule())
+                            }
+                        }
+                        Text(gateway.address).font(.caption2).foregroundStyle(NauclioTheme.tertiary)
+                    }
+                    Spacer()
+                    if gateway.credentialID == store.activeGateway.credentialID { Text("Active gateway").font(.caption2).foregroundStyle(NauclioTheme.seafoam) }
+                    Button("Use gateway") { Task { await store.chooseGateway(gateway) } }
+                    if store.gateways.count > 1 {
+                        Button(role: .destructive) { store.deleteEndpoint(gateway) } label: { Image(systemName: "trash") }
+                            .buttonStyle(.plain).disabled(gateway.credentialID == store.activeGateway.credentialID)
+                            .help("Remove gateway")
+                    }
+                }
+                if gateway.id != store.gateways.last?.id { Divider().overlay(NauclioTheme.border) }
+            }
+        }
+    }
+
+    private var machineList: some View {
+        SettingsPanel(
+            title: "Machines discovered through \(store.activeGateway.name)",
+            subtitle: store.machines.isEmpty ? "Sign in to this gateway to load its machines." : "Projects and conversations stay on these machines, never on the gateway."
+        ) {
+            if store.machines.isEmpty {
+                Text("No machines discovered yet.").font(.caption).foregroundStyle(NauclioTheme.tertiary).padding(.vertical, 5)
+            }
+            ForEach(store.machines) { machine in
+                HStack(spacing: 10) {
+                    Circle().fill(machine.online ? NauclioTheme.seafoam : NauclioTheme.tertiary).frame(width: 8, height: 8)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(machine.name).font(.system(size: 12, weight: .semibold))
+                        Text(machineSummary(machine)).font(.caption2).foregroundStyle(NauclioTheme.tertiary)
+                    }
+                    Spacer()
+                    if machine.id == store.endpoint.id { Text("Current route").font(.caption2).foregroundStyle(NauclioTheme.seafoam) }
+                    Button { pendingRename = machine } label: { Image(systemName: "pencil") }.buttonStyle(.plain).help("Rename machine")
+                    Button(role: .destructive) { pendingRevoke = machine } label: { Image(systemName: "trash") }.buttonStyle(.plain).help("Revoke machine")
+                }
+                if machine.id != store.machines.last?.id { Divider().overlay(NauclioTheme.border) }
+            }
+        }
+    }
+
+    private var addGateway: some View {
+        SettingsPanel(title: "Add another gateway", subtitle: "Use this only for a separate Nauclio deployment. It has a separate sign-in and machine directory.") {
+            HStack(spacing: 9) {
+                TextField("Display name", text: $name)
+                TextField("https://nauclio.example.com", text: $address)
+                Button("Save and discover") {
+                    if let gateway = NauclioEndpoint.parse(address, name: name.isEmpty ? "Custom gateway" : name), gateway.secure {
+                        Task { await store.saveEndpoint(gateway) }
+                        name = ""; address = ""
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(NauclioEndpoint.parse(address)?.secure != true)
+            }
+            Text("Gateway sessions are stored in a user-only local file. Nauclio prefers verified direct TLS to a discovered machine and otherwise uses the gateway's encrypted relay.")
+                .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
+        }
+    }
+
+    private var activeMachineDetail: String {
+        guard store.endpoint.daemonID != nil else { return "Nauclio will route through the first available machine" }
+        guard let status = store.connectionStatus(for: store.endpoint) else { return store.endpoint.online ? "Connecting…" : MachinePresenceText.lastSeen(store.endpoint.lastSeenAt) }
+        return "\(status.route.rawValue) connection · \(status.latencyMilliseconds) ms"
+    }
+
+    private func machineSummary(_ machine: NauclioEndpoint) -> String {
+        guard machine.online else { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
+        if let status = store.connectionStatus(for: machine) { return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms" }
+        return machine.version.isEmpty ? "Online" : "Online · Nauclio \(machine.version)"
+    }
+}
+
+private struct ConnectionConcept: View {
+    let symbol: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol).font(.system(size: 15, weight: .semibold)).foregroundStyle(NauclioTheme.aegean).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 11, weight: .semibold))
+                Text(detail).font(.system(size: 9)).foregroundStyle(NauclioTheme.tertiary)
+            }
+        }
+        .padding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .background(NauclioTheme.input, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(NauclioTheme.border))
     }
 }
 
 struct NotificationSettings: View {
     @Environment(NauclioStore.self) private var store
     @State private var enabled = UserDefaults.standard.bool(forKey: "NauclioNotifications")
+
     var body: some View {
-        Form {
-            Section("Agent activity") { Toggle("Show macOS notifications", isOn: $enabled).onChange(of: enabled) { _, value in UserDefaults.standard.set(value, forKey: "NauclioNotifications"); if value { store.requestNotifications() } }; Toggle("Review requested", isOn: .constant(true)); Toggle("Agent failed", isOn: .constant(true)); Toggle("Agent completed", isOn: .constant(true)) }
-            Section { Text("Notifications are generated by state transitions observed on the gRPC stream. Clicking a menu-bar task opens its durable conversation.").font(.caption).foregroundStyle(.secondary) }
-        }.formStyle(.grouped)
+        SettingsPage {
+            VStack(spacing: 14) {
+                SettingsPanel(title: "Agent activity", subtitle: "Choose whether Nauclio can alert you outside the app.") {
+                    Toggle("Show macOS notifications", isOn: $enabled)
+                        .onChange(of: enabled) { _, value in
+                            UserDefaults.standard.set(value, forKey: "NauclioNotifications")
+                            if value { store.requestNotifications() }
+                        }
+                    Divider().overlay(NauclioTheme.border)
+                    Toggle("Review requested", isOn: .constant(true))
+                    Toggle("Agent failed", isOn: .constant(true))
+                    Toggle("Agent completed", isOn: .constant(true))
+                }
+                SettingsPanel(title: "Delivery") {
+                    Text("Notifications come from state transitions on the synchronized Nauclio stream. Clicking one opens the same durable conversation.")
+                        .font(.caption).foregroundStyle(NauclioTheme.tertiary)
+                }
+            }
+        }
     }
 }
 
@@ -386,20 +649,38 @@ struct AgentSettings: View {
     @State private var boardLimits: [String: Int] = [:]
 
     var body: some View {
-        Form {
-            Section("Parallel sessions") {
-                Stepper("Global limit: \(global)", value: $global, in: 1...64)
-                ForEach(store.harnessCatalog.harnesses, id: \.id) { harness in
-                    Stepper("\(harness.name): \(agentLimits[harness.id, default: 0])", value: Binding(get: { agentLimits[harness.id, default: 0] }, set: { agentLimits[harness.id] = $0 }), in: 0...64)
+        SettingsPage {
+            VStack(spacing: 14) {
+                SettingsPanel(title: "Parallel sessions", subtitle: "Zero on a harness or board means it inherits the global policy.") {
+                    Stepper("Global limit: \(global)", value: $global, in: 1...64)
+                    Divider().overlay(NauclioTheme.border)
+                    ForEach(store.harnessCatalog.harnesses, id: \.id) { harness in
+                        Stepper("\(harness.name): \(agentLimits[harness.id, default: 0])", value: Binding(get: { agentLimits[harness.id, default: 0] }, set: { agentLimits[harness.id] = $0 }), in: 0...64)
+                    }
+                    DisclosureGroup("Per-board limits") {
+                        VStack(spacing: 8) {
+                            ForEach(store.settingsOptions.boards, id: \.id) { board in
+                                Stepper("\(board.name): \(boardLimits[board.id, default: 0])", value: Binding(get: { boardLimits[board.id, default: 0] }, set: { boardLimits[board.id] = $0 }), in: 0...64)
+                            }
+                        }.padding(.top, 8)
+                    }
+                    HStack { Spacer(); Button("Save parallel limits") { Task { await store.updateLimits(global: global, agents: agentLimits, boards: boardLimits) } }.buttonStyle(.borderedProminent) }
                 }
-                DisclosureGroup("Per-board limits") {
-                    ForEach(store.settingsOptions.boards, id: \.id) { board in
-                        Stepper("\(board.name): \(boardLimits[board.id, default: 0])", value: Binding(get: { boardLimits[board.id, default: 0] }, set: { boardLimits[board.id] = $0 }), in: 0...64)
+                SettingsPanel(title: "Harness capabilities") {
+                    ForEach(store.harnessCatalog.harnesses, id: \.id) { harness in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(harness.name).font(.system(size: 12, weight: .semibold))
+                            Text(harness.models.map(\.name).joined(separator: ", ")).font(.caption).foregroundStyle(NauclioTheme.tertiary)
+                        }
+                        if harness.id != store.harnessCatalog.harnesses.last?.id { Divider().overlay(NauclioTheme.border) }
                     }
                 }
-                Button("Save parallel limits") { Task { await store.updateLimits(global: global, agents: agentLimits, boards: boardLimits) } }
             }
-            Section("Capabilities") { ForEach(store.harnessCatalog.harnesses, id: \.id) { harness in VStack(alignment: .leading) { Text(harness.name).fontWeight(.semibold); Text(harness.models.map(\.name).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) } } }
-        }.formStyle(.grouped).onAppear { global = max(1, Int(store.boardSettings.globalParallelLimit)); agentLimits = store.boardSettings.agentParallelLimits.mapValues(Int.init); boardLimits = store.boardSettings.boardParallelLimits.mapValues(Int.init) }
+        }
+        .onAppear {
+            global = max(1, Int(store.boardSettings.globalParallelLimit))
+            agentLimits = store.boardSettings.agentParallelLimits.mapValues(Int.init)
+            boardLimits = store.boardSettings.boardParallelLimits.mapValues(Int.init)
+        }
     }
 }

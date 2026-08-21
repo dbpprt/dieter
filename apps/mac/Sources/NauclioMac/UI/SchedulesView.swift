@@ -65,15 +65,15 @@ struct ScheduleRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack { Circle().fill(schedule.enabled ? NauclioTheme.seafoam : NauclioTheme.subtle).frame(width: 7, height: 7); Text(schedule.name).fontWeight(.semibold); Spacer(); if !schedule.enabled { Text("Paused").font(.caption2).foregroundStyle(.secondary) } }
-            Text(schedule.cron).font(.caption.monospaced()).foregroundStyle(NauclioTheme.cobalt)
-            HStack { Text(schedule.action.capitalized); Spacer(); Text(schedule.nextRunAt.isEmpty ? "No next run" : schedule.nextRunAt) }.font(.caption2).foregroundStyle(.secondary)
+            HStack { Circle().fill(schedule.enabled ? NauclioTheme.seafoam : NauclioTheme.subtle).frame(width: 6, height: 6); Text(schedule.name).font(.system(size: 13, weight: .semibold)); Spacer(); if !schedule.enabled { Text("Paused").font(.system(size: 10)).foregroundStyle(NauclioTheme.tertiary) } }
+            Text(schedule.cron).font(.system(size: 11).monospaced()).foregroundStyle(NauclioTheme.aegean)
+            HStack { Text(schedule.action.capitalized); Spacer(); Text(schedule.nextRunAt.isEmpty ? "No next run" : schedule.nextRunAt) }.font(.system(size: 10)).foregroundStyle(NauclioTheme.tertiary)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? NauclioTheme.raised : NauclioTheme.surface.opacity(0.34), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected ? NauclioTheme.aegean.opacity(0.28) : .clear))
-        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .background(selected ? NauclioTheme.selection : NauclioTheme.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: NauclioMetrics.cardRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: NauclioMetrics.cardRadius, style: .continuous).stroke(selected ? .clear : NauclioTheme.border))
+        .contentShape(RoundedRectangle(cornerRadius: NauclioMetrics.cardRadius))
     }
 }
 
@@ -98,13 +98,13 @@ struct ScheduleDetail: View {
                 }
             } secondary: {
                 HStack(spacing: 8) {
-                    Text(schedule.cron).font(.system(size: 10, design: .monospaced))
+                    Text(schedule.cron).font(.system(size: 11, design: .monospaced))
                     Text("·")
                     Text(schedule.timezone)
                     Spacer()
                     StatusPill(text: schedule.enabled ? "Enabled" : "Paused", color: schedule.enabled ? NauclioTheme.seafoam : NauclioTheme.subtle)
                 }
-                .font(.system(size: 9.5, weight: .medium)).foregroundStyle(NauclioTheme.tertiary)
+                .font(NauclioFont.subtitle).foregroundStyle(NauclioTheme.tertiary)
             }
 
             ScrollView {
@@ -115,10 +115,14 @@ struct ScheduleDetail: View {
                     ScheduleMetric(title: "Action", value: schedule.action, symbol: "bolt")
                     ScheduleMetric(title: "Next run", value: schedule.nextRunAt.isEmpty ? "—" : schedule.nextRunAt, symbol: "forward")
                 }
-                GroupBox("Templates") {
-                    VStack(alignment: .leading, spacing: 10) { Text(schedule.titleTemplate).font(.headline); Text(schedule.promptTemplate).textSelection(.enabled); HStack { StatusPill(text: schedule.provider); StatusPill(text: schedule.model); StatusPill(text: schedule.effort) } }.frame(maxWidth: .infinity, alignment: .leading).padding(6)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("TEMPLATES").font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary)
+                    Text(schedule.titleTemplate).font(.system(size: 13, weight: .semibold))
+                    Text(schedule.promptTemplate).font(.system(size: 12)).foregroundStyle(NauclioTheme.subtle).textSelection(.enabled)
+                    HStack { StatusPill(text: schedule.provider); StatusPill(text: schedule.model); StatusPill(text: schedule.effort) }
                 }
-                HStack { Text("Recent runs").font(.headline); Spacer(); Button("Delete schedule", role: .destructive) { Task { await store.deleteSchedule(schedule) } } }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(14).nauclioSurface(radius: 10)
+                HStack { Text("Recent runs").font(.system(size: 13, weight: .semibold)); Spacer(); Button("Delete schedule", role: .destructive) { Task { await store.deleteSchedule(schedule) } } }
                 if store.scheduleRuns.isEmpty { Text("No occurrences yet.").foregroundStyle(.secondary) }
                 ForEach(store.scheduleRuns, id: \.id) { run in
                     HStack { StatusPill(text: run.status, color: runtimeColor(run.status)); VStack(alignment: .leading) { Text(run.scheduledFor); if !run.message.isEmpty { Text(run.message).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Text(run.manual ? "Manual" : "Scheduled").font(.caption).foregroundStyle(.secondary); if !run.cardID.isEmpty { Button("Open card") { store.section = .board; Task { await store.openConversation(cardID: run.cardID) } } } }
@@ -132,7 +136,7 @@ struct ScheduleDetail: View {
 
 struct ScheduleMetric: View {
     let title: String, value: String, symbol: String
-    var body: some View { VStack(alignment: .leading, spacing: 6) { Label(title, systemImage: symbol).font(.caption).foregroundStyle(.secondary); Text(value).font(.callout.weight(.semibold)).lineLimit(2) }.padding(12).frame(maxWidth: .infinity, alignment: .leading).nauclioSurface() }
+    var body: some View { VStack(alignment: .leading, spacing: 6) { Label(title, systemImage: symbol).font(.system(size: 11)).foregroundStyle(NauclioTheme.tertiary); Text(value).font(.system(size: 12, weight: .semibold)).lineLimit(2) }.padding(12).frame(maxWidth: .infinity, alignment: .leading).nauclioSurface(radius: 10) }
 }
 
 struct ScheduleEditor: View {

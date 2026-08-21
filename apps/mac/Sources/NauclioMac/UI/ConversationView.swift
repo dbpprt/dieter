@@ -2,6 +2,10 @@ import NauclioAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum ComposerReturnPolicy {
+    static func sendsMessage(shiftPressed: Bool) -> Bool { !shiftPressed }
+}
+
 struct ConversationView: View {
     @Environment(NauclioStore.self) private var store
     var compact = false
@@ -75,9 +79,9 @@ private struct ConversationChrome: View {
                             Text(detail.project.name).lineLimit(1)
                             Text(standalone ? "· Standalone chat" : "/ \(detail.board.name)").lineLimit(1)
                         }
-                        if let id = card?.id, !id.isEmpty { Text("· \(id.prefix(8))").font(.caption2.monospaced()) }
+                        if let id = card?.id, !id.isEmpty { Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()) }
                     }
-                    .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
+                    .font(NauclioFont.subtitle).foregroundStyle(NauclioTheme.tertiary)
                 }
                 Spacer(minLength: 10)
                 StatusPill(text: status, color: runtimeColor(status))
@@ -122,11 +126,11 @@ private struct ConversationTabBar: View {
                                 Text("\(item.1)").font(.caption2.weight(.bold)).foregroundStyle(selection == item.0 ? NauclioTheme.aegean : NauclioTheme.tertiary)
                             }
                         }
-                        .fixedSize(horizontal: true, vertical: false)
                         .font(.system(size: 12, weight: selection == item.0 ? .semibold : .medium))
-                        .foregroundStyle(selection == item.0 ? NauclioTheme.aegean : NauclioTheme.subtle)
-                        Capsule().fill(selection == item.0 ? NauclioTheme.aegean : .clear).frame(height: 2)
+                        .foregroundStyle(selection == item.0 ? NauclioTheme.text : NauclioTheme.subtle)
+                        Capsule().fill(selection == item.0 ? NauclioTheme.primary : .clear).frame(height: 2)
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                 }.buttonStyle(.plain)
             }
             Spacer()
@@ -347,7 +351,7 @@ struct MessageView: View {
                     }
                 }
                 .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)
-                .background(NauclioTheme.cobalt.opacity(0.86), in: RoundedRectangle(cornerRadius: 12))
+                .background(NauclioTheme.cobalt.opacity(0.9), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .frame(maxWidth: 620, alignment: .trailing)
             }
             .opacity(store.isPendingMessage(message.id) ? 0.52 : 1)
@@ -801,8 +805,8 @@ struct TaskPlanView: View {
                 }
             }
         }
-        .background(NauclioTheme.input.opacity(0.62), in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(NauclioTheme.strongBorder))
+        .background(NauclioTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(NauclioTheme.border))
     }
 
     private func planIcon(_ status: String) -> String {
@@ -972,6 +976,7 @@ struct CommentsView: View {
     }
 }
 
+
 private struct ConversationComposer: View {
     @Environment(NauclioStore.self) private var store
     @Binding var fileImporterPresented: Bool
@@ -982,6 +987,10 @@ private struct ConversationComposer: View {
     private var working: Bool { ["running", "starting"].contains(store.conversation?.conversation.status ?? "") }
     private var hasDraft: Bool {
         !store.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.composerAttachments.isEmpty
+    }
+    private var composerEditorHeight: CGFloat {
+        let lines = store.composerText.split(separator: "\n", omittingEmptySubsequences: false).count
+        return min(126, 54 + CGFloat(max(0, lines - 1)) * 18)
     }
 
     var body: some View {
@@ -995,16 +1004,32 @@ private struct ConversationComposer: View {
                 }.foregroundStyle(NauclioTheme.amber)
             }
             VStack(alignment: .leading, spacing: 0) {
-                TextField("Message the local agent…", text: $store.composerText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .lineLimit(1...6)
-                    .focused($composerFocused)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    .padding(.bottom, store.composerAttachments.isEmpty ? 12 : 8)
-                    .frame(minHeight: 54, alignment: .topLeading)
-                    .accessibilityIdentifier("conversation.composer")
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $store.composerText)
+                        .scrollContentBackground(.hidden)
+                        .font(.system(size: 14))
+                        .focused($composerFocused)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .accessibilityIdentifier("conversation.composer")
+                        .onKeyPress(.return, phases: .down) { press in
+                            if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
+                                return .ignored
+                            }
+                            if hasDraft { Task { await store.sendComposer() } }
+                            return .handled
+                        }
+
+                    if store.composerText.isEmpty {
+                        Text("Message the local agent…")
+                            .font(.system(size: 14))
+                            .foregroundStyle(NauclioTheme.tertiary)
+                            .padding(.leading, 16)
+                            .padding(.top, 14)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .frame(height: composerEditorHeight, alignment: .topLeading)
 
                 if !store.composerAttachments.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -1060,32 +1085,17 @@ private struct ConversationComposer: View {
                 .padding(.trailing, 9)
                 .padding(.bottom, 9)
 
-                Button("") { Task { await store.sendComposer() } }
-                    .keyboardShortcut(.return, modifiers: [])
-                    .frame(width: 0, height: 0).opacity(0)
-                    .accessibilityHidden(true)
             }
-            .background(
-                LinearGradient(
-                    colors: [NauclioTheme.raised.opacity(0.96), NauclioTheme.surface.opacity(0.98)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
+            .background(NauclioTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(composerFocused ? NauclioTheme.aegean.opacity(0.58) : Color.white.opacity(0.09), lineWidth: composerFocused ? 1.4 : 1)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(composerFocused ? NauclioTheme.cobalt.opacity(0.55) : NauclioTheme.border, lineWidth: 1)
             }
-            .overlay(alignment: .top) {
-                Capsule().fill(Color.white.opacity(0.045)).frame(height: 1).padding(.horizontal, 18)
-            }
-            .shadow(color: composerFocused ? NauclioTheme.cobalt.opacity(0.14) : Color.black.opacity(0.22), radius: composerFocused ? 16 : 12, y: 5)
+            .shadow(color: Color.black.opacity(0.24), radius: 12, y: 5)
             .animation(.easeOut(duration: 0.16), value: composerFocused)
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(NauclioTheme.sidebar)
-        .overlay(alignment: .top) { Rectangle().fill(NauclioTheme.border).frame(height: 1) }
     }
 
     private func composerSettings(showContext: Bool) -> some View {
