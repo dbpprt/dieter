@@ -55,6 +55,13 @@ struct NauclioRootView: View {
 struct AppSidebar: View {
     @Environment(NauclioStore.self) private var store
     @Binding var collapsed: Bool
+    @State private var projectNavigation = SidebarProjectNavigationPreferences.load(from: SidebarProjectNavigationPreferences.applicationDefaults())
+
+    private var visibleProjects: [Nauclio_V1_Project] {
+        let projects = store.projects.filter { !$0.archived }
+        let byID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+        return projectNavigation.orderedIDs(from: projects.map(\.id)).compactMap { byID[$0] }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -141,50 +148,25 @@ struct AppSidebar: View {
     }
 
     private var expandedProjects: some View {
-        LazyVStack(alignment: .leading, spacing: 14) {
-            ForEach(store.projects.filter { !$0.archived }, id: \.id) { project in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(project.name.uppercased()).font(NauclioFont.sectionLabel).tracking(0.8).foregroundStyle(NauclioTheme.tertiary).lineLimit(1)
-                        if let machine = store.machine(forProjectID: project.id) {
-                            ProjectMachineBadge(machine: machine)
-                        }
-                        Spacer()
-                        Button { store.presentNewBoard(projectID: project.id) } label: { Image(systemName: "plus").font(.system(size: 9, weight: .bold)) }
-                            .buttonStyle(.plain).foregroundStyle(NauclioTheme.subtle).help("New board in \(project.name)")
-                    }
-                    .padding(.horizontal, 9).frame(height: 24)
-
-                    ForEach(store.boards(for: project.id), id: \.id) { board in
-                        SidebarDestination(
-                            title: board.name,
-                            symbol: "rectangle.split.3x1",
-                            selected: store.section == .board && store.selectedBoardID == board.id,
-                            badge: board.projectID == store.selectedProjectID ? activeCount(board.id) : 0
-                        ) { Task { await store.openBoard(board.id, projectID: project.id) } }
-                        .accessibilityIdentifier("sidebar.board.\(board.id)")
-                        .contextMenu {
-                            Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
-                            Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
-                        }
-                    }
-
-                    SidebarDestination(title: "Files", symbol: "folder", selected: store.section == .files && store.selectedProjectID == project.id) {
-                        Task { await store.openProject(project.id, section: .files) }
-                    }.accessibilityIdentifier("sidebar.files.\(project.id)")
-
-                    SidebarDestination(title: "Schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
-                        Task { await store.openProject(project.id, section: .schedules) }
-                    }.accessibilityIdentifier("sidebar.schedules.\(project.id)")
-                }
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(visibleProjects, id: \.id) { project in
+                SidebarProjectInsertionTarget(beforeProjectID: project.id) { moveProject($0, before: project.id) }
+                SidebarExpandedProject(
+                    project: project,
+                    projectIDs: visibleProjects.map(\.id),
+                    collapsed: projectNavigation.isCollapsed(project.id),
+                    toggleCollapsed: { toggleProject(project.id) },
+                    moveProject: moveProject
+                )
             }
+            SidebarProjectInsertionTarget(beforeProjectID: nil) { moveProject($0, before: nil) }
         }
-        .padding(.horizontal, 8).padding(.vertical, 14)
+        .padding(.horizontal, 8).padding(.vertical, 10)
     }
 
     private var collapsedProjects: some View {
         LazyVStack(spacing: 8) {
-            ForEach(store.projects.filter { !$0.archived }, id: \.id) { project in
+            ForEach(visibleProjects, id: \.id) { project in
                 VStack(spacing: 5) {
                     if let machine = store.machine(forProjectID: project.id) {
                         Text(machine.name.prefix(2).uppercased())
@@ -279,11 +261,177 @@ struct AppSidebar: View {
         store.navigationCards.values.flatMap { $0 }.filter { $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime) }.count
     }
 
+    private func toggleProject(_ projectID: String) {
+        projectNavigation.toggleCollapsed(projectID)
+        projectNavigation.save(to: SidebarProjectNavigationPreferences.applicationDefaults())
+    }
+
+    private func moveProject(_ projectID: String, before targetProjectID: String?) {
+        guard projectNavigation.move(projectID, before: targetProjectID, availableIDs: visibleProjects.map(\.id)) else { return }
+        projectNavigation.save(to: SidebarProjectNavigationPreferences.applicationDefaults())
+    }
+
     private func machineDetail(_ machine: NauclioEndpoint) -> String {
         guard machine.online else { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
         guard let status = store.connectionStatus(for: machine) else { return "Measuring…" }
         return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms"
     }
+}
+
+private struct SidebarExpandedProject: View {
+    @Environment(NauclioStore.self) private var store
+    let project: Nauclio_V1_Project
+    let projectIDs: [String]
+    let collapsed: Bool
+    let toggleCollapsed: () -> Void
+    let moveProject: (String, String?) -> Void
+    @State private var dropTargeted = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Button(action: toggleCollapsed) {
+                    Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(NauclioTheme.tertiary)
+                        .frame(width: 10, height: 18)
+                }
+                .buttonStyle(.plain)
+                .help(collapsed ? "Expand \(project.name)" : "Collapse \(project.name)")
+                .accessibilityLabel(collapsed ? "Expand \(project.name)" : "Collapse \(project.name)")
+                .accessibilityIdentifier("sidebar.project.\(project.id).toggle")
+
+                Text(project.name.uppercased())
+                    .font(NauclioFont.sectionLabel).tracking(0.8)
+                    .foregroundStyle(NauclioTheme.tertiary).lineLimit(1)
+                if let machine = store.machine(forProjectID: project.id) {
+                    ProjectMachineBadge(machine: machine)
+                }
+                Spacer()
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(dropTargeted ? NauclioTheme.aegean : NauclioTheme.tertiary.opacity(0.65))
+                    .accessibilityHidden(true)
+                Button { store.presentNewBoard(projectID: project.id) } label: {
+                    Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+                }
+                .buttonStyle(.plain).foregroundStyle(NauclioTheme.subtle).help("New board in \(project.name)")
+            }
+            .padding(.horizontal, 9).frame(height: 24)
+            .contentShape(Rectangle())
+            .background(dropTargeted ? NauclioTheme.cobalt.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+            .draggable(SidebarProjectDragPayload(projectID: project.id).encoded) {
+                SidebarProjectDragPreview(project: project)
+            }
+            .dropDestination(for: String.self) { values, location in
+                guard let value = values.first, let payload = SidebarProjectDragPayload(value), payload.projectID != project.id else { return false }
+                let targetIndex = projectIDs.firstIndex(of: project.id) ?? 0
+                let beforeProjectID: String?
+                if location.y < 12 {
+                    beforeProjectID = project.id
+                } else if projectIDs.indices.contains(targetIndex + 1) {
+                    beforeProjectID = projectIDs[targetIndex + 1]
+                } else {
+                    beforeProjectID = nil
+                }
+                moveProject(payload.projectID, beforeProjectID)
+                return true
+            } isTargeted: { dropTargeted = $0 }
+            .animation(.easeOut(duration: 0.12), value: dropTargeted)
+            .help("Drag to reorder \(project.name)")
+            .accessibilityIdentifier("sidebar.project.\(project.id)")
+
+            if !collapsed {
+                ForEach(store.boards(for: project.id), id: \.id) { board in
+                    SidebarDestination(
+                        title: board.name,
+                        symbol: "rectangle.split.3x1",
+                        selected: store.section == .board && store.selectedBoardID == board.id,
+                        badge: board.projectID == store.selectedProjectID ? activeCount(board.id) : 0
+                    ) { Task { await store.openBoard(board.id, projectID: project.id) } }
+                    .accessibilityIdentifier("sidebar.board.\(board.id)")
+                    .contextMenu {
+                        Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
+                        Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
+                    }
+                }
+
+                SidebarDestination(title: "Files", symbol: "folder", selected: store.section == .files && store.selectedProjectID == project.id) {
+                    Task { await store.openProject(project.id, section: .files) }
+                }.accessibilityIdentifier("sidebar.files.\(project.id)")
+
+                SidebarDestination(title: "Schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
+                    Task { await store.openProject(project.id, section: .schedules) }
+                }.accessibilityIdentifier("sidebar.schedules.\(project.id)")
+            }
+        }
+        .padding(.bottom, 4)
+        .animation(.snappy(duration: 0.18), value: collapsed)
+    }
+
+    private func activeCount(_ boardID: String) -> Int {
+        store.navigationCards.values.flatMap { $0 }.filter { $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime) }.count
+    }
+}
+
+private struct SidebarProjectInsertionTarget: View {
+    let beforeProjectID: String?
+    let moveProject: (String) -> Void
+    @State private var targeted = false
+
+    var body: some View {
+        ZStack {
+            Color.clear
+            if targeted {
+                HStack(spacing: 5) {
+                    Circle().fill(NauclioTheme.aegean).frame(width: 5, height: 5)
+                    Capsule().fill(NauclioTheme.aegean).frame(height: 2)
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .frame(height: 8)
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { values, _ in
+            guard let value = values.first, let payload = SidebarProjectDragPayload(value), payload.projectID != beforeProjectID else { return false }
+            moveProject(payload.projectID)
+            return true
+        } isTargeted: { targeted = $0 }
+        .animation(.easeOut(duration: 0.12), value: targeted)
+    }
+}
+
+private struct SidebarProjectDragPreview: View {
+    let project: Nauclio_V1_Project
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder.fill").foregroundStyle(NauclioTheme.aegean)
+            Text(project.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+        }
+        .padding(.horizontal, 12).frame(width: 190, height: 38, alignment: .leading)
+        .background(NauclioTheme.elevated, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(NauclioTheme.aegean.opacity(0.4)))
+        .shadow(color: Color.black.opacity(0.4), radius: 14, y: 7)
+    }
+}
+
+struct SidebarProjectDragPayload: Equatable {
+    private static let prefix = "nauclio:sidebar-project:"
+    let projectID: String
+
+    init(projectID: String) {
+        self.projectID = projectID
+    }
+
+    init?(_ encoded: String) {
+        guard encoded.hasPrefix(Self.prefix) else { return nil }
+        let projectID = String(encoded.dropFirst(Self.prefix.count))
+        guard !projectID.isEmpty else { return nil }
+        self.projectID = projectID
+    }
+
+    var encoded: String { Self.prefix + projectID }
 }
 
 private struct ProjectMachineBadge: View {

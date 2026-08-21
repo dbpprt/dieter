@@ -82,6 +82,7 @@ card.
 ```sh
 swift test --package-path apps/mac
 apps/mac/scripts/ui-smoke.sh
+apps/mac/scripts/sidebar-ui-smoke.sh
 apps/mac/scripts/accessibility-smoke.sh
 ```
 
@@ -95,3 +96,10 @@ Screen Recording permission.
 invoking terminal has Accessibility and Screen Recording access, it drives the
 packaged app through System Events and captures the board, a real chat
 conversation, files, schedules, and a real card conversation.
+
+`sidebar-ui-smoke.sh` launches the packaged app twice against isolated local
+preferences. The first launch clicks a project collapse control and records an
+accepted project drop; the second launch verifies through native clicks that
+both states were restored in the rendered sidebar. It attempts the drop with
+in-process mouse events and uses the same accepted-drop state transition when
+macOS does not admit synthetic events to its system drag manager.

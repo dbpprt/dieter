@@ -695,3 +695,41 @@ private func dragCard(_ id: String, position: Int64) -> Nauclio_V1_Card {
     card.position = position
     return card
 }
+
+@Test func sidebarProjectPreferencesReorderAndReconcileAvailableProjects() {
+    var preferences = SidebarProjectNavigationPreferences(projectOrder: ["p_two", "p_missing", "p_one"])
+
+    #expect(preferences.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_two", "p_one", "p_three"])
+    let movedToFront = preferences.move("p_three", before: "p_two", availableIDs: ["p_one", "p_two", "p_three"])
+    #expect(movedToFront)
+    #expect(preferences.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_three", "p_two", "p_one"])
+    let movedToEnd = preferences.move("p_three", before: nil, availableIDs: ["p_one", "p_two", "p_three"])
+    #expect(movedToEnd)
+    #expect(preferences.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_two", "p_one", "p_three"])
+    #expect(preferences.orderedIDs(from: ["p_one", "p_four"]) == ["p_one", "p_four"])
+    let ignoredSelfMove = preferences.move("p_one", before: "p_one", availableIDs: ["p_one", "p_two"])
+    #expect(!ignoredSelfMove)
+}
+
+@Test func sidebarProjectPreferencesPersistOrderAndCollapsedStateAcrossReload() throws {
+    let suite = "nauclio-sidebar-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    var preferences = SidebarProjectNavigationPreferences()
+    _ = preferences.move("p_three", before: "p_one", availableIDs: ["p_one", "p_two", "p_three"])
+    preferences.toggleCollapsed("p_two")
+    preferences.save(to: defaults)
+
+    let restored = SidebarProjectNavigationPreferences.load(from: defaults)
+    #expect(restored.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_three", "p_one", "p_two"])
+    #expect(restored.isCollapsed("p_two"))
+    #expect(!restored.isCollapsed("p_one"))
+}
+
+@Test func sidebarProjectDragPayloadRejectsOtherStringDrops() {
+    let payload = SidebarProjectDragPayload(projectID: "p_one")
+    #expect(SidebarProjectDragPayload(payload.encoded) == payload)
+    #expect(SidebarProjectDragPayload("not-a-sidebar-project") == nil)
+    #expect(SidebarProjectDragPayload("nauclio:sidebar-project:") == nil)
+}
