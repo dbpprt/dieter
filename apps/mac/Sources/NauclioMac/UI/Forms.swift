@@ -82,8 +82,7 @@ struct NewConversationSheet: View {
                             .font(.caption2).foregroundStyle(NauclioTheme.tertiary)
                     }
                     if !attachments.isEmpty {
-                        VStack(spacing: 6) { DraftAttachmentStrip(attachments: $attachments) }
-                            .padding(9).background(NauclioTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 9))
+                        AttachmentPreviewStrip(attachments: $attachments)
                     }
 
                     if let labels = store.selectedBoard?.labels, !labels.isEmpty {
@@ -185,6 +184,16 @@ struct NewConversationSheet: View {
                 catch { store.show(error) }
             }
         }
+        .attachmentPasteCatcher { pasteboard in
+            do {
+                guard let parts = try store.pasteboardAttachmentParts(pasteboard, appendingTo: attachments) else { return false }
+                attachments = parts
+                return true
+            } catch {
+                store.show(error)
+                return true
+            }
+        }
         .task {
             chooseDefaults()
             await Task.yield()
@@ -251,30 +260,6 @@ struct NewConversationSheet: View {
             labelIDs: Array(selectedLabelIDs).sorted()
         )
         submitting = false
-    }
-}
-
-struct DraftAttachmentStrip: View {
-    @Binding var attachments: [Nauclio_V1_MessagePart]
-
-    var body: some View {
-        ForEach(Array(attachments.enumerated()), id: \.offset) { index, part in
-            HStack(spacing: 8) {
-                Image(systemName: part.mediaType.hasPrefix("image/") ? "photo" : "doc")
-                    .foregroundStyle(NauclioTheme.aegean)
-                Text(part.filename).lineLimit(1)
-                Spacer()
-                Text(Self.size(part.data.count)).font(.caption).foregroundStyle(.secondary)
-                Button { attachments.remove(at: index) } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).help("Remove attachment")
-            }
-        }
-    }
-
-    private static func size(_ bytes: Int) -> String {
-        if bytes >= 1_024 * 1_024 { return String(format: "%.1f MB", Double(bytes) / 1_048_576) }
-        if bytes >= 1_024 { return String(format: "%.0f KB", Double(bytes) / 1_024) }
-        return "\(bytes) B"
     }
 }
 

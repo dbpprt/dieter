@@ -494,10 +494,10 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
 }
 
 @Test func kanbanLanesFillTheBoardBeforeFallingBackToHorizontalScrolling() {
-    #expect(KanbanLaneSizing.laneWidth(availableWidth: 680, laneCount: 4) == 156.25)
-    #expect(KanbanLaneSizing.contentWidth(availableWidth: 680, laneCount: 4) == 680)
-    #expect(KanbanLaneSizing.laneWidth(availableWidth: 520, laneCount: 4) == KanbanLaneSizing.minimumWidth)
-    #expect(KanbanLaneSizing.contentWidth(availableWidth: 520, laneCount: 4) == 655)
+    #expect(KanbanLaneSizing.laneWidth(availableWidth: 1_255, laneCount: 4) == 300)
+    #expect(KanbanLaneSizing.contentWidth(availableWidth: 1_255, laneCount: 4) == 1_255)
+    #expect(KanbanLaneSizing.laneWidth(availableWidth: 680, laneCount: 4) == KanbanLaneSizing.minimumWidth)
+    #expect(KanbanLaneSizing.contentWidth(availableWidth: 680, laneCount: 4) == 1_111)
 }
 
 @Test func boardCreationOptionsMatchTheServerContract() {
@@ -695,6 +695,53 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(parts[0].mediaType == "image/png")
     #expect(parts[0].filename == "Pasted Image 1.png")
     #expect(NSImage(data: parts[0].data) != nil)
+}
+
+@Test @MainActor func pasteboardImageDataBecomesAComposerAttachment() throws {
+    let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("nauclio-test-\(UUID().uuidString)"))
+    defer { pasteboard.releaseGlobally() }
+    pasteboard.clearContents()
+    pasteboard.setData(png, forType: NSPasteboard.PasteboardType(UTType.png.identifier))
+    let store = NauclioStore()
+
+    let parts = try #require(try store.pasteboardAttachmentParts(pasteboard))
+
+    #expect(parts.count == 1)
+    #expect(parts[0].type == "image")
+    #expect(parts[0].mediaType == "image/png")
+    #expect(parts[0].filename == "Pasted Image 1.png")
+    #expect(parts[0].data == png)
+}
+
+@Test @MainActor func pasteboardWithOnlyTextIsLeftForTheFocusedTextView() throws {
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("nauclio-test-\(UUID().uuidString)"))
+    defer { pasteboard.releaseGlobally() }
+    pasteboard.clearContents()
+    pasteboard.setString("plain text", forType: .string)
+    let store = NauclioStore()
+
+    #expect(try store.pasteboardAttachmentParts(pasteboard) == nil)
+    #expect(!store.attachPasteboard(pasteboard))
+    #expect(store.composerAttachments.isEmpty)
+}
+
+@Test @MainActor func pasteboardFileURLsAttachTheUnderlyingFiles() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "nauclio-mac-pasteboard-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appending(path: "diagram.png")
+    try Data("png fixture".utf8).write(to: file)
+    let pasteboard = NSPasteboard(name: NSPasteboard.Name("nauclio-test-\(UUID().uuidString)"))
+    defer { pasteboard.releaseGlobally() }
+    pasteboard.clearContents()
+    pasteboard.writeObjects([file as NSURL])
+    let store = NauclioStore()
+
+    #expect(store.attachPasteboard(pasteboard))
+    #expect(store.composerAttachments.count == 1)
+    #expect(store.composerAttachments[0].filename == "diagram.png")
+    #expect(store.composerAttachments[0].data == Data("png fixture".utf8))
 }
 
 @Test(.enabled(if: ProcessInfo.processInfo.environment["NAUCLIO_LIVE_ATTACHMENT_PORT"] != nil))

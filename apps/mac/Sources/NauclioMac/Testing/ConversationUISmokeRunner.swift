@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import NauclioAPI
+import UniformTypeIdentifiers
 
 /// An in-process smoke driver for the conversation transcript.
 ///
@@ -76,7 +77,82 @@ enum ConversationUISmokeRunner {
         capture(window, to: output.appending(path: "03-reasoning-on-again.png"))
         results["reasoning-toggle"] = "passed"
 
+        await runPasteChecks(store: store, window: window, results: &results, output: output)
+
         writeReport(results, to: output)
+    }
+
+    /// Proves ⌘V routes pasteboard images into the composer as attachment
+    /// previews while plain text keeps flowing to the focused text view.
+    private static func runPasteChecks(
+        store: NauclioStore,
+        window: NSWindow,
+        results: inout [String: String],
+        output: URL
+    ) async {
+        let pasteboard = NSPasteboard.general
+        let saved = (pasteboard.pasteboardItems ?? []).map { item in
+            item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in
+                values[type] = item.data(forType: type)
+            }
+        }
+        defer {
+            pasteboard.clearContents()
+            let items = saved.map { values in
+                let item = NSPasteboardItem()
+                for (type, data) in values { item.setData(data, forType: type) }
+                return item
+            }
+            if !items.isEmpty { pasteboard.writeObjects(items) }
+        }
+
+        store.composerAttachments = []
+        pasteboard.clearContents()
+        pasteboard.setData(smokeImagePNG(), forType: NSPasteboard.PasteboardType(UTType.png.identifier))
+        postCommandV(window)
+        try? await NauclioTaskSleep.milliseconds(900)
+        results["paste-image-attaches"] = store.composerAttachments.count == 1
+            ? "passed"
+            : "failed: \(store.composerAttachments.count) attachments after image paste"
+        capture(window, to: output.appending(path: "04-pasted-attachment-preview.png"))
+
+        pasteboard.clearContents()
+        pasteboard.setString("plain text belongs to the text view", forType: .string)
+        let before = store.composerAttachments.count
+        postCommandV(window)
+        try? await NauclioTaskSleep.milliseconds(600)
+        results["paste-text-passes-through"] = store.composerAttachments.count == before
+            ? "passed"
+            : "failed: text paste changed attachments"
+        store.composerAttachments = []
+    }
+
+    private static func smokeImagePNG() -> Data {
+        let image = NSImage(size: NSSize(width: 24, height: 24))
+        image.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: 24, height: 24).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else { return Data() }
+        return png
+    }
+
+    private static func postCommandV(_ window: NSWindow) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: NSPoint(x: 5, y: 5),
+            modifierFlags: [.command],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: "v",
+            charactersIgnoringModifiers: "v",
+            isARepeat: false,
+            keyCode: 9
+        ) else { return }
+        NSApp.postEvent(event, atStart: false)
     }
 
     /// Opens recently updated conversations until one contains both reasoning

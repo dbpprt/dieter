@@ -1552,19 +1552,7 @@ final class NauclioStore {
                 throw NauclioAttachmentError.unsupportedPaste
             }
             let sourceData = try await Self.loadData(provider, typeIdentifier: identifier)
-            let sourceType = UTType(identifier)
-            let normalized: (data: Data, type: UTType)
-            if sourceType == .png || sourceType == .jpeg || sourceType == .gif || sourceType == .heic {
-                normalized = (sourceData, sourceType ?? .png)
-            } else {
-                guard let image = NSImage(data: sourceData),
-                      let tiff = image.tiffRepresentation,
-                      let bitmap = NSBitmapImageRep(data: tiff),
-                      let png = bitmap.representation(using: .png, properties: [:]) else {
-                    throw NauclioAttachmentError.invalidImage
-                }
-                normalized = (png, .png)
-            }
+            let normalized = try Self.normalizedImage(data: sourceData, type: UTType(identifier))
             let baseName = provider.suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines)
             let fallbackName = "Pasted Image \(parts.count + 1)"
             let resolvedName = baseName.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackName
@@ -1592,6 +1580,65 @@ final class NauclioStore {
         part.filename = filename
         part.data = data
         return existing + [part]
+    }
+
+    /// Attaches whatever attachable content is on the pasteboard to the composer.
+    /// Returns false when the pasteboard holds nothing attachable (plain text),
+    /// so the caller can let the focused text view handle ⌘V normally.
+    @discardableResult
+    func attachPasteboard(_ pasteboard: NSPasteboard = .general) -> Bool {
+        do {
+            guard let parts = try pasteboardAttachmentParts(pasteboard, appendingTo: composerAttachments) else { return false }
+            composerAttachments = parts
+            return true
+        } catch {
+            show(error)
+            return true
+        }
+    }
+
+    /// Returns nil when the pasteboard has no files or images to attach.
+    func pasteboardAttachmentParts(
+        _ pasteboard: NSPasteboard,
+        appendingTo existing: [Nauclio_V1_MessagePart] = []
+    ) throws -> [Nauclio_V1_MessagePart]? {
+        let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        if !urls.isEmpty { return try attachmentParts(urls, appendingTo: existing) }
+        let payloads = Self.pasteboardImagePayloads(pasteboard)
+        guard !payloads.isEmpty else { return nil }
+        guard existing.count + payloads.count <= Self.maximumAttachmentCount else {
+            throw NauclioAttachmentError.tooMany
+        }
+        var parts = existing
+        for payload in payloads {
+            let normalized = try Self.normalizedImage(data: payload.data, type: payload.type)
+            let filename = Self.filename("Pasted Image \(parts.count + 1)", for: normalized.type)
+            parts = try appendingAttachment(data: normalized.data, filename: filename, contentType: normalized.type, to: parts)
+        }
+        return parts
+    }
+
+    static func normalizedImage(data: Data, type: UTType?) throws -> (data: Data, type: UTType) {
+        if type == .png || type == .jpeg || type == .gif || type == .heic {
+            return (data, type ?? .png)
+        }
+        guard let image = NSImage(data: data),
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else {
+            throw NauclioAttachmentError.invalidImage
+        }
+        return (png, .png)
+    }
+
+    private static func pasteboardImagePayloads(_ pasteboard: NSPasteboard) -> [(data: Data, type: UTType)] {
+        let preferred: [UTType] = [.png, .jpeg, .gif, .heic, .tiff]
+        return (pasteboard.pasteboardItems ?? []).compactMap { item in
+            let types = item.types.compactMap { UTType($0.rawValue) }
+            let type = preferred.first(where: types.contains) ?? types.first { $0.conforms(to: .image) }
+            guard let type, let data = item.data(forType: NSPasteboard.PasteboardType(type.identifier)) else { return nil }
+            return (data, type)
+        }
     }
 
     private static let maximumAttachmentCount = 4

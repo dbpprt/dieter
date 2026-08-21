@@ -12,6 +12,7 @@ struct NauclioRootView: View {
             AppSidebar(collapsed: $navigationCollapsed)
                 .frame(width: navigationCollapsed ? NauclioMetrics.sidebarCollapsedWidth : NauclioMetrics.sidebarExpandedWidth)
             Divider().overlay(NauclioTheme.border)
+                .ignoresSafeArea(.container, edges: .top)
             Group {
                 switch store.section {
                 case .board: BoardView()

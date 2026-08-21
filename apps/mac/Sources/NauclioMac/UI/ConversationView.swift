@@ -50,6 +50,9 @@ struct ConversationView: View {
         .onPasteCommand(of: [.image, .fileURL]) { providers in
             store.addPastedAttachments(providers)
         }
+        .attachmentPasteCatcher { pasteboard in
+            store.attachPasteboard(pasteboard)
+        }
     }
 }
 
@@ -312,14 +315,14 @@ private struct EmptyConversationView: View {
             Text(standalone ? "Start a focused conversation in this project." : "Send this card's brief to start its local harness session.")
                 .font(.caption).foregroundStyle(NauclioTheme.tertiary).multilineTextAlignment(.center)
             if !prompt.isEmpty || !attachments.isEmpty {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 9) {
                     if !prompt.isEmpty { Text(prompt).font(.callout).textSelection(.enabled) }
-                    ForEach(Array(attachments.enumerated()), id: \.offset) { _, part in
-                        HStack(spacing: 7) {
-                            Image(systemName: part.mediaType.hasPrefix("image/") ? "photo" : "doc")
-                            Text(part.filename).lineLimit(1)
+                    if !attachments.isEmpty {
+                        HStack(spacing: 8) {
+                            ForEach(Array(attachments.enumerated()), id: \.offset) { _, part in
+                                AttachmentPreviewTile(part: part)
+                            }
                         }
-                        .font(.caption).foregroundStyle(NauclioTheme.aegean)
                     }
                 }
                 .padding(12).frame(maxWidth: 520, alignment: .leading)
@@ -1062,26 +1065,9 @@ private struct ConversationComposer: View {
                 .frame(height: composerEditorHeight, alignment: .topLeading)
 
                 if !store.composerAttachments.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 7) {
-                            ForEach(Array(store.composerAttachments.enumerated()), id: \.offset) { index, part in
-                                HStack(spacing: 6) {
-                                    Image(systemName: part.type == "image" ? "photo" : "doc").foregroundStyle(NauclioTheme.aegean)
-                                    Text(part.filename).lineLimit(1)
-                                    Button { store.composerAttachments.remove(at: index) } label: {
-                                        Image(systemName: "xmark").font(.system(size: 8, weight: .bold))
-                                    }.buttonStyle(.plain)
-                                }
-                                .font(.caption2)
-                                .padding(.horizontal, 9)
-                                .frame(height: 27)
-                                .background(NauclioTheme.elevated.opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
-                                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.white.opacity(0.055)))
-                            }
-                        }
-                        .padding(.horizontal, 11)
-                    }
-                    .padding(.bottom, 8)
+                    AttachmentPreviewStrip(attachments: $store.composerAttachments)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 6)
                 }
 
                 HStack(alignment: .center, spacing: 9) {

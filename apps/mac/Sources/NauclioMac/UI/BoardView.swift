@@ -83,7 +83,9 @@ enum ConversationPaneSizing {
 enum KanbanLaneSizing {
     static let horizontalPadding: CGFloat = 14
     static let spacing: CGFloat = 9
-    static let minimumWidth: CGFloat = 150
+    // Lanes never squeeze below a readable card width; the board falls back to
+    // horizontal scrolling instead.
+    static let minimumWidth: CGFloat = 264
 
     static func laneWidth(availableWidth: CGFloat, laneCount: Int) -> CGFloat {
         guard laneCount > 0 else { return 0 }

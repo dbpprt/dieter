@@ -339,7 +339,7 @@ private struct StandaloneChatStartView: View {
                     Spacer()
                 }
                 if !attachments.isEmpty {
-                    DraftAttachmentStrip(attachments: $attachments)
+                    AttachmentPreviewStrip(attachments: $attachments)
                         .padding(.horizontal, 4)
                 }
                 HStack(alignment: .bottom, spacing: 10) {
@@ -395,6 +395,16 @@ private struct StandaloneChatStartView: View {
             Task {
                 do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
                 catch { store.show(error) }
+            }
+        }
+        .attachmentPasteCatcher { pasteboard in
+            do {
+                guard let parts = try store.pasteboardAttachmentParts(pasteboard, appendingTo: attachments) else { return false }
+                attachments = parts
+                return true
+            } catch {
+                store.show(error)
+                return true
             }
         }
         .onAppear { chooseDefaults() }
