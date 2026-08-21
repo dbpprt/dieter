@@ -75,13 +75,48 @@ enum NativeUISmokeRunner {
         results["07-card-conversation"] = store.selectedCardID == nil ? "failed: no card selected" : "passed"
         capture(window, to: output.appending(path: "07-card-conversation.png"))
 
+        store.openSettings()
+        try? await NauclioTaskSleep.milliseconds(700)
+        results["09-settings-general"] = store.section == .settings ? "passed" : "failed: settings did not open"
+        capture(window, to: output.appending(path: "09-settings-general.png"))
+
+        click(window: window, x: 320, distanceFromTop: 165)
+        try? await NauclioTaskSleep.milliseconds(700)
+        capture(window, to: output.appending(path: "10-settings-connection.png"))
+        results["10-settings-connection"] = "passed"
+
+        click(window: window, x: 320, distanceFromTop: 204)
+        try? await NauclioTaskSleep.seconds(1)
+        capture(window, to: output.appending(path: "11-settings-prompts.png"))
+        results["11-settings-prompts"] = "passed"
+
+        store.section = .board
+        store.labelsPresented = true
+        try? await NauclioTaskSleep.milliseconds(700)
+        if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
+            capture(sheet, to: output.appending(path: "12-board-label-editor.png"))
+            results["12-board-label-editor"] = "passed"
+        } else {
+            results["12-board-label-editor"] = "failed: sheet not visible"
+        }
+        store.labelsPresented = false
+        try? await NauclioTaskSleep.milliseconds(350)
+
+        let connectedPhase = store.phase
+        store.phase = .authenticationRequired
+        try? await NauclioTaskSleep.milliseconds(700)
+        capture(window, to: output.appending(path: "12b-connection-onboarding.png"))
+        results["12b-connection-onboarding"] = store.phase.needsConnectionOverlay ? "passed" : "failed: overlay phase inactive"
+        store.phase = connectedPhase
+        try? await NauclioTaskSleep.milliseconds(350)
+
         store.createConversationPresented = true
         try? await NauclioTaskSleep.milliseconds(700)
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
-            capture(sheet, to: output.appending(path: "08-new-card.png"))
-            results["08-new-card"] = "passed"
+            capture(sheet, to: output.appending(path: "13-new-card.png"))
+            results["13-new-card"] = "passed"
         } else {
-            results["08-new-card"] = "failed: sheet not visible"
+            results["13-new-card"] = "failed: sheet not visible"
         }
         store.createConversationPresented = false
         try? await NauclioTaskSleep.milliseconds(350)
@@ -89,20 +124,20 @@ enum NativeUISmokeRunner {
         store.createProjectPresented = true
         try? await NauclioTaskSleep.milliseconds(700)
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
-            capture(sheet, to: output.appending(path: "09-new-project.png"))
-            results["09-new-project"] = "passed"
+            capture(sheet, to: output.appending(path: "14-new-project.png"))
+            results["14-new-project"] = "passed"
             click(window: sheet, x: 605, distanceFromTop: 242)
             try? await NauclioTaskSleep.seconds(1.5)
             if let browser = NSApp.windows.first(where: {
                 $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
             }) {
-                capture(browser, to: output.appending(path: "10-remote-directory-browser.png"))
-                results["10-remote-directory-browser"] = "passed"
+                capture(browser, to: output.appending(path: "15-remote-directory-browser.png"))
+                results["15-remote-directory-browser"] = "passed"
             } else {
-                results["10-remote-directory-browser"] = "failed: browser sheet not visible"
+                results["15-remote-directory-browser"] = "failed: browser sheet not visible"
             }
         } else {
-            results["09-new-project"] = "failed: sheet not visible"
+            results["14-new-project"] = "failed: sheet not visible"
         }
         store.createProjectPresented = false
 

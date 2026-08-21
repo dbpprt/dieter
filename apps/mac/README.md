@@ -1,8 +1,8 @@
 # Nauclio for macOS
 
 A native SwiftUI client for Nauclio. It signs in to the machine-only gateway,
-discovers every enrolled daemon, and talks to the selected daemon over native
-gRPC/HTTP2 through either verified direct TLS or the bounded relay.
+discovers every enrolled daemon, and automatically routes native gRPC/HTTP2
+through either verified direct TLS or the bounded relay.
 
 ## What is included
 
@@ -40,10 +40,10 @@ using a native PKCE flow. Only the resulting Nauclio session is retained, in an
 unencrypted user-only file at
 `~/Library/Application Support/com.dbpprt.nauclio.mac/gateway-sessions.json`; the
 app never accesses Keychain and the GitHub token never enters the app. Daemons
-at the same origin share that one credential and appear as switchable endpoints.
-The sidebar keeps online and offline machines visible at the bottom, annotates
-every project with its owning hostname, and automatically switches to that
-machine before opening any project surface or conversation. This directory is
+at the same origin share that one credential and form one combined workspace.
+The sidebar keeps online and offline machines visible as presence indicators,
+annotates every project with its owning hostname, and automatically routes to
+that machine before opening any project surface or conversation. This directory is
 built on-device from authenticated daemon responses; it is not stored by the
 gateway.
 For a daemon on the same Mac, the app automatically discovers and uses its
@@ -52,16 +52,25 @@ configure. Other daemons transparently use the encrypted gateway relay.
 
 `Package.swift` can also be opened directly in Xcode. `scripts/build.sh`
 creates an ad-hoc-signed `apps/mac/build/Nauclio.app` that launches like a normal
-macOS app.
+macOS app. The script reuses SwiftPM's incremental build directory, disables the
+CLI-only index store, keeps manifest and compiled-artifact caches under
+`apps/mac/.build/nauclio-local`, reuses SwiftPM's shared dependency download
+cache, and avoids network version resolution. The dedicated scratch path keeps
+Xcode, direct SwiftPM commands, and concurrent project sessions from
+invalidating the app script's cache. Keep `apps/mac/.build` between builds to
+retain it, or set `NAUCLIO_SWIFT_SCRATCH_PATH` to put it elsewhere.
 
 The build packages the canonical app icon and small-size product mark directly
 from [`assets/brand`](../../assets/brand/README.md). The SwiftUI theme implements
 the same dark semantic palette; platform-specific copies are intentionally not
 kept in this app directory.
 
-The Swift package build plugin generates public SwiftProtobuf messages and
-grpc-swift v2 client stubs. `scripts/sync-proto.sh` keeps the package input in
-sync with the repository's authoritative `api/proto/nauclio/v1/nauclio.proto`.
+Public SwiftProtobuf messages and grpc-swift v2 client stubs are checked in so
+ordinary builds do not compile `protoc` and both Swift generator plugins. The
+build verifies their input and output fingerprints and only regenerates them
+after an authoritative schema changes. Run `scripts/generate-swift-proto.sh`
+directly when upgrading the generator dependencies. `scripts/sync-proto.sh`
+keeps both package inputs in sync with the repository's authoritative schemas.
 
 Navigation follows the desktop reference hierarchy: All chats is global, while
 boards, Files, and Schedules live beneath each project. Creating a chat calls

@@ -52,6 +52,10 @@ service NauclioService {
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
   rpc AddComment(AddCommentRequest) returns (Comment);
   rpc MoveCard(MoveCardRequest) returns (Card);
+  // StartCard is an idempotent admission command. It durably admits the
+  // initial turn and returns the fresh card projection without waiting for
+  // the agent turn to finish.
+  rpc StartCard(StartCardRequest) returns (StartCardResponse);
   rpc SetCardLabels(SetCardLabelsRequest) returns (Card);
   rpc CancelCard(GetCardRequest) returns (google.protobuf.Empty);
   rpc RenameCard(RenameCardRequest) returns (Card);
@@ -132,15 +136,34 @@ message SyncEvent {
   string command_id = 4;
 }
 
-// GlobalSnapshot is deliberately bounded: it contains the Nauclio-owned UI
-// projection and recent conversation tails, while full tool payloads, files,
-// and older history remain lazy.
+// GlobalSnapshot is deliberately bounded. Clients that request a zero
+// conversation_limit receive only workspace metadata here and use
+// WatchConversation for the currently visible conversation.
 message GlobalSnapshot {
   State state = 1;
   repeated ConversationSnapshot conversations = 2;
   repeated Schedule schedules = 3;
   repeated ScheduleRun schedule_runs = 4;
   Settings settings = 5;
+}
+
+// GlobalDelta carries only changed metadata after the initial bootstrap.
+// Removed IDs make the delta independently applicable to a persisted client
+// projection. Conversation content is intentionally not part of this stream.
+message GlobalDelta {
+  repeated Project projects = 1;
+  repeated string removed_project_ids = 2;
+  repeated Board boards = 3;
+  repeated string removed_board_ids = 4;
+  repeated Card cards = 5;
+  repeated string removed_card_ids = 6;
+  repeated Card chats = 7;
+  repeated string removed_chat_ids = 8;
+  repeated Schedule schedules = 9;
+  repeated string removed_schedule_ids = 10;
+  repeated ScheduleRun schedule_runs = 11;
+  repeated string removed_schedule_run_ids = 12;
+  Settings settings = 13;
 }
 
 message SyncFrame {
@@ -150,6 +173,7 @@ message SyncFrame {
   bool reset = 4;
   bool heartbeat = 5;
   repeated SyncEvent events = 6;
+  GlobalDelta delta = 7;
 }
 
 message ProjectsResponse {
@@ -718,6 +742,20 @@ message MoveCardRequest {
   string card_id = 1;
   string lane = 2;
   optional int64 position = 3;
+}
+
+message StartCardRequest {
+  string card_id = 1;
+  string client_id = 2;
+  string command_id = 3;
+}
+
+message StartCardResponse {
+  Card card = 1;
+  bool accepted = 2;
+  bool already_running = 3;
+  bool replayed = 4;
+  string command_id = 5;
 }
 
 message SetCardLabelsRequest {

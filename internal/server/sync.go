@@ -6,6 +6,7 @@ import (
 
 	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
 	"github.com/dbpprt/nauclio/internal/store"
+	"google.golang.org/protobuf/proto"
 )
 
 func protoSyncCursor(cursor store.SyncCursor) *naucliov1.SyncCursor {
@@ -17,9 +18,6 @@ func protoSyncEvent(event store.SyncEvent) *naucliov1.SyncEvent {
 }
 
 func (api *grpcAPI) globalSnapshot(limit int) (*naucliov1.GlobalSnapshot, error) {
-	if limit < 1 {
-		limit = 40
-	}
 	if limit > 100 {
 		limit = 100
 	}
@@ -45,12 +43,14 @@ func (api *grpcAPI) globalSnapshot(limit int) (*naucliov1.GlobalSnapshot, error)
 		}
 	}
 	snapshot := &naucliov1.GlobalSnapshot{State: state}
-	for _, card := range append(append([]*naucliov1.Card(nil), state.Cards...), state.Chats...) {
-		conversation, conversationErr := api.conversationSnapshot(card.GetId(), limit, nil)
-		if conversationErr != nil {
-			return nil, conversationErr
+	if limit > 0 {
+		for _, card := range append(append([]*naucliov1.Card(nil), state.Cards...), state.Chats...) {
+			conversation, conversationErr := api.conversationSnapshot(card.GetId(), limit, nil)
+			if conversationErr != nil {
+				return nil, conversationErr
+			}
+			snapshot.Conversations = append(snapshot.Conversations, conversation)
 		}
-		snapshot.Conversations = append(snapshot.Conversations, conversation)
 	}
 	schedules, err := api.server.store.ListSchedules("")
 	if err != nil {
@@ -74,6 +74,115 @@ func (api *grpcAPI) globalSnapshot(limit int) (*naucliov1.GlobalSnapshot, error)
 	return snapshot, nil
 }
 
+func globalDelta(previous, current *naucliov1.GlobalSnapshot) *naucliov1.GlobalDelta {
+	delta := &naucliov1.GlobalDelta{}
+	previousProjects := make(map[string]*naucliov1.Project, len(previous.GetState().GetProjects()))
+	for _, value := range previous.GetState().GetProjects() {
+		previousProjects[value.GetId()] = value
+	}
+	currentProjects := make(map[string]struct{}, len(current.GetState().GetProjects()))
+	for _, value := range current.GetState().GetProjects() {
+		currentProjects[value.GetId()] = struct{}{}
+		if before := previousProjects[value.GetId()]; before == nil || !proto.Equal(before, value) {
+			delta.Projects = append(delta.Projects, value)
+		}
+	}
+	for id := range previousProjects {
+		if _, ok := currentProjects[id]; !ok {
+			delta.RemovedProjectIds = append(delta.RemovedProjectIds, id)
+		}
+	}
+
+	previousBoards := make(map[string]*naucliov1.Board, len(previous.GetState().GetBoards()))
+	for _, value := range previous.GetState().GetBoards() {
+		previousBoards[value.GetId()] = value
+	}
+	currentBoards := make(map[string]struct{}, len(current.GetState().GetBoards()))
+	for _, value := range current.GetState().GetBoards() {
+		currentBoards[value.GetId()] = struct{}{}
+		if before := previousBoards[value.GetId()]; before == nil || !proto.Equal(before, value) {
+			delta.Boards = append(delta.Boards, value)
+		}
+	}
+	for id := range previousBoards {
+		if _, ok := currentBoards[id]; !ok {
+			delta.RemovedBoardIds = append(delta.RemovedBoardIds, id)
+		}
+	}
+
+	previousCards := make(map[string]*naucliov1.Card, len(previous.GetState().GetCards()))
+	for _, value := range previous.GetState().GetCards() {
+		previousCards[value.GetId()] = value
+	}
+	currentCards := make(map[string]struct{}, len(current.GetState().GetCards()))
+	for _, value := range current.GetState().GetCards() {
+		currentCards[value.GetId()] = struct{}{}
+		if before := previousCards[value.GetId()]; before == nil || !proto.Equal(before, value) {
+			delta.Cards = append(delta.Cards, value)
+		}
+	}
+	for id := range previousCards {
+		if _, ok := currentCards[id]; !ok {
+			delta.RemovedCardIds = append(delta.RemovedCardIds, id)
+		}
+	}
+
+	previousChats := make(map[string]*naucliov1.Card, len(previous.GetState().GetChats()))
+	for _, value := range previous.GetState().GetChats() {
+		previousChats[value.GetId()] = value
+	}
+	currentChats := make(map[string]struct{}, len(current.GetState().GetChats()))
+	for _, value := range current.GetState().GetChats() {
+		currentChats[value.GetId()] = struct{}{}
+		if before := previousChats[value.GetId()]; before == nil || !proto.Equal(before, value) {
+			delta.Chats = append(delta.Chats, value)
+		}
+	}
+	for id := range previousChats {
+		if _, ok := currentChats[id]; !ok {
+			delta.RemovedChatIds = append(delta.RemovedChatIds, id)
+		}
+	}
+
+	previousSchedules := make(map[string]*naucliov1.Schedule, len(previous.GetSchedules()))
+	for _, value := range previous.GetSchedules() {
+		previousSchedules[value.GetId()] = value
+	}
+	currentSchedules := make(map[string]struct{}, len(current.GetSchedules()))
+	for _, value := range current.GetSchedules() {
+		currentSchedules[value.GetId()] = struct{}{}
+		if before := previousSchedules[value.GetId()]; before == nil || !proto.Equal(before, value) {
+			delta.Schedules = append(delta.Schedules, value)
+		}
+	}
+	for id := range previousSchedules {
+		if _, ok := currentSchedules[id]; !ok {
+			delta.RemovedScheduleIds = append(delta.RemovedScheduleIds, id)
+		}
+	}
+
+	previousRuns := make(map[string]*naucliov1.ScheduleRun, len(previous.GetScheduleRuns()))
+	for _, value := range previous.GetScheduleRuns() {
+		previousRuns[value.GetId()] = value
+	}
+	currentRuns := make(map[string]struct{}, len(current.GetScheduleRuns()))
+	for _, value := range current.GetScheduleRuns() {
+		currentRuns[value.GetId()] = struct{}{}
+		if before := previousRuns[value.GetId()]; before == nil || !proto.Equal(before, value) {
+			delta.ScheduleRuns = append(delta.ScheduleRuns, value)
+		}
+	}
+	for id := range previousRuns {
+		if _, ok := currentRuns[id]; !ok {
+			delta.RemovedScheduleRunIds = append(delta.RemovedScheduleRunIds, id)
+		}
+	}
+	if !proto.Equal(previous.GetSettings(), current.GetSettings()) {
+		delta.Settings = current.GetSettings()
+	}
+	return delta
+}
+
 func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncRequest, send func(*naucliov1.SyncFrame) error) error {
 	heartbeat := boundedInterval(request.GetHeartbeatMs(), 15*time.Second)
 	if heartbeat < time.Second {
@@ -94,7 +203,9 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 	if !reset {
 		sequence = after.GetSequence()
 	}
-	if reset || sequence == 0 {
+	metadataOnly := request.GetConversationLimit() == 0
+	var projection *naucliov1.GlobalSnapshot
+	if metadataOnly || reset || sequence == 0 {
 		if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
 			return waitErr
 		}
@@ -106,6 +217,14 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 			return err
 		}
 		sequence = cursor.Sequence
+		projection = snapshot
+	}
+	if projection == nil {
+		var projectionErr error
+		projection, projectionErr = api.globalSnapshot(int(request.GetConversationLimit()))
+		if projectionErr != nil {
+			return projectionErr
+		}
 	}
 
 	sendEvents := func() error {
@@ -122,6 +241,7 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 				return snapshotErr
 			}
 			cursor, sequence = current, current.Sequence
+			projection = snapshot
 			return send(&naucliov1.SyncFrame{Cursor: protoSyncCursor(current), Snapshot: snapshot, Reset_: true})
 		}
 		if len(events) == 0 {
@@ -137,7 +257,12 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 		last := events[len(events)-1]
 		frame := &naucliov1.SyncFrame{
 			Cursor: protoSyncCursor(store.SyncCursor{Epoch: current.Epoch, Sequence: last.Sequence}),
-			Event:  protoSyncEvent(last), Snapshot: snapshot,
+			Event:  protoSyncEvent(last),
+		}
+		if request.GetConversationLimit() == 0 {
+			frame.Delta = globalDelta(projection, snapshot)
+		} else {
+			frame.Snapshot = snapshot
 		}
 		for _, event := range events {
 			frame.Events = append(frame.Events, protoSyncEvent(event))
@@ -147,6 +272,7 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *naucliov1.SyncReques
 		}
 		sequence = last.Sequence
 		cursor = current
+		projection = snapshot
 		return nil
 	}
 

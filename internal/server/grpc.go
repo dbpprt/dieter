@@ -703,6 +703,10 @@ func (api *grpcAPI) MoveCard(_ context.Context, request *naucliov1.MoveCardReque
 			return nil, grpcFailure(startErr)
 		}
 		go drainUpdates(updates)
+		// StartCard durably updates the runtime and initial prompt marker before
+		// returning. Resolve again so legacy MoveCard callers never receive the
+		// stale "running lane / idle runtime" projection.
+		value, _ = api.server.store.ResolveCard(value.ID)
 	}
 	if value.Lane == model.LaneDone {
 		if _, err := api.server.store.ArchiveDoneCards(time.Now()); err != nil {
@@ -711,6 +715,58 @@ func (api *grpcAPI) MoveCard(_ context.Context, request *naucliov1.MoveCardReque
 		value, _ = api.server.store.ResolveCard(value.ID)
 	}
 	return protoCard(value), nil
+}
+
+func (api *grpcAPI) StartCard(_ context.Context, request *naucliov1.StartCardRequest) (*naucliov1.StartCardResponse, error) {
+	clientID, commandID := strings.TrimSpace(request.GetClientId()), strings.TrimSpace(request.GetCommandId())
+	if clientID == "" || commandID == "" {
+		return nil, status.Error(codes.InvalidArgument, "client_id and command_id are required")
+	}
+	api.commandMu.Lock()
+	defer api.commandMu.Unlock()
+	if result, ok, err := api.server.store.LoadCommandResult(clientID, commandID); err != nil {
+		return nil, grpcFailure(err)
+	} else if ok {
+		if result.Kind != "start_card" || result.CardID != request.GetCardId() {
+			return nil, status.Error(codes.AlreadyExists, "command_id was already used for another operation")
+		}
+		card, resolveErr := api.server.store.ResolveCard(result.CardID)
+		if resolveErr != nil {
+			return nil, grpcFailure(resolveErr)
+		}
+		return &naucliov1.StartCardResponse{Card: protoCard(card), Accepted: true, Replayed: true, CommandId: commandID}, nil
+	}
+
+	card, err := api.server.store.ResolveCard(request.GetCardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	if card.Scope != model.ConversationScopeBoard {
+		return nil, status.Error(codes.FailedPrecondition, "only board cards can be started")
+	}
+	if card.InitialPromptSentAt != "" {
+		if card.Runtime == "starting" || card.Runtime == "running" || card.Runtime == "working" || card.Runtime == "streaming" {
+			if saveErr := api.server.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: "start_card", CardID: card.ID}); saveErr != nil {
+				return nil, grpcFailure(saveErr)
+			}
+			return &naucliov1.StartCardResponse{Card: protoCard(card), Accepted: true, AlreadyRunning: true, CommandId: commandID}, nil
+		}
+		return nil, status.Error(codes.FailedPrecondition, "card has already been started; send a message to resume its conversation")
+	}
+
+	updates, err := api.server.app.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	go drainUpdates(updates)
+	fresh, err := api.server.store.ResolveCard(card.ID)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	if err := api.server.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: "start_card", CardID: fresh.ID}); err != nil {
+		return nil, grpcFailure(err)
+	}
+	return &naucliov1.StartCardResponse{Card: protoCard(fresh), Accepted: true, CommandId: commandID}, nil
 }
 
 func (api *grpcAPI) SetCardLabels(_ context.Context, request *naucliov1.SetCardLabelsRequest) (*naucliov1.Card, error) {

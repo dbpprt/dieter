@@ -24,8 +24,11 @@ let package = Package(
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
-            plugins: [
-                .plugin(name: "GRPCProtobufGenerator", package: "grpc-swift-protobuf"),
+            exclude: [
+                "gateway.proto",
+                "nauclio.proto",
+                "grpc-swift-proto-generator-config.json",
+                "Generated/.inputs.sha256",
             ]
         ),
         .executableTarget(

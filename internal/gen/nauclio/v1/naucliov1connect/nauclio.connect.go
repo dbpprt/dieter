@@ -141,6 +141,9 @@ const (
 	NauclioServiceAddCommentProcedure = "/nauclio.v1.NauclioService/AddComment"
 	// NauclioServiceMoveCardProcedure is the fully-qualified name of the NauclioService's MoveCard RPC.
 	NauclioServiceMoveCardProcedure = "/nauclio.v1.NauclioService/MoveCard"
+	// NauclioServiceStartCardProcedure is the fully-qualified name of the NauclioService's StartCard
+	// RPC.
+	NauclioServiceStartCardProcedure = "/nauclio.v1.NauclioService/StartCard"
 	// NauclioServiceSetCardLabelsProcedure is the fully-qualified name of the NauclioService's
 	// SetCardLabels RPC.
 	NauclioServiceSetCardLabelsProcedure = "/nauclio.v1.NauclioService/SetCardLabels"
@@ -241,6 +244,10 @@ type NauclioServiceClient interface {
 	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error)
 	AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error)
 	MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error)
+	// StartCard is an idempotent admission command. It durably admits the
+	// initial turn and returns the fresh card projection without waiting for
+	// the agent turn to finish.
+	StartCard(context.Context, *connect.Request[v1.StartCardRequest]) (*connect.Response[v1.StartCardResponse], error)
 	SetCardLabels(context.Context, *connect.Request[v1.SetCardLabelsRequest]) (*connect.Response[v1.Card], error)
 	CancelCard(context.Context, *connect.Request[v1.GetCardRequest]) (*connect.Response[emptypb.Empty], error)
 	RenameCard(context.Context, *connect.Request[v1.RenameCardRequest]) (*connect.Response[v1.Card], error)
@@ -496,6 +503,12 @@ func NewNauclioServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(nauclioServiceMethods.ByName("MoveCard")),
 			connect.WithClientOptions(opts...),
 		),
+		startCard: connect.NewClient[v1.StartCardRequest, v1.StartCardResponse](
+			httpClient,
+			baseURL+NauclioServiceStartCardProcedure,
+			connect.WithSchema(nauclioServiceMethods.ByName("StartCard")),
+			connect.WithClientOptions(opts...),
+		),
 		setCardLabels: connect.NewClient[v1.SetCardLabelsRequest, v1.Card](
 			httpClient,
 			baseURL+NauclioServiceSetCardLabelsProcedure,
@@ -658,6 +671,7 @@ type nauclioServiceClient struct {
 	sendMessage              *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
 	addComment               *connect.Client[v1.AddCommentRequest, v1.Comment]
 	moveCard                 *connect.Client[v1.MoveCardRequest, v1.Card]
+	startCard                *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
 	setCardLabels            *connect.Client[v1.SetCardLabelsRequest, v1.Card]
 	cancelCard               *connect.Client[v1.GetCardRequest, emptypb.Empty]
 	renameCard               *connect.Client[v1.RenameCardRequest, v1.Card]
@@ -865,6 +879,11 @@ func (c *nauclioServiceClient) MoveCard(ctx context.Context, req *connect.Reques
 	return c.moveCard.CallUnary(ctx, req)
 }
 
+// StartCard calls nauclio.v1.NauclioService.StartCard.
+func (c *nauclioServiceClient) StartCard(ctx context.Context, req *connect.Request[v1.StartCardRequest]) (*connect.Response[v1.StartCardResponse], error) {
+	return c.startCard.CallUnary(ctx, req)
+}
+
 // SetCardLabels calls nauclio.v1.NauclioService.SetCardLabels.
 func (c *nauclioServiceClient) SetCardLabels(ctx context.Context, req *connect.Request[v1.SetCardLabelsRequest]) (*connect.Response[v1.Card], error) {
 	return c.setCardLabels.CallUnary(ctx, req)
@@ -1007,6 +1026,10 @@ type NauclioServiceHandler interface {
 	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error)
 	AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error)
 	MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error)
+	// StartCard is an idempotent admission command. It durably admits the
+	// initial turn and returns the fresh card projection without waiting for
+	// the agent turn to finish.
+	StartCard(context.Context, *connect.Request[v1.StartCardRequest]) (*connect.Response[v1.StartCardResponse], error)
 	SetCardLabels(context.Context, *connect.Request[v1.SetCardLabelsRequest]) (*connect.Response[v1.Card], error)
 	CancelCard(context.Context, *connect.Request[v1.GetCardRequest]) (*connect.Response[emptypb.Empty], error)
 	RenameCard(context.Context, *connect.Request[v1.RenameCardRequest]) (*connect.Response[v1.Card], error)
@@ -1258,6 +1281,12 @@ func NewNauclioServiceHandler(svc NauclioServiceHandler, opts ...connect.Handler
 		connect.WithSchema(nauclioServiceMethods.ByName("MoveCard")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nauclioServiceStartCardHandler := connect.NewUnaryHandler(
+		NauclioServiceStartCardProcedure,
+		svc.StartCard,
+		connect.WithSchema(nauclioServiceMethods.ByName("StartCard")),
+		connect.WithHandlerOptions(opts...),
+	)
 	nauclioServiceSetCardLabelsHandler := connect.NewUnaryHandler(
 		NauclioServiceSetCardLabelsProcedure,
 		svc.SetCardLabels,
@@ -1454,6 +1483,8 @@ func NewNauclioServiceHandler(svc NauclioServiceHandler, opts ...connect.Handler
 			nauclioServiceAddCommentHandler.ServeHTTP(w, r)
 		case NauclioServiceMoveCardProcedure:
 			nauclioServiceMoveCardHandler.ServeHTTP(w, r)
+		case NauclioServiceStartCardProcedure:
+			nauclioServiceStartCardHandler.ServeHTTP(w, r)
 		case NauclioServiceSetCardLabelsProcedure:
 			nauclioServiceSetCardLabelsHandler.ServeHTTP(w, r)
 		case NauclioServiceCancelCardProcedure:
@@ -1649,6 +1680,10 @@ func (UnimplementedNauclioServiceHandler) AddComment(context.Context, *connect.R
 
 func (UnimplementedNauclioServiceHandler) MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.MoveCard is not implemented"))
+}
+
+func (UnimplementedNauclioServiceHandler) StartCard(context.Context, *connect.Request[v1.StartCardRequest]) (*connect.Response[v1.StartCardResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.StartCard is not implemented"))
 }
 
 func (UnimplementedNauclioServiceHandler) SetCardLabels(context.Context, *connect.Request[v1.SetCardLabelsRequest]) (*connect.Response[v1.Card], error) {

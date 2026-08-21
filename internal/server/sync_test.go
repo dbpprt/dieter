@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -121,4 +122,87 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
+}
+
+func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
+	t.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	data := store.New(t.TempDir())
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Delta", Path: testRepository(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.CreateCard(store.CreateCardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Admit me", Prompt: "Read only",
+		Provider: "mock", Model: "mock",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	stopRunner := func() {
+		releaseOnce.Do(func() { close(release) })
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			resolved, resolveErr := data.ResolveCard(card.ID)
+			if resolveErr == nil && resolved.Runtime == "idle" {
+				_ = data.WaitForWriter(context.Background())
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	t.Cleanup(stopRunner)
+	client, _ := newConnectTestClient(t, data, gatedRunner{release: release})
+
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&naucliov1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() {
+		t.Fatalf("initial metadata sync: %v", stream.Err())
+	}
+	initial := stream.Msg()
+	if initial.GetSnapshot() == nil || len(initial.GetSnapshot().GetConversations()) != 0 {
+		t.Fatalf("metadata bootstrap unexpectedly contained conversation tails: %#v", initial)
+	}
+
+	request := &naucliov1.StartCardRequest{CardId: card.ID, ClientId: "android-test", CommandId: "start-once"}
+	started, err := client.StartCard(ctx, connect.NewRequest(request))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !started.Msg.GetAccepted() || started.Msg.GetCard().GetLane() != model.LaneRunning || started.Msg.GetCard().GetInitialPromptSentAt() == "" {
+		t.Fatalf("start admission response=%#v", started.Msg)
+	}
+	replayed, err := client.StartCard(ctx, connect.NewRequest(request))
+	if err != nil || !replayed.Msg.GetReplayed() || replayed.Msg.GetCard().GetId() != card.ID {
+		t.Fatalf("replayed start=%#v err=%v", replayed.Msg, err)
+	}
+
+	found := false
+	for stream.Receive() {
+		frame := stream.Msg()
+		if frame.GetSnapshot() != nil {
+			t.Fatalf("live metadata frame duplicated the bootstrap snapshot: %#v", frame)
+		}
+		for _, changed := range frame.GetDelta().GetCards() {
+			if changed.GetId() == card.ID && changed.GetLane() == model.LaneRunning {
+				found = true
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("started card was not delivered as a metadata delta: %v", stream.Err())
+	}
+	stopRunner()
 }

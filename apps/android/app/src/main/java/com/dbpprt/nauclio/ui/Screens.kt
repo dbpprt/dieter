@@ -299,30 +299,7 @@ private fun SpacesOverview(state: NauclioUiState, model: NauclioViewModel, modif
             IconButton(onClick = { searchOpen = !searchOpen }) { Icon(Icons.Outlined.Search, "Search spaces") }
         }
         if (searchOpen) CompactSearchField(query, { query = it }, "Search projects and boards")
-        val machines = state.endpointConnections.filter { it.daemonId != null }
-        if (machines.size > 1) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 7.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                machines.forEach { machine ->
-                    val selected = machine.phase == com.dbpprt.nauclio.connection.EndpointPhase.CONNECTED
-                    Surface(
-                        onClick = { if (machine.online) model.selectDaemon(machine.id) },
-                        enabled = machine.online,
-                        shape = RoundedCornerShape(50),
-                        color = if (selected) NauclioAegean.copy(alpha = 0.13f) else NauclioSurfaceHigh,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) NauclioCobalt else NauclioOutline),
-                    ) {
-                        Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.size(7.dp).background(if (machine.online) NauclioSeafoam else NauclioMuted, CircleShape))
-                            Spacer(Modifier.width(7.dp))
-                            Text(machine.label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium)
-                        }
-                    }
-                }
-            }
-        }
+        val showProjectHosts = state.projectHosts.values.map { it.daemonId }.distinct().size > 1
         if (state.spacesLoading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = NauclioAegean)
         SurfaceErrorBanner(state.error, model::clearError)
         if (!state.connected && state.projects.isEmpty()) {
@@ -343,7 +320,7 @@ private fun SpacesOverview(state: NauclioUiState, model: NauclioViewModel, modif
                     }
                     ProjectSpaceCard(
                         project = project,
-                        host = state.projectHosts[project.id]?.takeIf { machines.size > 1 },
+                        host = state.projectHosts[project.id]?.takeIf { showProjectHosts },
                         boards = state.spaceBoards.filter { it.projectId == project.id },
                         cards = state.spaceCards.filter { it.projectId == project.id },
                         dragged = dragged,
@@ -900,6 +877,8 @@ private fun BoardLanePager(
                         board = state.board,
                         selected = card.id == state.selectedCardId,
                         pending = card.id in state.pendingCardIds,
+                        operation = state.cardOperations[card.id],
+                        operationError = state.cardOperationErrors[card.id],
                         revealed = revealedCardId == card.id,
                         onReveal = { revealedCardId = card.id },
                         onCloseActions = { if (revealedCardId == card.id) revealedCardId = null },
@@ -1530,6 +1509,8 @@ private fun CardDetailScreen(
     val subagents = snapshot?.conversation?.subagentsList.orEmpty()
     val activeSubagents = subagents.count { it.status == "running" || it.status == "pending" }
     val showDetailTabs = !standalone || subagents.isNotEmpty() || commentCount > 0
+    val cardOperation = state.cardOperations[card.id]
+    val displayRuntime = resolvedCardRuntime(card.runtime, snapshot?.conversation?.status.orEmpty(), cardOperation)
     val detailTab by rememberUpdatedState(state.detailTab)
     val detailPagerState = rememberPagerState(
         initialPage = state.detailTab.coerceIn(0, detailPageCount - 1),
@@ -1564,9 +1545,9 @@ private fun CardDetailScreen(
                     fontSize = 11.sp,
                 )
             }
-            StatusPill(card.runtime.ifBlank { snapshot?.conversation?.status ?: "idle" })
-            if (card.runtime == "running" || card.runtime == "starting") {
-                IconButton(onClick = model::cancelSelected, enabled = !state.working) {
+            StatusPill(displayRuntime)
+            if (isActiveCardRuntime(displayRuntime) && cardOperation != CardOperation.CANCELLING) {
+                IconButton(onClick = model::cancelSelected) {
                     Icon(Icons.Outlined.Cancel, "Cancel active turn")
                 }
             }
@@ -1913,8 +1894,12 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
             includeReasoning = state.showReasoningTraces,
         )
     }
-    val runtime = card?.runtime.orEmpty().ifBlank { conversation?.status.orEmpty() }.lowercase()
-    val activeTurn = runtime in setOf("running", "starting", "working", "streaming")
+    val runtime = resolvedCardRuntime(
+        card?.runtime.orEmpty(),
+        conversation?.status.orEmpty(),
+        card?.id?.let(state.cardOperations::get),
+    )
+    val activeTurn = isActiveCardRuntime(runtime)
     val assistantCount = messages.count { it.role.equals("assistant", true) || it.role.equals("agent", true) }
     val latestMessage = allMessages.lastOrNull()
     val latestPlan = latestMessage?.let { plansByMessage[it.id] }
@@ -2090,7 +2075,8 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
         }
         if (card?.canStartFromTodo(draftAttachments.isNotEmpty()) == true) {
             StartCardBanner(
-                working = state.working,
+                starting = state.cardOperations[card.id] == CardOperation.STARTING,
+                error = state.cardOperationErrors[card.id],
                 onStart = model::startSelectedCard,
             )
         }
@@ -2216,7 +2202,7 @@ private fun UnsentTaskMessage(task: String, attachments: List<MessagePart> = emp
 }
 
 @Composable
-private fun StartCardBanner(working: Boolean, onStart: () -> Unit) {
+private fun StartCardBanner(starting: Boolean, error: String?, onStart: () -> Unit) {
     Surface(
         color = NauclioAegean.copy(alpha = 0.12f),
         shape = RoundedCornerShape(16.dp),
@@ -2231,28 +2217,31 @@ private fun StartCardBanner(working: Boolean, onStart: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text("Ready to start", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 Text(
-                    "Run the saved task and move this card to Running.",
+                    if (starting) "The daemon accepted the start request…" else "Run the saved task and move this card to Running.",
                     color = NauclioMuted,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                 )
+                if (!error.isNullOrBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, lineHeight = 15.sp)
+                }
             }
             Button(
                 onClick = onStart,
-                enabled = !working,
+                enabled = !starting,
                 modifier = Modifier.testTag("start-card"),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = NauclioAegean,
                     contentColor = Color(0xFF071426),
                 ),
             ) {
-                if (working) {
+                if (starting) {
                     CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                 } else {
                     Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
                 }
                 Spacer(Modifier.width(6.dp))
-                Text("Start card")
+                Text(if (starting) "Starting…" else "Start card")
             }
         }
     }
@@ -3474,6 +3463,8 @@ private fun SwipeableWorkCard(
     board: Board?,
     selected: Boolean,
     pending: Boolean,
+    operation: CardOperation?,
+    operationError: String?,
     revealed: Boolean,
     onReveal: () -> Unit,
     onCloseActions: () -> Unit,
@@ -3545,6 +3536,8 @@ private fun SwipeableWorkCard(
             board = board,
             selected = selected,
             pending = pending,
+            operation = operation,
+            operationError = operationError,
             modifier = Modifier
                 .offset { IntOffset(dragOffset.toInt(), 0) }
                 .draggable(
@@ -3705,6 +3698,8 @@ private fun WorkCard(
     board: Board?,
     selected: Boolean,
     pending: Boolean,
+    operation: CardOperation?,
+    operationError: String?,
     modifier: Modifier = Modifier,
     onStart: (() -> Unit)? = null,
     onClick: () -> Unit,
@@ -3750,6 +3745,9 @@ private fun WorkCard(
                         labels.take(3).forEach { label -> LabelPill(label.name, label.color) }
                     }
                 }
+                if (!operationError.isNullOrBlank()) {
+                    Text(operationError, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
             HorizontalDivider(color = NauclioOutline.copy(alpha = 0.52f))
             Row(
@@ -3762,6 +3760,7 @@ private fun WorkCard(
                 if (onStart != null) {
                     Surface(
                         onClick = onStart,
+                        enabled = operation == null,
                         modifier = Modifier.testTag("start-card-${card.id}"),
                         shape = RoundedCornerShape(10.dp),
                         color = NauclioSeafoam.copy(alpha = 0.16f),
@@ -3771,9 +3770,13 @@ private fun WorkCard(
                             Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, Modifier.size(16.dp))
+                            if (operation == CardOperation.STARTING) {
+                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, Modifier.size(16.dp))
+                            }
                             Spacer(Modifier.width(3.dp))
-                            Text("Start", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (operation == CardOperation.STARTING) "Starting…" else "Start", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                     Spacer(Modifier.width(8.dp))
@@ -3804,7 +3807,7 @@ private fun LabelPill(name: String, color: String) {
 
 @Composable
 private fun StatusPill(status: String) {
-    val active = status.contains("running", true) || status.contains("starting", true) || status.contains("working", true)
+    val active = isActiveCardRuntime(status)
     Row(
         Modifier.clip(RoundedCornerShape(20.dp))
             .border(1.dp, NauclioOutline.copy(alpha = 0.82f), RoundedCornerShape(20.dp))

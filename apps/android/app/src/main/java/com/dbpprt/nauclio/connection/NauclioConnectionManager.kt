@@ -19,6 +19,7 @@ import com.dbpprt.nauclio.v1.Card
 import com.dbpprt.nauclio.v1.ConversationSnapshot
 import com.dbpprt.nauclio.v1.CreateConversationRequest
 import com.dbpprt.nauclio.v1.GlobalSnapshot
+import com.dbpprt.nauclio.v1.GlobalDelta
 import com.dbpprt.nauclio.v1.GetStateRequest
 import com.dbpprt.nauclio.v1.Harness
 import com.dbpprt.nauclio.v1.Project
@@ -28,6 +29,8 @@ import com.dbpprt.nauclio.v1.MessagePart
 import com.dbpprt.nauclio.v1.Schedule
 import com.dbpprt.nauclio.v1.ScheduleRun
 import com.dbpprt.nauclio.v1.State
+import com.dbpprt.nauclio.v1.StartCardRequest
+import com.dbpprt.nauclio.v1.StartCardResponse
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -43,7 +46,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -56,7 +58,7 @@ import java.security.SecureRandom
 import java.util.UUID
 import kotlin.time.TimeSource
 
-enum class ConnectionPhase { STOPPED, CONNECTING, CONNECTED, RECONNECTING, AUTH_REQUIRED, INCOMPATIBLE, UNAVAILABLE }
+enum class ConnectionPhase { STOPPED, CONNECTING, SYNCING, CONNECTED, RECONNECTING, AUTH_REQUIRED, INCOMPATIBLE, UNAVAILABLE }
 
 enum class EndpointPhase { PENDING, TRYING, CONNECTED, FAILED }
 
@@ -117,8 +119,10 @@ class NauclioConnectionManager(
     private val appContext = context.applicationContext
     private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val syncStore = NauclioSyncStore(appContext)
-    private var globalSnapshot = syncStore.loadSnapshot()
-    private var syncCursor = syncStore.loadCursor().takeIf { globalSnapshot != null }
+    private var preferredDaemonId = preferences.getString(KEY_PREFERRED_DAEMON, null)
+    private var activeProjectionKey = preferredDaemonId.orEmpty()
+    private var globalSnapshot = activeProjectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadSnapshot)
+    private var syncCursor = activeProjectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadCursor).takeIf { globalSnapshot != null }
     private val outbox = syncStore.loadOutbox()
     private val conversationIdResolutions = linkedMapOf<String, String>().apply {
         outbox.forEach { entry ->
@@ -134,7 +138,6 @@ class NauclioConnectionManager(
     private var selectedProjectId = ""
     private var appForeground = false
     private var serviceActive = false
-    private var preferredDaemonId = preferences.getString(KEY_PREFERRED_DAEMON, null)
     private var discoveredEndpoints: List<NauclioEndpoint> = emptyList()
 
     private val _state = MutableStateFlow(
@@ -177,9 +180,9 @@ class NauclioConnectionManager(
 
     fun selectProject(projectId: String) {
         val nextDaemon = daemonForProjectSelection(projectId, preferredDaemonId, _state.value.projectHosts)
-        val daemonChanged = nextDaemon != null
-        val changed = synchronized(lock) {
-            if (selectedProjectId == projectId && !daemonChanged) false else {
+        val daemonChanged = nextDaemon != null && nextDaemon != repository.activeEndpoint.daemonId
+        val projectChanged = synchronized(lock) {
+            if (selectedProjectId == projectId) false else {
                 selectedProjectId = projectId
                 true
             }
@@ -189,7 +192,8 @@ class NauclioConnectionManager(
             preferences.edit().putString(KEY_PREFERRED_DAEMON, preferredDaemonId).apply()
         }
         if (!daemonChanged) globalSnapshot?.let(::applyGlobalSnapshot)
-        if (changed && shouldRun()) restart()
+        if (daemonChanged && shouldRun()) restart()
+        else if (projectChanged) globalSnapshot?.let(::applyGlobalSnapshot)
     }
 
     fun connect() {
@@ -207,14 +211,6 @@ class NauclioConnectionManager(
     fun refreshProjectDirectory() {
         if (!shouldRun()) return
         scope.launch { refreshMachineDirectory() }
-    }
-
-    fun selectDaemon(endpointId: String) {
-        val target = discoveredEndpoints.firstOrNull { it.id == endpointId }
-        if (target != null && !target.online) return
-        preferredDaemonId = endpointId.substringAfterLast('#', endpointId)
-        preferences.edit().putString(KEY_PREFERRED_DAEMON, preferredDaemonId).apply()
-        if (_state.value.desiredConnected) restart()
     }
 
     fun signIn() {
@@ -397,8 +393,7 @@ class NauclioConnectionManager(
                 }
                 _state.update {
                     it.copy(
-                        phase = ConnectionPhase.CONNECTED,
-                        connectionInterruptedAtMs = null,
+                        phase = ConnectionPhase.SYNCING,
                         runtimeStatus = runtime,
                         harnesses = catalog.harnessesList,
                         error = null,
@@ -408,7 +403,7 @@ class NauclioConnectionManager(
                 coroutineScope {
                     launch { collectGlobalSync(currentGeneration) }
                     launch { drainOutbox(currentGeneration) }
-                    launch { pollDaemonPresence(currentGeneration) }
+                    launch { watchDaemonPresence(currentGeneration) }
                     launch {
                         val refreshAt = repository.directRefreshAtMillis() ?: return@launch awaitCancellation()
                         delay((refreshAt - System.currentTimeMillis()).coerceAtLeast(1_000))
@@ -508,10 +503,10 @@ class NauclioConnectionManager(
                 _state.update {
                     it.copy(
                         endpoint = endpoint,
-                        phase = ConnectionPhase.CONNECTED,
-                        connectionInterruptedAtMs = null,
+                        phase = ConnectionPhase.SYNCING,
                     )
                 }
+                activateProjection(requireNotNull(endpoint.daemonId))
                 return health
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -528,32 +523,27 @@ class NauclioConnectionManager(
         throw lastError ?: IllegalStateException("No Nauclio connection target is available")
     }
 
-    private suspend fun collectSelectedState(currentGeneration: Long) {
-        val projectId = synchronized(lock) { selectedProjectId }
-        val filter = GetStateRequest.newBuilder().setProjectId(projectId).build()
-        repository.watchState(filter).collectLatest { remote ->
-            if (currentGeneration != synchronized(lock) { generation }) return@collectLatest
-            _state.update {
-                it.copy(
-                    phase = ConnectionPhase.CONNECTED,
-                    connectionInterruptedAtMs = null,
-                    selectedState = remote,
-                    error = null,
-                )
-            }
-        }
-    }
-
     private suspend fun collectGlobalSync(currentGeneration: Long) {
-        repository.watchSync(syncCursor, conversationLimit = 100).collect { frame ->
+        repository.watchSync(syncCursor, conversationLimit = 0).collect { frame ->
             if (currentGeneration != synchronized(lock) { generation }) return@collect
+            var projectionChanged = false
             if (frame.hasSnapshot()) {
                 globalSnapshot = frame.snapshot
+                projectionChanged = true
+            } else if (frame.hasDelta() && globalSnapshot != null) {
+                globalSnapshot = applyGlobalDelta(requireNotNull(globalSnapshot), frame.delta)
+                projectionChanged = true
             }
             if (frame.hasCursor()) {
                 syncCursor = frame.cursor
             }
-            syncStore.saveProjection(frame.snapshot.takeIf { frame.hasSnapshot() }, frame.cursor.takeIf { frame.hasCursor() })
+            if (activeProjectionKey.isNotBlank() && (projectionChanged || frame.hasCursor() && !frame.heartbeat)) {
+                syncStore.saveProjection(
+                    activeProjectionKey,
+                    globalSnapshot.takeIf { projectionChanged },
+                    frame.cursor.takeIf { frame.hasCursor() },
+                )
+            }
             globalSnapshot?.let {
                 reconcileOutbox(it)
                 applyGlobalSnapshot(it)
@@ -562,43 +552,42 @@ class NauclioConnectionManager(
         }
     }
 
-    private suspend fun pollDaemonPresence(currentGeneration: Long) {
-        while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
-            refreshDaemonPresence()
-            delay(MACHINE_POLL_INTERVAL_MS)
+    private suspend fun watchDaemonPresence(currentGeneration: Long) {
+        repository.watchDaemons().collect { update ->
+            if (currentGeneration != synchronized(lock) { generation }) return@collect
+            applyDaemonPresence(update.daemonsList)
         }
     }
 
-    private suspend fun pollGlobalState(currentGeneration: Long) {
-        while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
-            refreshDaemonPresence()
-            refreshMachineDirectory()
-            val cards = _state.value.cards
-            val chats = _state.value.chats
-            val activeCards = (cards + chats).filter { isActiveRuntime(it.runtime) }
-                .filter { _state.value.projectHosts[it.projectId]?.daemonId == repository.activeEndpoint.daemonId }
-            val conversations = coroutineScope {
-                activeCards.map { card ->
-                    async {
-                        runCatching { repository.conversation(card.id, limit = 4) }.getOrNull()?.let { card.id to it }
-                    }
-                }.mapNotNull { it.await() }.toMap()
-            }
+    private fun activateProjection(daemonId: String) {
+        if (activeProjectionKey == daemonId) return
+        activeProjectionKey = daemonId
+        preferredDaemonId = daemonId
+        preferences.edit().putString(KEY_PREFERRED_DAEMON, daemonId).apply()
+        globalSnapshot = syncStore.loadSnapshot(daemonId)
+        syncCursor = syncStore.loadCursor(daemonId).takeIf { globalSnapshot != null }
+        val cached = globalSnapshot
+        if (cached != null) {
+            applyGlobalSnapshot(cached)
+        } else {
             _state.update {
                 it.copy(
-                    phase = ConnectionPhase.CONNECTED,
-                    connectionInterruptedAtMs = null,
-                    activeConversations = conversations,
-                    error = null,
+                    selectedState = null,
+                    projects = emptyList(),
+                    projectHosts = emptyMap(),
+                    boards = emptyList(),
+                    cards = emptyList(),
+                    chats = emptyList(),
+                    activeConversations = emptyMap(),
+                    schedules = emptyList(),
+                    scheduleRuns = emptyList(),
                 )
             }
-            delay(MACHINE_POLL_INTERVAL_MS)
         }
     }
 
-    private suspend fun refreshDaemonPresence() {
-        val directory = repository.daemons()
-        val byID = directory.daemonsList.associateBy { it.id }
+    private fun applyDaemonPresence(daemons: List<com.dbpprt.nauclio.gateway.v1.Daemon>) {
+        val byID = daemons.associateBy { it.id }
         discoveredEndpoints = discoveredEndpoints.map { endpoint ->
             val daemon = endpoint.daemonId?.let(byID::get) ?: return@map endpoint
             endpoint.copy(
@@ -614,7 +603,7 @@ class NauclioConnectionManager(
                 endpointConnections = current.endpointConnections.map { row ->
                     val endpoint = discoveredEndpoints.firstOrNull { it.id == row.id } ?: return@map row
                     when {
-                        endpoint.online && endpoint.id == current.endpoint?.id && current.phase == ConnectionPhase.CONNECTED -> row.copy(
+                        endpoint.online && endpoint.id == current.endpoint?.id && current.phase in setOf(ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED) -> row.copy(
                             label = endpoint.label,
                             online = endpoint.online,
                         )
@@ -631,21 +620,25 @@ class NauclioConnectionManager(
     suspend fun refreshMachineDirectory(includeArchivedChats: Boolean = false) {
         val machines = discoveredEndpoints.filter(NauclioEndpoint::online)
         if (machines.isEmpty()) return
-        val snapshots = coroutineScope {
-            machines.map { machine ->
-                async {
-                    runCatching {
-                        val root = repository.relayState(machine)
-                        val projects = root.projectsList.filterNot(Project::getArchived)
-                        val projectStates = projects.map { project ->
-                            async { repository.relayState(machine, GetStateRequest.newBuilder().setProjectId(project.id).setLimit(500).build()) }
-                        }.map { it.await() }
-                        val chats = repository.relayChats(machine, includeArchived = includeArchivedChats).chatsList
-                            .filter { includeArchivedChats || !it.archived }
-                        MachineSnapshot(machine, projects, projectStates.flatMap { it.boardsList }, projectStates.flatMap { it.cardsList }, chats)
-                    }.getOrNull()
-                }
-            }.mapNotNull { it.await() }
+        // Directory refresh is intentionally sequential. Each lookup is a
+        // short relay RPC; bounding it to one at a time prevents a large
+        // account from consuming every logical stream on a daemon link.
+        val snapshots = buildList {
+            for (machine in machines) {
+                val snapshot = runCatching {
+                    val root = repository.relayState(machine)
+                    val projects = root.projectsList.filterNot(Project::getArchived)
+                    val projectStates = buildList {
+                        for (project in projects) {
+                            add(repository.relayState(machine, GetStateRequest.newBuilder().setProjectId(project.id).setLimit(500).build()))
+                        }
+                    }
+                    val chats = repository.relayChats(machine, includeArchived = includeArchivedChats).chatsList
+                        .filter { includeArchivedChats || !it.archived }
+                    MachineSnapshot(machine, projects, projectStates.flatMap { it.boardsList }, projectStates.flatMap { it.cardsList }, chats)
+                }.getOrNull()
+                if (snapshot != null) add(snapshot)
+            }
         }
         if (snapshots.isEmpty()) return
         val refreshedEndpointIDs = snapshots.mapTo(hashSetOf()) { it.endpoint.id }
@@ -676,6 +669,31 @@ class NauclioConnectionManager(
         }
     }
 
+    private fun applyGlobalDelta(snapshot: GlobalSnapshot, delta: GlobalDelta): GlobalSnapshot {
+        fun <T> merge(current: List<T>, changed: List<T>, removed: Set<String>, id: (T) -> String): List<T> {
+            val changedByID = changed.associateBy(id)
+            return (current.filter { id(it) !in removed && id(it) !in changedByID } + changed)
+        }
+        val state = snapshot.state.toBuilder()
+            .clearProjects()
+            .addAllProjects(merge(snapshot.state.projectsList, delta.projectsList, delta.removedProjectIdsList.toSet(), Project::getId))
+            .clearBoards()
+            .addAllBoards(merge(snapshot.state.boardsList, delta.boardsList, delta.removedBoardIdsList.toSet(), Board::getId))
+            .clearCards()
+            .addAllCards(merge(snapshot.state.cardsList, delta.cardsList, delta.removedCardIdsList.toSet(), Card::getId))
+            .clearChats()
+            .addAllChats(merge(snapshot.state.chatsList, delta.chatsList, delta.removedChatIdsList.toSet(), Card::getId))
+            .build()
+        return snapshot.toBuilder()
+            .setState(state)
+            .clearSchedules()
+            .addAllSchedules(merge(snapshot.schedulesList, delta.schedulesList, delta.removedScheduleIdsList.toSet(), Schedule::getId))
+            .clearScheduleRuns()
+            .addAllScheduleRuns(merge(snapshot.scheduleRunsList, delta.scheduleRunsList, delta.removedScheduleRunIdsList.toSet(), ScheduleRun::getId))
+            .also { if (delta.hasSettings()) it.settings = delta.settings }
+            .build()
+    }
+
     private fun applyGlobalSnapshot(snapshot: GlobalSnapshot) {
         val (entries, resolvedConversationIds) = synchronized(outbox) {
             outbox.toList() to conversationIdResolutions.toMap()
@@ -688,7 +706,9 @@ class NauclioConnectionManager(
 
         val cards = snapshot.state.cardsList.toMutableList()
         val chats = snapshot.state.chatsList.toMutableList()
-        val conversations = snapshot.conversationsList.associateBy { it.detail.card.id }.toMutableMap()
+        val conversations = _state.value.activeConversations.toMutableMap().apply {
+            snapshot.conversationsList.forEach { put(it.detail.card.id, it) }
+        }
         entries.forEach { entry ->
             when (entry.kind) {
                 OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT -> {
@@ -791,16 +811,34 @@ class NauclioConnectionManager(
 
     private fun reconcileOutbox(snapshot: GlobalSnapshot) {
         val cardIds = (snapshot.state.cardsList + snapshot.state.chatsList).mapTo(hashSetOf()) { it.id }
-        val messageIds = snapshot.conversationsList.flatMapTo(hashSetOf()) { conversation ->
-            conversation.conversation.messagesList.map { it.id }
-        }
         val changed = synchronized(outbox) {
             outbox.removeAll { entry ->
                 val serverId = entry.serverId ?: return@removeAll false
-                if (entry.kind == OutboxKind.SEND_MESSAGE) serverId in messageIds else serverId in cardIds
+                if (entry.kind == OutboxKind.SEND_MESSAGE) true else serverId in cardIds
             }
         }
         if (changed) syncStore.saveOutbox(synchronized(outbox) { outbox.toList() })
+    }
+
+    suspend fun startCard(cardId: String): StartCardResponse = repository.startCard(
+        StartCardRequest.newBuilder()
+            .setCardId(cardId)
+            .setClientId(syncStore.clientId)
+            .setCommandId(UUID.randomUUID().toString().lowercase())
+            .build(),
+    )
+
+    fun acceptConversation(snapshot: ConversationSnapshot) {
+        val cardId = snapshot.detail.card.id
+        if (cardId.isBlank()) return
+        _state.update { current ->
+            val conversations = LinkedHashMap(current.activeConversations)
+            conversations[cardId] = snapshot
+            while (conversations.size > MAX_ACTIVE_CONVERSATIONS) {
+                conversations.remove(conversations.keys.first())
+            }
+            current.copy(activeConversations = conversations)
+        }
     }
 
     suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean): Card {
@@ -1009,8 +1047,8 @@ class NauclioConnectionManager(
         private const val KEY_AUTH_VERIFIER = "auth_verifier"
         private const val KEY_AUTH_ENDPOINT = "auth_endpoint"
         private const val KEY_PREFERRED_DAEMON = "preferred_daemon"
-        private const val MACHINE_POLL_INTERVAL_MS = 5_000L
         private const val MAX_RESOLVED_CONVERSATIONS = 256
+        private const val MAX_ACTIVE_CONVERSATIONS = 8
     }
 }
 

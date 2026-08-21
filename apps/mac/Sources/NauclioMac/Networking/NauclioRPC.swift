@@ -57,7 +57,7 @@ final class NauclioRPC: Sendable {
                 config.trustRoots = .certificates([.bytes(Array(direct.daemonCAPEM), format: .pem)])
                 // Daemon certificates carry a SPIFFE identity rather than a
                 // network-name SAN. The CA and daemon-bound bearer jointly
-                // authenticate the selected machine.
+                // authenticate the automatically routed machine.
                 config.serverCertificateVerification = .noHostnameVerification
                 config.verifySignatureAlgorithms = [.ed25519]
             }

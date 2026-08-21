@@ -2,9 +2,11 @@ package com.dbpprt.nauclio.data
 
 import android.content.Context
 import com.dbpprt.nauclio.gateway.v1.DaemonRef
+import com.dbpprt.nauclio.gateway.v1.DaemonPresenceUpdate
 import com.dbpprt.nauclio.gateway.v1.ExchangeDaemonTokenRequest
 import com.dbpprt.nauclio.gateway.v1.GatewayServiceGrpcKt
 import com.dbpprt.nauclio.gateway.v1.ListDaemonsResponse
+import com.dbpprt.nauclio.gateway.v1.WatchDaemonsRequest
 import com.dbpprt.nauclio.v1.AddCommentRequest
 import com.dbpprt.nauclio.v1.ArchiveCardRequest
 import com.dbpprt.nauclio.v1.ArchiveProjectRequest
@@ -67,6 +69,8 @@ import com.dbpprt.nauclio.v1.SetScheduleEnabledRequest
 import com.dbpprt.nauclio.v1.Settings
 import com.dbpprt.nauclio.v1.SettingsOptions
 import com.dbpprt.nauclio.v1.State
+import com.dbpprt.nauclio.v1.StartCardRequest
+import com.dbpprt.nauclio.v1.StartCardResponse
 import com.dbpprt.nauclio.v1.SyncCursor
 import com.dbpprt.nauclio.v1.SyncFrame
 import com.dbpprt.nauclio.v1.SyncRequest
@@ -161,6 +165,7 @@ interface NauclioRepository {
     fun selectEndpoint(endpoint: NauclioEndpoint)
     fun setAccessToken(endpoint: NauclioEndpoint, token: String?)
     suspend fun daemons(): ListDaemonsResponse
+    fun watchDaemons(): Flow<DaemonPresenceUpdate>
     suspend fun relayState(endpoint: NauclioEndpoint, filter: GetStateRequest = GetStateRequest.getDefaultInstance()): State
     suspend fun relayChats(endpoint: NauclioEndpoint, includeArchived: Boolean = false): ChatsResponse
     suspend fun prepareDaemon(): String
@@ -169,7 +174,7 @@ interface NauclioRepository {
     suspend fun runtimeStatus(): RuntimeStatus
     suspend fun state(filter: GetStateRequest = GetStateRequest.getDefaultInstance()): State
     fun watchState(filter: GetStateRequest = GetStateRequest.getDefaultInstance()): Flow<State>
-    fun watchSync(after: SyncCursor? = null, conversationLimit: Int = 100): Flow<SyncFrame>
+    fun watchSync(after: SyncCursor? = null, conversationLimit: Int = 0): Flow<SyncFrame>
     suspend fun harnesses(): HarnessCatalog
     suspend fun settings(): Settings
     suspend fun settingsOptions(): SettingsOptions
@@ -202,6 +207,7 @@ interface NauclioRepository {
     suspend fun sendMessage(request: SendMessageRequest): SendMessageResponse
     suspend fun addComment(cardId: String, text: String, name: String = "You"): Comment
     suspend fun moveCard(cardId: String, lane: String, position: Long? = null): Card
+    suspend fun startCard(request: StartCardRequest): StartCardResponse
     suspend fun setCardLabels(cardId: String, labelIds: List<String>): Card
     suspend fun cancelCard(cardId: String)
     suspend fun renameCard(cardId: String, title: String): Card
@@ -328,7 +334,19 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
         return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
     }
 
+    private fun gatewayStreamingStub(): GatewayServiceGrpcKt.GatewayServiceCoroutineStub {
+        val stub = GatewayServiceGrpcKt.GatewayServiceCoroutineStub(gatewayChannel())
+        val token = credentials.get(activeEndpoint.credentialId) ?: return stub
+        return stub.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(metadata(token)))
+    }
+
     override suspend fun daemons(): ListDaemonsResponse = gatewayStub().listDaemons(Empty.getDefaultInstance())
+
+    override fun watchDaemons(): Flow<DaemonPresenceUpdate> = flow {
+        gatewayStreamingStub().watchDaemons(
+            WatchDaemonsRequest.newBuilder().setHeartbeatSeconds(15).build(),
+        ).collect(::emit)
+    }
 
     override suspend fun relayState(endpoint: NauclioEndpoint, filter: GetStateRequest): State = withRelay(endpoint) {
         getState(filter)
@@ -440,7 +458,7 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
 
     override fun watchSync(after: SyncCursor?, conversationLimit: Int): Flow<SyncFrame> = flow {
         val request = SyncRequest.newBuilder()
-            .setConversationLimit(conversationLimit.coerceIn(1, 100))
+            .setConversationLimit(conversationLimit.coerceIn(0, 100))
             .setHeartbeatMs(15_000)
             .also { if (after != null) it.after = after }
             .build()
@@ -556,6 +574,9 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
         if (position != null) request.position = position
         return unary().moveCard(request.build())
     }
+
+    override suspend fun startCard(request: StartCardRequest): StartCardResponse =
+        unary(deadlineSeconds = 15).startCard(request)
 
     override suspend fun setCardLabels(cardId: String, labelIds: List<String>): Card = unary().setCardLabels(
         SetCardLabelsRequest.newBuilder().setCardId(cardId).addAllLabelIds(labelIds).build(),

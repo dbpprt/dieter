@@ -107,15 +107,45 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 		return err
 	}
 	defer local.Close()
-	send := make(chan *gatewayv1.DaemonLinkFrame, 8)
+	prioritySend := make(chan *gatewayv1.DaemonLinkFrame, 16)
+	streamSend := make(chan *gatewayv1.DaemonLinkFrame, 8)
+	enqueue := func(frame *gatewayv1.DaemonLinkFrame, priority bool) bool {
+		queue := streamSend
+		if priority {
+			queue = prioritySend
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case queue <- frame:
+			return true
+		}
+	}
 	sendErr := make(chan error, 1)
 	go func() {
 		for {
+			// Always drain command responses, terminal frames, and control
+			// traffic before another streaming data frame. This keeps a busy
+			// WatchSync/WatchConversation call from hiding a unary admission ack.
+			select {
+			case frame := <-prioritySend:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+				continue
+			default:
+			}
 			select {
 			case <-ctx.Done():
 				sendErr <- ctx.Err()
 				return
-			case frame := <-send:
+			case frame := <-prioritySend:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+			case frame := <-streamSend:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
 					return
@@ -147,7 +177,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 		case err := <-recvErr:
 			return err
 		case <-heartbeat.C:
-			send <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes}
+			enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes}, true)
 		case frame := <-recv:
 			switch frame.GetKind() {
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC:
@@ -155,26 +185,32 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 				calls.Store(frame.GetStreamId(), cancel)
 				go func(frame *gatewayv1.DaemonLinkFrame) {
 					defer calls.Delete(frame.GetStreamId())
-					c.relayLocal(callCtx, local, frame, send)
+					c.relayLocal(callCtx, local, frame, enqueue)
 				}(frame)
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_CANCEL_RPC:
 				if value, ok := calls.LoadAndDelete(frame.GetStreamId()); ok {
 					value.(context.CancelFunc)()
 				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING:
-				send <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG}
+				enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG}, true)
 			}
 		}
 	}
 }
 
-func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, frame *gatewayv1.DaemonLinkFrame, send chan<- *gatewayv1.DaemonLinkFrame) {
+func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, frame *gatewayv1.DaemonLinkFrame, send func(*gatewayv1.DaemonLinkFrame, bool) bool) {
+	started := time.Now()
+	priority := relayMethodPriority(frame.GetMethod())
+	defer func() {
+		c.Log.Debug("relayed Nauclio RPC", "method", frame.GetMethod(), "stream_id", frame.GetStreamId(), "priority", priority, "elapsed", time.Since(started))
+	}()
+	emit := func(value *gatewayv1.DaemonLinkFrame) bool { return send(value, priority) }
 	public, err := trust.PublicKeyFromPEM(c.Identity.GatewaySigningPublicKey)
 	if err == nil {
 		_, err = trust.ParseAndVerifyDelegation(public, frame.GetDelegationAssertion(), c.Identity.GatewayURL, c.Identity.ID, frame.GetRequestId(), frame.GetMethod(), frame.GetPayload(), frame.GetGeneration(), time.Now().UTC())
 	}
 	if err != nil {
-		send <- relayError(frame.GetStreamId(), codes.Unauthenticated, "relay assertion is invalid")
+		emit(relayError(frame.GetStreamId(), codes.Unauthenticated, "relay assertion is invalid"))
 		return
 	}
 	if deadline := frame.GetDeadlineUnixMillis(); deadline > 0 {
@@ -185,39 +221,49 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
 	call, err := local.NewStream(ctx, description, frame.GetMethod(), grpc.ForceCodec(rpcraw.Codec{}))
 	if err != nil {
-		send <- relayStatusError(frame.GetStreamId(), err)
+		emit(relayStatusError(frame.GetStreamId(), err))
 		return
 	}
 	if err := call.SendMsg(&rpcraw.Message{Data: frame.GetPayload()}); err != nil {
-		send <- relayStatusError(frame.GetStreamId(), err)
+		emit(relayStatusError(frame.GetStreamId(), err))
 		return
 	}
 	if err := call.CloseSend(); err != nil {
-		send <- relayStatusError(frame.GetStreamId(), err)
+		emit(relayStatusError(frame.GetStreamId(), err))
 		return
 	}
 	if headers, err := call.Header(); err == nil {
-		send <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER, StreamId: frame.GetStreamId(), Metadata: firstMetadata(headers)}
+		if !emit(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER, StreamId: frame.GetStreamId(), Metadata: firstMetadata(headers)}) {
+			return
+		}
 	}
 	for {
 		var response rpcraw.Message
 		err := call.RecvMsg(&response)
 		if errors.Is(err, io.EOF) {
-			send <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END, StreamId: frame.GetStreamId(), StatusCode: int32(codes.OK), Metadata: firstMetadata(call.Trailer())}
+			emit(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END, StreamId: frame.GetStreamId(), StatusCode: int32(codes.OK), Metadata: firstMetadata(call.Trailer())})
 			return
 		}
 		if err != nil {
 			result := relayStatusError(frame.GetStreamId(), err)
 			result.Metadata = firstMetadata(call.Trailer())
-			send <- result
+			emit(result)
 			return
 		}
 		if len(response.Data) > 16<<20 {
-			send <- relayError(frame.GetStreamId(), codes.ResourceExhausted, "local response exceeds 16 MiB")
+			emit(relayError(frame.GetStreamId(), codes.ResourceExhausted, "local response exceeds 16 MiB"))
 			return
 		}
-		send <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: frame.GetStreamId(), Payload: response.Data}
+		if !emit(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: frame.GetStreamId(), Payload: response.Data}) {
+			return
+		}
 	}
+}
+
+func relayMethodPriority(method string) bool {
+	return !strings.HasSuffix(method, "/WatchSync") &&
+		!strings.HasSuffix(method, "/WatchConversation") &&
+		!strings.HasSuffix(method, "/WatchState")
 }
 
 func relayStatusError(streamID uint64, err error) *gatewayv1.DaemonLinkFrame {

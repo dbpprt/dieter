@@ -99,6 +99,11 @@ private val navigationItems = listOf(
     NavItem(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
 )
 
+internal const val TABLET_LAYOUT_MIN_WIDTH_DP = 600
+
+internal fun usesTabletLayout(availableWidthDp: Float): Boolean =
+    availableWidthDp >= TABLET_LAYOUT_MIN_WIDTH_DP
+
 @Composable
 fun NauclioApp(container: NauclioContainer) {
     val model: NauclioViewModel = viewModel(
@@ -152,12 +157,12 @@ fun NauclioApp(container: NauclioContainer) {
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val expanded = maxWidth >= 840.dp
+        val tabletLayout = usesTabletLayout(maxWidth.value)
         if (state.appSurface != null) {
             Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
                 AppSurfaceContent(state, model, container.appUpdateManager, Modifier.fillMaxSize(), padding)
             }
-        } else if (expanded) {
+        } else if (tabletLayout) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = MaterialTheme.colorScheme.background,
@@ -282,6 +287,8 @@ private fun ReconnectingIndicator(modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewModel) {
     val connected = state.connected
+    val machines = state.endpointConnections.filter { it.daemonId != null }
+    val onlineMachineCount = machines.count { it.online }
     ModalBottomSheet(
         onDismissRequest = { if (connected) model.dismissConnectionDialog() },
         containerColor = NauclioSurface,
@@ -309,7 +316,8 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                 Column(Modifier.weight(1f)) {
                     Text("Nauclio server", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "${state.endpointConnections.firstOrNull { it.phase == EndpointPhase.CONNECTED }?.label ?: "Choose a daemon"} · tries each address in order",
+                        if (machines.isEmpty()) "Discovering enrolled machines"
+                        else "$onlineMachineCount of ${machines.size} machines online · automatic routing",
                         color = NauclioAegean,
                         fontSize = 12.sp,
                         modifier = Modifier.clickable(onClick = model::openAppSettingsFromConnection),
@@ -326,6 +334,7 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                     Text(
                         when (state.connectionPhase) {
                             ConnectionPhase.CONNECTED -> "● Connected"
+                            ConnectionPhase.SYNCING -> "Syncing"
                             ConnectionPhase.RECONNECTING -> "Reconnecting"
                             ConnectionPhase.INCOMPATIBLE -> "Incompatible"
                             ConnectionPhase.UNAVAILABLE -> "Unavailable"
@@ -345,13 +354,11 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                 }
             }
             state.endpointConnections.forEach { endpoint ->
-                val selected = endpoint.phase == EndpointPhase.CONNECTED
+                val activeRoute = endpoint.phase == EndpointPhase.CONNECTED
                 Surface(
-                    onClick = { model.selectDaemon(endpoint.id) },
-                    enabled = endpoint.online,
                     color = NauclioSurfaceHigh,
                     shape = RoundedCornerShape(15.dp),
-                    border = if (selected) BorderStroke(1.dp, NauclioSeafoam.copy(alpha = 0.8f)) else null,
+                    border = if (activeRoute) BorderStroke(1.dp, NauclioSeafoam.copy(alpha = 0.8f)) else null,
                 ) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 11.dp),
@@ -374,7 +381,11 @@ private fun NauclioConnectionDialog(state: NauclioUiState, model: NauclioViewMod
                             Text(endpoint.label, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                             Text(endpoint.address, color = NauclioMuted, fontSize = 11.sp)
                         }
-                        Text(endpoint.detail, color = if (selected) NauclioSeafoam else NauclioMuted, fontSize = 10.sp)
+                        Text(
+                            if (activeRoute) "Active route · ${endpoint.detail}" else endpoint.detail,
+                            color = if (activeRoute) NauclioSeafoam else NauclioMuted,
+                            fontSize = 10.sp,
+                        )
                     }
                 }
             }

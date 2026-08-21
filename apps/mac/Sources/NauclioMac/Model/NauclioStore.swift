@@ -52,6 +52,113 @@ struct MachineConnectionStatus: Equatable, Sendable {
     let latencyMilliseconds: Int
 }
 
+enum MachineRoutingPolicy {
+    static func automaticConnectionTarget(
+        from machines: [NauclioEndpoint],
+        preferredDaemonID: String?
+    ) -> NauclioEndpoint? {
+        machines.first { $0.daemonID == preferredDaemonID && $0.online }
+            ?? machines.filter(\.online).sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }.first
+    }
+}
+
+struct OptimisticCardMove: Equatable, Sendable {
+    let operationID: UUID
+    var lane: String
+    var position: Int64
+    var confirmsPosition: Bool
+
+    func isConfirmed(by card: Nauclio_V1_Card) -> Bool {
+        card.lane == lane && (!confirmsPosition || card.position == position)
+    }
+
+    func applying(to card: Nauclio_V1_Card) -> Nauclio_V1_Card {
+        var card = card
+        card.lane = lane
+        card.position = position
+        return card
+    }
+}
+
+struct OptimisticCardLabels: Equatable, Sendable {
+    let operationID: UUID
+    let labelIDs: [String]
+
+    func isConfirmed(by card: Nauclio_V1_Card) -> Bool {
+        card.labelIds == labelIDs
+    }
+
+    func applying(to card: Nauclio_V1_Card) -> Nauclio_V1_Card {
+        var card = card
+        card.labelIds = labelIDs
+        return card
+    }
+}
+
+struct OptimisticCardProjection {
+    let cards: [Nauclio_V1_Card]
+    let moves: [String: OptimisticCardMove]
+    let labels: [String: OptimisticCardLabels]
+
+    static func reconcile(
+        cards: [Nauclio_V1_Card],
+        moves: [String: OptimisticCardMove],
+        labels: [String: OptimisticCardLabels]
+    ) -> OptimisticCardProjection {
+        var remainingMoves = moves
+        var remainingLabels = labels
+        let projected = cards.map { serverCard in
+            var card = serverCard
+            if let move = moves[card.id] {
+                if move.isConfirmed(by: serverCard) { remainingMoves.removeValue(forKey: card.id) }
+                else { card = move.applying(to: card) }
+            }
+            if let labelUpdate = labels[card.id] {
+                if labelUpdate.isConfirmed(by: serverCard) { remainingLabels.removeValue(forKey: card.id) }
+                else { card = labelUpdate.applying(to: card) }
+            }
+            return card
+        }
+        return .init(cards: projected, moves: remainingMoves, labels: remainingLabels)
+    }
+}
+
+struct OptimisticWorkspaceProjection {
+    static func reconcileBoards(
+        _ serverBoards: [Nauclio_V1_Board],
+        pending: [String: Nauclio_V1_Board]
+    ) -> (boards: [Nauclio_V1_Board], pending: [String: Nauclio_V1_Board]) {
+        var remaining = pending
+        let boards = serverBoards.map { serverBoard in
+            guard let expected = pending[serverBoard.id] else { return serverBoard }
+            if serverBoard == expected {
+                remaining.removeValue(forKey: serverBoard.id)
+                return serverBoard
+            }
+            return expected
+        }
+        return (boards, remaining)
+    }
+
+    static func reconcileProjects(
+        _ serverProjects: [Nauclio_V1_Project],
+        pending: [String: Nauclio_V1_Project]
+    ) -> (projects: [Nauclio_V1_Project], pending: [String: Nauclio_V1_Project]) {
+        var remaining = pending
+        let projects = serverProjects.map { serverProject in
+            guard let expected = pending[serverProject.id] else { return serverProject }
+            if serverProject == expected {
+                remaining.removeValue(forKey: serverProject.id)
+                return serverProject
+            }
+            return expected
+        }
+        return (projects, remaining)
+    }
+}
+
 @MainActor
 @Observable
 final class NauclioStore {
@@ -131,6 +238,11 @@ final class NauclioStore {
     private var conversationTask: Task<Void, Never>?
     private var syncTask: Task<Void, Never>?
     private var outboxTask: Task<Void, Never>?
+    private var connectionGeneration: UInt64 = 0
+    private var pendingCardMoves: [String: OptimisticCardMove] = [:]
+    private var pendingCardLabelUpdates: [String: OptimisticCardLabels] = [:]
+    private var pendingBoards: [String: Nauclio_V1_Board] = [:]
+    private var pendingProjects: [String: Nauclio_V1_Project] = [:]
     private var notificationStatuses: [String: String] = [:]
     private var persistConnectionSelection = true
     private var gatewayOrigins: [NauclioEndpoint]
@@ -189,6 +301,19 @@ final class NauclioStore {
             if $0.online != $1.online { return $0.online && !$1.online }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+    }
+
+    var gateways: [NauclioEndpoint] {
+        gatewayOrigins.sorted {
+            let lhsPrimary = $0.credentialID == NauclioEndpoint.defaults.first?.credentialID
+            let rhsPrimary = $1.credentialID == NauclioEndpoint.defaults.first?.credentialID
+            if lhsPrimary != rhsPrimary { return lhsPrimary }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    var activeGateway: NauclioEndpoint {
+        gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID }) ?? endpoint.gatewayEndpoint
     }
 
     var hasLoadedWorkspace: Bool {
@@ -261,8 +386,10 @@ final class NauclioStore {
     func connect(to newEndpoint: NauclioEndpoint? = nil, automatic: Bool = false) async {
         if !automatic { reconnectTask?.cancel(); reconnectTask = nil }
         let requested = newEndpoint ?? endpoint
-        let preferredDaemonID = requested.daemonID ?? endpoint.daemonID
+        let preferredDaemonID = requested.daemonID ?? (requested.credentialID == endpoint.credentialID ? endpoint.daemonID : nil)
         let origin = gatewayOrigins.first(where: { $0.credentialID == requested.credentialID }) ?? requested.gatewayEndpoint
+        connectionGeneration &+= 1
+        let generation = connectionGeneration
         phase = .connecting
         stateTask?.cancel(); conversationTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel()
         rpc?.shutdown()
@@ -277,6 +404,11 @@ final class NauclioStore {
             gatewayRPC = control
             gatewayTask = Task { try? await control.run() }
             let daemonDirectory = try await control.daemons()
+            guard generation == connectionGeneration else {
+                gatewayTask?.cancel()
+                control.shutdown()
+                return
+            }
             gatewayAuthenticated = true
             let discovered = daemonDirectory.daemons.map {
                 NauclioEndpoint(
@@ -294,17 +426,12 @@ final class NauclioStore {
                 throw NSError(domain: "NauclioGateway", code: 1, userInfo: [NSLocalizedDescriptionKey: "No Nauclio daemons are enrolled for this account."])
             }
             endpoints = discovered
-            let target: NauclioEndpoint
-            if let preferredDaemonID {
-                guard let selected = discovered.first(where: { $0.daemonID == preferredDaemonID }) else {
-                    throw NSError(domain: "NauclioGateway", code: 4, userInfo: [NSLocalizedDescriptionKey: "This Nauclio daemon is no longer enrolled."])
-                }
-                target = selected
-            } else {
-                target = discovered.first(where: \.online) ?? discovered[0]
-            }
-            guard target.online else {
-                throw NSError(domain: "NauclioGateway", code: 3, userInfo: [NSLocalizedDescriptionKey: "This Nauclio daemon is offline."])
+            let target = MachineRoutingPolicy.automaticConnectionTarget(
+                from: discovered,
+                preferredDaemonID: preferredDaemonID
+            )
+            guard let target else {
+                throw NSError(domain: "NauclioGateway", code: 3, userInfo: [NSLocalizedDescriptionKey: "No enrolled Nauclio machines are online."])
             }
 
             let dataPlane = try await selectDataPlane(
@@ -312,6 +439,13 @@ final class NauclioStore {
                 target: target,
                 gatewayAccessToken: accessToken
             )
+            guard generation == connectionGeneration else {
+                dataPlane.task.cancel()
+                dataPlane.rpc.shutdown()
+                gatewayTask?.cancel()
+                control.shutdown()
+                return
+            }
             gatewayTask?.cancel()
             control.shutdown()
             gatewayTask = nil
@@ -363,6 +497,7 @@ final class NauclioStore {
             connectionTask = nil
             rpc?.shutdown()
             rpc = nil
+            guard generation == connectionGeneration else { return }
             if !gatewayAuthenticated, let rpcError = error as? RPCError, rpcError.code == .unauthenticated {
                 phase = .authenticationRequired
                 errorMessage = nil
@@ -521,17 +656,20 @@ final class NauclioStore {
     }
 
     func disconnect() {
+        connectionGeneration &+= 1
         stateTask?.cancel(); conversationTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); reconnectTask?.cancel()
         reconnectTask = nil
         rpc?.shutdown(); rpc = nil
         phase = .disconnected
     }
 
-    func setEndpoint(_ endpoint: NauclioEndpoint) async {
-        if endpoint.daemonID == nil, !gatewayOrigins.contains(where: { $0.credentialID == endpoint.credentialID }) {
-            gatewayOrigins.append(endpoint)
+    func chooseGateway(_ gateway: NauclioEndpoint) async {
+        guard gateway.daemonID == nil else { return }
+        if !gatewayOrigins.contains(where: { $0.credentialID == gateway.credentialID }) {
+            gatewayOrigins.append(gateway)
         }
-        await connect(to: endpoint)
+        endpoint = gateway
+        await connect(to: gateway)
     }
 
     func saveEndpoint(_ endpoint: NauclioEndpoint) async {
@@ -868,7 +1006,23 @@ final class NauclioStore {
     }
 
     private func applyGlobalSnapshot(_ snapshot: Nauclio_V1_GlobalSnapshot) {
-        let global = snapshot.state
+        var global = snapshot.state
+        let boardProjection = OptimisticWorkspaceProjection.reconcileBoards(global.boards, pending: pendingBoards)
+        global.boards = boardProjection.boards
+        pendingBoards = boardProjection.pending
+        let projectProjection = OptimisticWorkspaceProjection.reconcileProjects(global.projects, pending: pendingProjects)
+        global.projects = projectProjection.projects
+        pendingProjects = projectProjection.pending
+        let projection = OptimisticCardProjection.reconcile(
+            cards: global.cards,
+            moves: pendingCardMoves,
+            labels: pendingCardLabelUpdates
+        )
+        global.cards = projection.cards
+        pendingCardMoves = projection.moves
+        pendingCardLabelUpdates = projection.labels
+        movingCardIDs = Set(projection.moves.keys)
+        labelUpdatingCardIDs = Set(projection.labels.keys)
         for card in global.cards + global.chats {
             if let previous = notificationStatuses[card.id], previous != card.runtime,
                ["review", "waiting", "completed", "failed"].contains(card.runtime.lowercased()) {
@@ -1382,6 +1536,14 @@ final class NauclioStore {
         let original = state.cards.first(where: { $0.id == card.id }) ?? card
         let optimisticPosition = position ?? ((state.cards.filter { $0.id != card.id && $0.lane == lane }.map(\.position).max() ?? 0) + 1_024)
 
+        let operationID = UUID()
+        pendingCardMoves[card.id] = OptimisticCardMove(
+            operationID: operationID,
+            lane: lane,
+            position: optimisticPosition,
+            confirmsPosition: position != nil || original.lane == lane
+        )
+
         if let index = state.cards.firstIndex(where: { $0.id == card.id }) {
             var next = state
             next.cards[index].lane = lane
@@ -1389,7 +1551,6 @@ final class NauclioStore {
             state = next
         }
         movingCardIDs.insert(card.id)
-        defer { movingCardIDs.remove(card.id) }
 
         var request = Nauclio_V1_MoveCardRequest()
         request.cardID = card.id
@@ -1397,13 +1558,22 @@ final class NauclioStore {
         if let position { request.position = position }
         do {
             let moved = try await rpc.moveCard(request)
+            if var pending = pendingCardMoves[card.id], pending.operationID == operationID {
+                pending.position = moved.position
+                pending.confirmsPosition = pending.confirmsPosition || original.lane == lane
+                pendingCardMoves[card.id] = pending
+            } else if pendingCardMoves[card.id] != nil {
+                return
+            }
             if let index = state.cards.firstIndex(where: { $0.id == moved.id }) {
                 var next = state
                 next.cards[index] = moved
                 state = next
             }
-            await refreshState()
         } catch {
+            guard pendingCardMoves[card.id]?.operationID == operationID else { return }
+            pendingCardMoves.removeValue(forKey: card.id)
+            movingCardIDs.remove(card.id)
             if let index = state.cards.firstIndex(where: { $0.id == original.id }) {
                 var next = state
                 next.cards[index] = original
@@ -1446,24 +1616,29 @@ final class NauclioStore {
         let original = state.cards.first(where: { $0.id == card.id }) ?? card
         guard original.labelIds != normalized else { return }
 
+        let operationID = UUID()
+        pendingCardLabelUpdates[card.id] = .init(operationID: operationID, labelIDs: normalized)
+
         if let index = state.cards.firstIndex(where: { $0.id == card.id }) {
             var next = state
             next.cards[index].labelIds = normalized
             state = next
         }
         labelUpdatingCardIDs.insert(card.id)
-        defer { labelUpdatingCardIDs.remove(card.id) }
 
         var request = Nauclio_V1_SetCardLabelsRequest(); request.cardID = card.id; request.labelIds = normalized
         do {
             let updated = try await rpc.setCardLabels(request)
+            if let pending = pendingCardLabelUpdates[card.id], pending.operationID != operationID { return }
             if let index = state.cards.firstIndex(where: { $0.id == updated.id }) {
                 var next = state
                 next.cards[index] = updated
                 state = next
             }
-            await refreshState()
         } catch {
+            guard pendingCardLabelUpdates[card.id]?.operationID == operationID else { return }
+            pendingCardLabelUpdates.removeValue(forKey: card.id)
+            labelUpdatingCardIDs.remove(card.id)
             if let index = state.cards.firstIndex(where: { $0.id == original.id }) {
                 var next = state
                 next.cards[index] = original
@@ -1495,7 +1670,7 @@ final class NauclioStore {
             return try await rpc.listDirectories(request)
         }
         guard let daemonID = machine.daemonID else {
-            throw NSError(domain: "NauclioMachine", code: 3, userInfo: [NSLocalizedDescriptionKey: "The selected machine has no daemon identity."])
+            throw NSError(domain: "NauclioMachine", code: 3, userInfo: [NSLocalizedDescriptionKey: "The project host has no daemon identity."])
         }
         let client = try NauclioRPC(
             endpoint: machine,
@@ -1511,7 +1686,7 @@ final class NauclioStore {
         let target: NauclioEndpoint
         if let machineID {
             guard let selected = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil) else {
-                show(NSError(domain: "NauclioMachine", code: 1, userInfo: [NSLocalizedDescriptionKey: "The selected machine is no longer enrolled."]))
+                show(NSError(domain: "NauclioMachine", code: 1, userInfo: [NSLocalizedDescriptionKey: "The project host is no longer enrolled."]))
                 return
             }
             target = selected
@@ -1531,7 +1706,7 @@ final class NauclioStore {
                 response = try await rpc.createProject(request)
             } else {
                 guard let daemonID = target.daemonID else {
-                    throw NSError(domain: "NauclioMachine", code: 3, userInfo: [NSLocalizedDescriptionKey: "The selected machine has no daemon identity."])
+                    throw NSError(domain: "NauclioMachine", code: 3, userInfo: [NSLocalizedDescriptionKey: "The project host has no daemon identity."])
                 }
                 let client = try NauclioRPC(
                     endpoint: target,
@@ -1606,16 +1781,44 @@ final class NauclioStore {
         do { _ = try await rpc.setBoardArchivePolicy(request); archivePolicyPresented = false; await refreshState() } catch { show(error) }
     }
 
-    func createLabel(name: String, color: String) async {
+    func createLabel(name: String, color: String, instructions: String = "") async {
         guard let rpc else { return }
-        var request = Nauclio_V1_CreateBoardLabelRequest(); request.boardID = selectedBoardID; request.name = name; request.color = color
-        do { _ = try await rpc.createBoardLabel(request); await refreshState() } catch { show(error) }
+        var request = Nauclio_V1_CreateBoardLabelRequest(); request.boardID = selectedBoardID; request.name = name; request.color = color; request.instructions = instructions
+        do { acceptBoard(try await rpc.createBoardLabel(request)) } catch { show(error) }
+    }
+
+    func updateLabel(id: String, name: String, color: String, instructions: String) async {
+        guard let rpc else { return }
+        var request = Nauclio_V1_UpdateBoardLabelRequest()
+        request.boardID = selectedBoardID; request.labelID = id; request.name = name; request.color = color; request.instructions = instructions
+        do { acceptBoard(try await rpc.updateBoardLabel(request)) } catch { show(error) }
     }
 
     func deleteLabel(id: String) async {
         guard let rpc else { return }
         var request = Nauclio_V1_DeleteBoardLabelRequest(); request.boardID = selectedBoardID; request.labelID = id
-        do { _ = try await rpc.deleteBoardLabel(request); await refreshState() } catch { show(error) }
+        do { acceptBoard(try await rpc.deleteBoardLabel(request)) } catch { show(error) }
+    }
+
+    func acceptBoard(_ board: Nauclio_V1_Board) {
+        pendingBoards[board.id] = board
+        var next = state
+        if let index = next.boards.firstIndex(where: { $0.id == board.id }) { next.boards[index] = board }
+        else if board.projectID == selectedProjectID { next.boards.append(board) }
+        state = next
+        if var boards = navigationBoards[board.projectID], let index = boards.firstIndex(where: { $0.id == board.id }) {
+            boards[index] = board
+            navigationBoards[board.projectID] = boards
+        }
+    }
+
+    func acceptProject(_ project: Nauclio_V1_Project) {
+        pendingProjects[project.id] = project
+        projectDirectory[project.id] = project
+        var next = state
+        if let index = next.projects.firstIndex(where: { $0.id == project.id }) { next.projects[index] = project }
+        if next.project.id == project.id { next.project = project }
+        state = next
     }
 
     func loadFiles(path: String? = nil) async {
@@ -1703,7 +1906,10 @@ final class NauclioStore {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
-    func show(_ error: Error) { errorMessage = error.localizedDescription }
+    func show(_ error: Error) {
+        guard !Self.isExpectedCancellation(error) else { return }
+        errorMessage = error.localizedDescription
+    }
 }
 
 enum NauclioAttachmentError: LocalizedError {

@@ -55,6 +55,16 @@ class CardStartPolicyTest {
         assertNull(card().startLane(Board.getDefaultInstance()))
     }
 
+    @Test
+    fun operationAndConversationStatusOverrideAStaleCardRuntime() {
+        assertEquals("starting", resolvedCardRuntime("idle", "idle", CardOperation.STARTING))
+        assertEquals("running", resolvedCardRuntime("idle", "running"))
+        assertEquals("working", resolvedCardRuntime("working", "idle"))
+        assertEquals("cancelling", resolvedCardRuntime("running", "running", CardOperation.CANCELLING))
+        assertTrue(isActiveCardRuntime("streaming"))
+        assertFalse(isActiveCardRuntime("idle"))
+    }
+
     private fun card(
         scope: String = "board",
         lane: String = "todo",

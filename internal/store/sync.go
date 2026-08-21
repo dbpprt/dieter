@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const SyncProjectionVersion = 1
+const SyncProjectionVersion = 2
 
 const (
 	maxSyncJournalBytes   = 16 << 20
@@ -21,8 +21,10 @@ const (
 )
 
 // SyncEvent is the durable, daemon-wide ordering boundary. The first protocol
-// version intentionally uses it as a projection invalidation event; the
-// server attaches a bounded current projection to every streamed event.
+// journal intentionally remains a conservative invalidation boundary. The
+// server coalesces these events and derives a small metadata delta for native
+// clients, so high-frequency conversation writes never duplicate transcripts
+// onto the daemon-wide stream.
 type SyncEvent struct {
 	Sequence  uint64 `json:"sequence"`
 	Kind      string `json:"kind"`

@@ -377,6 +377,10 @@ func (api *connectAPI) MoveCard(ctx context.Context, request *connect.Request[na
 	return connectUnary(ctx, request, api.core.MoveCard)
 }
 
+func (api *connectAPI) StartCard(ctx context.Context, request *connect.Request[naucliov1.StartCardRequest]) (*connect.Response[naucliov1.StartCardResponse], error) {
+	return connectUnary(ctx, request, api.core.StartCard)
+}
+
 func (api *connectAPI) SetCardLabels(ctx context.Context, request *connect.Request[naucliov1.SetCardLabelsRequest]) (*connect.Response[naucliov1.Card], error) {
 	return connectUnary(ctx, request, api.core.SetCardLabels)
 }

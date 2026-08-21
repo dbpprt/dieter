@@ -3,20 +3,20 @@
 Native Kotlin/Jetpack Compose client for Nauclio. It follows the 19 phone and
 unfolded views extracted losslessly from `Native Android PWA redesign1.pdf`,
 including the cross-project Spaces overview and board quick switcher. It uses
-an adaptive master-detail layout at 840 dp and talks to Nauclio through the
+an adaptive master-detail layout for medium and expanded windows at 600 dp and
+above, including unfolded Galaxy Fold displays, and talks to Nauclio through the
 machine-only gateway protocol and native gRPC/Protobuf Lite.
 
 The default endpoint is `https://board.dbpprt.com`. One native OAuth/PKCE
 session discovers every daemon enrolled to the GitHub account. The connection
-dialog shows their presence and route state, allows switching machines, tries
-gateway-provided authenticated TLS candidates, and falls back to the encrypted
-relay. Local-route discovery is automatic and never requires ADB port mapping
-or a manually entered daemon address. The selected daemon is persisted
-on-device.
+dialog shows their presence and route state. Nauclio automatically works across
+all online machines, tries gateway-provided authenticated TLS candidates, and
+falls back to the encrypted relay. Local-route discovery is automatic and never
+requires ADB port mapping or a manually entered daemon address.
 
 Spaces shows all projects discovered across online daemons, with a hostname
-badge on every project and a horizontally scrollable machine picker. Opening a
-project or chat switches to its owning daemon before starting streams or
+badge on every project when more than one host is present. Opening a project or
+chat automatically routes to its owning daemon before starting streams or
 mutations. This project-to-host directory lives only in the Android process;
 the gateway remains a machine and presence directory.
 
@@ -27,7 +27,7 @@ are never persisted by the app.
 
 The connection is process-wide rather than screen-scoped. While **Stay
 connected in background** is enabled, a `remoteMessaging` foreground service
-keeps the selected workspace stream and cross-project chat/card polling alive,
+keeps the automatically routed workspace stream and cross-project chat/card polling alive,
 and exposes a permanent connection notification with **Disconnect** and
 **Open** actions. Running standalone chats receive separate dismissible
 notifications; dismissing one suppresses only that running session, and its

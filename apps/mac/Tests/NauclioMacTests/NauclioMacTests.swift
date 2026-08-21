@@ -189,6 +189,93 @@ func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
     #expect(BoardLabelAssignment.adding("l_1", to: ["l_1", "l_2"]) == ["l_1", "l_2"])
 }
 
+@Test func shiftReturnCreatesANewlineAndPlainReturnSends() {
+    #expect(ComposerReturnPolicy.sendsMessage(shiftPressed: false))
+    #expect(!ComposerReturnPolicy.sendsMessage(shiftPressed: true))
+}
+
+@Test func optimisticCardMoveSurvivesAStaleProjectionUntilSyncConfirmsIt() {
+    var stale = Nauclio_V1_Card()
+    stale.id = "card-one"
+    stale.lane = "todo"
+    stale.position = 1_024
+    let move = OptimisticCardMove(
+        operationID: UUID(),
+        lane: "review",
+        position: 2_048,
+        confirmsPosition: true
+    )
+
+    let projected = OptimisticCardProjection.reconcile(
+        cards: [stale],
+        moves: [stale.id: move],
+        labels: [:]
+    )
+    #expect(projected.cards[0].lane == "review")
+    #expect(projected.cards[0].position == 2_048)
+    #expect(projected.moves[stale.id] == move)
+
+    var confirmed = stale
+    confirmed.lane = "review"
+    confirmed.position = 2_048
+    let synchronized = OptimisticCardProjection.reconcile(
+        cards: [confirmed],
+        moves: projected.moves,
+        labels: [:]
+    )
+    #expect(synchronized.cards[0] == confirmed)
+    #expect(synchronized.moves.isEmpty)
+}
+
+@Test func optimisticCardLabelsStayVisibleUntilTheSynchronizedCardMatches() {
+    var stale = Nauclio_V1_Card()
+    stale.id = "card-labels"
+    stale.labelIds = ["old"]
+    let update = OptimisticCardLabels(operationID: UUID(), labelIDs: ["new"])
+
+    let projected = OptimisticCardProjection.reconcile(
+        cards: [stale],
+        moves: [:],
+        labels: [stale.id: update]
+    )
+    #expect(projected.cards[0].labelIds == ["new"])
+    #expect(projected.labels[stale.id] == update)
+
+    var confirmed = stale
+    confirmed.labelIds = ["new"]
+    let synchronized = OptimisticCardProjection.reconcile(
+        cards: [confirmed],
+        moves: [:],
+        labels: projected.labels
+    )
+    #expect(synchronized.labels.isEmpty)
+}
+
+@Test func boardLabelChangesSurviveAStaleWorkspaceProjection() {
+    var stale = Nauclio_V1_Board()
+    stale.id = "board-one"
+    var updated = stale
+    var label = Nauclio_V1_Label()
+    label.id = "label-one"
+    label.name = "Backend"
+    label.instructions = "Run the backend checks."
+    updated.labels = [label]
+
+    let projected = OptimisticWorkspaceProjection.reconcileBoards(
+        [stale],
+        pending: [updated.id: updated]
+    )
+    #expect(projected.boards == [updated])
+    #expect(projected.pending[updated.id] == updated)
+
+    let synchronized = OptimisticWorkspaceProjection.reconcileBoards(
+        [updated],
+        pending: projected.pending
+    )
+    #expect(synchronized.boards == [updated])
+    #expect(synchronized.pending.isEmpty)
+}
+
 @Test func conversationScrollBehaviorUsesANearBottomThreshold() {
     #expect(ConversationScrollBehavior.isNearBottom(visibleMaxY: 928, contentHeight: 1_000))
     #expect(!ConversationScrollBehavior.isNearBottom(visibleMaxY: 927, contentHeight: 1_000))
@@ -314,6 +401,33 @@ func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
     #expect(NauclioSettingsSection.allCases.map(\.rawValue) == [
         "General", "Connection", "Prompts", "Notifications", "Agents",
     ])
+}
+
+@Test func onlyAuthenticationRequiresAConnectionOverlay() {
+    #expect(ConnectionPhase.authenticationRequired.needsConnectionOverlay)
+    #expect(!ConnectionPhase.connecting.needsConnectionOverlay)
+    #expect(!ConnectionPhase.disconnected.needsConnectionOverlay)
+}
+
+@Test func machineRoutingAutomaticallyUsesAnOnlineTarget() {
+    let gateway = NauclioEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
+    let offlinePreferred = NauclioEndpoint(
+        name: "Studio Mac", host: gateway.host, port: gateway.port, secure: true,
+        daemonID: "mac", online: false
+    )
+    let onlineFallback = NauclioEndpoint(
+        name: "Build server", host: gateway.host, port: gateway.port, secure: true,
+        daemonID: "server", online: true
+    )
+
+    #expect(MachineRoutingPolicy.automaticConnectionTarget(
+        from: [offlinePreferred, onlineFallback],
+        preferredDaemonID: "mac"
+    ) == onlineFallback)
+    #expect(MachineRoutingPolicy.automaticConnectionTarget(
+        from: [offlinePreferred],
+        preferredDaemonID: "mac"
+    ) == nil)
 }
 
 @Test func projectFileLanguageDetectionCoversCommonSourceFormats() {

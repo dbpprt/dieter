@@ -78,6 +78,8 @@ enum class Destination { CHATS, BOARD, FILES, SCHEDULES }
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
 
+enum class CardOperation { STARTING, MOVING, CANCELLING }
+
 data class NauclioUiState(
     val destination: Destination = Destination.BOARD,
     val appSurface: AppSurface? = null,
@@ -144,6 +146,8 @@ data class NauclioUiState(
     val pendingMessageIds: Set<String> = emptySet(),
     val acceptedOutboxIds: Set<String> = emptySet(),
     val failedOutboxIds: Set<String> = emptySet(),
+    val cardOperations: Map<String, CardOperation> = emptyMap(),
+    val cardOperationErrors: Map<String, String> = emptyMap(),
 ) {
     val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
     val project: Project? get() = projects.firstOrNull { it.id == selectedProjectId }
@@ -245,8 +249,6 @@ class NauclioViewModel(
     }
 
     fun signIn() = connectionManager.signIn()
-
-    fun selectDaemon(endpointId: String) = connectionManager.selectDaemon(endpointId)
 
     fun disconnect() {
         conversationJob?.cancel()
@@ -669,6 +671,7 @@ class NauclioViewModel(
             )
         }
         connectionManager.selectProject(projectId)
+        startConversationStream(card.id)
     }
 
     fun openNotificationCard(cardId: String) {
@@ -684,6 +687,7 @@ class NauclioViewModel(
                 .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
                 .collectLatest { snapshot ->
                     if (_state.value.selectedCardId != cardId) return@collectLatest
+                    connectionManager.acceptConversation(snapshot)
                     _state.update { current ->
                         current.copy(
                             conversation = snapshot,
@@ -858,17 +862,17 @@ class NauclioViewModel(
         updateCard(repository.moveCard(cardId, lane))
     }
 
-    fun startBoardCard(cardId: String) = action {
+    fun startBoardCard(cardId: String) {
         val current = _state.value
-        val card = current.cards.firstOrNull { it.id == cardId } ?: return@action
+        val card = current.cards.firstOrNull { it.id == cardId } ?: return
         val board = current.board?.takeIf { it.id == card.boardId }
             ?: current.boards.firstOrNull { it.id == card.boardId }
         startCard(card, board)
     }
 
-    fun startSelectedCard() = action {
+    fun startSelectedCard() {
         val current = _state.value
-        val card = current.selectedCard ?: return@action
+        val card = current.selectedCard ?: return
         val board = current.conversation?.detail?.board ?: current.board
         startCard(card, board)
     }
@@ -894,9 +898,9 @@ class NauclioViewModel(
         action { updateCard(repository.setCardLabels(cardId, labelIds)) }
     }
 
-    fun cancelSelected() = action {
-        val id = _state.value.selectedCardId ?: return@action
-        repository.cancelCard(id)
+    fun cancelSelected() {
+        val id = _state.value.selectedCardId ?: return
+        cardAction(id, CardOperation.CANCELLING) { repository.cancelCard(id) }
     }
 
     fun renameSelected(title: String) = action {
@@ -921,9 +925,15 @@ class NauclioViewModel(
         refreshStateOnce()
     }
 
-    private suspend fun startCard(card: Card, board: Board?) {
-        val runningLane = card.startLane(board) ?: return
-        updateCard(repository.moveCard(card.id, runningLane))
+    private fun startCard(card: Card, board: Board?) {
+        if (card.startLane(board) == null) return
+        if (_state.value.cardOperations.containsKey(card.id)) return
+        val optimistic = card.toBuilder().setRuntime("starting").build()
+        updateCard(optimistic)
+        cardAction(card.id, CardOperation.STARTING, rollback = { updateCard(card) }) {
+            val response = connectionManager.startCard(card.id)
+            updateCard(response.card)
+        }
     }
 
     fun togglePin(card: Card) = action {
@@ -1201,6 +1211,39 @@ class NauclioViewModel(
                 } finally {
                     _state.update { it.copy(working = false) }
                 }
+            }
+        }
+    }
+
+    private fun cardAction(
+        cardId: String,
+        operation: CardOperation,
+        rollback: (() -> Unit)? = null,
+        block: suspend () -> Unit,
+    ) {
+        if (_state.value.cardOperations.containsKey(cardId)) return
+        _state.update {
+            it.copy(
+                cardOperations = it.cardOperations + (cardId to operation),
+                cardOperationErrors = it.cardOperationErrors - cardId,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                rollback?.invoke()
+                val message = readableError(error)
+                _state.update {
+                    it.copy(
+                        error = message,
+                        cardOperationErrors = it.cardOperationErrors + (cardId to message),
+                    )
+                }
+            } finally {
+                _state.update { it.copy(cardOperations = it.cardOperations - cardId) }
             }
         }
     }

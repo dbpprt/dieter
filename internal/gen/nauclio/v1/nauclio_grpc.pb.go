@@ -57,6 +57,7 @@ const (
 	NauclioService_SendMessage_FullMethodName              = "/nauclio.v1.NauclioService/SendMessage"
 	NauclioService_AddComment_FullMethodName               = "/nauclio.v1.NauclioService/AddComment"
 	NauclioService_MoveCard_FullMethodName                 = "/nauclio.v1.NauclioService/MoveCard"
+	NauclioService_StartCard_FullMethodName                = "/nauclio.v1.NauclioService/StartCard"
 	NauclioService_SetCardLabels_FullMethodName            = "/nauclio.v1.NauclioService/SetCardLabels"
 	NauclioService_CancelCard_FullMethodName               = "/nauclio.v1.NauclioService/CancelCard"
 	NauclioService_RenameCard_FullMethodName               = "/nauclio.v1.NauclioService/RenameCard"
@@ -123,6 +124,10 @@ type NauclioServiceClient interface {
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
 	AddComment(ctx context.Context, in *AddCommentRequest, opts ...grpc.CallOption) (*Comment, error)
 	MoveCard(ctx context.Context, in *MoveCardRequest, opts ...grpc.CallOption) (*Card, error)
+	// StartCard is an idempotent admission command. It durably admits the
+	// initial turn and returns the fresh card projection without waiting for
+	// the agent turn to finish.
+	StartCard(ctx context.Context, in *StartCardRequest, opts ...grpc.CallOption) (*StartCardResponse, error)
 	SetCardLabels(ctx context.Context, in *SetCardLabelsRequest, opts ...grpc.CallOption) (*Card, error)
 	CancelCard(ctx context.Context, in *GetCardRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RenameCard(ctx context.Context, in *RenameCardRequest, opts ...grpc.CallOption) (*Card, error)
@@ -550,6 +555,16 @@ func (c *nauclioServiceClient) MoveCard(ctx context.Context, in *MoveCardRequest
 	return out, nil
 }
 
+func (c *nauclioServiceClient) StartCard(ctx context.Context, in *StartCardRequest, opts ...grpc.CallOption) (*StartCardResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartCardResponse)
+	err := c.cc.Invoke(ctx, NauclioService_StartCard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nauclioServiceClient) SetCardLabels(ctx context.Context, in *SetCardLabelsRequest, opts ...grpc.CallOption) (*Card, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Card)
@@ -794,6 +809,10 @@ type NauclioServiceServer interface {
 	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
 	AddComment(context.Context, *AddCommentRequest) (*Comment, error)
 	MoveCard(context.Context, *MoveCardRequest) (*Card, error)
+	// StartCard is an idempotent admission command. It durably admits the
+	// initial turn and returns the fresh card projection without waiting for
+	// the agent turn to finish.
+	StartCard(context.Context, *StartCardRequest) (*StartCardResponse, error)
 	SetCardLabels(context.Context, *SetCardLabelsRequest) (*Card, error)
 	CancelCard(context.Context, *GetCardRequest) (*emptypb.Empty, error)
 	RenameCard(context.Context, *RenameCardRequest) (*Card, error)
@@ -934,6 +953,9 @@ func (UnimplementedNauclioServiceServer) AddComment(context.Context, *AddComment
 }
 func (UnimplementedNauclioServiceServer) MoveCard(context.Context, *MoveCardRequest) (*Card, error) {
 	return nil, status.Error(codes.Unimplemented, "method MoveCard not implemented")
+}
+func (UnimplementedNauclioServiceServer) StartCard(context.Context, *StartCardRequest) (*StartCardResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartCard not implemented")
 }
 func (UnimplementedNauclioServiceServer) SetCardLabels(context.Context, *SetCardLabelsRequest) (*Card, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetCardLabels not implemented")
@@ -1661,6 +1683,24 @@ func _NauclioService_MoveCard_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NauclioService_StartCard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartCardRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NauclioServiceServer).StartCard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NauclioService_StartCard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NauclioServiceServer).StartCard(ctx, req.(*StartCardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NauclioService_SetCardLabels_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetCardLabelsRequest)
 	if err := dec(in); err != nil {
@@ -2163,6 +2203,10 @@ var NauclioService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MoveCard",
 			Handler:    _NauclioService_MoveCard_Handler,
+		},
+		{
+			MethodName: "StartCard",
+			Handler:    _NauclioService_StartCard_Handler,
 		},
 		{
 			MethodName: "SetCardLabels",

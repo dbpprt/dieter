@@ -99,6 +99,10 @@ enum ConnectionPhase: Equatable, Sendable {
         if case .connected = self { return true }
         return false
     }
+
+    var needsConnectionOverlay: Bool {
+        self == .authenticationRequired
+    }
 }
 
 enum MachinePresenceText {

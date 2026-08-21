@@ -566,9 +566,9 @@ func (x *SyncEvent) GetCommandId() string {
 	return ""
 }
 
-// GlobalSnapshot is deliberately bounded: it contains the Nauclio-owned UI
-// projection and recent conversation tails, while full tool payloads, files,
-// and older history remain lazy.
+// GlobalSnapshot is deliberately bounded. Clients that request a zero
+// conversation_limit receive only workspace metadata here and use
+// WatchConversation for the currently visible conversation.
 type GlobalSnapshot struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	State         *State                  `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
@@ -645,6 +645,149 @@ func (x *GlobalSnapshot) GetSettings() *Settings {
 	return nil
 }
 
+// GlobalDelta carries only changed metadata after the initial bootstrap.
+// Removed IDs make the delta independently applicable to a persisted client
+// projection. Conversation content is intentionally not part of this stream.
+type GlobalDelta struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Projects              []*Project             `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
+	RemovedProjectIds     []string               `protobuf:"bytes,2,rep,name=removed_project_ids,json=removedProjectIds,proto3" json:"removed_project_ids,omitempty"`
+	Boards                []*Board               `protobuf:"bytes,3,rep,name=boards,proto3" json:"boards,omitempty"`
+	RemovedBoardIds       []string               `protobuf:"bytes,4,rep,name=removed_board_ids,json=removedBoardIds,proto3" json:"removed_board_ids,omitempty"`
+	Cards                 []*Card                `protobuf:"bytes,5,rep,name=cards,proto3" json:"cards,omitempty"`
+	RemovedCardIds        []string               `protobuf:"bytes,6,rep,name=removed_card_ids,json=removedCardIds,proto3" json:"removed_card_ids,omitempty"`
+	Chats                 []*Card                `protobuf:"bytes,7,rep,name=chats,proto3" json:"chats,omitempty"`
+	RemovedChatIds        []string               `protobuf:"bytes,8,rep,name=removed_chat_ids,json=removedChatIds,proto3" json:"removed_chat_ids,omitempty"`
+	Schedules             []*Schedule            `protobuf:"bytes,9,rep,name=schedules,proto3" json:"schedules,omitempty"`
+	RemovedScheduleIds    []string               `protobuf:"bytes,10,rep,name=removed_schedule_ids,json=removedScheduleIds,proto3" json:"removed_schedule_ids,omitempty"`
+	ScheduleRuns          []*ScheduleRun         `protobuf:"bytes,11,rep,name=schedule_runs,json=scheduleRuns,proto3" json:"schedule_runs,omitempty"`
+	RemovedScheduleRunIds []string               `protobuf:"bytes,12,rep,name=removed_schedule_run_ids,json=removedScheduleRunIds,proto3" json:"removed_schedule_run_ids,omitempty"`
+	Settings              *Settings              `protobuf:"bytes,13,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *GlobalDelta) Reset() {
+	*x = GlobalDelta{}
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GlobalDelta) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GlobalDelta) ProtoMessage() {}
+
+func (x *GlobalDelta) ProtoReflect() protoreflect.Message {
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GlobalDelta.ProtoReflect.Descriptor instead.
+func (*GlobalDelta) Descriptor() ([]byte, []int) {
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GlobalDelta) GetProjects() []*Project {
+	if x != nil {
+		return x.Projects
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetRemovedProjectIds() []string {
+	if x != nil {
+		return x.RemovedProjectIds
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetBoards() []*Board {
+	if x != nil {
+		return x.Boards
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetRemovedBoardIds() []string {
+	if x != nil {
+		return x.RemovedBoardIds
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetCards() []*Card {
+	if x != nil {
+		return x.Cards
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetRemovedCardIds() []string {
+	if x != nil {
+		return x.RemovedCardIds
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetChats() []*Card {
+	if x != nil {
+		return x.Chats
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetRemovedChatIds() []string {
+	if x != nil {
+		return x.RemovedChatIds
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetSchedules() []*Schedule {
+	if x != nil {
+		return x.Schedules
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetRemovedScheduleIds() []string {
+	if x != nil {
+		return x.RemovedScheduleIds
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetScheduleRuns() []*ScheduleRun {
+	if x != nil {
+		return x.ScheduleRuns
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetRemovedScheduleRunIds() []string {
+	if x != nil {
+		return x.RemovedScheduleRunIds
+	}
+	return nil
+}
+
+func (x *GlobalDelta) GetSettings() *Settings {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
 type SyncFrame struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Cursor        *SyncCursor            `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
@@ -653,13 +796,14 @@ type SyncFrame struct {
 	Reset_        bool                   `protobuf:"varint,4,opt,name=reset,proto3" json:"reset,omitempty"`
 	Heartbeat     bool                   `protobuf:"varint,5,opt,name=heartbeat,proto3" json:"heartbeat,omitempty"`
 	Events        []*SyncEvent           `protobuf:"bytes,6,rep,name=events,proto3" json:"events,omitempty"`
+	Delta         *GlobalDelta           `protobuf:"bytes,7,opt,name=delta,proto3" json:"delta,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SyncFrame) Reset() {
 	*x = SyncFrame{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[9]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -671,7 +815,7 @@ func (x *SyncFrame) String() string {
 func (*SyncFrame) ProtoMessage() {}
 
 func (x *SyncFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[9]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -684,7 +828,7 @@ func (x *SyncFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncFrame.ProtoReflect.Descriptor instead.
 func (*SyncFrame) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{9}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SyncFrame) GetCursor() *SyncCursor {
@@ -729,6 +873,13 @@ func (x *SyncFrame) GetEvents() []*SyncEvent {
 	return nil
 }
 
+func (x *SyncFrame) GetDelta() *GlobalDelta {
+	if x != nil {
+		return x.Delta
+	}
+	return nil
+}
+
 type ProjectsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Projects      []*Project             `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
@@ -738,7 +889,7 @@ type ProjectsResponse struct {
 
 func (x *ProjectsResponse) Reset() {
 	*x = ProjectsResponse{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[10]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -750,7 +901,7 @@ func (x *ProjectsResponse) String() string {
 func (*ProjectsResponse) ProtoMessage() {}
 
 func (x *ProjectsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[10]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -763,7 +914,7 @@ func (x *ProjectsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectsResponse.ProtoReflect.Descriptor instead.
 func (*ProjectsResponse) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{10}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ProjectsResponse) GetProjects() []*Project {
@@ -782,7 +933,7 @@ type CardsResponse struct {
 
 func (x *CardsResponse) Reset() {
 	*x = CardsResponse{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[11]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -794,7 +945,7 @@ func (x *CardsResponse) String() string {
 func (*CardsResponse) ProtoMessage() {}
 
 func (x *CardsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[11]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -807,7 +958,7 @@ func (x *CardsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CardsResponse.ProtoReflect.Descriptor instead.
 func (*CardsResponse) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{11}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CardsResponse) GetCards() []*Card {
@@ -837,7 +988,7 @@ type Project struct {
 
 func (x *Project) Reset() {
 	*x = Project{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[12]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -849,7 +1000,7 @@ func (x *Project) String() string {
 func (*Project) ProtoMessage() {}
 
 func (x *Project) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[12]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -862,7 +1013,7 @@ func (x *Project) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Project.ProtoReflect.Descriptor instead.
 func (*Project) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{12}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Project) GetId() string {
@@ -968,7 +1119,7 @@ type Board struct {
 
 func (x *Board) Reset() {
 	*x = Board{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[13]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -980,7 +1131,7 @@ func (x *Board) String() string {
 func (*Board) ProtoMessage() {}
 
 func (x *Board) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[13]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -993,7 +1144,7 @@ func (x *Board) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Board.ProtoReflect.Descriptor instead.
 func (*Board) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{13}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Board) GetId() string {
@@ -1085,7 +1236,7 @@ type Label struct {
 
 func (x *Label) Reset() {
 	*x = Label{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[14]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1097,7 +1248,7 @@ func (x *Label) String() string {
 func (*Label) ProtoMessage() {}
 
 func (x *Label) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[14]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1110,7 +1261,7 @@ func (x *Label) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Label.ProtoReflect.Descriptor instead.
 func (*Label) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{14}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Label) GetId() string {
@@ -1151,7 +1302,7 @@ type Lane struct {
 
 func (x *Lane) Reset() {
 	*x = Lane{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[15]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1163,7 +1314,7 @@ func (x *Lane) String() string {
 func (*Lane) ProtoMessage() {}
 
 func (x *Lane) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[15]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1176,7 +1327,7 @@ func (x *Lane) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Lane.ProtoReflect.Descriptor instead.
 func (*Lane) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{15}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Lane) GetId() string {
@@ -1228,7 +1379,7 @@ type Card struct {
 
 func (x *Card) Reset() {
 	*x = Card{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[16]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1240,7 +1391,7 @@ func (x *Card) String() string {
 func (*Card) ProtoMessage() {}
 
 func (x *Card) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[16]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1253,7 +1404,7 @@ func (x *Card) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Card.ProtoReflect.Descriptor instead.
 func (*Card) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{16}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Card) GetId() string {
@@ -1457,7 +1608,7 @@ type CardOrigin struct {
 
 func (x *CardOrigin) Reset() {
 	*x = CardOrigin{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[17]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1469,7 +1620,7 @@ func (x *CardOrigin) String() string {
 func (*CardOrigin) ProtoMessage() {}
 
 func (x *CardOrigin) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[17]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1482,7 +1633,7 @@ func (x *CardOrigin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CardOrigin.ProtoReflect.Descriptor instead.
 func (*CardOrigin) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{17}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CardOrigin) GetKind() string {
@@ -1525,7 +1676,7 @@ type CardDetail struct {
 
 func (x *CardDetail) Reset() {
 	*x = CardDetail{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[18]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1537,7 +1688,7 @@ func (x *CardDetail) String() string {
 func (*CardDetail) ProtoMessage() {}
 
 func (x *CardDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[18]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1550,7 +1701,7 @@ func (x *CardDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CardDetail.ProtoReflect.Descriptor instead.
 func (*CardDetail) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{18}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CardDetail) GetCard() *Card {
@@ -1594,7 +1745,7 @@ type Comment struct {
 
 func (x *Comment) Reset() {
 	*x = Comment{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[19]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1606,7 +1757,7 @@ func (x *Comment) String() string {
 func (*Comment) ProtoMessage() {}
 
 func (x *Comment) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[19]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1619,7 +1770,7 @@ func (x *Comment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Comment.ProtoReflect.Descriptor instead.
 func (*Comment) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{19}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Comment) GetId() string {
@@ -1671,7 +1822,7 @@ type Author struct {
 
 func (x *Author) Reset() {
 	*x = Author{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[20]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1683,7 +1834,7 @@ func (x *Author) String() string {
 func (*Author) ProtoMessage() {}
 
 func (x *Author) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[20]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1696,7 +1847,7 @@ func (x *Author) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Author.ProtoReflect.Descriptor instead.
 func (*Author) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{20}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Author) GetKind() string {
@@ -1760,7 +1911,7 @@ type Conversation struct {
 
 func (x *Conversation) Reset() {
 	*x = Conversation{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[21]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1772,7 +1923,7 @@ func (x *Conversation) String() string {
 func (*Conversation) ProtoMessage() {}
 
 func (x *Conversation) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[21]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1785,7 +1936,7 @@ func (x *Conversation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Conversation.ProtoReflect.Descriptor instead.
 func (*Conversation) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{21}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Conversation) GetProjectionVersion() int32 {
@@ -1903,7 +2054,7 @@ type Subagent struct {
 
 func (x *Subagent) Reset() {
 	*x = Subagent{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[22]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1915,7 +2066,7 @@ func (x *Subagent) String() string {
 func (*Subagent) ProtoMessage() {}
 
 func (x *Subagent) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[22]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1928,7 +2079,7 @@ func (x *Subagent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Subagent.ProtoReflect.Descriptor instead.
 func (*Subagent) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{22}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *Subagent) GetId() string {
@@ -2158,7 +2309,7 @@ type TaskPlan struct {
 
 func (x *TaskPlan) Reset() {
 	*x = TaskPlan{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[23]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2170,7 +2321,7 @@ func (x *TaskPlan) String() string {
 func (*TaskPlan) ProtoMessage() {}
 
 func (x *TaskPlan) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[23]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2183,7 +2334,7 @@ func (x *TaskPlan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskPlan.ProtoReflect.Descriptor instead.
 func (*TaskPlan) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{23}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *TaskPlan) GetId() string {
@@ -2259,7 +2410,7 @@ type TaskPlanPhase struct {
 
 func (x *TaskPlanPhase) Reset() {
 	*x = TaskPlanPhase{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[24]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2271,7 +2422,7 @@ func (x *TaskPlanPhase) String() string {
 func (*TaskPlanPhase) ProtoMessage() {}
 
 func (x *TaskPlanPhase) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[24]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2284,7 +2435,7 @@ func (x *TaskPlanPhase) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskPlanPhase.ProtoReflect.Descriptor instead.
 func (*TaskPlanPhase) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{24}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *TaskPlanPhase) GetName() string {
@@ -2316,7 +2467,7 @@ type TaskPlanItem struct {
 
 func (x *TaskPlanItem) Reset() {
 	*x = TaskPlanItem{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[25]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2328,7 +2479,7 @@ func (x *TaskPlanItem) String() string {
 func (*TaskPlanItem) ProtoMessage() {}
 
 func (x *TaskPlanItem) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[25]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2341,7 +2492,7 @@ func (x *TaskPlanItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskPlanItem.ProtoReflect.Descriptor instead.
 func (*TaskPlanItem) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{25}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *TaskPlanItem) GetId() string {
@@ -2405,7 +2556,7 @@ type UiMessage struct {
 
 func (x *UiMessage) Reset() {
 	*x = UiMessage{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[26]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2417,7 +2568,7 @@ func (x *UiMessage) String() string {
 func (*UiMessage) ProtoMessage() {}
 
 func (x *UiMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[26]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2430,7 +2581,7 @@ func (x *UiMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UiMessage.ProtoReflect.Descriptor instead.
 func (*UiMessage) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{26}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *UiMessage) GetId() string {
@@ -2488,7 +2639,7 @@ type MessagePart struct {
 
 func (x *MessagePart) Reset() {
 	*x = MessagePart{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[27]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2500,7 +2651,7 @@ func (x *MessagePart) String() string {
 func (*MessagePart) ProtoMessage() {}
 
 func (x *MessagePart) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[27]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2513,7 +2664,7 @@ func (x *MessagePart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessagePart.ProtoReflect.Descriptor instead.
 func (*MessagePart) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{27}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *MessagePart) GetType() string {
@@ -2665,7 +2816,7 @@ type PendingTool struct {
 
 func (x *PendingTool) Reset() {
 	*x = PendingTool{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[28]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2677,7 +2828,7 @@ func (x *PendingTool) String() string {
 func (*PendingTool) ProtoMessage() {}
 
 func (x *PendingTool) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[28]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2690,7 +2841,7 @@ func (x *PendingTool) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingTool.ProtoReflect.Descriptor instead.
 func (*PendingTool) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{28}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *PendingTool) GetId() string {
@@ -2761,7 +2912,7 @@ type QueuedMessage struct {
 
 func (x *QueuedMessage) Reset() {
 	*x = QueuedMessage{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[29]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2773,7 +2924,7 @@ func (x *QueuedMessage) String() string {
 func (*QueuedMessage) ProtoMessage() {}
 
 func (x *QueuedMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[29]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2786,7 +2937,7 @@ func (x *QueuedMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueuedMessage.ProtoReflect.Descriptor instead.
 func (*QueuedMessage) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{29}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *QueuedMessage) GetId() string {
@@ -2829,7 +2980,7 @@ type ConversationPage struct {
 
 func (x *ConversationPage) Reset() {
 	*x = ConversationPage{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[30]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2841,7 +2992,7 @@ func (x *ConversationPage) String() string {
 func (*ConversationPage) ProtoMessage() {}
 
 func (x *ConversationPage) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[30]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2854,7 +3005,7 @@ func (x *ConversationPage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationPage.ProtoReflect.Descriptor instead.
 func (*ConversationPage) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{30}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ConversationPage) GetStart() int32 {
@@ -2896,7 +3047,7 @@ type ConversationSnapshot struct {
 
 func (x *ConversationSnapshot) Reset() {
 	*x = ConversationSnapshot{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[31]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2908,7 +3059,7 @@ func (x *ConversationSnapshot) String() string {
 func (*ConversationSnapshot) ProtoMessage() {}
 
 func (x *ConversationSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[31]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2921,7 +3072,7 @@ func (x *ConversationSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationSnapshot.ProtoReflect.Descriptor instead.
 func (*ConversationSnapshot) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{31}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ConversationSnapshot) GetDetail() *CardDetail {
@@ -2954,7 +3105,7 @@ type HarnessCatalog struct {
 
 func (x *HarnessCatalog) Reset() {
 	*x = HarnessCatalog{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[32]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2966,7 +3117,7 @@ func (x *HarnessCatalog) String() string {
 func (*HarnessCatalog) ProtoMessage() {}
 
 func (x *HarnessCatalog) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[32]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2979,7 +3130,7 @@ func (x *HarnessCatalog) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessCatalog.ProtoReflect.Descriptor instead.
 func (*HarnessCatalog) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{32}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *HarnessCatalog) GetHarnesses() []*Harness {
@@ -3004,7 +3155,7 @@ type Harness struct {
 
 func (x *Harness) Reset() {
 	*x = Harness{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[33]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3016,7 +3167,7 @@ func (x *Harness) String() string {
 func (*Harness) ProtoMessage() {}
 
 func (x *Harness) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[33]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3029,7 +3180,7 @@ func (x *Harness) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Harness.ProtoReflect.Descriptor instead.
 func (*Harness) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{33}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Harness) GetId() string {
@@ -3095,7 +3246,7 @@ type ProviderOption struct {
 
 func (x *ProviderOption) Reset() {
 	*x = ProviderOption{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[34]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3107,7 +3258,7 @@ func (x *ProviderOption) String() string {
 func (*ProviderOption) ProtoMessage() {}
 
 func (x *ProviderOption) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[34]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3120,7 +3271,7 @@ func (x *ProviderOption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderOption.ProtoReflect.Descriptor instead.
 func (*ProviderOption) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{34}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ProviderOption) GetId() string {
@@ -3175,7 +3326,7 @@ type ProviderOptionChoice struct {
 
 func (x *ProviderOptionChoice) Reset() {
 	*x = ProviderOptionChoice{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[35]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3187,7 +3338,7 @@ func (x *ProviderOptionChoice) String() string {
 func (*ProviderOptionChoice) ProtoMessage() {}
 
 func (x *ProviderOptionChoice) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[35]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3200,7 +3351,7 @@ func (x *ProviderOptionChoice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProviderOptionChoice.ProtoReflect.Descriptor instead.
 func (*ProviderOptionChoice) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{35}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ProviderOptionChoice) GetValue() string {
@@ -3227,7 +3378,7 @@ type HarnessCapability struct {
 
 func (x *HarnessCapability) Reset() {
 	*x = HarnessCapability{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[36]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3239,7 +3390,7 @@ func (x *HarnessCapability) String() string {
 func (*HarnessCapability) ProtoMessage() {}
 
 func (x *HarnessCapability) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[36]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3252,7 +3403,7 @@ func (x *HarnessCapability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessCapability.ProtoReflect.Descriptor instead.
 func (*HarnessCapability) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{36}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *HarnessCapability) GetId() string {
@@ -3282,7 +3433,7 @@ type HarnessModel struct {
 
 func (x *HarnessModel) Reset() {
 	*x = HarnessModel{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[37]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3294,7 +3445,7 @@ func (x *HarnessModel) String() string {
 func (*HarnessModel) ProtoMessage() {}
 
 func (x *HarnessModel) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[37]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3307,7 +3458,7 @@ func (x *HarnessModel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HarnessModel.ProtoReflect.Descriptor instead.
 func (*HarnessModel) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{37}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *HarnessModel) GetId() string {
@@ -3355,7 +3506,7 @@ type EffortConfig struct {
 
 func (x *EffortConfig) Reset() {
 	*x = EffortConfig{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[38]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3367,7 +3518,7 @@ func (x *EffortConfig) String() string {
 func (*EffortConfig) ProtoMessage() {}
 
 func (x *EffortConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[38]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3380,7 +3531,7 @@ func (x *EffortConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EffortConfig.ProtoReflect.Descriptor instead.
 func (*EffortConfig) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{38}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *EffortConfig) GetLabel() string {
@@ -3409,7 +3560,7 @@ type Settings struct {
 
 func (x *Settings) Reset() {
 	*x = Settings{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[39]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3421,7 +3572,7 @@ func (x *Settings) String() string {
 func (*Settings) ProtoMessage() {}
 
 func (x *Settings) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[39]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3434,7 +3585,7 @@ func (x *Settings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Settings.ProtoReflect.Descriptor instead.
 func (*Settings) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{39}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *Settings) GetGlobalParallelLimit() int32 {
@@ -3476,7 +3627,7 @@ type SettingsOptions struct {
 
 func (x *SettingsOptions) Reset() {
 	*x = SettingsOptions{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[40]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3488,7 +3639,7 @@ func (x *SettingsOptions) String() string {
 func (*SettingsOptions) ProtoMessage() {}
 
 func (x *SettingsOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[40]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3501,7 +3652,7 @@ func (x *SettingsOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SettingsOptions.ProtoReflect.Descriptor instead.
 func (*SettingsOptions) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{40}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SettingsOptions) GetProjects() []*Project {
@@ -3534,7 +3685,7 @@ type UpdateSettingsRequest struct {
 
 func (x *UpdateSettingsRequest) Reset() {
 	*x = UpdateSettingsRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[41]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3546,7 +3697,7 @@ func (x *UpdateSettingsRequest) String() string {
 func (*UpdateSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[41]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3559,7 +3710,7 @@ func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{41}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *UpdateSettingsRequest) GetSettings() *Settings {
@@ -3581,7 +3732,7 @@ type PromptSettings struct {
 
 func (x *PromptSettings) Reset() {
 	*x = PromptSettings{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[42]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3593,7 +3744,7 @@ func (x *PromptSettings) String() string {
 func (*PromptSettings) ProtoMessage() {}
 
 func (x *PromptSettings) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[42]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3606,7 +3757,7 @@ func (x *PromptSettings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptSettings.ProtoReflect.Descriptor instead.
 func (*PromptSettings) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{42}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *PromptSettings) GetPromptTemplate() string {
@@ -3648,7 +3799,7 @@ type UpdatePromptSettingsRequest struct {
 
 func (x *UpdatePromptSettingsRequest) Reset() {
 	*x = UpdatePromptSettingsRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[43]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3660,7 +3811,7 @@ func (x *UpdatePromptSettingsRequest) String() string {
 func (*UpdatePromptSettingsRequest) ProtoMessage() {}
 
 func (x *UpdatePromptSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[43]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3673,7 +3824,7 @@ func (x *UpdatePromptSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatePromptSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdatePromptSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{43}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *UpdatePromptSettingsRequest) GetPromptTemplate() string {
@@ -3708,7 +3859,7 @@ type SetScopedPromptTemplateRequest struct {
 
 func (x *SetScopedPromptTemplateRequest) Reset() {
 	*x = SetScopedPromptTemplateRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[44]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3720,7 +3871,7 @@ func (x *SetScopedPromptTemplateRequest) String() string {
 func (*SetScopedPromptTemplateRequest) ProtoMessage() {}
 
 func (x *SetScopedPromptTemplateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[44]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3733,7 +3884,7 @@ func (x *SetScopedPromptTemplateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetScopedPromptTemplateRequest.ProtoReflect.Descriptor instead.
 func (*SetScopedPromptTemplateRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{44}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SetScopedPromptTemplateRequest) GetScopeId() string {
@@ -3770,7 +3921,7 @@ type PreviewPromptRequest struct {
 
 func (x *PreviewPromptRequest) Reset() {
 	*x = PreviewPromptRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[45]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3782,7 +3933,7 @@ func (x *PreviewPromptRequest) String() string {
 func (*PreviewPromptRequest) ProtoMessage() {}
 
 func (x *PreviewPromptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[45]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3795,7 +3946,7 @@ func (x *PreviewPromptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewPromptRequest.ProtoReflect.Descriptor instead.
 func (*PreviewPromptRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{45}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *PreviewPromptRequest) GetProjectId() string {
@@ -3849,7 +4000,7 @@ type PromptPreview struct {
 
 func (x *PromptPreview) Reset() {
 	*x = PromptPreview{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[46]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3861,7 +4012,7 @@ func (x *PromptPreview) String() string {
 func (*PromptPreview) ProtoMessage() {}
 
 func (x *PromptPreview) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[46]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3874,7 +4025,7 @@ func (x *PromptPreview) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromptPreview.ProtoReflect.Descriptor instead.
 func (*PromptPreview) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{46}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *PromptPreview) GetSource() string {
@@ -3942,7 +4093,7 @@ type ListDirectoriesRequest struct {
 
 func (x *ListDirectoriesRequest) Reset() {
 	*x = ListDirectoriesRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[47]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3954,7 +4105,7 @@ func (x *ListDirectoriesRequest) String() string {
 func (*ListDirectoriesRequest) ProtoMessage() {}
 
 func (x *ListDirectoriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[47]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3967,7 +4118,7 @@ func (x *ListDirectoriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDirectoriesRequest.ProtoReflect.Descriptor instead.
 func (*ListDirectoriesRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{47}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ListDirectoriesRequest) GetPath() string {
@@ -3989,7 +4140,7 @@ type DirectoryEntry struct {
 
 func (x *DirectoryEntry) Reset() {
 	*x = DirectoryEntry{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[48]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4001,7 +4152,7 @@ func (x *DirectoryEntry) String() string {
 func (*DirectoryEntry) ProtoMessage() {}
 
 func (x *DirectoryEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[48]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4014,7 +4165,7 @@ func (x *DirectoryEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectoryEntry.ProtoReflect.Descriptor instead.
 func (*DirectoryEntry) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{48}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *DirectoryEntry) GetName() string {
@@ -4056,7 +4207,7 @@ type DirectoryLocation struct {
 
 func (x *DirectoryLocation) Reset() {
 	*x = DirectoryLocation{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[49]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4068,7 +4219,7 @@ func (x *DirectoryLocation) String() string {
 func (*DirectoryLocation) ProtoMessage() {}
 
 func (x *DirectoryLocation) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[49]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4081,7 +4232,7 @@ func (x *DirectoryLocation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectoryLocation.ProtoReflect.Descriptor instead.
 func (*DirectoryLocation) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{49}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *DirectoryLocation) GetName() string {
@@ -4120,7 +4271,7 @@ type DirectoryListing struct {
 
 func (x *DirectoryListing) Reset() {
 	*x = DirectoryListing{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[50]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4132,7 +4283,7 @@ func (x *DirectoryListing) String() string {
 func (*DirectoryListing) ProtoMessage() {}
 
 func (x *DirectoryListing) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[50]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4145,7 +4296,7 @@ func (x *DirectoryListing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectoryListing.ProtoReflect.Descriptor instead.
 func (*DirectoryListing) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{50}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *DirectoryListing) GetPath() string {
@@ -4212,7 +4363,7 @@ type CreateProjectRequest struct {
 
 func (x *CreateProjectRequest) Reset() {
 	*x = CreateProjectRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[51]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4224,7 +4375,7 @@ func (x *CreateProjectRequest) String() string {
 func (*CreateProjectRequest) ProtoMessage() {}
 
 func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[51]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4237,7 +4388,7 @@ func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectRequest.ProtoReflect.Descriptor instead.
 func (*CreateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{51}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *CreateProjectRequest) GetMode() string {
@@ -4299,7 +4450,7 @@ type CreateProjectResponse struct {
 
 func (x *CreateProjectResponse) Reset() {
 	*x = CreateProjectResponse{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[52]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4311,7 +4462,7 @@ func (x *CreateProjectResponse) String() string {
 func (*CreateProjectResponse) ProtoMessage() {}
 
 func (x *CreateProjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[52]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4324,7 +4475,7 @@ func (x *CreateProjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectResponse.ProtoReflect.Descriptor instead.
 func (*CreateProjectResponse) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{52}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *CreateProjectResponse) GetProject() *Project {
@@ -4353,7 +4504,7 @@ type UpdateProjectRequest struct {
 
 func (x *UpdateProjectRequest) Reset() {
 	*x = UpdateProjectRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[53]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4365,7 +4516,7 @@ func (x *UpdateProjectRequest) String() string {
 func (*UpdateProjectRequest) ProtoMessage() {}
 
 func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[53]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4378,7 +4529,7 @@ func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProjectRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{53}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *UpdateProjectRequest) GetProjectId() string {
@@ -4419,7 +4570,7 @@ type ArchiveProjectRequest struct {
 
 func (x *ArchiveProjectRequest) Reset() {
 	*x = ArchiveProjectRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[54]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4431,7 +4582,7 @@ func (x *ArchiveProjectRequest) String() string {
 func (*ArchiveProjectRequest) ProtoMessage() {}
 
 func (x *ArchiveProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[54]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4444,7 +4595,7 @@ func (x *ArchiveProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveProjectRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveProjectRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{54}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ArchiveProjectRequest) GetProjectId() string {
@@ -4474,7 +4625,7 @@ type CreateBoardRequest struct {
 
 func (x *CreateBoardRequest) Reset() {
 	*x = CreateBoardRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[55]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4486,7 +4637,7 @@ func (x *CreateBoardRequest) String() string {
 func (*CreateBoardRequest) ProtoMessage() {}
 
 func (x *CreateBoardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[55]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4499,7 +4650,7 @@ func (x *CreateBoardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBoardRequest.ProtoReflect.Descriptor instead.
 func (*CreateBoardRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{55}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *CreateBoardRequest) GetProjectId() string {
@@ -4547,7 +4698,7 @@ type RenameBoardRequest struct {
 
 func (x *RenameBoardRequest) Reset() {
 	*x = RenameBoardRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[56]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4559,7 +4710,7 @@ func (x *RenameBoardRequest) String() string {
 func (*RenameBoardRequest) ProtoMessage() {}
 
 func (x *RenameBoardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[56]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4572,7 +4723,7 @@ func (x *RenameBoardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameBoardRequest.ProtoReflect.Descriptor instead.
 func (*RenameBoardRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{56}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *RenameBoardRequest) GetBoardId() string {
@@ -4598,7 +4749,7 @@ type BoardRef struct {
 
 func (x *BoardRef) Reset() {
 	*x = BoardRef{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[57]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4610,7 +4761,7 @@ func (x *BoardRef) String() string {
 func (*BoardRef) ProtoMessage() {}
 
 func (x *BoardRef) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[57]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4623,7 +4774,7 @@ func (x *BoardRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BoardRef.ProtoReflect.Descriptor instead.
 func (*BoardRef) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{57}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *BoardRef) GetBoardId() string {
@@ -4643,7 +4794,7 @@ type SetBoardArchivePolicyRequest struct {
 
 func (x *SetBoardArchivePolicyRequest) Reset() {
 	*x = SetBoardArchivePolicyRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[58]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4655,7 +4806,7 @@ func (x *SetBoardArchivePolicyRequest) String() string {
 func (*SetBoardArchivePolicyRequest) ProtoMessage() {}
 
 func (x *SetBoardArchivePolicyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[58]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4668,7 +4819,7 @@ func (x *SetBoardArchivePolicyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetBoardArchivePolicyRequest.ProtoReflect.Descriptor instead.
 func (*SetBoardArchivePolicyRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{58}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *SetBoardArchivePolicyRequest) GetBoardId() string {
@@ -4697,7 +4848,7 @@ type CreateBoardLabelRequest struct {
 
 func (x *CreateBoardLabelRequest) Reset() {
 	*x = CreateBoardLabelRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[59]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4709,7 +4860,7 @@ func (x *CreateBoardLabelRequest) String() string {
 func (*CreateBoardLabelRequest) ProtoMessage() {}
 
 func (x *CreateBoardLabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[59]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4722,7 +4873,7 @@ func (x *CreateBoardLabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateBoardLabelRequest.ProtoReflect.Descriptor instead.
 func (*CreateBoardLabelRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{59}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *CreateBoardLabelRequest) GetBoardId() string {
@@ -4766,7 +4917,7 @@ type UpdateBoardLabelRequest struct {
 
 func (x *UpdateBoardLabelRequest) Reset() {
 	*x = UpdateBoardLabelRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[60]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4778,7 +4929,7 @@ func (x *UpdateBoardLabelRequest) String() string {
 func (*UpdateBoardLabelRequest) ProtoMessage() {}
 
 func (x *UpdateBoardLabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[60]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4791,7 +4942,7 @@ func (x *UpdateBoardLabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateBoardLabelRequest.ProtoReflect.Descriptor instead.
 func (*UpdateBoardLabelRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{60}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *UpdateBoardLabelRequest) GetBoardId() string {
@@ -4839,7 +4990,7 @@ type DeleteBoardLabelRequest struct {
 
 func (x *DeleteBoardLabelRequest) Reset() {
 	*x = DeleteBoardLabelRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[61]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4851,7 +5002,7 @@ func (x *DeleteBoardLabelRequest) String() string {
 func (*DeleteBoardLabelRequest) ProtoMessage() {}
 
 func (x *DeleteBoardLabelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[61]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4864,7 +5015,7 @@ func (x *DeleteBoardLabelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteBoardLabelRequest.ProtoReflect.Descriptor instead.
 func (*DeleteBoardLabelRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{61}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *DeleteBoardLabelRequest) GetBoardId() string {
@@ -4891,7 +5042,7 @@ type EffortOption struct {
 
 func (x *EffortOption) Reset() {
 	*x = EffortOption{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[62]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4903,7 +5054,7 @@ func (x *EffortOption) String() string {
 func (*EffortOption) ProtoMessage() {}
 
 func (x *EffortOption) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[62]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4916,7 +5067,7 @@ func (x *EffortOption) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EffortOption.ProtoReflect.Descriptor instead.
 func (*EffortOption) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{62}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *EffortOption) GetId() string {
@@ -4955,7 +5106,7 @@ type CreateConversationRequest struct {
 
 func (x *CreateConversationRequest) Reset() {
 	*x = CreateConversationRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[63]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4967,7 +5118,7 @@ func (x *CreateConversationRequest) String() string {
 func (*CreateConversationRequest) ProtoMessage() {}
 
 func (x *CreateConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[63]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4980,7 +5131,7 @@ func (x *CreateConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateConversationRequest.ProtoReflect.Descriptor instead.
 func (*CreateConversationRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{63}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *CreateConversationRequest) GetProjectId() string {
@@ -5090,7 +5241,7 @@ type ListChatsRequest struct {
 
 func (x *ListChatsRequest) Reset() {
 	*x = ListChatsRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[64]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5102,7 +5253,7 @@ func (x *ListChatsRequest) String() string {
 func (*ListChatsRequest) ProtoMessage() {}
 
 func (x *ListChatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[64]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5115,7 +5266,7 @@ func (x *ListChatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListChatsRequest.ProtoReflect.Descriptor instead.
 func (*ListChatsRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{64}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *ListChatsRequest) GetIncludeArchived() bool {
@@ -5135,7 +5286,7 @@ type ChatsResponse struct {
 
 func (x *ChatsResponse) Reset() {
 	*x = ChatsResponse{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[65]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5147,7 +5298,7 @@ func (x *ChatsResponse) String() string {
 func (*ChatsResponse) ProtoMessage() {}
 
 func (x *ChatsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[65]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5160,7 +5311,7 @@ func (x *ChatsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatsResponse.ProtoReflect.Descriptor instead.
 func (*ChatsResponse) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{65}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *ChatsResponse) GetProjects() []*Project {
@@ -5186,7 +5337,7 @@ type GetCardRequest struct {
 
 func (x *GetCardRequest) Reset() {
 	*x = GetCardRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[66]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5198,7 +5349,7 @@ func (x *GetCardRequest) String() string {
 func (*GetCardRequest) ProtoMessage() {}
 
 func (x *GetCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[66]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5211,7 +5362,7 @@ func (x *GetCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCardRequest.ProtoReflect.Descriptor instead.
 func (*GetCardRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{66}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *GetCardRequest) GetCardId() string {
@@ -5232,7 +5383,7 @@ type GetConversationRequest struct {
 
 func (x *GetConversationRequest) Reset() {
 	*x = GetConversationRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[67]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5244,7 +5395,7 @@ func (x *GetConversationRequest) String() string {
 func (*GetConversationRequest) ProtoMessage() {}
 
 func (x *GetConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[67]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5257,7 +5408,7 @@ func (x *GetConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConversationRequest.ProtoReflect.Descriptor instead.
 func (*GetConversationRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{67}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *GetConversationRequest) GetCardId() string {
@@ -5293,7 +5444,7 @@ type WatchConversationRequest struct {
 
 func (x *WatchConversationRequest) Reset() {
 	*x = WatchConversationRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[68]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5305,7 +5456,7 @@ func (x *WatchConversationRequest) String() string {
 func (*WatchConversationRequest) ProtoMessage() {}
 
 func (x *WatchConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[68]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5318,7 +5469,7 @@ func (x *WatchConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchConversationRequest.ProtoReflect.Descriptor instead.
 func (*WatchConversationRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{68}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *WatchConversationRequest) GetCardId() string {
@@ -5363,7 +5514,7 @@ type PollConversationRequest struct {
 
 func (x *PollConversationRequest) Reset() {
 	*x = PollConversationRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[69]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5375,7 +5526,7 @@ func (x *PollConversationRequest) String() string {
 func (*PollConversationRequest) ProtoMessage() {}
 
 func (x *PollConversationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[69]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5388,7 +5539,7 @@ func (x *PollConversationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PollConversationRequest.ProtoReflect.Descriptor instead.
 func (*PollConversationRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{69}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *PollConversationRequest) GetCardId() string {
@@ -5436,7 +5587,7 @@ type ConversationUpdate struct {
 
 func (x *ConversationUpdate) Reset() {
 	*x = ConversationUpdate{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[70]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5448,7 +5599,7 @@ func (x *ConversationUpdate) String() string {
 func (*ConversationUpdate) ProtoMessage() {}
 
 func (x *ConversationUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[70]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5461,7 +5612,7 @@ func (x *ConversationUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationUpdate.ProtoReflect.Descriptor instead.
 func (*ConversationUpdate) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{70}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ConversationUpdate) GetSnapshot() *ConversationSnapshot {
@@ -5567,7 +5718,7 @@ type GetToolOutputRequest struct {
 
 func (x *GetToolOutputRequest) Reset() {
 	*x = GetToolOutputRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[71]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5579,7 +5730,7 @@ func (x *GetToolOutputRequest) String() string {
 func (*GetToolOutputRequest) ProtoMessage() {}
 
 func (x *GetToolOutputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[71]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5592,7 +5743,7 @@ func (x *GetToolOutputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetToolOutputRequest.ProtoReflect.Descriptor instead.
 func (*GetToolOutputRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{71}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *GetToolOutputRequest) GetCardId() string {
@@ -5642,7 +5793,7 @@ type ToolOutput struct {
 
 func (x *ToolOutput) Reset() {
 	*x = ToolOutput{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[72]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5654,7 +5805,7 @@ func (x *ToolOutput) String() string {
 func (*ToolOutput) ProtoMessage() {}
 
 func (x *ToolOutput) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[72]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5667,7 +5818,7 @@ func (x *ToolOutput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolOutput.ProtoReflect.Descriptor instead.
 func (*ToolOutput) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{72}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ToolOutput) GetCardId() string {
@@ -5750,7 +5901,7 @@ type SendMessageRequest struct {
 
 func (x *SendMessageRequest) Reset() {
 	*x = SendMessageRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[73]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5762,7 +5913,7 @@ func (x *SendMessageRequest) String() string {
 func (*SendMessageRequest) ProtoMessage() {}
 
 func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[73]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5775,7 +5926,7 @@ func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendMessageRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{73}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *SendMessageRequest) GetCardId() string {
@@ -5852,7 +6003,7 @@ type SendMessageResponse struct {
 
 func (x *SendMessageResponse) Reset() {
 	*x = SendMessageResponse{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[74]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5864,7 +6015,7 @@ func (x *SendMessageResponse) String() string {
 func (*SendMessageResponse) ProtoMessage() {}
 
 func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[74]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5877,7 +6028,7 @@ func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageResponse.ProtoReflect.Descriptor instead.
 func (*SendMessageResponse) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{74}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *SendMessageResponse) GetSent() bool {
@@ -5912,7 +6063,7 @@ type AddCommentRequest struct {
 
 func (x *AddCommentRequest) Reset() {
 	*x = AddCommentRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[75]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5924,7 +6075,7 @@ func (x *AddCommentRequest) String() string {
 func (*AddCommentRequest) ProtoMessage() {}
 
 func (x *AddCommentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[75]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5937,7 +6088,7 @@ func (x *AddCommentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddCommentRequest.ProtoReflect.Descriptor instead.
 func (*AddCommentRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{75}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *AddCommentRequest) GetCardId() string {
@@ -5972,7 +6123,7 @@ type MoveCardRequest struct {
 
 func (x *MoveCardRequest) Reset() {
 	*x = MoveCardRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[76]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5984,7 +6135,7 @@ func (x *MoveCardRequest) String() string {
 func (*MoveCardRequest) ProtoMessage() {}
 
 func (x *MoveCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[76]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5997,7 +6148,7 @@ func (x *MoveCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveCardRequest.ProtoReflect.Descriptor instead.
 func (*MoveCardRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{76}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *MoveCardRequest) GetCardId() string {
@@ -6021,6 +6172,142 @@ func (x *MoveCardRequest) GetPosition() int64 {
 	return 0
 }
 
+type StartCardRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	ClientId      string                 `protobuf:"bytes,2,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	CommandId     string                 `protobuf:"bytes,3,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartCardRequest) Reset() {
+	*x = StartCardRequest{}
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[78]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartCardRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartCardRequest) ProtoMessage() {}
+
+func (x *StartCardRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[78]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartCardRequest.ProtoReflect.Descriptor instead.
+func (*StartCardRequest) Descriptor() ([]byte, []int) {
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{78}
+}
+
+func (x *StartCardRequest) GetCardId() string {
+	if x != nil {
+		return x.CardId
+	}
+	return ""
+}
+
+func (x *StartCardRequest) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
+func (x *StartCardRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+type StartCardResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Card           *Card                  `protobuf:"bytes,1,opt,name=card,proto3" json:"card,omitempty"`
+	Accepted       bool                   `protobuf:"varint,2,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	AlreadyRunning bool                   `protobuf:"varint,3,opt,name=already_running,json=alreadyRunning,proto3" json:"already_running,omitempty"`
+	Replayed       bool                   `protobuf:"varint,4,opt,name=replayed,proto3" json:"replayed,omitempty"`
+	CommandId      string                 `protobuf:"bytes,5,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *StartCardResponse) Reset() {
+	*x = StartCardResponse{}
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[79]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartCardResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartCardResponse) ProtoMessage() {}
+
+func (x *StartCardResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[79]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartCardResponse.ProtoReflect.Descriptor instead.
+func (*StartCardResponse) Descriptor() ([]byte, []int) {
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{79}
+}
+
+func (x *StartCardResponse) GetCard() *Card {
+	if x != nil {
+		return x.Card
+	}
+	return nil
+}
+
+func (x *StartCardResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *StartCardResponse) GetAlreadyRunning() bool {
+	if x != nil {
+		return x.AlreadyRunning
+	}
+	return false
+}
+
+func (x *StartCardResponse) GetReplayed() bool {
+	if x != nil {
+		return x.Replayed
+	}
+	return false
+}
+
+func (x *StartCardResponse) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
 type SetCardLabelsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
@@ -6031,7 +6318,7 @@ type SetCardLabelsRequest struct {
 
 func (x *SetCardLabelsRequest) Reset() {
 	*x = SetCardLabelsRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[77]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6043,7 +6330,7 @@ func (x *SetCardLabelsRequest) String() string {
 func (*SetCardLabelsRequest) ProtoMessage() {}
 
 func (x *SetCardLabelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[77]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6056,7 +6343,7 @@ func (x *SetCardLabelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetCardLabelsRequest.ProtoReflect.Descriptor instead.
 func (*SetCardLabelsRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{77}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *SetCardLabelsRequest) GetCardId() string {
@@ -6083,7 +6370,7 @@ type RenameCardRequest struct {
 
 func (x *RenameCardRequest) Reset() {
 	*x = RenameCardRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[78]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6095,7 +6382,7 @@ func (x *RenameCardRequest) String() string {
 func (*RenameCardRequest) ProtoMessage() {}
 
 func (x *RenameCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[78]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6108,7 +6395,7 @@ func (x *RenameCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameCardRequest.ProtoReflect.Descriptor instead.
 func (*RenameCardRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{78}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *RenameCardRequest) GetCardId() string {
@@ -6136,7 +6423,7 @@ type UpdateCardRequest struct {
 
 func (x *UpdateCardRequest) Reset() {
 	*x = UpdateCardRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[79]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6148,7 +6435,7 @@ func (x *UpdateCardRequest) String() string {
 func (*UpdateCardRequest) ProtoMessage() {}
 
 func (x *UpdateCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[79]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6161,7 +6448,7 @@ func (x *UpdateCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCardRequest.ProtoReflect.Descriptor instead.
 func (*UpdateCardRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{79}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *UpdateCardRequest) GetCardId() string {
@@ -6195,7 +6482,7 @@ type ArchiveCardRequest struct {
 
 func (x *ArchiveCardRequest) Reset() {
 	*x = ArchiveCardRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[80]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6207,7 +6494,7 @@ func (x *ArchiveCardRequest) String() string {
 func (*ArchiveCardRequest) ProtoMessage() {}
 
 func (x *ArchiveCardRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[80]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6220,7 +6507,7 @@ func (x *ArchiveCardRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveCardRequest.ProtoReflect.Descriptor instead.
 func (*ArchiveCardRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{80}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ArchiveCardRequest) GetCardId() string {
@@ -6247,7 +6534,7 @@ type PinChatRequest struct {
 
 func (x *PinChatRequest) Reset() {
 	*x = PinChatRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[81]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6259,7 +6546,7 @@ func (x *PinChatRequest) String() string {
 func (*PinChatRequest) ProtoMessage() {}
 
 func (x *PinChatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[81]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6272,7 +6559,7 @@ func (x *PinChatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PinChatRequest.ProtoReflect.Descriptor instead.
 func (*PinChatRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{81}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *PinChatRequest) GetCardId() string {
@@ -6300,7 +6587,7 @@ type ListFilesRequest struct {
 
 func (x *ListFilesRequest) Reset() {
 	*x = ListFilesRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[82]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6312,7 +6599,7 @@ func (x *ListFilesRequest) String() string {
 func (*ListFilesRequest) ProtoMessage() {}
 
 func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[82]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6325,7 +6612,7 @@ func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
 func (*ListFilesRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{82}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ListFilesRequest) GetProjectId() string {
@@ -6364,7 +6651,7 @@ type FileEntry struct {
 
 func (x *FileEntry) Reset() {
 	*x = FileEntry{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[83]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6376,7 +6663,7 @@ func (x *FileEntry) String() string {
 func (*FileEntry) ProtoMessage() {}
 
 func (x *FileEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[83]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6389,7 +6676,7 @@ func (x *FileEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
 func (*FileEntry) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{83}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *FileEntry) GetName() string {
@@ -6451,7 +6738,7 @@ type FileList struct {
 
 func (x *FileList) Reset() {
 	*x = FileList{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[84]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6463,7 +6750,7 @@ func (x *FileList) String() string {
 func (*FileList) ProtoMessage() {}
 
 func (x *FileList) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[84]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6476,7 +6763,7 @@ func (x *FileList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileList.ProtoReflect.Descriptor instead.
 func (*FileList) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{84}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *FileList) GetPath() string {
@@ -6503,7 +6790,7 @@ type ReadFileRequest struct {
 
 func (x *ReadFileRequest) Reset() {
 	*x = ReadFileRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[85]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6515,7 +6802,7 @@ func (x *ReadFileRequest) String() string {
 func (*ReadFileRequest) ProtoMessage() {}
 
 func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[85]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6528,7 +6815,7 @@ func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadFileRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{85}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *ReadFileRequest) GetProjectId() string {
@@ -6562,7 +6849,7 @@ type FileDocument struct {
 
 func (x *FileDocument) Reset() {
 	*x = FileDocument{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[86]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6574,7 +6861,7 @@ func (x *FileDocument) String() string {
 func (*FileDocument) ProtoMessage() {}
 
 func (x *FileDocument) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[86]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6587,7 +6874,7 @@ func (x *FileDocument) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDocument.ProtoReflect.Descriptor instead.
 func (*FileDocument) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{86}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *FileDocument) GetPath() string {
@@ -6665,7 +6952,7 @@ type SaveFileRequest struct {
 
 func (x *SaveFileRequest) Reset() {
 	*x = SaveFileRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[87]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6677,7 +6964,7 @@ func (x *SaveFileRequest) String() string {
 func (*SaveFileRequest) ProtoMessage() {}
 
 func (x *SaveFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[87]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6690,7 +6977,7 @@ func (x *SaveFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveFileRequest.ProtoReflect.Descriptor instead.
 func (*SaveFileRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{87}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *SaveFileRequest) GetProjectId() string {
@@ -6733,7 +7020,7 @@ type CreateFileRequest struct {
 
 func (x *CreateFileRequest) Reset() {
 	*x = CreateFileRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[88]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6745,7 +7032,7 @@ func (x *CreateFileRequest) String() string {
 func (*CreateFileRequest) ProtoMessage() {}
 
 func (x *CreateFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[88]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6758,7 +7045,7 @@ func (x *CreateFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFileRequest.ProtoReflect.Descriptor instead.
 func (*CreateFileRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{88}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *CreateFileRequest) GetProjectId() string {
@@ -6800,7 +7087,7 @@ type MoveFileRequest struct {
 
 func (x *MoveFileRequest) Reset() {
 	*x = MoveFileRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[89]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6812,7 +7099,7 @@ func (x *MoveFileRequest) String() string {
 func (*MoveFileRequest) ProtoMessage() {}
 
 func (x *MoveFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[89]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6825,7 +7112,7 @@ func (x *MoveFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveFileRequest.ProtoReflect.Descriptor instead.
 func (*MoveFileRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{89}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *MoveFileRequest) GetProjectId() string {
@@ -6859,7 +7146,7 @@ type MoveFileResponse struct {
 
 func (x *MoveFileResponse) Reset() {
 	*x = MoveFileResponse{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[90]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6871,7 +7158,7 @@ func (x *MoveFileResponse) String() string {
 func (*MoveFileResponse) ProtoMessage() {}
 
 func (x *MoveFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[90]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6884,7 +7171,7 @@ func (x *MoveFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveFileResponse.ProtoReflect.Descriptor instead.
 func (*MoveFileResponse) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{90}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *MoveFileResponse) GetSource() string {
@@ -6912,7 +7199,7 @@ type DeleteFileRequest struct {
 
 func (x *DeleteFileRequest) Reset() {
 	*x = DeleteFileRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[91]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6924,7 +7211,7 @@ func (x *DeleteFileRequest) String() string {
 func (*DeleteFileRequest) ProtoMessage() {}
 
 func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[91]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6937,7 +7224,7 @@ func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{91}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *DeleteFileRequest) GetProjectId() string {
@@ -6970,7 +7257,7 @@ type ListSchedulesRequest struct {
 
 func (x *ListSchedulesRequest) Reset() {
 	*x = ListSchedulesRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[92]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6982,7 +7269,7 @@ func (x *ListSchedulesRequest) String() string {
 func (*ListSchedulesRequest) ProtoMessage() {}
 
 func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[92]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6995,7 +7282,7 @@ func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
 func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{92}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *ListSchedulesRequest) GetProjectId() string {
@@ -7014,7 +7301,7 @@ type SchedulesResponse struct {
 
 func (x *SchedulesResponse) Reset() {
 	*x = SchedulesResponse{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[93]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7026,7 +7313,7 @@ func (x *SchedulesResponse) String() string {
 func (*SchedulesResponse) ProtoMessage() {}
 
 func (x *SchedulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[93]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7039,7 +7326,7 @@ func (x *SchedulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulesResponse.ProtoReflect.Descriptor instead.
 func (*SchedulesResponse) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{93}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *SchedulesResponse) GetSchedules() []*Schedule {
@@ -7081,7 +7368,7 @@ type Schedule struct {
 
 func (x *Schedule) Reset() {
 	*x = Schedule{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[94]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7093,7 +7380,7 @@ func (x *Schedule) String() string {
 func (*Schedule) ProtoMessage() {}
 
 func (x *Schedule) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[94]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7106,7 +7393,7 @@ func (x *Schedule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
 func (*Schedule) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{94}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *Schedule) GetId() string {
@@ -7303,7 +7590,7 @@ type ScheduleDraft struct {
 
 func (x *ScheduleDraft) Reset() {
 	*x = ScheduleDraft{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[95]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7315,7 +7602,7 @@ func (x *ScheduleDraft) String() string {
 func (*ScheduleDraft) ProtoMessage() {}
 
 func (x *ScheduleDraft) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[95]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7328,7 +7615,7 @@ func (x *ScheduleDraft) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleDraft.ProtoReflect.Descriptor instead.
 func (*ScheduleDraft) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{95}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *ScheduleDraft) GetProjectId() string {
@@ -7467,7 +7754,7 @@ type SaveScheduleRequest struct {
 
 func (x *SaveScheduleRequest) Reset() {
 	*x = SaveScheduleRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[96]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7479,7 +7766,7 @@ func (x *SaveScheduleRequest) String() string {
 func (*SaveScheduleRequest) ProtoMessage() {}
 
 func (x *SaveScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[96]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7492,7 +7779,7 @@ func (x *SaveScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveScheduleRequest.ProtoReflect.Descriptor instead.
 func (*SaveScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{96}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *SaveScheduleRequest) GetScheduleId() string {
@@ -7520,7 +7807,7 @@ type PreviewScheduleRequest struct {
 
 func (x *PreviewScheduleRequest) Reset() {
 	*x = PreviewScheduleRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[97]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7532,7 +7819,7 @@ func (x *PreviewScheduleRequest) String() string {
 func (*PreviewScheduleRequest) ProtoMessage() {}
 
 func (x *PreviewScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[97]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7545,7 +7832,7 @@ func (x *PreviewScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewScheduleRequest.ProtoReflect.Descriptor instead.
 func (*PreviewScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{97}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *PreviewScheduleRequest) GetCron() string {
@@ -7578,7 +7865,7 @@ type SchedulePreview struct {
 
 func (x *SchedulePreview) Reset() {
 	*x = SchedulePreview{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[98]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[101]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7590,7 +7877,7 @@ func (x *SchedulePreview) String() string {
 func (*SchedulePreview) ProtoMessage() {}
 
 func (x *SchedulePreview) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[98]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[101]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7603,7 +7890,7 @@ func (x *SchedulePreview) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulePreview.ProtoReflect.Descriptor instead.
 func (*SchedulePreview) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{98}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{101}
 }
 
 func (x *SchedulePreview) GetTimes() []string {
@@ -7622,7 +7909,7 @@ type ScheduleRef struct {
 
 func (x *ScheduleRef) Reset() {
 	*x = ScheduleRef{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[99]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[102]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7634,7 +7921,7 @@ func (x *ScheduleRef) String() string {
 func (*ScheduleRef) ProtoMessage() {}
 
 func (x *ScheduleRef) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[99]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[102]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7647,7 +7934,7 @@ func (x *ScheduleRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRef.ProtoReflect.Descriptor instead.
 func (*ScheduleRef) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{99}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{102}
 }
 
 func (x *ScheduleRef) GetScheduleId() string {
@@ -7667,7 +7954,7 @@ type SetScheduleEnabledRequest struct {
 
 func (x *SetScheduleEnabledRequest) Reset() {
 	*x = SetScheduleEnabledRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[100]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[103]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7679,7 +7966,7 @@ func (x *SetScheduleEnabledRequest) String() string {
 func (*SetScheduleEnabledRequest) ProtoMessage() {}
 
 func (x *SetScheduleEnabledRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[100]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[103]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7692,7 +7979,7 @@ func (x *SetScheduleEnabledRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetScheduleEnabledRequest.ProtoReflect.Descriptor instead.
 func (*SetScheduleEnabledRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{100}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{103}
 }
 
 func (x *SetScheduleEnabledRequest) GetScheduleId() string {
@@ -7719,7 +8006,7 @@ type ListScheduleRunsRequest struct {
 
 func (x *ListScheduleRunsRequest) Reset() {
 	*x = ListScheduleRunsRequest{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[101]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[104]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7731,7 +8018,7 @@ func (x *ListScheduleRunsRequest) String() string {
 func (*ListScheduleRunsRequest) ProtoMessage() {}
 
 func (x *ListScheduleRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[101]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[104]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7744,7 +8031,7 @@ func (x *ListScheduleRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListScheduleRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListScheduleRunsRequest) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{101}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{104}
 }
 
 func (x *ListScheduleRunsRequest) GetScheduleId() string {
@@ -7784,7 +8071,7 @@ type ScheduleRun struct {
 
 func (x *ScheduleRun) Reset() {
 	*x = ScheduleRun{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[102]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[105]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7796,7 +8083,7 @@ func (x *ScheduleRun) String() string {
 func (*ScheduleRun) ProtoMessage() {}
 
 func (x *ScheduleRun) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[102]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[105]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7809,7 +8096,7 @@ func (x *ScheduleRun) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRun.ProtoReflect.Descriptor instead.
 func (*ScheduleRun) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{102}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{105}
 }
 
 func (x *ScheduleRun) GetId() string {
@@ -7926,7 +8213,7 @@ type ScheduleRunsResponse struct {
 
 func (x *ScheduleRunsResponse) Reset() {
 	*x = ScheduleRunsResponse{}
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[103]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[106]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7938,7 +8225,7 @@ func (x *ScheduleRunsResponse) String() string {
 func (*ScheduleRunsResponse) ProtoMessage() {}
 
 func (x *ScheduleRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_nauclio_v1_nauclio_proto_msgTypes[103]
+	mi := &file_nauclio_v1_nauclio_proto_msgTypes[106]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7951,7 +8238,7 @@ func (x *ScheduleRunsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRunsResponse.ProtoReflect.Descriptor instead.
 func (*ScheduleRunsResponse) Descriptor() ([]byte, []int) {
-	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{103}
+	return file_nauclio_v1_nauclio_proto_rawDescGZIP(), []int{106}
 }
 
 func (x *ScheduleRunsResponse) GetRuns() []*ScheduleRun {
@@ -8019,14 +8306,30 @@ const file_nauclio_v1_nauclio_proto_rawDesc = "" +
 	"\rconversations\x18\x02 \x03(\v2 .nauclio.v1.ConversationSnapshotR\rconversations\x122\n" +
 	"\tschedules\x18\x03 \x03(\v2\x14.nauclio.v1.ScheduleR\tschedules\x12<\n" +
 	"\rschedule_runs\x18\x04 \x03(\v2\x17.nauclio.v1.ScheduleRunR\fscheduleRuns\x120\n" +
-	"\bsettings\x18\x05 \x01(\v2\x14.nauclio.v1.SettingsR\bsettings\"\x83\x02\n" +
+	"\bsettings\x18\x05 \x01(\v2\x14.nauclio.v1.SettingsR\bsettings\"\xf8\x04\n" +
+	"\vGlobalDelta\x12/\n" +
+	"\bprojects\x18\x01 \x03(\v2\x13.nauclio.v1.ProjectR\bprojects\x12.\n" +
+	"\x13removed_project_ids\x18\x02 \x03(\tR\x11removedProjectIds\x12)\n" +
+	"\x06boards\x18\x03 \x03(\v2\x11.nauclio.v1.BoardR\x06boards\x12*\n" +
+	"\x11removed_board_ids\x18\x04 \x03(\tR\x0fremovedBoardIds\x12&\n" +
+	"\x05cards\x18\x05 \x03(\v2\x10.nauclio.v1.CardR\x05cards\x12(\n" +
+	"\x10removed_card_ids\x18\x06 \x03(\tR\x0eremovedCardIds\x12&\n" +
+	"\x05chats\x18\a \x03(\v2\x10.nauclio.v1.CardR\x05chats\x12(\n" +
+	"\x10removed_chat_ids\x18\b \x03(\tR\x0eremovedChatIds\x122\n" +
+	"\tschedules\x18\t \x03(\v2\x14.nauclio.v1.ScheduleR\tschedules\x120\n" +
+	"\x14removed_schedule_ids\x18\n" +
+	" \x03(\tR\x12removedScheduleIds\x12<\n" +
+	"\rschedule_runs\x18\v \x03(\v2\x17.nauclio.v1.ScheduleRunR\fscheduleRuns\x127\n" +
+	"\x18removed_schedule_run_ids\x18\f \x03(\tR\x15removedScheduleRunIds\x120\n" +
+	"\bsettings\x18\r \x01(\v2\x14.nauclio.v1.SettingsR\bsettings\"\xb2\x02\n" +
 	"\tSyncFrame\x12.\n" +
 	"\x06cursor\x18\x01 \x01(\v2\x16.nauclio.v1.SyncCursorR\x06cursor\x12+\n" +
 	"\x05event\x18\x02 \x01(\v2\x15.nauclio.v1.SyncEventR\x05event\x126\n" +
 	"\bsnapshot\x18\x03 \x01(\v2\x1a.nauclio.v1.GlobalSnapshotR\bsnapshot\x12\x14\n" +
 	"\x05reset\x18\x04 \x01(\bR\x05reset\x12\x1c\n" +
 	"\theartbeat\x18\x05 \x01(\bR\theartbeat\x12-\n" +
-	"\x06events\x18\x06 \x03(\v2\x15.nauclio.v1.SyncEventR\x06events\"C\n" +
+	"\x06events\x18\x06 \x03(\v2\x15.nauclio.v1.SyncEventR\x06events\x12-\n" +
+	"\x05delta\x18\a \x01(\v2\x17.nauclio.v1.GlobalDeltaR\x05delta\"C\n" +
 	"\x10ProjectsResponse\x12/\n" +
 	"\bprojects\x18\x01 \x03(\v2\x13.nauclio.v1.ProjectR\bprojects\"7\n" +
 	"\rCardsResponse\x12&\n" +
@@ -8549,7 +8852,19 @@ const file_nauclio_v1_nauclio_proto_rawDesc = "" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04lane\x18\x02 \x01(\tR\x04lane\x12\x1f\n" +
 	"\bposition\x18\x03 \x01(\x03H\x00R\bposition\x88\x01\x01B\v\n" +
-	"\t_position\"L\n" +
+	"\t_position\"g\n" +
+	"\x10StartCardRequest\x12\x17\n" +
+	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1b\n" +
+	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x03 \x01(\tR\tcommandId\"\xb9\x01\n" +
+	"\x11StartCardResponse\x12$\n" +
+	"\x04card\x18\x01 \x01(\v2\x10.nauclio.v1.CardR\x04card\x12\x1a\n" +
+	"\baccepted\x18\x02 \x01(\bR\baccepted\x12'\n" +
+	"\x0falready_running\x18\x03 \x01(\bR\x0ealreadyRunning\x12\x1a\n" +
+	"\breplayed\x18\x04 \x01(\bR\breplayed\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x05 \x01(\tR\tcommandId\"L\n" +
 	"\x14SetCardLabelsRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1b\n" +
 	"\tlabel_ids\x18\x02 \x03(\tR\blabelIds\"B\n" +
@@ -8732,7 +9047,7 @@ const file_nauclio_v1_nauclio_proto_rawDesc = "" +
 	"\vfinished_at\x18\x0f \x01(\tR\n" +
 	"finishedAt\"C\n" +
 	"\x14ScheduleRunsResponse\x12+\n" +
-	"\x04runs\x18\x01 \x03(\v2\x17.nauclio.v1.ScheduleRunR\x04runs2\xdc \n" +
+	"\x04runs\x18\x01 \x03(\v2\x17.nauclio.v1.ScheduleRunR\x04runs2\xa6!\n" +
 	"\x0eNauclioService\x12<\n" +
 	"\x06Health\x12\x16.google.protobuf.Empty\x1a\x1a.nauclio.v1.HealthResponse\x12E\n" +
 	"\x10GetRuntimeStatus\x12\x16.google.protobuf.Empty\x1a\x19.nauclio.v1.RuntimeStatus\x12:\n" +
@@ -8774,7 +9089,8 @@ const file_nauclio_v1_nauclio_proto_rawDesc = "" +
 	"\vSendMessage\x12\x1e.nauclio.v1.SendMessageRequest\x1a\x1f.nauclio.v1.SendMessageResponse\x12@\n" +
 	"\n" +
 	"AddComment\x12\x1d.nauclio.v1.AddCommentRequest\x1a\x13.nauclio.v1.Comment\x129\n" +
-	"\bMoveCard\x12\x1b.nauclio.v1.MoveCardRequest\x1a\x10.nauclio.v1.Card\x12C\n" +
+	"\bMoveCard\x12\x1b.nauclio.v1.MoveCardRequest\x1a\x10.nauclio.v1.Card\x12H\n" +
+	"\tStartCard\x12\x1c.nauclio.v1.StartCardRequest\x1a\x1d.nauclio.v1.StartCardResponse\x12C\n" +
 	"\rSetCardLabels\x12 .nauclio.v1.SetCardLabelsRequest\x1a\x10.nauclio.v1.Card\x12@\n" +
 	"\n" +
 	"CancelCard\x12\x1a.nauclio.v1.GetCardRequest\x1a\x16.google.protobuf.Empty\x12=\n" +
@@ -8814,7 +9130,7 @@ func file_nauclio_v1_nauclio_proto_rawDescGZIP() []byte {
 	return file_nauclio_v1_nauclio_proto_rawDescData
 }
 
-var file_nauclio_v1_nauclio_proto_msgTypes = make([]protoimpl.MessageInfo, 111)
+var file_nauclio_v1_nauclio_proto_msgTypes = make([]protoimpl.MessageInfo, 114)
 var file_nauclio_v1_nauclio_proto_goTypes = []any{
 	(*HealthResponse)(nil),                 // 0: nauclio.v1.HealthResponse
 	(*RuntimeStatus)(nil),                  // 1: nauclio.v1.RuntimeStatus
@@ -8825,310 +9141,324 @@ var file_nauclio_v1_nauclio_proto_goTypes = []any{
 	(*SyncRequest)(nil),                    // 6: nauclio.v1.SyncRequest
 	(*SyncEvent)(nil),                      // 7: nauclio.v1.SyncEvent
 	(*GlobalSnapshot)(nil),                 // 8: nauclio.v1.GlobalSnapshot
-	(*SyncFrame)(nil),                      // 9: nauclio.v1.SyncFrame
-	(*ProjectsResponse)(nil),               // 10: nauclio.v1.ProjectsResponse
-	(*CardsResponse)(nil),                  // 11: nauclio.v1.CardsResponse
-	(*Project)(nil),                        // 12: nauclio.v1.Project
-	(*Board)(nil),                          // 13: nauclio.v1.Board
-	(*Label)(nil),                          // 14: nauclio.v1.Label
-	(*Lane)(nil),                           // 15: nauclio.v1.Lane
-	(*Card)(nil),                           // 16: nauclio.v1.Card
-	(*CardOrigin)(nil),                     // 17: nauclio.v1.CardOrigin
-	(*CardDetail)(nil),                     // 18: nauclio.v1.CardDetail
-	(*Comment)(nil),                        // 19: nauclio.v1.Comment
-	(*Author)(nil),                         // 20: nauclio.v1.Author
-	(*Conversation)(nil),                   // 21: nauclio.v1.Conversation
-	(*Subagent)(nil),                       // 22: nauclio.v1.Subagent
-	(*TaskPlan)(nil),                       // 23: nauclio.v1.TaskPlan
-	(*TaskPlanPhase)(nil),                  // 24: nauclio.v1.TaskPlanPhase
-	(*TaskPlanItem)(nil),                   // 25: nauclio.v1.TaskPlanItem
-	(*UiMessage)(nil),                      // 26: nauclio.v1.UiMessage
-	(*MessagePart)(nil),                    // 27: nauclio.v1.MessagePart
-	(*PendingTool)(nil),                    // 28: nauclio.v1.PendingTool
-	(*QueuedMessage)(nil),                  // 29: nauclio.v1.QueuedMessage
-	(*ConversationPage)(nil),               // 30: nauclio.v1.ConversationPage
-	(*ConversationSnapshot)(nil),           // 31: nauclio.v1.ConversationSnapshot
-	(*HarnessCatalog)(nil),                 // 32: nauclio.v1.HarnessCatalog
-	(*Harness)(nil),                        // 33: nauclio.v1.Harness
-	(*ProviderOption)(nil),                 // 34: nauclio.v1.ProviderOption
-	(*ProviderOptionChoice)(nil),           // 35: nauclio.v1.ProviderOptionChoice
-	(*HarnessCapability)(nil),              // 36: nauclio.v1.HarnessCapability
-	(*HarnessModel)(nil),                   // 37: nauclio.v1.HarnessModel
-	(*EffortConfig)(nil),                   // 38: nauclio.v1.EffortConfig
-	(*Settings)(nil),                       // 39: nauclio.v1.Settings
-	(*SettingsOptions)(nil),                // 40: nauclio.v1.SettingsOptions
-	(*UpdateSettingsRequest)(nil),          // 41: nauclio.v1.UpdateSettingsRequest
-	(*PromptSettings)(nil),                 // 42: nauclio.v1.PromptSettings
-	(*UpdatePromptSettingsRequest)(nil),    // 43: nauclio.v1.UpdatePromptSettingsRequest
-	(*SetScopedPromptTemplateRequest)(nil), // 44: nauclio.v1.SetScopedPromptTemplateRequest
-	(*PreviewPromptRequest)(nil),           // 45: nauclio.v1.PreviewPromptRequest
-	(*PromptPreview)(nil),                  // 46: nauclio.v1.PromptPreview
-	(*ListDirectoriesRequest)(nil),         // 47: nauclio.v1.ListDirectoriesRequest
-	(*DirectoryEntry)(nil),                 // 48: nauclio.v1.DirectoryEntry
-	(*DirectoryLocation)(nil),              // 49: nauclio.v1.DirectoryLocation
-	(*DirectoryListing)(nil),               // 50: nauclio.v1.DirectoryListing
-	(*CreateProjectRequest)(nil),           // 51: nauclio.v1.CreateProjectRequest
-	(*CreateProjectResponse)(nil),          // 52: nauclio.v1.CreateProjectResponse
-	(*UpdateProjectRequest)(nil),           // 53: nauclio.v1.UpdateProjectRequest
-	(*ArchiveProjectRequest)(nil),          // 54: nauclio.v1.ArchiveProjectRequest
-	(*CreateBoardRequest)(nil),             // 55: nauclio.v1.CreateBoardRequest
-	(*RenameBoardRequest)(nil),             // 56: nauclio.v1.RenameBoardRequest
-	(*BoardRef)(nil),                       // 57: nauclio.v1.BoardRef
-	(*SetBoardArchivePolicyRequest)(nil),   // 58: nauclio.v1.SetBoardArchivePolicyRequest
-	(*CreateBoardLabelRequest)(nil),        // 59: nauclio.v1.CreateBoardLabelRequest
-	(*UpdateBoardLabelRequest)(nil),        // 60: nauclio.v1.UpdateBoardLabelRequest
-	(*DeleteBoardLabelRequest)(nil),        // 61: nauclio.v1.DeleteBoardLabelRequest
-	(*EffortOption)(nil),                   // 62: nauclio.v1.EffortOption
-	(*CreateConversationRequest)(nil),      // 63: nauclio.v1.CreateConversationRequest
-	(*ListChatsRequest)(nil),               // 64: nauclio.v1.ListChatsRequest
-	(*ChatsResponse)(nil),                  // 65: nauclio.v1.ChatsResponse
-	(*GetCardRequest)(nil),                 // 66: nauclio.v1.GetCardRequest
-	(*GetConversationRequest)(nil),         // 67: nauclio.v1.GetConversationRequest
-	(*WatchConversationRequest)(nil),       // 68: nauclio.v1.WatchConversationRequest
-	(*PollConversationRequest)(nil),        // 69: nauclio.v1.PollConversationRequest
-	(*ConversationUpdate)(nil),             // 70: nauclio.v1.ConversationUpdate
-	(*GetToolOutputRequest)(nil),           // 71: nauclio.v1.GetToolOutputRequest
-	(*ToolOutput)(nil),                     // 72: nauclio.v1.ToolOutput
-	(*SendMessageRequest)(nil),             // 73: nauclio.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),            // 74: nauclio.v1.SendMessageResponse
-	(*AddCommentRequest)(nil),              // 75: nauclio.v1.AddCommentRequest
-	(*MoveCardRequest)(nil),                // 76: nauclio.v1.MoveCardRequest
-	(*SetCardLabelsRequest)(nil),           // 77: nauclio.v1.SetCardLabelsRequest
-	(*RenameCardRequest)(nil),              // 78: nauclio.v1.RenameCardRequest
-	(*UpdateCardRequest)(nil),              // 79: nauclio.v1.UpdateCardRequest
-	(*ArchiveCardRequest)(nil),             // 80: nauclio.v1.ArchiveCardRequest
-	(*PinChatRequest)(nil),                 // 81: nauclio.v1.PinChatRequest
-	(*ListFilesRequest)(nil),               // 82: nauclio.v1.ListFilesRequest
-	(*FileEntry)(nil),                      // 83: nauclio.v1.FileEntry
-	(*FileList)(nil),                       // 84: nauclio.v1.FileList
-	(*ReadFileRequest)(nil),                // 85: nauclio.v1.ReadFileRequest
-	(*FileDocument)(nil),                   // 86: nauclio.v1.FileDocument
-	(*SaveFileRequest)(nil),                // 87: nauclio.v1.SaveFileRequest
-	(*CreateFileRequest)(nil),              // 88: nauclio.v1.CreateFileRequest
-	(*MoveFileRequest)(nil),                // 89: nauclio.v1.MoveFileRequest
-	(*MoveFileResponse)(nil),               // 90: nauclio.v1.MoveFileResponse
-	(*DeleteFileRequest)(nil),              // 91: nauclio.v1.DeleteFileRequest
-	(*ListSchedulesRequest)(nil),           // 92: nauclio.v1.ListSchedulesRequest
-	(*SchedulesResponse)(nil),              // 93: nauclio.v1.SchedulesResponse
-	(*Schedule)(nil),                       // 94: nauclio.v1.Schedule
-	(*ScheduleDraft)(nil),                  // 95: nauclio.v1.ScheduleDraft
-	(*SaveScheduleRequest)(nil),            // 96: nauclio.v1.SaveScheduleRequest
-	(*PreviewScheduleRequest)(nil),         // 97: nauclio.v1.PreviewScheduleRequest
-	(*SchedulePreview)(nil),                // 98: nauclio.v1.SchedulePreview
-	(*ScheduleRef)(nil),                    // 99: nauclio.v1.ScheduleRef
-	(*SetScheduleEnabledRequest)(nil),      // 100: nauclio.v1.SetScheduleEnabledRequest
-	(*ListScheduleRunsRequest)(nil),        // 101: nauclio.v1.ListScheduleRunsRequest
-	(*ScheduleRun)(nil),                    // 102: nauclio.v1.ScheduleRun
-	(*ScheduleRunsResponse)(nil),           // 103: nauclio.v1.ScheduleRunsResponse
-	nil,                                    // 104: nauclio.v1.Card.ProviderOptionsEntry
-	nil,                                    // 105: nauclio.v1.Settings.AgentParallelLimitsEntry
-	nil,                                    // 106: nauclio.v1.Settings.BoardParallelLimitsEntry
-	nil,                                    // 107: nauclio.v1.CreateConversationRequest.ProviderOptionsEntry
-	nil,                                    // 108: nauclio.v1.SendMessageRequest.ProviderOptionsEntry
-	nil,                                    // 109: nauclio.v1.Schedule.ProviderOptionsEntry
-	nil,                                    // 110: nauclio.v1.ScheduleDraft.ProviderOptionsEntry
-	(*emptypb.Empty)(nil),                  // 111: google.protobuf.Empty
+	(*GlobalDelta)(nil),                    // 9: nauclio.v1.GlobalDelta
+	(*SyncFrame)(nil),                      // 10: nauclio.v1.SyncFrame
+	(*ProjectsResponse)(nil),               // 11: nauclio.v1.ProjectsResponse
+	(*CardsResponse)(nil),                  // 12: nauclio.v1.CardsResponse
+	(*Project)(nil),                        // 13: nauclio.v1.Project
+	(*Board)(nil),                          // 14: nauclio.v1.Board
+	(*Label)(nil),                          // 15: nauclio.v1.Label
+	(*Lane)(nil),                           // 16: nauclio.v1.Lane
+	(*Card)(nil),                           // 17: nauclio.v1.Card
+	(*CardOrigin)(nil),                     // 18: nauclio.v1.CardOrigin
+	(*CardDetail)(nil),                     // 19: nauclio.v1.CardDetail
+	(*Comment)(nil),                        // 20: nauclio.v1.Comment
+	(*Author)(nil),                         // 21: nauclio.v1.Author
+	(*Conversation)(nil),                   // 22: nauclio.v1.Conversation
+	(*Subagent)(nil),                       // 23: nauclio.v1.Subagent
+	(*TaskPlan)(nil),                       // 24: nauclio.v1.TaskPlan
+	(*TaskPlanPhase)(nil),                  // 25: nauclio.v1.TaskPlanPhase
+	(*TaskPlanItem)(nil),                   // 26: nauclio.v1.TaskPlanItem
+	(*UiMessage)(nil),                      // 27: nauclio.v1.UiMessage
+	(*MessagePart)(nil),                    // 28: nauclio.v1.MessagePart
+	(*PendingTool)(nil),                    // 29: nauclio.v1.PendingTool
+	(*QueuedMessage)(nil),                  // 30: nauclio.v1.QueuedMessage
+	(*ConversationPage)(nil),               // 31: nauclio.v1.ConversationPage
+	(*ConversationSnapshot)(nil),           // 32: nauclio.v1.ConversationSnapshot
+	(*HarnessCatalog)(nil),                 // 33: nauclio.v1.HarnessCatalog
+	(*Harness)(nil),                        // 34: nauclio.v1.Harness
+	(*ProviderOption)(nil),                 // 35: nauclio.v1.ProviderOption
+	(*ProviderOptionChoice)(nil),           // 36: nauclio.v1.ProviderOptionChoice
+	(*HarnessCapability)(nil),              // 37: nauclio.v1.HarnessCapability
+	(*HarnessModel)(nil),                   // 38: nauclio.v1.HarnessModel
+	(*EffortConfig)(nil),                   // 39: nauclio.v1.EffortConfig
+	(*Settings)(nil),                       // 40: nauclio.v1.Settings
+	(*SettingsOptions)(nil),                // 41: nauclio.v1.SettingsOptions
+	(*UpdateSettingsRequest)(nil),          // 42: nauclio.v1.UpdateSettingsRequest
+	(*PromptSettings)(nil),                 // 43: nauclio.v1.PromptSettings
+	(*UpdatePromptSettingsRequest)(nil),    // 44: nauclio.v1.UpdatePromptSettingsRequest
+	(*SetScopedPromptTemplateRequest)(nil), // 45: nauclio.v1.SetScopedPromptTemplateRequest
+	(*PreviewPromptRequest)(nil),           // 46: nauclio.v1.PreviewPromptRequest
+	(*PromptPreview)(nil),                  // 47: nauclio.v1.PromptPreview
+	(*ListDirectoriesRequest)(nil),         // 48: nauclio.v1.ListDirectoriesRequest
+	(*DirectoryEntry)(nil),                 // 49: nauclio.v1.DirectoryEntry
+	(*DirectoryLocation)(nil),              // 50: nauclio.v1.DirectoryLocation
+	(*DirectoryListing)(nil),               // 51: nauclio.v1.DirectoryListing
+	(*CreateProjectRequest)(nil),           // 52: nauclio.v1.CreateProjectRequest
+	(*CreateProjectResponse)(nil),          // 53: nauclio.v1.CreateProjectResponse
+	(*UpdateProjectRequest)(nil),           // 54: nauclio.v1.UpdateProjectRequest
+	(*ArchiveProjectRequest)(nil),          // 55: nauclio.v1.ArchiveProjectRequest
+	(*CreateBoardRequest)(nil),             // 56: nauclio.v1.CreateBoardRequest
+	(*RenameBoardRequest)(nil),             // 57: nauclio.v1.RenameBoardRequest
+	(*BoardRef)(nil),                       // 58: nauclio.v1.BoardRef
+	(*SetBoardArchivePolicyRequest)(nil),   // 59: nauclio.v1.SetBoardArchivePolicyRequest
+	(*CreateBoardLabelRequest)(nil),        // 60: nauclio.v1.CreateBoardLabelRequest
+	(*UpdateBoardLabelRequest)(nil),        // 61: nauclio.v1.UpdateBoardLabelRequest
+	(*DeleteBoardLabelRequest)(nil),        // 62: nauclio.v1.DeleteBoardLabelRequest
+	(*EffortOption)(nil),                   // 63: nauclio.v1.EffortOption
+	(*CreateConversationRequest)(nil),      // 64: nauclio.v1.CreateConversationRequest
+	(*ListChatsRequest)(nil),               // 65: nauclio.v1.ListChatsRequest
+	(*ChatsResponse)(nil),                  // 66: nauclio.v1.ChatsResponse
+	(*GetCardRequest)(nil),                 // 67: nauclio.v1.GetCardRequest
+	(*GetConversationRequest)(nil),         // 68: nauclio.v1.GetConversationRequest
+	(*WatchConversationRequest)(nil),       // 69: nauclio.v1.WatchConversationRequest
+	(*PollConversationRequest)(nil),        // 70: nauclio.v1.PollConversationRequest
+	(*ConversationUpdate)(nil),             // 71: nauclio.v1.ConversationUpdate
+	(*GetToolOutputRequest)(nil),           // 72: nauclio.v1.GetToolOutputRequest
+	(*ToolOutput)(nil),                     // 73: nauclio.v1.ToolOutput
+	(*SendMessageRequest)(nil),             // 74: nauclio.v1.SendMessageRequest
+	(*SendMessageResponse)(nil),            // 75: nauclio.v1.SendMessageResponse
+	(*AddCommentRequest)(nil),              // 76: nauclio.v1.AddCommentRequest
+	(*MoveCardRequest)(nil),                // 77: nauclio.v1.MoveCardRequest
+	(*StartCardRequest)(nil),               // 78: nauclio.v1.StartCardRequest
+	(*StartCardResponse)(nil),              // 79: nauclio.v1.StartCardResponse
+	(*SetCardLabelsRequest)(nil),           // 80: nauclio.v1.SetCardLabelsRequest
+	(*RenameCardRequest)(nil),              // 81: nauclio.v1.RenameCardRequest
+	(*UpdateCardRequest)(nil),              // 82: nauclio.v1.UpdateCardRequest
+	(*ArchiveCardRequest)(nil),             // 83: nauclio.v1.ArchiveCardRequest
+	(*PinChatRequest)(nil),                 // 84: nauclio.v1.PinChatRequest
+	(*ListFilesRequest)(nil),               // 85: nauclio.v1.ListFilesRequest
+	(*FileEntry)(nil),                      // 86: nauclio.v1.FileEntry
+	(*FileList)(nil),                       // 87: nauclio.v1.FileList
+	(*ReadFileRequest)(nil),                // 88: nauclio.v1.ReadFileRequest
+	(*FileDocument)(nil),                   // 89: nauclio.v1.FileDocument
+	(*SaveFileRequest)(nil),                // 90: nauclio.v1.SaveFileRequest
+	(*CreateFileRequest)(nil),              // 91: nauclio.v1.CreateFileRequest
+	(*MoveFileRequest)(nil),                // 92: nauclio.v1.MoveFileRequest
+	(*MoveFileResponse)(nil),               // 93: nauclio.v1.MoveFileResponse
+	(*DeleteFileRequest)(nil),              // 94: nauclio.v1.DeleteFileRequest
+	(*ListSchedulesRequest)(nil),           // 95: nauclio.v1.ListSchedulesRequest
+	(*SchedulesResponse)(nil),              // 96: nauclio.v1.SchedulesResponse
+	(*Schedule)(nil),                       // 97: nauclio.v1.Schedule
+	(*ScheduleDraft)(nil),                  // 98: nauclio.v1.ScheduleDraft
+	(*SaveScheduleRequest)(nil),            // 99: nauclio.v1.SaveScheduleRequest
+	(*PreviewScheduleRequest)(nil),         // 100: nauclio.v1.PreviewScheduleRequest
+	(*SchedulePreview)(nil),                // 101: nauclio.v1.SchedulePreview
+	(*ScheduleRef)(nil),                    // 102: nauclio.v1.ScheduleRef
+	(*SetScheduleEnabledRequest)(nil),      // 103: nauclio.v1.SetScheduleEnabledRequest
+	(*ListScheduleRunsRequest)(nil),        // 104: nauclio.v1.ListScheduleRunsRequest
+	(*ScheduleRun)(nil),                    // 105: nauclio.v1.ScheduleRun
+	(*ScheduleRunsResponse)(nil),           // 106: nauclio.v1.ScheduleRunsResponse
+	nil,                                    // 107: nauclio.v1.Card.ProviderOptionsEntry
+	nil,                                    // 108: nauclio.v1.Settings.AgentParallelLimitsEntry
+	nil,                                    // 109: nauclio.v1.Settings.BoardParallelLimitsEntry
+	nil,                                    // 110: nauclio.v1.CreateConversationRequest.ProviderOptionsEntry
+	nil,                                    // 111: nauclio.v1.SendMessageRequest.ProviderOptionsEntry
+	nil,                                    // 112: nauclio.v1.Schedule.ProviderOptionsEntry
+	nil,                                    // 113: nauclio.v1.ScheduleDraft.ProviderOptionsEntry
+	(*emptypb.Empty)(nil),                  // 114: google.protobuf.Empty
 }
 var file_nauclio_v1_nauclio_proto_depIdxs = []int32{
 	2,   // 0: nauclio.v1.WatchStateRequest.filter:type_name -> nauclio.v1.GetStateRequest
-	12,  // 1: nauclio.v1.State.projects:type_name -> nauclio.v1.Project
-	12,  // 2: nauclio.v1.State.project:type_name -> nauclio.v1.Project
-	13,  // 3: nauclio.v1.State.boards:type_name -> nauclio.v1.Board
-	16,  // 4: nauclio.v1.State.cards:type_name -> nauclio.v1.Card
-	16,  // 5: nauclio.v1.State.chats:type_name -> nauclio.v1.Card
+	13,  // 1: nauclio.v1.State.projects:type_name -> nauclio.v1.Project
+	13,  // 2: nauclio.v1.State.project:type_name -> nauclio.v1.Project
+	14,  // 3: nauclio.v1.State.boards:type_name -> nauclio.v1.Board
+	17,  // 4: nauclio.v1.State.cards:type_name -> nauclio.v1.Card
+	17,  // 5: nauclio.v1.State.chats:type_name -> nauclio.v1.Card
 	5,   // 6: nauclio.v1.SyncRequest.after:type_name -> nauclio.v1.SyncCursor
 	4,   // 7: nauclio.v1.GlobalSnapshot.state:type_name -> nauclio.v1.State
-	31,  // 8: nauclio.v1.GlobalSnapshot.conversations:type_name -> nauclio.v1.ConversationSnapshot
-	94,  // 9: nauclio.v1.GlobalSnapshot.schedules:type_name -> nauclio.v1.Schedule
-	102, // 10: nauclio.v1.GlobalSnapshot.schedule_runs:type_name -> nauclio.v1.ScheduleRun
-	39,  // 11: nauclio.v1.GlobalSnapshot.settings:type_name -> nauclio.v1.Settings
-	5,   // 12: nauclio.v1.SyncFrame.cursor:type_name -> nauclio.v1.SyncCursor
-	7,   // 13: nauclio.v1.SyncFrame.event:type_name -> nauclio.v1.SyncEvent
-	8,   // 14: nauclio.v1.SyncFrame.snapshot:type_name -> nauclio.v1.GlobalSnapshot
-	7,   // 15: nauclio.v1.SyncFrame.events:type_name -> nauclio.v1.SyncEvent
-	12,  // 16: nauclio.v1.ProjectsResponse.projects:type_name -> nauclio.v1.Project
-	16,  // 17: nauclio.v1.CardsResponse.cards:type_name -> nauclio.v1.Card
-	14,  // 18: nauclio.v1.Board.labels:type_name -> nauclio.v1.Label
-	15,  // 19: nauclio.v1.Board.lanes:type_name -> nauclio.v1.Lane
-	17,  // 20: nauclio.v1.Card.origin:type_name -> nauclio.v1.CardOrigin
-	22,  // 21: nauclio.v1.Card.active_subagents:type_name -> nauclio.v1.Subagent
-	104, // 22: nauclio.v1.Card.provider_options:type_name -> nauclio.v1.Card.ProviderOptionsEntry
-	16,  // 23: nauclio.v1.CardDetail.card:type_name -> nauclio.v1.Card
-	12,  // 24: nauclio.v1.CardDetail.project:type_name -> nauclio.v1.Project
-	13,  // 25: nauclio.v1.CardDetail.board:type_name -> nauclio.v1.Board
-	19,  // 26: nauclio.v1.CardDetail.comments:type_name -> nauclio.v1.Comment
-	20,  // 27: nauclio.v1.Comment.author:type_name -> nauclio.v1.Author
-	26,  // 28: nauclio.v1.Conversation.messages:type_name -> nauclio.v1.UiMessage
-	28,  // 29: nauclio.v1.Conversation.pending_tools:type_name -> nauclio.v1.PendingTool
-	29,  // 30: nauclio.v1.Conversation.queue:type_name -> nauclio.v1.QueuedMessage
-	22,  // 31: nauclio.v1.Conversation.subagents:type_name -> nauclio.v1.Subagent
-	23,  // 32: nauclio.v1.Conversation.task_plans:type_name -> nauclio.v1.TaskPlan
-	27,  // 33: nauclio.v1.Conversation.draft_attachments:type_name -> nauclio.v1.MessagePart
-	24,  // 34: nauclio.v1.TaskPlan.phases:type_name -> nauclio.v1.TaskPlanPhase
-	25,  // 35: nauclio.v1.TaskPlanPhase.tasks:type_name -> nauclio.v1.TaskPlanItem
-	27,  // 36: nauclio.v1.UiMessage.parts:type_name -> nauclio.v1.MessagePart
-	27,  // 37: nauclio.v1.QueuedMessage.parts:type_name -> nauclio.v1.MessagePart
-	18,  // 38: nauclio.v1.ConversationSnapshot.detail:type_name -> nauclio.v1.CardDetail
-	21,  // 39: nauclio.v1.ConversationSnapshot.conversation:type_name -> nauclio.v1.Conversation
-	30,  // 40: nauclio.v1.ConversationSnapshot.page:type_name -> nauclio.v1.ConversationPage
-	33,  // 41: nauclio.v1.HarnessCatalog.harnesses:type_name -> nauclio.v1.Harness
-	37,  // 42: nauclio.v1.Harness.models:type_name -> nauclio.v1.HarnessModel
-	38,  // 43: nauclio.v1.Harness.effort:type_name -> nauclio.v1.EffortConfig
-	36,  // 44: nauclio.v1.Harness.capabilities:type_name -> nauclio.v1.HarnessCapability
-	34,  // 45: nauclio.v1.Harness.options:type_name -> nauclio.v1.ProviderOption
-	35,  // 46: nauclio.v1.ProviderOption.choices:type_name -> nauclio.v1.ProviderOptionChoice
-	62,  // 47: nauclio.v1.EffortConfig.options:type_name -> nauclio.v1.EffortOption
-	105, // 48: nauclio.v1.Settings.agent_parallel_limits:type_name -> nauclio.v1.Settings.AgentParallelLimitsEntry
-	106, // 49: nauclio.v1.Settings.board_parallel_limits:type_name -> nauclio.v1.Settings.BoardParallelLimitsEntry
-	12,  // 50: nauclio.v1.SettingsOptions.projects:type_name -> nauclio.v1.Project
-	13,  // 51: nauclio.v1.SettingsOptions.boards:type_name -> nauclio.v1.Board
-	32,  // 52: nauclio.v1.SettingsOptions.agents:type_name -> nauclio.v1.HarnessCatalog
-	39,  // 53: nauclio.v1.UpdateSettingsRequest.settings:type_name -> nauclio.v1.Settings
-	14,  // 54: nauclio.v1.PromptPreview.applied_labels:type_name -> nauclio.v1.Label
-	48,  // 55: nauclio.v1.DirectoryListing.entries:type_name -> nauclio.v1.DirectoryEntry
-	49,  // 56: nauclio.v1.DirectoryListing.locations:type_name -> nauclio.v1.DirectoryLocation
-	12,  // 57: nauclio.v1.CreateProjectResponse.project:type_name -> nauclio.v1.Project
-	13,  // 58: nauclio.v1.CreateProjectResponse.board:type_name -> nauclio.v1.Board
-	107, // 59: nauclio.v1.CreateConversationRequest.provider_options:type_name -> nauclio.v1.CreateConversationRequest.ProviderOptionsEntry
-	27,  // 60: nauclio.v1.CreateConversationRequest.attachments:type_name -> nauclio.v1.MessagePart
-	12,  // 61: nauclio.v1.ChatsResponse.projects:type_name -> nauclio.v1.Project
-	16,  // 62: nauclio.v1.ChatsResponse.chats:type_name -> nauclio.v1.Card
-	31,  // 63: nauclio.v1.ConversationUpdate.snapshot:type_name -> nauclio.v1.ConversationSnapshot
-	26,  // 64: nauclio.v1.ConversationUpdate.changed_messages:type_name -> nauclio.v1.UiMessage
-	28,  // 65: nauclio.v1.ConversationUpdate.pending_tools:type_name -> nauclio.v1.PendingTool
-	29,  // 66: nauclio.v1.ConversationUpdate.queue:type_name -> nauclio.v1.QueuedMessage
-	18,  // 67: nauclio.v1.ConversationUpdate.detail:type_name -> nauclio.v1.CardDetail
-	30,  // 68: nauclio.v1.ConversationUpdate.page:type_name -> nauclio.v1.ConversationPage
-	22,  // 69: nauclio.v1.ConversationUpdate.subagents:type_name -> nauclio.v1.Subagent
-	23,  // 70: nauclio.v1.ConversationUpdate.task_plans:type_name -> nauclio.v1.TaskPlan
-	27,  // 71: nauclio.v1.ConversationUpdate.draft_attachments:type_name -> nauclio.v1.MessagePart
-	27,  // 72: nauclio.v1.SendMessageRequest.parts:type_name -> nauclio.v1.MessagePart
-	108, // 73: nauclio.v1.SendMessageRequest.provider_options:type_name -> nauclio.v1.SendMessageRequest.ProviderOptionsEntry
-	83,  // 74: nauclio.v1.FileList.entries:type_name -> nauclio.v1.FileEntry
-	94,  // 75: nauclio.v1.SchedulesResponse.schedules:type_name -> nauclio.v1.Schedule
-	109, // 76: nauclio.v1.Schedule.provider_options:type_name -> nauclio.v1.Schedule.ProviderOptionsEntry
-	110, // 77: nauclio.v1.ScheduleDraft.provider_options:type_name -> nauclio.v1.ScheduleDraft.ProviderOptionsEntry
-	95,  // 78: nauclio.v1.SaveScheduleRequest.schedule:type_name -> nauclio.v1.ScheduleDraft
-	102, // 79: nauclio.v1.ScheduleRunsResponse.runs:type_name -> nauclio.v1.ScheduleRun
-	111, // 80: nauclio.v1.NauclioService.Health:input_type -> google.protobuf.Empty
-	111, // 81: nauclio.v1.NauclioService.GetRuntimeStatus:input_type -> google.protobuf.Empty
-	2,   // 82: nauclio.v1.NauclioService.GetState:input_type -> nauclio.v1.GetStateRequest
-	3,   // 83: nauclio.v1.NauclioService.WatchState:input_type -> nauclio.v1.WatchStateRequest
-	6,   // 84: nauclio.v1.NauclioService.WatchSync:input_type -> nauclio.v1.SyncRequest
-	111, // 85: nauclio.v1.NauclioService.GetHarnesses:input_type -> google.protobuf.Empty
-	111, // 86: nauclio.v1.NauclioService.GetSettings:input_type -> google.protobuf.Empty
-	111, // 87: nauclio.v1.NauclioService.GetSettingsOptions:input_type -> google.protobuf.Empty
-	41,  // 88: nauclio.v1.NauclioService.UpdateSettings:input_type -> nauclio.v1.UpdateSettingsRequest
-	111, // 89: nauclio.v1.NauclioService.GetPromptSettings:input_type -> google.protobuf.Empty
-	43,  // 90: nauclio.v1.NauclioService.UpdatePromptSettings:input_type -> nauclio.v1.UpdatePromptSettingsRequest
-	44,  // 91: nauclio.v1.NauclioService.SetProjectPromptTemplate:input_type -> nauclio.v1.SetScopedPromptTemplateRequest
-	44,  // 92: nauclio.v1.NauclioService.SetBoardPromptTemplate:input_type -> nauclio.v1.SetScopedPromptTemplateRequest
-	45,  // 93: nauclio.v1.NauclioService.PreviewPrompt:input_type -> nauclio.v1.PreviewPromptRequest
-	47,  // 94: nauclio.v1.NauclioService.ListDirectories:input_type -> nauclio.v1.ListDirectoriesRequest
-	51,  // 95: nauclio.v1.NauclioService.CreateProject:input_type -> nauclio.v1.CreateProjectRequest
-	53,  // 96: nauclio.v1.NauclioService.UpdateProject:input_type -> nauclio.v1.UpdateProjectRequest
-	54,  // 97: nauclio.v1.NauclioService.ArchiveProject:input_type -> nauclio.v1.ArchiveProjectRequest
-	111, // 98: nauclio.v1.NauclioService.ListArchivedProjects:input_type -> google.protobuf.Empty
-	55,  // 99: nauclio.v1.NauclioService.CreateBoard:input_type -> nauclio.v1.CreateBoardRequest
-	56,  // 100: nauclio.v1.NauclioService.RenameBoard:input_type -> nauclio.v1.RenameBoardRequest
-	58,  // 101: nauclio.v1.NauclioService.SetBoardArchivePolicy:input_type -> nauclio.v1.SetBoardArchivePolicyRequest
-	57,  // 102: nauclio.v1.NauclioService.ListArchivedCards:input_type -> nauclio.v1.BoardRef
-	59,  // 103: nauclio.v1.NauclioService.CreateBoardLabel:input_type -> nauclio.v1.CreateBoardLabelRequest
-	60,  // 104: nauclio.v1.NauclioService.UpdateBoardLabel:input_type -> nauclio.v1.UpdateBoardLabelRequest
-	61,  // 105: nauclio.v1.NauclioService.DeleteBoardLabel:input_type -> nauclio.v1.DeleteBoardLabelRequest
-	63,  // 106: nauclio.v1.NauclioService.CreateCard:input_type -> nauclio.v1.CreateConversationRequest
-	63,  // 107: nauclio.v1.NauclioService.CreateChat:input_type -> nauclio.v1.CreateConversationRequest
-	64,  // 108: nauclio.v1.NauclioService.ListChats:input_type -> nauclio.v1.ListChatsRequest
-	66,  // 109: nauclio.v1.NauclioService.GetCard:input_type -> nauclio.v1.GetCardRequest
-	67,  // 110: nauclio.v1.NauclioService.GetConversation:input_type -> nauclio.v1.GetConversationRequest
-	69,  // 111: nauclio.v1.NauclioService.PollConversation:input_type -> nauclio.v1.PollConversationRequest
-	68,  // 112: nauclio.v1.NauclioService.WatchConversation:input_type -> nauclio.v1.WatchConversationRequest
-	71,  // 113: nauclio.v1.NauclioService.GetToolOutput:input_type -> nauclio.v1.GetToolOutputRequest
-	73,  // 114: nauclio.v1.NauclioService.SendMessage:input_type -> nauclio.v1.SendMessageRequest
-	75,  // 115: nauclio.v1.NauclioService.AddComment:input_type -> nauclio.v1.AddCommentRequest
-	76,  // 116: nauclio.v1.NauclioService.MoveCard:input_type -> nauclio.v1.MoveCardRequest
-	77,  // 117: nauclio.v1.NauclioService.SetCardLabels:input_type -> nauclio.v1.SetCardLabelsRequest
-	66,  // 118: nauclio.v1.NauclioService.CancelCard:input_type -> nauclio.v1.GetCardRequest
-	78,  // 119: nauclio.v1.NauclioService.RenameCard:input_type -> nauclio.v1.RenameCardRequest
-	79,  // 120: nauclio.v1.NauclioService.UpdateCard:input_type -> nauclio.v1.UpdateCardRequest
-	80,  // 121: nauclio.v1.NauclioService.ArchiveCard:input_type -> nauclio.v1.ArchiveCardRequest
-	81,  // 122: nauclio.v1.NauclioService.PinChat:input_type -> nauclio.v1.PinChatRequest
-	82,  // 123: nauclio.v1.NauclioService.ListFiles:input_type -> nauclio.v1.ListFilesRequest
-	85,  // 124: nauclio.v1.NauclioService.ReadFile:input_type -> nauclio.v1.ReadFileRequest
-	87,  // 125: nauclio.v1.NauclioService.SaveFile:input_type -> nauclio.v1.SaveFileRequest
-	88,  // 126: nauclio.v1.NauclioService.CreateFile:input_type -> nauclio.v1.CreateFileRequest
-	89,  // 127: nauclio.v1.NauclioService.MoveFile:input_type -> nauclio.v1.MoveFileRequest
-	91,  // 128: nauclio.v1.NauclioService.DeleteFile:input_type -> nauclio.v1.DeleteFileRequest
-	92,  // 129: nauclio.v1.NauclioService.ListSchedules:input_type -> nauclio.v1.ListSchedulesRequest
-	97,  // 130: nauclio.v1.NauclioService.PreviewSchedule:input_type -> nauclio.v1.PreviewScheduleRequest
-	96,  // 131: nauclio.v1.NauclioService.CreateSchedule:input_type -> nauclio.v1.SaveScheduleRequest
-	96,  // 132: nauclio.v1.NauclioService.UpdateSchedule:input_type -> nauclio.v1.SaveScheduleRequest
-	99,  // 133: nauclio.v1.NauclioService.DeleteSchedule:input_type -> nauclio.v1.ScheduleRef
-	99,  // 134: nauclio.v1.NauclioService.RunSchedule:input_type -> nauclio.v1.ScheduleRef
-	100, // 135: nauclio.v1.NauclioService.SetScheduleEnabled:input_type -> nauclio.v1.SetScheduleEnabledRequest
-	101, // 136: nauclio.v1.NauclioService.ListScheduleRuns:input_type -> nauclio.v1.ListScheduleRunsRequest
-	0,   // 137: nauclio.v1.NauclioService.Health:output_type -> nauclio.v1.HealthResponse
-	1,   // 138: nauclio.v1.NauclioService.GetRuntimeStatus:output_type -> nauclio.v1.RuntimeStatus
-	4,   // 139: nauclio.v1.NauclioService.GetState:output_type -> nauclio.v1.State
-	4,   // 140: nauclio.v1.NauclioService.WatchState:output_type -> nauclio.v1.State
-	9,   // 141: nauclio.v1.NauclioService.WatchSync:output_type -> nauclio.v1.SyncFrame
-	32,  // 142: nauclio.v1.NauclioService.GetHarnesses:output_type -> nauclio.v1.HarnessCatalog
-	39,  // 143: nauclio.v1.NauclioService.GetSettings:output_type -> nauclio.v1.Settings
-	40,  // 144: nauclio.v1.NauclioService.GetSettingsOptions:output_type -> nauclio.v1.SettingsOptions
-	39,  // 145: nauclio.v1.NauclioService.UpdateSettings:output_type -> nauclio.v1.Settings
-	42,  // 146: nauclio.v1.NauclioService.GetPromptSettings:output_type -> nauclio.v1.PromptSettings
-	42,  // 147: nauclio.v1.NauclioService.UpdatePromptSettings:output_type -> nauclio.v1.PromptSettings
-	12,  // 148: nauclio.v1.NauclioService.SetProjectPromptTemplate:output_type -> nauclio.v1.Project
-	13,  // 149: nauclio.v1.NauclioService.SetBoardPromptTemplate:output_type -> nauclio.v1.Board
-	46,  // 150: nauclio.v1.NauclioService.PreviewPrompt:output_type -> nauclio.v1.PromptPreview
-	50,  // 151: nauclio.v1.NauclioService.ListDirectories:output_type -> nauclio.v1.DirectoryListing
-	52,  // 152: nauclio.v1.NauclioService.CreateProject:output_type -> nauclio.v1.CreateProjectResponse
-	12,  // 153: nauclio.v1.NauclioService.UpdateProject:output_type -> nauclio.v1.Project
-	12,  // 154: nauclio.v1.NauclioService.ArchiveProject:output_type -> nauclio.v1.Project
-	10,  // 155: nauclio.v1.NauclioService.ListArchivedProjects:output_type -> nauclio.v1.ProjectsResponse
-	13,  // 156: nauclio.v1.NauclioService.CreateBoard:output_type -> nauclio.v1.Board
-	13,  // 157: nauclio.v1.NauclioService.RenameBoard:output_type -> nauclio.v1.Board
-	13,  // 158: nauclio.v1.NauclioService.SetBoardArchivePolicy:output_type -> nauclio.v1.Board
-	11,  // 159: nauclio.v1.NauclioService.ListArchivedCards:output_type -> nauclio.v1.CardsResponse
-	13,  // 160: nauclio.v1.NauclioService.CreateBoardLabel:output_type -> nauclio.v1.Board
-	13,  // 161: nauclio.v1.NauclioService.UpdateBoardLabel:output_type -> nauclio.v1.Board
-	13,  // 162: nauclio.v1.NauclioService.DeleteBoardLabel:output_type -> nauclio.v1.Board
-	16,  // 163: nauclio.v1.NauclioService.CreateCard:output_type -> nauclio.v1.Card
-	16,  // 164: nauclio.v1.NauclioService.CreateChat:output_type -> nauclio.v1.Card
-	65,  // 165: nauclio.v1.NauclioService.ListChats:output_type -> nauclio.v1.ChatsResponse
-	18,  // 166: nauclio.v1.NauclioService.GetCard:output_type -> nauclio.v1.CardDetail
-	31,  // 167: nauclio.v1.NauclioService.GetConversation:output_type -> nauclio.v1.ConversationSnapshot
-	70,  // 168: nauclio.v1.NauclioService.PollConversation:output_type -> nauclio.v1.ConversationUpdate
-	70,  // 169: nauclio.v1.NauclioService.WatchConversation:output_type -> nauclio.v1.ConversationUpdate
-	72,  // 170: nauclio.v1.NauclioService.GetToolOutput:output_type -> nauclio.v1.ToolOutput
-	74,  // 171: nauclio.v1.NauclioService.SendMessage:output_type -> nauclio.v1.SendMessageResponse
-	19,  // 172: nauclio.v1.NauclioService.AddComment:output_type -> nauclio.v1.Comment
-	16,  // 173: nauclio.v1.NauclioService.MoveCard:output_type -> nauclio.v1.Card
-	16,  // 174: nauclio.v1.NauclioService.SetCardLabels:output_type -> nauclio.v1.Card
-	111, // 175: nauclio.v1.NauclioService.CancelCard:output_type -> google.protobuf.Empty
-	16,  // 176: nauclio.v1.NauclioService.RenameCard:output_type -> nauclio.v1.Card
-	16,  // 177: nauclio.v1.NauclioService.UpdateCard:output_type -> nauclio.v1.Card
-	16,  // 178: nauclio.v1.NauclioService.ArchiveCard:output_type -> nauclio.v1.Card
-	16,  // 179: nauclio.v1.NauclioService.PinChat:output_type -> nauclio.v1.Card
-	84,  // 180: nauclio.v1.NauclioService.ListFiles:output_type -> nauclio.v1.FileList
-	86,  // 181: nauclio.v1.NauclioService.ReadFile:output_type -> nauclio.v1.FileDocument
-	86,  // 182: nauclio.v1.NauclioService.SaveFile:output_type -> nauclio.v1.FileDocument
-	83,  // 183: nauclio.v1.NauclioService.CreateFile:output_type -> nauclio.v1.FileEntry
-	90,  // 184: nauclio.v1.NauclioService.MoveFile:output_type -> nauclio.v1.MoveFileResponse
-	111, // 185: nauclio.v1.NauclioService.DeleteFile:output_type -> google.protobuf.Empty
-	93,  // 186: nauclio.v1.NauclioService.ListSchedules:output_type -> nauclio.v1.SchedulesResponse
-	98,  // 187: nauclio.v1.NauclioService.PreviewSchedule:output_type -> nauclio.v1.SchedulePreview
-	94,  // 188: nauclio.v1.NauclioService.CreateSchedule:output_type -> nauclio.v1.Schedule
-	94,  // 189: nauclio.v1.NauclioService.UpdateSchedule:output_type -> nauclio.v1.Schedule
-	111, // 190: nauclio.v1.NauclioService.DeleteSchedule:output_type -> google.protobuf.Empty
-	102, // 191: nauclio.v1.NauclioService.RunSchedule:output_type -> nauclio.v1.ScheduleRun
-	94,  // 192: nauclio.v1.NauclioService.SetScheduleEnabled:output_type -> nauclio.v1.Schedule
-	103, // 193: nauclio.v1.NauclioService.ListScheduleRuns:output_type -> nauclio.v1.ScheduleRunsResponse
-	137, // [137:194] is the sub-list for method output_type
-	80,  // [80:137] is the sub-list for method input_type
-	80,  // [80:80] is the sub-list for extension type_name
-	80,  // [80:80] is the sub-list for extension extendee
-	0,   // [0:80] is the sub-list for field type_name
+	32,  // 8: nauclio.v1.GlobalSnapshot.conversations:type_name -> nauclio.v1.ConversationSnapshot
+	97,  // 9: nauclio.v1.GlobalSnapshot.schedules:type_name -> nauclio.v1.Schedule
+	105, // 10: nauclio.v1.GlobalSnapshot.schedule_runs:type_name -> nauclio.v1.ScheduleRun
+	40,  // 11: nauclio.v1.GlobalSnapshot.settings:type_name -> nauclio.v1.Settings
+	13,  // 12: nauclio.v1.GlobalDelta.projects:type_name -> nauclio.v1.Project
+	14,  // 13: nauclio.v1.GlobalDelta.boards:type_name -> nauclio.v1.Board
+	17,  // 14: nauclio.v1.GlobalDelta.cards:type_name -> nauclio.v1.Card
+	17,  // 15: nauclio.v1.GlobalDelta.chats:type_name -> nauclio.v1.Card
+	97,  // 16: nauclio.v1.GlobalDelta.schedules:type_name -> nauclio.v1.Schedule
+	105, // 17: nauclio.v1.GlobalDelta.schedule_runs:type_name -> nauclio.v1.ScheduleRun
+	40,  // 18: nauclio.v1.GlobalDelta.settings:type_name -> nauclio.v1.Settings
+	5,   // 19: nauclio.v1.SyncFrame.cursor:type_name -> nauclio.v1.SyncCursor
+	7,   // 20: nauclio.v1.SyncFrame.event:type_name -> nauclio.v1.SyncEvent
+	8,   // 21: nauclio.v1.SyncFrame.snapshot:type_name -> nauclio.v1.GlobalSnapshot
+	7,   // 22: nauclio.v1.SyncFrame.events:type_name -> nauclio.v1.SyncEvent
+	9,   // 23: nauclio.v1.SyncFrame.delta:type_name -> nauclio.v1.GlobalDelta
+	13,  // 24: nauclio.v1.ProjectsResponse.projects:type_name -> nauclio.v1.Project
+	17,  // 25: nauclio.v1.CardsResponse.cards:type_name -> nauclio.v1.Card
+	15,  // 26: nauclio.v1.Board.labels:type_name -> nauclio.v1.Label
+	16,  // 27: nauclio.v1.Board.lanes:type_name -> nauclio.v1.Lane
+	18,  // 28: nauclio.v1.Card.origin:type_name -> nauclio.v1.CardOrigin
+	23,  // 29: nauclio.v1.Card.active_subagents:type_name -> nauclio.v1.Subagent
+	107, // 30: nauclio.v1.Card.provider_options:type_name -> nauclio.v1.Card.ProviderOptionsEntry
+	17,  // 31: nauclio.v1.CardDetail.card:type_name -> nauclio.v1.Card
+	13,  // 32: nauclio.v1.CardDetail.project:type_name -> nauclio.v1.Project
+	14,  // 33: nauclio.v1.CardDetail.board:type_name -> nauclio.v1.Board
+	20,  // 34: nauclio.v1.CardDetail.comments:type_name -> nauclio.v1.Comment
+	21,  // 35: nauclio.v1.Comment.author:type_name -> nauclio.v1.Author
+	27,  // 36: nauclio.v1.Conversation.messages:type_name -> nauclio.v1.UiMessage
+	29,  // 37: nauclio.v1.Conversation.pending_tools:type_name -> nauclio.v1.PendingTool
+	30,  // 38: nauclio.v1.Conversation.queue:type_name -> nauclio.v1.QueuedMessage
+	23,  // 39: nauclio.v1.Conversation.subagents:type_name -> nauclio.v1.Subagent
+	24,  // 40: nauclio.v1.Conversation.task_plans:type_name -> nauclio.v1.TaskPlan
+	28,  // 41: nauclio.v1.Conversation.draft_attachments:type_name -> nauclio.v1.MessagePart
+	25,  // 42: nauclio.v1.TaskPlan.phases:type_name -> nauclio.v1.TaskPlanPhase
+	26,  // 43: nauclio.v1.TaskPlanPhase.tasks:type_name -> nauclio.v1.TaskPlanItem
+	28,  // 44: nauclio.v1.UiMessage.parts:type_name -> nauclio.v1.MessagePart
+	28,  // 45: nauclio.v1.QueuedMessage.parts:type_name -> nauclio.v1.MessagePart
+	19,  // 46: nauclio.v1.ConversationSnapshot.detail:type_name -> nauclio.v1.CardDetail
+	22,  // 47: nauclio.v1.ConversationSnapshot.conversation:type_name -> nauclio.v1.Conversation
+	31,  // 48: nauclio.v1.ConversationSnapshot.page:type_name -> nauclio.v1.ConversationPage
+	34,  // 49: nauclio.v1.HarnessCatalog.harnesses:type_name -> nauclio.v1.Harness
+	38,  // 50: nauclio.v1.Harness.models:type_name -> nauclio.v1.HarnessModel
+	39,  // 51: nauclio.v1.Harness.effort:type_name -> nauclio.v1.EffortConfig
+	37,  // 52: nauclio.v1.Harness.capabilities:type_name -> nauclio.v1.HarnessCapability
+	35,  // 53: nauclio.v1.Harness.options:type_name -> nauclio.v1.ProviderOption
+	36,  // 54: nauclio.v1.ProviderOption.choices:type_name -> nauclio.v1.ProviderOptionChoice
+	63,  // 55: nauclio.v1.EffortConfig.options:type_name -> nauclio.v1.EffortOption
+	108, // 56: nauclio.v1.Settings.agent_parallel_limits:type_name -> nauclio.v1.Settings.AgentParallelLimitsEntry
+	109, // 57: nauclio.v1.Settings.board_parallel_limits:type_name -> nauclio.v1.Settings.BoardParallelLimitsEntry
+	13,  // 58: nauclio.v1.SettingsOptions.projects:type_name -> nauclio.v1.Project
+	14,  // 59: nauclio.v1.SettingsOptions.boards:type_name -> nauclio.v1.Board
+	33,  // 60: nauclio.v1.SettingsOptions.agents:type_name -> nauclio.v1.HarnessCatalog
+	40,  // 61: nauclio.v1.UpdateSettingsRequest.settings:type_name -> nauclio.v1.Settings
+	15,  // 62: nauclio.v1.PromptPreview.applied_labels:type_name -> nauclio.v1.Label
+	49,  // 63: nauclio.v1.DirectoryListing.entries:type_name -> nauclio.v1.DirectoryEntry
+	50,  // 64: nauclio.v1.DirectoryListing.locations:type_name -> nauclio.v1.DirectoryLocation
+	13,  // 65: nauclio.v1.CreateProjectResponse.project:type_name -> nauclio.v1.Project
+	14,  // 66: nauclio.v1.CreateProjectResponse.board:type_name -> nauclio.v1.Board
+	110, // 67: nauclio.v1.CreateConversationRequest.provider_options:type_name -> nauclio.v1.CreateConversationRequest.ProviderOptionsEntry
+	28,  // 68: nauclio.v1.CreateConversationRequest.attachments:type_name -> nauclio.v1.MessagePart
+	13,  // 69: nauclio.v1.ChatsResponse.projects:type_name -> nauclio.v1.Project
+	17,  // 70: nauclio.v1.ChatsResponse.chats:type_name -> nauclio.v1.Card
+	32,  // 71: nauclio.v1.ConversationUpdate.snapshot:type_name -> nauclio.v1.ConversationSnapshot
+	27,  // 72: nauclio.v1.ConversationUpdate.changed_messages:type_name -> nauclio.v1.UiMessage
+	29,  // 73: nauclio.v1.ConversationUpdate.pending_tools:type_name -> nauclio.v1.PendingTool
+	30,  // 74: nauclio.v1.ConversationUpdate.queue:type_name -> nauclio.v1.QueuedMessage
+	19,  // 75: nauclio.v1.ConversationUpdate.detail:type_name -> nauclio.v1.CardDetail
+	31,  // 76: nauclio.v1.ConversationUpdate.page:type_name -> nauclio.v1.ConversationPage
+	23,  // 77: nauclio.v1.ConversationUpdate.subagents:type_name -> nauclio.v1.Subagent
+	24,  // 78: nauclio.v1.ConversationUpdate.task_plans:type_name -> nauclio.v1.TaskPlan
+	28,  // 79: nauclio.v1.ConversationUpdate.draft_attachments:type_name -> nauclio.v1.MessagePart
+	28,  // 80: nauclio.v1.SendMessageRequest.parts:type_name -> nauclio.v1.MessagePart
+	111, // 81: nauclio.v1.SendMessageRequest.provider_options:type_name -> nauclio.v1.SendMessageRequest.ProviderOptionsEntry
+	17,  // 82: nauclio.v1.StartCardResponse.card:type_name -> nauclio.v1.Card
+	86,  // 83: nauclio.v1.FileList.entries:type_name -> nauclio.v1.FileEntry
+	97,  // 84: nauclio.v1.SchedulesResponse.schedules:type_name -> nauclio.v1.Schedule
+	112, // 85: nauclio.v1.Schedule.provider_options:type_name -> nauclio.v1.Schedule.ProviderOptionsEntry
+	113, // 86: nauclio.v1.ScheduleDraft.provider_options:type_name -> nauclio.v1.ScheduleDraft.ProviderOptionsEntry
+	98,  // 87: nauclio.v1.SaveScheduleRequest.schedule:type_name -> nauclio.v1.ScheduleDraft
+	105, // 88: nauclio.v1.ScheduleRunsResponse.runs:type_name -> nauclio.v1.ScheduleRun
+	114, // 89: nauclio.v1.NauclioService.Health:input_type -> google.protobuf.Empty
+	114, // 90: nauclio.v1.NauclioService.GetRuntimeStatus:input_type -> google.protobuf.Empty
+	2,   // 91: nauclio.v1.NauclioService.GetState:input_type -> nauclio.v1.GetStateRequest
+	3,   // 92: nauclio.v1.NauclioService.WatchState:input_type -> nauclio.v1.WatchStateRequest
+	6,   // 93: nauclio.v1.NauclioService.WatchSync:input_type -> nauclio.v1.SyncRequest
+	114, // 94: nauclio.v1.NauclioService.GetHarnesses:input_type -> google.protobuf.Empty
+	114, // 95: nauclio.v1.NauclioService.GetSettings:input_type -> google.protobuf.Empty
+	114, // 96: nauclio.v1.NauclioService.GetSettingsOptions:input_type -> google.protobuf.Empty
+	42,  // 97: nauclio.v1.NauclioService.UpdateSettings:input_type -> nauclio.v1.UpdateSettingsRequest
+	114, // 98: nauclio.v1.NauclioService.GetPromptSettings:input_type -> google.protobuf.Empty
+	44,  // 99: nauclio.v1.NauclioService.UpdatePromptSettings:input_type -> nauclio.v1.UpdatePromptSettingsRequest
+	45,  // 100: nauclio.v1.NauclioService.SetProjectPromptTemplate:input_type -> nauclio.v1.SetScopedPromptTemplateRequest
+	45,  // 101: nauclio.v1.NauclioService.SetBoardPromptTemplate:input_type -> nauclio.v1.SetScopedPromptTemplateRequest
+	46,  // 102: nauclio.v1.NauclioService.PreviewPrompt:input_type -> nauclio.v1.PreviewPromptRequest
+	48,  // 103: nauclio.v1.NauclioService.ListDirectories:input_type -> nauclio.v1.ListDirectoriesRequest
+	52,  // 104: nauclio.v1.NauclioService.CreateProject:input_type -> nauclio.v1.CreateProjectRequest
+	54,  // 105: nauclio.v1.NauclioService.UpdateProject:input_type -> nauclio.v1.UpdateProjectRequest
+	55,  // 106: nauclio.v1.NauclioService.ArchiveProject:input_type -> nauclio.v1.ArchiveProjectRequest
+	114, // 107: nauclio.v1.NauclioService.ListArchivedProjects:input_type -> google.protobuf.Empty
+	56,  // 108: nauclio.v1.NauclioService.CreateBoard:input_type -> nauclio.v1.CreateBoardRequest
+	57,  // 109: nauclio.v1.NauclioService.RenameBoard:input_type -> nauclio.v1.RenameBoardRequest
+	59,  // 110: nauclio.v1.NauclioService.SetBoardArchivePolicy:input_type -> nauclio.v1.SetBoardArchivePolicyRequest
+	58,  // 111: nauclio.v1.NauclioService.ListArchivedCards:input_type -> nauclio.v1.BoardRef
+	60,  // 112: nauclio.v1.NauclioService.CreateBoardLabel:input_type -> nauclio.v1.CreateBoardLabelRequest
+	61,  // 113: nauclio.v1.NauclioService.UpdateBoardLabel:input_type -> nauclio.v1.UpdateBoardLabelRequest
+	62,  // 114: nauclio.v1.NauclioService.DeleteBoardLabel:input_type -> nauclio.v1.DeleteBoardLabelRequest
+	64,  // 115: nauclio.v1.NauclioService.CreateCard:input_type -> nauclio.v1.CreateConversationRequest
+	64,  // 116: nauclio.v1.NauclioService.CreateChat:input_type -> nauclio.v1.CreateConversationRequest
+	65,  // 117: nauclio.v1.NauclioService.ListChats:input_type -> nauclio.v1.ListChatsRequest
+	67,  // 118: nauclio.v1.NauclioService.GetCard:input_type -> nauclio.v1.GetCardRequest
+	68,  // 119: nauclio.v1.NauclioService.GetConversation:input_type -> nauclio.v1.GetConversationRequest
+	70,  // 120: nauclio.v1.NauclioService.PollConversation:input_type -> nauclio.v1.PollConversationRequest
+	69,  // 121: nauclio.v1.NauclioService.WatchConversation:input_type -> nauclio.v1.WatchConversationRequest
+	72,  // 122: nauclio.v1.NauclioService.GetToolOutput:input_type -> nauclio.v1.GetToolOutputRequest
+	74,  // 123: nauclio.v1.NauclioService.SendMessage:input_type -> nauclio.v1.SendMessageRequest
+	76,  // 124: nauclio.v1.NauclioService.AddComment:input_type -> nauclio.v1.AddCommentRequest
+	77,  // 125: nauclio.v1.NauclioService.MoveCard:input_type -> nauclio.v1.MoveCardRequest
+	78,  // 126: nauclio.v1.NauclioService.StartCard:input_type -> nauclio.v1.StartCardRequest
+	80,  // 127: nauclio.v1.NauclioService.SetCardLabels:input_type -> nauclio.v1.SetCardLabelsRequest
+	67,  // 128: nauclio.v1.NauclioService.CancelCard:input_type -> nauclio.v1.GetCardRequest
+	81,  // 129: nauclio.v1.NauclioService.RenameCard:input_type -> nauclio.v1.RenameCardRequest
+	82,  // 130: nauclio.v1.NauclioService.UpdateCard:input_type -> nauclio.v1.UpdateCardRequest
+	83,  // 131: nauclio.v1.NauclioService.ArchiveCard:input_type -> nauclio.v1.ArchiveCardRequest
+	84,  // 132: nauclio.v1.NauclioService.PinChat:input_type -> nauclio.v1.PinChatRequest
+	85,  // 133: nauclio.v1.NauclioService.ListFiles:input_type -> nauclio.v1.ListFilesRequest
+	88,  // 134: nauclio.v1.NauclioService.ReadFile:input_type -> nauclio.v1.ReadFileRequest
+	90,  // 135: nauclio.v1.NauclioService.SaveFile:input_type -> nauclio.v1.SaveFileRequest
+	91,  // 136: nauclio.v1.NauclioService.CreateFile:input_type -> nauclio.v1.CreateFileRequest
+	92,  // 137: nauclio.v1.NauclioService.MoveFile:input_type -> nauclio.v1.MoveFileRequest
+	94,  // 138: nauclio.v1.NauclioService.DeleteFile:input_type -> nauclio.v1.DeleteFileRequest
+	95,  // 139: nauclio.v1.NauclioService.ListSchedules:input_type -> nauclio.v1.ListSchedulesRequest
+	100, // 140: nauclio.v1.NauclioService.PreviewSchedule:input_type -> nauclio.v1.PreviewScheduleRequest
+	99,  // 141: nauclio.v1.NauclioService.CreateSchedule:input_type -> nauclio.v1.SaveScheduleRequest
+	99,  // 142: nauclio.v1.NauclioService.UpdateSchedule:input_type -> nauclio.v1.SaveScheduleRequest
+	102, // 143: nauclio.v1.NauclioService.DeleteSchedule:input_type -> nauclio.v1.ScheduleRef
+	102, // 144: nauclio.v1.NauclioService.RunSchedule:input_type -> nauclio.v1.ScheduleRef
+	103, // 145: nauclio.v1.NauclioService.SetScheduleEnabled:input_type -> nauclio.v1.SetScheduleEnabledRequest
+	104, // 146: nauclio.v1.NauclioService.ListScheduleRuns:input_type -> nauclio.v1.ListScheduleRunsRequest
+	0,   // 147: nauclio.v1.NauclioService.Health:output_type -> nauclio.v1.HealthResponse
+	1,   // 148: nauclio.v1.NauclioService.GetRuntimeStatus:output_type -> nauclio.v1.RuntimeStatus
+	4,   // 149: nauclio.v1.NauclioService.GetState:output_type -> nauclio.v1.State
+	4,   // 150: nauclio.v1.NauclioService.WatchState:output_type -> nauclio.v1.State
+	10,  // 151: nauclio.v1.NauclioService.WatchSync:output_type -> nauclio.v1.SyncFrame
+	33,  // 152: nauclio.v1.NauclioService.GetHarnesses:output_type -> nauclio.v1.HarnessCatalog
+	40,  // 153: nauclio.v1.NauclioService.GetSettings:output_type -> nauclio.v1.Settings
+	41,  // 154: nauclio.v1.NauclioService.GetSettingsOptions:output_type -> nauclio.v1.SettingsOptions
+	40,  // 155: nauclio.v1.NauclioService.UpdateSettings:output_type -> nauclio.v1.Settings
+	43,  // 156: nauclio.v1.NauclioService.GetPromptSettings:output_type -> nauclio.v1.PromptSettings
+	43,  // 157: nauclio.v1.NauclioService.UpdatePromptSettings:output_type -> nauclio.v1.PromptSettings
+	13,  // 158: nauclio.v1.NauclioService.SetProjectPromptTemplate:output_type -> nauclio.v1.Project
+	14,  // 159: nauclio.v1.NauclioService.SetBoardPromptTemplate:output_type -> nauclio.v1.Board
+	47,  // 160: nauclio.v1.NauclioService.PreviewPrompt:output_type -> nauclio.v1.PromptPreview
+	51,  // 161: nauclio.v1.NauclioService.ListDirectories:output_type -> nauclio.v1.DirectoryListing
+	53,  // 162: nauclio.v1.NauclioService.CreateProject:output_type -> nauclio.v1.CreateProjectResponse
+	13,  // 163: nauclio.v1.NauclioService.UpdateProject:output_type -> nauclio.v1.Project
+	13,  // 164: nauclio.v1.NauclioService.ArchiveProject:output_type -> nauclio.v1.Project
+	11,  // 165: nauclio.v1.NauclioService.ListArchivedProjects:output_type -> nauclio.v1.ProjectsResponse
+	14,  // 166: nauclio.v1.NauclioService.CreateBoard:output_type -> nauclio.v1.Board
+	14,  // 167: nauclio.v1.NauclioService.RenameBoard:output_type -> nauclio.v1.Board
+	14,  // 168: nauclio.v1.NauclioService.SetBoardArchivePolicy:output_type -> nauclio.v1.Board
+	12,  // 169: nauclio.v1.NauclioService.ListArchivedCards:output_type -> nauclio.v1.CardsResponse
+	14,  // 170: nauclio.v1.NauclioService.CreateBoardLabel:output_type -> nauclio.v1.Board
+	14,  // 171: nauclio.v1.NauclioService.UpdateBoardLabel:output_type -> nauclio.v1.Board
+	14,  // 172: nauclio.v1.NauclioService.DeleteBoardLabel:output_type -> nauclio.v1.Board
+	17,  // 173: nauclio.v1.NauclioService.CreateCard:output_type -> nauclio.v1.Card
+	17,  // 174: nauclio.v1.NauclioService.CreateChat:output_type -> nauclio.v1.Card
+	66,  // 175: nauclio.v1.NauclioService.ListChats:output_type -> nauclio.v1.ChatsResponse
+	19,  // 176: nauclio.v1.NauclioService.GetCard:output_type -> nauclio.v1.CardDetail
+	32,  // 177: nauclio.v1.NauclioService.GetConversation:output_type -> nauclio.v1.ConversationSnapshot
+	71,  // 178: nauclio.v1.NauclioService.PollConversation:output_type -> nauclio.v1.ConversationUpdate
+	71,  // 179: nauclio.v1.NauclioService.WatchConversation:output_type -> nauclio.v1.ConversationUpdate
+	73,  // 180: nauclio.v1.NauclioService.GetToolOutput:output_type -> nauclio.v1.ToolOutput
+	75,  // 181: nauclio.v1.NauclioService.SendMessage:output_type -> nauclio.v1.SendMessageResponse
+	20,  // 182: nauclio.v1.NauclioService.AddComment:output_type -> nauclio.v1.Comment
+	17,  // 183: nauclio.v1.NauclioService.MoveCard:output_type -> nauclio.v1.Card
+	79,  // 184: nauclio.v1.NauclioService.StartCard:output_type -> nauclio.v1.StartCardResponse
+	17,  // 185: nauclio.v1.NauclioService.SetCardLabels:output_type -> nauclio.v1.Card
+	114, // 186: nauclio.v1.NauclioService.CancelCard:output_type -> google.protobuf.Empty
+	17,  // 187: nauclio.v1.NauclioService.RenameCard:output_type -> nauclio.v1.Card
+	17,  // 188: nauclio.v1.NauclioService.UpdateCard:output_type -> nauclio.v1.Card
+	17,  // 189: nauclio.v1.NauclioService.ArchiveCard:output_type -> nauclio.v1.Card
+	17,  // 190: nauclio.v1.NauclioService.PinChat:output_type -> nauclio.v1.Card
+	87,  // 191: nauclio.v1.NauclioService.ListFiles:output_type -> nauclio.v1.FileList
+	89,  // 192: nauclio.v1.NauclioService.ReadFile:output_type -> nauclio.v1.FileDocument
+	89,  // 193: nauclio.v1.NauclioService.SaveFile:output_type -> nauclio.v1.FileDocument
+	86,  // 194: nauclio.v1.NauclioService.CreateFile:output_type -> nauclio.v1.FileEntry
+	93,  // 195: nauclio.v1.NauclioService.MoveFile:output_type -> nauclio.v1.MoveFileResponse
+	114, // 196: nauclio.v1.NauclioService.DeleteFile:output_type -> google.protobuf.Empty
+	96,  // 197: nauclio.v1.NauclioService.ListSchedules:output_type -> nauclio.v1.SchedulesResponse
+	101, // 198: nauclio.v1.NauclioService.PreviewSchedule:output_type -> nauclio.v1.SchedulePreview
+	97,  // 199: nauclio.v1.NauclioService.CreateSchedule:output_type -> nauclio.v1.Schedule
+	97,  // 200: nauclio.v1.NauclioService.UpdateSchedule:output_type -> nauclio.v1.Schedule
+	114, // 201: nauclio.v1.NauclioService.DeleteSchedule:output_type -> google.protobuf.Empty
+	105, // 202: nauclio.v1.NauclioService.RunSchedule:output_type -> nauclio.v1.ScheduleRun
+	97,  // 203: nauclio.v1.NauclioService.SetScheduleEnabled:output_type -> nauclio.v1.Schedule
+	106, // 204: nauclio.v1.NauclioService.ListScheduleRuns:output_type -> nauclio.v1.ScheduleRunsResponse
+	147, // [147:205] is the sub-list for method output_type
+	89,  // [89:147] is the sub-list for method input_type
+	89,  // [89:89] is the sub-list for extension type_name
+	89,  // [89:89] is the sub-list for extension extendee
+	0,   // [0:89] is the sub-list for field type_name
 }
 
 func init() { file_nauclio_v1_nauclio_proto_init() }
@@ -9136,17 +9466,17 @@ func file_nauclio_v1_nauclio_proto_init() {
 	if File_nauclio_v1_nauclio_proto != nil {
 		return
 	}
-	file_nauclio_v1_nauclio_proto_msgTypes[53].OneofWrappers = []any{}
-	file_nauclio_v1_nauclio_proto_msgTypes[67].OneofWrappers = []any{}
-	file_nauclio_v1_nauclio_proto_msgTypes[69].OneofWrappers = []any{}
-	file_nauclio_v1_nauclio_proto_msgTypes[76].OneofWrappers = []any{}
+	file_nauclio_v1_nauclio_proto_msgTypes[54].OneofWrappers = []any{}
+	file_nauclio_v1_nauclio_proto_msgTypes[68].OneofWrappers = []any{}
+	file_nauclio_v1_nauclio_proto_msgTypes[70].OneofWrappers = []any{}
+	file_nauclio_v1_nauclio_proto_msgTypes[77].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_nauclio_v1_nauclio_proto_rawDesc), len(file_nauclio_v1_nauclio_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   111,
+			NumMessages:   114,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

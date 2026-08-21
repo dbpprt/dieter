@@ -201,6 +201,7 @@ class NauclioSyncService : Service() {
         val reviews = state.cards.count { it.lane.equals("review", true) }
         val title = when (state.phase) {
             ConnectionPhase.CONNECTED -> "Connected to Nauclio"
+            ConnectionPhase.SYNCING -> "Synchronizing Nauclio"
             ConnectionPhase.RECONNECTING -> "Reconnecting to Nauclio"
             ConnectionPhase.AUTH_REQUIRED -> "Sign in to Nauclio"
             ConnectionPhase.INCOMPATIBLE -> "Incompatible Nauclio server"
@@ -208,7 +209,7 @@ class NauclioSyncService : Service() {
             else -> "Connecting to Nauclio"
         }
         val endpointText = endpoint?.let { "${it.label} · ${it.address}" } ?: "Trying configured addresses"
-        val summary = if (connected) "$endpointText · polling in background" else state.error ?: endpointText
+        val summary = if (connected) "$endpointText · live updates in background" else state.error ?: endpointText
         val stats = "${state.boards.size} boards · $reviews review · $activeSubagents subagents"
         val builder = Notification.Builder(this, CONNECTION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
