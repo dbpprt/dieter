@@ -184,7 +184,7 @@ fun NauclioApp(container: NauclioContainer) {
                             }
                         },
                     )
-                    Box(Modifier.weight(1f)) {
+                    Box(Modifier.weight(1f).statusBarsPadding()) {
                         DestinationContent(state, model, expanded = true)
                     }
                 }
