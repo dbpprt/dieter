@@ -40,9 +40,18 @@ class RemoteTerminalViewTest {
 
         composeRule.runOnIdle {
             assertTrue(terminal.transcriptForTesting().contains("ANDROID_RENDER_OK"))
+            assertTrue(terminal.cursorVisibleForTesting())
             terminal.sendBytes("echo input\n".encodeToByteArray())
             assertTrue(input.decodeToString().contains("echo input"))
             assertTrue(terminal.width > 0 && terminal.height > 0)
+        }
+        composeRule.waitUntil(timeoutMillis = 2_500) {
+            terminal.cursorBlinkTransitionsForTesting() >= 2
+        }
+        composeRule.runOnIdle {
+            assertTrue(terminal.cursorBlinkTransitionsForTesting() >= 2)
+            terminal.sendBytes("cursor wakes\n".encodeToByteArray())
+            assertTrue(terminal.cursorVisibleForTesting())
         }
     }
 }

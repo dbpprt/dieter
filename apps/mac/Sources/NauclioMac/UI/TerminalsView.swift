@@ -409,9 +409,8 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         var send: (Data) -> Void
         var resize: (Int, Int) -> Void
         var acceptsInput = true
-        private var consumedBytes = 0
-        private var resetRevision = -1
         private var resizeWorkItem: DispatchWorkItem?
+        private let screenRenderer = RemoteTerminalScreenRenderer()
 
         init(terminalID: String, send: @escaping (Data) -> Void, resize: @escaping (Int, Int) -> Void) {
             self.terminalID = terminalID
@@ -421,15 +420,7 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
 
         @MainActor
         func apply(_ screen: TerminalScreenState, to view: SwiftTerm.TerminalView) {
-            if resetRevision != screen.resetRevision || consumedBytes > screen.data.count {
-                view.terminal.resetToInitialState()
-                consumedBytes = 0
-                resetRevision = screen.resetRevision
-            }
-            guard screen.data.count > consumedBytes else { return }
-            let bytes = [UInt8](screen.data[consumedBytes...])
-            consumedBytes = screen.data.count
-            view.terminal.feed(byteArray: bytes)
+            screenRenderer.apply(screen, to: view)
         }
 
         func send(source: SwiftTerm.TerminalView, data: ArraySlice<UInt8>) {
@@ -452,6 +443,38 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
             NSPasteboard.general.setData(content, forType: .string)
         }
         func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) { }
+    }
+}
+
+/// Applies replayable daemon output through SwiftTerm's view-level feed path.
+///
+/// Feeding `Terminal` directly mutates its buffer but skips the view work that
+/// advances the visible caret, redraws changed rows, clears stale selections,
+/// and follows the live viewport. Keep the replay cursor here so resets and
+/// bounded-buffer truncation also perform a coherent full-screen redraw.
+@MainActor
+final class RemoteTerminalScreenRenderer {
+    private var consumedBytes = 0
+    private var resetRevision = -1
+
+    func apply(_ screen: TerminalScreenState, to view: SwiftTerm.TerminalView) {
+        let needsReset = resetRevision != screen.resetRevision || consumedBytes > screen.data.count
+        if needsReset {
+            view.terminal.resetToInitialState()
+            consumedBytes = 0
+            resetRevision = screen.resetRevision
+        }
+
+        if screen.data.count > consumedBytes {
+            let bytes = [UInt8](screen.data[consumedBytes...])
+            consumedBytes = screen.data.count
+            view.feed(byteArray: bytes[...])
+        } else if needsReset {
+            // The reset dirties the whole terminal even when the replay is empty.
+            // An empty view-level feed schedules SwiftTerm's caret and display pass.
+            let empty = [UInt8]()
+            view.feed(byteArray: empty[...])
+        }
     }
 }
 

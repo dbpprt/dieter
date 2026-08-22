@@ -78,8 +78,60 @@ enum ConversationUISmokeRunner {
         results["reasoning-toggle"] = "passed"
 
         await runPasteChecks(store: store, window: window, results: &results, output: output)
+        await runHistoryChecks(store: store, window: window, results: &results, output: output)
 
         writeReport(results, to: output)
+    }
+
+    /// Proves a long transcript opens with a bounded page instead of
+    /// chain-loading its full history, and that one explicit earlier-page
+    /// request loads exactly one page.
+    private static func runHistoryChecks(
+        store: NauclioStore,
+        window: NSWindow,
+        results: inout [String: String],
+        output: URL
+    ) async {
+        var bestID: String?
+        var bestTotal = 0
+        let candidates = (store.state.cards + store.chats).sorted { $0.updatedAt > $1.updatedAt }.map(\.id)
+        for cardID in candidates.prefix(12) {
+            await store.openConversation(cardID: cardID)
+            var waited = 0
+            while store.conversationLoading && waited < 20 {
+                try? await NauclioTaskSleep.milliseconds(500)
+                waited += 1
+            }
+            if store.conversationHistoryTotal > bestTotal {
+                bestTotal = store.conversationHistoryTotal
+                bestID = cardID
+            }
+        }
+        guard let bestID, bestTotal >= 120 else {
+            results["history-bounded"] = "skipped: largest recent conversation has \(bestTotal) messages"
+            return
+        }
+        await store.openConversation(cardID: bestID)
+        var waited = 0
+        while store.conversationLoading && waited < 20 {
+            try? await NauclioTaskSleep.milliseconds(500)
+            waited += 1
+        }
+        // Give a runaway page chain time to manifest before judging.
+        try? await NauclioTaskSleep.seconds(5)
+        let loaded = store.conversationMessages.count
+        progress("history: \(loaded) of \(store.conversationHistoryTotal) messages loaded after settling", in: output)
+        capture(window, to: output.appending(path: "05-long-history.png"))
+        results["history-bounded"] = loaded <= bestTotal - 30 && store.conversationHistoryHasMore
+            ? "passed"
+            : "failed: \(loaded) of \(bestTotal) messages loaded after opening; hasMore=\(store.conversationHistoryHasMore)"
+
+        let before = store.conversationMessages.count
+        let pageLoaded = await store.loadEarlierMessages()
+        let added = store.conversationMessages.count - before
+        results["history-page"] = pageLoaded && added > 0 && added <= 30
+            ? "passed"
+            : "failed: explicit earlier-page load added \(added) messages"
     }
 
     /// Proves ⌘V routes pasteboard images into the composer as attachment

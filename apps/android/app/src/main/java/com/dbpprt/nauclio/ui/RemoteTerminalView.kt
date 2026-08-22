@@ -46,8 +46,22 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
     private var appliedResetRevision = Long.MIN_VALUE
     private var topRow = 0
     private var controlArmed = false
+    @Volatile private var cursorBlinkVisible = true
+    @Volatile private var cursorBlinkTransitions = 0
+    private var cursorBlinkRunning = false
     private val horizontalInset = (10f * resources.displayMetrics.density).toInt()
     private val verticalInset = (8f * resources.displayMetrics.density).toInt()
+
+    private val cursorBlinkRunnable = object : Runnable {
+        override fun run() {
+            if (!cursorBlinkRunning) return
+            cursorBlinkVisible = !cursorBlinkVisible
+            cursorBlinkTransitions += 1
+            emulator.setCursorBlinkState(cursorBlinkVisible)
+            postInvalidateOnAnimation()
+            postDelayed(this, CURSOR_BLINK_INTERVAL_MILLIS)
+        }
+    }
 
     private val output = object : TerminalOutput() {
         override fun write(data: ByteArray, offset: Int, count: Int) {
@@ -101,6 +115,7 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
         mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND] = Color.rgb(8, 9, 13)
         mColors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] = Color.rgb(182, 173, 246)
         setCursorBlinkingEnabled(true)
+        setCursorBlinkState(true)
     }
 
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
@@ -149,19 +164,22 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
     }
 
     fun applyScreen(screen: TerminalScreenState) {
+        var changed = false
         if (appliedResetRevision != screen.resetRevision || consumedBytes > screen.data.size) {
             emulator.reset()
             consumedBytes = 0
             appliedResetRevision = screen.resetRevision
             topRow = 0
+            changed = true
         }
         if (screen.data.size > consumedBytes) {
             val suffix = screen.data.copyOfRange(consumedBytes, screen.data.size)
             emulator.append(suffix, suffix.size)
             consumedBytes = screen.data.size
             if (topRow == 0) emulator.clearScrollCounter()
+            changed = true
         }
-        postInvalidateOnAnimation()
+        if (changed) revealCursorAndRestartBlink() else postInvalidateOnAnimation()
     }
 
     fun toggleControl() {
@@ -185,16 +203,22 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
     fun sendBytes(bytes: ByteArray) {
         consumeControl()
         if (bytes.isNotEmpty()) onInput(bytes)
+        revealCursorAndRestartBlink()
         requestFocus()
     }
 
     fun pasteClipboard() {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val text = clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
-        if (text.isNotEmpty()) emulator.paste(text)
+        if (text.isNotEmpty()) {
+            emulator.paste(text)
+            revealCursorAndRestartBlink()
+        }
     }
 
     internal fun transcriptForTesting(): String = emulator.screen.transcriptText
+    internal fun cursorVisibleForTesting(): Boolean = emulator.shouldCursorBeVisible()
+    internal fun cursorBlinkTransitionsForTesting(): Int = cursorBlinkTransitions
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -212,6 +236,21 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
             emulator.resize(columns, rows, renderer.fontWidth.toInt().coerceAtLeast(1), renderer.fontLineSpacing)
             onResize(columns, rows)
         }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        startCursorBlinking()
+    }
+
+    override fun onDetachedFromWindow() {
+        stopCursorBlinking()
+        super.onDetachedFromWindow()
+    }
+
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (isVisible) startCursorBlinking() else stopCursorBlinking()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean = gestures.onTouchEvent(event) || super.onTouchEvent(event)
@@ -247,6 +286,7 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
                 repeat(beforeLength.coerceAtMost(64)) { onInput(byteArrayOf(0x7f)) }
+                if (beforeLength > 0) revealCursorAndRestartBlink()
                 return true
             }
 
@@ -294,7 +334,29 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
             }
         } else value
         onInput(transformed.toByteArray(Charsets.UTF_8))
+        revealCursorAndRestartBlink()
         if (applyControl) consumeControl()
+    }
+
+    private fun startCursorBlinking() {
+        if (cursorBlinkRunning || !isAttachedToWindow || !isShown) return
+        cursorBlinkRunning = true
+        revealCursorAndRestartBlink()
+    }
+
+    private fun stopCursorBlinking() {
+        cursorBlinkRunning = false
+        removeCallbacks(cursorBlinkRunnable)
+        cursorBlinkVisible = true
+        emulator.setCursorBlinkState(true)
+    }
+
+    private fun revealCursorAndRestartBlink() {
+        cursorBlinkVisible = true
+        emulator.setCursorBlinkState(true)
+        removeCallbacks(cursorBlinkRunnable)
+        if (cursorBlinkRunning) postDelayed(cursorBlinkRunnable, CURSOR_BLINK_INTERVAL_MILLIS)
+        postInvalidateOnAnimation()
     }
 
     private fun consumeControl(): Boolean {
@@ -319,5 +381,9 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private companion object {
+        const val CURSOR_BLINK_INTERVAL_MILLIS = 600L
     }
 }

@@ -45,7 +45,11 @@ let package = Package(
         ),
         .testTarget(
             name: "NauclioMacTests",
-            dependencies: ["NauclioMac", "NauclioAPI"]
+            dependencies: [
+                "NauclioMac",
+                "NauclioAPI",
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
+            ]
         ),
     ]
 )

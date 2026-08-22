@@ -131,6 +131,8 @@ macOS does not admit synthetic events to its system drag manager.
 `127.0.0.1:14244` by default, leaving the normal local ports untouched. It
 creates and uses a terminal in one packaged app process, terminates that client,
 then launches a second app process and verifies that the daemon-owned terminal
-is still running, its prior output is replayed, and it accepts more input. The
-report and screenshots land under `apps/mac/.build/terminal-ui-smoke`. Override
-the alternate port with `NAUCLIO_TERMINAL_SMOKE_PORT`.
+is still running, its prior output is replayed, and it accepts more input. It
+also fills the terminal scrollback and verifies that SwiftTerm's visible caret
+tracks the emulator cursor while the live viewport follows new output. The report
+and screenshots land under `apps/mac/.build/terminal-ui-smoke`. Override the
+alternate port with `NAUCLIO_TERMINAL_SMOKE_PORT`.

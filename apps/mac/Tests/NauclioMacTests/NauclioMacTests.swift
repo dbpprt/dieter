@@ -4,6 +4,7 @@ import AppKit
 import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
+import SwiftTerm
 import UniformTypeIdentifiers
 @testable import NauclioMac
 
@@ -350,6 +351,120 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(!ConversationScrollBehavior.shouldLoadEarlier(viewport: nearTop, hasMore: false, loading: false))
 }
 
+private func historyToolMessage(_ id: String) -> Nauclio_V1_UiMessage {
+    var part = Nauclio_V1_MessagePart()
+    part.type = "dynamic-tool"
+    part.toolCallID = "call_\(id)"
+    part.toolName = "Bash"
+    var message = Nauclio_V1_UiMessage()
+    message.id = id
+    message.role = "assistant"
+    message.parts = [part]
+    return message
+}
+
+private func historyTextMessage(_ id: String, role: String = "assistant") -> Nauclio_V1_UiMessage {
+    var part = Nauclio_V1_MessagePart()
+    part.type = "text"
+    part.text = "message \(id)"
+    var message = Nauclio_V1_UiMessage()
+    message.id = id
+    message.role = role
+    message.parts = [part]
+    return message
+}
+
+@Test func earlierHistoryAnchorSurvivesToolGroupMergesAcrossPageBoundaries() {
+    // Before the earlier page arrives the transcript starts with a tool-only
+    // message; the anchor remembers the message id, not the item id.
+    let visible = ConversationTimelineItem.group([historyToolMessage("m_20"), historyTextMessage("m_21")])
+    let anchorMessageID = visible.first?.messages.first?.id
+    #expect(anchorMessageID == "m_20")
+
+    // Prepending an earlier page that ends in tool calls merges the old first
+    // item into a differently-identified group; the anchor must resolve to
+    // the containing row instead of silently scrolling nowhere.
+    let merged = ConversationTimelineItem.group([
+        historyTextMessage("m_18", role: "user"),
+        historyToolMessage("m_19"),
+        historyToolMessage("m_20"),
+        historyTextMessage("m_21"),
+    ])
+    #expect(ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: merged) == "tools:m_19")
+
+    // Plain message rows register their raw message id with ScrollViewReader.
+    #expect(ConversationScrollBehavior.anchorItem(containing: "m_21", in: merged) == "m_21")
+    #expect(ConversationScrollBehavior.anchorItem(containing: "gone", in: merged) == nil)
+    #expect(ConversationScrollBehavior.anchorItem(containing: nil, in: merged) == nil)
+}
+
+@Test @MainActor func watchDeltaWindowSlidesKeepMessagesAsLocalHistory() {
+    let store = NauclioStore()
+    var snapshot = Nauclio_V1_ConversationSnapshot()
+    snapshot.conversation.messages = [historyTextMessage("m_1"), historyTextMessage("m_2"), historyTextMessage("m_3")]
+    store.conversation = snapshot
+    store.conversationHistoryStart = 10
+    store.conversationHistoryTotal = 13
+    store.conversationHistoryHasMore = true
+
+    var update = Nauclio_V1_ConversationUpdate()
+    update.removedMessageIds = ["m_1"]
+    update.changedMessages = [historyTextMessage("m_4")]
+    store.apply(update)
+
+    #expect(store.olderConversationMessages.map(\.id) == ["m_1"])
+    #expect(store.conversationMessages.map(\.id) == ["m_1", "m_2", "m_3", "m_4"])
+    #expect(store.conversationHistoryStart == 10)
+    #expect(store.conversationHistoryHasMore)
+}
+
+@Test @MainActor func watchSnapshotReplacementSlidesEarlierMessagesIntoHistory() {
+    let store = NauclioStore()
+    var snapshot = Nauclio_V1_ConversationSnapshot()
+    snapshot.conversation.messages = [historyTextMessage("m_1"), historyTextMessage("m_2"), historyTextMessage("m_3")]
+    store.conversation = snapshot
+    store.conversationHistoryStart = 0
+    store.conversationHistoryTotal = 3
+
+    var replacement = Nauclio_V1_ConversationSnapshot()
+    replacement.conversation.messages = [historyTextMessage("m_3"), historyTextMessage("m_4")]
+    replacement.page.start = 2
+    replacement.page.end = 4
+    replacement.page.total = 4
+    replacement.page.hasMore_p = true
+    var update = Nauclio_V1_ConversationUpdate()
+    update.snapshot = replacement
+    store.apply(update)
+
+    #expect(store.olderConversationMessages.map(\.id) == ["m_1", "m_2"])
+    #expect(store.conversationMessages.map(\.id) == ["m_1", "m_2", "m_3", "m_4"])
+    #expect(store.conversationHistoryStart == 0)
+}
+
+@Test @MainActor func watchSnapshotWithoutOverlapResetsHistoryToTheServerPage() {
+    let store = NauclioStore()
+    var snapshot = Nauclio_V1_ConversationSnapshot()
+    snapshot.conversation.messages = [historyTextMessage("m_1"), historyTextMessage("m_2")]
+    store.conversation = snapshot
+    store.conversationHistoryStart = 0
+    store.conversationHistoryTotal = 2
+
+    var replacement = Nauclio_V1_ConversationSnapshot()
+    replacement.conversation.messages = [historyTextMessage("m_5"), historyTextMessage("m_6")]
+    replacement.page.start = 4
+    replacement.page.end = 6
+    replacement.page.total = 6
+    replacement.page.hasMore_p = true
+    var update = Nauclio_V1_ConversationUpdate()
+    update.snapshot = replacement
+    store.apply(update)
+
+    #expect(store.olderConversationMessages.isEmpty)
+    #expect(store.conversationMessages.map(\.id) == ["m_5", "m_6"])
+    #expect(store.conversationHistoryStart == 4)
+    #expect(store.conversationHistoryHasMore)
+}
+
 @Test func terminalScreenReducerReplaysResetsAndBoundsReconnectState() {
     let first = TerminalScreenReducer.applying(
         data: Data("first".utf8),
@@ -378,6 +493,53 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     )
     #expect(String(decoding: replayed.data, as: UTF8.self) == "fresh")
     #expect(replayed.resetRevision == 3)
+}
+
+@Test @MainActor func remoteTerminalRendererMovesTheVisibleCaretWithOutputAndReplayResets() async throws {
+    let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    let view = SwiftTerm.TerminalView(
+        frame: NSRect(x: 0, y: 0, width: 640, height: 320),
+        font: font
+    )
+    let renderer = RemoteTerminalScreenRenderer()
+
+    var screen = TerminalScreenState()
+    screen.data = Data("abc".utf8)
+    screen.revision = 1
+    renderer.apply(screen, to: view)
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    #expect(view.terminal.getCursorLocation().x == 3)
+    #expect(view.terminal.getCursorLocation().y == 0)
+    #expect(view.caretFrame.origin.x > 0)
+    let firstCaret = view.caretFrame
+
+    screen.data.append(Data("\u{001B}[2D".utf8))
+    screen.revision += 1
+    renderer.apply(screen, to: view)
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    #expect(view.terminal.getCursorLocation().x == 1)
+    #expect(view.caretFrame.origin.x < firstCaret.origin.x)
+
+    screen.data.append(Data("\r\nnext".utf8))
+    screen.revision += 1
+    renderer.apply(screen, to: view)
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    #expect(view.terminal.getCursorLocation().x == 4)
+    #expect(view.terminal.getCursorLocation().y == 1)
+    #expect(view.caretFrame.origin.y < firstCaret.origin.y)
+
+    screen.data = Data("reset".utf8)
+    screen.revision += 1
+    screen.resetRevision += 1
+    renderer.apply(screen, to: view)
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    #expect(view.terminal.getCursorLocation().x == 5)
+    #expect(view.terminal.getCursorLocation().y == 0)
+    #expect(view.caretFrame.origin.y == firstCaret.origin.y)
 }
 
 @Test func chatActivityTextUsesCompactUnits() throws {

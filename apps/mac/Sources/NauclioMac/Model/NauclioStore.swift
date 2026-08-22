@@ -1859,8 +1859,29 @@ final class NauclioStore {
         return (error as? RPCError)?.code == .cancelled
     }
 
-    private func apply(_ update: Nauclio_V1_ConversationUpdate) {
+    // Splits the client's contiguous transcript at the first message the
+    // replacement window still contains; nil when the windows are disjoint.
+    nonisolated static func retainedHistoryPrefix(
+        current: [Nauclio_V1_UiMessage],
+        replacementIDs: Set<String>
+    ) -> [Nauclio_V1_UiMessage]? {
+        guard let overlap = current.firstIndex(where: { !$0.id.isEmpty && replacementIDs.contains($0.id) }) else { return nil }
+        return current[..<overlap].filter { !$0.id.isEmpty }
+    }
+
+    func apply(_ update: Nauclio_V1_ConversationUpdate) {
         if update.hasSnapshot {
+            // The replacement snapshot only carries the server's bounded
+            // window. Messages the client already has that precede the new
+            // window slide into local history so the transcript never loses
+            // content; with no overlap the retained prefix would leave an
+            // unfillable gap, so history resets to the new page instead.
+            let replacementIDs = Set(update.snapshot.conversation.messages.lazy.map(\.id).filter { !$0.isEmpty })
+            if let retained = Self.retainedHistoryPrefix(current: conversationMessages, replacementIDs: replacementIDs) {
+                olderConversationMessages = retained
+            } else {
+                olderConversationMessages = []
+            }
             conversation = update.snapshot
             selectedDetail = update.snapshot.detail
             if olderConversationMessages.isEmpty {
@@ -1872,7 +1893,16 @@ final class NauclioStore {
         }
         guard var snapshot = conversation else { return }
         var value = snapshot.conversation
-        var messages = value.messages.filter { !update.removedMessageIds.contains($0.id) }
+        let removedIDs = Set(update.removedMessageIds)
+        // Removed ids are almost always the window sliding forward during a
+        // streaming turn, not deletions; keep those messages as history so
+        // they don't vanish from the visible transcript.
+        if !removedIDs.isEmpty {
+            let known = Set(olderConversationMessages.lazy.map(\.id))
+            let slidOut = value.messages.filter { removedIDs.contains($0.id) && !known.contains($0.id) }
+            olderConversationMessages.append(contentsOf: slidOut)
+        }
+        var messages = value.messages.filter { !removedIDs.contains($0.id) }
         for changed in update.changedMessages {
             if let index = messages.firstIndex(where: { $0.id == changed.id }) { messages[index] = changed }
             else { messages.append(changed) }

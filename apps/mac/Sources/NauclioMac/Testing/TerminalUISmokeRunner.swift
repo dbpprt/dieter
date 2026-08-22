@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftTerm
 
 /// Drives the persistent-terminal flow from inside the packaged Mac app.
 ///
@@ -10,6 +11,7 @@ import Foundation
 enum TerminalUISmokeRunner {
     private static let firstMarker = "NAUCLIO_TERMINAL_BEFORE_CLIENT_EXIT"
     private static let secondMarker = "NAUCLIO_TERMINAL_AFTER_CLIENT_RESTART"
+    private static let followMarker = "NAUCLIO_TERMINAL_CURSOR_FOLLOW"
 
     static func run(store: NauclioStore) async {
         let output = outputDirectory()
@@ -67,11 +69,26 @@ enum TerminalUISmokeRunner {
         try? await NauclioTaskSleep.milliseconds(500)
         capture(window, to: output.appending(path: "01-before-client-exit.png"))
 
+        store.sendTerminalInput(id: terminalID, data: scrollbackCommand())
+        let filledScrollback = await waitUntil(timeout: 20, condition: {
+            screen(store, terminalID).contains(followMarker)
+        })
+        try? await NauclioTaskSleep.milliseconds(500)
+        let presentation = terminalPresentation(in: window)
+        capture(window, to: output.appending(path: "01-cursor-follow.png"))
+
         writeReport([
             "connection": "passed",
             "terminal-id": terminalID,
             "terminal-create": "passed",
             "initial-output": received ? "passed" : "failed: first marker was not rendered",
+            "scrollback-output": filledScrollback ? "passed" : "failed: scrollback marker was not rendered",
+            "cursor-tracking": presentation.cursorTracks
+                ? "passed"
+                : "failed: SwiftTerm caret did not track the emulator cursor",
+            "viewport-follow": presentation.viewportFollows
+                ? "passed"
+                : "failed: live output did not keep the terminal viewport at the cursor",
             "terminal-running": store.selectedTerminal?.status == "running" ? "passed" : "failed: terminal was not running",
         ], named: "create-report.json", to: output)
     }
@@ -113,6 +130,35 @@ enum TerminalUISmokeRunner {
 
     private static func command(printing marker: String) -> Data {
         Data("printf '\\033[1;36m%s\\033[0m\\n' '\(marker)'\n".utf8)
+    }
+
+    private static func scrollbackCommand() -> Data {
+        Data(
+            "i=1; while [ \"$i\" -le 80 ]; do printf 'NAUCLIO_FOLLOW_%03d\\n' \"$i\"; i=$((i+1)); done; printf '%s\\n' '\(followMarker)'\n".utf8
+        )
+    }
+
+    private static func terminalPresentation(in window: NSWindow) -> (cursorTracks: Bool, viewportFollows: Bool) {
+        guard let view = terminalView(in: window.contentView) else { return (false, false) }
+        let caret = view.caretFrame
+        let cursor = view.terminal.getCursorLocation()
+        let expectedX = CGFloat(cursor.x) * caret.width
+        let caretTracks = caret.width > 0
+            && abs(caret.minX - expectedX) < 1.5
+            && view.bounds.intersects(caret)
+        return (
+            cursorTracks: caretTracks,
+            viewportFollows: caretTracks && view.terminal.getTopVisibleRow() > 0
+        )
+    }
+
+    private static func terminalView(in root: NSView?) -> SwiftTerm.TerminalView? {
+        guard let root else { return nil }
+        if let terminal = root as? SwiftTerm.TerminalView { return terminal }
+        for child in root.subviews {
+            if let terminal = terminalView(in: child) { return terminal }
+        }
+        return nil
     }
 
     private static func screen(_ store: NauclioStore, _ terminalID: String) -> String {

@@ -103,6 +103,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -3603,10 +3604,11 @@ private fun BoardLabelFilters(
 private fun LaneTabs(state: NauclioUiState, model: NauclioViewModel, visibleCards: List<BoardCard>) {
     val board = state.board ?: return
     val selectedIndex = board.lanesList.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
-    PrimaryTabRow(
+    PrimaryScrollableTabRow(
         selectedTabIndex = selectedIndex,
         containerColor = MaterialTheme.colorScheme.background,
         contentColor = NauclioAegean,
+        edgePadding = 0.dp,
         divider = { HorizontalDivider(color = NauclioOutline.copy(alpha = 0.72f)) },
     ) {
         board.lanesList.forEach { lane ->
@@ -3633,6 +3635,7 @@ private fun LaneTabs(state: NauclioUiState, model: NauclioViewModel, visibleCard
                             pop()
                         },
                         fontSize = 13.sp,
+                        maxLines = 1,
                     )
                 },
             )

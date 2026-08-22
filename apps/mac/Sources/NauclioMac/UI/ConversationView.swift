@@ -141,13 +141,21 @@ private struct ConversationTabBar: View {
     }
 }
 
+// Deliberately not @Observable: the scroll geometry callback writes here every
+// frame, and an observable (or @State value) write would re-evaluate the whole
+// timeline body per frame — with a long transcript that pegs the main thread.
+final class ConversationViewportReader {
+    var latest: ConversationViewport?
+    var anchored = false
+}
+
 struct ConversationTimeline: View {
     @Environment(NauclioStore.self) private var store
     @State private var followsLatest = true
     @State private var jumpToLatestVisible = false
     @State private var programmaticScroll = false
     @State private var historyLoadInFlight = false
-    @State private var latestViewport: ConversationViewport?
+    @State private var viewportReader = ConversationViewportReader()
 
     private var messages: [Nauclio_V1_UiMessage] { store.conversationMessages }
     private var timelineItems: [ConversationTimelineItem] {
@@ -180,11 +188,7 @@ struct ConversationTimeline: View {
                             .id("conversation.history-loading")
                         } else if store.conversationHistoryHasMore {
                             Button("Load earlier messages · \(messages.count) of \(store.conversationHistoryTotal)") {
-                                if let latestViewport {
-                                    requestEarlierMessages(ifNeededFor: latestViewport, proxy: proxy)
-                                } else {
-                                    Task { await store.loadEarlierMessages() }
-                                }
+                                loadEarlierHistory(keepLatestVisible: false, proxy: proxy)
                             }
                             .buttonStyle(.plain)
                             .font(.caption)
@@ -234,20 +238,22 @@ struct ConversationTimeline: View {
                         contentHeight: geometry.contentSize.height
                     )
                 } action: { oldViewport, newViewport in
-                    latestViewport = newViewport
+                    viewportReader.latest = newViewport
                     if newViewport.isNearBottom {
-                        followsLatest = true
-                        jumpToLatestVisible = false
-                    } else if oldViewport.isNearBottom && newViewport.contentHeight > oldViewport.contentHeight {
+                        if !followsLatest { followsLatest = true }
+                        if jumpToLatestVisible { jumpToLatestVisible = false }
+                    } else if !programmaticScroll, oldViewport.isNearBottom, newViewport.contentHeight > oldViewport.contentHeight {
                         followsLatest = true
                         Task { @MainActor in
                             await Task.yield()
                             scrollToLatest(proxy, animated: true)
                         }
                     } else if !programmaticScroll, ConversationScrollBehavior.isUserNavigation(from: oldViewport, to: newViewport) {
-                        followsLatest = false
+                        if followsLatest { followsLatest = false }
                     }
-                    requestEarlierMessages(ifNeededFor: newViewport, proxy: proxy)
+                    if viewportReader.anchored {
+                        requestEarlierMessages(ifNeededFor: newViewport, proxy: proxy)
+                    }
                 }
 
                 if jumpToLatestVisible {
@@ -259,10 +265,19 @@ struct ConversationTimeline: View {
                 }
             }
             .task(id: conversationID) {
+                // History loads stay gated until the transcript is anchored at
+                // the bottom; the first geometry event fires at offset zero and
+                // must not be mistaken for the user reaching the oldest page.
                 historyLoadInFlight = false
-                latestViewport = nil
+                viewportReader.latest = nil
+                viewportReader.anchored = false
                 await Task.yield()
                 scrollToLatest(proxy, animated: false)
+                await Task.yield()
+                viewportReader.anchored = true
+                if let latest = viewportReader.latest {
+                    requestEarlierMessages(ifNeededFor: latest, proxy: proxy)
+                }
             }
             .onChange(of: store.conversation?.conversation.lastSeq) { _, _ in
                 if followsLatest {
@@ -270,7 +285,7 @@ struct ConversationTimeline: View {
                         await Task.yield()
                         scrollToLatest(proxy, animated: true)
                     }
-                } else {
+                } else if !jumpToLatestVisible {
                     withAnimation(.easeOut(duration: 0.16)) { jumpToLatestVisible = true }
                 }
             }
@@ -282,8 +297,8 @@ struct ConversationTimeline: View {
         let scroll = { proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom) }
         if animated { withAnimation(.easeOut(duration: 0.22), scroll) }
         else { scroll() }
-        followsLatest = true
-        jumpToLatestVisible = false
+        if !followsLatest { followsLatest = true }
+        if jumpToLatestVisible { jumpToLatestVisible = false }
         Task { @MainActor in
             try? await NauclioTaskSleep.milliseconds(animated ? 320 : 80)
             programmaticScroll = false
@@ -297,9 +312,17 @@ struct ConversationTimeline: View {
                 hasMore: store.conversationHistoryHasMore,
                 loading: store.conversationHistoryLoading
               ) else { return }
+        loadEarlierHistory(keepLatestVisible: followsLatest && viewport.isNearBottom, proxy: proxy)
+    }
+
+    private func loadEarlierHistory(keepLatestVisible: Bool, proxy: ScrollViewProxy) {
+        guard !historyLoadInFlight else { return }
         historyLoadInFlight = true
-        let keepLatestVisible = followsLatest && viewport.isNearBottom
-        let anchorID = keepLatestVisible ? nil : timelineItems.first?.id
+        // Anchor by message id, not timeline-item id: prepending a page can
+        // merge the current first item into a differently-identified tool
+        // group, and a missed scroll restore leaves the viewport at offset
+        // zero, which would chain-load the entire history.
+        let anchorMessageID = keepLatestVisible ? nil : timelineItems.first?.messages.first?.id
         Task { @MainActor in
             let loaded = await store.loadEarlierMessages()
             if loaded {
@@ -307,16 +330,16 @@ struct ConversationTimeline: View {
                 if keepLatestVisible {
                     scrollToLatest(proxy, animated: false)
                     try? await NauclioTaskSleep.milliseconds(80)
-                } else if let anchorID {
+                } else if let anchor = ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: timelineItems) {
                     programmaticScroll = true
-                    proxy.scrollTo(anchorID, anchor: .top)
+                    proxy.scrollTo(anchor, anchor: .top)
                     try? await NauclioTaskSleep.milliseconds(80)
                     programmaticScroll = false
                 }
             }
             historyLoadInFlight = false
-            if loaded, let latestViewport, latestViewport.needsBackfill {
-                requestEarlierMessages(ifNeededFor: latestViewport, proxy: proxy)
+            if loaded, let latest = viewportReader.latest, latest.needsBackfill {
+                requestEarlierMessages(ifNeededFor: latest, proxy: proxy)
             }
         }
     }
@@ -364,6 +387,11 @@ enum ConversationScrollBehavior {
 
     static func isUserNavigation(from old: ConversationViewport, to new: ConversationViewport) -> Bool {
         abs(new.offsetY - old.offsetY) > 0.5 && abs(new.contentHeight - old.contentHeight) <= 0.5
+    }
+
+    static func anchorItem(containing messageID: String?, in items: [ConversationTimelineItem]) -> String? {
+        guard let messageID, !messageID.isEmpty else { return nil }
+        return items.first { item in item.messages.contains { $0.id == messageID } }?.scrollAnchorID
     }
 }
 
@@ -588,6 +616,12 @@ struct ConversationTimelineItem: Identifiable {
     var id: String {
         let prefix = isToolCallGroup ? "tools" : "message"
         return "\(prefix):\(messages.first?.id ?? "unknown")"
+    }
+
+    // The id this item's row registers with ScrollViewReader: grouped tool
+    // rows use the item id, plain message rows the raw message id.
+    var scrollAnchorID: String {
+        isToolCallGroup ? id : (messages.first?.id ?? id)
     }
 
     var toolCalls: [ConversationToolCall] {
