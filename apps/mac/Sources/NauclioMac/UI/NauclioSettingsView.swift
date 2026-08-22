@@ -410,11 +410,25 @@ private struct SettingsValueRow: View {
 
 struct GeneralSettings: View {
     @Environment(NauclioStore.self) private var store
+    @AppStorage(NauclioAppearance.storageKey, store: NauclioAppearance.applicationDefaults())
+    private var appearanceValue = NauclioAppearance.defaultValue.rawValue
     @State private var archiveConfirmation = false
 
     var body: some View {
         SettingsPage {
             VStack(spacing: 14) {
+                SettingsPanel(title: "Appearance", subtitle: "Choose how Nauclio looks on this Mac. Changes apply immediately to every window.") {
+                    HStack(spacing: 9) {
+                        ForEach(NauclioAppearance.allCases) { appearance in
+                            AppearanceOption(
+                                appearance: appearance,
+                                selected: appearance.rawValue == appearanceValue
+                            ) {
+                                appearanceValue = appearance.rawValue
+                            }
+                        }
+                    }
+                }
                 SettingsPanel(title: "Current project route", subtitle: "Nauclio routes each project to the machine that owns it.") {
                     SettingsValueRow(title: "Store", value: store.health.storePath)
                     Divider().overlay(NauclioTheme.border)
@@ -441,6 +455,41 @@ struct GeneralSettings: View {
         .confirmationDialog("Archive \(store.selectedProject?.name ?? "project")?", isPresented: $archiveConfirmation) {
             Button("Archive project", role: .destructive) { Task { await store.setProjectArchived(id: store.selectedProjectID, archived: true) } }
         }
+    }
+}
+
+private struct AppearanceOption: View {
+    let appearance: NauclioAppearance
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: appearance.symbol)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(selected ? NauclioTheme.cobalt : NauclioTheme.subtle)
+                    .frame(width: 24)
+                Text(appearance.title)
+                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                Spacer(minLength: 4)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(selected ? NauclioTheme.cobalt : NauclioTheme.tertiary)
+            }
+            .foregroundStyle(NauclioTheme.text)
+            .padding(.horizontal, 11)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(selected ? NauclioTheme.selection : NauclioTheme.raised, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(selected ? NauclioTheme.cobalt.opacity(0.42) : NauclioTheme.border)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(appearance.title) appearance")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("settings.appearance.\(appearance.rawValue)")
     }
 }
 

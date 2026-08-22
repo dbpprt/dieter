@@ -15,6 +15,7 @@ import com.dbpprt.nauclio.data.AndroidOutboxEntry
 import com.dbpprt.nauclio.data.CachedProjectHost
 import com.dbpprt.nauclio.data.NauclioSyncStore
 import com.dbpprt.nauclio.data.OutboxKind
+import com.dbpprt.nauclio.widget.NauclioWidgetPrefs
 import com.dbpprt.nauclio.v1.Board
 import com.dbpprt.nauclio.v1.Card
 import com.dbpprt.nauclio.v1.ConversationSnapshot
@@ -662,6 +663,7 @@ class NauclioConnectionManager(
         ).collect { frame ->
             if (currentGeneration != synchronized(lock) { generation }) return@collect
             lastSyncFrameAtMs = System.currentTimeMillis()
+            NauclioWidgetPrefs.recordSyncFrame(appContext, lastSyncFrameAtMs)
             var projectionChanged = false
             if (frame.hasSnapshot()) {
                 globalSnapshot = frame.snapshot
@@ -863,10 +865,14 @@ class NauclioConnectionManager(
     }
 
     private fun applyGlobalSnapshot(snapshot: GlobalSnapshot) {
-        val (entries, resolvedConversationIds) = synchronized(outbox) {
-            outbox.toList() to conversationIdResolutions.toMap()
-        }
         _state.update { current ->
+            // Read the outbox inside StateFlow's CAS update. The lambda may be
+            // retried after a foreground conversation frame reconciles a send;
+            // an earlier captured list would then restore the stale pending
+            // presentation until another global frame arrives.
+            val (entries, resolvedConversationIds) = synchronized(outbox) {
+                outbox.toList() to conversationIdResolutions.toMap()
+            }
             val activeEndpoint = current.endpoint
             val activeEndpointId = activeEndpoint?.id ?: activeProjectionKey
             val replacedProjectIds = current.projectHosts
@@ -899,7 +905,13 @@ class NauclioConnectionManager(
                 }
             }
 
+            val knownCards = (cards + chats).associateBy { it.id }
             val conversations = current.activeConversations.toMutableMap().apply {
+                resolvedConversationIds.forEach { (localId, serverId) ->
+                    val local = remove(localId) ?: return@forEach
+                    val migrated = retargetConversation(local, knownCards[serverId], serverId)
+                    put(serverId, freshestConversation(get(serverId), migrated))
+                }
                 snapshot.conversationsList.forEach { incoming ->
                     val id = incoming.detail.card.id
                     put(id, freshestConversation(get(id), incoming))
@@ -916,8 +928,9 @@ class NauclioConnectionManager(
                 when (entry.kind) {
                     OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT -> {
                         val request = runCatching { CreateConversationRequest.parseFrom(entry.request) }.getOrNull() ?: return@forEach
-                        val card = Card.newBuilder()
-                            .setId(entry.optimisticId)
+                        val conversationId = optimisticConversationId(entry)
+                        val card = knownCards[conversationId] ?: Card.newBuilder()
+                            .setId(conversationId)
                             .setScope(if (entry.kind == OutboxKind.CREATE_CHAT) "chat" else "board")
                             .setProjectId(request.projectId)
                             .setBoardId(if (entry.kind == OutboxKind.CREATE_CHAT) "" else request.boardId)
@@ -936,14 +949,14 @@ class NauclioConnectionManager(
                         } else if (cards.none { it.id == card.id }) {
                             cards += card
                         }
-                        if (conversations[card.id] == null) {
+                        if (conversations[conversationId] == null) {
                             val detail = com.dbpprt.nauclio.v1.CardDetail.newBuilder()
                                 .setCard(card)
                                 .also { builder -> projects.firstOrNull { it.id == card.projectId }?.let(builder::setProject) }
                                 .also { builder -> boards.firstOrNull { it.id == card.boardId }?.let(builder::setBoard) }
                                 .build()
                             val conversationBuilder = com.dbpprt.nauclio.v1.Conversation.newBuilder()
-                                .setCardId(card.id)
+                                .setCardId(conversationId)
                                 .setStatus("pending")
                             if (entry.kind != OutboxKind.CREATE_CHAT || request.deferStart) {
                                 conversationBuilder.addAllDraftAttachments(request.attachmentsList)
@@ -952,7 +965,7 @@ class NauclioConnectionManager(
                                 optimisticChatMessage(request, "${entry.optimisticId}_initial")
                                     ?.let(conversationBuilder::addMessages)
                             }
-                            conversations[card.id] = ConversationSnapshot.newBuilder()
+                            conversations[conversationId] = ConversationSnapshot.newBuilder()
                                 .setDetail(detail)
                                 .setConversation(conversationBuilder.build())
                                 .build()
@@ -974,6 +987,7 @@ class NauclioConnectionManager(
                     }
                 }
             }
+            conversations.replaceAll { _, conversation -> overlayOptimisticMessages(conversation, entries) }
 
             val retainedSchedules = current.schedules.filter { it.projectId in retainedProjectIds }
             val schedules = (retainedSchedules + snapshot.schedulesList).distinctBy { it.id }
@@ -993,10 +1007,10 @@ class NauclioConnectionManager(
                 activeConversations = conversations,
                 schedules = schedules,
                 scheduleRuns = scheduleRuns,
-                pendingCardIds = entries.filter { it.kind != OutboxKind.SEND_MESSAGE }.mapTo(mutableSetOf()) { it.optimisticId },
-                pendingMessageIds = entries.filter { it.kind == OutboxKind.SEND_MESSAGE }.mapTo(mutableSetOf()) { it.optimisticId },
-                acceptedOutboxIds = entries.filter { it.serverId != null }.mapTo(mutableSetOf()) { it.optimisticId },
-                failedOutboxIds = entries.filter { it.lastError != null }.mapTo(mutableSetOf()) { it.optimisticId },
+                pendingCardIds = pendingCardIds(entries),
+                pendingMessageIds = pendingMessageIds(entries),
+                acceptedOutboxIds = acceptedOutboxIds(entries),
+                failedOutboxIds = failedOutboxIds(entries),
                 resolvedConversationIds = resolvedConversationIds,
             )
             combined.copy(selectedState = selectedState(combined, snapshot.state))
@@ -1025,15 +1039,25 @@ class NauclioConnectionManager(
             .build()
     }
 
-    private fun reconcileOutbox(snapshot: GlobalSnapshot) {
+    private fun reconcileOutbox(snapshot: GlobalSnapshot): Boolean {
         val cardIds = (snapshot.state.cardsList + snapshot.state.chatsList).mapTo(hashSetOf()) { it.id }
+        return reconcileOutbox(cardIds, snapshot.conversationsList)
+    }
+
+    private fun reconcileOutbox(snapshot: ConversationSnapshot): Boolean {
+        val cardId = snapshot.detail.card.id.ifBlank { snapshot.conversation.cardId }
+        return reconcileOutbox(setOf(cardId).filter(String::isNotBlank).toSet(), listOf(snapshot))
+    }
+
+    private fun reconcileOutbox(
+        cardIds: Set<String>,
+        conversations: List<ConversationSnapshot>,
+    ): Boolean {
         val changed = synchronized(outbox) {
-            outbox.removeAll { entry ->
-                val serverId = entry.serverId ?: return@removeAll false
-                if (entry.kind == OutboxKind.SEND_MESSAGE) true else serverId in cardIds
-            }
+            outbox.removeAll { entry -> outboxEntryIsSynced(entry, cardIds, conversations) }
         }
         if (changed) syncStore.saveOutbox(synchronized(outbox) { outbox.toList() })
+        return changed
     }
 
     suspend fun startCard(cardId: String): StartCardResponse {
@@ -1051,17 +1075,70 @@ class NauclioConnectionManager(
         )
     }
 
-    fun acceptConversation(snapshot: ConversationSnapshot) {
+    fun acceptConversation(snapshot: ConversationSnapshot): ConversationSnapshot {
         val cardId = snapshot.detail.card.id
-        if (cardId.isBlank()) return
+        if (cardId.isBlank()) return snapshot
+        reconcileOutbox(snapshot)
+        var accepted = snapshot
         _state.update { current ->
+            // Keep delivery presentation tied to the outbox state used for
+            // this exact CAS attempt; a concurrent global reconciliation must
+            // not be overwritten by an older pending snapshot.
+            val entries = synchronized(outbox) { outbox.toList() }
             val conversations = LinkedHashMap(current.activeConversations)
-            conversations[cardId] = freshestConversation(conversations[cardId], snapshot)
+            accepted = overlayOptimisticMessages(freshestConversation(conversations[cardId], snapshot), entries)
+            conversations[cardId] = accepted
             while (conversations.size > MAX_ACTIVE_CONVERSATIONS && conversations.keys.first() != cardId) {
                 conversations.remove(conversations.keys.first())
             }
-            current.copy(activeConversations = conversations)
+            current.copy(
+                activeConversations = conversations,
+                pendingCardIds = pendingCardIds(entries),
+                pendingMessageIds = pendingMessageIds(entries),
+                acceptedOutboxIds = acceptedOutboxIds(entries),
+                failedOutboxIds = failedOutboxIds(entries),
+            )
         }
+        return accepted
+    }
+
+    private fun retargetConversation(snapshot: ConversationSnapshot, card: Card?, cardId: String): ConversationSnapshot {
+        val targetCard = card ?: snapshot.detail.card.toBuilder().setId(cardId).build()
+        return snapshot.toBuilder()
+            .setDetail(snapshot.detail.toBuilder().setCard(targetCard))
+            .setConversation(snapshot.conversation.toBuilder().setCardId(cardId))
+            .build()
+    }
+
+    private fun pendingCardIds(entries: List<AndroidOutboxEntry>): Set<String> = buildSet {
+        entries.filter { it.kind != OutboxKind.SEND_MESSAGE }.forEach { entry ->
+            add(entry.optimisticId)
+            entry.serverId?.let(::add)
+        }
+    }
+
+    private fun pendingMessageIds(entries: List<AndroidOutboxEntry>): Set<String> = buildSet {
+        entries.forEach { entry ->
+            when (entry.kind) {
+                OutboxKind.SEND_MESSAGE -> add(entry.optimisticId)
+                OutboxKind.CREATE_CHAT -> optimisticInitialMessageId(entry)?.let(::add)
+                OutboxKind.CREATE_CARD -> Unit
+            }
+        }
+    }
+
+    private fun acceptedOutboxIds(entries: List<AndroidOutboxEntry>): Set<String> = buildSet {
+        entries.filter { it.serverId != null }.forEach { entry -> addAll(outboxPresentationIds(entry)) }
+    }
+
+    private fun failedOutboxIds(entries: List<AndroidOutboxEntry>): Set<String> = buildSet {
+        entries.filter { it.lastError != null }.forEach { entry -> addAll(outboxPresentationIds(entry)) }
+    }
+
+    private fun outboxPresentationIds(entry: AndroidOutboxEntry): Set<String> = buildSet {
+        add(entry.optimisticId)
+        entry.serverId?.let(::add)
+        optimisticInitialMessageId(entry)?.let(::add)
     }
 
     suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean): Card {
@@ -1083,8 +1160,11 @@ class NauclioConnectionManager(
             syncStore.saveOutbox(outbox)
         }
         globalSnapshot?.let(::applyGlobalSnapshot)
+        val resolvedId = synchronized(outbox) { conversationIdResolutions[optimisticId] }
         return _state.value.let { state ->
-            (if (chat) state.chats else state.cards).first { it.id == optimisticId }
+            (if (chat) state.chats else state.cards).first { card ->
+                card.id == resolvedId || card.id == optimisticId
+            }
         }
     }
 

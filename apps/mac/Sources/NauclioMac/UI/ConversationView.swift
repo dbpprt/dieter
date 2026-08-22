@@ -292,7 +292,7 @@ private struct JumpToLatestButton: View {
                 Image(systemName: "arrow.down").font(.system(size: 10, weight: .bold))
             }
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Color.white)
+            .foregroundStyle(NauclioTheme.text)
             .padding(.horizontal, 13).frame(height: 32)
             .background(NauclioTheme.elevated, in: Capsule())
             .shadow(color: Color.black.opacity(0.42), radius: 12, y: 5)
@@ -630,7 +630,7 @@ struct MessagePartView: View {
             if !part.text.isEmpty {
                 Text(markdown(part.text))
                     .font(.system(size: 13))
-                    .foregroundStyle(inUserBubble ? Color.white : Color.white.opacity(0.88))
+                    .foregroundStyle(inUserBubble ? Color.white : NauclioTheme.text)
                     .textSelection(.enabled).lineSpacing(4)
             }
         }
@@ -830,7 +830,7 @@ struct TaskPlanView: View {
                             .font(.system(size: 12, weight: .medium)).foregroundStyle(planColor(task.status)).frame(width: 14)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(task.status == "in_progress" && !task.activeForm.isEmpty ? task.activeForm : task.content)
-                                .font(.caption).foregroundStyle(task.status == "pending" ? NauclioTheme.subtle : Color.white.opacity(0.86))
+                                .font(.caption).foregroundStyle(task.status == "pending" ? NauclioTheme.subtle : NauclioTheme.text)
                             if !task.blocker.isEmpty { Text(task.blocker).font(.caption2).foregroundStyle(NauclioTheme.coral) }
                         }
                         Spacer()

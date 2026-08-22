@@ -172,6 +172,9 @@ data class NauclioUiState(
         }
 }
 
+internal fun conversationStreamNeedsRestart(activeCardId: String?, selectedCardId: String?): Boolean =
+    selectedCardId != null && activeCardId != selectedCardId
+
 class NauclioViewModel(
     private val connectionManager: NauclioConnectionManager,
     private val appPreferences: AppPreferences,
@@ -184,6 +187,7 @@ class NauclioViewModel(
     private var foreground = false
     private var stateJob: Job? = null
     private var conversationJob: Job? = null
+    private var conversationStreamCardId: String? = null
     private var spacesJob: Job? = null
     private var connectionDialogGraceJob: Job? = null
     private var connectionDialogManuallyRequested = false
@@ -233,7 +237,7 @@ class NauclioViewModel(
         rememberConversation()
         foreground = false
         stateJob?.cancel()
-        conversationJob?.cancel()
+        cancelConversationStream()
         spacesJob?.cancel()
         connectionDialogGraceJob?.cancel()
         connectionDialogGraceJob = null
@@ -254,7 +258,7 @@ class NauclioViewModel(
     fun signIn() = connectionManager.signIn()
 
     fun disconnect() {
-        conversationJob?.cancel()
+        cancelConversationStream()
         connectionDialogGraceJob?.cancel()
         connectionDialogGraceJob = null
         connectionDialogManuallyRequested = false
@@ -398,6 +402,10 @@ class NauclioViewModel(
                 failedOutboxIds = connection.failedOutboxIds,
             )
         }
+        val resolvedSelectedCardId = _state.value.selectedCardId
+        if (foreground && conversationStreamNeedsRestart(conversationStreamCardId, resolvedSelectedCardId)) {
+            startConversationStream(requireNotNull(resolvedSelectedCardId))
+        }
         reconcileConnectionDialog(connection)
         if (remote != null && remote !== lastRemoteState) {
             lastRemoteState = remote
@@ -509,7 +517,7 @@ class NauclioViewModel(
                 boardOverviewVisible = if (destination == Destination.BOARD) true else it.boardOverviewVisible,
             )
         }
-        conversationJob?.cancel()
+        cancelConversationStream()
         when (destination) {
             Destination.CHATS -> viewModelScope.launch { loadChats() }
             Destination.FILES -> viewModelScope.launch { loadFiles() }
@@ -538,7 +546,7 @@ class NauclioViewModel(
 
     fun selectProject(id: String) {
         rememberConversation()
-        conversationJob?.cancel()
+        cancelConversationStream()
         _state.update {
             it.copy(
                 selectedProjectId = id,
@@ -572,12 +580,12 @@ class NauclioViewModel(
                 historyLoading = false,
             )
         }
-        conversationJob?.cancel()
+        cancelConversationStream()
     }
 
     fun openBoard(projectId: String, boardId: String) {
         rememberConversation()
-        conversationJob?.cancel()
+        cancelConversationStream()
         val board = _state.value.spaceBoards.firstOrNull { it.id == boardId }
         val changingProject = projectId != _state.value.selectedProjectId
         _state.update {
@@ -605,7 +613,7 @@ class NauclioViewModel(
 
     fun showBoardOverview() {
         rememberConversation()
-        conversationJob?.cancel()
+        cancelConversationStream()
         _state.update {
             it.copy(
                 destination = Destination.BOARD,
@@ -659,15 +667,19 @@ class NauclioViewModel(
 
     fun openCard(card: Card, destination: Destination = _state.value.destination) {
         rememberConversation()
-        val cached = connectionManager.state.value.activeConversations[card.id]?.let {
+        val connection = connectionManager.state.value
+        val cardId = resolveConversationId(card.id, connection.resolvedConversationIds) ?: card.id
+        val resolvedCard = (connection.cards + connection.chats).firstOrNull { it.id == cardId }
+            ?: if (card.id == cardId) card else card.toBuilder().setId(cardId).build()
+        val cached = connection.activeConversations[cardId]?.let {
             CachedConversationUi(it, emptyList(), it.page.start, it.page.total, it.page.hasMore)
-        } ?: conversationCache[card.id]
-        val projectId = card.projectId.ifBlank { _state.value.selectedProjectId }
+        } ?: conversationCache[cardId]
+        val projectId = resolvedCard.projectId.ifBlank { _state.value.selectedProjectId }
         _state.update {
             it.copy(
                 destination = destination,
                 boardOverviewVisible = if (destination == Destination.BOARD) false else it.boardOverviewVisible,
-                selectedCardId = card.id,
+                selectedCardId = cardId,
                 selectedProjectId = projectId,
                 conversation = cached?.snapshot,
                 olderMessages = cached?.olderMessages.orEmpty(),
@@ -683,7 +695,7 @@ class NauclioViewModel(
             )
         }
         connectionManager.selectProject(projectId)
-        startConversationStream(card.id)
+        startConversationStream(cardId)
     }
 
     fun openNotificationCard(cardId: String) {
@@ -693,7 +705,8 @@ class NauclioViewModel(
 
     private fun startConversationStream(cardId: String) {
         if (!foreground) return
-        conversationJob?.cancel()
+        cancelConversationStream()
+        conversationStreamCardId = cardId
         conversationJob = viewModelScope.launch {
             val projectId = (_state.value.cards + _state.value.chats + _state.value.spaceCards)
                 .firstOrNull { it.id == cardId }
@@ -751,16 +764,24 @@ class NauclioViewModel(
 
     private fun applyLiveConversation(cardId: String, snapshot: ConversationSnapshot) {
         if (_state.value.selectedCardId != cardId) return
-        connectionManager.acceptConversation(snapshot)
+        val accepted = connectionManager.acceptConversation(snapshot)
+        val connection = connectionManager.state.value
         _state.update { current ->
             current.copy(
-                conversation = snapshot,
+                conversation = accepted,
                 conversationSyncing = false,
                 connectionPhase = ConnectionPhase.CONNECTED,
                 error = null,
-                historyStart = if (current.historyTotal == 0) snapshot.page.start else current.historyStart,
-                historyTotal = maxOf(current.historyTotal, snapshot.page.total),
-                historyHasMore = if (current.olderMessages.isEmpty()) snapshot.page.hasMore else current.historyHasMore,
+                // A foreground transcript frame is also the durable delivery
+                // acknowledgement. Apply its reconciled presentation in the
+                // same UI update so a conflated background state emission
+                // cannot leave the bubble showing the old local receipt.
+                pendingMessageIds = connection.pendingMessageIds,
+                acceptedOutboxIds = connection.acceptedOutboxIds,
+                failedOutboxIds = connection.failedOutboxIds,
+                historyStart = if (current.historyTotal == 0) accepted.page.start else current.historyStart,
+                historyTotal = maxOf(current.historyTotal, accepted.page.total),
+                historyHasMore = if (current.olderMessages.isEmpty()) accepted.page.hasMore else current.historyHasMore,
             )
         }
         rememberConversation(cardId)
@@ -770,11 +791,14 @@ class NauclioViewModel(
         val cardId = _state.value.selectedCardId ?: return
         viewModelScope.launch {
             mutationMutex.withLock {
-                conversationJob?.cancel()
+                cancelConversationStream()
                 _state.update { it.copy(conversationRefreshing = true, error = null) }
                 try {
                     connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
-                    val snapshot = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
+                    val snapshot = connectionManager.acceptConversation(
+                        repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE),
+                    )
+                    val connection = connectionManager.state.value
                     if (_state.value.selectedCardId != cardId) return@withLock
                     _state.update { current ->
                         val liveIds = snapshot.conversation.messagesList.mapTo(mutableSetOf()) { it.id }
@@ -787,6 +811,9 @@ class NauclioViewModel(
                             historyHasMore = if (older.isEmpty()) snapshot.page.hasMore else current.historyHasMore,
                             conversationRefreshing = false,
                             conversationSyncing = false,
+                            pendingMessageIds = connection.pendingMessageIds,
+                            acceptedOutboxIds = connection.acceptedOutboxIds,
+                            failedOutboxIds = connection.failedOutboxIds,
                             conversationScrollRequest = current.conversationScrollRequest + 1,
                             connectionPhase = ConnectionPhase.CONNECTED,
                             error = null,
@@ -843,8 +870,14 @@ class NauclioViewModel(
 
     fun closeDetail() {
         rememberConversation()
-        conversationJob?.cancel()
+        cancelConversationStream()
         _state.update { it.copy(selectedCardId = null, conversation = null, olderMessages = emptyList()) }
+    }
+
+    private fun cancelConversationStream() {
+        conversationJob?.cancel()
+        conversationJob = null
+        conversationStreamCardId = null
     }
 
     private fun rememberConversation(cardId: String? = _state.value.selectedCardId) {

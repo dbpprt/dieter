@@ -1,39 +1,100 @@
+import AppKit
 import SwiftUI
 
-private extension Color {
-    init(rgb: UInt32) {
+enum NauclioAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    static let storageKey = "NauclioAppearance"
+    static let defaultsSuiteFlag = "--appearance-defaults-suite"
+    static let defaultValue = NauclioAppearance.dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .system: "circle.lefthalf.filled"
+        case .light: "sun.max"
+        case .dark: "moon.stars"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    static func resolve(_ storedValue: String?) -> NauclioAppearance {
+        storedValue.flatMap(Self.init(rawValue:)) ?? defaultValue
+    }
+
+    static func applicationDefaults(arguments: [String] = ProcessInfo.processInfo.arguments) -> UserDefaults {
+        guard let flag = arguments.firstIndex(of: defaultsSuiteFlag),
+              arguments.indices.contains(flag + 1),
+              let defaults = UserDefaults(suiteName: arguments[flag + 1]) else { return .standard }
+        return defaults
+    }
+}
+
+private extension NSColor {
+    convenience init(rgb: UInt32, alpha: CGFloat = 1) {
         self.init(
             red: Double((rgb >> 16) & 0xff) / 255,
             green: Double((rgb >> 8) & 0xff) / 255,
-            blue: Double(rgb & 0xff) / 255
+            blue: Double(rgb & 0xff) / 255,
+            alpha: alpha
         )
     }
 }
 
-/// Neutral near-black surfaces with Nauclio's cobalt, Aegean, and seafoam
-/// brand accents. Hairlines are low-opacity white so panes read as one fluent
-/// surface instead of outlined boxes.
+private extension Color {
+    init(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) {
+        let name = NSColor.Name("Nauclio.\(light).\(dark).\(lightAlpha).\(darkAlpha)")
+        self.init(nsColor: NSColor(name: name) { appearance in
+            let match = appearance.bestMatch(from: [.aqua, .darkAqua])
+            return match == .darkAqua
+                ? NSColor(rgb: dark, alpha: darkAlpha)
+                : NSColor(rgb: light, alpha: lightAlpha)
+        })
+    }
+}
+
+/// Adaptive neutral surfaces with Nauclio's cobalt, Aegean, and seafoam brand
+/// accents. Each semantic color preserves the visual hierarchy and accessible
+/// contrast in both Aqua and Dark Aqua appearances.
 enum NauclioTheme {
-    static let background = Color(rgb: 0x0C0C10)
-    static let sidebar = Color(rgb: 0x111116)
-    static let surface = Color(rgb: 0x17171E)
-    static let raised = Color(rgb: 0x1E1E27)
-    static let elevated = Color(rgb: 0x272733)
-    static let input = Color(rgb: 0x0A0A0E)
-    static let border = Color.white.opacity(0.07)
-    static let strongBorder = Color.white.opacity(0.13)
-    static let text = Color(rgb: 0xF4F4F7)
-    static let subtle = Color(rgb: 0xA6A6B4)
-    static let tertiary = Color(rgb: 0x6F6F7C)
-    static let cobalt = Color(rgb: 0x2563EB)
-    static let aegean = Color(rgb: 0x22D3EE)
-    static let primary = Color(rgb: 0x2563EB)
-    static let seafoam = Color(rgb: 0x5EEAD4)
-    static let amber = Color(rgb: 0xE8A33D)
-    static let coral = Color(rgb: 0xF26D80)
+    static let background = Color(light: 0xF8F8FB, dark: 0x0C0C10)
+    static let sidebar = Color(light: 0xF0F0F5, dark: 0x111116)
+    static let surface = Color(light: 0xFFFFFF, dark: 0x17171E)
+    static let raised = Color(light: 0xF3F3F7, dark: 0x1E1E27)
+    static let elevated = Color(light: 0xE7E7EF, dark: 0x272733)
+    static let input = Color(light: 0xFFFFFF, dark: 0x0A0A0E)
+    static let border = Color(light: 0x16161C, dark: 0xFFFFFF, lightAlpha: 0.09, darkAlpha: 0.07)
+    static let strongBorder = Color(light: 0x16161C, dark: 0xFFFFFF, lightAlpha: 0.16, darkAlpha: 0.13)
+    static let text = Color(light: 0x1B1B21, dark: 0xF4F4F7)
+    static let subtle = Color(light: 0x595A66, dark: 0xA6A6B4)
+    static let tertiary = Color(light: 0x767783, dark: 0x6F6F7C)
+    static let cobalt = Color(light: 0x1D4ED8, dark: 0x2563EB)
+    static let aegean = Color(light: 0x087F9D, dark: 0x22D3EE)
+    static let primary = Color(light: 0x1D4ED8, dark: 0x2563EB)
+    static let seafoam = Color(light: 0x08766E, dark: 0x5EEAD4)
+    static let amber = Color(light: 0xA84C08, dark: 0xE8A33D)
+    static let coral = Color(light: 0xD52D4B, dark: 0xF26D80)
 
     /// Background for the selected navigation or list row.
-    static let selection = Color(rgb: 0x2563EB).opacity(0.22)
+    static let selection = Color(light: 0x1D4ED8, dark: 0x2563EB, lightAlpha: 0.13, darkAlpha: 0.22)
 }
 
 enum NauclioMetrics {

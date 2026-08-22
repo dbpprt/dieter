@@ -31,6 +31,9 @@ enum NativeUISmokeRunner {
         try? await NauclioTaskSleep.milliseconds(500)
 
         var results: [String: String] = [:]
+        let appearanceDefaults = NauclioAppearance.applicationDefaults()
+        appearanceDefaults.set(NauclioAppearance.dark.rawValue, forKey: NauclioAppearance.storageKey)
+        try? await NauclioTaskSleep.milliseconds(300)
         capture(window, to: output.appending(path: "01-board.png"))
         results["board-initial"] = store.section.rawValue
 
@@ -79,6 +82,17 @@ enum NativeUISmokeRunner {
         try? await NauclioTaskSleep.milliseconds(700)
         results["09-settings-general"] = store.section == .settings ? "passed" : "failed: settings did not open"
         capture(window, to: output.appending(path: "09-settings-general.png"))
+
+        if !pressAccessibilityElement(identifier: "settings.appearance.light", in: window) {
+            click(window: window, x: 925, distanceFromTop: 196)
+        }
+        try? await NauclioTaskSleep.milliseconds(700)
+        let storedAppearance = NauclioAppearance.resolve(appearanceDefaults.string(forKey: NauclioAppearance.storageKey))
+        let effectiveAppearance = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
+        results["09b-settings-light-appearance"] = storedAppearance == .light && effectiveAppearance == .aqua
+            ? "passed"
+            : "failed: stored=\(storedAppearance.rawValue), effective=\(effectiveAppearance?.rawValue ?? "unknown")"
+        capture(window, to: output.appending(path: "09b-settings-light-appearance.png"))
 
         click(window: window, x: 320, distanceFromTop: 165)
         try? await NauclioTaskSleep.milliseconds(700)
@@ -140,6 +154,14 @@ enum NativeUISmokeRunner {
             results["14-new-project"] = "failed: sheet not visible"
         }
         store.createProjectPresented = false
+        try? await NauclioTaskSleep.milliseconds(350)
+
+        store.section = .board
+        try? await NauclioTaskSleep.milliseconds(700)
+        capture(window, to: output.appending(path: "16-light-workspace.png"))
+        results["16-light-workspace"] = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua
+            ? "passed"
+            : "failed: light appearance did not persist"
 
         writeReport(results, to: output)
     }
@@ -171,6 +193,47 @@ enum NativeUISmokeRunner {
             )
             if let event { window.sendEvent(event) }
         }
+    }
+
+    private static func pressAccessibilityElement(identifier: String, in window: NSWindow) -> Bool {
+        guard let root = window.contentView else { return false }
+        var visited: Set<ObjectIdentifier> = []
+        return pressAccessibilityElement(identifier: identifier, element: root, visited: &visited)
+    }
+
+    private static func pressAccessibilityElement(
+        identifier: String,
+        element: Any,
+        visited: inout Set<ObjectIdentifier>
+    ) -> Bool {
+        guard let object = element as? NSObject else { return false }
+        let objectID = ObjectIdentifier(object)
+        guard visited.insert(objectID).inserted else { return false }
+
+        if let view = object as? NSView {
+            if view.accessibilityIdentifier() == identifier {
+                return view.accessibilityPerformPress()
+            }
+            for child in view.accessibilityChildren() ?? [] where pressAccessibilityElement(
+                identifier: identifier,
+                element: child,
+                visited: &visited
+            ) {
+                return true
+            }
+        } else if let accessibilityElement = object as? NSAccessibilityElement {
+            if accessibilityElement.accessibilityIdentifier() == identifier {
+                return accessibilityElement.accessibilityPerformPress()
+            }
+            for child in accessibilityElement.accessibilityChildren() ?? [] where pressAccessibilityElement(
+                identifier: identifier,
+                element: child,
+                visited: &visited
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     private static func capture(_ window: NSWindow, to url: URL) {

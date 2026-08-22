@@ -4,12 +4,16 @@ import SwiftUI
 @main
 struct NauclioMacApp: App {
     @State private var store = NauclioStore()
+    @AppStorage(NauclioAppearance.storageKey, store: NauclioAppearance.applicationDefaults())
+    private var appearanceValue = NauclioAppearance.defaultValue.rawValue
+
+    private var appearance: NauclioAppearance { NauclioAppearance.resolve(appearanceValue) }
 
     var body: some Scene {
         WindowGroup("Nauclio") {
             NauclioRootView()
                 .environment(store)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(appearance.colorScheme)
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
                     if ProcessInfo.processInfo.arguments.contains("--sidebar-ui-smoke") {
@@ -96,6 +100,8 @@ enum MenuBarIcon {
 
 struct MenuBarContent: View {
     @Environment(NauclioStore.self) private var store
+    @AppStorage(NauclioAppearance.storageKey, store: NauclioAppearance.applicationDefaults())
+    private var appearanceValue = NauclioAppearance.defaultValue.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -126,7 +132,7 @@ struct MenuBarContent: View {
         .padding(16)
         .frame(width: 384)
         .background(NauclioTheme.background)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(NauclioAppearance.resolve(appearanceValue).colorScheme)
     }
 
     private var header: some View {

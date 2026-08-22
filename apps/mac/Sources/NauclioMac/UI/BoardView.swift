@@ -253,7 +253,7 @@ struct BoardHeader: View {
                         Text("All cards · \(store.boardCards.count)").lineLimit(1)
                     }
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(store.labelFilter.isEmpty ? Color.white : NauclioTheme.subtle)
+                    .foregroundStyle(store.labelFilter.isEmpty ? NauclioTheme.text : NauclioTheme.subtle)
                     .padding(.horizontal, 10).frame(height: 28)
                     .background(store.labelFilter.isEmpty ? NauclioTheme.elevated : NauclioTheme.surface, in: RoundedRectangle(cornerRadius: 7))
                 }
@@ -320,7 +320,7 @@ struct BoardHeader: View {
                             Text("All · \(store.boardCards.count)").lineLimit(1)
                         }
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(store.labelFilter.isEmpty ? Color.white : NauclioTheme.subtle)
+                        .foregroundStyle(store.labelFilter.isEmpty ? NauclioTheme.text : NauclioTheme.subtle)
                         .padding(.horizontal, 10).frame(height: 28)
                         .background(store.labelFilter.isEmpty ? NauclioTheme.elevated : NauclioTheme.surface, in: RoundedRectangle(cornerRadius: 7))
                     }

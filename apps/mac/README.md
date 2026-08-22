@@ -36,11 +36,9 @@ For an isolated development server on another port, launch the app with
 does not replace the user's saved endpoint.
 
 Saved endpoints are HTTPS gateway origins. The app signs in through GitHub
-using a native PKCE flow. Only the resulting Nauclio session is retained, in an
-unencrypted user-only file at
-`~/Library/Application Support/com.dbpprt.nauclio.mac/gateway-sessions.json`; the
-app never accesses Keychain and the GitHub token never enters the app. Daemons
-at the same origin share that one credential and form one combined workspace.
+using a native PKCE flow. Only the resulting Nauclio session is retained in the
+macOS Keychain; the GitHub token never enters the app. Daemons at the same
+origin share that one credential and form one combined workspace.
 The sidebar keeps online and offline machines visible as presence indicators,
 annotates every project with its owning hostname, and automatically routes to
 that machine before opening any project surface or conversation. This directory is
@@ -52,7 +50,12 @@ configure. Other daemons transparently use the encrypted gateway relay.
 
 `Package.swift` can also be opened directly in Xcode. `scripts/build.sh`
 creates an ad-hoc-signed `apps/mac/build/Nauclio.app` that launches like a normal
-macOS app. The script reuses SwiftPM's incremental build directory, disables the
+macOS app. Its explicit development-only designated requirement remains stable
+across rebuilt binaries so one Keychain approval can be retained without a
+local signing certificate. Because an ad-hoc binary can claim the same bundle
+identifier, this requirement is a development convenience rather than a
+security boundary; release packaging replaces it with the certificate-backed
+signature. The script reuses SwiftPM's incremental build directory, disables the
 CLI-only index store, keeps manifest and compiled-artifact caches under
 `apps/mac/.build/nauclio-local`, reuses SwiftPM's shared dependency download
 cache, and avoids network version resolution. The dedicated scratch path keeps

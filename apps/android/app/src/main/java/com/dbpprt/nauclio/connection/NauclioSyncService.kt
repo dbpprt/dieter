@@ -243,7 +243,9 @@ class NauclioSyncService : Service() {
             .addAction(Notification.Action.Builder(null, "Open", openIntent(showConnection = true)).build())
         if (Build.VERSION.SDK_INT >= 36 && connected) {
             // Surface live agent work as an Android 16 promoted Live Update chip.
-            builder.setRequestPromotedOngoing(true)
+            if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+                builder.setRequestPromotedOngoing(true)
+            }
             if (activityPreview.totalCount > 0) {
                 builder.setShortCriticalText("${activityPreview.totalCount} active")
             }

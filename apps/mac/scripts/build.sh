@@ -11,6 +11,7 @@ OUTPUT_ROOT="$APP_ROOT/build"
 APP_BUNDLE="$OUTPUT_ROOT/Nauclio.app"
 BUNDLE_MANIFEST="$OUTPUT_ROOT/.Nauclio.bundle-inputs"
 BUNDLE_OUTPUT_MANIFEST="$OUTPUT_ROOT/.Nauclio.bundle-outputs"
+DEVELOPMENT_REQUIREMENTS='=designated => identifier "com.dbpprt.nauclio.mac"'
 
 "$SCRIPT_DIR/sync-proto.sh" >&2
 "$SCRIPT_DIR/swiftpm.sh" build -c "$CONFIGURATION" >&2
@@ -58,16 +59,24 @@ if [ ! -f "$BUNDLE_MANIFEST" ] || \
     cp "$BRAND_ROOT/assets/png/app-icon-dark-1024.png" "$APP_BUNDLE/Contents/Resources/NauclioAppIcon.png"
     cp "$BRAND_ROOT/assets/png/favicon-32.png" "$APP_BUNDLE/Contents/Resources/NauclioFavicon.png"
     cp "$NAUCLIO_BINARY" "$APP_BUNDLE/Contents/MacOS/NauclioMac"
-    codesign --force --deep --sign - "$APP_BUNDLE" >&2
-    stat -f '%N %Fm %z %i' \
-        "$APP_BUNDLE/Contents/Info.plist" \
-        "$APP_BUNDLE/Contents/Resources/Nauclio.icns" \
-        "$APP_BUNDLE/Contents/Resources/NauclioAppIcon.png" \
-        "$APP_BUNDLE/Contents/Resources/NauclioFavicon.png" \
-        "$APP_BUNDLE/Contents/MacOS/NauclioMac" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
-    mv "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST"
-    mv "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"
-    trap - EXIT INT TERM
 fi
+
+# A default ad-hoc signature derives its designated requirement from the
+# executable's cdhash, so Keychain treats every rebuilt binary as a different
+# application. Embedding this stable development-only requirement lets one
+# explicit Keychain approval survive rebuilds without a signing certificate.
+# It is intentionally replaced by the certificate-backed signature in release
+# packaging and is not a security boundary: another ad-hoc binary can claim the
+# same identifier.
+codesign --force --deep --sign - --requirements "$DEVELOPMENT_REQUIREMENTS" "$APP_BUNDLE" >&2
+stat -f '%N %Fm %z %i' \
+    "$APP_BUNDLE/Contents/Info.plist" \
+    "$APP_BUNDLE/Contents/Resources/Nauclio.icns" \
+    "$APP_BUNDLE/Contents/Resources/NauclioAppIcon.png" \
+    "$APP_BUNDLE/Contents/Resources/NauclioFavicon.png" \
+    "$APP_BUNDLE/Contents/MacOS/NauclioMac" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
+mv "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST"
+mv "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"
+trap - EXIT INT TERM
 
 echo "$APP_BUNDLE"

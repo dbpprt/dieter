@@ -5,6 +5,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$APP_ROOT/../.." && pwd)
 CAPTURE_DIR="$APP_ROOT/.build/ui-smoke"
+APPEARANCE_SUITE="io.nauclio.ui-smoke.$$.appearance"
 mkdir -p "$CAPTURE_DIR"
 rm -f "$CAPTURE_DIR/report.json"
 
@@ -20,12 +21,13 @@ else
     APP_BUNDLE=$($SCRIPT_DIR/build.sh)
 fi
 pkill -x NauclioMac 2>/dev/null || true
-"$APP_BUNDLE/Contents/MacOS/NauclioMac" --ui-smoke --ui-smoke-output "$CAPTURE_DIR" >"$CAPTURE_DIR/app.log" 2>&1 &
+"$APP_BUNDLE/Contents/MacOS/NauclioMac" --ui-smoke --ui-smoke-output "$CAPTURE_DIR" \
+    --appearance-defaults-suite "$APPEARANCE_SUITE" >"$CAPTURE_DIR/app.log" 2>&1 &
 APP_PID=$!
-trap 'kill "$APP_PID" 2>/dev/null || true; if [ -n "${SERVER_PID:-}" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi' EXIT INT TERM
+trap 'kill "$APP_PID" 2>/dev/null || true; defaults delete "$APPEARANCE_SUITE" >/dev/null 2>&1 || true; if [ -n "${SERVER_PID:-}" ]; then kill "$SERVER_PID" 2>/dev/null || true; fi' EXIT INT TERM
 
 COUNT=0
-while [ ! -f "$CAPTURE_DIR/report.json" ] && [ "$COUNT" -lt 60 ]; do
+while [ ! -f "$CAPTURE_DIR/report.json" ] && [ "$COUNT" -lt 120 ]; do
     sleep 1
     COUNT=$((COUNT + 1))
 done

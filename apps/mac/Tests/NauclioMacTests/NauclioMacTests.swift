@@ -514,6 +514,15 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     ])
 }
 
+@Test func appearancePreferenceDefaultsToDarkAndRecognizesEveryStoredMode() {
+    #expect(NauclioAppearance.resolve(nil) == .dark)
+    #expect(NauclioAppearance.resolve("unknown") == .dark)
+    #expect(NauclioAppearance.allCases.map(\.rawValue) == ["system", "light", "dark"])
+    #expect(NauclioAppearance.resolve("system").colorScheme == nil)
+    #expect(NauclioAppearance.resolve("light").colorScheme == .light)
+    #expect(NauclioAppearance.resolve("dark").colorScheme == .dark)
+}
+
 @Test func onlyAuthenticationRequiresAConnectionOverlay() {
     #expect(ConnectionPhase.authenticationRequired.needsConnectionOverlay)
     #expect(!ConnectionPhase.connecting.needsConnectionOverlay)

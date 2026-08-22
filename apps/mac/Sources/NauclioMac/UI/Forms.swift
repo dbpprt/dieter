@@ -111,7 +111,7 @@ struct NewConversationSheet: View {
                                         Circle().fill(tint).frame(width: 6, height: 6)
                                         Text(label.name)
                                     }
-                                    .font(.caption.weight(.medium)).foregroundStyle(selected ? Color.white.opacity(0.88) : NauclioTheme.subtle)
+                                    .font(.caption.weight(.medium)).foregroundStyle(selected ? NauclioTheme.text : NauclioTheme.subtle)
                                     .padding(.horizontal, 9).frame(height: 28)
                                     .background(tint.opacity(selected ? 0.17 : 0.08), in: Capsule())
                                 }.buttonStyle(.plain)

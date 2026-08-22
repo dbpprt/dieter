@@ -36,6 +36,29 @@
                 <data android:scheme="nauclio-android" android:host="oauth" android:path="/callback" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".widget.NauclioWidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Nauclio">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name=".widget.NauclioActivityWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_activity_info" />
+        </receiver>
+        <service
+            android:name=".widget.NauclioWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
         <service
             android:name=".connection.NauclioSyncService"
             android:exported="false"

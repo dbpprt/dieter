@@ -3789,13 +3789,15 @@ private fun WorkCard(
     val labels = board?.labelsList.orEmpty().filter { card.labelIdsList.contains(it.id) }
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().alpha(if (pending) 0.52f else 1f).then(
+        modifier = modifier.fillMaxWidth().then(
             if (selected) Modifier.border(1.dp, NauclioCobalt, RoundedCornerShape(20.dp)) else Modifier,
         ),
         colors = CardDefaults.cardColors(containerColor = if (selected) NauclioIndigoTintDeep else NauclioSurfaceHigh),
         shape = RoundedCornerShape(20.dp),
     ) {
-        Column {
+        // Keep the surface opaque while an optimistic card is syncing. Fading
+        // the entire card exposes the swipe actions rendered underneath it.
+        Column(Modifier.alpha(if (pending) 0.52f else 1f)) {
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),

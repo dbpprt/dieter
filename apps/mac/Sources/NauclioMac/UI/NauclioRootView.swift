@@ -588,7 +588,7 @@ private struct SidebarUtilityButton: View {
 
     var body: some View {
         Button(action: action) { Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26) }
-            .buttonStyle(.plain).foregroundStyle(hovering ? Color.white : NauclioTheme.subtle)
+            .buttonStyle(.plain).foregroundStyle(hovering ? NauclioTheme.text : NauclioTheme.subtle)
             .background(hovering ? NauclioTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 6))
             .onHover { hovering = $0 }.help(help)
     }

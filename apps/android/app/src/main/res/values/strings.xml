@@ -1,3 +1,10 @@
 <resources>
     <string name="app_name">Nauclio</string>
+    <string name="widget_label">Nauclio Activity</string>
+    <string name="widget_description">Agent activity at a glance: what needs you, what is running, and what just finished.</string>
+    <string name="widget_title_activity">Activity</string>
+    <string name="widget_title_last_finished">Last finished</string>
+    <string name="widget_refresh">Refresh</string>
+    <string name="widget_empty_title">No activity yet</string>
+    <string name="widget_empty_body">Open Nauclio to connect</string>
 </resources>
