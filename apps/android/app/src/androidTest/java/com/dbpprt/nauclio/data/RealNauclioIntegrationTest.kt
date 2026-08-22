@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.NotificationManager
 import android.os.Build
 import com.dbpprt.nauclio.v1.CreateConversationRequest
+import com.dbpprt.nauclio.v1.CreateTerminalRequest
 import com.dbpprt.nauclio.v1.MessagePart
 import com.google.protobuf.ByteString
 import com.dbpprt.nauclio.NauclioApplication
@@ -24,10 +25,55 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
+import java.util.UUID
 
 /** Real transport verification through the configured gateway and an enrolled daemon. */
 @RunWith(AndroidJUnit4::class)
 class RealNauclioIntegrationTest {
+    @Test
+    fun terminalSurvivesAndroidTransportLossThroughTheRealGateway() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        var repository = GrpcNauclioRepository(context)
+        var terminalId: String? = null
+        try {
+            connectToEnrolledDaemon(repository)
+            val project = repository.state().projectsList.first()
+            val nonce = UUID.randomUUID().toString().take(8)
+            val terminal = repository.createTerminal(
+                CreateTerminalRequest.newBuilder()
+                    .setProjectId(project.id)
+                    .setName("android-transport-$nonce")
+                    .setShell("sh")
+                    .setWorkingDirectory(project.path)
+                    .setColumns(92)
+                    .setRows(26)
+                    .build(),
+            )
+            terminalId = terminal.id
+            assertEquals("running", terminal.status)
+
+            val firstMarker = "ANDROID_TERMINAL_ONE_$nonce"
+            repository.writeTerminal(terminal.id, "printf '$firstMarker\\n'\n".encodeToByteArray())
+            val firstSequence = awaitTerminalText(repository, terminal.id, 0, firstMarker)
+
+            // Closing the Android channel must not close the daemon-owned PTY.
+            repository.close()
+            repository = GrpcNauclioRepository(context)
+            connectToEnrolledDaemon(repository)
+            val resumed = repository.terminals().terminalsList.single { it.id == terminal.id }
+            assertEquals("running", resumed.status)
+
+            val secondMarker = "ANDROID_TERMINAL_TWO_$nonce"
+            repository.writeTerminal(terminal.id, "printf '$secondMarker\\n'\n".encodeToByteArray())
+            val resumedSequence = awaitTerminalText(repository, terminal.id, firstSequence, secondMarker)
+            assertTrue(resumedSequence > firstSequence)
+        } finally {
+            terminalId?.let { runCatching { repository.closeTerminal(it) } }
+            repository.close()
+        }
+    }
+
     @Test
     fun cardAttachmentDraftRoundTripsThroughTheRealGateway() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -210,6 +256,36 @@ class RealNauclioIntegrationTest {
             manager.updateEndpoints(originalEndpoints)
             preferences.setNavigationStyle(originalStyle)
             preferences.setShowReasoningTraces(originalShowReasoning)
+        }
+    }
+
+    private suspend fun connectToEnrolledDaemon(repository: GrpcNauclioRepository) {
+        val gateway = repository.activeEndpoint
+        val daemons = repository.daemons().daemonsList
+        val daemon = daemons.firstOrNull { it.id == gateway.daemonId } ?: daemons.firstOrNull()
+            ?: error("The authenticated account must have an enrolled Nauclio daemon")
+        val endpoint = gateway.copy(
+            id = "${gateway.credentialId}#${daemon.id}",
+            label = daemon.name.ifBlank { daemon.id },
+            daemonId = daemon.id,
+        )
+        repository.replaceEndpoints(listOf(endpoint))
+        repository.selectEndpoint(endpoint)
+        repository.prepareDaemon()
+    }
+
+    private suspend fun awaitTerminalText(
+        repository: GrpcNauclioRepository,
+        terminalId: String,
+        afterSequence: Long,
+        marker: String,
+    ): Long {
+        val output = ByteArrayOutputStream()
+        return withTimeout(15_000) {
+            repository.watchTerminal(terminalId, afterSequence).first { frame ->
+                output.write(frame.data.toByteArray())
+                output.toString(Charsets.UTF_8.name()).contains(marker)
+            }.sequence
         }
     }
 }

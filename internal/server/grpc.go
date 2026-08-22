@@ -22,6 +22,7 @@ import (
 	"github.com/dbpprt/nauclio/internal/model"
 	nauclioprompt "github.com/dbpprt/nauclio/internal/prompt"
 	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/nauclio/internal/terminal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -1031,6 +1032,15 @@ func grpcFailure(err error) error {
 	}
 	if errors.Is(err, store.ErrCardActive) {
 		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if errors.Is(err, terminal.ErrNotFound) {
+		return status.Error(codes.NotFound, err.Error())
+	}
+	if errors.Is(err, terminal.ErrNotRunning) {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if errors.Is(err, terminal.ErrLimitReached) {
+		return status.Error(codes.ResourceExhausted, err.Error())
 	}
 	var fileErr *projectFileError
 	if errors.As(err, &fileErr) {

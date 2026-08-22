@@ -16,6 +16,7 @@ func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
 		"/nauclio.v1.NauclioService/WatchSync",
 		"/nauclio.v1.NauclioService/WatchConversation",
 		"/nauclio.v1.NauclioService/WatchState",
+		"/nauclio.v1.NauclioService/WatchTerminal",
 	} {
 		if relayMethodPriority(method) {
 			t.Fatalf("%s should use the bounded streaming relay queue", method)

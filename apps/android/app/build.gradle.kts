@@ -73,6 +73,9 @@ android {
     }
 
     packaging {
+        // Nauclio uses only Termux's pure-Java VT emulator and renderer. The
+        // bundled local-process JNI bridge is unused and is not 16 KiB aligned.
+        jniLibs.excludes += setOf("**/libtermux.so")
         resources.excludes += setOf(
             "META-INF/AL2.0",
             "META-INF/LGPL2.1",
@@ -120,6 +123,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.graphics.path)
     implementation(libs.kotlinx.coroutines.android)
+    // These two reusable Termux terminal modules are Apache-2.0 licensed.
+    implementation(libs.termux.terminal.emulator)
+    implementation(libs.termux.terminal.view)
 
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)

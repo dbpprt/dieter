@@ -39,7 +39,18 @@ board's overflow menu. Expanding either the connection notification or a
 running-chat notification shows a compact live preview of the main model and
 active subagents without exposing raw tool input.
 
-The classic four-destination Material navigation remains the default. App
+The classic five-destination Material navigation remains the default. Its
+native Terminal workspace lists daemon-owned PTYs across projects, renders ANSI
+and VT sequences with the reusable Apache-2.0 Termux emulator/renderer modules,
+and forwards IME, hardware keys, clipboard paste, accessory keys, and live
+window-size changes over gRPC. Output is resumed from a monotonic sequence
+cursor after Android process death or a route reconnect; leaving the screen or
+closing the app never closes the shell. Only the explicit **Close terminal**
+confirmation ends the daemon session. The bundled Termux local-process JNI
+bridge is deliberately excluded because Nauclio never starts a process on the
+phone.
+
+App
 Settings opens from Board actions or the server-status sheet and follows the
 native Connections and Display tab references. Display also offers the
 optional glass lens navigation from `Copy of Native Android PWA redesign.pdf`:
@@ -112,10 +123,11 @@ window remains visible. Run a real enrolled daemon, install the app, and
 exercise it through the gateway. There is intentionally no mock server or
 coordinate-driven shell smoke test.
 
-The conversation stream reducer is covered by Kotlin unit tests. A read-only
-instrumentation check verifies health, runtime, state streaming, harnesses,
-project files, and schedule preview through native gRPC against the selected
-real daemon:
+The conversation and terminal replay reducers are covered by Kotlin unit tests.
+Real-process instrumentation verifies health, runtime, state streaming,
+harnesses, project files, schedule preview, and a terminal that stays alive
+across a complete Android gRPC channel teardown and cursor-based reconnect,
+all through the configured gateway and selected real daemon:
 
 ```sh
 ANDROID_SERIAL=emulator-5554 ./apps/android/gradlew \

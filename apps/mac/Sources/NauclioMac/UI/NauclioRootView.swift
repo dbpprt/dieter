@@ -17,6 +17,7 @@ struct NauclioRootView: View {
                 switch store.section {
                 case .board: BoardView()
                 case .chats: ChatsView()
+                case .terminals: TerminalsView()
                 case .files: FilesView()
                 case .schedules: SchedulesView()
                 case .archive: ArchiveView()
@@ -145,6 +146,25 @@ struct AppSidebar: View {
             ) { Task { await store.openChats() } }
             .padding(.horizontal, 8).padding(.top, 9)
             .accessibilityIdentifier("sidebar.all-chats")
+        }
+
+        if collapsed {
+            SidebarRailDestination(
+                title: "Terminals",
+                symbol: "terminal",
+                selected: store.section == .terminals,
+                badge: store.terminals.filter { $0.status == "running" }.count
+            ) { Task { await store.openTerminals() } }
+            .accessibilityIdentifier("sidebar.terminals")
+        } else {
+            SidebarDestination(
+                title: "Terminals",
+                symbol: "terminal",
+                selected: store.section == .terminals,
+                badge: store.terminals.filter { $0.status == "running" }.count
+            ) { Task { await store.openTerminals() } }
+            .padding(.horizontal, 8)
+            .accessibilityIdentifier("sidebar.terminals")
         }
     }
 
@@ -774,6 +794,7 @@ struct CommandPalette: View {
             ("New card", "rectangle.badge.plus", { store.createConversationPresented = true }),
             ("New standalone chat", "bubble.left.and.bubble.right.fill", { store.beginStandaloneChat() }),
             ("Open all chats", "bubble.left.and.bubble.right", { Task { await store.openChats() } }),
+            ("Open terminals", "terminal", { Task { await store.openTerminals() } }),
             ("Browse project files", "doc.on.doc", { Task { await store.openProject(store.selectedProjectID, section: .files) } }),
             ("Open project schedules", "calendar.badge.clock", { Task { await store.openProject(store.selectedProjectID, section: .schedules) } }),
             ("Add Git project", "folder.badge.plus", { store.createProjectPresented = true }),

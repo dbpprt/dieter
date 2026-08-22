@@ -63,7 +63,7 @@ struct NewConversationSheet: View {
                         .font(.system(size: 14)).lineSpacing(3).lineLimit(1...7)
                         .focused($focusedField, equals: .prompt)
                         .padding(.horizontal, 13).padding(.vertical, 14)
-                        .frame(height: 135)
+                        .frame(height: 135, alignment: .topLeading)
                         .background(
                             attachmentDropTargeted ? NauclioTheme.cobalt.opacity(0.12) : NauclioTheme.input,
                             in: RoundedRectangle(cornerRadius: 10)

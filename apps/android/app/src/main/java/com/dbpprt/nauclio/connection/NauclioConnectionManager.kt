@@ -1066,13 +1066,36 @@ class NauclioConnectionManager(
             ?.projectId
             .orEmpty()
         ensureProjectRoute(projectId)
-        return repository.startCard(
+        val response = repository.startCard(
             StartCardRequest.newBuilder()
                 .setCardId(cardId)
                 .setClientId(syncStore.clientId)
                 .setCommandId(UUID.randomUUID().toString().lowercase())
                 .build(),
         )
+        acceptStartedCard(response.card)
+        return response
+    }
+
+    private fun acceptStartedCard(card: Card) {
+        fun replace(cards: List<Card>): List<Card> =
+            if (cards.any { it.id == card.id }) cards.map { if (it.id == card.id) card else it }
+            else cards + card
+
+        globalSnapshot = globalSnapshot?.let { snapshot ->
+            snapshot.toBuilder()
+                .setState(
+                    snapshot.state.toBuilder()
+                        .clearCards()
+                        .addAllCards(replace(snapshot.state.cardsList)),
+                )
+                .build()
+        }
+        _state.update { current ->
+            val combined = current.copy(cards = replace(current.cards))
+            combined.copy(selectedState = selectedState(combined))
+        }
+        persistMachineDirectory()
     }
 
     fun acceptConversation(snapshot: ConversationSnapshot): ConversationSnapshot {

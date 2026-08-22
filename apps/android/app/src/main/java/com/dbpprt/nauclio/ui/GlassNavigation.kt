@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -62,6 +63,7 @@ private data class GlassDestination(val destination: Destination, val label: Str
 private val glassDestinations = listOf(
     GlassDestination(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
     GlassDestination(Destination.BOARD, "Boards", Icons.Outlined.ViewKanban),
+    GlassDestination(Destination.TERMINALS, "Terminal", Icons.Outlined.Terminal),
     GlassDestination(Destination.FILES, "Files", Icons.Outlined.FolderOpen),
     GlassDestination(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
 )

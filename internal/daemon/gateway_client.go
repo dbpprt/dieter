@@ -263,7 +263,8 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 func relayMethodPriority(method string) bool {
 	return !strings.HasSuffix(method, "/WatchSync") &&
 		!strings.HasSuffix(method, "/WatchConversation") &&
-		!strings.HasSuffix(method, "/WatchState")
+		!strings.HasSuffix(method, "/WatchState") &&
+		!strings.HasSuffix(method, "/WatchTerminal")
 }
 
 func relayStatusError(streamID uint64, err error) *gatewayv1.DaemonLinkFrame {

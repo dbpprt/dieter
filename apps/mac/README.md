@@ -11,6 +11,8 @@ through either verified direct TLS or the bounded relay.
   project context, and archives
 - A board-independent global Chats workspace, with pinned and archived
   standalone conversations grouped by project, plus live server streams
+- Daemon-owned terminal tabs with a real VT renderer, reconnectable scrollback,
+  working-directory and shell selection, resize forwarding, and explicit close
 - Message parts, reasoning, lazy full tool output, plans, subagents, and comments
 - Project file browsing/editing and file mutations
 - Schedule editing, previewing, enabling, manual runs, and occurrence history
@@ -80,6 +82,16 @@ boards, Files, and Schedules live beneath each project. Creating a chat calls
 `CreateChat` with an empty board ID; it never creates or appears as a board
 card.
 
+Terminals are global to the selected machine and owned by its daemon, not by a
+Mac window or RPC. Closing or disconnecting the app cancels only its output
+observer; the PTY and commands keep running until the shell exits, the user
+explicitly closes the terminal, or the daemon shuts down. Reopening the app
+lists the same session and resumes its sequenced output cursor. Both the daemon
+and client retain a bounded 2 MiB replay buffer. Input and resize use separate
+priority unary calls so output backpressure cannot make typing wait behind the
+long-lived stream. A terminal may only start inside its registered project
+tree, after symlink resolution.
+
 ## Verify
 
 ```sh
@@ -87,6 +99,7 @@ swift test --package-path apps/mac
 apps/mac/scripts/ui-smoke.sh
 apps/mac/scripts/conversation-ui-smoke.sh
 apps/mac/scripts/sidebar-ui-smoke.sh
+apps/mac/scripts/terminal-ui-smoke.sh
 apps/mac/scripts/accessibility-smoke.sh
 ```
 
@@ -113,3 +126,11 @@ accepted project drop; the second launch verifies through native clicks that
 both states were restored in the rendered sidebar. It attempts the drop with
 in-process mouse events and uses the same accepted-drop state transition when
 macOS does not admit synthetic events to its system drag manager.
+
+`terminal-ui-smoke.sh` builds and starts a throwaway gateway on
+`127.0.0.1:14244` by default, leaving the normal local ports untouched. It
+creates and uses a terminal in one packaged app process, terminates that client,
+then launches a second app process and verifies that the daemon-owned terminal
+is still running, its prior output is replayed, and it accepts more input. The
+report and screenshots land under `apps/mac/.build/terminal-ui-smoke`. Override
+the alternate port with `NAUCLIO_TERMINAL_SMOKE_PORT`.

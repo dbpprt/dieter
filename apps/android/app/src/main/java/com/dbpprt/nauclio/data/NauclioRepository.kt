@@ -25,6 +25,7 @@ import com.dbpprt.nauclio.v1.CreateConversationRequest
 import com.dbpprt.nauclio.v1.CreateFileRequest
 import com.dbpprt.nauclio.v1.CreateProjectRequest
 import com.dbpprt.nauclio.v1.CreateProjectResponse
+import com.dbpprt.nauclio.v1.CreateTerminalRequest
 import com.dbpprt.nauclio.v1.DeleteBoardLabelRequest
 import com.dbpprt.nauclio.v1.DeleteFileRequest
 import com.dbpprt.nauclio.v1.DirectoryListing
@@ -42,6 +43,7 @@ import com.dbpprt.nauclio.v1.ListDirectoriesRequest
 import com.dbpprt.nauclio.v1.ListFilesRequest
 import com.dbpprt.nauclio.v1.ListScheduleRunsRequest
 import com.dbpprt.nauclio.v1.ListSchedulesRequest
+import com.dbpprt.nauclio.v1.ListTerminalsRequest
 import com.dbpprt.nauclio.v1.MessagePart
 import com.dbpprt.nauclio.v1.MoveCardRequest
 import com.dbpprt.nauclio.v1.MoveFileRequest
@@ -53,6 +55,7 @@ import com.dbpprt.nauclio.v1.ProjectsResponse
 import com.dbpprt.nauclio.v1.ReadFileRequest
 import com.dbpprt.nauclio.v1.RenameCardRequest
 import com.dbpprt.nauclio.v1.RuntimeStatus
+import com.dbpprt.nauclio.v1.ResizeTerminalRequest
 import com.dbpprt.nauclio.v1.SaveFileRequest
 import com.dbpprt.nauclio.v1.SaveScheduleRequest
 import com.dbpprt.nauclio.v1.Schedule
@@ -74,12 +77,19 @@ import com.dbpprt.nauclio.v1.StartCardResponse
 import com.dbpprt.nauclio.v1.SyncCursor
 import com.dbpprt.nauclio.v1.SyncFrame
 import com.dbpprt.nauclio.v1.SyncRequest
+import com.dbpprt.nauclio.v1.Terminal
+import com.dbpprt.nauclio.v1.TerminalFrame
+import com.dbpprt.nauclio.v1.TerminalInputRequest
+import com.dbpprt.nauclio.v1.TerminalRef
+import com.dbpprt.nauclio.v1.TerminalsResponse
 import com.dbpprt.nauclio.v1.ToolOutput
 import com.dbpprt.nauclio.v1.UpdateCardRequest
 import com.dbpprt.nauclio.v1.UpdateProjectRequest
 import com.dbpprt.nauclio.v1.UpdateSettingsRequest
 import com.dbpprt.nauclio.v1.WatchConversationRequest
 import com.dbpprt.nauclio.v1.WatchStateRequest
+import com.dbpprt.nauclio.v1.WatchTerminalRequest
+import com.dbpprt.nauclio.v1.RenameTerminalRequest
 import com.google.protobuf.Empty
 import io.grpc.ManagedChannel
 import io.grpc.Metadata
@@ -224,6 +234,14 @@ interface NauclioRepository {
     suspend fun createFile(projectId: String, path: String, kind: String, content: String = ""): FileEntry
     suspend fun moveFile(projectId: String, source: String, destination: String): MoveFileResponse
     suspend fun deleteFile(projectId: String, path: String, recursive: Boolean = false)
+
+    suspend fun terminals(projectId: String = ""): TerminalsResponse
+    suspend fun createTerminal(request: CreateTerminalRequest): Terminal
+    fun watchTerminal(terminalId: String, afterSequence: Long = 0): Flow<TerminalFrame>
+    suspend fun writeTerminal(terminalId: String, data: ByteArray): Terminal
+    suspend fun resizeTerminal(terminalId: String, columns: Int, rows: Int): Terminal
+    suspend fun renameTerminal(terminalId: String, name: String): Terminal
+    suspend fun closeTerminal(terminalId: String)
 
     suspend fun schedules(projectId: String): SchedulesResponse
     suspend fun previewSchedule(cron: String, timezone: String, count: Int = 5): SchedulePreview
@@ -675,6 +693,45 @@ class GrpcNauclioRepository(context: Context) : NauclioRepository {
                 .setRecursive(recursive)
                 .build(),
         )
+    }
+
+    override suspend fun terminals(projectId: String): TerminalsResponse = unary().listTerminals(
+        ListTerminalsRequest.newBuilder().setProjectId(projectId).build(),
+    )
+
+    override suspend fun createTerminal(request: CreateTerminalRequest): Terminal = unary().createTerminal(request)
+
+    override fun watchTerminal(terminalId: String, afterSequence: Long): Flow<TerminalFrame> = flow {
+        streaming().watchTerminal(
+            WatchTerminalRequest.newBuilder()
+                .setTerminalId(terminalId)
+                .setAfterSequence(afterSequence)
+                .setHeartbeatMs(15_000)
+                .build(),
+        ).collect(::emit)
+    }
+
+    override suspend fun writeTerminal(terminalId: String, data: ByteArray): Terminal = unary().writeTerminal(
+        TerminalInputRequest.newBuilder()
+            .setTerminalId(terminalId)
+            .setData(com.google.protobuf.ByteString.copyFrom(data))
+            .build(),
+    )
+
+    override suspend fun resizeTerminal(terminalId: String, columns: Int, rows: Int): Terminal = unary().resizeTerminal(
+        ResizeTerminalRequest.newBuilder()
+            .setTerminalId(terminalId)
+            .setColumns(columns)
+            .setRows(rows)
+            .build(),
+    )
+
+    override suspend fun renameTerminal(terminalId: String, name: String): Terminal = unary().renameTerminal(
+        RenameTerminalRequest.newBuilder().setTerminalId(terminalId).setName(name).build(),
+    )
+
+    override suspend fun closeTerminal(terminalId: String) {
+        unary().closeTerminal(TerminalRef.newBuilder().setTerminalId(terminalId).build())
     }
 
     override suspend fun schedules(projectId: String): SchedulesResponse = unary().listSchedules(

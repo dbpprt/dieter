@@ -2470,6 +2470,212 @@ public nonisolated struct Nauclio_V1_FileDocument: Sendable {
   public init() {}
 }
 
+public nonisolated struct Nauclio_V1_Terminal: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var projectID: String = String()
+
+  public var name: String = String()
+
+  public var shell: String = String()
+
+  public var workingDirectory: String = String()
+
+  public var status: String = String()
+
+  public var pid: Int64 = 0
+
+  public var columns: Int32 = 0
+
+  public var rows: Int32 = 0
+
+  public var sequence: UInt64 = 0
+
+  public var createdAt: String = String()
+
+  public var updatedAt: String = String()
+
+  public var exitCode: Int32 {
+    get {_exitCode ?? 0}
+    set {_exitCode = newValue}
+  }
+  /// Returns true if `exitCode` has been explicitly set.
+  public var hasExitCode: Bool {self._exitCode != nil}
+  /// Clears the value of `exitCode`. Subsequent reads from it will return its default value.
+  public mutating func clearExitCode() {self._exitCode = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _exitCode: Int32? = nil
+}
+
+public nonisolated struct Nauclio_V1_TerminalRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var terminalID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Nauclio_V1_ListTerminalsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var projectID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Nauclio_V1_TerminalsResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var terminals: [Nauclio_V1_Terminal] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Nauclio_V1_CreateTerminalRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var projectID: String = String()
+
+  public var name: String = String()
+
+  public var shell: String = String()
+
+  public var workingDirectory: String = String()
+
+  public var columns: Int32 = 0
+
+  public var rows: Int32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Nauclio_V1_WatchTerminalRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var terminalID: String = String()
+
+  public var afterSequence: UInt64 = 0
+
+  public var heartbeatMs: Int32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Nauclio_V1_TerminalFrame: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var terminal: Nauclio_V1_Terminal {
+    get {_storage._terminal ?? Nauclio_V1_Terminal()}
+    set {_uniqueStorage()._terminal = newValue}
+  }
+  /// Returns true if `terminal` has been explicitly set.
+  public var hasTerminal: Bool {_storage._terminal != nil}
+  /// Clears the value of `terminal`. Subsequent reads from it will return its default value.
+  public mutating func clearTerminal() {_uniqueStorage()._terminal = nil}
+
+  public var sequence: UInt64 {
+    get {_storage._sequence}
+    set {_uniqueStorage()._sequence = newValue}
+  }
+
+  public var data: Data {
+    get {_storage._data}
+    set {_uniqueStorage()._data = newValue}
+  }
+
+  /// Reset means the client's previous screen is stale. Clear the emulator and
+  /// replay data as the new bounded baseline before applying later frames.
+  public var screenReset: Bool {
+    get {_storage._screenReset}
+    set {_uniqueStorage()._screenReset = newValue}
+  }
+
+  public var heartbeat: Bool {
+    get {_storage._heartbeat}
+    set {_uniqueStorage()._heartbeat = newValue}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct Nauclio_V1_TerminalInputRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var terminalID: String = String()
+
+  public var data: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Nauclio_V1_ResizeTerminalRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var terminalID: String = String()
+
+  public var columns: Int32 = 0
+
+  public var rows: Int32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Nauclio_V1_RenameTerminalRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var terminalID: String = String()
+
+  public var name: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Nauclio_V1_SaveFileRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -8139,6 +8345,493 @@ nonisolated extension Nauclio_V1_FileDocument: SwiftProtobuf.Message, SwiftProto
     if lhs.mimeType != rhs.mimeType {return false}
     if lhs.content != rhs.content {return false}
     if lhs.data != rhs.data {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_Terminal: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Terminal"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{1}name\0\u{1}shell\0\u{3}working_directory\0\u{1}status\0\u{1}pid\0\u{1}columns\0\u{1}rows\0\u{1}sequence\0\u{3}created_at\0\u{3}updated_at\0\u{3}exit_code\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.shell) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.workingDirectory) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.status) }()
+      case 7: try { try decoder.decodeSingularInt64Field(value: &self.pid) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.columns) }()
+      case 9: try { try decoder.decodeSingularInt32Field(value: &self.rows) }()
+      case 10: try { try decoder.decodeSingularUInt64Field(value: &self.sequence) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self.createdAt) }()
+      case 12: try { try decoder.decodeSingularStringField(value: &self.updatedAt) }()
+      case 13: try { try decoder.decodeSingularInt32Field(value: &self._exitCode) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.projectID.isEmpty {
+      try visitor.visitSingularStringField(value: self.projectID, fieldNumber: 2)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 3)
+    }
+    if !self.shell.isEmpty {
+      try visitor.visitSingularStringField(value: self.shell, fieldNumber: 4)
+    }
+    if !self.workingDirectory.isEmpty {
+      try visitor.visitSingularStringField(value: self.workingDirectory, fieldNumber: 5)
+    }
+    if !self.status.isEmpty {
+      try visitor.visitSingularStringField(value: self.status, fieldNumber: 6)
+    }
+    if self.pid != 0 {
+      try visitor.visitSingularInt64Field(value: self.pid, fieldNumber: 7)
+    }
+    if self.columns != 0 {
+      try visitor.visitSingularInt32Field(value: self.columns, fieldNumber: 8)
+    }
+    if self.rows != 0 {
+      try visitor.visitSingularInt32Field(value: self.rows, fieldNumber: 9)
+    }
+    if self.sequence != 0 {
+      try visitor.visitSingularUInt64Field(value: self.sequence, fieldNumber: 10)
+    }
+    if !self.createdAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.createdAt, fieldNumber: 11)
+    }
+    if !self.updatedAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.updatedAt, fieldNumber: 12)
+    }
+    try { if let v = self._exitCode {
+      try visitor.visitSingularInt32Field(value: v, fieldNumber: 13)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_Terminal, rhs: Nauclio_V1_Terminal) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.projectID != rhs.projectID {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.shell != rhs.shell {return false}
+    if lhs.workingDirectory != rhs.workingDirectory {return false}
+    if lhs.status != rhs.status {return false}
+    if lhs.pid != rhs.pid {return false}
+    if lhs.columns != rhs.columns {return false}
+    if lhs.rows != rhs.rows {return false}
+    if lhs.sequence != rhs.sequence {return false}
+    if lhs.createdAt != rhs.createdAt {return false}
+    if lhs.updatedAt != rhs.updatedAt {return false}
+    if lhs._exitCode != rhs._exitCode {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_TerminalRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".TerminalRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}terminal_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.terminalID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.terminalID.isEmpty {
+      try visitor.visitSingularStringField(value: self.terminalID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_TerminalRef, rhs: Nauclio_V1_TerminalRef) -> Bool {
+    if lhs.terminalID != rhs.terminalID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_ListTerminalsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ListTerminalsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.projectID.isEmpty {
+      try visitor.visitSingularStringField(value: self.projectID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_ListTerminalsRequest, rhs: Nauclio_V1_ListTerminalsRequest) -> Bool {
+    if lhs.projectID != rhs.projectID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_TerminalsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".TerminalsResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}terminals\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.terminals) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.terminals.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.terminals, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_TerminalsResponse, rhs: Nauclio_V1_TerminalsResponse) -> Bool {
+    if lhs.terminals != rhs.terminals {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_CreateTerminalRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".CreateTerminalRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}shell\0\u{3}working_directory\0\u{1}columns\0\u{1}rows\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.shell) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.workingDirectory) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.columns) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.rows) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.projectID.isEmpty {
+      try visitor.visitSingularStringField(value: self.projectID, fieldNumber: 1)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    if !self.shell.isEmpty {
+      try visitor.visitSingularStringField(value: self.shell, fieldNumber: 3)
+    }
+    if !self.workingDirectory.isEmpty {
+      try visitor.visitSingularStringField(value: self.workingDirectory, fieldNumber: 4)
+    }
+    if self.columns != 0 {
+      try visitor.visitSingularInt32Field(value: self.columns, fieldNumber: 5)
+    }
+    if self.rows != 0 {
+      try visitor.visitSingularInt32Field(value: self.rows, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_CreateTerminalRequest, rhs: Nauclio_V1_CreateTerminalRequest) -> Bool {
+    if lhs.projectID != rhs.projectID {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.shell != rhs.shell {return false}
+    if lhs.workingDirectory != rhs.workingDirectory {return false}
+    if lhs.columns != rhs.columns {return false}
+    if lhs.rows != rhs.rows {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_WatchTerminalRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".WatchTerminalRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}terminal_id\0\u{3}after_sequence\0\u{3}heartbeat_ms\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.terminalID) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.afterSequence) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.heartbeatMs) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.terminalID.isEmpty {
+      try visitor.visitSingularStringField(value: self.terminalID, fieldNumber: 1)
+    }
+    if self.afterSequence != 0 {
+      try visitor.visitSingularUInt64Field(value: self.afterSequence, fieldNumber: 2)
+    }
+    if self.heartbeatMs != 0 {
+      try visitor.visitSingularInt32Field(value: self.heartbeatMs, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_WatchTerminalRequest, rhs: Nauclio_V1_WatchTerminalRequest) -> Bool {
+    if lhs.terminalID != rhs.terminalID {return false}
+    if lhs.afterSequence != rhs.afterSequence {return false}
+    if lhs.heartbeatMs != rhs.heartbeatMs {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_TerminalFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".TerminalFrame"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}terminal\0\u{1}sequence\0\u{1}data\0\u{3}screen_reset\0\u{1}heartbeat\0")
+
+  fileprivate class _StorageClass {
+    var _terminal: Nauclio_V1_Terminal? = nil
+    var _sequence: UInt64 = 0
+    var _data: Data = Data()
+    var _screenReset: Bool = false
+    var _heartbeat: Bool = false
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _terminal = source._terminal
+      _sequence = source._sequence
+      _data = source._data
+      _screenReset = source._screenReset
+      _heartbeat = source._heartbeat
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularMessageField(value: &_storage._terminal) }()
+        case 2: try { try decoder.decodeSingularUInt64Field(value: &_storage._sequence) }()
+        case 3: try { try decoder.decodeSingularBytesField(value: &_storage._data) }()
+        case 4: try { try decoder.decodeSingularBoolField(value: &_storage._screenReset) }()
+        case 5: try { try decoder.decodeSingularBoolField(value: &_storage._heartbeat) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._terminal {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+      } }()
+      if _storage._sequence != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._sequence, fieldNumber: 2)
+      }
+      if !_storage._data.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._data, fieldNumber: 3)
+      }
+      if _storage._screenReset != false {
+        try visitor.visitSingularBoolField(value: _storage._screenReset, fieldNumber: 4)
+      }
+      if _storage._heartbeat != false {
+        try visitor.visitSingularBoolField(value: _storage._heartbeat, fieldNumber: 5)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_TerminalFrame, rhs: Nauclio_V1_TerminalFrame) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._terminal != rhs_storage._terminal {return false}
+        if _storage._sequence != rhs_storage._sequence {return false}
+        if _storage._data != rhs_storage._data {return false}
+        if _storage._screenReset != rhs_storage._screenReset {return false}
+        if _storage._heartbeat != rhs_storage._heartbeat {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_TerminalInputRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".TerminalInputRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}terminal_id\0\u{1}data\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.terminalID) }()
+      case 2: try { try decoder.decodeSingularBytesField(value: &self.data) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.terminalID.isEmpty {
+      try visitor.visitSingularStringField(value: self.terminalID, fieldNumber: 1)
+    }
+    if !self.data.isEmpty {
+      try visitor.visitSingularBytesField(value: self.data, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_TerminalInputRequest, rhs: Nauclio_V1_TerminalInputRequest) -> Bool {
+    if lhs.terminalID != rhs.terminalID {return false}
+    if lhs.data != rhs.data {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_ResizeTerminalRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ResizeTerminalRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}terminal_id\0\u{1}columns\0\u{1}rows\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.terminalID) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.columns) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.rows) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.terminalID.isEmpty {
+      try visitor.visitSingularStringField(value: self.terminalID, fieldNumber: 1)
+    }
+    if self.columns != 0 {
+      try visitor.visitSingularInt32Field(value: self.columns, fieldNumber: 2)
+    }
+    if self.rows != 0 {
+      try visitor.visitSingularInt32Field(value: self.rows, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_ResizeTerminalRequest, rhs: Nauclio_V1_ResizeTerminalRequest) -> Bool {
+    if lhs.terminalID != rhs.terminalID {return false}
+    if lhs.columns != rhs.columns {return false}
+    if lhs.rows != rhs.rows {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Nauclio_V1_RenameTerminalRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RenameTerminalRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}terminal_id\0\u{1}name\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.terminalID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.terminalID.isEmpty {
+      try visitor.visitSingularStringField(value: self.terminalID, fieldNumber: 1)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Nauclio_V1_RenameTerminalRequest, rhs: Nauclio_V1_RenameTerminalRequest) -> Bool {
+    if lhs.terminalID != rhs.terminalID {return false}
+    if lhs.name != rhs.name {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

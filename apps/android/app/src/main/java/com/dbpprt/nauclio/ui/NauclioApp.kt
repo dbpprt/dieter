@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Icon
@@ -99,6 +100,7 @@ private data class NavItem(
 private val navigationItems = listOf(
     NavItem(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
     NavItem(Destination.BOARD, "Boards", Icons.Outlined.ViewKanban),
+    NavItem(Destination.TERMINALS, "Terminal", Icons.Outlined.Terminal),
     NavItem(Destination.FILES, "Files", Icons.Outlined.FolderOpen),
     NavItem(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
 )
@@ -149,11 +151,12 @@ fun NauclioApp(container: NauclioContainer) {
     }
 
     BackHandler(
-        state.appSurface != null || state.selectedCardId != null || state.fileDocument != null ||
+        state.appSurface != null || state.terminalCreateVisible || state.selectedCardId != null || state.fileDocument != null ||
             (state.destination == Destination.BOARD && !state.boardOverviewVisible),
     ) {
         when {
             state.appSurface != null -> model.closeSurface()
+            state.terminalCreateVisible -> model.dismissTerminalCreate()
             state.fileDocument != null -> model.closeFile()
             state.selectedCardId != null -> model.closeDetail()
             else -> model.showBoardOverview()
@@ -183,6 +186,7 @@ fun NauclioApp(container: NauclioContainer) {
                                 Destination.BOARD -> model.openSurface(
                                     if (state.boardOverviewVisible) AppSurface.NEW_PROJECT else AppSurface.NEW_CARD,
                                 )
+                                Destination.TERMINALS -> model.showTerminalCreate()
                                 Destination.FILES -> fileCreateVisible = true
                                 Destination.SCHEDULES -> model.openSurface(AppSurface.SCHEDULE_EDITOR)
                             }
@@ -447,6 +451,7 @@ private fun DestinationContent(
     when (destination) {
         Destination.CHATS -> ChatsScreen(state, model, expanded, contentPadding)
         Destination.BOARD -> BoardScreen(state, model, expanded, contentPadding)
+        Destination.TERMINALS -> TerminalsScreen(state, model, expanded, contentPadding)
         Destination.FILES -> FilesScreen(state, model, expanded, contentPadding)
         Destination.SCHEDULES -> SchedulesScreen(state, model, contentPadding)
     }

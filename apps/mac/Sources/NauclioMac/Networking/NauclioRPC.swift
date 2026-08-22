@@ -303,7 +303,7 @@ final class NauclioRPC: Sendable {
         return try await service.getCard(request: .init(message: request))
     }
 
-    func conversation(cardID: String, limit: Int32 = 200, before: Int32? = nil) async throws -> Nauclio_V1_ConversationSnapshot {
+    func conversation(cardID: String, limit: Int32 = 30, before: Int32? = nil) async throws -> Nauclio_V1_ConversationSnapshot {
         var request = Nauclio_V1_GetConversationRequest(); request.cardID = cardID; request.limit = limit
         if let before { request.before = before }
         return try await service.getConversation(request: .init(message: request), options: Self.attachmentCallOptions())
@@ -315,7 +315,7 @@ final class NauclioRPC: Sendable {
         receive: @Sendable @escaping (Nauclio_V1_ConversationUpdate) async -> Void
     ) async throws {
         var request = Nauclio_V1_WatchConversationRequest()
-        request.cardID = cardID; request.limit = 200; request.intervalMs = 700; request.afterSeq = sequence
+        request.cardID = cardID; request.limit = 30; request.intervalMs = 700; request.afterSeq = sequence
         try await service.watchConversation(request: .init(message: request), options: Self.attachmentCallOptions()) { response in
             for try await update in response.messages {
                 try Task.checkCancellation()
@@ -383,6 +383,51 @@ final class NauclioRPC: Sendable {
 
     func deleteFile(_ request: Nauclio_V1_DeleteFileRequest) async throws {
         _ = try await service.deleteFile(request: .init(message: request)) as Google_Protobuf_Empty
+    }
+
+    func terminals(projectID: String = "") async throws -> Nauclio_V1_TerminalsResponse {
+        var request = Nauclio_V1_ListTerminalsRequest(); request.projectID = projectID
+        return try await service.listTerminals(request: .init(message: request))
+    }
+
+    func createTerminal(_ request: Nauclio_V1_CreateTerminalRequest) async throws -> Nauclio_V1_Terminal {
+        try await service.createTerminal(request: .init(message: request))
+    }
+
+    func watchTerminal(
+        id: String,
+        after sequence: UInt64,
+        receive: @Sendable @escaping (Nauclio_V1_TerminalFrame) async -> Void
+    ) async throws {
+        var request = Nauclio_V1_WatchTerminalRequest()
+        request.terminalID = id; request.afterSequence = sequence; request.heartbeatMs = 15_000
+        try await service.watchTerminal(request: .init(message: request), options: Self.attachmentCallOptions()) { response in
+            for try await frame in response.messages {
+                try Task.checkCancellation()
+                await receive(frame)
+            }
+        }
+    }
+
+    func writeTerminal(id: String, data: Data) async throws -> Nauclio_V1_Terminal {
+        var request = Nauclio_V1_TerminalInputRequest(); request.terminalID = id; request.data = data
+        return try await service.writeTerminal(request: .init(message: request))
+    }
+
+    func resizeTerminal(id: String, columns: Int, rows: Int) async throws -> Nauclio_V1_Terminal {
+        var request = Nauclio_V1_ResizeTerminalRequest()
+        request.terminalID = id; request.columns = Int32(columns); request.rows = Int32(rows)
+        return try await service.resizeTerminal(request: .init(message: request))
+    }
+
+    func renameTerminal(id: String, name: String) async throws -> Nauclio_V1_Terminal {
+        var request = Nauclio_V1_RenameTerminalRequest(); request.terminalID = id; request.name = name
+        return try await service.renameTerminal(request: .init(message: request))
+    }
+
+    func closeTerminal(id: String) async throws {
+        var request = Nauclio_V1_TerminalRef(); request.terminalID = id
+        _ = try await service.closeTerminal(request: .init(message: request)) as Google_Protobuf_Empty
     }
 
     func schedules(projectID: String) async throws -> Nauclio_V1_SchedulesResponse {

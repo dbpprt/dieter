@@ -16,16 +16,21 @@ struct NauclioMacApp: App {
                 .preferredColorScheme(appearance.colorScheme)
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
-                    if ProcessInfo.processInfo.arguments.contains("--sidebar-ui-smoke") {
+                    let arguments = ProcessInfo.processInfo.arguments
+                    if arguments.contains("--sidebar-ui-smoke") {
                         await SidebarNavigationUISmokeRunner.run(store: store)
                         return
                     }
-                    let conversationSmoke = ProcessInfo.processInfo.arguments.contains("--conversation-ui-smoke")
+                    let conversationSmoke = arguments.contains("--conversation-ui-smoke")
                     if conversationSmoke {
                         ConversationUISmokeRunner.progress("task fired, connecting", in: ConversationUISmokeRunner.outputDirectory())
                     }
                     await store.connect()
-                    if ProcessInfo.processInfo.arguments.contains("--ui-smoke") {
+                    if arguments.contains("--terminal-ui-smoke") {
+                        await TerminalUISmokeRunner.run(store: store)
+                        return
+                    }
+                    if arguments.contains("--ui-smoke") {
                         await NativeUISmokeRunner.run(store: store)
                     }
                     if conversationSmoke {
@@ -51,6 +56,13 @@ struct NauclioMacApp: App {
                     .keyboardShortcut("n", modifiers: .command)
                 Button("New Standalone Chat") { store.beginStandaloneChat() }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("New Terminal…") {
+                    Task {
+                        await store.openTerminals()
+                        store.createTerminalPresented = true
+                    }
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
                 Divider()
                 Button("Refresh") { Task { await store.refreshState() } }
                     .keyboardShortcut("r", modifiers: .command)

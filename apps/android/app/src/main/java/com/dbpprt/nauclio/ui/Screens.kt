@@ -1928,6 +1928,11 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
     val listState = remember(state.selectedCardId) { LazyListState() }
     var initialScrollComplete by remember(state.selectedCardId) { mutableStateOf(false) }
     var followingLatest by remember(state.selectedCardId) { mutableStateOf(true) }
+    var historyAnchorPending by remember(state.selectedCardId) { mutableStateOf(false) }
+    var historyAnchorKey by remember(state.selectedCardId) { mutableStateOf<String?>(null) }
+    var historyKeepLatest by remember(state.selectedCardId) { mutableStateOf(false) }
+    var historyStartAtRequest by remember(state.selectedCardId) { mutableStateOf(0) }
+    var historyObservedLoading by remember(state.selectedCardId) { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
     var composerError by remember { mutableStateOf<String?>(null) }
     var awaitingAgent by remember(state.selectedCardId) { mutableStateOf(false) }
@@ -2008,6 +2013,94 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
                 }
             }
     }
+    fun requestEarlierHistory(viewport: ConversationHistoryViewport) {
+        if (!shouldLoadEarlierConversationHistory(
+                hasMore = state.historyHasMore,
+                loading = state.historyLoading,
+                anchorPending = historyAnchorPending,
+                initialScrollComplete = initialScrollComplete,
+                viewport = viewport,
+            )
+        ) return
+        historyAnchorPending = true
+        historyObservedLoading = false
+        historyKeepLatest = followingLatest && listState.isAtConversationEnd()
+        historyStartAtRequest = state.historyStart
+        historyAnchorKey = if (historyKeepLatest) {
+            null
+        } else {
+            listState.layoutInfo.visibleItemsInfo
+                .map { it.key.toString() }
+                .firstOrNull { it.startsWith("message:") }
+                ?: messages.firstOrNull()?.let { conversationMessageKey(it, 0) }
+        }
+        model.loadOlderMessages()
+    }
+    LaunchedEffect(
+        listState,
+        state.selectedCardId,
+        state.historyHasMore,
+        state.historyLoading,
+        historyAnchorPending,
+        initialScrollComplete,
+    ) {
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            ConversationHistoryViewport(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                canScrollBackward = listState.canScrollBackward,
+                canScrollForward = listState.canScrollForward,
+                hasItems = layout.totalItemsCount > 0,
+            )
+        }
+            .distinctUntilChanged()
+            .collect(::requestEarlierHistory)
+    }
+    LaunchedEffect(
+        state.historyStart,
+        state.historyLoading,
+        messages.size,
+        historyAnchorPending,
+    ) {
+        if (!historyAnchorPending) return@LaunchedEffect
+        if (!state.historyHasMore && !state.historyLoading && state.historyStart == historyStartAtRequest) {
+            historyAnchorPending = false
+            historyAnchorKey = null
+            historyObservedLoading = false
+            return@LaunchedEffect
+        }
+        if (state.historyLoading) {
+            historyObservedLoading = true
+            return@LaunchedEffect
+        }
+        if (!historyObservedLoading && state.historyStart == historyStartAtRequest) return@LaunchedEffect
+        if (state.historyStart != historyStartAtRequest) {
+            delay(1)
+            if (historyKeepLatest) {
+                val endIndex = listState.layoutInfo.totalItemsCount - 1
+                if (endIndex >= 0) listState.scrollToItem(endIndex)
+                followingLatest = true
+            } else if (historyAnchorKey != null) {
+                val messageIndex = messages.withIndex().indexOfFirst { (index, message) ->
+                    conversationMessageKey(message, index) == historyAnchorKey
+                }
+                if (messageIndex >= 0) {
+                    val historyItems = if (state.historyHasMore || state.historyLoading) 1 else 0
+                    val unsentTaskItems = if (hasUnsentDraft) 1 else 0
+                    listState.scrollToItem(historyItems + unsentTaskItems + messageIndex)
+                }
+                followingLatest = false
+            }
+        } else {
+            // Keep the anchor pending after a failed request. This prevents an
+            // automatic retry loop; the visible history control remains a
+            // manual retry path.
+            return@LaunchedEffect
+        }
+        historyAnchorPending = false
+        historyAnchorKey = null
+        historyObservedLoading = false
+    }
     LaunchedEffect(
         state.conversationScrollRequest,
         messages.size,
@@ -2051,8 +2144,13 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
                                 enabled = !state.historyLoading,
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                if (state.historyLoading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                                else Text("Load earlier messages · ${allMessages.size} of ${state.historyTotal}")
+                                if (state.historyLoading) {
+                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Loading earlier messages…", color = NauclioMuted, fontSize = 11.sp)
+                                } else {
+                                    Text("Load earlier messages · ${allMessages.size} of ${state.historyTotal}")
+                                }
                             }
                         }
                     }
@@ -2061,7 +2159,7 @@ private fun ConversationBody(state: NauclioUiState, model: NauclioViewModel, mod
                             UnsentTaskMessage(unsentTask.orEmpty(), draftAttachments)
                         }
                     }
-                    itemsIndexed(messages, key = { index, message -> "${message.id}:$index" }) { _, message ->
+                    itemsIndexed(messages, key = { index, message -> conversationMessageKey(message, index) }) { _, message ->
                         val plan = plansByMessage[message.id]
                         val subagents = subagentsByMessage[message.id].orEmpty()
                         // animateItem eases freshly synced messages in instead
@@ -2317,6 +2415,9 @@ private fun LazyListState.isAtConversationEnd(): Boolean {
     if (layout.totalItemsCount == 0) return true
     return layout.visibleItemsInfo.lastOrNull()?.index == layout.totalItemsCount - 1
 }
+
+private fun conversationMessageKey(message: UiMessage, index: Int): String =
+    if (message.id.isNotBlank()) "message:${message.id}" else "message:anonymous:${message.hashCode()}:$index"
 
 @Composable
 private fun MessageBlock(
@@ -3787,6 +3888,7 @@ private fun WorkCard(
     onClick: () -> Unit,
 ) {
     val labels = board?.labelsList.orEmpty().filter { card.labelIdsList.contains(it.id) }
+    val starting = operation == CardOperation.STARTING || card.runtime.equals("starting", ignoreCase = true)
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().then(
@@ -3845,10 +3947,10 @@ private fun WorkCard(
                 Text(card.provider.ifBlank { "agent" }, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 Spacer(Modifier.width(8.dp))
                 Text(card.model, color = NauclioMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (onStart != null) {
+                if (starting || onStart != null) {
                     Surface(
-                        onClick = onStart,
-                        enabled = operation == null,
+                        onClick = { onStart?.invoke() },
+                        enabled = onStart != null && operation == null && !starting,
                         modifier = Modifier.testTag("start-card-${card.id}"),
                         shape = RoundedCornerShape(10.dp),
                         color = NauclioSeafoam.copy(alpha = 0.16f),
@@ -3858,13 +3960,13 @@ private fun WorkCard(
                             Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            if (operation == CardOperation.STARTING) {
+                            if (starting) {
                                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                             } else {
                                 Icon(Icons.Default.PlayArrow, contentDescription = null, Modifier.size(16.dp))
                             }
                             Spacer(Modifier.width(3.dp))
-                            Text(if (operation == CardOperation.STARTING) "Starting…" else "Start", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (starting) "Starting…" else "Start", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                     Spacer(Modifier.width(8.dp))

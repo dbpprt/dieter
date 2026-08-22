@@ -146,8 +146,13 @@ struct ConversationTimeline: View {
     @State private var followsLatest = true
     @State private var jumpToLatestVisible = false
     @State private var programmaticScroll = false
+    @State private var historyLoadInFlight = false
+    @State private var latestViewport: ConversationViewport?
 
-    private var messages: [Nauclio_V1_UiMessage] { store.conversation?.conversation.messages ?? [] }
+    private var messages: [Nauclio_V1_UiMessage] { store.conversationMessages }
+    private var timelineItems: [ConversationTimelineItem] {
+        ConversationTimelineItem.group(messages, showReasoning: store.showReasoning)
+    }
     private var plans: [Nauclio_V1_TaskPlan] { store.conversation?.conversation.taskPlans ?? [] }
     private var subagents: [Nauclio_V1_Subagent] { store.conversation?.conversation.subagents ?? [] }
     private var conversationID: String { store.selectedCardID ?? store.selectedChatID ?? "" }
@@ -164,6 +169,29 @@ struct ConversationTimeline: View {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 15) {
+                        if store.conversationHistoryLoading {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text("Loading earlier messages…")
+                                    .font(.caption)
+                                    .foregroundStyle(NauclioTheme.tertiary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .id("conversation.history-loading")
+                        } else if store.conversationHistoryHasMore {
+                            Button("Load earlier messages · \(messages.count) of \(store.conversationHistoryTotal)") {
+                                if let latestViewport {
+                                    requestEarlierMessages(ifNeededFor: latestViewport, proxy: proxy)
+                                } else {
+                                    Task { await store.loadEarlierMessages() }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.caption)
+                            .foregroundStyle(NauclioTheme.tertiary)
+                            .frame(maxWidth: .infinity)
+                        }
+
                         if messages.isEmpty {
                             EmptyConversationView(
                                 standalone: store.selectedCard?.scope == "chat",
@@ -172,7 +200,7 @@ struct ConversationTimeline: View {
                             )
                         }
 
-                        ForEach(ConversationTimelineItem.group(messages, showReasoning: store.showReasoning)) { item in
+                        ForEach(timelineItems) { item in
                             if item.isToolCallGroup {
                                 ToolCallGroupView(items: item.toolCalls).id(item.id)
                             } else if let message = item.messages.first {
@@ -202,9 +230,11 @@ struct ConversationTimeline: View {
                     ConversationViewport(
                         offsetY: geometry.contentOffset.y,
                         visibleMaxY: geometry.visibleRect.maxY,
+                        visibleHeight: geometry.visibleRect.height,
                         contentHeight: geometry.contentSize.height
                     )
                 } action: { oldViewport, newViewport in
+                    latestViewport = newViewport
                     if newViewport.isNearBottom {
                         followsLatest = true
                         jumpToLatestVisible = false
@@ -217,6 +247,7 @@ struct ConversationTimeline: View {
                     } else if !programmaticScroll, ConversationScrollBehavior.isUserNavigation(from: oldViewport, to: newViewport) {
                         followsLatest = false
                     }
+                    requestEarlierMessages(ifNeededFor: newViewport, proxy: proxy)
                 }
 
                 if jumpToLatestVisible {
@@ -228,6 +259,8 @@ struct ConversationTimeline: View {
                 }
             }
             .task(id: conversationID) {
+                historyLoadInFlight = false
+                latestViewport = nil
                 await Task.yield()
                 scrollToLatest(proxy, animated: false)
             }
@@ -256,24 +289,77 @@ struct ConversationTimeline: View {
             programmaticScroll = false
         }
     }
+
+    private func requestEarlierMessages(ifNeededFor viewport: ConversationViewport, proxy: ScrollViewProxy) {
+        guard !historyLoadInFlight,
+              ConversationScrollBehavior.shouldLoadEarlier(
+                viewport: viewport,
+                hasMore: store.conversationHistoryHasMore,
+                loading: store.conversationHistoryLoading
+              ) else { return }
+        historyLoadInFlight = true
+        let keepLatestVisible = followsLatest && viewport.isNearBottom
+        let anchorID = keepLatestVisible ? nil : timelineItems.first?.id
+        Task { @MainActor in
+            let loaded = await store.loadEarlierMessages()
+            if loaded {
+                await Task.yield()
+                if keepLatestVisible {
+                    scrollToLatest(proxy, animated: false)
+                    try? await NauclioTaskSleep.milliseconds(80)
+                } else if let anchorID {
+                    programmaticScroll = true
+                    proxy.scrollTo(anchorID, anchor: .top)
+                    try? await NauclioTaskSleep.milliseconds(80)
+                    programmaticScroll = false
+                }
+            }
+            historyLoadInFlight = false
+            if loaded, let latestViewport, latestViewport.needsBackfill {
+                requestEarlierMessages(ifNeededFor: latestViewport, proxy: proxy)
+            }
+        }
+    }
 }
 
 struct ConversationViewport: Equatable {
     let offsetY: CGFloat
     let visibleMaxY: CGFloat
+    let visibleHeight: CGFloat
     let contentHeight: CGFloat
 
     var isNearBottom: Bool {
         ConversationScrollBehavior.isNearBottom(visibleMaxY: visibleMaxY, contentHeight: contentHeight)
+    }
+
+    var isNearTop: Bool {
+        ConversationScrollBehavior.isNearTop(offsetY: offsetY)
+    }
+
+    var needsBackfill: Bool {
+        ConversationScrollBehavior.needsBackfill(contentHeight: contentHeight, visibleHeight: visibleHeight)
     }
 }
 
 enum ConversationScrollBehavior {
     static let bottomID = "conversation.bottom"
     static let followThreshold: CGFloat = 72
+    static let historyPrefetchThreshold: CGFloat = 160
 
     static func isNearBottom(visibleMaxY: CGFloat, contentHeight: CGFloat) -> Bool {
         max(0, contentHeight - visibleMaxY) <= followThreshold
+    }
+
+    static func isNearTop(offsetY: CGFloat) -> Bool {
+        offsetY <= historyPrefetchThreshold
+    }
+
+    static func needsBackfill(contentHeight: CGFloat, visibleHeight: CGFloat) -> Bool {
+        contentHeight <= visibleHeight + 1
+    }
+
+    static func shouldLoadEarlier(viewport: ConversationViewport, hasMore: Bool, loading: Bool) -> Bool {
+        hasMore && !loading && (viewport.isNearTop || viewport.needsBackfill)
     }
 
     static func isUserNavigation(from old: ConversationViewport, to new: ConversationViewport) -> Bool {

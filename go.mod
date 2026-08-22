@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	connectrpc.com/connect v1.20.0
+	github.com/creack/pty v1.1.24
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/net v0.58.0
 	google.golang.org/grpc v1.83.0

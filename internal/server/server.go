@@ -18,6 +18,7 @@ import (
 	"github.com/dbpprt/nauclio/internal/model"
 	"github.com/dbpprt/nauclio/internal/scheduler"
 	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/nauclio/internal/terminal"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -30,6 +31,7 @@ type Server struct {
 	mux       *http.ServeMux
 	filesMu   sync.RWMutex
 	auth      *authManager
+	terminals *terminal.Manager
 }
 
 func New(data *store.Store, logger *slog.Logger) *Server {
@@ -47,7 +49,10 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 	}
 	manager.log = logger
 	service := app.New(data, runner)
-	s := &Server{store: data, app: service, schedules: scheduler.New(data, service), log: logger, mux: http.NewServeMux(), auth: manager}
+	s := &Server{
+		store: data, app: service, schedules: scheduler.New(data, service), log: logger,
+		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(),
+	}
 	manager.register(s.mux)
 	path, handler := naucliov1connect.NewNauclioServiceHandler(&connectAPI{core: &grpcAPI{server: s}})
 	s.mux.Handle(path, handler)
@@ -171,6 +176,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 	if err := application.app.SuspendActiveTurns(shutdownCtx); err != nil {
 		logger.Warn("some active agent turns could not be suspended for restart", "error", err)
 	}
+	application.terminals.Shutdown(shutdownCtx)
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		_ = httpServer.Close()
 	}

@@ -671,6 +671,97 @@ public enum Nauclio_V1_NauclioService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ListTerminals" metadata.
+        public enum ListTerminals: Sendable {
+            /// Request type for "ListTerminals".
+            public typealias Input = Nauclio_V1_ListTerminalsRequest
+            /// Response type for "ListTerminals".
+            public typealias Output = Nauclio_V1_TerminalsResponse
+            /// Descriptor for "ListTerminals".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "nauclio.v1.NauclioService"),
+                method: "ListTerminals",
+                type: .unary
+            )
+        }
+        /// Namespace for "CreateTerminal" metadata.
+        public enum CreateTerminal: Sendable {
+            /// Request type for "CreateTerminal".
+            public typealias Input = Nauclio_V1_CreateTerminalRequest
+            /// Response type for "CreateTerminal".
+            public typealias Output = Nauclio_V1_Terminal
+            /// Descriptor for "CreateTerminal".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "nauclio.v1.NauclioService"),
+                method: "CreateTerminal",
+                type: .unary
+            )
+        }
+        /// Namespace for "WatchTerminal" metadata.
+        public enum WatchTerminal: Sendable {
+            /// Request type for "WatchTerminal".
+            public typealias Input = Nauclio_V1_WatchTerminalRequest
+            /// Response type for "WatchTerminal".
+            public typealias Output = Nauclio_V1_TerminalFrame
+            /// Descriptor for "WatchTerminal".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "nauclio.v1.NauclioService"),
+                method: "WatchTerminal",
+                type: .serverStreaming
+            )
+        }
+        /// Namespace for "WriteTerminal" metadata.
+        public enum WriteTerminal: Sendable {
+            /// Request type for "WriteTerminal".
+            public typealias Input = Nauclio_V1_TerminalInputRequest
+            /// Response type for "WriteTerminal".
+            public typealias Output = Nauclio_V1_Terminal
+            /// Descriptor for "WriteTerminal".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "nauclio.v1.NauclioService"),
+                method: "WriteTerminal",
+                type: .unary
+            )
+        }
+        /// Namespace for "ResizeTerminal" metadata.
+        public enum ResizeTerminal: Sendable {
+            /// Request type for "ResizeTerminal".
+            public typealias Input = Nauclio_V1_ResizeTerminalRequest
+            /// Response type for "ResizeTerminal".
+            public typealias Output = Nauclio_V1_Terminal
+            /// Descriptor for "ResizeTerminal".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "nauclio.v1.NauclioService"),
+                method: "ResizeTerminal",
+                type: .unary
+            )
+        }
+        /// Namespace for "RenameTerminal" metadata.
+        public enum RenameTerminal: Sendable {
+            /// Request type for "RenameTerminal".
+            public typealias Input = Nauclio_V1_RenameTerminalRequest
+            /// Response type for "RenameTerminal".
+            public typealias Output = Nauclio_V1_Terminal
+            /// Descriptor for "RenameTerminal".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "nauclio.v1.NauclioService"),
+                method: "RenameTerminal",
+                type: .unary
+            )
+        }
+        /// Namespace for "CloseTerminal" metadata.
+        public enum CloseTerminal: Sendable {
+            /// Request type for "CloseTerminal".
+            public typealias Input = Nauclio_V1_TerminalRef
+            /// Response type for "CloseTerminal".
+            public typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "CloseTerminal".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "nauclio.v1.NauclioService"),
+                method: "CloseTerminal",
+                type: .unary
+            )
+        }
         /// Namespace for "ListSchedules" metadata.
         public enum ListSchedules: Sendable {
             /// Request type for "ListSchedules".
@@ -827,6 +918,13 @@ public enum Nauclio_V1_NauclioService: Sendable {
             CreateFile.descriptor,
             MoveFile.descriptor,
             DeleteFile.descriptor,
+            ListTerminals.descriptor,
+            CreateTerminal.descriptor,
+            WatchTerminal.descriptor,
+            WriteTerminal.descriptor,
+            ResizeTerminal.descriptor,
+            RenameTerminal.descriptor,
+            CloseTerminal.descriptor,
             ListSchedules.descriptor,
             PreviewSchedule.descriptor,
             CreateSchedule.descriptor,
@@ -1811,6 +1909,145 @@ extension Nauclio_V1_NauclioService {
         func deleteFile<Result>(
             request: GRPCCore.ClientRequest<Nauclio_V1_DeleteFileRequest>,
             serializer: some GRPCCore.MessageSerializer<Nauclio_V1_DeleteFileRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListTerminals" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Terminal processes are owned by the daemon, not by a client stream. A
+        /// > client can therefore disconnect and resume output from after_sequence
+        /// > without terminating the shell.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_ListTerminalsRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_ListTerminalsRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_TerminalsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listTerminals<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_ListTerminalsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_ListTerminalsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_TerminalsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_TerminalsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CreateTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_CreateTerminalRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_CreateTerminalRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_Terminal` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func createTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_CreateTerminalRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_CreateTerminalRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_Terminal>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_WatchTerminalRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_WatchTerminalRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_TerminalFrame` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_WatchTerminalRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_WatchTerminalRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_TerminalFrame>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Nauclio_V1_TerminalFrame>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WriteTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_TerminalInputRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_TerminalInputRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_Terminal` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func writeTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_TerminalInputRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_TerminalInputRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_Terminal>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ResizeTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_ResizeTerminalRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_ResizeTerminalRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_Terminal` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func resizeTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_ResizeTerminalRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_ResizeTerminalRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_Terminal>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RenameTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_RenameTerminalRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_RenameTerminalRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_Terminal` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func renameTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_RenameTerminalRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_RenameTerminalRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_Terminal>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CloseTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_TerminalRef` message.
+        ///   - serializer: A serializer for `Nauclio_V1_TerminalRef` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func closeTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_TerminalRef>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_TerminalRef>,
             deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
@@ -3491,6 +3728,220 @@ extension Nauclio_V1_NauclioService {
             )
         }
 
+        /// Call the "ListTerminals" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Terminal processes are owned by the daemon, not by a client stream. A
+        /// > client can therefore disconnect and resume output from after_sequence
+        /// > without terminating the shell.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_ListTerminalsRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_ListTerminalsRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_TerminalsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listTerminals<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_ListTerminalsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_ListTerminalsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_TerminalsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_TerminalsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Nauclio_V1_NauclioService.Method.ListTerminals.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CreateTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_CreateTerminalRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_CreateTerminalRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_Terminal` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func createTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_CreateTerminalRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_CreateTerminalRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_Terminal>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Nauclio_V1_NauclioService.Method.CreateTerminal.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WatchTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_WatchTerminalRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_WatchTerminalRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_TerminalFrame` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_WatchTerminalRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_WatchTerminalRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_TerminalFrame>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Nauclio_V1_TerminalFrame>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Nauclio_V1_NauclioService.Method.WatchTerminal.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WriteTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_TerminalInputRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_TerminalInputRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_Terminal` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func writeTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_TerminalInputRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_TerminalInputRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_Terminal>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Nauclio_V1_NauclioService.Method.WriteTerminal.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ResizeTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_ResizeTerminalRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_ResizeTerminalRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_Terminal` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func resizeTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_ResizeTerminalRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_ResizeTerminalRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_Terminal>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Nauclio_V1_NauclioService.Method.ResizeTerminal.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RenameTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_RenameTerminalRequest` message.
+        ///   - serializer: A serializer for `Nauclio_V1_RenameTerminalRequest` messages.
+        ///   - deserializer: A deserializer for `Nauclio_V1_Terminal` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func renameTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_RenameTerminalRequest>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_RenameTerminalRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Nauclio_V1_Terminal>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Nauclio_V1_NauclioService.Method.RenameTerminal.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CloseTerminal" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Nauclio_V1_TerminalRef` message.
+        ///   - serializer: A serializer for `Nauclio_V1_TerminalRef` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func closeTerminal<Result>(
+            request: GRPCCore.ClientRequest<Nauclio_V1_TerminalRef>,
+            serializer: some GRPCCore.MessageSerializer<Nauclio_V1_TerminalRef>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Nauclio_V1_NauclioService.Method.CloseTerminal.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "ListSchedules" method.
         ///
         /// - Parameters:
@@ -4986,6 +5437,185 @@ extension Nauclio_V1_NauclioService.ClientProtocol {
         try await self.deleteFile(
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Nauclio_V1_DeleteFileRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListTerminals" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Terminal processes are owned by the daemon, not by a client stream. A
+    /// > client can therefore disconnect and resume output from after_sequence
+    /// > without terminating the shell.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Nauclio_V1_ListTerminalsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listTerminals<Result>(
+        request: GRPCCore.ClientRequest<Nauclio_V1_ListTerminalsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_TerminalsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listTerminals(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Nauclio_V1_ListTerminalsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Nauclio_V1_TerminalsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CreateTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Nauclio_V1_CreateTerminalRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func createTerminal<Result>(
+        request: GRPCCore.ClientRequest<Nauclio_V1_CreateTerminalRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.createTerminal(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Nauclio_V1_CreateTerminalRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Nauclio_V1_Terminal>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Nauclio_V1_WatchTerminalRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchTerminal<Result>(
+        request: GRPCCore.ClientRequest<Nauclio_V1_WatchTerminalRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Nauclio_V1_TerminalFrame>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchTerminal(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Nauclio_V1_WatchTerminalRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Nauclio_V1_TerminalFrame>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WriteTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Nauclio_V1_TerminalInputRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func writeTerminal<Result>(
+        request: GRPCCore.ClientRequest<Nauclio_V1_TerminalInputRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.writeTerminal(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Nauclio_V1_TerminalInputRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Nauclio_V1_Terminal>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResizeTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Nauclio_V1_ResizeTerminalRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resizeTerminal<Result>(
+        request: GRPCCore.ClientRequest<Nauclio_V1_ResizeTerminalRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.resizeTerminal(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Nauclio_V1_ResizeTerminalRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Nauclio_V1_Terminal>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RenameTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Nauclio_V1_RenameTerminalRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func renameTerminal<Result>(
+        request: GRPCCore.ClientRequest<Nauclio_V1_RenameTerminalRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.renameTerminal(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Nauclio_V1_RenameTerminalRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Nauclio_V1_Terminal>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CloseTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Nauclio_V1_TerminalRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func closeTerminal<Result>(
+        request: GRPCCore.ClientRequest<Nauclio_V1_TerminalRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.closeTerminal(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Nauclio_V1_TerminalRef>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
             options: options,
             onResponse: handleResponse
@@ -6646,6 +7276,213 @@ extension Nauclio_V1_NauclioService.ClientProtocol {
             metadata: metadata
         )
         return try await self.deleteFile(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListTerminals" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Terminal processes are owned by the daemon, not by a client stream. A
+    /// > client can therefore disconnect and resume output from after_sequence
+    /// > without terminating the shell.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listTerminals<Result>(
+        _ message: Nauclio_V1_ListTerminalsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_TerminalsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Nauclio_V1_ListTerminalsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listTerminals(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CreateTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func createTerminal<Result>(
+        _ message: Nauclio_V1_CreateTerminalRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Nauclio_V1_CreateTerminalRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.createTerminal(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchTerminal<Result>(
+        _ message: Nauclio_V1_WatchTerminalRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Nauclio_V1_TerminalFrame>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Nauclio_V1_WatchTerminalRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchTerminal(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WriteTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func writeTerminal<Result>(
+        _ message: Nauclio_V1_TerminalInputRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Nauclio_V1_TerminalInputRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.writeTerminal(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResizeTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resizeTerminal<Result>(
+        _ message: Nauclio_V1_ResizeTerminalRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Nauclio_V1_ResizeTerminalRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.resizeTerminal(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RenameTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func renameTerminal<Result>(
+        _ message: Nauclio_V1_RenameTerminalRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Nauclio_V1_Terminal>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Nauclio_V1_RenameTerminalRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.renameTerminal(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CloseTerminal" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func closeTerminal<Result>(
+        _ message: Nauclio_V1_TerminalRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Nauclio_V1_TerminalRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.closeTerminal(
             request: request,
             options: options,
             onResponse: handleResponse

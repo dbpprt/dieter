@@ -70,6 +70,17 @@ service NauclioService {
   rpc MoveFile(MoveFileRequest) returns (MoveFileResponse);
   rpc DeleteFile(DeleteFileRequest) returns (google.protobuf.Empty);
 
+  // Terminal processes are owned by the daemon, not by a client stream. A
+  // client can therefore disconnect and resume output from after_sequence
+  // without terminating the shell.
+  rpc ListTerminals(ListTerminalsRequest) returns (TerminalsResponse);
+  rpc CreateTerminal(CreateTerminalRequest) returns (Terminal);
+  rpc WatchTerminal(WatchTerminalRequest) returns (stream TerminalFrame);
+  rpc WriteTerminal(TerminalInputRequest) returns (Terminal);
+  rpc ResizeTerminal(ResizeTerminalRequest) returns (Terminal);
+  rpc RenameTerminal(RenameTerminalRequest) returns (Terminal);
+  rpc CloseTerminal(TerminalRef) returns (google.protobuf.Empty);
+
   rpc ListSchedules(ListSchedulesRequest) returns (SchedulesResponse);
   rpc PreviewSchedule(PreviewScheduleRequest) returns (SchedulePreview);
   rpc CreateSchedule(SaveScheduleRequest) returns (Schedule);
@@ -828,6 +839,75 @@ message FileDocument {
   string mime_type = 7;
   string content = 8;
   bytes data = 9;
+}
+
+message Terminal {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string shell = 4;
+  string working_directory = 5;
+  string status = 6;
+  int64 pid = 7;
+  int32 columns = 8;
+  int32 rows = 9;
+  uint64 sequence = 10;
+  string created_at = 11;
+  string updated_at = 12;
+  optional int32 exit_code = 13;
+}
+
+message TerminalRef {
+  string terminal_id = 1;
+}
+
+message ListTerminalsRequest {
+  string project_id = 1;
+}
+
+message TerminalsResponse {
+  repeated Terminal terminals = 1;
+}
+
+message CreateTerminalRequest {
+  string project_id = 1;
+  string name = 2;
+  string shell = 3;
+  string working_directory = 4;
+  int32 columns = 5;
+  int32 rows = 6;
+}
+
+message WatchTerminalRequest {
+  string terminal_id = 1;
+  uint64 after_sequence = 2;
+  int32 heartbeat_ms = 3;
+}
+
+message TerminalFrame {
+  Terminal terminal = 1;
+  uint64 sequence = 2;
+  bytes data = 3;
+  // Reset means the client's previous screen is stale. Clear the emulator and
+  // replay data as the new bounded baseline before applying later frames.
+  bool screen_reset = 4;
+  bool heartbeat = 5;
+}
+
+message TerminalInputRequest {
+  string terminal_id = 1;
+  bytes data = 2;
+}
+
+message ResizeTerminalRequest {
+  string terminal_id = 1;
+  int32 columns = 2;
+  int32 rows = 3;
+}
+
+message RenameTerminalRequest {
+  string terminal_id = 1;
+  string name = 2;
 }
 
 message SaveFileRequest {

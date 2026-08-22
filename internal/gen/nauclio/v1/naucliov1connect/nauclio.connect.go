@@ -176,6 +176,27 @@ const (
 	// NauclioServiceDeleteFileProcedure is the fully-qualified name of the NauclioService's DeleteFile
 	// RPC.
 	NauclioServiceDeleteFileProcedure = "/nauclio.v1.NauclioService/DeleteFile"
+	// NauclioServiceListTerminalsProcedure is the fully-qualified name of the NauclioService's
+	// ListTerminals RPC.
+	NauclioServiceListTerminalsProcedure = "/nauclio.v1.NauclioService/ListTerminals"
+	// NauclioServiceCreateTerminalProcedure is the fully-qualified name of the NauclioService's
+	// CreateTerminal RPC.
+	NauclioServiceCreateTerminalProcedure = "/nauclio.v1.NauclioService/CreateTerminal"
+	// NauclioServiceWatchTerminalProcedure is the fully-qualified name of the NauclioService's
+	// WatchTerminal RPC.
+	NauclioServiceWatchTerminalProcedure = "/nauclio.v1.NauclioService/WatchTerminal"
+	// NauclioServiceWriteTerminalProcedure is the fully-qualified name of the NauclioService's
+	// WriteTerminal RPC.
+	NauclioServiceWriteTerminalProcedure = "/nauclio.v1.NauclioService/WriteTerminal"
+	// NauclioServiceResizeTerminalProcedure is the fully-qualified name of the NauclioService's
+	// ResizeTerminal RPC.
+	NauclioServiceResizeTerminalProcedure = "/nauclio.v1.NauclioService/ResizeTerminal"
+	// NauclioServiceRenameTerminalProcedure is the fully-qualified name of the NauclioService's
+	// RenameTerminal RPC.
+	NauclioServiceRenameTerminalProcedure = "/nauclio.v1.NauclioService/RenameTerminal"
+	// NauclioServiceCloseTerminalProcedure is the fully-qualified name of the NauclioService's
+	// CloseTerminal RPC.
+	NauclioServiceCloseTerminalProcedure = "/nauclio.v1.NauclioService/CloseTerminal"
 	// NauclioServiceListSchedulesProcedure is the fully-qualified name of the NauclioService's
 	// ListSchedules RPC.
 	NauclioServiceListSchedulesProcedure = "/nauclio.v1.NauclioService/ListSchedules"
@@ -260,6 +281,16 @@ type NauclioServiceClient interface {
 	CreateFile(context.Context, *connect.Request[v1.CreateFileRequest]) (*connect.Response[v1.FileEntry], error)
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.MoveFileResponse], error)
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[emptypb.Empty], error)
+	// Terminal processes are owned by the daemon, not by a client stream. A
+	// client can therefore disconnect and resume output from after_sequence
+	// without terminating the shell.
+	ListTerminals(context.Context, *connect.Request[v1.ListTerminalsRequest]) (*connect.Response[v1.TerminalsResponse], error)
+	CreateTerminal(context.Context, *connect.Request[v1.CreateTerminalRequest]) (*connect.Response[v1.Terminal], error)
+	WatchTerminal(context.Context, *connect.Request[v1.WatchTerminalRequest]) (*connect.ServerStreamForClient[v1.TerminalFrame], error)
+	WriteTerminal(context.Context, *connect.Request[v1.TerminalInputRequest]) (*connect.Response[v1.Terminal], error)
+	ResizeTerminal(context.Context, *connect.Request[v1.ResizeTerminalRequest]) (*connect.Response[v1.Terminal], error)
+	RenameTerminal(context.Context, *connect.Request[v1.RenameTerminalRequest]) (*connect.Response[v1.Terminal], error)
+	CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
 	CreateSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.Schedule], error)
@@ -581,6 +612,48 @@ func NewNauclioServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(nauclioServiceMethods.ByName("DeleteFile")),
 			connect.WithClientOptions(opts...),
 		),
+		listTerminals: connect.NewClient[v1.ListTerminalsRequest, v1.TerminalsResponse](
+			httpClient,
+			baseURL+NauclioServiceListTerminalsProcedure,
+			connect.WithSchema(nauclioServiceMethods.ByName("ListTerminals")),
+			connect.WithClientOptions(opts...),
+		),
+		createTerminal: connect.NewClient[v1.CreateTerminalRequest, v1.Terminal](
+			httpClient,
+			baseURL+NauclioServiceCreateTerminalProcedure,
+			connect.WithSchema(nauclioServiceMethods.ByName("CreateTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		watchTerminal: connect.NewClient[v1.WatchTerminalRequest, v1.TerminalFrame](
+			httpClient,
+			baseURL+NauclioServiceWatchTerminalProcedure,
+			connect.WithSchema(nauclioServiceMethods.ByName("WatchTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		writeTerminal: connect.NewClient[v1.TerminalInputRequest, v1.Terminal](
+			httpClient,
+			baseURL+NauclioServiceWriteTerminalProcedure,
+			connect.WithSchema(nauclioServiceMethods.ByName("WriteTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		resizeTerminal: connect.NewClient[v1.ResizeTerminalRequest, v1.Terminal](
+			httpClient,
+			baseURL+NauclioServiceResizeTerminalProcedure,
+			connect.WithSchema(nauclioServiceMethods.ByName("ResizeTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		renameTerminal: connect.NewClient[v1.RenameTerminalRequest, v1.Terminal](
+			httpClient,
+			baseURL+NauclioServiceRenameTerminalProcedure,
+			connect.WithSchema(nauclioServiceMethods.ByName("RenameTerminal")),
+			connect.WithClientOptions(opts...),
+		),
+		closeTerminal: connect.NewClient[v1.TerminalRef, emptypb.Empty](
+			httpClient,
+			baseURL+NauclioServiceCloseTerminalProcedure,
+			connect.WithSchema(nauclioServiceMethods.ByName("CloseTerminal")),
+			connect.WithClientOptions(opts...),
+		),
 		listSchedules: connect.NewClient[v1.ListSchedulesRequest, v1.SchedulesResponse](
 			httpClient,
 			baseURL+NauclioServiceListSchedulesProcedure,
@@ -684,6 +757,13 @@ type nauclioServiceClient struct {
 	createFile               *connect.Client[v1.CreateFileRequest, v1.FileEntry]
 	moveFile                 *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
 	deleteFile               *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
+	listTerminals            *connect.Client[v1.ListTerminalsRequest, v1.TerminalsResponse]
+	createTerminal           *connect.Client[v1.CreateTerminalRequest, v1.Terminal]
+	watchTerminal            *connect.Client[v1.WatchTerminalRequest, v1.TerminalFrame]
+	writeTerminal            *connect.Client[v1.TerminalInputRequest, v1.Terminal]
+	resizeTerminal           *connect.Client[v1.ResizeTerminalRequest, v1.Terminal]
+	renameTerminal           *connect.Client[v1.RenameTerminalRequest, v1.Terminal]
+	closeTerminal            *connect.Client[v1.TerminalRef, emptypb.Empty]
 	listSchedules            *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
 	previewSchedule          *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
 	createSchedule           *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
@@ -944,6 +1024,41 @@ func (c *nauclioServiceClient) DeleteFile(ctx context.Context, req *connect.Requ
 	return c.deleteFile.CallUnary(ctx, req)
 }
 
+// ListTerminals calls nauclio.v1.NauclioService.ListTerminals.
+func (c *nauclioServiceClient) ListTerminals(ctx context.Context, req *connect.Request[v1.ListTerminalsRequest]) (*connect.Response[v1.TerminalsResponse], error) {
+	return c.listTerminals.CallUnary(ctx, req)
+}
+
+// CreateTerminal calls nauclio.v1.NauclioService.CreateTerminal.
+func (c *nauclioServiceClient) CreateTerminal(ctx context.Context, req *connect.Request[v1.CreateTerminalRequest]) (*connect.Response[v1.Terminal], error) {
+	return c.createTerminal.CallUnary(ctx, req)
+}
+
+// WatchTerminal calls nauclio.v1.NauclioService.WatchTerminal.
+func (c *nauclioServiceClient) WatchTerminal(ctx context.Context, req *connect.Request[v1.WatchTerminalRequest]) (*connect.ServerStreamForClient[v1.TerminalFrame], error) {
+	return c.watchTerminal.CallServerStream(ctx, req)
+}
+
+// WriteTerminal calls nauclio.v1.NauclioService.WriteTerminal.
+func (c *nauclioServiceClient) WriteTerminal(ctx context.Context, req *connect.Request[v1.TerminalInputRequest]) (*connect.Response[v1.Terminal], error) {
+	return c.writeTerminal.CallUnary(ctx, req)
+}
+
+// ResizeTerminal calls nauclio.v1.NauclioService.ResizeTerminal.
+func (c *nauclioServiceClient) ResizeTerminal(ctx context.Context, req *connect.Request[v1.ResizeTerminalRequest]) (*connect.Response[v1.Terminal], error) {
+	return c.resizeTerminal.CallUnary(ctx, req)
+}
+
+// RenameTerminal calls nauclio.v1.NauclioService.RenameTerminal.
+func (c *nauclioServiceClient) RenameTerminal(ctx context.Context, req *connect.Request[v1.RenameTerminalRequest]) (*connect.Response[v1.Terminal], error) {
+	return c.renameTerminal.CallUnary(ctx, req)
+}
+
+// CloseTerminal calls nauclio.v1.NauclioService.CloseTerminal.
+func (c *nauclioServiceClient) CloseTerminal(ctx context.Context, req *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error) {
+	return c.closeTerminal.CallUnary(ctx, req)
+}
+
 // ListSchedules calls nauclio.v1.NauclioService.ListSchedules.
 func (c *nauclioServiceClient) ListSchedules(ctx context.Context, req *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error) {
 	return c.listSchedules.CallUnary(ctx, req)
@@ -1042,6 +1157,16 @@ type NauclioServiceHandler interface {
 	CreateFile(context.Context, *connect.Request[v1.CreateFileRequest]) (*connect.Response[v1.FileEntry], error)
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.MoveFileResponse], error)
 	DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[emptypb.Empty], error)
+	// Terminal processes are owned by the daemon, not by a client stream. A
+	// client can therefore disconnect and resume output from after_sequence
+	// without terminating the shell.
+	ListTerminals(context.Context, *connect.Request[v1.ListTerminalsRequest]) (*connect.Response[v1.TerminalsResponse], error)
+	CreateTerminal(context.Context, *connect.Request[v1.CreateTerminalRequest]) (*connect.Response[v1.Terminal], error)
+	WatchTerminal(context.Context, *connect.Request[v1.WatchTerminalRequest], *connect.ServerStream[v1.TerminalFrame]) error
+	WriteTerminal(context.Context, *connect.Request[v1.TerminalInputRequest]) (*connect.Response[v1.Terminal], error)
+	ResizeTerminal(context.Context, *connect.Request[v1.ResizeTerminalRequest]) (*connect.Response[v1.Terminal], error)
+	RenameTerminal(context.Context, *connect.Request[v1.RenameTerminalRequest]) (*connect.Response[v1.Terminal], error)
+	CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
 	CreateSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.Schedule], error)
@@ -1359,6 +1484,48 @@ func NewNauclioServiceHandler(svc NauclioServiceHandler, opts ...connect.Handler
 		connect.WithSchema(nauclioServiceMethods.ByName("DeleteFile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nauclioServiceListTerminalsHandler := connect.NewUnaryHandler(
+		NauclioServiceListTerminalsProcedure,
+		svc.ListTerminals,
+		connect.WithSchema(nauclioServiceMethods.ByName("ListTerminals")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nauclioServiceCreateTerminalHandler := connect.NewUnaryHandler(
+		NauclioServiceCreateTerminalProcedure,
+		svc.CreateTerminal,
+		connect.WithSchema(nauclioServiceMethods.ByName("CreateTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nauclioServiceWatchTerminalHandler := connect.NewServerStreamHandler(
+		NauclioServiceWatchTerminalProcedure,
+		svc.WatchTerminal,
+		connect.WithSchema(nauclioServiceMethods.ByName("WatchTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nauclioServiceWriteTerminalHandler := connect.NewUnaryHandler(
+		NauclioServiceWriteTerminalProcedure,
+		svc.WriteTerminal,
+		connect.WithSchema(nauclioServiceMethods.ByName("WriteTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nauclioServiceResizeTerminalHandler := connect.NewUnaryHandler(
+		NauclioServiceResizeTerminalProcedure,
+		svc.ResizeTerminal,
+		connect.WithSchema(nauclioServiceMethods.ByName("ResizeTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nauclioServiceRenameTerminalHandler := connect.NewUnaryHandler(
+		NauclioServiceRenameTerminalProcedure,
+		svc.RenameTerminal,
+		connect.WithSchema(nauclioServiceMethods.ByName("RenameTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nauclioServiceCloseTerminalHandler := connect.NewUnaryHandler(
+		NauclioServiceCloseTerminalProcedure,
+		svc.CloseTerminal,
+		connect.WithSchema(nauclioServiceMethods.ByName("CloseTerminal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	nauclioServiceListSchedulesHandler := connect.NewUnaryHandler(
 		NauclioServiceListSchedulesProcedure,
 		svc.ListSchedules,
@@ -1509,6 +1676,20 @@ func NewNauclioServiceHandler(svc NauclioServiceHandler, opts ...connect.Handler
 			nauclioServiceMoveFileHandler.ServeHTTP(w, r)
 		case NauclioServiceDeleteFileProcedure:
 			nauclioServiceDeleteFileHandler.ServeHTTP(w, r)
+		case NauclioServiceListTerminalsProcedure:
+			nauclioServiceListTerminalsHandler.ServeHTTP(w, r)
+		case NauclioServiceCreateTerminalProcedure:
+			nauclioServiceCreateTerminalHandler.ServeHTTP(w, r)
+		case NauclioServiceWatchTerminalProcedure:
+			nauclioServiceWatchTerminalHandler.ServeHTTP(w, r)
+		case NauclioServiceWriteTerminalProcedure:
+			nauclioServiceWriteTerminalHandler.ServeHTTP(w, r)
+		case NauclioServiceResizeTerminalProcedure:
+			nauclioServiceResizeTerminalHandler.ServeHTTP(w, r)
+		case NauclioServiceRenameTerminalProcedure:
+			nauclioServiceRenameTerminalHandler.ServeHTTP(w, r)
+		case NauclioServiceCloseTerminalProcedure:
+			nauclioServiceCloseTerminalHandler.ServeHTTP(w, r)
 		case NauclioServiceListSchedulesProcedure:
 			nauclioServiceListSchedulesHandler.ServeHTTP(w, r)
 		case NauclioServicePreviewScheduleProcedure:
@@ -1732,6 +1913,34 @@ func (UnimplementedNauclioServiceHandler) MoveFile(context.Context, *connect.Req
 
 func (UnimplementedNauclioServiceHandler) DeleteFile(context.Context, *connect.Request[v1.DeleteFileRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.DeleteFile is not implemented"))
+}
+
+func (UnimplementedNauclioServiceHandler) ListTerminals(context.Context, *connect.Request[v1.ListTerminalsRequest]) (*connect.Response[v1.TerminalsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.ListTerminals is not implemented"))
+}
+
+func (UnimplementedNauclioServiceHandler) CreateTerminal(context.Context, *connect.Request[v1.CreateTerminalRequest]) (*connect.Response[v1.Terminal], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.CreateTerminal is not implemented"))
+}
+
+func (UnimplementedNauclioServiceHandler) WatchTerminal(context.Context, *connect.Request[v1.WatchTerminalRequest], *connect.ServerStream[v1.TerminalFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.WatchTerminal is not implemented"))
+}
+
+func (UnimplementedNauclioServiceHandler) WriteTerminal(context.Context, *connect.Request[v1.TerminalInputRequest]) (*connect.Response[v1.Terminal], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.WriteTerminal is not implemented"))
+}
+
+func (UnimplementedNauclioServiceHandler) ResizeTerminal(context.Context, *connect.Request[v1.ResizeTerminalRequest]) (*connect.Response[v1.Terminal], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.ResizeTerminal is not implemented"))
+}
+
+func (UnimplementedNauclioServiceHandler) RenameTerminal(context.Context, *connect.Request[v1.RenameTerminalRequest]) (*connect.Response[v1.Terminal], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.RenameTerminal is not implemented"))
+}
+
+func (UnimplementedNauclioServiceHandler) CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("nauclio.v1.NauclioService.CloseTerminal is not implemented"))
 }
 
 func (UnimplementedNauclioServiceHandler) ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error) {

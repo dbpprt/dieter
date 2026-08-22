@@ -18,6 +18,7 @@ import (
 	"github.com/dbpprt/nauclio/internal/model"
 	nauclioprompt "github.com/dbpprt/nauclio/internal/prompt"
 	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/nauclio/internal/terminal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -613,6 +614,12 @@ func connectFailure(err error) error {
 		code = connect.CodeResourceExhausted
 	case errors.Is(err, store.ErrCardActive):
 		code = connect.CodeFailedPrecondition
+	case errors.Is(err, terminal.ErrNotFound):
+		code = connect.CodeNotFound
+	case errors.Is(err, terminal.ErrNotRunning):
+		code = connect.CodeFailedPrecondition
+	case errors.Is(err, terminal.ErrLimitReached):
+		code = connect.CodeResourceExhausted
 	}
 	return connect.NewError(code, err)
 }

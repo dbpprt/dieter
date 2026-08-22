@@ -7,10 +7,72 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 private let nauclioExpectedAPIVersion = "2"
+private let conversationPageSize: Int32 = 30
+private let terminalClientBufferLimit = 2 * 1_024 * 1_024
+
+struct TerminalScreenState: Equatable, Sendable {
+    var data = Data()
+    var revision = 0
+    var resetRevision = 0
+}
+
+enum TerminalScreenReducer {
+    static func applying(
+        data: Data,
+        screenReset: Bool,
+        to current: TerminalScreenState,
+        limit: Int = terminalClientBufferLimit
+    ) -> TerminalScreenState {
+        var result = current
+        if screenReset {
+            result.data = data
+            result.resetRevision += 1
+        } else {
+            result.data.append(data)
+        }
+        if result.data.count > limit {
+            result.data = Data(result.data.suffix(limit))
+            result.resetRevision += 1
+        }
+        result.revision += 1
+        return result
+    }
+}
+
+actor TerminalInputForwarder {
+    private var pending: [String: Data] = [:]
+    private var flushing: Set<String> = []
+
+    func enqueue(id: String, data: Data, rpc: NauclioRPC) async -> String? {
+        guard !data.isEmpty else { return nil }
+        pending[id, default: Data()].append(data)
+        guard flushing.insert(id).inserted else { return nil }
+        defer { flushing.remove(id) }
+        do {
+            while !Task.isCancelled {
+                try await NauclioTaskSleep.milliseconds(12)
+                guard let chunk = pending.removeValue(forKey: id), !chunk.isEmpty else { return nil }
+                var offset = 0
+                while offset < chunk.count {
+                    let end = min(chunk.count, offset + (64 * 1_024))
+                    _ = try await rpc.writeTerminal(id: id, data: chunk.subdata(in: offset..<end))
+                    offset = end
+                }
+                if pending[id]?.isEmpty != false { return nil }
+            }
+            return nil
+        } catch is CancellationError {
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+}
 
 enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case board = "Board"
     case chats = "All chats"
+    case terminals = "Terminals"
     case files = "Files"
     case schedules = "Schedules"
     case archive = "Archive"
@@ -21,6 +83,7 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .board: "rectangle.split.3x1"
         case .chats: "bubble.left.and.bubble.right"
+        case .terminals: "terminal"
         case .files: "doc.on.doc"
         case .schedules: "calendar.badge.clock"
         case .archive: "archivebox"
@@ -212,6 +275,11 @@ final class NauclioStore {
     var selectedCardID: String?
     var selectedChatID: String?
     var conversation: Nauclio_V1_ConversationSnapshot?
+    var olderConversationMessages: [Nauclio_V1_UiMessage] = []
+    var conversationHistoryStart = 0
+    var conversationHistoryTotal = 0
+    var conversationHistoryHasMore = false
+    var conversationHistoryLoading = false
     var selectedDetail: Nauclio_V1_CardDetail?
     var conversationLoading = false
     var composerText = ""
@@ -232,11 +300,28 @@ final class NauclioStore {
     private(set) var acceptedOutboxIDs: Set<String> = []
     private(set) var failedOutboxIDs: Set<String> = []
 
+    var conversationMessages: [Nauclio_V1_UiMessage] {
+        let live = conversation?.conversation.messages ?? []
+        let liveIDs = Set(live.lazy.map(\.id).filter { !$0.isEmpty })
+        var seen = Set<String>()
+        let history = olderConversationMessages.filter { $0.id.isEmpty || !liveIDs.contains($0.id) }
+        return (history + live).filter { message in
+            message.id.isEmpty || seen.insert(message.id).inserted
+        }
+    }
+
     var files: [Nauclio_V1_FileEntry] = []
     var filePath = ""
     var fileDocument: Nauclio_V1_FileDocument?
     var fileEditorText = ""
     var showHiddenFiles = false
+
+    var terminals: [Nauclio_V1_Terminal] = []
+    var selectedTerminalID: String?
+    var terminalScreens: [String: TerminalScreenState] = [:]
+    var terminalLoading = false
+    var terminalStreamConnected = false
+    var createTerminalPresented = false
 
     var schedules: [Nauclio_V1_Schedule] = []
     var scheduleRuns: [Nauclio_V1_ScheduleRun] = []
@@ -261,6 +346,8 @@ final class NauclioStore {
     private var machineDirectoryTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
     private var conversationTask: Task<Void, Never>?
+    private var terminalWatchTask: Task<Void, Never>?
+    private var conversationHistoryRequestID: UUID?
     private var syncTask: Task<Void, Never>?
     private var outboxTask: Task<Void, Never>?
     private var connectionGeneration: UInt64 = 0
@@ -271,17 +358,27 @@ final class NauclioStore {
     private var notificationStatuses: [String: String] = [:]
     private var lastSyncFrameAt: Date?
     private var persistConnectionSelection = true
+    private let accessTokenOverride: String?
     private var gatewayOrigins: [NauclioEndpoint]
     private var readChatActivity: [String: String]
     private let authentication = NauclioAuthentication()
     private let syncPersistence = NauclioSyncPersistence()
     private let syncClientID = NauclioSyncPersistence.installationID()
+    private let terminalInputForwarder = TerminalInputForwarder()
+    private var terminalSequences: [String: UInt64] = [:]
     private var syncDiskState = NauclioSyncDiskState.empty
     private var syncProjection = NauclioSyncProjection.empty
 
     init() {
-        readChatActivity = UserDefaults.standard.dictionary(forKey: "NauclioReadChatActivity") as? [String: String] ?? [:]
         let arguments = ProcessInfo.processInfo.arguments
+        if let flag = arguments.firstIndex(of: "--nauclio-access-token-file"), arguments.indices.contains(flag + 1),
+           let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
+            accessTokenOverride = token
+        } else {
+            accessTokenOverride = nil
+        }
+        readChatActivity = UserDefaults.standard.dictionary(forKey: "NauclioReadChatActivity") as? [String: String] ?? [:]
         if let flag = arguments.firstIndex(of: "--nauclio-endpoint"), arguments.indices.contains(flag + 1),
            let override = NauclioEndpoint.parse(arguments[flag + 1], name: "Command line") {
             endpoints = [override]
@@ -307,6 +404,11 @@ final class NauclioStore {
         }
         if loadedEndpoints != storedEndpoints { persistEndpoints() }
         Task { [weak self] in await self?.restorePersistentSync() }
+    }
+
+    private func accessToken(for endpoint: NauclioEndpoint) async -> String? {
+        if let accessTokenOverride { return accessTokenOverride }
+        return await NauclioCredentialStore.token(for: endpoint)
     }
 
     var selectedProject: Nauclio_V1_Project? {
@@ -390,6 +492,11 @@ final class NauclioStore {
         return schedules.first { $0.id == selectedScheduleID }
     }
 
+    var selectedTerminal: Nauclio_V1_Terminal? {
+        guard let selectedTerminalID else { return nil }
+        return terminals.first { $0.id == selectedTerminalID }
+    }
+
     var displayedCards: [Nauclio_V1_Card] {
         boardCards.filter { card in
             (runtimeFilter.isEmpty || card.runtime == runtimeFilter) &&
@@ -422,7 +529,8 @@ final class NauclioStore {
         connectionGeneration &+= 1
         let generation = connectionGeneration
         phase = .connecting
-        stateTask?.cancel(); conversationTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel()
+        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel()
+        terminalStreamConnected = false
         rpc?.shutdown()
         rpc = nil
         connectionTask = nil
@@ -430,7 +538,7 @@ final class NauclioStore {
         var gatewayTask: Task<Void, Never>?
         var gatewayAuthenticated = false
         do {
-            let accessToken = await NauclioCredentialStore.token(for: origin)
+            let accessToken = await accessToken(for: origin)
             let control = try NauclioRPC(endpoint: origin, accessToken: accessToken)
             gatewayRPC = control
             gatewayTask = Task { try? await control.run() }
@@ -526,6 +634,7 @@ final class NauclioStore {
             startOutboxWorker()
             await refreshMachineDirectory()
             startMachineDirectoryRefresh()
+            if section == .terminals { await loadTerminals() }
         } catch {
             gatewayTask?.cancel()
             gatewayRPC?.shutdown()
@@ -712,8 +821,9 @@ final class NauclioStore {
 
     func disconnect() {
         connectionGeneration &+= 1
-        stateTask?.cancel(); conversationTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); reconnectTask?.cancel()
+        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); reconnectTask?.cancel()
         reconnectTask = nil
+        terminalStreamConnected = false
         rpc?.shutdown(); rpc = nil
         lastSyncFrameAt = nil
         phase = .disconnected
@@ -783,7 +893,7 @@ final class NauclioStore {
         guard let daemonID = endpoint.daemonID, !normalized.isEmpty else { return }
         let origin = gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID }) ?? endpoint.gatewayEndpoint
         do {
-            let client = try NauclioRPC(endpoint: origin, accessToken: await NauclioCredentialStore.token(for: origin))
+            let client = try NauclioRPC(endpoint: origin, accessToken: await accessToken(for: origin))
             let runner = Task { try? await client.run() }
             defer { runner.cancel(); client.shutdown() }
             _ = try await client.renameDaemon(daemonID: daemonID, name: normalized)
@@ -896,7 +1006,7 @@ final class NauclioStore {
     private func refreshDaemonPresence() async {
         guard let origin = gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID }) else { return }
         do {
-            let client = try NauclioRPC(endpoint: origin, accessToken: await NauclioCredentialStore.token(for: origin))
+            let client = try NauclioRPC(endpoint: origin, accessToken: await accessToken(for: origin))
             let runner = Task { try? await client.run() }
             defer { runner.cancel(); client.shutdown() }
             let directory = try await client.daemons()
@@ -936,7 +1046,7 @@ final class NauclioStore {
             }
             client = try NauclioRPC(
                 endpoint: machine,
-                accessToken: await NauclioCredentialStore.token(for: machine),
+                accessToken: await accessToken(for: machine),
                 route: .relay(daemonID: daemonID)
             )
             ownsClient = true
@@ -1002,6 +1112,7 @@ final class NauclioStore {
 
     func openBoard(_ boardID: String, projectID: String) async {
         guard await ensureProjectConnection(projectID) else { return }
+        stopTerminalWatch()
         closeConversation()
         section = .board
         selectedProjectID = projectID
@@ -1013,6 +1124,7 @@ final class NauclioStore {
 
     func openProject(_ projectID: String, section destination: AppSection) async {
         guard await ensureProjectConnection(projectID) else { return }
+        stopTerminalWatch()
         closeConversation()
         section = destination
         selectedProjectID = projectID
@@ -1026,18 +1138,193 @@ final class NauclioStore {
     }
 
     func openChats() async {
+        stopTerminalWatch()
         closeConversation()
         section = .chats
         await refreshChats()
     }
 
+    func openTerminals() async {
+        closeConversation()
+        section = .terminals
+        await loadTerminals()
+    }
+
+    func loadTerminals() async {
+        guard let rpc else { return }
+        terminalLoading = true
+        defer { terminalLoading = false }
+        do {
+            let values = try await rpc.terminals().terminals
+            terminals = values
+            let liveIDs = Set(values.map(\.id))
+            terminalScreens = terminalScreens.filter { liveIDs.contains($0.key) }
+            terminalSequences = terminalSequences.filter { liveIDs.contains($0.key) }
+            if selectedTerminalID.flatMap({ id in values.first(where: { $0.id == id }) }) == nil {
+                selectedTerminalID = values.first?.id
+            }
+            startTerminalWatch()
+        } catch {
+            show(error)
+        }
+    }
+
+    func selectTerminal(_ id: String) {
+        guard terminals.contains(where: { $0.id == id }) else { return }
+        selectedTerminalID = id
+        startTerminalWatch()
+    }
+
+    func createTerminal(projectID: String, name: String, shell: String, workingDirectory: String) async {
+        guard await ensureProjectConnection(projectID) else { return }
+        guard let rpc else { return }
+        var request = Nauclio_V1_CreateTerminalRequest()
+        request.projectID = projectID
+        request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.shell = shell
+        request.workingDirectory = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.columns = 120
+        request.rows = 36
+        do {
+            let value = try await rpc.createTerminal(request)
+            upsertTerminal(value)
+            selectedTerminalID = value.id
+            terminalSequences[value.id] = 0
+            terminalScreens[value.id] = TerminalScreenState()
+            createTerminalPresented = false
+            section = .terminals
+            startTerminalWatch()
+        } catch {
+            show(error)
+        }
+    }
+
+    func sendTerminalInput(id: String, data: Data) {
+        guard let rpc,
+              !data.isEmpty,
+              terminals.first(where: { $0.id == id })?.status == "running" else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            if let message = await terminalInputForwarder.enqueue(id: id, data: data, rpc: rpc),
+               self.rpc === rpc,
+               self.terminals.contains(where: { $0.id == id }) {
+                self.terminalStreamConnected = false
+                self.errorMessage = "Terminal input could not be forwarded: \(message)"
+            }
+        }
+    }
+
+    func resizeTerminal(id: String, columns: Int, rows: Int) async {
+        guard let rpc,
+              columns >= 2, rows >= 2,
+              terminals.first(where: { $0.id == id })?.status == "running" else { return }
+        do {
+            upsertTerminal(try await rpc.resizeTerminal(id: id, columns: columns, rows: rows))
+        } catch where Self.isExpectedCancellation(error) { }
+        catch {
+            guard terminals.contains(where: { $0.id == id }) else { return }
+            show(error)
+        }
+    }
+
+    func renameTerminal(id: String, name: String) async {
+        guard let rpc else { return }
+        let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        do { upsertTerminal(try await rpc.renameTerminal(id: id, name: value)) }
+        catch { show(error) }
+    }
+
+    func closeTerminal(id: String) async {
+        guard let rpc else { return }
+        do {
+            try await rpc.closeTerminal(id: id)
+            terminals.removeAll { $0.id == id }
+            terminalScreens.removeValue(forKey: id)
+            terminalSequences.removeValue(forKey: id)
+            if selectedTerminalID == id {
+                selectedTerminalID = terminals.first?.id
+                startTerminalWatch()
+            }
+        } catch { show(error) }
+    }
+
+    private func startTerminalWatch() {
+        terminalWatchTask?.cancel()
+        terminalWatchTask = nil
+        terminalStreamConnected = false
+        guard section == .terminals,
+              let id = selectedTerminalID,
+              terminals.contains(where: { $0.id == id }),
+              let rpc else { return }
+        let after = terminalSequences[id] ?? 0
+        terminalWatchTask = Task { [weak self] in
+            guard let self else { return }
+            var delay = 0.5
+            while !Task.isCancelled, self.rpc === rpc, self.selectedTerminalID == id {
+                do {
+                    self.terminalStreamConnected = true
+                    try await rpc.watchTerminal(id: id, after: self.terminalSequences[id] ?? after) { [weak self] frame in
+                        await self?.acceptTerminalFrame(frame, terminalID: id)
+                    }
+                    guard !Task.isCancelled else { return }
+                    self.terminalStreamConnected = false
+                } catch where Self.isExpectedCancellation(error) {
+                    return
+                } catch {
+                    self.terminalStreamConnected = false
+                    if let rpcError = error as? RPCError, rpcError.code == .notFound {
+                        self.terminals.removeAll { $0.id == id }
+                        self.selectedTerminalID = self.terminals.first?.id
+                        return
+                    }
+                }
+                try? await NauclioTaskSleep.seconds(delay)
+                delay = min(5, delay * 1.8)
+            }
+        }
+    }
+
+    private func acceptTerminalFrame(_ frame: Nauclio_V1_TerminalFrame, terminalID: String) {
+        guard frame.hasTerminal, frame.terminal.id == terminalID else { return }
+        upsertTerminal(frame.terminal)
+        terminalStreamConnected = true
+        terminalSequences[terminalID] = max(terminalSequences[terminalID] ?? 0, frame.sequence)
+        guard frame.screenReset || !frame.data.isEmpty else { return }
+        terminalScreens[terminalID] = TerminalScreenReducer.applying(
+            data: frame.data,
+            screenReset: frame.screenReset,
+            to: terminalScreens[terminalID] ?? TerminalScreenState()
+        )
+    }
+
+    private func upsertTerminal(_ value: Nauclio_V1_Terminal) {
+        if let index = terminals.firstIndex(where: { $0.id == value.id }) {
+            terminals[index] = value
+        } else {
+            terminals.append(value)
+        }
+        terminals.sort {
+            if $0.createdAt == $1.createdAt { return $0.id < $1.id }
+            return $0.createdAt < $1.createdAt
+        }
+    }
+
+    private func stopTerminalWatch() {
+        terminalWatchTask?.cancel()
+        terminalWatchTask = nil
+        terminalStreamConnected = false
+    }
+
     func beginStandaloneChat(projectID: String? = nil) {
+        stopTerminalWatch()
         closeConversation()
         section = .chats
         newChatProjectID = projectID ?? selectedProjectID
     }
 
     func openSettings() {
+        stopTerminalWatch()
         closeConversation()
         section = .settings
     }
@@ -1457,6 +1744,7 @@ final class NauclioStore {
         selectedCardID = chat ? nil : cardID
         selectedChatID = chat ? cardID : nil
         if chat { newChatProjectID = "" }
+        resetConversationHistory()
         conversationLoading = true
         conversationTask?.cancel()
         if let cached = projectedConversation(cardID: cardID) {
@@ -1468,7 +1756,7 @@ final class NauclioStore {
             return
         }
         do {
-            let snapshot = try await rpc.conversation(cardID: cardID)
+            let snapshot = try await rpc.conversation(cardID: cardID, limit: conversationPageSize)
             guard (selectedCardID ?? selectedChatID) == cardID else { return }
             acceptConversation(snapshot, chat: chat)
             let after = snapshot.conversation.lastSeq
@@ -1490,6 +1778,7 @@ final class NauclioStore {
     }
 
     private func acceptConversation(_ snapshot: Nauclio_V1_ConversationSnapshot, chat: Bool) {
+        resetConversationHistory(from: snapshot)
         conversation = snapshot
         selectedDetail = snapshot.detail
         conversationLoading = false
@@ -1502,6 +1791,57 @@ final class NauclioStore {
         if chat, let card = chats.first(where: { $0.id == snapshot.detail.card.id }) { markChatRead(card) }
     }
 
+    @discardableResult
+    func loadEarlierMessages() async -> Bool {
+        guard !conversationHistoryLoading,
+              conversationHistoryHasMore,
+              conversationHistoryStart > 0,
+              let cardID = selectedCardID ?? selectedChatID,
+              let rpc else { return false }
+        let before = conversationHistoryStart
+        let requestID = UUID()
+        conversationHistoryRequestID = requestID
+        conversationHistoryLoading = true
+        defer {
+            if conversationHistoryRequestID == requestID {
+                conversationHistoryRequestID = nil
+                conversationHistoryLoading = false
+            }
+        }
+        do {
+            let page = try await rpc.conversation(
+                cardID: cardID,
+                limit: conversationPageSize,
+                before: Int32(before)
+            )
+            guard conversationHistoryRequestID == requestID,
+                  (selectedCardID ?? selectedChatID) == cardID else { return false }
+            let liveIDs = Set(conversation?.conversation.messages.map(\.id) ?? [])
+            var seen = liveIDs
+            olderConversationMessages = (page.conversation.messages + olderConversationMessages).filter { message in
+                message.id.isEmpty || seen.insert(message.id).inserted
+            }
+            conversationHistoryStart = Int(page.page.start)
+            conversationHistoryTotal = Int(page.page.total)
+            conversationHistoryHasMore = page.page.hasMore_p
+            return true
+        } catch {
+            guard conversationHistoryRequestID == requestID,
+                  (selectedCardID ?? selectedChatID) == cardID else { return false }
+            errorMessage = "Could not load earlier messages: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    private func resetConversationHistory(from snapshot: Nauclio_V1_ConversationSnapshot? = nil) {
+        conversationHistoryRequestID = nil
+        olderConversationMessages = []
+        conversationHistoryStart = Int(snapshot?.page.start ?? 0)
+        conversationHistoryTotal = Int(snapshot?.page.total ?? 0)
+        conversationHistoryHasMore = snapshot?.page.hasMore_p ?? false
+        conversationHistoryLoading = false
+    }
+
     private func applyConversationUpdate(_ update: Nauclio_V1_ConversationUpdate, cardID: String) {
         guard (selectedCardID ?? selectedChatID) == cardID else { return }
         apply(update)
@@ -1511,6 +1851,7 @@ final class NauclioStore {
         if let selectedChatID, let card = chats.first(where: { $0.id == selectedChatID }) { markChatRead(card) }
         conversationTask?.cancel(); conversationTask = nil
         conversation = nil; selectedDetail = nil; selectedCardID = nil; selectedChatID = nil
+        resetConversationHistory()
     }
 
     private nonisolated static func isExpectedCancellation(_ error: Error) -> Bool {
@@ -1522,6 +1863,11 @@ final class NauclioStore {
         if update.hasSnapshot {
             conversation = update.snapshot
             selectedDetail = update.snapshot.detail
+            if olderConversationMessages.isEmpty {
+                conversationHistoryStart = Int(update.snapshot.page.start)
+                conversationHistoryHasMore = update.snapshot.page.hasMore_p
+            }
+            conversationHistoryTotal = max(conversationHistoryTotal, Int(update.snapshot.page.total))
             return
         }
         guard var snapshot = conversation else { return }
@@ -1539,7 +1885,14 @@ final class NauclioStore {
         value.subagents = update.subagents; value.taskPlans = update.taskPlans
         snapshot.conversation = value
         if update.hasDetail { snapshot.detail = update.detail; selectedDetail = update.detail }
-        if update.hasPage { snapshot.page = update.page }
+        if update.hasPage {
+            snapshot.page = update.page
+            if olderConversationMessages.isEmpty {
+                conversationHistoryStart = Int(update.page.start)
+                conversationHistoryHasMore = update.page.hasMore_p
+            }
+            conversationHistoryTotal = max(conversationHistoryTotal, Int(update.page.total))
+        }
         conversation = snapshot
     }
 
@@ -1980,7 +2333,7 @@ final class NauclioStore {
         }
         let client = try NauclioRPC(
             endpoint: machine,
-            accessToken: await NauclioCredentialStore.token(for: machine),
+            accessToken: await accessToken(for: machine),
             route: .relay(daemonID: daemonID)
         )
         let connection = Task { try? await client.run() }
@@ -2016,7 +2369,7 @@ final class NauclioStore {
                 }
                 let client = try NauclioRPC(
                     endpoint: target,
-                    accessToken: await NauclioCredentialStore.token(for: target),
+                    accessToken: await accessToken(for: target),
                     route: .relay(daemonID: daemonID)
                 )
                 let connection = Task { try? await client.run() }

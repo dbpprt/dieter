@@ -124,14 +124,57 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 	}
 
 	routed := metadata.AppendToOutgoingContext(authorized, "x-nauclio-daemon-id", identity.ID)
-	health, err := naucliov1.NewNauclioServiceClient(connection).Health(routed, &emptypb.Empty{})
+	nauclioClient := naucliov1.NewNauclioServiceClient(connection)
+	health, err := nauclioClient.Health(routed, &emptypb.Empty{})
 	if err != nil {
 		t.Fatalf("relay NauclioService.Health: %v", err)
 	}
 	if health.GetStatus() != "ok" || health.GetStorePath() != boardStore.Root {
 		t.Fatalf("unexpected relayed health: %#v", health)
 	}
-	syncStream, err := naucliov1.NewNauclioServiceClient(connection).WatchSync(routed, &naucliov1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000})
+	terminalCtx, stopTerminal := context.WithTimeout(routed, 10*time.Second)
+	defer stopTerminal()
+	terminalSession, err := nauclioClient.CreateTerminal(terminalCtx, &naucliov1.CreateTerminalRequest{
+		ProjectId: project.ID, Shell: "sh", WorkingDirectory: repositoryPath, Columns: 100, Rows: 30,
+	})
+	if err != nil || terminalSession.GetStatus() != "running" {
+		t.Fatalf("create relayed terminal=%#v err=%v", terminalSession, err)
+	}
+	firstWatchCtx, stopFirstWatch := context.WithCancel(terminalCtx)
+	firstWatch, err := nauclioClient.WatchTerminal(firstWatchCtx, &naucliov1.WatchTerminalRequest{TerminalId: terminalSession.GetId(), HeartbeatMs: 1_000})
+	if err != nil {
+		t.Fatalf("watch relayed terminal: %v", err)
+	}
+	baseline, err := firstWatch.Recv()
+	if err != nil || !baseline.GetScreenReset() {
+		t.Fatalf("relayed terminal baseline=%#v err=%v", baseline, err)
+	}
+	if _, err := nauclioClient.WriteTerminal(terminalCtx, &naucliov1.TerminalInputRequest{
+		TerminalId: terminalSession.GetId(), Data: []byte("printf 'gateway-terminal-first\\n'\n"),
+	}); err != nil {
+		t.Fatalf("write relayed terminal: %v", err)
+	}
+	firstSequence := receiveRelayedTerminalMarker(t, firstWatch, "gateway-terminal-first")
+	stopFirstWatch()
+	if _, err := nauclioClient.WriteTerminal(terminalCtx, &naucliov1.TerminalInputRequest{
+		TerminalId: terminalSession.GetId(), Data: []byte("printf 'gateway-terminal-resumed\\n'\n"),
+	}); err != nil {
+		t.Fatalf("write disconnected relayed terminal: %v", err)
+	}
+	resumedWatch, err := nauclioClient.WatchTerminal(terminalCtx, &naucliov1.WatchTerminalRequest{
+		TerminalId: terminalSession.GetId(), AfterSequence: firstSequence, HeartbeatMs: 1_000,
+	})
+	if err != nil {
+		t.Fatalf("resume relayed terminal: %v", err)
+	}
+	if sequence := receiveRelayedTerminalMarker(t, resumedWatch, "gateway-terminal-resumed"); sequence <= firstSequence {
+		t.Fatalf("relayed terminal sequence did not advance: %d <= %d", sequence, firstSequence)
+	}
+	if _, err := nauclioClient.CloseTerminal(terminalCtx, &naucliov1.TerminalRef{TerminalId: terminalSession.GetId()}); err != nil {
+		t.Fatalf("close relayed terminal: %v", err)
+	}
+
+	syncStream, err := nauclioClient.WatchSync(routed, &naucliov1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000})
 	if err != nil {
 		t.Fatalf("open relayed global sync: %v", err)
 	}
@@ -144,11 +187,11 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 		Provider: "mock", Model: "mock", DeferStart: true,
 		ClientId: "gateway-e2e-client", CommandId: "gateway-e2e-command",
 	}
-	created, err := naucliov1.NewNauclioServiceClient(connection).CreateChat(routed, command)
+	created, err := nauclioClient.CreateChat(routed, command)
 	if err != nil {
 		t.Fatalf("relayed outbox command: %v", err)
 	}
-	repeated, err := naucliov1.NewNauclioServiceClient(connection).CreateChat(routed, command)
+	repeated, err := nauclioClient.CreateChat(routed, command)
 	if err != nil || repeated.GetId() != created.GetId() {
 		t.Fatalf("relayed idempotent command first=%q repeated=%#v err=%v", created.GetId(), repeated, err)
 	}
@@ -267,6 +310,25 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 	if err != nil || reconnectedHealth.GetStorePath() != boardStore.Root {
 		t.Fatalf("reconnected relay health=%#v err=%v", reconnectedHealth, err)
 	}
+}
+
+func receiveRelayedTerminalMarker(t *testing.T, stream interface {
+	Recv() (*naucliov1.TerminalFrame, error)
+}, marker string) uint64 {
+	t.Helper()
+	var output []byte
+	var sequence uint64
+	for !bytes.Contains(output, []byte(marker)) {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatal(err)
+		}
+		output = append(output, frame.GetData()...)
+		if frame.GetSequence() > sequence {
+			sequence = frame.GetSequence()
+		}
+	}
+	return sequence
 }
 
 func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T) {

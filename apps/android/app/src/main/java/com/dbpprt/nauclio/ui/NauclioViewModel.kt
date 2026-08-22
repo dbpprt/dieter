@@ -22,6 +22,7 @@ import com.dbpprt.nauclio.v1.ConversationSnapshot
 import com.dbpprt.nauclio.v1.CreateBoardRequest
 import com.dbpprt.nauclio.v1.CreateConversationRequest
 import com.dbpprt.nauclio.v1.CreateProjectRequest
+import com.dbpprt.nauclio.v1.CreateTerminalRequest
 import com.dbpprt.nauclio.v1.DirectoryListing
 import com.dbpprt.nauclio.v1.FileDocument
 import com.dbpprt.nauclio.v1.FileEntry
@@ -40,6 +41,8 @@ import com.dbpprt.nauclio.v1.State
 import com.dbpprt.nauclio.v1.UiMessage
 import com.dbpprt.nauclio.v1.UpdateProjectRequest
 import com.dbpprt.nauclio.v1.ToolOutput
+import com.dbpprt.nauclio.v1.Terminal
+import com.dbpprt.nauclio.v1.TerminalFrame
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -74,7 +77,7 @@ internal fun connectionDialogDelayMs(
     return (CONNECTION_DIALOG_GRACE_MS - elapsed).coerceAtLeast(0L)
 }
 
-enum class Destination { CHATS, BOARD, FILES, SCHEDULES }
+enum class Destination { CHATS, BOARD, TERMINALS, FILES, SCHEDULES }
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
 
@@ -136,6 +139,12 @@ data class NauclioUiState(
     val fileDocument: FileDocument? = null,
     val fileDraft: String = "",
     val fileDirty: Boolean = false,
+    val terminals: List<Terminal> = emptyList(),
+    val selectedTerminalId: String? = null,
+    val terminalScreens: Map<String, TerminalScreenState> = emptyMap(),
+    val terminalLoading: Boolean = false,
+    val terminalStreamConnected: Boolean = false,
+    val terminalCreateVisible: Boolean = false,
     val schedules: List<Schedule> = emptyList(),
     val selectedScheduleId: String? = null,
     val scheduleRuns: List<ScheduleRun> = emptyList(),
@@ -161,11 +170,14 @@ data class NauclioUiState(
             ?: cards.firstOrNull { it.id == selectedCardId }
             ?: chats.firstOrNull { it.id == selectedCardId }
     val selectedSchedule: Schedule? get() = schedules.firstOrNull { it.id == selectedScheduleId }
+    val selectedTerminal: Terminal? get() = terminals.firstOrNull { it.id == selectedTerminalId }
     val conversationMessages: List<UiMessage>
         get() {
             val live = conversation?.conversation?.messagesList.orEmpty()
+            val liveIds = live.mapNotNullTo(mutableSetOf()) { it.id.takeIf(String::isNotBlank) }
             val seen = mutableSetOf<String>()
-            return (olderMessages + live).filter { message ->
+            val history = olderMessages.filter { it.id.isBlank() || it.id !in liveIds }
+            return (history + live).filter { message ->
                 val key = message.id.ifBlank { "anonymous:${message.hashCode()}" }
                 seen.add(key)
             }
@@ -187,7 +199,14 @@ class NauclioViewModel(
     private var foreground = false
     private var stateJob: Job? = null
     private var conversationJob: Job? = null
+    private var terminalWatchJob: Job? = null
     private var conversationStreamCardId: String? = null
+    private var terminalEndpointId: String? = null
+    private val terminalSequences = mutableMapOf<String, Long>()
+    private val terminalPendingInput = mutableMapOf<String, ByteArray>()
+    private val terminalInputJobs = mutableMapOf<String, Job>()
+    private val terminalResizeJobs = mutableMapOf<String, Job>()
+    private var conversationHistoryRequestGeneration = 0L
     private var spacesJob: Job? = null
     private var connectionDialogGraceJob: Job? = null
     private var connectionDialogManuallyRequested = false
@@ -231,6 +250,7 @@ class NauclioViewModel(
         }
         connectionManager.onAppForegrounded(_state.value.selectedProjectId)
         startStateStream()
+        if (_state.value.destination == Destination.TERMINALS) loadTerminals()
     }
 
     fun stop() {
@@ -238,6 +258,7 @@ class NauclioViewModel(
         foreground = false
         stateJob?.cancel()
         cancelConversationStream()
+        stopTerminalWatch()
         spacesJob?.cancel()
         connectionDialogGraceJob?.cancel()
         connectionDialogGraceJob = null
@@ -365,6 +386,22 @@ class NauclioViewModel(
     }
 
     private fun applyConnectionState(connection: NauclioConnectionState) {
+        val connectedEndpointId = connection.endpoint?.id
+        val endpointChanged = connectedEndpointId != null && connectedEndpointId != terminalEndpointId
+        if (endpointChanged) {
+            terminalEndpointId = connectedEndpointId
+            stopTerminalWatch()
+            cancelTerminalIO()
+            terminalSequences.clear()
+            _state.update {
+                it.copy(
+                    terminals = emptyList(),
+                    selectedTerminalId = null,
+                    terminalScreens = emptyMap(),
+                    terminalStreamConnected = false,
+                )
+            }
+        }
         val remote = connection.selectedState
         _state.update { current ->
             val selectedCardId = resolveConversationId(current.selectedCardId, connection.resolvedConversationIds)
@@ -391,7 +428,11 @@ class NauclioViewModel(
                 projects = orderedProjects(connection.projects, current.projectOrder),
                 projectHosts = connection.projectHosts,
                 spaceBoards = connection.boards,
-                spaceCards = connection.cards,
+                spaceCards = reconcileCardsDuringOperations(
+                    remoteCards = connection.cards,
+                    localCards = current.spaceCards + current.cards,
+                    operations = current.cardOperations,
+                ),
                 selectedCardId = selectedCardId,
                 conversation = selectedCardId?.let(connection.activeConversations::get) ?: current.conversation,
                 schedules = connection.schedules.filter { it.projectId == current.selectedProjectId },
@@ -410,6 +451,11 @@ class NauclioViewModel(
         if (remote != null && remote !== lastRemoteState) {
             lastRemoteState = remote
             applyRemoteState(remote)
+        }
+        if (endpointChanged && foreground && connection.phase == ConnectionPhase.CONNECTED &&
+            _state.value.destination == Destination.TERMINALS
+        ) {
+            loadTerminals()
         }
     }
 
@@ -490,7 +536,11 @@ class NauclioViewModel(
                 loading = false,
                 error = null,
                 boards = remote.boardsList,
-                cards = remote.cardsList,
+                cards = reconcileCardsDuringOperations(
+                    remoteCards = remote.cardsList,
+                    localCards = current.cards,
+                    operations = current.cardOperations,
+                ),
                 selectedProjectId = projectId,
                 selectedBoardId = boardId,
                 selectedLane = lane,
@@ -499,12 +549,14 @@ class NauclioViewModel(
         when (_state.value.destination) {
             Destination.FILES -> viewModelScope.launch { loadFiles() }
             Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
+            Destination.TERMINALS -> if (_state.value.terminals.isEmpty()) loadTerminals()
             else -> Unit
         }
     }
 
     fun navigate(destination: Destination) {
         rememberConversation()
+        if (destination != Destination.TERMINALS) stopTerminalWatch()
         _state.update {
             it.copy(
                 destination = destination,
@@ -522,6 +574,7 @@ class NauclioViewModel(
             Destination.CHATS -> viewModelScope.launch { loadChats() }
             Destination.FILES -> viewModelScope.launch { loadFiles() }
             Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
+            Destination.TERMINALS -> loadTerminals()
             Destination.BOARD -> refreshSpaces()
         }
     }
@@ -547,6 +600,7 @@ class NauclioViewModel(
     fun selectProject(id: String) {
         rememberConversation()
         cancelConversationStream()
+        stopTerminalWatch()
         _state.update {
             it.copy(
                 selectedProjectId = id,
@@ -586,6 +640,7 @@ class NauclioViewModel(
     fun openBoard(projectId: String, boardId: String) {
         rememberConversation()
         cancelConversationStream()
+        stopTerminalWatch()
         val board = _state.value.spaceBoards.firstOrNull { it.id == boardId }
         val changingProject = projectId != _state.value.selectedProjectId
         _state.update {
@@ -614,6 +669,7 @@ class NauclioViewModel(
     fun showBoardOverview() {
         rememberConversation()
         cancelConversationStream()
+        stopTerminalWatch()
         _state.update {
             it.copy(
                 destination = Destination.BOARD,
@@ -667,6 +723,7 @@ class NauclioViewModel(
 
     fun openCard(card: Card, destination: Destination = _state.value.destination) {
         rememberConversation()
+        stopTerminalWatch()
         val connection = connectionManager.state.value
         val cardId = resolveConversationId(card.id, connection.resolvedConversationIds) ?: card.id
         val resolvedCard = (connection.cards + connection.chats).firstOrNull { it.id == cardId }
@@ -837,12 +894,18 @@ class NauclioViewModel(
         val current = _state.value
         val cardId = current.selectedCardId ?: return
         if (!current.historyHasMore || current.historyLoading || current.historyStart <= 0) return
+        val requestGeneration = ++conversationHistoryRequestGeneration
         viewModelScope.launch {
+            if (_state.value.selectedCardId != cardId) return@launch
             _state.update { it.copy(historyLoading = true) }
             try {
                 connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
                 val page = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE, before = current.historyStart)
                 _state.update { latest ->
+                    if (conversationHistoryRequestGeneration != requestGeneration ||
+                        latest.selectedCardId != cardId ||
+                        !latest.historyLoading
+                    ) return@update latest
                     val liveIds = latest.conversation?.conversation?.messagesList.orEmpty().mapTo(mutableSetOf()) { it.id }
                     val older = (page.conversation.messagesList + latest.olderMessages)
                         .filterNot { it.id in liveIds }
@@ -855,9 +918,12 @@ class NauclioViewModel(
                         historyLoading = false,
                     )
                 }
-                rememberConversation(cardId)
+                if (conversationHistoryRequestGeneration == requestGeneration) rememberConversation(cardId)
             } catch (error: Throwable) {
-                _state.update { it.copy(historyLoading = false, error = readableError(error)) }
+                _state.update { latest ->
+                    if (conversationHistoryRequestGeneration != requestGeneration || latest.selectedCardId != cardId) latest
+                    else latest.copy(historyLoading = false, error = readableError(error))
+                }
             }
         }
     }
@@ -1026,11 +1092,20 @@ class NauclioViewModel(
     }
 
     private fun startCard(card: Card, board: Board?) {
-        if (card.startLane(board) == null) return
-        if (_state.value.cardOperations.containsKey(card.id)) return
-        val optimistic = card.toBuilder().setRuntime("starting").build()
-        updateCard(optimistic)
-        cardAction(card.id, CardOperation.STARTING, rollback = { updateCard(card) }) {
+        val optimistic = card.optimisticStart(board) ?: return
+        cardAction(
+            cardId = card.id,
+            operation = CardOperation.STARTING,
+            prepare = { current ->
+                current.replacingCard(optimistic).copy(selectedLane = optimistic.lane)
+            },
+            rollback = { current ->
+                current.replacingCard(card).copy(
+                    selectedLane = card.lane.takeIf { current.selectedLane == optimistic.lane }
+                        ?: current.selectedLane,
+                )
+            },
+        ) {
             val response = connectionManager.startCard(card.id)
             updateCard(response.card)
         }
@@ -1042,16 +1117,17 @@ class NauclioViewModel(
     }
 
     private fun updateCard(card: Card) {
-        _state.update { current ->
-            current.copy(
-                cards = current.cards.map { if (it.id == card.id) card else it },
-                chats = current.chats.map { if (it.id == card.id) card else it },
-                conversation = current.conversation?.takeIf { it.detail.card.id == card.id }?.toBuilder()
-                    ?.setDetail(current.conversation.detail.toBuilder().setCard(card))
-                    ?.build() ?: current.conversation,
-            )
-        }
+        _state.update { it.replacingCard(card) }
     }
+
+    private fun NauclioUiState.replacingCard(card: Card): NauclioUiState = copy(
+        cards = cards.map { if (it.id == card.id) card else it },
+        spaceCards = spaceCards.map { if (it.id == card.id) card else it },
+        chats = chats.map { if (it.id == card.id) card else it },
+        conversation = conversation?.takeIf { it.detail.card.id == card.id }?.toBuilder()
+            ?.setDetail(conversation.detail.toBuilder().setCard(card))
+            ?.build() ?: conversation,
+    )
 
     private suspend fun loadChats() {
         _state.update { it.copy(chats = connectionManager.state.value.chats, error = null) }
@@ -1116,6 +1192,242 @@ class NauclioViewModel(
         _state.update { it.copy(fileDocument = null, fileDraft = "", fileDirty = false) }
         return true
     }
+
+    fun loadTerminals() {
+        if (!foreground || _state.value.connectionPhase != ConnectionPhase.CONNECTED) return
+        viewModelScope.launch {
+            _state.update { it.copy(terminalLoading = true, error = null) }
+            try {
+                val terminals = repository.terminals().terminalsList.sortedWith(
+                    compareBy<Terminal> { it.createdAt }.thenBy { it.id },
+                )
+                _state.update { current ->
+                    val live = terminals.mapTo(mutableSetOf(), Terminal::getId)
+                    val selected = current.selectedTerminalId?.takeIf(live::contains) ?: terminals.firstOrNull()?.id
+                    current.copy(
+                        terminals = terminals,
+                        selectedTerminalId = selected,
+                        terminalScreens = current.terminalScreens.filterKeys(live::contains),
+                        terminalLoading = false,
+                    )
+                }
+                terminalSequences.keys.retainAll(terminals.mapTo(mutableSetOf(), Terminal::getId))
+                startTerminalWatch()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { it.copy(terminalLoading = false, error = readableTerminalError(error)) }
+            }
+        }
+    }
+
+    fun showTerminalCreate() {
+        _state.update { it.copy(terminalCreateVisible = true, error = null) }
+    }
+
+    fun dismissTerminalCreate() {
+        _state.update { it.copy(terminalCreateVisible = false) }
+    }
+
+    fun selectTerminal(terminalId: String) {
+        if (_state.value.terminals.none { it.id == terminalId }) return
+        _state.update { it.copy(selectedTerminalId = terminalId) }
+        startTerminalWatch()
+    }
+
+    fun createTerminal(
+        projectId: String,
+        name: String,
+        shell: String,
+        workingDirectory: String,
+        onCreated: () -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            _state.update { it.copy(terminalLoading = true, error = null) }
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+                val terminal = repository.createTerminal(
+                    CreateTerminalRequest.newBuilder()
+                        .setProjectId(projectId)
+                        .setName(name.trim())
+                        .setShell(shell)
+                        .setWorkingDirectory(workingDirectory.trim())
+                        .setColumns(80)
+                        .setRows(28)
+                        .build(),
+                )
+                terminalSequences[terminal.id] = 0
+                _state.update { current ->
+                    current.copy(
+                        destination = Destination.TERMINALS,
+                        terminals = upsertTerminal(current.terminals, terminal),
+                        selectedTerminalId = terminal.id,
+                        terminalScreens = current.terminalScreens + (terminal.id to TerminalScreenState()),
+                        terminalLoading = false,
+                        terminalCreateVisible = false,
+                    )
+                }
+                startTerminalWatch()
+                onCreated()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { it.copy(terminalLoading = false, error = readableTerminalError(error)) }
+            }
+        }
+    }
+
+    fun sendTerminalInput(terminalId: String, data: ByteArray) {
+        if (data.isEmpty() || _state.value.terminals.none { it.id == terminalId && it.status == "running" }) return
+        terminalPendingInput[terminalId] = terminalPendingInput[terminalId]?.plus(data) ?: data.copyOf()
+        if (terminalInputJobs[terminalId]?.isActive == true) return
+        terminalInputJobs[terminalId] = viewModelScope.launch {
+            try {
+                while (true) {
+                    delay(12)
+                    val pending = terminalPendingInput.remove(terminalId) ?: break
+                    terminalInputChunks(pending).forEach { repository.writeTerminal(terminalId, it) }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { it.copy(terminalStreamConnected = false, error = "Terminal input paused: ${readableError(error)}") }
+            } finally {
+                terminalInputJobs.remove(terminalId)
+                if (terminalPendingInput[terminalId]?.isNotEmpty() == true) {
+                    terminalPendingInput.remove(terminalId)?.let { sendTerminalInput(terminalId, it) }
+                }
+            }
+        }
+    }
+
+    fun resizeTerminal(terminalId: String, columns: Int, rows: Int) {
+        if (columns !in 2..500 || rows !in 2..500) return
+        terminalResizeJobs.remove(terminalId)?.cancel()
+        terminalResizeJobs[terminalId] = viewModelScope.launch {
+            delay(120)
+            try {
+                upsertTerminal(repository.resizeTerminal(terminalId, columns, rows))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (_state.value.terminals.any { it.id == terminalId }) {
+                    _state.update { it.copy(error = readableError(error)) }
+                }
+            }
+        }
+    }
+
+    fun renameTerminal(terminalId: String, name: String) {
+        val normalized = name.trim()
+        if (normalized.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                upsertTerminal(repository.renameTerminal(terminalId, normalized))
+            } catch (error: Throwable) {
+                _state.update { it.copy(error = readableError(error)) }
+            }
+        }
+    }
+
+    fun closeTerminal(terminalId: String) {
+        viewModelScope.launch {
+            try {
+                repository.closeTerminal(terminalId)
+                terminalSequences.remove(terminalId)
+                terminalPendingInput.remove(terminalId)
+                terminalInputJobs.remove(terminalId)?.cancel()
+                terminalResizeJobs.remove(terminalId)?.cancel()
+                _state.update { current ->
+                    val terminals = current.terminals.filterNot { it.id == terminalId }
+                    current.copy(
+                        terminals = terminals,
+                        selectedTerminalId = if (current.selectedTerminalId == terminalId) terminals.firstOrNull()?.id else current.selectedTerminalId,
+                        terminalScreens = current.terminalScreens - terminalId,
+                    )
+                }
+                startTerminalWatch()
+            } catch (error: Throwable) {
+                _state.update { it.copy(error = readableError(error)) }
+            }
+        }
+    }
+
+    private fun startTerminalWatch() {
+        stopTerminalWatch()
+        val terminalId = _state.value.selectedTerminalId ?: return
+        if (!foreground || _state.value.destination != Destination.TERMINALS) return
+        terminalWatchJob = viewModelScope.launch {
+            var delayMs = 500L
+            while (_state.value.destination == Destination.TERMINALS && _state.value.selectedTerminalId == terminalId) {
+                try {
+                    _state.update { it.copy(terminalStreamConnected = true) }
+                    repository.watchTerminal(terminalId, terminalSequences[terminalId] ?: 0).collectLatest { frame ->
+                        acceptTerminalFrame(terminalId, frame)
+                    }
+                    _state.update { it.copy(terminalStreamConnected = false) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    _state.update { it.copy(terminalStreamConnected = false) }
+                    if (Status.fromThrowable(error).code == Status.Code.NOT_FOUND) {
+                        _state.update { current ->
+                            val terminals = current.terminals.filterNot { it.id == terminalId }
+                            current.copy(
+                                terminals = terminals,
+                                selectedTerminalId = terminals.firstOrNull()?.id,
+                                terminalScreens = current.terminalScreens - terminalId,
+                            )
+                        }
+                        return@launch
+                    }
+                }
+                delay(delayMs)
+                delayMs = (delayMs * 1.8).toLong().coerceAtMost(5_000)
+            }
+        }
+    }
+
+    private fun stopTerminalWatch() {
+        terminalWatchJob?.cancel()
+        terminalWatchJob = null
+        _state.update { it.copy(terminalStreamConnected = false) }
+    }
+
+    private fun cancelTerminalIO() {
+        terminalInputJobs.values.forEach { it.cancel() }
+        terminalResizeJobs.values.forEach { it.cancel() }
+        terminalInputJobs.clear()
+        terminalResizeJobs.clear()
+        terminalPendingInput.clear()
+    }
+
+    private fun acceptTerminalFrame(terminalId: String, frame: TerminalFrame) {
+        if (frame.hasTerminal() && frame.terminal.id == terminalId) upsertTerminal(frame.terminal)
+        terminalSequences[terminalId] = maxOf(terminalSequences[terminalId] ?: 0, frame.sequence)
+        if (!frame.screenReset && frame.data.isEmpty) return
+        _state.update { current ->
+            current.copy(
+                terminalStreamConnected = true,
+                terminalScreens = current.terminalScreens + (
+                    terminalId to TerminalScreenReducer.apply(
+                        current = current.terminalScreens[terminalId] ?: TerminalScreenState(),
+                        data = frame.data.toByteArray(),
+                        screenReset = frame.screenReset,
+                    )
+                ),
+            )
+        }
+    }
+
+    private fun upsertTerminal(terminal: Terminal) {
+        _state.update { it.copy(terminals = upsertTerminal(it.terminals, terminal)) }
+    }
+
+    private fun upsertTerminal(terminals: List<Terminal>, terminal: Terminal): List<Terminal> =
+        (terminals.filterNot { it.id == terminal.id } + terminal).sortedWith(
+            compareBy<Terminal> { it.createdAt }.thenBy { it.id },
+        )
 
     private suspend fun loadSchedules() {
         val projectId = _state.value.selectedProjectId
@@ -1323,15 +1635,18 @@ class NauclioViewModel(
     private fun cardAction(
         cardId: String,
         operation: CardOperation,
-        rollback: (() -> Unit)? = null,
+        prepare: (NauclioUiState) -> NauclioUiState = { it },
+        rollback: ((NauclioUiState) -> NauclioUiState)? = null,
         block: suspend () -> Unit,
     ) {
         if (_state.value.cardOperations.containsKey(cardId)) return
-        _state.update {
-            it.copy(
-                cardOperations = it.cardOperations + (cardId to operation),
-                cardOperationErrors = it.cardOperationErrors - cardId,
-            )
+        _state.update { current ->
+            prepare(current).let {
+                it.copy(
+                    cardOperations = it.cardOperations + (cardId to operation),
+                    cardOperationErrors = it.cardOperationErrors - cardId,
+                )
+            }
         }
         viewModelScope.launch {
             try {
@@ -1339,12 +1654,11 @@ class NauclioViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                rollback?.invoke()
                 val message = readableError(error)
-                _state.update {
-                    it.copy(
+                _state.update { current ->
+                    (rollback?.invoke(current) ?: current).copy(
                         error = message,
-                        cardOperationErrors = it.cardOperationErrors + (cardId to message),
+                        cardOperationErrors = current.cardOperationErrors + (cardId to message),
                     )
                 }
             } finally {
@@ -1368,7 +1682,17 @@ class NauclioViewModel(
     }
 
     override fun onCleared() {
+        stopTerminalWatch()
+        cancelTerminalIO()
         connectionManager.onAppBackgrounded()
+    }
+
+    private fun readableTerminalError(error: Throwable): String {
+        val status = Status.fromThrowable(error)
+        if (status.code == Status.Code.UNIMPLEMENTED || status.description?.contains("404 (Not Found)") == true) {
+            return "This gateway needs the terminal-forwarding update. Update it, then refresh terminals."
+        }
+        return readableError(error)
     }
 
     private fun readableError(error: Throwable): String {

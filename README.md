@@ -41,8 +41,8 @@ and shell sessions work as a coordinated fleet.
 
 The system has three parts:
 
-- `nauclio daemon start` owns projects, durable conversations, schedules, files,
-  and local AI SDK Harness workers;
+- `nauclio daemon start` owns projects, durable conversations, persistent PTY
+  terminals, schedules, files, and local AI SDK Harness workers;
 - `nauclio-gateway` authenticates one GitHub account and connects any number of
   enrolled daemons; and
 - the native macOS and Android clients select a daemon and use the same
@@ -55,7 +55,7 @@ credentials never leave their daemon host.
 
 The native clients build their own project directory by querying every online
 daemon through the authenticated relay. Each project is shown with its owning
-hostname, and opening its board, chats, files, or schedules automatically moves
+hostname, and opening its board, chats, terminals, files, or schedules automatically moves
 the active connection to that daemon. The gateway never sees or stores that
 directory.
 
@@ -109,7 +109,7 @@ flowchart TB
     gatewayData["Stores sessions + daemon routes<br/>Still not your source code."]
     daemon(["nauclio daemon"])
     api["Local API<br/>127.0.0.1:4242"]
-    domain["Boards · cards · chats<br/>files · schedules · queues"]
+    domain["Boards · cards · chats · terminals<br/>files · schedules · queues"]
     home[("NAUCLIO_HOME")]
     git[("Git worktrees")]
     agents["Harness workers<br/>Codex · Claude Code · Pi · Oh My Pi"]
@@ -150,6 +150,14 @@ Direct routes use a verified daemon certificate and a five-minute bearer.
 Revoking a daemon closes its relay immediately and invalidates direct access as
 those bearers expire. Relay messages are capped at 16 MiB, buffers and streams
 are bounded, and canceling an RPC does not accidentally stop the agent.
+
+Terminal PTYs follow the same transport rule but have a daemon-owned lifecycle:
+canceling an output stream or closing the Mac app removes only that observer.
+The shell continues until it exits, is explicitly closed, or the daemon shuts
+down. Output carries monotonically increasing sequence numbers and a bounded
+replay baseline, so clients can resume after a disconnect without making the
+gateway store terminal state. Typing and resize calls use the relay's priority
+unary path independently of the long-lived output stream.
 
 ## Requirements
 
@@ -379,8 +387,8 @@ git diff --check
 ```
 
 `internal/gateway/e2e_test.go` runs a real gateway, enrollment, signed daemon
-link, local Nauclio data plane, unary relay, streaming relay, token exchange, and
-direct TLS call in one test.
+link, local Nauclio data plane, unary relay, streaming relay, persistent
+terminal reconnect, token exchange, and direct TLS call in one test.
 
 ## License
 

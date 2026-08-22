@@ -36,6 +36,22 @@ class ConversationUiCacheTest {
         requireNotNull(cache["three"])
     }
 
+    @Test
+    fun liveTailWinsWhenItOverlapsLoadedHistory() {
+        val state = NauclioUiState(
+            conversation = ConversationSnapshot.newBuilder()
+                .setConversation(
+                    Conversation.newBuilder()
+                        .addMessages(message("2").toBuilder().setRole("live")),
+                )
+                .build(),
+            olderMessages = listOf(message("1"), message("2").toBuilder().setRole("stale").build()),
+        )
+
+        assertEquals(listOf("1", "2"), state.conversationMessages.map { it.id })
+        assertEquals("live", state.conversationMessages.last().role)
+    }
+
     private fun cached(
         live: List<UiMessage> = emptyList(),
         older: List<UiMessage> = emptyList(),

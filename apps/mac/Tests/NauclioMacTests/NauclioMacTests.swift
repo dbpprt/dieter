@@ -330,12 +330,54 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
 }
 
 @Test func conversationScrollBehaviorDistinguishesUserNavigationFromContentGrowth() {
-    let initial = ConversationViewport(offsetY: 400, visibleMaxY: 900, contentHeight: 1_000)
-    let userScrolled = ConversationViewport(offsetY: 250, visibleMaxY: 750, contentHeight: 1_000)
-    let messageArrived = ConversationViewport(offsetY: 400, visibleMaxY: 900, contentHeight: 1_180)
+    let initial = ConversationViewport(offsetY: 400, visibleMaxY: 900, visibleHeight: 500, contentHeight: 1_000)
+    let userScrolled = ConversationViewport(offsetY: 250, visibleMaxY: 750, visibleHeight: 500, contentHeight: 1_000)
+    let messageArrived = ConversationViewport(offsetY: 400, visibleMaxY: 900, visibleHeight: 500, contentHeight: 1_180)
 
     #expect(ConversationScrollBehavior.isUserNavigation(from: initial, to: userScrolled))
     #expect(!ConversationScrollBehavior.isUserNavigation(from: initial, to: messageArrived))
+}
+
+@Test func conversationHistoryLoadsNearTheTopAndUntilTheViewportIsFilled() {
+    let nearTop = ConversationViewport(offsetY: 120, visibleMaxY: 720, visibleHeight: 600, contentHeight: 1_400)
+    let shortPage = ConversationViewport(offsetY: 0, visibleMaxY: 420, visibleHeight: 600, contentHeight: 420)
+    let middle = ConversationViewport(offsetY: 360, visibleMaxY: 960, visibleHeight: 600, contentHeight: 1_400)
+
+    #expect(ConversationScrollBehavior.shouldLoadEarlier(viewport: nearTop, hasMore: true, loading: false))
+    #expect(ConversationScrollBehavior.shouldLoadEarlier(viewport: shortPage, hasMore: true, loading: false))
+    #expect(!ConversationScrollBehavior.shouldLoadEarlier(viewport: middle, hasMore: true, loading: false))
+    #expect(!ConversationScrollBehavior.shouldLoadEarlier(viewport: nearTop, hasMore: true, loading: true))
+    #expect(!ConversationScrollBehavior.shouldLoadEarlier(viewport: nearTop, hasMore: false, loading: false))
+}
+
+@Test func terminalScreenReducerReplaysResetsAndBoundsReconnectState() {
+    let first = TerminalScreenReducer.applying(
+        data: Data("first".utf8),
+        screenReset: true,
+        to: TerminalScreenState(),
+        limit: 8
+    )
+    #expect(String(decoding: first.data, as: UTF8.self) == "first")
+    #expect(first.resetRevision == 1)
+
+    let appended = TerminalScreenReducer.applying(
+        data: Data("-second".utf8),
+        screenReset: false,
+        to: first,
+        limit: 8
+    )
+    #expect(String(decoding: appended.data, as: UTF8.self) == "t-second")
+    #expect(appended.resetRevision == 2)
+    #expect(appended.revision == 2)
+
+    let replayed = TerminalScreenReducer.applying(
+        data: Data("fresh".utf8),
+        screenReset: true,
+        to: appended,
+        limit: 8
+    )
+    #expect(String(decoding: replayed.data, as: UTF8.self) == "fresh")
+    #expect(replayed.resetRevision == 3)
 }
 
 @Test func chatActivityTextUsesCompactUnits() throws {

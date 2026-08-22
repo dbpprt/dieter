@@ -70,6 +70,13 @@ const (
 	NauclioService_CreateFile_FullMethodName               = "/nauclio.v1.NauclioService/CreateFile"
 	NauclioService_MoveFile_FullMethodName                 = "/nauclio.v1.NauclioService/MoveFile"
 	NauclioService_DeleteFile_FullMethodName               = "/nauclio.v1.NauclioService/DeleteFile"
+	NauclioService_ListTerminals_FullMethodName            = "/nauclio.v1.NauclioService/ListTerminals"
+	NauclioService_CreateTerminal_FullMethodName           = "/nauclio.v1.NauclioService/CreateTerminal"
+	NauclioService_WatchTerminal_FullMethodName            = "/nauclio.v1.NauclioService/WatchTerminal"
+	NauclioService_WriteTerminal_FullMethodName            = "/nauclio.v1.NauclioService/WriteTerminal"
+	NauclioService_ResizeTerminal_FullMethodName           = "/nauclio.v1.NauclioService/ResizeTerminal"
+	NauclioService_RenameTerminal_FullMethodName           = "/nauclio.v1.NauclioService/RenameTerminal"
+	NauclioService_CloseTerminal_FullMethodName            = "/nauclio.v1.NauclioService/CloseTerminal"
 	NauclioService_ListSchedules_FullMethodName            = "/nauclio.v1.NauclioService/ListSchedules"
 	NauclioService_PreviewSchedule_FullMethodName          = "/nauclio.v1.NauclioService/PreviewSchedule"
 	NauclioService_CreateSchedule_FullMethodName           = "/nauclio.v1.NauclioService/CreateSchedule"
@@ -140,6 +147,16 @@ type NauclioServiceClient interface {
 	CreateFile(ctx context.Context, in *CreateFileRequest, opts ...grpc.CallOption) (*FileEntry, error)
 	MoveFile(ctx context.Context, in *MoveFileRequest, opts ...grpc.CallOption) (*MoveFileResponse, error)
 	DeleteFile(ctx context.Context, in *DeleteFileRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Terminal processes are owned by the daemon, not by a client stream. A
+	// client can therefore disconnect and resume output from after_sequence
+	// without terminating the shell.
+	ListTerminals(ctx context.Context, in *ListTerminalsRequest, opts ...grpc.CallOption) (*TerminalsResponse, error)
+	CreateTerminal(ctx context.Context, in *CreateTerminalRequest, opts ...grpc.CallOption) (*Terminal, error)
+	WatchTerminal(ctx context.Context, in *WatchTerminalRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalFrame], error)
+	WriteTerminal(ctx context.Context, in *TerminalInputRequest, opts ...grpc.CallOption) (*Terminal, error)
+	ResizeTerminal(ctx context.Context, in *ResizeTerminalRequest, opts ...grpc.CallOption) (*Terminal, error)
+	RenameTerminal(ctx context.Context, in *RenameTerminalRequest, opts ...grpc.CallOption) (*Terminal, error)
+	CloseTerminal(ctx context.Context, in *TerminalRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*SchedulesResponse, error)
 	PreviewSchedule(ctx context.Context, in *PreviewScheduleRequest, opts ...grpc.CallOption) (*SchedulePreview, error)
 	CreateSchedule(ctx context.Context, in *SaveScheduleRequest, opts ...grpc.CallOption) (*Schedule, error)
@@ -685,6 +702,85 @@ func (c *nauclioServiceClient) DeleteFile(ctx context.Context, in *DeleteFileReq
 	return out, nil
 }
 
+func (c *nauclioServiceClient) ListTerminals(ctx context.Context, in *ListTerminalsRequest, opts ...grpc.CallOption) (*TerminalsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TerminalsResponse)
+	err := c.cc.Invoke(ctx, NauclioService_ListTerminals_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nauclioServiceClient) CreateTerminal(ctx context.Context, in *CreateTerminalRequest, opts ...grpc.CallOption) (*Terminal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Terminal)
+	err := c.cc.Invoke(ctx, NauclioService_CreateTerminal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nauclioServiceClient) WatchTerminal(ctx context.Context, in *WatchTerminalRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &NauclioService_ServiceDesc.Streams[3], NauclioService_WatchTerminal_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchTerminalRequest, TerminalFrame]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type NauclioService_WatchTerminalClient = grpc.ServerStreamingClient[TerminalFrame]
+
+func (c *nauclioServiceClient) WriteTerminal(ctx context.Context, in *TerminalInputRequest, opts ...grpc.CallOption) (*Terminal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Terminal)
+	err := c.cc.Invoke(ctx, NauclioService_WriteTerminal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nauclioServiceClient) ResizeTerminal(ctx context.Context, in *ResizeTerminalRequest, opts ...grpc.CallOption) (*Terminal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Terminal)
+	err := c.cc.Invoke(ctx, NauclioService_ResizeTerminal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nauclioServiceClient) RenameTerminal(ctx context.Context, in *RenameTerminalRequest, opts ...grpc.CallOption) (*Terminal, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Terminal)
+	err := c.cc.Invoke(ctx, NauclioService_RenameTerminal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nauclioServiceClient) CloseTerminal(ctx context.Context, in *TerminalRef, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, NauclioService_CloseTerminal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *nauclioServiceClient) ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*SchedulesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SchedulesResponse)
@@ -825,6 +921,16 @@ type NauclioServiceServer interface {
 	CreateFile(context.Context, *CreateFileRequest) (*FileEntry, error)
 	MoveFile(context.Context, *MoveFileRequest) (*MoveFileResponse, error)
 	DeleteFile(context.Context, *DeleteFileRequest) (*emptypb.Empty, error)
+	// Terminal processes are owned by the daemon, not by a client stream. A
+	// client can therefore disconnect and resume output from after_sequence
+	// without terminating the shell.
+	ListTerminals(context.Context, *ListTerminalsRequest) (*TerminalsResponse, error)
+	CreateTerminal(context.Context, *CreateTerminalRequest) (*Terminal, error)
+	WatchTerminal(*WatchTerminalRequest, grpc.ServerStreamingServer[TerminalFrame]) error
+	WriteTerminal(context.Context, *TerminalInputRequest) (*Terminal, error)
+	ResizeTerminal(context.Context, *ResizeTerminalRequest) (*Terminal, error)
+	RenameTerminal(context.Context, *RenameTerminalRequest) (*Terminal, error)
+	CloseTerminal(context.Context, *TerminalRef) (*emptypb.Empty, error)
 	ListSchedules(context.Context, *ListSchedulesRequest) (*SchedulesResponse, error)
 	PreviewSchedule(context.Context, *PreviewScheduleRequest) (*SchedulePreview, error)
 	CreateSchedule(context.Context, *SaveScheduleRequest) (*Schedule, error)
@@ -992,6 +1098,27 @@ func (UnimplementedNauclioServiceServer) MoveFile(context.Context, *MoveFileRequ
 }
 func (UnimplementedNauclioServiceServer) DeleteFile(context.Context, *DeleteFileRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteFile not implemented")
+}
+func (UnimplementedNauclioServiceServer) ListTerminals(context.Context, *ListTerminalsRequest) (*TerminalsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListTerminals not implemented")
+}
+func (UnimplementedNauclioServiceServer) CreateTerminal(context.Context, *CreateTerminalRequest) (*Terminal, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateTerminal not implemented")
+}
+func (UnimplementedNauclioServiceServer) WatchTerminal(*WatchTerminalRequest, grpc.ServerStreamingServer[TerminalFrame]) error {
+	return status.Error(codes.Unimplemented, "method WatchTerminal not implemented")
+}
+func (UnimplementedNauclioServiceServer) WriteTerminal(context.Context, *TerminalInputRequest) (*Terminal, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteTerminal not implemented")
+}
+func (UnimplementedNauclioServiceServer) ResizeTerminal(context.Context, *ResizeTerminalRequest) (*Terminal, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResizeTerminal not implemented")
+}
+func (UnimplementedNauclioServiceServer) RenameTerminal(context.Context, *RenameTerminalRequest) (*Terminal, error) {
+	return nil, status.Error(codes.Unimplemented, "method RenameTerminal not implemented")
+}
+func (UnimplementedNauclioServiceServer) CloseTerminal(context.Context, *TerminalRef) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CloseTerminal not implemented")
 }
 func (UnimplementedNauclioServiceServer) ListSchedules(context.Context, *ListSchedulesRequest) (*SchedulesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSchedules not implemented")
@@ -1917,6 +2044,125 @@ func _NauclioService_DeleteFile_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NauclioService_ListTerminals_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTerminalsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NauclioServiceServer).ListTerminals(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NauclioService_ListTerminals_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NauclioServiceServer).ListTerminals(ctx, req.(*ListTerminalsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NauclioService_CreateTerminal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTerminalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NauclioServiceServer).CreateTerminal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NauclioService_CreateTerminal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NauclioServiceServer).CreateTerminal(ctx, req.(*CreateTerminalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NauclioService_WatchTerminal_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchTerminalRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(NauclioServiceServer).WatchTerminal(m, &grpc.GenericServerStream[WatchTerminalRequest, TerminalFrame]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type NauclioService_WatchTerminalServer = grpc.ServerStreamingServer[TerminalFrame]
+
+func _NauclioService_WriteTerminal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TerminalInputRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NauclioServiceServer).WriteTerminal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NauclioService_WriteTerminal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NauclioServiceServer).WriteTerminal(ctx, req.(*TerminalInputRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NauclioService_ResizeTerminal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResizeTerminalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NauclioServiceServer).ResizeTerminal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NauclioService_ResizeTerminal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NauclioServiceServer).ResizeTerminal(ctx, req.(*ResizeTerminalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NauclioService_RenameTerminal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenameTerminalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NauclioServiceServer).RenameTerminal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NauclioService_RenameTerminal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NauclioServiceServer).RenameTerminal(ctx, req.(*RenameTerminalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NauclioService_CloseTerminal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TerminalRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NauclioServiceServer).CloseTerminal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NauclioService_CloseTerminal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NauclioServiceServer).CloseTerminal(ctx, req.(*TerminalRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _NauclioService_ListSchedules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListSchedulesRequest)
 	if err := dec(in); err != nil {
@@ -2257,6 +2503,30 @@ var NauclioService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NauclioService_DeleteFile_Handler,
 		},
 		{
+			MethodName: "ListTerminals",
+			Handler:    _NauclioService_ListTerminals_Handler,
+		},
+		{
+			MethodName: "CreateTerminal",
+			Handler:    _NauclioService_CreateTerminal_Handler,
+		},
+		{
+			MethodName: "WriteTerminal",
+			Handler:    _NauclioService_WriteTerminal_Handler,
+		},
+		{
+			MethodName: "ResizeTerminal",
+			Handler:    _NauclioService_ResizeTerminal_Handler,
+		},
+		{
+			MethodName: "RenameTerminal",
+			Handler:    _NauclioService_RenameTerminal_Handler,
+		},
+		{
+			MethodName: "CloseTerminal",
+			Handler:    _NauclioService_CloseTerminal_Handler,
+		},
+		{
 			MethodName: "ListSchedules",
 			Handler:    _NauclioService_ListSchedules_Handler,
 		},
@@ -2303,6 +2573,11 @@ var NauclioService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchConversation",
 			Handler:       _NauclioService_WatchConversation_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchTerminal",
+			Handler:       _NauclioService_WatchTerminal_Handler,
 			ServerStreams: true,
 		},
 	},

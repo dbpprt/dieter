@@ -15,6 +15,7 @@ let package = Package(
         .package(path: "Vendor/grpc-swift-nio-transport"),
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.5.1"),
     ],
     targets: [
         .target(
@@ -39,6 +40,7 @@ let package = Package(
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                .product(name: "SwiftTerm", package: "SwiftTerm"),
             ]
         ),
         .testTarget(

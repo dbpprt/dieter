@@ -16,6 +16,31 @@ internal fun Board.runningLaneId(): String? =
 internal fun Card.startLane(board: Board?): String? =
     if (canStartFromTodo()) board?.runningLaneId() else null
 
+internal fun Card.optimisticStart(board: Board?): Card? {
+    val runningLane = startLane(board) ?: return null
+    return toBuilder()
+        .setLane(runningLane)
+        .setRuntime("starting")
+        .build()
+}
+
+internal fun reconcileCardsDuringOperations(
+    remoteCards: List<Card>,
+    localCards: List<Card>,
+    operations: Map<String, CardOperation>,
+): List<Card> {
+    val startingCards = localCards.associateBy(Card::getId).filterKeys { operations[it] == CardOperation.STARTING }
+    if (startingCards.isEmpty()) return remoteCards
+
+    val reconciled = remoteCards.map { remote ->
+        val optimistic = startingCards[remote.id]
+        if (optimistic != null && remote.initialPromptSentAt.isBlank()) optimistic else remote
+    }.toMutableList()
+    val remoteIds = remoteCards.mapTo(hashSetOf(), Card::getId)
+    startingCards.values.filterTo(reconciled) { it.id !in remoteIds }
+    return reconciled
+}
+
 internal fun resolvedCardRuntime(
     cardRuntime: String,
     conversationStatus: String,
