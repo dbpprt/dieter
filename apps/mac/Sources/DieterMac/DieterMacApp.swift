@@ -10,7 +10,6 @@ struct DieterMacApp: App {
     private var appearance: DieterAppearance { DieterAppearance.resolve(appearanceValue) }
 
     init() {
-        DieterLegacyMigration.run()
         _store = State(initialValue: DieterStore())
     }
 

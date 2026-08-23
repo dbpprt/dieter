@@ -281,17 +281,3 @@ func TestServiceLoggerWritesCentralBoundedLog(t *testing.T) {
 		t.Fatalf("log=%q err=%v", raw, err)
 	}
 }
-
-func TestAvailableDisabledPathPreservesExistingBackups(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "daemon.plist")
-	if err := os.WriteFile(path+".disabled", []byte("old"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	candidate, err := availableDisabledPath(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if candidate != path+".disabled.2" {
-		t.Fatalf("candidate=%q", candidate)
-	}
-}

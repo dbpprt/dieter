@@ -22,7 +22,6 @@ import (
 	"github.com/dbpprt/dieter/internal/app"
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/model"
-	"github.com/dbpprt/dieter/internal/store"
 )
 
 const (
@@ -452,12 +451,6 @@ Homebrew-managed daemon. With no path, the current Git working tree is used.
 		fmt.Fprintln(c.Out, "Homebrew installation not detected; run `dieter daemon start` in the foreground.")
 		return nil
 	}
-	// The CLI may have opened the legacy root while its old service was still
-	// active. Once that service is disabled, the Dieter service (or this call)
-	// can complete the atomic directory migration; follow it before waiting.
-	if migratedRoot := store.DefaultRoot(); migratedRoot != c.Store.Root {
-		c.Store.Root = migratedRoot
-	}
 	if err := waitForDaemon(c.Store.Root, 20*time.Second); err != nil {
 		fmt.Fprintln(c.Out, "Homebrew service started, but onboarding is not fully healthy.")
 		fmt.Fprintln(c.Out)
@@ -526,76 +519,12 @@ func restartHomebrewService(output io.Writer) (bool, error) {
 	if err := exec.Command(brew, "list", "--formula", "dieter").Run(); err != nil {
 		return false, nil
 	}
-	if _, err := migrateLegacyLaunchAgents(output); err != nil {
-		return true, err
-	}
 	command := exec.Command(brew, "services", "restart", "dieter")
 	command.Stdout, command.Stderr = output, output
 	if err := command.Run(); err != nil {
 		return true, fmt.Errorf("restart Homebrew service: %w", err)
 	}
 	return true, nil
-}
-
-func migrateLegacyLaunchAgents(output io.Writer) (bool, error) {
-	launchctl, err := exec.LookPath("launchctl")
-	if err != nil {
-		return false, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false, err
-	}
-	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	migrated := false
-	for _, label := range []string{"dev.dbpprt.nauclio", "dev.dbpprt.board"} {
-		service := domain + "/" + label
-		plist := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
-		_, statErr := os.Stat(plist)
-		hasPlist := statErr == nil
-		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
-			return migrated, statErr
-		}
-		loaded := exec.Command(launchctl, "print", service).Run() == nil
-		if !loaded && !hasPlist {
-			continue
-		}
-		if loaded {
-			raw, bootoutErr := exec.Command(launchctl, "bootout", service).CombinedOutput()
-			if bootoutErr != nil && exec.Command(launchctl, "print", service).Run() == nil {
-				return migrated, fmt.Errorf("stop legacy daemon %s: %s: %w", label, strings.TrimSpace(string(raw)), bootoutErr)
-			}
-		}
-		disabled := ""
-		if hasPlist {
-			disabled, err = availableDisabledPath(plist)
-			if err != nil {
-				return migrated, err
-			}
-			if err := os.Rename(plist, disabled); err != nil {
-				return migrated, fmt.Errorf("disable legacy daemon %s: %w", label, err)
-			}
-		}
-		migrated = true
-		fmt.Fprintf(output, "Disabled legacy daemon service %s", label)
-		if disabled != "" {
-			fmt.Fprintf(output, " (saved as %s)", disabled)
-		}
-		fmt.Fprintln(output, ".")
-	}
-	return migrated, nil
-}
-
-func availableDisabledPath(path string) (string, error) {
-	candidate := path + ".disabled"
-	for index := 2; ; index++ {
-		if _, err := os.Stat(candidate); errors.Is(err, os.ErrNotExist) {
-			return candidate, nil
-		} else if err != nil {
-			return "", err
-		}
-		candidate = fmt.Sprintf("%s.disabled.%d", path, index)
-	}
 }
 
 func waitForDaemon(root string, timeout time.Duration) error {

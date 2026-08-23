@@ -23,50 +23,20 @@ func gitProject(t *testing.T) string {
 	return path
 }
 
-func TestDefaultRootMigratesLegacyDirectory(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("DIETER_HOME", "")
-	t.Setenv("NAUCLIO_HOME", "")
-	legacy := filepath.Join(home, ".nauclio")
-	if err := os.MkdirAll(legacy, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(legacy, "marker"), []byte("kept"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	root := DefaultRoot()
-	if want := filepath.Join(home, ".dieter"); root != want {
-		t.Fatalf("DefaultRoot() = %q, want %q", root, want)
-	}
-	if data, err := os.ReadFile(filepath.Join(root, "marker")); err != nil || string(data) != "kept" {
-		t.Fatalf("migrated marker = %q, %v", data, err)
-	}
-	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("legacy directory still exists: %v", err)
+func TestDefaultRootUsesDieterHome(t *testing.T) {
+	want := filepath.Join(t.TempDir(), "state")
+	t.Setenv("DIETER_HOME", want)
+	if got := DefaultRoot(); got != want {
+		t.Fatalf("DefaultRoot() = %q, want %q", got, want)
 	}
 }
 
-func TestDefaultRootDefersMigrationWhileLegacyDaemonIsActive(t *testing.T) {
+func TestDefaultRootUsesHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("DIETER_HOME", "")
-	t.Setenv("NAUCLIO_HOME", "")
-	legacy := filepath.Join(home, ".nauclio")
-	if err := os.MkdirAll(filepath.Join(legacy, "runtime"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runtimeStatus := []byte(`{"updatedAt":"` + time.Now().UTC().Format(time.RFC3339Nano) + `"}`)
-	if err := os.WriteFile(filepath.Join(legacy, "runtime", "daemon.json"), runtimeStatus, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if root := DefaultRoot(); root != legacy {
-		t.Fatalf("DefaultRoot() = %q, want active legacy root %q", root, legacy)
-	}
-	if _, err := os.Stat(filepath.Join(home, ".dieter")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("active legacy store was migrated: %v", err)
+	if got, want := DefaultRoot(), filepath.Join(home, ".dieter"); got != want {
+		t.Fatalf("DefaultRoot() = %q, want %q", got, want)
 	}
 }
 

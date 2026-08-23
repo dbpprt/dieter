@@ -3,7 +3,6 @@ package store
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -29,51 +28,11 @@ func DefaultRoot() string {
 	if value := os.Getenv("DIETER_HOME"); value != "" {
 		return value
 	}
-	// Deprecated compatibility for custom installations upgrading in place.
-	if value := os.Getenv("NAUCLIO_HOME"); value != "" {
-		return value
-	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ".dieter"
 	}
-	root := filepath.Join(home, ".dieter")
-	legacy := filepath.Join(home, ".nauclio")
-	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
-		if info, legacyErr := os.Stat(legacy); legacyErr == nil && info.IsDir() {
-			// A service from the previous release may still be reading and writing
-			// this directory. Let setup stop it before a later invocation performs
-			// the atomic rename; moving a live store would split subsequent writes.
-			if legacyDaemonActive(legacy, time.Now()) {
-				return legacy
-			}
-			if renameErr := os.Rename(legacy, root); renameErr != nil {
-				// Never make an existing installation look empty just because its
-				// one-time rename could not be completed.
-				return legacy
-			}
-		}
-	}
-	return root
-}
-
-func legacyDaemonActive(root string, now time.Time) bool {
-	raw, err := os.ReadFile(filepath.Join(root, "runtime", "daemon.json"))
-	if err != nil {
-		return false
-	}
-	var status struct {
-		UpdatedAt string `json:"updatedAt"`
-	}
-	if json.Unmarshal(raw, &status) != nil {
-		return false
-	}
-	updatedAt, err := time.Parse(time.RFC3339Nano, status.UpdatedAt)
-	if err != nil {
-		return false
-	}
-	age := now.Sub(updatedAt)
-	return age >= -time.Minute && age <= 15*time.Second
+	return filepath.Join(home, ".dieter")
 }
 
 func New(root string) *Store {
