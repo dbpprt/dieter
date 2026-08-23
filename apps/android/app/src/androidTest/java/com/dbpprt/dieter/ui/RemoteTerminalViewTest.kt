@@ -40,9 +40,9 @@ class RemoteTerminalViewTest {
 
         composeRule.runOnIdle {
             assertTrue(terminal.transcriptForTesting().contains("ANDROID_RENDER_OK"))
-            assertTrue(terminal.cursorVisibleForTesting())
             terminal.sendBytes("echo input\n".encodeToByteArray())
             assertTrue(input.decodeToString().contains("echo input"))
+            assertTrue(terminal.cursorVisibleForTesting())
             assertTrue(terminal.width > 0 && terminal.height > 0)
         }
         composeRule.waitUntil(timeoutMillis = 2_500) {

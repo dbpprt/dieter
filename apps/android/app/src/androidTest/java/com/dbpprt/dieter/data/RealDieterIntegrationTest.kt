@@ -93,18 +93,12 @@ class RealDieterIntegrationTest {
             repository.selectEndpoint(endpoint)
             repository.prepareDaemon()
 
-            val state = repository.watchState().first { snapshot ->
-                snapshot.projectsCount > 0 && snapshot.boardsList.any { board ->
-                    board.lanesList.any { it.id == "todo" }
-                }
-            }
-            val board = state.boardsList.first { value -> value.lanesList.any { it.id == "todo" } }
+            val state = repository.watchState().first { it.projectsCount > 0 }
+            val project = state.projectsList.first()
             val harness = repository.harnesses().harnessesList.first()
             val bytes = "android attachment fixture".encodeToByteArray()
             val request = CreateConversationRequest.newBuilder()
-                .setProjectId(board.projectId)
-                .setBoardId(board.id)
-                .setLane("todo")
+                .setProjectId(project.id)
                 .setTitle("Android attachment transport fixture")
                 .setPrompt("Keep this deferred; verify the attached bytes only.")
                 .setProvider(harness.id)
@@ -118,7 +112,7 @@ class RealDieterIntegrationTest {
                         .setData(ByteString.copyFrom(bytes)),
                 )
                 .build()
-            val card = repository.createConversation(request, chat = false)
+            val card = repository.createConversation(request, chat = true)
             cardId = card.id
             val snapshot = repository.conversation(card.id)
             val attachment = snapshot.conversation.draftAttachmentsList.single()
@@ -194,7 +188,6 @@ class RealDieterIntegrationTest {
                 manager.state.filter {
                     it.phase == ConnectionPhase.CONNECTED &&
                         it.projects.isNotEmpty() &&
-                        it.boards.isNotEmpty() &&
                         it.projects.all { project ->
                             it.projectHosts[project.id]?.daemonId?.isNotBlank() == true
                         }
