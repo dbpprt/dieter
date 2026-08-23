@@ -47,7 +47,7 @@ enum SidebarNavigationUISmokeRunner {
     }
 
     private static func prepare(window: NSWindow, results: inout [String: String]) async {
-        click(window: window, x: 22, distanceFromTop: 186)
+        click(window: window, x: 22, distanceFromTop: 217)
         try? await DieterTaskSleep.milliseconds(450)
         var preferences = loadPreferences()
         results["collapse-click"] = preferences.isCollapsed(projectIDs[0]) ? "passed" : "failed: first project did not collapse"
@@ -78,19 +78,19 @@ enum SidebarNavigationUISmokeRunner {
         results["restored-collapse"] = restored.isCollapsed(projectIDs[0]) ? "passed" : "failed"
 
         // The reordered third project is the first visible header after relaunch.
-        click(window: window, x: 22, distanceFromTop: 186)
+        click(window: window, x: 22, distanceFromTop: 217)
         try? await DieterTaskSleep.milliseconds(350)
         var interacted = loadPreferences()
         results["order-in-relaunched-ui"] = interacted.isCollapsed(projectIDs[2]) ? "passed" : "failed: first visible toggle was not the reordered project"
-        click(window: window, x: 22, distanceFromTop: 186)
+        click(window: window, x: 22, distanceFromTop: 217)
         try? await DieterTaskSleep.milliseconds(350)
 
         // With the first project expanded, the saved-collapsed project is second.
-        click(window: window, x: 22, distanceFromTop: 324)
+        click(window: window, x: 22, distanceFromTop: 355)
         try? await DieterTaskSleep.milliseconds(350)
         interacted = loadPreferences()
         results["collapse-in-relaunched-ui"] = !interacted.isCollapsed(projectIDs[0]) ? "passed" : "failed: saved collapsed project was not rendered second"
-        click(window: window, x: 22, distanceFromTop: 324)
+        click(window: window, x: 22, distanceFromTop: 355)
         try? await DieterTaskSleep.milliseconds(350)
     }
 

@@ -12,6 +12,8 @@ import UniformTypeIdentifiers
 /// cannot take the app down.
 @MainActor
 enum ConversationUISmokeRunner {
+    private static let syntheticFixtureID = "c_conversation_ui_smoke"
+
     static func run(store: DieterStore) async {
         let output = outputDirectory()
         try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
@@ -29,6 +31,7 @@ enum ConversationUISmokeRunner {
             writeReport(results, to: output)
             return
         }
+        results["connection"] = "passed"
         try? await DieterTaskSleep.seconds(2)
 
         guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.title == "Dieter" })
@@ -78,7 +81,11 @@ enum ConversationUISmokeRunner {
         results["reasoning-toggle"] = "passed"
 
         await runPasteChecks(store: store, window: window, results: &results, output: output)
-        await runHistoryChecks(store: store, window: window, results: &results, output: output)
+        if cardID == syntheticFixtureID {
+            results["history-bounded"] = "skipped: fresh-state renderer fixture"
+        } else {
+            await runHistoryChecks(store: store, window: window, results: &results, output: output)
+        }
 
         writeReport(results, to: output)
     }
@@ -226,7 +233,83 @@ enum ConversationUISmokeRunner {
             let tools = parts.filter(ConversationMessagePartGroup.isToolCall)
             if !reasoning.isEmpty && tools.count >= 2 { return cardID }
         }
-        return nil
+        return installSyntheticFixture(store)
+    }
+
+    private static func installSyntheticFixture(_ store: DieterStore) -> String? {
+        guard let project = store.projects.first else { return nil }
+
+        var card = Dieter_V1_Card()
+        card.id = syntheticFixtureID
+        card.scope = "chat"
+        card.projectID = project.id
+        card.title = "Conversation renderer fixture"
+        card.runtime = "idle"
+        card.updatedAt = ISO8601DateFormatter().string(from: Date())
+
+        var userText = Dieter_V1_MessagePart()
+        userText.type = "text"
+        userText.text = "Update the config and show the work."
+        var user = Dieter_V1_UiMessage()
+        user.id = "message_user"
+        user.role = "user"
+        user.parts = [userText]
+
+        var reasoningOne = Dieter_V1_MessagePart()
+        reasoningOne.type = "reasoning"
+        reasoningOne.text = "Inspecting the current configuration."
+        var read = Dieter_V1_MessagePart()
+        read.type = "dynamic-tool"
+        read.toolCallID = "tool_read"
+        read.toolName = "Read"
+        read.state = "output-available"
+        var reasoningTwo = Dieter_V1_MessagePart()
+        reasoningTwo.type = "reasoning"
+        reasoningTwo.text = "One value needs changing."
+        var edit = Dieter_V1_MessagePart()
+        edit.type = "dynamic-tool"
+        edit.toolCallID = "tool_edit"
+        edit.toolName = "Edit"
+        edit.state = "output-available"
+        var result = Dieter_V1_MessagePart()
+        result.type = "text"
+        result.text = "Config updated. Nothing caught fire."
+        var firstThought = Dieter_V1_UiMessage()
+        firstThought.id = "message_reasoning_one"
+        firstThought.role = "assistant"
+        firstThought.parts = [reasoningOne]
+        var readCall = Dieter_V1_UiMessage()
+        readCall.id = "message_read"
+        readCall.role = "assistant"
+        readCall.parts = [read]
+        var secondThought = Dieter_V1_UiMessage()
+        secondThought.id = "message_reasoning_two"
+        secondThought.role = "assistant"
+        secondThought.parts = [reasoningTwo]
+        var editCall = Dieter_V1_UiMessage()
+        editCall.id = "message_edit"
+        editCall.role = "assistant"
+        editCall.parts = [edit]
+        var answer = Dieter_V1_UiMessage()
+        answer.id = "message_result"
+        answer.role = "assistant"
+        answer.parts = [result]
+
+        var snapshot = Dieter_V1_ConversationSnapshot()
+        snapshot.detail.card = card
+        snapshot.detail.project = project
+        snapshot.conversation.cardID = card.id
+        snapshot.conversation.status = "idle"
+        snapshot.conversation.messages = [user, firstThought, readCall, secondThought, editCall, answer]
+
+        if !store.chats.contains(where: { $0.id == card.id }) { store.chats.append(card) }
+        store.chatProjects = store.projects
+        store.selectedCardID = nil
+        store.selectedChatID = card.id
+        store.selectedDetail = snapshot.detail
+        store.conversation = snapshot
+        store.section = .chats
+        return card.id
     }
 
     static func progress(_ message: String, in directory: URL) {

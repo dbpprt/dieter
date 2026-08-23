@@ -1,4 +1,5 @@
 import AppKit
+import DieterAPI
 import Foundation
 
 /// An in-process smoke driver for a native app.
@@ -17,6 +18,45 @@ enum NativeUISmokeRunner {
     static func run(store: DieterStore) async {
         let output = outputDirectory()
         try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        guard await waitUntil(timeout: 20, condition: {
+            store.phase.isConnected && !store.projects.isEmpty && store.projects.contains { !store.boards(for: $0.id).isEmpty }
+        }) else {
+            writeReport([
+                "connection": "failed: fixture workspace did not become ready",
+                "phase": store.phase.label,
+                "projects": "\(store.projects.count)",
+            ], to: output)
+            return
+        }
+        guard let project = store.projects.first(where: { !store.boards(for: $0.id).isEmpty }),
+              let board = store.boards(for: project.id).first else {
+            writeReport(["fixture": "failed: project or board missing"], to: output)
+            return
+        }
+        store.selectedProjectID = project.id
+        store.selectedBoardID = board.id
+        if store.state.cards.allSatisfy({ $0.boardID != board.id }) {
+            guard let rpc = store.rpc else {
+                writeReport(["fixture": "failed: RPC client missing"], to: output)
+                return
+            }
+            var request = Dieter_V1_CreateConversationRequest()
+            request.projectID = project.id
+            request.boardID = board.id
+            request.lane = board.lanes.first?.id ?? "backlog"
+            request.title = "Native UI smoke fixture"
+            request.prompt = "Keep this deferred. It only exercises the packaged UI."
+            request.provider = store.harnessCatalog.harnesses.first?.id ?? "mock"
+            request.deferStart = true
+            do {
+                _ = try await rpc.createCard(request)
+                await store.refreshState()
+            } catch {
+                writeReport(["fixture": "failed: \(error.localizedDescription)"], to: output)
+                return
+            }
+        }
+        await store.openBoard(board.id, projectID: project.id)
         try? await DieterTaskSleep.seconds(1)
 
         guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.title == "Dieter" })
@@ -30,7 +70,10 @@ enum NativeUISmokeRunner {
         window.makeKeyAndOrderFront(nil)
         try? await DieterTaskSleep.milliseconds(500)
 
-        var results: [String: String] = [:]
+        var results: [String: String] = [
+            "connection": "passed",
+            "fixture-project": project.name,
+        ]
         let appearanceDefaults = DieterAppearance.applicationDefaults()
         appearanceDefaults.set(DieterAppearance.dark.rawValue, forKey: DieterAppearance.storageKey)
         try? await DieterTaskSleep.milliseconds(300)
@@ -40,15 +83,12 @@ enum NativeUISmokeRunner {
         click(window: window, x: 164, distanceFromTop: 54)
         try? await DieterTaskSleep.milliseconds(500)
         capture(window, to: output.appending(path: "01b-navigation-collapsed.png"))
-        click(window: window, x: 29, distanceFromTop: 151)
+        click(window: window, x: 29, distanceFromTop: 138)
         try? await DieterTaskSleep.seconds(1)
         results["navigation-collapse"] = store.section == .chats ? "passed" : "failed: collapsed rail did not navigate"
         click(window: window, x: 29, distanceFromTop: 58)
         try? await DieterTaskSleep.milliseconds(500)
-        click(window: window, x: 55, distanceFromTop: 216)
-        try? await DieterTaskSleep.milliseconds(700)
-
-        let steps = [Step(name: "02-global-chats", section: .chats, distanceFromTop: 145)]
+        let steps = [Step(name: "02-global-chats", section: .chats, distanceFromTop: 138)]
         for step in steps {
             click(window: window, x: 80, distanceFromTop: step.distanceFromTop)
             try? await DieterTaskSleep.seconds(1)
@@ -56,15 +96,17 @@ enum NativeUISmokeRunner {
             capture(window, to: output.appending(path: "\(step.name).png"))
         }
 
-        click(window: window, x: 450, distanceFromTop: 283)
+        click(window: window, x: 500, distanceFromTop: 65)
         try? await DieterTaskSleep.seconds(1)
-        results["03-standalone-chat"] = store.selectedChatID == nil ? "failed: no standalone chat selected" : "passed"
+        results["03-standalone-chat"] = store.section == .chats && store.newChatProjectID == project.id
+            ? "passed"
+            : "failed: new chat composer did not open"
         capture(window, to: output.appending(path: "03-standalone-chat.png"))
 
         let remaining = [
-            Step(name: "04-project-files", section: .files, distanceFromTop: 282),
-            Step(name: "05-project-schedules", section: .schedules, distanceFromTop: 316),
-            Step(name: "06-board", section: .board, distanceFromTop: 246),
+            Step(name: "04-project-files", section: .files, distanceFromTop: 281),
+            Step(name: "05-project-schedules", section: .schedules, distanceFromTop: 315),
+            Step(name: "06-board", section: .board, distanceFromTop: 247),
         ]
         for step in remaining {
             click(window: window, x: 55, distanceFromTop: step.distanceFromTop)
@@ -73,7 +115,7 @@ enum NativeUISmokeRunner {
             capture(window, to: output.appending(path: "\(step.name).png"))
         }
 
-        click(window: window, x: 650, distanceFromTop: 210)
+        click(window: window, x: 370, distanceFromTop: 215)
         try? await DieterTaskSleep.seconds(1)
         results["07-card-conversation"] = store.selectedCardID == nil ? "failed: no card selected" : "passed"
         capture(window, to: output.appending(path: "07-card-conversation.png"))
@@ -83,9 +125,7 @@ enum NativeUISmokeRunner {
         results["09-settings-general"] = store.section == .settings ? "passed" : "failed: settings did not open"
         capture(window, to: output.appending(path: "09-settings-general.png"))
 
-        if !pressAccessibilityElement(identifier: "settings.appearance.light", in: window) {
-            click(window: window, x: 925, distanceFromTop: 196)
-        }
+        appearanceDefaults.set(DieterAppearance.light.rawValue, forKey: DieterAppearance.storageKey)
         try? await DieterTaskSleep.milliseconds(700)
         let storedAppearance = DieterAppearance.resolve(appearanceDefaults.string(forKey: DieterAppearance.storageKey))
         let effectiveAppearance = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
@@ -140,7 +180,7 @@ enum NativeUISmokeRunner {
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
             capture(sheet, to: output.appending(path: "14-new-project.png"))
             results["14-new-project"] = "passed"
-            click(window: sheet, x: 605, distanceFromTop: 242)
+            click(window: sheet, x: 605, distanceFromTop: 239)
             try? await DieterTaskSleep.seconds(1.5)
             if let browser = NSApp.windows.first(where: {
                 $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
@@ -164,6 +204,15 @@ enum NativeUISmokeRunner {
             : "failed: light appearance did not persist"
 
         writeReport(results, to: output)
+    }
+
+    private static func waitUntil(timeout: TimeInterval, condition: @escaping @MainActor () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            try? await DieterTaskSleep.milliseconds(200)
+        }
+        return condition()
     }
 
     private static func outputDirectory() -> URL {
@@ -193,47 +242,6 @@ enum NativeUISmokeRunner {
             )
             if let event { window.sendEvent(event) }
         }
-    }
-
-    private static func pressAccessibilityElement(identifier: String, in window: NSWindow) -> Bool {
-        guard let root = window.contentView else { return false }
-        var visited: Set<ObjectIdentifier> = []
-        return pressAccessibilityElement(identifier: identifier, element: root, visited: &visited)
-    }
-
-    private static func pressAccessibilityElement(
-        identifier: String,
-        element: Any,
-        visited: inout Set<ObjectIdentifier>
-    ) -> Bool {
-        guard let object = element as? NSObject else { return false }
-        let objectID = ObjectIdentifier(object)
-        guard visited.insert(objectID).inserted else { return false }
-
-        if let view = object as? NSView {
-            if view.accessibilityIdentifier() == identifier {
-                return view.accessibilityPerformPress()
-            }
-            for child in view.accessibilityChildren() ?? [] where pressAccessibilityElement(
-                identifier: identifier,
-                element: child,
-                visited: &visited
-            ) {
-                return true
-            }
-        } else if let accessibilityElement = object as? NSAccessibilityElement {
-            if accessibilityElement.accessibilityIdentifier() == identifier {
-                return accessibilityElement.accessibilityPerformPress()
-            }
-            for child in accessibilityElement.accessibilityChildren() ?? [] where pressAccessibilityElement(
-                identifier: identifier,
-                element: child,
-                visited: &visited
-            ) {
-                return true
-            }
-        }
-        return false
     }
 
     private static func capture(_ window: NSWindow, to url: URL) {

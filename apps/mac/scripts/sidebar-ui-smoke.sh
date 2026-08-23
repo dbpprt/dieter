@@ -24,8 +24,7 @@ run_phase() {
     PHASE=$1
     OUTPUT="$CAPTURE_DIR/$PHASE"
     mkdir -p "$OUTPUT"
-    "$APP_BUNDLE/Contents/MacOS/DieterMac" \
-        --sidebar-ui-smoke "$PHASE" \
+    open -n -W "$APP_BUNDLE" --args --sidebar-ui-smoke "$PHASE" \
         --sidebar-preferences-suite "$PREFERENCES_SUITE" \
         --ui-smoke-output "$OUTPUT" >"$OUTPUT/app.log" 2>&1 &
     APP_PID=$!

@@ -464,7 +464,8 @@ struct NewProjectSheet: View {
                             Label("Browse…", systemImage: "folder")
                         }
                         .buttonStyle(DieterSecondaryButtonStyle())
-                            .disabled(machineID.isEmpty || selectedMachine?.online != true)
+                        .accessibilityIdentifier("new-project.browse")
+                        .disabled(machineID.isEmpty || selectedMachine?.online != true)
                     }
                     Text("The path is resolved and validated by the project host; no local macOS file panel is used.")
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)

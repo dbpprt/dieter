@@ -29,8 +29,6 @@ if [ "${SKIP_BUILD:-0}" = "1" ] && [ -x "$APP_ROOT/build/Dieter.app/Contents/Mac
 else
     APP_BUNDLE=$($SCRIPT_DIR/build.sh)
 fi
-APP_BINARY="$APP_BUNDLE/Contents/MacOS/DieterMac"
-
 rm -rf "$CAPTURE_DIR"
 mkdir -p "$CAPTURE_DIR"
 (cd "$REPO_ROOT" && go build -o "$CAPTURE_DIR/isolated-gateway" ./scripts/isolated-gateway)
@@ -62,8 +60,7 @@ chmod 600 "$TOKEN_FILE"
 run_phase() {
     PHASE=$1
     REPORT=$2
-    "$APP_BINARY" \
-        --dieter-endpoint "$ENDPOINT" \
+    open -n -W "$APP_BUNDLE" --args --dieter-endpoint "$ENDPOINT" \
         --dieter-access-token-file "$TOKEN_FILE" \
         --terminal-ui-smoke "$PHASE" \
         --ui-smoke-output "$CAPTURE_DIR" >"$CAPTURE_DIR/app-$PHASE.log" 2>&1 &
