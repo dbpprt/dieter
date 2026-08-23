@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Base64
+import android.util.Log
 import com.dbpprt.dieter.data.DIETER_API_VERSION
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DieterEndpoint
@@ -15,6 +16,7 @@ import com.dbpprt.dieter.data.AndroidOutboxEntry
 import com.dbpprt.dieter.data.CachedProjectHost
 import com.dbpprt.dieter.data.DieterSyncStore
 import com.dbpprt.dieter.data.OutboxKind
+import com.dbpprt.dieter.data.OutboxState
 import com.dbpprt.dieter.widget.DieterWidgetPrefs
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Card
@@ -940,7 +942,7 @@ class DieterConnectionManager(
                             .setProvider(request.provider)
                             .setModel(request.model)
                             .setEffort(request.effort)
-                            .setRuntime("pending")
+                            .setRuntime(if (entry.state == OutboxState.FAILED) "failed" else "pending")
                             .setCreatedAt(java.time.Instant.ofEpochMilli(entry.createdAtMillis).toString())
                             .setUpdatedAt(java.time.Instant.ofEpochMilli(entry.createdAtMillis).toString())
                             .build()
@@ -957,7 +959,7 @@ class DieterConnectionManager(
                                 .build()
                             val conversationBuilder = com.dbpprt.dieter.v1.Conversation.newBuilder()
                                 .setCardId(conversationId)
-                                .setStatus("pending")
+                                .setStatus(if (entry.state == OutboxState.FAILED) "failed" else "pending")
                             if (entry.kind != OutboxKind.CREATE_CHAT || request.deferStart) {
                                 conversationBuilder.addAllDraftAttachments(request.attachmentsList)
                             }
@@ -1155,7 +1157,7 @@ class DieterConnectionManager(
     }
 
     private fun failedOutboxIds(entries: List<AndroidOutboxEntry>): Set<String> = buildSet {
-        entries.filter { it.lastError != null }.forEach { entry -> addAll(outboxPresentationIds(entry)) }
+        entries.filter { it.state == OutboxState.FAILED }.forEach { entry -> addAll(outboxPresentationIds(entry)) }
     }
 
     private fun outboxPresentationIds(entry: AndroidOutboxEntry): Set<String> = buildSet {
@@ -1237,7 +1239,7 @@ class DieterConnectionManager(
     private suspend fun drainOutbox(currentGeneration: Long) {
         while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
             val activeEndpoint = repository.activeEndpoint.id
-            val entry = synchronized(outbox) { outbox.firstOrNull { it.endpointId == activeEndpoint && it.serverId == null } }
+            val entry = synchronized(outbox) { nextOutboxEntry(outbox, activeEndpoint) }
             if (entry == null) {
                 delay(500)
                 continue
@@ -1251,9 +1253,19 @@ class DieterConnectionManager(
                 }
                 synchronized(outbox) {
                     val index = outbox.indexOfFirst { it.commandId == entry.commandId }
-                    if (index >= 0) outbox[index] = entry.copy(serverId = serverId, lastError = null)
+                    if (index >= 0) {
+                        outbox[index] = entry.copy(
+                            serverId = serverId,
+                            lastError = null,
+                            state = OutboxState.QUEUED,
+                            nextAttemptAtMillis = null,
+                        )
+                    }
                     if (entry.kind != OutboxKind.SEND_MESSAGE) {
                         conversationIdResolutions[entry.optimisticId] = serverId
+                        val retargeted = retargetOutboxDependencies(outbox, entry.optimisticId, serverId)
+                        outbox.clear()
+                        outbox.addAll(retargeted)
                         while (conversationIdResolutions.size > MAX_RESOLVED_CONVERSATIONS) {
                             conversationIdResolutions.remove(conversationIdResolutions.keys.first())
                         }
@@ -1265,15 +1277,84 @@ class DieterConnectionManager(
                     applyGlobalSnapshot(it)
                 }
             } catch (error: Throwable) {
+                val attempts = entry.attempts + 1
+                val terminal = outboxFailureIsPermanent(error)
                 synchronized(outbox) {
                     val index = outbox.indexOfFirst { it.commandId == entry.commandId }
-                    if (index >= 0) outbox[index] = entry.copy(attempts = entry.attempts + 1, lastError = readableError(error))
+                    if (index >= 0) {
+                        outbox[index] = entry.copy(
+                            attempts = attempts,
+                            lastError = readableRpcError(error),
+                            state = if (terminal) OutboxState.FAILED else OutboxState.RETRYING,
+                            nextAttemptAtMillis = if (terminal) null else System.currentTimeMillis() + outboxBackoffMillis(attempts),
+                        )
+                    }
                     syncStore.saveOutbox(outbox)
                 }
+                Log.e(
+                    "DieterOutbox",
+                    "operation=${entry.kind} card=${entry.serverId ?: entry.optimisticId} " +
+                        "endpoint=$activeEndpoint route=${repository.dataRoute()} status=${Status.fromThrowable(error).code} " +
+                        "message=${readableRpcError(error)} terminal=$terminal",
+                )
                 globalSnapshot?.let(::applyGlobalSnapshot)
-                delay((750L shl entry.attempts.coerceAtMost(4)).coerceAtMost(15_000L))
             }
         }
+    }
+
+    fun retryOutboxItem(id: String) {
+        synchronized(outbox) {
+            val index = outbox.indexOfFirst {
+                (it.optimisticId == id || it.serverId == id) && it.state == OutboxState.FAILED
+            }
+            if (index < 0) return
+            outbox[index] = outbox[index].copy(
+                attempts = 0,
+                lastError = null,
+                state = OutboxState.QUEUED,
+                nextAttemptAtMillis = null,
+            )
+            syncStore.saveOutbox(outbox)
+        }
+        globalSnapshot?.let(::applyGlobalSnapshot)
+    }
+
+    fun outboxFailure(id: String): String? = synchronized(outbox) {
+        outbox.firstOrNull {
+            (it.optimisticId == id || it.serverId == id) && it.state == OutboxState.FAILED
+        }?.lastError
+    }
+
+    fun discardOutboxItem(id: String) {
+        val removed = synchronized(outbox) {
+            val index = outbox.indexOfFirst {
+                (it.optimisticId == id || it.serverId == id) && it.state == OutboxState.FAILED
+            }
+            if (index < 0) return
+            outbox.removeAt(index).also { syncStore.saveOutbox(outbox) }
+        }
+        _state.update { current ->
+            val ids = buildSet {
+                add(removed.optimisticId)
+                removed.serverId?.let(::add)
+            }
+            val conversations = current.activeConversations.toMutableMap()
+            if (removed.kind == OutboxKind.SEND_MESSAGE) {
+                conversations.replaceAll { _, snapshot ->
+                    snapshot.toBuilder()
+                        .setConversation(
+                            snapshot.conversation.toBuilder()
+                                .clearMessages()
+                                .addAllMessages(snapshot.conversation.messagesList.filterNot { it.id == removed.optimisticId }),
+                        )
+                        .build()
+                }
+            } else {
+                ids.forEach(conversations::remove)
+            }
+            current.copy(activeConversations = conversations)
+        }
+        globalSnapshot?.let(::applyGlobalSnapshot)
     }
 
     private fun updateEndpoint(endpoint: DieterEndpoint, phase: EndpointPhase, detail: String, latencyMs: Long?) {

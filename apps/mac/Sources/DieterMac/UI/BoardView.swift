@@ -664,6 +664,11 @@ struct BoardCardView: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .contextMenu {
+            if store.isFailedOutboxItem(card.id) {
+                Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
+                Button("Discard queued creation", role: .destructive) { Task { await store.discardOutboxItem(card.id) } }
+                Divider()
+            }
             Button("Open conversation") { Task { await store.openConversation(cardID: card.id) } }
             Button("Rename…") { renameText = card.title; renamePresented = true }
             Menu("Move to") {

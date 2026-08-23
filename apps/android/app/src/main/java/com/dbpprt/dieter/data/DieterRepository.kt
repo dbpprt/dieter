@@ -183,6 +183,7 @@ interface DieterRepository {
     suspend fun relayChats(endpoint: DieterEndpoint, includeArchived: Boolean = false): ChatsResponse
     suspend fun prepareDaemon(): String
     fun directRefreshAtMillis(): Long?
+    fun dataRoute(): String = "unknown"
     suspend fun health(timeoutSeconds: Long = 15): HealthResponse
     suspend fun runtimeStatus(): RuntimeStatus
     suspend fun state(filter: GetStateRequest = GetStateRequest.getDefaultInstance()): State
@@ -450,6 +451,10 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     }
 
     override fun directRefreshAtMillis(): Long? = synchronized(lock) { directRefreshAt }
+
+    override fun dataRoute(): String = synchronized(lock) {
+        if (directAccessToken != null) "local" else "gateway"
+    }
 
     private fun directChannel(host: String, port: Int, daemonId: String, daemonCA: ByteArray): ManagedChannel {
         val certificate = CertificateFactory.getInstance("X.509").generateCertificate(ByteArrayInputStream(daemonCA))

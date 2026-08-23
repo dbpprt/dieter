@@ -90,6 +90,11 @@ private struct ConversationChrome: View {
                 StatusPill(text: status, color: runtimeColor(status))
                 if let card {
                     Menu {
+                        if store.isFailedOutboxItem(card.id) {
+                            Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
+                            Button("Discard queued creation", role: .destructive) { Task { await store.discardOutboxItem(card.id) } }
+                            Divider()
+                        }
                         if standalone { Button(card.pinned ? "Unpin chat" : "Pin chat") { Task { await store.pin(card, pinned: !card.pinned) } } }
                         if ["running", "starting", "waiting_for_user"].contains(status) {
                             Button("Interrupt agent", role: .destructive) { Task { await store.cancel(card) } }
@@ -477,6 +482,12 @@ struct MessageView: View {
                     .padding(.trailing, 4)
                     .padding(.bottom, 4)
             }
+            .contextMenu {
+                if deliveryState == .failed {
+                    Button("Retry queued message") { Task { await store.retryOutboxItem(message.id) } }
+                    Button("Discard queued message", role: .destructive) { Task { await store.discardOutboxItem(message.id) } }
+                }
+            }
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(ConversationMessagePartGroup.group(message.parts, showReasoning: store.showReasoning).enumerated()), id: \.offset) { _, group in
@@ -541,7 +552,7 @@ private struct MessageDeliveryReceipt: View {
         case .local: "Waiting to send"
         case .accepted: "Accepted by daemon"
         case .synced: "Synced"
-        case .failed: "Send failed; retrying"
+        case .failed: "Send failed; use the context menu to retry or discard"
         }
     }
 }

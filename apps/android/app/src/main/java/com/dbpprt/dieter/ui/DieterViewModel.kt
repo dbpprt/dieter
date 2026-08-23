@@ -9,6 +9,7 @@ import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
 import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.isServerConversationId
 import com.dbpprt.dieter.connection.resolveConversationId
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
@@ -699,6 +700,16 @@ class DieterViewModel(
     fun isAcceptedOutboxItem(id: String): Boolean = id in _state.value.acceptedOutboxIds
     fun isFailedOutboxItem(id: String): Boolean = id in _state.value.failedOutboxIds
 
+    fun retryOutboxItem(id: String) {
+        connectionManager.retryOutboxItem(id)
+        _state.update { it.copy(error = null) }
+    }
+
+    fun discardOutboxItem(id: String) {
+        connectionManager.discardOutboxItem(id)
+        if (_state.value.selectedCardId == id) closeDetail()
+    }
+
     fun selectDetailTab(index: Int) = _state.update { it.copy(detailTab = index) }
 
     fun openSurface(surface: AppSurface, schedule: Schedule? = null) {
@@ -745,14 +756,14 @@ class DieterViewModel(
                 historyHasMore = cached?.historyHasMore ?: false,
                 historyLoading = false,
                 conversationRefreshing = false,
-                conversationSyncing = true,
+                conversationSyncing = isServerConversationId(cardId),
                 conversationScrollRequest = it.conversationScrollRequest + 1,
                 detailTab = 0,
-                error = null,
+                error = connectionManager.outboxFailure(cardId),
             )
         }
         connectionManager.selectProject(projectId)
-        startConversationStream(cardId)
+        if (isServerConversationId(cardId)) startConversationStream(cardId)
     }
 
     fun openNotificationCard(cardId: String) {

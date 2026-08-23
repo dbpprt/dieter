@@ -13,6 +13,7 @@ import java.security.MessageDigest
 import java.util.UUID
 
 enum class OutboxKind { CREATE_CARD, CREATE_CHAT, SEND_MESSAGE }
+enum class OutboxState { QUEUED, RETRYING, FAILED }
 
 data class AndroidOutboxEntry(
     val commandId: String,
@@ -25,6 +26,8 @@ data class AndroidOutboxEntry(
     val serverId: String? = null,
     val attempts: Int = 0,
     val lastError: String? = null,
+    val state: OutboxState = OutboxState.QUEUED,
+    val nextAttemptAtMillis: Long? = null,
     val createdAtMillis: Long = System.currentTimeMillis(),
 )
 
@@ -124,6 +127,9 @@ class DieterSyncStore(context: Context) {
                     serverId = item.optString("serverId").takeIf(String::isNotBlank),
                     attempts = item.optInt("attempts"),
                     lastError = item.optString("lastError").takeIf(String::isNotBlank),
+                    state = item.optString("state").takeIf(String::isNotBlank)
+                        ?.let(OutboxState::valueOf) ?: OutboxState.QUEUED,
+                    nextAttemptAtMillis = item.optLong("nextAttemptAtMillis").takeIf { it > 0 },
                     createdAtMillis = item.optLong("createdAtMillis"),
                 )
             }
@@ -145,6 +151,8 @@ class DieterSyncStore(context: Context) {
                     .put("serverId", entry.serverId ?: "")
                     .put("attempts", entry.attempts)
                     .put("lastError", entry.lastError ?: "")
+                    .put("state", entry.state.name)
+                    .put("nextAttemptAtMillis", entry.nextAttemptAtMillis ?: 0)
                     .put("createdAtMillis", entry.createdAtMillis),
             )
         }

@@ -2,11 +2,60 @@ package com.dbpprt.dieter.connection
 
 import com.dbpprt.dieter.data.AndroidOutboxEntry
 import com.dbpprt.dieter.data.OutboxKind
+import com.dbpprt.dieter.data.OutboxState
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.CreateConversationRequest
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.SendMessageRequest
 import com.dbpprt.dieter.v1.UiMessage
+import io.grpc.Status
+
+internal fun isServerConversationId(id: String): Boolean = !id.startsWith("local_")
+
+internal fun outboxFailureIsPermanent(error: Throwable): Boolean = when (Status.fromThrowable(error).code) {
+    Status.Code.NOT_FOUND,
+    Status.Code.INVALID_ARGUMENT,
+    Status.Code.PERMISSION_DENIED,
+    Status.Code.FAILED_PRECONDITION,
+    -> true
+    else -> false
+}
+
+internal fun readableRpcError(error: Throwable): String {
+    val status = Status.fromThrowable(error)
+    val message = status.description
+        ?.replace(Regex("[\\r\\n\\t]+"), " ")
+        ?.replace(Regex("(?i)bearer\\s+[^ ]+"), "Bearer [redacted]")
+        ?.trim()
+        ?.take(500)
+        .orEmpty()
+    return if (message.isBlank()) "gRPC ${status.code}" else "gRPC ${status.code}: $message"
+}
+
+internal fun nextOutboxEntry(
+    entries: List<AndroidOutboxEntry>,
+    endpointId: String,
+    nowMillis: Long = System.currentTimeMillis(),
+): AndroidOutboxEntry? = entries.firstOrNull {
+    it.endpointId == endpointId &&
+        it.serverId == null &&
+        it.state != OutboxState.FAILED &&
+        (it.nextAttemptAtMillis == null || it.nextAttemptAtMillis <= nowMillis)
+}
+
+internal fun outboxBackoffMillis(attempts: Int): Long =
+    (750L shl attempts.coerceAtMost(4)).coerceAtMost(15_000L)
+
+internal fun retargetOutboxDependencies(
+    entries: List<AndroidOutboxEntry>,
+    optimisticId: String,
+    serverId: String,
+): List<AndroidOutboxEntry> = entries.map { entry ->
+    if (entry.kind != OutboxKind.SEND_MESSAGE || entry.serverId != null) return@map entry
+    val request = runCatching { SendMessageRequest.parseFrom(entry.request) }.getOrNull() ?: return@map entry
+    if (request.cardId != optimisticId) entry
+    else entry.copy(request = request.toBuilder().setCardId(serverId).build().toByteArray())
+}
 
 internal fun optimisticChatMessage(request: CreateConversationRequest, messageId: String): UiMessage? {
     if (request.deferStart) return null

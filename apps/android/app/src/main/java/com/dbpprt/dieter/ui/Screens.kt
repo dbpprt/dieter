@@ -1608,6 +1608,16 @@ private fun CardDetailScreen(
             Box {
                 IconButton(onClick = { actionsOpen = true }) { Icon(Icons.Outlined.MoreVert, "Conversation actions") }
                 DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                    if (model.isFailedOutboxItem(card.id)) {
+                        DropdownMenuItem(
+                            text = { Text("Retry queued creation") },
+                            onClick = { actionsOpen = false; model.retryOutboxItem(card.id) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Discard queued creation") },
+                            onClick = { actionsOpen = false; model.discardOutboxItem(card.id) },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text(if (state.conversationRefreshing) "Refreshing…" else "Force refresh") },
                         leadingIcon = {
@@ -2431,6 +2441,8 @@ private fun MessageBlock(
 ) {
     val fromUser = message.role.equals("user", true) || message.role.equals("human", true)
     val pendingAlpha = if (model.isPendingMessage(message.id)) 0.52f else 1f
+    val failed = model.isFailedOutboxItem(message.id)
+    var deliveryActionsOpen by remember(message.id) { mutableStateOf(false) }
     if (fromUser) {
         Row(Modifier.fillMaxWidth().alpha(pendingAlpha), horizontalArrangement = Arrangement.End) {
             Surface(
@@ -2454,10 +2466,21 @@ private fun MessageBlock(
                         messageDeliveryState(
                             pending = model.isPendingMessage(message.id),
                             accepted = model.isAcceptedOutboxItem(message.id),
-                            failed = model.isFailedOutboxItem(message.id),
+                            failed = failed,
                         ),
-                        Modifier.align(Alignment.BottomEnd).offset(x = (-4).dp, y = (-4).dp),
+                        Modifier.align(Alignment.BottomEnd).offset(x = (-4).dp, y = (-4).dp)
+                            .clickable(enabled = failed) { deliveryActionsOpen = true },
                     )
+                    DropdownMenu(expanded = deliveryActionsOpen, onDismissRequest = { deliveryActionsOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Retry queued message") },
+                            onClick = { deliveryActionsOpen = false; model.retryOutboxItem(message.id) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Discard queued message") },
+                            onClick = { deliveryActionsOpen = false; model.discardOutboxItem(message.id) },
+                        )
+                    }
                 }
             }
         }
@@ -2492,7 +2515,7 @@ private fun MessageDeliveryReceipt(state: MessageDeliveryState, modifier: Modifi
         MessageDeliveryState.LOCAL -> "Waiting to send"
         MessageDeliveryState.ACCEPTED -> "Accepted by daemon"
         MessageDeliveryState.SYNCED -> "Synced"
-        MessageDeliveryState.FAILED -> "Send failed; retrying"
+        MessageDeliveryState.FAILED -> "Send failed; tap to retry or discard"
     }
     Box(modifier.width(14.dp).height(10.dp)) {
         when (state) {

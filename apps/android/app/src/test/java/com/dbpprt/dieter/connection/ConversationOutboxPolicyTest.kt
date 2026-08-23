@@ -2,6 +2,7 @@ package com.dbpprt.dieter.connection
 
 import com.dbpprt.dieter.data.AndroidOutboxEntry
 import com.dbpprt.dieter.data.OutboxKind
+import com.dbpprt.dieter.data.OutboxState
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.CardDetail
 import com.dbpprt.dieter.v1.Conversation
@@ -16,8 +17,47 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import io.grpc.Status
 
 class ConversationOutboxPolicyTest {
+    @Test
+    fun `permanent failure does not block later create`() {
+        val failed = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "msg_failed", null)
+            .copy(state = OutboxState.FAILED)
+        val ready = outboxEntry(OutboxKind.CREATE_CHAT, byteArrayOf(), "local_chat", null)
+
+        assertEquals(ready, nextOutboxEntry(listOf(failed, ready), "endpoint", nowMillis = 100))
+    }
+
+    @Test
+    fun `backed off head does not block ready entry`() {
+        val delayed = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "msg_delayed", null)
+            .copy(state = OutboxState.RETRYING, nextAttemptAtMillis = 200)
+        val ready = outboxEntry(OutboxKind.CREATE_CHAT, byteArrayOf(), "local_chat", null)
+
+        assertEquals(ready, nextOutboxEntry(listOf(delayed, ready), "endpoint", nowMillis = 100))
+    }
+
+    @Test
+    fun `dependent send retargets to created server conversation`() {
+        val request = SendMessageRequest.newBuilder().setCardId("local_chat").build()
+        val entry = outboxEntry(OutboxKind.SEND_MESSAGE, request.toByteArray(), "msg_local", null)
+
+        val retargeted = retargetOutboxDependencies(listOf(entry), "local_chat", "c_server").single()
+
+        assertEquals("c_server", SendMessageRequest.parseFrom(retargeted.request).cardId)
+    }
+
+    @Test
+    fun `local id is never server fetchable and grpc error stays useful`() {
+        val error = Status.NOT_FOUND.withDescription("card missing").asRuntimeException()
+
+        assertFalse(isServerConversationId("local_chat"))
+        assertTrue(isServerConversationId("c_server"))
+        assertTrue(outboxFailureIsPermanent(error))
+        assertEquals("gRPC NOT_FOUND: card missing", readableRpcError(error))
+    }
+
     @Test
     fun `starting chat renders its first message while creation is pending`() {
         val request = CreateConversationRequest.newBuilder()

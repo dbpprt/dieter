@@ -3,21 +3,24 @@ import Foundation
 
 struct DieterOutboxEntry: Codable, Identifiable, Sendable {
     enum Kind: String, Codable, Sendable { case createCard, createChat, sendMessage }
+    enum State: String, Codable, Sendable { case queued, retrying, failed }
 
     var id: String { commandID }
     let commandID: String
     let clientID: String
     var endpointID: String
     let kind: Kind
-    let request: Data
+    var request: Data
     let optimisticID: String
     var serverID: String? = nil
     var attempts: Int
     var lastError: String? = nil
+    var state: State = .queued
+    var nextAttemptAt: Date? = nil
     let createdAt: Date
 
     private enum CodingKeys: String, CodingKey {
-        case commandID, clientID, endpointID, daemonID, kind, request, optimisticID, serverID, attempts, lastError, createdAt
+        case commandID, clientID, endpointID, daemonID, kind, request, optimisticID, serverID, attempts, lastError, state, nextAttemptAt, createdAt
     }
 
     init(
@@ -30,6 +33,8 @@ struct DieterOutboxEntry: Codable, Identifiable, Sendable {
         serverID: String? = nil,
         attempts: Int,
         lastError: String? = nil,
+        state: State = .queued,
+        nextAttemptAt: Date? = nil,
         createdAt: Date
     ) {
         self.commandID = commandID
@@ -41,6 +46,8 @@ struct DieterOutboxEntry: Codable, Identifiable, Sendable {
         self.serverID = serverID
         self.attempts = attempts
         self.lastError = lastError
+        self.state = state
+        self.nextAttemptAt = nextAttemptAt
         self.createdAt = createdAt
     }
 
@@ -56,6 +63,8 @@ struct DieterOutboxEntry: Codable, Identifiable, Sendable {
         serverID = try values.decodeIfPresent(String.self, forKey: .serverID)
         attempts = try values.decode(Int.self, forKey: .attempts)
         lastError = try values.decodeIfPresent(String.self, forKey: .lastError)
+        state = try values.decodeIfPresent(State.self, forKey: .state) ?? .queued
+        nextAttemptAt = try values.decodeIfPresent(Date.self, forKey: .nextAttemptAt)
         createdAt = try values.decode(Date.self, forKey: .createdAt)
     }
 
@@ -70,6 +79,8 @@ struct DieterOutboxEntry: Codable, Identifiable, Sendable {
         try values.encodeIfPresent(serverID, forKey: .serverID)
         try values.encode(attempts, forKey: .attempts)
         try values.encodeIfPresent(lastError, forKey: .lastError)
+        try values.encode(state, forKey: .state)
+        try values.encodeIfPresent(nextAttemptAt, forKey: .nextAttemptAt)
         try values.encode(createdAt, forKey: .createdAt)
     }
 }

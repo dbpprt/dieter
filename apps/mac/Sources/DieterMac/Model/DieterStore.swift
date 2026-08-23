@@ -3,12 +3,14 @@ import DieterAPI
 import Foundation
 import GRPCCore
 import Observation
+import OSLog
 import UniformTypeIdentifiers
 import UserNotifications
 
 private let dieterExpectedAPIVersion = "2"
 private let conversationPageSize: Int32 = 30
 private let terminalClientBufferLimit = 2 * 1_024 * 1_024
+private let outboxLogger = Logger(subsystem: "com.dbpprt.dieter.mac", category: "Outbox")
 
 struct TerminalScreenState: Equatable, Sendable {
     var data = Data()
@@ -138,6 +140,14 @@ enum MachineConnectionRoute: String, Sendable {
 struct MachineConnectionStatus: Equatable, Sendable {
     let route: MachineConnectionRoute
     let latencyMilliseconds: Int
+}
+
+struct DieterFailedOutboxItem: Identifiable, Sendable {
+    let id: String
+    let operation: String
+    let targetID: String
+    let failure: String
+    let createdAt: Date
 }
 
 struct ProjectFileNavigation: Equatable, Sendable {
@@ -510,6 +520,19 @@ final class DieterStore {
     func isPendingMessage(_ id: String) -> Bool { pendingMessageIDs.contains(id) }
     func isAcceptedOutboxItem(_ id: String) -> Bool { acceptedOutboxIDs.contains(id) }
     func isFailedOutboxItem(_ id: String) -> Bool { failedOutboxIDs.contains(id) }
+
+    var failedOutboxItems: [DieterFailedOutboxItem] {
+        syncDiskState.outbox.compactMap { entry in
+            guard entry.state == .failed else { return nil }
+            return DieterFailedOutboxItem(
+                id: entry.serverID ?? entry.optimisticID,
+                operation: entry.kind.rawValue,
+                targetID: entry.serverID ?? entry.optimisticID,
+                failure: entry.lastError ?? "The queued operation failed.",
+                createdAt: entry.createdAt
+            )
+        }
+    }
 
     func machine(forProjectID projectID: String) -> DieterEndpoint? {
         guard let endpointID = projectEndpointIDs[projectID] else { return nil }
@@ -1575,16 +1598,16 @@ final class DieterStore {
     }
 
     private func rebuildOutboxOverlays() {
-        pendingCardIDs = Set(syncDiskState.outbox.filter { $0.kind != .sendMessage }.map(\.optimisticID))
+        pendingCardIDs = Set(syncDiskState.outbox.filter { $0.kind != .sendMessage }.map { $0.serverID ?? $0.optimisticID })
         pendingMessageIDs = Set(syncDiskState.outbox.filter { $0.kind == .sendMessage }.map(\.optimisticID))
-        acceptedOutboxIDs = Set(syncDiskState.outbox.filter { $0.serverID != nil }.map(\.optimisticID))
-        failedOutboxIDs = Set(syncDiskState.outbox.filter { $0.lastError != nil }.map(\.optimisticID))
+        acceptedOutboxIDs = Set(syncDiskState.outbox.filter { $0.serverID != nil }.flatMap { [$0.optimisticID, $0.serverID!] })
+        failedOutboxIDs = Set(syncDiskState.outbox.filter { $0.state == .failed }.map { $0.serverID ?? $0.optimisticID })
         for entry in syncDiskState.outbox {
             switch entry.kind {
             case .createCard, .createChat:
                 guard let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request) else { continue }
                 var card = Dieter_V1_Card()
-                card.id = entry.optimisticID
+                card.id = entry.serverID ?? entry.optimisticID
                 card.scope = entry.kind == .createChat ? "chat" : "board"
                 card.projectID = request.projectID
                 card.boardID = entry.kind == .createChat ? "" : request.boardID
@@ -1594,7 +1617,7 @@ final class DieterStore {
                 card.provider = request.provider
                 card.model = request.model
                 card.effort = request.effort
-                card.runtime = "pending"
+                card.runtime = entry.state == .failed ? "failed" : "pending"
                 card.createdAt = ISO8601DateFormatter().string(from: entry.createdAt)
                 card.updatedAt = card.createdAt
                 if entry.kind == .createChat {
@@ -1642,9 +1665,17 @@ final class DieterStore {
             defer { self.outboxTask = nil }
             while !Task.isCancelled {
                 guard let rpc = self.rpc, self.phase.isConnected else { return }
-                guard let index = self.syncDiskState.outbox.firstIndex(where: {
-                    $0.endpointID == self.endpoint.id && $0.serverID == nil
-                }) else { return }
+                guard let index = DieterOutboxPolicy.nextIndex(
+                    in: self.syncDiskState.outbox,
+                    endpointID: self.endpoint.id
+                ) else {
+                    guard let delay = DieterOutboxPolicy.nextRetryDelay(
+                        in: self.syncDiskState.outbox,
+                        endpointID: self.endpoint.id
+                    ) else { return }
+                    try? await DieterTaskSleep.seconds(min(0.5, max(0.05, delay)))
+                    continue
+                }
                 var entry = self.syncDiskState.outbox[index]
                 do {
                     switch entry.kind {
@@ -1660,25 +1691,157 @@ final class DieterStore {
                         entry.serverID = response.messageID.isEmpty ? entry.optimisticID : response.messageID
                     }
                     entry.lastError = nil
+                    entry.state = .queued
+                    entry.nextAttemptAt = nil
+                    guard let currentIndex = self.syncDiskState.outbox.firstIndex(where: { $0.commandID == entry.commandID }) else {
+                        continue
+                    }
+                    var shouldOpenCreatedConversation = false
                     if entry.kind == .sendMessage {
                         // SendMessage returning means the durable daemon accepted
                         // the command. Conversation content arrives on its own
                         // per-card stream, not the metadata-only global stream.
-                        self.syncDiskState.outbox.remove(at: index)
+                        self.syncDiskState.outbox.remove(at: currentIndex)
                     } else {
-                        self.syncDiskState.outbox[index] = entry
+                        self.syncDiskState.outbox[currentIndex] = entry
+                        if let serverID = entry.serverID {
+                            try DieterOutboxPolicy.retargetDependencies(
+                                in: &self.syncDiskState.outbox,
+                                from: entry.optimisticID,
+                                to: serverID
+                            )
+                            shouldOpenCreatedConversation = self.retargetOptimisticConversation(
+                                from: entry.optimisticID,
+                                to: serverID
+                            )
+                        }
                     }
                     self.reconcileOutboxWithProjection()
                     try? await self.syncPersistence.save(self.syncDiskState)
+                    if shouldOpenCreatedConversation, let serverID = entry.serverID {
+                        await self.openConversation(cardID: serverID, chat: entry.kind == .createChat)
+                    }
                 } catch {
                     entry.attempts += 1
-                    entry.lastError = error.localizedDescription
-                    self.syncDiskState.outbox[index] = entry
+                    entry.lastError = DieterRPCFailure.message(for: error)
+                    if DieterRPCFailure.isPermanent(error) {
+                        entry.state = .failed
+                        entry.nextAttemptAt = nil
+                    } else {
+                        entry.state = .retrying
+                        entry.nextAttemptAt = Date().addingTimeInterval(DieterOutboxPolicy.backoff(after: entry.attempts))
+                    }
+                    guard let currentIndex = self.syncDiskState.outbox.firstIndex(where: { $0.commandID == entry.commandID }) else {
+                        continue
+                    }
+                    self.syncDiskState.outbox[currentIndex] = entry
+                    if entry.kind != .sendMessage {
+                        self.setOptimisticConversationStatus(
+                            entry,
+                            status: entry.state == .failed ? "failed" : "pending"
+                        )
+                    }
                     self.rebuildOutboxOverlays()
                     try? await self.syncPersistence.save(self.syncDiskState)
-                    try? await DieterTaskSleep.seconds(min(30, Double(1 << min(entry.attempts, 4))))
+                    let route = self.machineConnectionStatuses[self.endpoint.id]?.route.rawValue ?? "Unknown"
+                    outboxLogger.error(
+                        "operation=\(entry.kind.rawValue, privacy: .public) card=\(entry.serverID ?? entry.optimisticID, privacy: .public) endpoint=\(self.endpoint.id, privacy: .public) route=\(route, privacy: .public) status=\((error as? RPCError)?.code.description ?? "non-rpc", privacy: .public) message=\(DieterRPCFailure.message(for: error), privacy: .public) terminal=\(entry.state == .failed, privacy: .public)"
+                    )
                 }
             }
+        }
+    }
+
+    func retryOutboxItem(_ id: String) async {
+        guard let index = syncDiskState.outbox.firstIndex(where: {
+            ($0.optimisticID == id || $0.serverID == id) && $0.state == .failed
+        }) else { return }
+        syncDiskState.outbox[index].state = .queued
+        syncDiskState.outbox[index].attempts = 0
+        syncDiskState.outbox[index].lastError = nil
+        syncDiskState.outbox[index].nextAttemptAt = nil
+        setOptimisticConversationStatus(syncDiskState.outbox[index], status: "pending")
+        await persistAndDrainOutbox()
+    }
+
+    func discardOutboxItem(_ id: String) async {
+        guard let index = syncDiskState.outbox.firstIndex(where: {
+            ($0.optimisticID == id || $0.serverID == id) && $0.state == .failed
+        }) else { return }
+        let entry = syncDiskState.outbox.remove(at: index)
+        switch entry.kind {
+        case .createCard, .createChat:
+            let ids = Set([entry.optimisticID, entry.serverID].compactMap { $0 })
+            state.cards.removeAll { ids.contains($0.id) }
+            chats.removeAll { ids.contains($0.id) }
+            for projectID in Array(navigationCards.keys) {
+                navigationCards[projectID]?.removeAll { ids.contains($0.id) }
+            }
+            if let selected = selectedCardID ?? selectedChatID, ids.contains(selected) {
+                closeConversation()
+            }
+        case .sendMessage:
+            if var snapshot = conversation {
+                snapshot.conversation.messages.removeAll { $0.id == entry.optimisticID }
+                conversation = snapshot
+            }
+        }
+        rebuildOutboxOverlays()
+        try? await syncPersistence.save(syncDiskState)
+        startOutboxWorker()
+    }
+
+    @discardableResult
+    private func retargetOptimisticConversation(from optimisticID: String, to serverID: String) -> Bool {
+        let selected = (selectedCardID ?? selectedChatID) == optimisticID
+        if selectedCardID == optimisticID { selectedCardID = serverID }
+        if selectedChatID == optimisticID { selectedChatID = serverID }
+        state.cards = state.cards.map { card in var card = card; if card.id == optimisticID { card.id = serverID }; return card }
+        chats = chats.map { card in var card = card; if card.id == optimisticID { card.id = serverID }; return card }
+        for projectID in Array(navigationCards.keys) {
+            navigationCards[projectID] = navigationCards[projectID]?.map { card in
+                var card = card
+                if card.id == optimisticID { card.id = serverID }
+                return card
+            }
+        }
+        if var snapshot = conversation, snapshot.detail.card.id == optimisticID || snapshot.conversation.cardID == optimisticID {
+            snapshot.detail.card.id = serverID
+            snapshot.conversation.cardID = serverID
+            conversation = snapshot
+        }
+        if var detail = selectedDetail, detail.card.id == optimisticID {
+            detail.card.id = serverID
+            selectedDetail = detail
+        }
+        return selected
+    }
+
+    private func setOptimisticConversationStatus(_ entry: DieterOutboxEntry, status: String) {
+        guard entry.kind != .sendMessage else { return }
+        let id = entry.serverID ?? entry.optimisticID
+        state.cards = state.cards.map { card in
+            var card = card
+            if card.id == id { card.runtime = status }
+            return card
+        }
+        chats = chats.map { card in
+            var card = card
+            if card.id == id { card.runtime = status }
+            return card
+        }
+        for projectID in Array(navigationCards.keys) {
+            navigationCards[projectID] = navigationCards[projectID]?.map { card in
+                var card = card
+                if card.id == id { card.runtime = status }
+                return card
+            }
+        }
+        if var snapshot = conversation, snapshot.conversation.cardID == id {
+            snapshot.conversation.status = status
+            snapshot.detail.card.runtime = status
+            conversation = snapshot
+            selectedDetail = snapshot.detail
         }
     }
 
@@ -1791,8 +1954,27 @@ final class DieterStore {
         selectedChatID = chat ? cardID : nil
         if chat { newChatProjectID = "" }
         resetConversationHistory()
-        conversationLoading = true
         conversationTask?.cancel()
+        guard DieterConversationID.isServerBacked(cardID) else {
+            conversationLoading = false
+            if let entry = syncDiskState.outbox.first(where: { $0.optimisticID == cardID }),
+               let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request) {
+                var snapshot = Dieter_V1_ConversationSnapshot()
+                snapshot.detail.card = card ?? Dieter_V1_Card()
+                snapshot.detail.project = projectDirectory[request.projectID] ?? Dieter_V1_Project()
+                if !chat { snapshot.detail.board = board(id: request.boardID) ?? Dieter_V1_Board() }
+                snapshot.conversation.cardID = cardID
+                snapshot.conversation.status = entry.state == .failed ? "failed" : "pending"
+                snapshot.conversation.draftAttachments = request.attachments
+                conversation = snapshot
+                selectedDetail = snapshot.detail
+                if entry.state == .failed, let failure = entry.lastError {
+                    errorMessage = "Could not create this conversation: \(failure)"
+                }
+            }
+            return
+        }
+        conversationLoading = true
         if let cached = projectedConversation(cardID: cardID) {
             acceptConversation(cached, chat: chat)
         }
@@ -1814,12 +1996,12 @@ final class DieterStore {
                 } catch where Self.isExpectedCancellation(error) { }
                 catch {
                     guard let self, (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
-                    self.errorMessage = "Conversation updates paused: \(error.localizedDescription)"
+                    self.errorMessage = "Conversation updates paused: \(DieterRPCFailure.message(for: error))"
                 }
             }
         } catch {
             conversationLoading = false
-            errorMessage = "Could not open this conversation: \(error.localizedDescription)"
+            errorMessage = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
         }
     }
 
@@ -2242,7 +2424,7 @@ final class DieterStore {
                 createdAt: Date()
             ))
             createConversationPresented = false
-            await persistAndDrainOutbox()
+            rebuildOutboxOverlays()
             let card = (chat ? chats : state.cards).first { $0.id == optimisticID } ?? Dieter_V1_Card()
             var local = Dieter_V1_ConversationSnapshot()
             local.detail.card = card
@@ -2256,6 +2438,7 @@ final class DieterStore {
             selectedCardID = chat ? nil : optimisticID
             selectedChatID = chat ? optimisticID : nil
             section = chat ? .chats : .board
+            await persistAndDrainOutbox()
         } catch { show(error) }
     }
 
@@ -2679,7 +2862,7 @@ final class DieterStore {
 
     func show(_ error: Error) {
         guard !Self.isExpectedCancellation(error) else { return }
-        errorMessage = error.localizedDescription
+        errorMessage = DieterRPCFailure.message(for: error)
     }
 }
 

@@ -417,6 +417,27 @@ struct GeneralSettings: View {
     var body: some View {
         SettingsPage {
             VStack(spacing: 14) {
+                if !store.failedOutboxItems.isEmpty {
+                    SettingsPanel(
+                        title: "Failed queued operations",
+                        subtitle: "Queued prompt data is preserved until you explicitly retry or discard it."
+                    ) {
+                        ForEach(store.failedOutboxItems) { item in
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(item.operation).font(.system(size: 12, weight: .semibold))
+                                    Text(item.targetID).font(.caption2.monospaced()).foregroundStyle(DieterTheme.tertiary)
+                                    Text(item.failure).font(.caption).foregroundStyle(DieterTheme.coral).textSelection(.enabled)
+                                    Text(item.createdAt.formatted()).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                                }
+                                Spacer()
+                                Button("Retry") { Task { await store.retryOutboxItem(item.id) } }
+                                Button("Discard", role: .destructive) { Task { await store.discardOutboxItem(item.id) } }
+                            }
+                            if item.id != store.failedOutboxItems.last?.id { Divider().overlay(DieterTheme.border) }
+                        }
+                    }
+                }
                 SettingsPanel(title: "Appearance", subtitle: "Choose how Dieter looks on this Mac. Changes apply immediately to every window.") {
                     HStack(spacing: 9) {
                         ForEach(DieterAppearance.allCases) { appearance in

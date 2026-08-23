@@ -858,6 +858,72 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(restored.outbox.first?.endpointID == endpointID)
 }
 
+@Test func permanentOutboxFailureDoesNotBlockLaterCreate() throws {
+    let endpointID = "gateway#daemon"
+    var send = Dieter_V1_SendMessageRequest()
+    send.cardID = "c_missing"
+    var create = Dieter_V1_CreateConversationRequest()
+    create.projectID = "p_one"
+    let failed = DieterOutboxEntry(
+        commandID: "send", clientID: "mac", endpointID: endpointID, kind: .sendMessage,
+        request: try send.serializedData(), optimisticID: "msg_one", attempts: 535,
+        lastError: "gRPC notFound: card not found", state: .failed, createdAt: Date(timeIntervalSince1970: 1)
+    )
+    let later = DieterOutboxEntry(
+        commandID: "create", clientID: "mac", endpointID: endpointID, kind: .createChat,
+        request: try create.serializedData(), optimisticID: "local_chat", attempts: 0,
+        createdAt: Date(timeIntervalSince1970: 2)
+    )
+
+    #expect(DieterOutboxPolicy.nextIndex(in: [failed, later], endpointID: endpointID) == 1)
+}
+
+@Test func backedOffOutboxHeadDoesNotStarveReadyEntry() throws {
+    let endpointID = "gateway#daemon"
+    var send = Dieter_V1_SendMessageRequest(); send.cardID = "c_one"
+    var delayed = DieterOutboxEntry(
+        commandID: "first", clientID: "mac", endpointID: endpointID, kind: .sendMessage,
+        request: try send.serializedData(), optimisticID: "msg_one", attempts: 1,
+        createdAt: Date(timeIntervalSince1970: 1)
+    )
+    delayed.state = .retrying
+    delayed.nextAttemptAt = Date(timeIntervalSince1970: 200)
+    let ready = DieterOutboxEntry(
+        commandID: "second", clientID: "mac", endpointID: endpointID, kind: .sendMessage,
+        request: try send.serializedData(), optimisticID: "msg_two", attempts: 0,
+        createdAt: Date(timeIntervalSince1970: 2)
+    )
+
+    #expect(DieterOutboxPolicy.nextIndex(in: [delayed, ready], endpointID: endpointID, now: Date(timeIntervalSince1970: 100)) == 1)
+}
+
+@Test func createSuccessRetargetsDependentQueuedMessages() throws {
+    var request = Dieter_V1_SendMessageRequest()
+    request.cardID = "local_chat"
+    let send = DieterOutboxEntry(
+        commandID: "send", clientID: "mac", endpointID: "endpoint", kind: .sendMessage,
+        request: try request.serializedData(), optimisticID: "msg_one", attempts: 0, createdAt: Date()
+    )
+    var entries = [send]
+
+    try DieterOutboxPolicy.retargetDependencies(in: &entries, from: "local_chat", to: "c_server")
+
+    #expect(try Dieter_V1_SendMessageRequest(serializedBytes: entries[0].request).cardID == "c_server")
+}
+
+@Test func localConversationIDsNeverQualifyForServerFetch() {
+    #expect(!DieterConversationID.isServerBacked("local_chat"))
+    #expect(DieterConversationID.isServerBacked("c_server"))
+}
+
+@Test func rpcErrorsExposeStatusAndMessage() {
+    let error = RPCError(code: .notFound, message: "card c_missing was not found")
+
+    #expect(DieterRPCFailure.isPermanent(error))
+    #expect(DieterRPCFailure.message(for: error) == "gRPC notFound: card c_missing was not found")
+    #expect(!DieterRPCFailure.message(for: error).contains("RPCError error 1"))
+}
+
 @Test func globalProjectionReducerAppliesMetadataChangesAndTombstones() {
     var retained = Dieter_V1_Project(); retained.id = "p_keep"; retained.name = "Before"
     var removed = Dieter_V1_Project(); removed.id = "p_remove"

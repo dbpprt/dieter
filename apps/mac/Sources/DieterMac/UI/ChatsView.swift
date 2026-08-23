@@ -229,6 +229,11 @@ struct ChatRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .contextMenu {
+            if store.isFailedOutboxItem(card.id) {
+                Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
+                Button("Discard queued creation", role: .destructive) { Task { await store.discardOutboxItem(card.id) } }
+                Divider()
+            }
             if card.archived {
                 Button("Restore") { Task { await store.archive(card, archived: false) } }
             } else {
