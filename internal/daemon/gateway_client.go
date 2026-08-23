@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -332,4 +333,25 @@ func CompleteEnrollment(ctx context.Context, identity *Identity, enrollmentID, s
 	}
 	defer connection.Close()
 	return gatewayv1.NewGatewayServiceClient(connection).CompleteDaemonEnrollment(ctx, &gatewayv1.CompleteDaemonEnrollmentRequest{EnrollmentId: enrollmentID, EnrollmentSecret: secret})
+}
+
+func Unenroll(ctx context.Context, identity *Identity) error {
+	if identity == nil || !identity.Enrolled() {
+		return errors.New("daemon is not enrolled")
+	}
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil {
+		return err
+	}
+	connection, err := dialGateway(ctx, identity, false)
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	_, err = gatewayv1.NewGatewayServiceClient(connection).UnenrollDaemon(ctx, &gatewayv1.UnenrollDaemonRequest{
+		DaemonId:  identity.ID,
+		Nonce:     nonce,
+		Signature: linkauth.SignUnenrollment(identity.PrivateKey, identity.GatewayURL, identity.ID, nonce),
+	})
+	return err
 }

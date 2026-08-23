@@ -160,9 +160,11 @@ fun NewConversationScreen(
                 {
                     Button(
                         onClick = {
+                            val cleanTitle = title.trim()
+                            val cleanPrompt = prompt.trim()
                             model.createConversation(
-                                title = title.trim(),
-                                prompt = prompt.trim(),
+                                title = cleanTitle,
+                                prompt = cleanPrompt.ifBlank { cleanTitle },
                                 chat = false,
                                 provider = provider,
                                 model = selectedModel,

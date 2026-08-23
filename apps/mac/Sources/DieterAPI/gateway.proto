@@ -18,6 +18,7 @@ service GatewayService {
   rpc WatchDaemons(WatchDaemonsRequest) returns (stream DaemonPresenceUpdate);
   rpc BeginDaemonEnrollment(BeginDaemonEnrollmentRequest) returns (DaemonEnrollment);
   rpc CompleteDaemonEnrollment(CompleteDaemonEnrollmentRequest) returns (DaemonCredential);
+  rpc UnenrollDaemon(UnenrollDaemonRequest) returns (google.protobuf.Empty);
   rpc RenameDaemon(RenameDaemonRequest) returns (Daemon);
   rpc RevokeDaemon(DaemonRef) returns (google.protobuf.Empty);
   rpc ExchangeDaemonToken(ExchangeDaemonTokenRequest) returns (DaemonAccessToken);
@@ -79,6 +80,12 @@ message DaemonEnrollment {
 message CompleteDaemonEnrollmentRequest {
   string enrollment_id = 1;
   string enrollment_secret = 2;
+}
+
+message UnenrollDaemonRequest {
+  string daemon_id = 1;
+  bytes nonce = 2;
+  bytes signature = 3;
 }
 
 message DaemonCredential {

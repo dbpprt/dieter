@@ -4,6 +4,7 @@ import AppKit
 import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
+import SwiftUI
 import SwiftTerm
 import UniformTypeIdentifiers
 @testable import DieterMac
@@ -770,6 +771,44 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(!ProjectFilePresentation.isImage(filename: "main.swift", mimeType: "text/plain"))
     #expect(ProjectFilePresentation.bytes(binary: true, content: "ignored", data: Data([0, 1, 2])) == Data([0, 1, 2]))
     #expect(ProjectFilePresentation.bytes(binary: false, content: "hello", data: Data()) == Data("hello".utf8))
+}
+
+@Test func projectFileNavigationReturnsEachParentThroughTheProjectRoot() {
+    #expect(ProjectFileNavigation.parentPath(of: "apps/mac/Sources") == "apps/mac")
+    #expect(ProjectFileNavigation.parentPath(of: "apps/mac") == "apps")
+    #expect(ProjectFileNavigation.parentPath(of: "apps") == "")
+    #expect(ProjectFileNavigation.parentPath(of: "") == "")
+}
+
+@Test func labelColorPaletteContainsValidDistinctHexColors() {
+    #expect(LabelColorPalette.colors.count >= 8)
+    #expect(Set(LabelColorPalette.colors).count == LabelColorPalette.colors.count)
+    #expect(LabelColorPalette.colors.allSatisfy { SwiftUI.Color(hex: $0) != nil })
+}
+
+@Test func labelColorPaletteSerializesCustomColorsAsHex() {
+    #expect(LabelColorPalette.hex(for: SwiftUI.Color(red: 1, green: 0.5, blue: 0)) == "#ff8000")
+}
+
+@Test func projectFileNavigationTracksBackwardAndForwardFolderHistory() {
+    var navigation = ProjectFileNavigation()
+    #expect(!navigation.canGoBack)
+    #expect(!navigation.canGoForward)
+
+    navigation.recordNavigation(from: "", to: "apps")
+    navigation.recordNavigation(from: "apps", to: "apps/mac")
+    #expect(navigation.goBack(from: "apps/mac") == "apps")
+    #expect(navigation.canGoBack)
+    #expect(navigation.canGoForward)
+    #expect(navigation.goBack(from: "apps") == "")
+    #expect(!navigation.canGoBack)
+    #expect(navigation.goForward(from: "") == "apps")
+
+    navigation.recordNavigation(from: "apps", to: "docs")
+    #expect(!navigation.canGoForward)
+    navigation.reset()
+    #expect(!navigation.canGoBack)
+    #expect(!navigation.canGoForward)
 }
 
 @Test func globalProjectionAndOutboxSurviveRelaunch() async throws {

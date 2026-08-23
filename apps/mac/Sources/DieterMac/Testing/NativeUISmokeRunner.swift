@@ -77,12 +77,12 @@ enum NativeUISmokeRunner {
         let appearanceDefaults = DieterAppearance.applicationDefaults()
         appearanceDefaults.set(DieterAppearance.dark.rawValue, forKey: DieterAppearance.storageKey)
         try? await DieterTaskSleep.milliseconds(300)
-        capture(window, to: output.appending(path: "01-board.png"))
+        await captureAppearances(window, named: "01-board.png", in: output)
         results["board-initial"] = store.section.rawValue
 
         click(window: window, x: 164, distanceFromTop: 54)
         try? await DieterTaskSleep.milliseconds(500)
-        capture(window, to: output.appending(path: "01b-navigation-collapsed.png"))
+        await captureAppearances(window, named: "01b-navigation-collapsed.png", in: output)
         click(window: window, x: 29, distanceFromTop: 138)
         try? await DieterTaskSleep.seconds(1)
         results["navigation-collapse"] = store.section == .chats ? "passed" : "failed: collapsed rail did not navigate"
@@ -93,7 +93,7 @@ enum NativeUISmokeRunner {
             click(window: window, x: 80, distanceFromTop: step.distanceFromTop)
             try? await DieterTaskSleep.seconds(1)
             results[step.name] = store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
-            capture(window, to: output.appending(path: "\(step.name).png"))
+            await captureAppearances(window, named: "\(step.name).png", in: output)
         }
 
         click(window: window, x: 500, distanceFromTop: 65)
@@ -101,7 +101,7 @@ enum NativeUISmokeRunner {
         results["03-standalone-chat"] = store.section == .chats && store.newChatProjectID == project.id
             ? "passed"
             : "failed: new chat composer did not open"
-        capture(window, to: output.appending(path: "03-standalone-chat.png"))
+        await captureAppearances(window, named: "03-standalone-chat.png", in: output)
 
         let remaining = [
             Step(name: "04-project-files", section: .files, distanceFromTop: 281),
@@ -112,18 +112,18 @@ enum NativeUISmokeRunner {
             click(window: window, x: 55, distanceFromTop: step.distanceFromTop)
             try? await DieterTaskSleep.seconds(1)
             results[step.name] = store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
-            capture(window, to: output.appending(path: "\(step.name).png"))
+            await captureAppearances(window, named: "\(step.name).png", in: output)
         }
 
         click(window: window, x: 370, distanceFromTop: 215)
         try? await DieterTaskSleep.seconds(1)
         results["07-card-conversation"] = store.selectedCardID == nil ? "failed: no card selected" : "passed"
-        capture(window, to: output.appending(path: "07-card-conversation.png"))
+        await captureAppearances(window, named: "07-card-conversation.png", in: output)
 
         store.openSettings()
         try? await DieterTaskSleep.milliseconds(700)
         results["09-settings-general"] = store.section == .settings ? "passed" : "failed: settings did not open"
-        capture(window, to: output.appending(path: "09-settings-general.png"))
+        await captureAppearances(window, named: "09-settings-general.png", in: output)
 
         appearanceDefaults.set(DieterAppearance.light.rawValue, forKey: DieterAppearance.storageKey)
         try? await DieterTaskSleep.milliseconds(700)
@@ -132,23 +132,23 @@ enum NativeUISmokeRunner {
         results["09b-settings-light-appearance"] = storedAppearance == .light && effectiveAppearance == .aqua
             ? "passed"
             : "failed: stored=\(storedAppearance.rawValue), effective=\(effectiveAppearance?.rawValue ?? "unknown")"
-        capture(window, to: output.appending(path: "09b-settings-light-appearance.png"))
+        await captureAppearances(window, named: "09b-settings-light-appearance.png", in: output)
 
         click(window: window, x: 320, distanceFromTop: 151)
         try? await DieterTaskSleep.milliseconds(700)
-        capture(window, to: output.appending(path: "10-settings-connection.png"))
+        await captureAppearances(window, named: "10-settings-connection.png", in: output)
         results["10-settings-connection"] = "passed"
 
         click(window: window, x: 320, distanceFromTop: 187)
         try? await DieterTaskSleep.seconds(1)
-        capture(window, to: output.appending(path: "11-settings-prompts.png"))
+        await captureAppearances(window, named: "11-settings-prompts.png", in: output)
         results["11-settings-prompts"] = "passed"
 
         store.section = .board
         store.labelsPresented = true
         try? await DieterTaskSleep.milliseconds(700)
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
-            capture(sheet, to: output.appending(path: "12-board-label-editor.png"))
+            await captureAppearances(sheet, named: "12-board-label-editor.png", in: output)
             results["12-board-label-editor"] = "passed"
         } else {
             results["12-board-label-editor"] = "failed: sheet not visible"
@@ -159,7 +159,7 @@ enum NativeUISmokeRunner {
         let connectedPhase = store.phase
         store.phase = .authenticationRequired
         try? await DieterTaskSleep.milliseconds(700)
-        capture(window, to: output.appending(path: "12b-connection-onboarding.png"))
+        await captureAppearances(window, named: "12b-connection-onboarding.png", in: output)
         results["12b-connection-onboarding"] = store.phase.needsConnectionOverlay ? "passed" : "failed: overlay phase inactive"
         store.phase = connectedPhase
         try? await DieterTaskSleep.milliseconds(350)
@@ -167,7 +167,7 @@ enum NativeUISmokeRunner {
         store.createConversationPresented = true
         try? await DieterTaskSleep.milliseconds(700)
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
-            capture(sheet, to: output.appending(path: "13-new-card.png"))
+            await captureAppearances(sheet, named: "13-new-card.png", in: output)
             results["13-new-card"] = "passed"
         } else {
             results["13-new-card"] = "failed: sheet not visible"
@@ -178,14 +178,14 @@ enum NativeUISmokeRunner {
         store.createProjectPresented = true
         try? await DieterTaskSleep.milliseconds(700)
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
-            capture(sheet, to: output.appending(path: "14-new-project.png"))
+            await captureAppearances(sheet, named: "14-new-project.png", in: output)
             results["14-new-project"] = "passed"
             click(window: sheet, x: 605, distanceFromTop: 239)
             try? await DieterTaskSleep.seconds(1.5)
             if let browser = NSApp.windows.first(where: {
                 $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
             }) {
-                capture(browser, to: output.appending(path: "15-remote-directory-browser.png"))
+                await captureAppearances(browser, named: "15-remote-directory-browser.png", in: output)
                 results["15-remote-directory-browser"] = "passed"
             } else {
                 results["15-remote-directory-browser"] = "failed: browser sheet not visible"
@@ -198,7 +198,7 @@ enum NativeUISmokeRunner {
 
         store.section = .board
         try? await DieterTaskSleep.milliseconds(700)
-        capture(window, to: output.appending(path: "16-light-workspace.png"))
+        await captureAppearances(window, named: "16-light-workspace.png", in: output)
         results["16-light-workspace"] = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua
             ? "passed"
             : "failed: light appearance did not persist"
@@ -242,6 +242,24 @@ enum NativeUISmokeRunner {
             )
             if let event { window.sendEvent(event) }
         }
+    }
+
+    private static func captureAppearances(_ window: NSWindow, named name: String, in output: URL) async {
+        let defaults = DieterAppearance.applicationDefaults()
+        let original = defaults.string(forKey: DieterAppearance.storageKey)
+        for appearance in [DieterAppearance.dark, DieterAppearance.light] {
+            defaults.set(appearance.rawValue, forKey: DieterAppearance.storageKey)
+            try? await DieterTaskSleep.milliseconds(450)
+            let directory = output.appending(path: "appearance-\(appearance.rawValue)", directoryHint: .isDirectory)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            capture(window, to: directory.appending(path: name))
+        }
+        if let original {
+            defaults.set(original, forKey: DieterAppearance.storageKey)
+        } else {
+            defaults.removeObject(forKey: DieterAppearance.storageKey)
+        }
+        try? await DieterTaskSleep.milliseconds(450)
     }
 
     private static func capture(_ window: NSWindow, to url: URL) {

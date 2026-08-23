@@ -51,6 +51,9 @@ const (
 	// GatewayServiceCompleteDaemonEnrollmentProcedure is the fully-qualified name of the
 	// GatewayService's CompleteDaemonEnrollment RPC.
 	GatewayServiceCompleteDaemonEnrollmentProcedure = "/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment"
+	// GatewayServiceUnenrollDaemonProcedure is the fully-qualified name of the GatewayService's
+	// UnenrollDaemon RPC.
+	GatewayServiceUnenrollDaemonProcedure = "/dieter.gateway.v1.GatewayService/UnenrollDaemon"
 	// GatewayServiceRenameDaemonProcedure is the fully-qualified name of the GatewayService's
 	// RenameDaemon RPC.
 	GatewayServiceRenameDaemonProcedure = "/dieter.gateway.v1.GatewayService/RenameDaemon"
@@ -75,6 +78,7 @@ type GatewayServiceClient interface {
 	WatchDaemons(context.Context, *connect.Request[v1.WatchDaemonsRequest]) (*connect.ServerStreamForClient[v1.DaemonPresenceUpdate], error)
 	BeginDaemonEnrollment(context.Context, *connect.Request[v1.BeginDaemonEnrollmentRequest]) (*connect.Response[v1.DaemonEnrollment], error)
 	CompleteDaemonEnrollment(context.Context, *connect.Request[v1.CompleteDaemonEnrollmentRequest]) (*connect.Response[v1.DaemonCredential], error)
+	UnenrollDaemon(context.Context, *connect.Request[v1.UnenrollDaemonRequest]) (*connect.Response[emptypb.Empty], error)
 	RenameDaemon(context.Context, *connect.Request[v1.RenameDaemonRequest]) (*connect.Response[v1.Daemon], error)
 	RevokeDaemon(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[emptypb.Empty], error)
 	ExchangeDaemonToken(context.Context, *connect.Request[v1.ExchangeDaemonTokenRequest]) (*connect.Response[v1.DaemonAccessToken], error)
@@ -122,6 +126,12 @@ func NewGatewayServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(gatewayServiceMethods.ByName("CompleteDaemonEnrollment")),
 			connect.WithClientOptions(opts...),
 		),
+		unenrollDaemon: connect.NewClient[v1.UnenrollDaemonRequest, emptypb.Empty](
+			httpClient,
+			baseURL+GatewayServiceUnenrollDaemonProcedure,
+			connect.WithSchema(gatewayServiceMethods.ByName("UnenrollDaemon")),
+			connect.WithClientOptions(opts...),
+		),
 		renameDaemon: connect.NewClient[v1.RenameDaemonRequest, v1.Daemon](
 			httpClient,
 			baseURL+GatewayServiceRenameDaemonProcedure,
@@ -156,6 +166,7 @@ type gatewayServiceClient struct {
 	watchDaemons             *connect.Client[v1.WatchDaemonsRequest, v1.DaemonPresenceUpdate]
 	beginDaemonEnrollment    *connect.Client[v1.BeginDaemonEnrollmentRequest, v1.DaemonEnrollment]
 	completeDaemonEnrollment *connect.Client[v1.CompleteDaemonEnrollmentRequest, v1.DaemonCredential]
+	unenrollDaemon           *connect.Client[v1.UnenrollDaemonRequest, emptypb.Empty]
 	renameDaemon             *connect.Client[v1.RenameDaemonRequest, v1.Daemon]
 	revokeDaemon             *connect.Client[v1.DaemonRef, emptypb.Empty]
 	exchangeDaemonToken      *connect.Client[v1.ExchangeDaemonTokenRequest, v1.DaemonAccessToken]
@@ -187,6 +198,11 @@ func (c *gatewayServiceClient) CompleteDaemonEnrollment(ctx context.Context, req
 	return c.completeDaemonEnrollment.CallUnary(ctx, req)
 }
 
+// UnenrollDaemon calls dieter.gateway.v1.GatewayService.UnenrollDaemon.
+func (c *gatewayServiceClient) UnenrollDaemon(ctx context.Context, req *connect.Request[v1.UnenrollDaemonRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.unenrollDaemon.CallUnary(ctx, req)
+}
+
 // RenameDaemon calls dieter.gateway.v1.GatewayService.RenameDaemon.
 func (c *gatewayServiceClient) RenameDaemon(ctx context.Context, req *connect.Request[v1.RenameDaemonRequest]) (*connect.Response[v1.Daemon], error) {
 	return c.renameDaemon.CallUnary(ctx, req)
@@ -214,6 +230,7 @@ type GatewayServiceHandler interface {
 	WatchDaemons(context.Context, *connect.Request[v1.WatchDaemonsRequest], *connect.ServerStream[v1.DaemonPresenceUpdate]) error
 	BeginDaemonEnrollment(context.Context, *connect.Request[v1.BeginDaemonEnrollmentRequest]) (*connect.Response[v1.DaemonEnrollment], error)
 	CompleteDaemonEnrollment(context.Context, *connect.Request[v1.CompleteDaemonEnrollmentRequest]) (*connect.Response[v1.DaemonCredential], error)
+	UnenrollDaemon(context.Context, *connect.Request[v1.UnenrollDaemonRequest]) (*connect.Response[emptypb.Empty], error)
 	RenameDaemon(context.Context, *connect.Request[v1.RenameDaemonRequest]) (*connect.Response[v1.Daemon], error)
 	RevokeDaemon(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[emptypb.Empty], error)
 	ExchangeDaemonToken(context.Context, *connect.Request[v1.ExchangeDaemonTokenRequest]) (*connect.Response[v1.DaemonAccessToken], error)
@@ -257,6 +274,12 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 		connect.WithSchema(gatewayServiceMethods.ByName("CompleteDaemonEnrollment")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gatewayServiceUnenrollDaemonHandler := connect.NewUnaryHandler(
+		GatewayServiceUnenrollDaemonProcedure,
+		svc.UnenrollDaemon,
+		connect.WithSchema(gatewayServiceMethods.ByName("UnenrollDaemon")),
+		connect.WithHandlerOptions(opts...),
+	)
 	gatewayServiceRenameDaemonHandler := connect.NewUnaryHandler(
 		GatewayServiceRenameDaemonProcedure,
 		svc.RenameDaemon,
@@ -293,6 +316,8 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 			gatewayServiceBeginDaemonEnrollmentHandler.ServeHTTP(w, r)
 		case GatewayServiceCompleteDaemonEnrollmentProcedure:
 			gatewayServiceCompleteDaemonEnrollmentHandler.ServeHTTP(w, r)
+		case GatewayServiceUnenrollDaemonProcedure:
+			gatewayServiceUnenrollDaemonHandler.ServeHTTP(w, r)
 		case GatewayServiceRenameDaemonProcedure:
 			gatewayServiceRenameDaemonHandler.ServeHTTP(w, r)
 		case GatewayServiceRevokeDaemonProcedure:
@@ -328,6 +353,10 @@ func (UnimplementedGatewayServiceHandler) BeginDaemonEnrollment(context.Context,
 
 func (UnimplementedGatewayServiceHandler) CompleteDaemonEnrollment(context.Context, *connect.Request[v1.CompleteDaemonEnrollmentRequest]) (*connect.Response[v1.DaemonCredential], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment is not implemented"))
+}
+
+func (UnimplementedGatewayServiceHandler) UnenrollDaemon(context.Context, *connect.Request[v1.UnenrollDaemonRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.UnenrollDaemon is not implemented"))
 }
 
 func (UnimplementedGatewayServiceHandler) RenameDaemon(context.Context, *connect.Request[v1.RenameDaemonRequest]) (*connect.Response[v1.Daemon], error) {

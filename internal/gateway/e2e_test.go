@@ -310,6 +310,42 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || reconnectedHealth.GetStorePath() != boardStore.Root {
 		t.Fatalf("reconnected relay health=%#v err=%v", reconnectedHealth, err)
 	}
+
+	if _, err := gatewayClient.UnenrollDaemon(ctx, &gatewayv1.UnenrollDaemonRequest{
+		DaemonId: identity.ID, Nonce: make([]byte, 32), Signature: make([]byte, 64),
+	}); err == nil {
+		t.Fatal("unsigned daemon unenrollment unexpectedly succeeded")
+	}
+	if record, err := gatewayStore.Daemon(identity.ID); err != nil || record.Revoked {
+		t.Fatalf("invalid unenrollment changed daemon record=%#v err=%v", record, err)
+	}
+	if err := daemon.Unenroll(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	// A repeated signed request is safe if the gateway committed revocation but
+	// the command did not receive its response or clear the local credential.
+	if err := daemon.Unenroll(ctx, identity); err != nil {
+		t.Fatalf("repeat daemon unenrollment: %v", err)
+	}
+	deadline = time.Now().Add(5 * time.Second)
+	for gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	record, err := gatewayStore.Daemon(identity.ID)
+	if err != nil || !record.Revoked || gatewayServer.Hub.Online(identity.ID) {
+		t.Fatalf("unenrolled daemon record=%#v online=%v err=%v", record, gatewayServer.Hub.Online(identity.ID), err)
+	}
+	list, err = gatewayClient.ListDaemons(authorized, &emptypb.Empty{})
+	if err != nil || len(list.GetDaemons()) != 0 {
+		t.Fatalf("unenrolled daemon remained discoverable: %#v err=%v", list, err)
+	}
+	if err := identity.ClearCredential(); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := daemon.LoadIdentity(identity.Root)
+	if err != nil || reloaded.Enrolled() || len(reloaded.PrivateKey) == 0 {
+		t.Fatalf("cleared local enrollment=%#v err=%v", reloaded, err)
+	}
 }
 
 func receiveRelayedTerminalMarker(t *testing.T, stream interface {

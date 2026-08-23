@@ -316,6 +316,11 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	if err != nil {
 		return model.Card{}, err
 	}
+	input.Title = strings.TrimSpace(input.Title)
+	input.Prompt = strings.TrimSpace(input.Prompt)
+	if input.Prompt == "" {
+		input.Prompt = input.Title
+	}
 	provider := strings.TrimSpace(input.Provider)
 	if provider == "" {
 		provider = "codex"

@@ -17,6 +17,22 @@ struct FilesView: View {
             VStack(spacing: 0) {
                 FluidPaneChrome(background: DieterTheme.sidebar, spacing: 9) {
                     HStack(spacing: 8) {
+                        Button { Task { await store.navigateFilesBack() } } label: {
+                            Image(systemName: "chevron.left")
+                        }
+                        .buttonStyle(DieterIconButtonStyle())
+                        .disabled(!store.fileNavigation.canGoBack || store.fileNavigationLoading)
+                        .help("Back")
+                        .accessibilityLabel("Back")
+                        .accessibilityIdentifier("files.back")
+                        Button { Task { await store.navigateFilesForward() } } label: {
+                            Image(systemName: "chevron.right")
+                        }
+                        .buttonStyle(DieterIconButtonStyle())
+                        .disabled(!store.fileNavigation.canGoForward || store.fileNavigationLoading)
+                        .help("Forward")
+                        .accessibilityLabel("Forward")
+                        .accessibilityIdentifier("files.forward")
                         PaneTitleBlock(
                             title: "Files",
                             subtitle: "\(store.files.count) item\(store.files.count == 1 ? "" : "s") · \(store.selectedProject?.name ?? "Project")",
@@ -25,7 +41,7 @@ struct FilesView: View {
                         )
                         Menu { Button("New file…") { newDirectory = false; createPresented = true }; Button("New folder…") { newDirectory = true; createPresented = true }; Divider(); Toggle("Show hidden", isOn: $store.showHiddenFiles) } label: { Image(systemName: "ellipsis.circle") }
                             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().buttonStyle(DieterIconButtonStyle())
-                        Button { Task { await store.loadFiles() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(DieterIconButtonStyle())
+                        Button { Task { await store.loadFiles() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(DieterIconButtonStyle()).disabled(store.fileNavigationLoading)
                     }
                 } secondary: {
                     HStack(spacing: 8) {
@@ -38,21 +54,22 @@ struct FilesView: View {
                 }
                 List {
                     if !store.filePath.isEmpty {
-                        Button { Task { await store.loadFiles(path: parent(store.filePath)) } } label: {
-                            Label("..", systemImage: "arrow.turn.up.left")
+                        Button { navigateToParent() } label: {
+                            Label("Parent Folder", systemImage: "arrow.turn.up.left")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(DieterTheme.subtle)
                                 .frame(maxWidth: .infinity, minHeight: 29, alignment: .leading)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .disabled(store.fileNavigationLoading)
                         .listRowInsets(EdgeInsets(top: 1, leading: 10, bottom: 1, trailing: 10))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                     }
                     ForEach(store.files, id: \.path) { entry in
                         Button {
-                            Task { if entry.kind == "directory" { await store.loadFiles(path: entry.path) } else { await store.openFile(path: entry.path) } }
+                            Task { if entry.kind == "directory" { await store.navigateFiles(to: entry.path) } else { await store.openFile(path: entry.path) } }
                         } label: {
                             HStack(spacing: 9) {
                                 Image(systemName: entry.kind == "directory" ? "folder.fill" : symbol(entry.name))
@@ -71,6 +88,7 @@ struct FilesView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .disabled(entry.kind == "directory" && store.fileNavigationLoading)
                         .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -177,7 +195,12 @@ struct FilesView: View {
         }
     }
 
-    private func parent(_ path: String) -> String { (path as NSString).deletingLastPathComponent == "." ? "" : (path as NSString).deletingLastPathComponent }
+    private func navigateToParent() {
+        guard !store.filePath.isEmpty else { return }
+        let parent = ProjectFileNavigation.parentPath(of: store.filePath)
+        Task { await store.navigateFiles(to: parent) }
+    }
+
     private func joined(_ base: String, _ path: String) -> String { base.isEmpty ? path : (base as NSString).appendingPathComponent(path) }
 }
 

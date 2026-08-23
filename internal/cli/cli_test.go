@@ -236,6 +236,14 @@ func TestDaemonStatusAndLogs(t *testing.T) {
 	if out.String() != "two\nthree\n" {
 		t.Fatalf("logs=%q", out.String())
 	}
+
+	out.Reset()
+	if err := c.Run([]string{"daemon", "--help"}); err != nil || !strings.Contains(out.String(), "unenroll") {
+		t.Fatalf("daemon help=%q err=%v", out.String(), err)
+	}
+	if err := c.Run([]string{"daemon", "unenroll"}); err == nil || !strings.Contains(err.Error(), "not enrolled") {
+		t.Fatalf("unenroll without identity err=%v", err)
+	}
 }
 
 func TestSetupProjectIsIdempotent(t *testing.T) {

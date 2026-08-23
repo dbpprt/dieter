@@ -30,4 +30,14 @@ func TestChallengeBindsGatewayDaemonAndNonce(t *testing.T) {
 	if VerifyCertificate(certificate, "https://dieter.example", "d_other", challenge, signature) == nil {
 		t.Fatal("signature was not bound to the daemon ID")
 	}
+	if VerifyUnenrollment(certificate, "https://dieter.example", "d_test", challenge, signature) == nil {
+		t.Fatal("daemon link proof was accepted as an unenrollment proof")
+	}
+	unenrollment := SignUnenrollment(private, "https://dieter.example", "d_test", challenge)
+	if err := VerifyUnenrollment(certificate, "https://dieter.example", "d_test", challenge, unenrollment); err != nil {
+		t.Fatal(err)
+	}
+	if VerifyCertificate(certificate, "https://dieter.example", "d_test", challenge, unenrollment) == nil {
+		t.Fatal("unenrollment proof was accepted as a daemon link proof")
+	}
 }

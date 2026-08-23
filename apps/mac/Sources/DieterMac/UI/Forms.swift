@@ -27,8 +27,7 @@ struct NewConversationSheet: View {
     private var selectedLane: Dieter_V1_Lane? { store.selectedBoard?.lanes.first { $0.id == lane } }
     private var deferred: Bool { lane.lowercased() != "running" }
     private var canSubmit: Bool {
-        !submitting && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
+        !submitting && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -257,9 +256,11 @@ struct NewConversationSheet: View {
     private func submit() async {
         guard canSubmit else { return }
         submitting = true
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         await store.createConversation(
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
+            title: cleanTitle,
+            prompt: cleanPrompt.isEmpty ? cleanTitle : cleanPrompt,
             attachments: attachments,
             chat: false,
             provider: provider,
@@ -905,8 +906,8 @@ struct LabelsSheet: View {
                         HStack(spacing: 9) {
                             Circle().fill(Color(hex: color) ?? DieterTheme.shellDeep).frame(width: 10, height: 10)
                             TextField("Label name", text: $name)
-                            TextField("#7c5cff", text: $color).font(.body.monospaced()).frame(width: 120)
                         }
+                        LabelColorControl(color: $color)
                         TextField("Optional prompt added when this label is assigned…", text: $instructions, axis: .vertical)
                             .textFieldStyle(.plain)
                             .font(.system(size: 12, design: .monospaced))
@@ -979,10 +980,10 @@ private struct BoardLabelEditorRow: View {
             HStack(spacing: 9) {
                 Circle().fill(Color(hex: color) ?? DieterTheme.shellDeep).frame(width: 10, height: 10)
                 TextField("Label name", text: $name)
-                TextField("#7c5cff", text: $color).font(.body.monospaced()).frame(width: 120)
                 Button(role: .destructive, action: requestDelete) { Image(systemName: "trash") }
                     .buttonStyle(.plain).help("Remove \(label.name)")
             }
+            LabelColorControl(color: $color)
             Text("AGENT INSTRUCTIONS").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
             TextField("Optional prompt added when this label is assigned…", text: $instructions, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -1010,6 +1011,59 @@ private struct BoardLabelEditorRow: View {
             instructions: instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         saving = false
+    }
+}
+
+struct LabelColorPalette {
+    static let colors = [
+        "#7c5cff", "#3478f6", "#32ade6", "#00a896", "#34c759", "#a3c940",
+        "#ffcc00", "#ff9500", "#ff6b35", "#ff3b30", "#e83e8c", "#af52de",
+    ]
+
+    static func hex(for color: Color) -> String? {
+        guard let converted = NSColor(color).usingColorSpace(.sRGB) else { return nil }
+        return String(
+            format: "#%02x%02x%02x",
+            Int((converted.redComponent * 255).rounded()),
+            Int((converted.greenComponent * 255).rounded()),
+            Int((converted.blueComponent * 255).rounded())
+        )
+    }
+}
+
+private struct LabelColorControl: View {
+    @Binding var color: String
+
+    private var pickerColor: Binding<Color> {
+        Binding(
+            get: { Color(hex: color) ?? Color(hex: LabelColorPalette.colors[0])! },
+            set: { if let hex = LabelColorPalette.hex(for: $0) { color = hex } }
+        )
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("COLOR").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
+            ForEach(LabelColorPalette.colors, id: \.self) { hex in
+                Button { color = hex } label: {
+                    Circle()
+                        .fill(Color(hex: hex)!)
+                        .frame(width: 18, height: 18)
+                        .overlay(Circle().stroke(Color.white.opacity(color.caseInsensitiveCompare(hex) == .orderedSame ? 0.9 : 0.18), lineWidth: color.caseInsensitiveCompare(hex) == .orderedSame ? 2 : 1))
+                        .padding(2)
+                }
+                .buttonStyle(.plain)
+                .help(hex)
+                .accessibilityLabel("Use label color \(hex)")
+            }
+            ColorPicker("Custom label color", selection: pickerColor, supportsOpacity: false)
+                .labelsHidden()
+                .help("Choose a custom color")
+            TextField("#7c5cff", text: $color)
+                .font(.body.monospaced())
+                .frame(width: 88)
+                .accessibilityLabel("Label color hex value")
+        }
     }
 }
 

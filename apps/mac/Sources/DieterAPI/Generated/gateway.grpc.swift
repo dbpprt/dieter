@@ -86,6 +86,19 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "UnenrollDaemon" metadata.
+        public enum UnenrollDaemon: Sendable {
+            /// Request type for "UnenrollDaemon".
+            public typealias Input = Dieter_Gateway_V1_UnenrollDaemonRequest
+            /// Response type for "UnenrollDaemon".
+            public typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "UnenrollDaemon".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "UnenrollDaemon",
+                type: .unary
+            )
+        }
         /// Namespace for "RenameDaemon" metadata.
         public enum RenameDaemon: Sendable {
             /// Request type for "RenameDaemon".
@@ -145,6 +158,7 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
             WatchDaemons.descriptor,
             BeginDaemonEnrollment.descriptor,
             CompleteDaemonEnrollment.descriptor,
+            UnenrollDaemon.descriptor,
             RenameDaemon.descriptor,
             RevokeDaemon.descriptor,
             ExchangeDaemonToken.descriptor,
@@ -267,6 +281,25 @@ extension Dieter_Gateway_V1_GatewayService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_DaemonCredential>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonCredential>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UnenrollDaemon" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_UnenrollDaemonRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_UnenrollDaemonRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func unenrollDaemon<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_UnenrollDaemonRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_UnenrollDaemonRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "RenameDaemon" method.
@@ -509,6 +542,36 @@ extension Dieter_Gateway_V1_GatewayService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_Gateway_V1_GatewayService.Method.CompleteDaemonEnrollment.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "UnenrollDaemon" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_UnenrollDaemonRequest` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_UnenrollDaemonRequest` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func unenrollDaemon<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_UnenrollDaemonRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_UnenrollDaemonRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.UnenrollDaemon.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -764,6 +827,31 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
         )
     }
 
+    /// Call the "UnenrollDaemon" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_UnenrollDaemonRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func unenrollDaemon<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_UnenrollDaemonRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.unenrollDaemon(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_UnenrollDaemonRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "RenameDaemon" method.
     ///
     /// - Parameters:
@@ -1005,6 +1093,35 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
             metadata: metadata
         )
         return try await self.completeDaemonEnrollment(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UnenrollDaemon" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func unenrollDaemon<Result>(
+        _ message: Dieter_Gateway_V1_UnenrollDaemonRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_UnenrollDaemonRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.unenrollDaemon(
             request: request,
             options: options,
             onResponse: handleResponse

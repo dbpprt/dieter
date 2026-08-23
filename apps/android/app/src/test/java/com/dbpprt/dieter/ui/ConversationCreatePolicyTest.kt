@@ -73,4 +73,18 @@ class ConversationCreatePolicyTest {
             ),
         )
     }
+
+    @Test
+    fun `board card can use its title as the initial task`() {
+        assertTrue(
+            canCreateConversation(
+                projectId = "project-a",
+                provider = "codex",
+                model = "gpt-5",
+                prompt = "",
+                chat = false,
+                title = "Inspect the sync queue",
+            ),
+        )
+    }
 }

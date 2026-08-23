@@ -274,6 +274,24 @@ func TestCreateRunningCardStartsHarnessWithBoardInstructions(t *testing.T) {
 	}
 }
 
+func TestCreateRunningCardUsesTitleAsInitialTaskWhenPromptIsEmpty(t *testing.T) {
+	service, fake, project, board := appSetup(t)
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "  Inspect the sync queue  ", Provider: "codex", Model: "gpt-5.5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return fake.count() == 1 && !hasActiveTurn(service, project.ID) })
+	if card.Title != "Inspect the sync queue" || card.InitialPrompt != "Inspect the sync queue" {
+		t.Fatalf("card=%#v", card)
+	}
+	if request := fake.request(0); request.Prompt != "Inspect the sync queue" {
+		t.Fatalf("request=%#v", request)
+	}
+}
+
 func TestCreateRunningCardCanDeferStartToStreamingClient(t *testing.T) {
 	service, fake, project, board := appSetup(t)
 	card, err := service.CreateCard(context.Background(), CardInput{

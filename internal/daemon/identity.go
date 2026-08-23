@@ -100,6 +100,16 @@ func (i *Identity) SaveCredential(id, name string, certificate, daemonCA, signin
 	return i.save()
 }
 
+func (i *Identity) ClearCredential() error {
+	i.ID = ""
+	i.CertificatePEM = nil
+	i.DaemonCAPEM = nil
+	i.GatewaySigningPublicKey = nil
+	i.CertificateExpiresAt = ""
+	i.Generation = 0
+	return i.save()
+}
+
 func (i *Identity) Enrolled() bool {
 	return i.ID != "" && len(i.CertificatePEM) > 0 && i.GatewayURL != ""
 }

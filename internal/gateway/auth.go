@@ -58,7 +58,9 @@ func (a *Auth) RegisterHTTP(mux *http.ServeMux) {
 }
 
 func (a *Auth) UnaryInterceptor(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if info.FullMethod == "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment" || info.FullMethod == "/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment" {
+	if info.FullMethod == "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment" ||
+		info.FullMethod == "/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment" ||
+		info.FullMethod == "/dieter.gateway.v1.GatewayService/UnenrollDaemon" {
 		return handler(ctx, request)
 	}
 	principal, err := a.grpcPrincipal(ctx)

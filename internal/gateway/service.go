@@ -15,6 +15,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/linkauth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -177,6 +178,24 @@ func (s *Service) CompleteDaemonEnrollment(_ context.Context, request *gatewayv1
 	return credential, nil
 }
 
+func (s *Service) UnenrollDaemon(_ context.Context, request *gatewayv1.UnenrollDaemonRequest) (*emptypb.Empty, error) {
+	if len(request.GetNonce()) != 32 || len(request.GetSignature()) != ed25519.SignatureSize {
+		return nil, status.Error(codes.Unauthenticated, "daemon unenrollment proof is invalid")
+	}
+	record, err := s.store.Daemon(request.GetDaemonId())
+	if err != nil || linkauth.VerifyUnenrollment(record.Certificate, s.config.PublicURL.String(), record.ID, request.GetNonce(), request.GetSignature()) != nil {
+		return nil, status.Error(codes.Unauthenticated, "daemon unenrollment proof is invalid")
+	}
+	if !record.Revoked {
+		if _, err := s.store.RevokeDaemon(record.ID, record.GitHubID); err != nil {
+			return nil, status.Error(codes.Aborted, "unenroll daemon")
+		}
+	}
+	s.hub.CloseDaemon(record.ID)
+	s.hub.signalChanged()
+	return &emptypb.Empty{}, nil
+}
+
 func (s *Service) RenameDaemon(ctx context.Context, request *gatewayv1.RenameDaemonRequest) (*gatewayv1.Daemon, error) {
 	principal, _ := PrincipalFromContext(ctx)
 	name := strings.TrimSpace(request.GetName())
@@ -197,6 +216,7 @@ func (s *Service) RevokeDaemon(ctx context.Context, request *gatewayv1.DaemonRef
 		return nil, status.Error(codes.NotFound, "daemon not found")
 	}
 	s.hub.CloseDaemon(request.GetDaemonId())
+	s.hub.signalChanged()
 	return &emptypb.Empty{}, nil
 }
 

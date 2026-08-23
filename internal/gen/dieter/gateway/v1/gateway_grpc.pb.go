@@ -25,6 +25,7 @@ const (
 	GatewayService_WatchDaemons_FullMethodName             = "/dieter.gateway.v1.GatewayService/WatchDaemons"
 	GatewayService_BeginDaemonEnrollment_FullMethodName    = "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment"
 	GatewayService_CompleteDaemonEnrollment_FullMethodName = "/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment"
+	GatewayService_UnenrollDaemon_FullMethodName           = "/dieter.gateway.v1.GatewayService/UnenrollDaemon"
 	GatewayService_RenameDaemon_FullMethodName             = "/dieter.gateway.v1.GatewayService/RenameDaemon"
 	GatewayService_RevokeDaemon_FullMethodName             = "/dieter.gateway.v1.GatewayService/RevokeDaemon"
 	GatewayService_ExchangeDaemonToken_FullMethodName      = "/dieter.gateway.v1.GatewayService/ExchangeDaemonToken"
@@ -44,6 +45,7 @@ type GatewayServiceClient interface {
 	WatchDaemons(ctx context.Context, in *WatchDaemonsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DaemonPresenceUpdate], error)
 	BeginDaemonEnrollment(ctx context.Context, in *BeginDaemonEnrollmentRequest, opts ...grpc.CallOption) (*DaemonEnrollment, error)
 	CompleteDaemonEnrollment(ctx context.Context, in *CompleteDaemonEnrollmentRequest, opts ...grpc.CallOption) (*DaemonCredential, error)
+	UnenrollDaemon(ctx context.Context, in *UnenrollDaemonRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	RenameDaemon(ctx context.Context, in *RenameDaemonRequest, opts ...grpc.CallOption) (*Daemon, error)
 	RevokeDaemon(ctx context.Context, in *DaemonRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ExchangeDaemonToken(ctx context.Context, in *ExchangeDaemonTokenRequest, opts ...grpc.CallOption) (*DaemonAccessToken, error)
@@ -117,6 +119,16 @@ func (c *gatewayServiceClient) CompleteDaemonEnrollment(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *gatewayServiceClient) UnenrollDaemon(ctx context.Context, in *UnenrollDaemonRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, GatewayService_UnenrollDaemon_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *gatewayServiceClient) RenameDaemon(ctx context.Context, in *RenameDaemonRequest, opts ...grpc.CallOption) (*Daemon, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Daemon)
@@ -170,6 +182,7 @@ type GatewayServiceServer interface {
 	WatchDaemons(*WatchDaemonsRequest, grpc.ServerStreamingServer[DaemonPresenceUpdate]) error
 	BeginDaemonEnrollment(context.Context, *BeginDaemonEnrollmentRequest) (*DaemonEnrollment, error)
 	CompleteDaemonEnrollment(context.Context, *CompleteDaemonEnrollmentRequest) (*DaemonCredential, error)
+	UnenrollDaemon(context.Context, *UnenrollDaemonRequest) (*emptypb.Empty, error)
 	RenameDaemon(context.Context, *RenameDaemonRequest) (*Daemon, error)
 	RevokeDaemon(context.Context, *DaemonRef) (*emptypb.Empty, error)
 	ExchangeDaemonToken(context.Context, *ExchangeDaemonTokenRequest) (*DaemonAccessToken, error)
@@ -198,6 +211,9 @@ func (UnimplementedGatewayServiceServer) BeginDaemonEnrollment(context.Context, 
 }
 func (UnimplementedGatewayServiceServer) CompleteDaemonEnrollment(context.Context, *CompleteDaemonEnrollmentRequest) (*DaemonCredential, error) {
 	return nil, status.Error(codes.Unimplemented, "method CompleteDaemonEnrollment not implemented")
+}
+func (UnimplementedGatewayServiceServer) UnenrollDaemon(context.Context, *UnenrollDaemonRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnenrollDaemon not implemented")
 }
 func (UnimplementedGatewayServiceServer) RenameDaemon(context.Context, *RenameDaemonRequest) (*Daemon, error) {
 	return nil, status.Error(codes.Unimplemented, "method RenameDaemon not implemented")
@@ -315,6 +331,24 @@ func _GatewayService_CompleteDaemonEnrollment_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GatewayService_UnenrollDaemon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnenrollDaemonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).UnenrollDaemon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_UnenrollDaemon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).UnenrollDaemon(ctx, req.(*UnenrollDaemonRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _GatewayService_RenameDaemon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RenameDaemonRequest)
 	if err := dec(in); err != nil {
@@ -409,6 +443,10 @@ var GatewayService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CompleteDaemonEnrollment",
 			Handler:    _GatewayService_CompleteDaemonEnrollment_Handler,
+		},
+		{
+			MethodName: "UnenrollDaemon",
+			Handler:    _GatewayService_UnenrollDaemon_Handler,
 		},
 		{
 			MethodName: "RenameDaemon",

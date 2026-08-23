@@ -285,6 +285,7 @@ func (c *CLI) daemon(args []string) error {
 Actions:
   start      Run the local data plane and persistent gateway tunnel
   enroll     Enroll this machine with the Dieter gateway
+  unenroll   Revoke this machine and remove its local gateway credential
   status     Show service, local API, enrollment, and gateway health
   logs       Show or follow the daemon service log
 `)
@@ -295,6 +296,8 @@ Actions:
 		return c.daemonStart(args[1:])
 	case "enroll":
 		return c.daemonEnroll(args[1:])
+	case "unenroll":
+		return c.daemonUnenroll(args[1:])
 	case "status":
 		return c.daemonStatus(args[1:])
 	case "logs":
@@ -521,6 +524,43 @@ Enroll this machine with the GitHub account configured by the Dieter gateway.
 		case <-ticker.C:
 		}
 	}
+}
+
+func (c *CLI) daemonUnenroll(args []string) error {
+	const usage = `Usage: dieter daemon unenroll
+
+Revoke this machine at its Dieter gateway and remove the local enrollment
+credential. Projects, conversations, schedules, and harness settings remain.
+`
+	set := flags("daemon unenroll")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 0 {
+		return fmt.Errorf("daemon unenroll does not accept arguments\n\n%s", usage)
+	}
+	identity, err := dieterdaemon.LoadIdentity(c.Store.Root)
+	if errors.Is(err, os.ErrNotExist) {
+		return errors.New("this daemon is not enrolled")
+	}
+	if err != nil {
+		return err
+	}
+	if !identity.Enrolled() {
+		return errors.New("this daemon is not enrolled")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	name, id := identity.Name, identity.ID
+	if err := dieterdaemon.Unenroll(ctx, identity); err != nil {
+		return fmt.Errorf("unenroll daemon: %w", err)
+	}
+	if err := identity.ClearCredential(); err != nil {
+		return fmt.Errorf("remove local daemon credential after gateway unenrollment: %w", err)
+	}
+	fmt.Fprintf(c.Out, "Unenrolled %s (%s). Restart the daemon before enrolling it again.\n", name, id)
+	return nil
 }
 
 func (c *CLI) status() error {

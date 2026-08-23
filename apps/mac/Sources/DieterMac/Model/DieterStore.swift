@@ -140,6 +140,50 @@ struct MachineConnectionStatus: Equatable, Sendable {
     let latencyMilliseconds: Int
 }
 
+struct ProjectFileNavigation: Equatable, Sendable {
+    private static let historyLimit = 100
+    private(set) var backwardPaths: [String] = []
+    private(set) var forwardPaths: [String] = []
+
+    var canGoBack: Bool { !backwardPaths.isEmpty }
+    var canGoForward: Bool { !forwardPaths.isEmpty }
+
+    static func parentPath(of path: String) -> String {
+        let parent = (path as NSString).deletingLastPathComponent
+        return parent == "." ? "" : parent
+    }
+
+    mutating func recordNavigation(from currentPath: String, to destinationPath: String) {
+        guard currentPath != destinationPath else { return }
+        Self.append(currentPath, to: &backwardPaths)
+        forwardPaths.removeAll(keepingCapacity: true)
+    }
+
+    mutating func goBack(from currentPath: String) -> String? {
+        guard let destination = backwardPaths.popLast() else { return nil }
+        Self.append(currentPath, to: &forwardPaths)
+        return destination
+    }
+
+    mutating func goForward(from currentPath: String) -> String? {
+        guard let destination = forwardPaths.popLast() else { return nil }
+        Self.append(currentPath, to: &backwardPaths)
+        return destination
+    }
+
+    mutating func reset() {
+        backwardPaths.removeAll(keepingCapacity: true)
+        forwardPaths.removeAll(keepingCapacity: true)
+    }
+
+    private static func append(_ path: String, to history: inout [String]) {
+        history.append(path)
+        if history.count > Self.historyLimit {
+            history.removeFirst(history.count - Self.historyLimit)
+        }
+    }
+}
+
 enum MachineRoutingPolicy {
     static func automaticConnectionTarget(
         from machines: [DieterEndpoint],
@@ -312,6 +356,8 @@ final class DieterStore {
 
     var files: [Dieter_V1_FileEntry] = []
     var filePath = ""
+    var fileNavigation = ProjectFileNavigation()
+    private(set) var fileNavigationLoading = false
     var fileDocument: Dieter_V1_FileDocument?
     var fileEditorText = ""
     var showHiddenFiles = false
@@ -1099,7 +1145,7 @@ final class DieterStore {
         guard await ensureProjectConnection(id) else { return }
         selectedProjectID = id
         selectedBoardID = boards(for: id).first?.id ?? ""
-        filePath = ""; fileDocument = nil
+        filePath = ""; fileNavigation.reset(); fileDocument = nil
         await refreshState()
         if section == .files { await loadFiles() }
         if section == .schedules { await loadSchedules() }
@@ -1117,7 +1163,7 @@ final class DieterStore {
         section = .board
         selectedProjectID = projectID
         selectedBoardID = boardID
-        filePath = ""; fileDocument = nil
+        filePath = ""; fileNavigation.reset(); fileDocument = nil
         query = ""; runtimeFilter = ""; labelFilter = ""
         await refreshState()
     }
@@ -1131,7 +1177,7 @@ final class DieterStore {
         if selectedBoardID.isEmpty || boards(for: projectID).contains(where: { $0.id == selectedBoardID }) == false {
             selectedBoardID = boards(for: projectID).first?.id ?? ""
         }
-        filePath = ""; fileDocument = nil
+        filePath = ""; fileNavigation.reset(); fileDocument = nil
         await refreshState()
         if destination == .files { await loadFiles() }
         if destination == .schedules { await loadSchedules() }
@@ -2510,11 +2556,47 @@ final class DieterStore {
         state = next
     }
 
-    func loadFiles(path: String? = nil) async {
-        guard let rpc, !selectedProjectID.isEmpty else { return }
-        if let path { filePath = path }
-        var request = Dieter_V1_ListFilesRequest(); request.projectID = selectedProjectID; request.path = filePath; request.showHidden = showHiddenFiles
-        do { files = try await rpc.listFiles(request).entries } catch { show(error) }
+    @discardableResult
+    func loadFiles(path: String? = nil) async -> Bool {
+        guard let rpc, !selectedProjectID.isEmpty else { return false }
+        let destination = path ?? filePath
+        var request = Dieter_V1_ListFilesRequest(); request.projectID = selectedProjectID; request.path = destination; request.showHidden = showHiddenFiles
+        do {
+            let listing = try await rpc.listFiles(request)
+            files = listing.entries
+            filePath = listing.path
+            return true
+        } catch {
+            show(error)
+            return false
+        }
+    }
+
+    func navigateFiles(to destination: String) async {
+        guard destination != filePath, !fileNavigationLoading else { return }
+        fileNavigationLoading = true
+        defer { fileNavigationLoading = false }
+        let previousNavigation = fileNavigation
+        fileNavigation.recordNavigation(from: filePath, to: destination)
+        if !(await loadFiles(path: destination)) { fileNavigation = previousNavigation }
+    }
+
+    func navigateFilesBack() async {
+        guard !fileNavigationLoading else { return }
+        fileNavigationLoading = true
+        defer { fileNavigationLoading = false }
+        let previousNavigation = fileNavigation
+        guard let destination = fileNavigation.goBack(from: filePath) else { return }
+        if !(await loadFiles(path: destination)) { fileNavigation = previousNavigation }
+    }
+
+    func navigateFilesForward() async {
+        guard !fileNavigationLoading else { return }
+        fileNavigationLoading = true
+        defer { fileNavigationLoading = false }
+        let previousNavigation = fileNavigation
+        guard let destination = fileNavigation.goForward(from: filePath) else { return }
+        if !(await loadFiles(path: destination)) { fileNavigation = previousNavigation }
     }
 
     func openFile(path: String) async {

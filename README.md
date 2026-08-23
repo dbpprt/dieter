@@ -231,6 +231,16 @@ device identity under `DIETER_HOME/daemon`, and never stores a GitHub token. On
 the next `dieter daemon start`, the daemon maintains its outbound tunnel and
 reconnects with exponential backoff after network or gateway restarts.
 
+Unenroll a machine from that machine itself with:
+
+```sh
+dieter daemon unenroll
+```
+
+The command signs the request with the enrolled machine identity, revokes the
+gateway record, closes its relay, and removes the local gateway credential. It
+does not remove projects, conversations, schedules, or harness settings.
+
 No flags are needed for same-device access. To advertise an additional direct
 route, expose a dedicated TLS port only on a trusted LAN or tailnet and name
 the address clients can actually reach:
