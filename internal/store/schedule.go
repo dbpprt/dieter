@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 type ScheduleInput struct {
@@ -409,7 +409,7 @@ func (s *Store) RecoverScheduleRuns() error {
 	}
 	for _, run := range runs {
 		if run.Status == model.ScheduleRunStarting || run.Status == model.ScheduleRunRunning {
-			_, _ = s.UpdateScheduleRun(run.ID, model.ScheduleRunFailed, "Nauclio stopped after this agent turn was dispatched; it was not replayed automatically")
+			_, _ = s.UpdateScheduleRun(run.ID, model.ScheduleRunFailed, "Dieter stopped after this agent turn was dispatched; it was not replayed automatically")
 		}
 	}
 	return nil

@@ -8,8 +8,8 @@ import (
 )
 
 func TestLiveProviderDiscovery(t *testing.T) {
-	if os.Getenv("NAUCLIO_TEST_LIVE_DISCOVERY") != "1" {
-		t.Skip("set NAUCLIO_TEST_LIVE_DISCOVERY=1 to query installed provider integrations")
+	if os.Getenv("DIETER_TEST_LIVE_DISCOVERY") != "1" {
+		t.Skip("set DIETER_TEST_LIVE_DISCOVERY=1 to query installed provider integrations")
 	}
 	for _, provider := range []string{"codex", "claude-code", "pi", "omp"} {
 		t.Run(provider, func(t *testing.T) {

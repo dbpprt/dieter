@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 const conversationProjectionVersion = 4

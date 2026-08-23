@@ -6,27 +6,27 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/store"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
-	t.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1")
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	// Settings options intentionally exercise live provider discovery. A cold
 	// OMP/Pi startup can use the discovery layer's 30-second bound.
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	data := store.New(t.TempDir())
 	client, _ := newConnectTestClient(t, data, &fakeRunner{})
-	workspace, err := client.CreateProject(ctx, connect.NewRequest(&naucliov1.CreateProjectRequest{Mode: "open", Path: testRepository(t), BoardName: "Main", Workflow: model.WorkflowReview}))
+	workspace, err := client.CreateProject(ctx, connect.NewRequest(&dieterv1.CreateProjectRequest{Mode: "open", Path: testRepository(t), BoardName: "Main", Workflow: model.WorkflowReview}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	project, board := workspace.Msg.GetProject(), workspace.Msg.GetBoard()
 
-	settings, err := client.UpdateSettings(ctx, connect.NewRequest(&naucliov1.UpdateSettingsRequest{Settings: &naucliov1.Settings{
+	settings, err := client.UpdateSettings(ctx, connect.NewRequest(&dieterv1.UpdateSettingsRequest{Settings: &dieterv1.Settings{
 		GlobalParallelLimit: 3, AgentParallelLimits: map[string]int32{"mock": 1}, BoardParallelLimits: map[string]int32{board.GetId(): 2},
 	}}))
 	if err != nil || settings.Msg.GetGlobalParallelLimit() != 3 || settings.Msg.GetAgentParallelLimits()["mock"] != 1 {
@@ -40,12 +40,12 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	if err != nil || len(options.Msg.GetProjects()) != 1 || len(options.Msg.GetBoards()) != 1 || len(options.Msg.GetAgents().GetHarnesses()) == 0 {
 		t.Fatalf("options=%#v err=%v", options, err)
 	}
-	preview, err := client.PreviewSchedule(ctx, connect.NewRequest(&naucliov1.PreviewScheduleRequest{Cron: "0 9 * * 1-5", Timezone: "Europe/Berlin", Count: 5}))
+	preview, err := client.PreviewSchedule(ctx, connect.NewRequest(&dieterv1.PreviewScheduleRequest{Cron: "0 9 * * 1-5", Timezone: "Europe/Berlin", Count: 5}))
 	if err != nil || len(preview.Msg.GetTimes()) != 5 {
 		t.Fatalf("preview=%#v err=%v", preview, err)
 	}
 
-	schedule, err := client.CreateSchedule(ctx, connect.NewRequest(&naucliov1.SaveScheduleRequest{Schedule: &naucliov1.ScheduleDraft{
+	schedule, err := client.CreateSchedule(ctx, connect.NewRequest(&dieterv1.SaveScheduleRequest{Schedule: &dieterv1.ScheduleDraft{
 		ProjectId: project.GetId(), BoardId: board.GetId(), Name: "Morning", Cron: "0 9 * * 1-5", Timezone: "Europe/Berlin", Enabled: true,
 		Action: model.ScheduleActionRun, TitleTemplate: "Morning · {{date}}", PromptTemplate: "Check {{project}}", Provider: "mock", Model: "mock",
 		OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", BusyPolicy: "queue",
@@ -53,7 +53,7 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := client.RunSchedule(ctx, connect.NewRequest(&naucliov1.ScheduleRef{ScheduleId: schedule.Msg.GetId()}))
+	run, err := client.RunSchedule(ctx, connect.NewRequest(&dieterv1.ScheduleRef{ScheduleId: schedule.Msg.GetId()}))
 	if err != nil || run.Msg.GetScheduleId() != schedule.Msg.GetId() {
 		t.Fatalf("run=%#v err=%v", run, err)
 	}
@@ -61,7 +61,7 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for status != model.ScheduleRunCompleted && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
-		runs, listErr := client.ListScheduleRuns(ctx, connect.NewRequest(&naucliov1.ListScheduleRunsRequest{ScheduleId: schedule.Msg.GetId(), Limit: 5}))
+		runs, listErr := client.ListScheduleRuns(ctx, connect.NewRequest(&dieterv1.ListScheduleRunsRequest{ScheduleId: schedule.Msg.GetId(), Limit: 5}))
 		if listErr != nil {
 			t.Fatal(listErr)
 		}
@@ -72,15 +72,15 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	if status != model.ScheduleRunCompleted {
 		t.Fatalf("run status=%s", status)
 	}
-	paused, err := client.SetScheduleEnabled(ctx, connect.NewRequest(&naucliov1.SetScheduleEnabledRequest{ScheduleId: schedule.Msg.GetId(), Enabled: false}))
+	paused, err := client.SetScheduleEnabled(ctx, connect.NewRequest(&dieterv1.SetScheduleEnabledRequest{ScheduleId: schedule.Msg.GetId(), Enabled: false}))
 	if err != nil || paused.Msg.GetEnabled() {
 		t.Fatalf("paused=%#v err=%v", paused, err)
 	}
-	schedules, err := client.ListSchedules(ctx, connect.NewRequest(&naucliov1.ListSchedulesRequest{ProjectId: project.GetId()}))
+	schedules, err := client.ListSchedules(ctx, connect.NewRequest(&dieterv1.ListSchedulesRequest{ProjectId: project.GetId()}))
 	if err != nil || len(schedules.Msg.GetSchedules()) != 1 {
 		t.Fatalf("schedules=%#v err=%v", schedules, err)
 	}
-	if _, err := client.DeleteSchedule(ctx, connect.NewRequest(&naucliov1.ScheduleRef{ScheduleId: schedule.Msg.GetId()})); err != nil {
+	if _, err := client.DeleteSchedule(ctx, connect.NewRequest(&dieterv1.ScheduleRef{ScheduleId: schedule.Msg.GetId()})); err != nil {
 		t.Fatal(err)
 	}
 }

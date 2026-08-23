@@ -3,7 +3,7 @@ package server
 import (
 	"testing"
 
-	"github.com/dbpprt/nauclio/internal/harness"
+	"github.com/dbpprt/dieter/internal/harness"
 )
 
 // Discovered catalogs can repeat effort values; duplicates crash the Mac

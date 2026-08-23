@@ -9,13 +9,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
-func protoState(value model.State) *naucliov1.State {
-	result := &naucliov1.State{StorePath: value.StorePath}
+func protoState(value model.State) *dieterv1.State {
+	result := &dieterv1.State{StorePath: value.StorePath}
 	for _, item := range value.Projects {
 		result.Projects = append(result.Projects, protoProject(item))
 	}
@@ -34,8 +34,8 @@ func protoState(value model.State) *naucliov1.State {
 	return result
 }
 
-func protoProject(value model.Project) *naucliov1.Project {
-	return &naucliov1.Project{
+func protoProject(value model.Project) *dieterv1.Project {
+	return &dieterv1.Project{
 		Id: value.ID, Name: value.Name, Path: value.Path, Summary: value.Summary,
 		Prompt: value.Prompt, Archived: value.Archived, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, BoardCount: int32(value.BoardCount),
@@ -43,24 +43,24 @@ func protoProject(value model.Project) *naucliov1.Project {
 	}
 }
 
-func protoBoard(value model.Board) *naucliov1.Board {
-	result := &naucliov1.Board{
+func protoBoard(value model.Board) *dieterv1.Board {
+	result := &dieterv1.Board{
 		Id: value.ID, ProjectId: value.ProjectID, Name: value.Name,
 		Workflow: value.Workflow, Description: value.Description,
 		DoneArchivePolicy: value.DoneArchivePolicy, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, PromptTemplate: value.PromptTemplate,
 	}
 	for _, item := range value.Labels {
-		result.Labels = append(result.Labels, &naucliov1.Label{Id: item.ID, Name: item.Name, Color: item.Color, Instructions: item.Instructions})
+		result.Labels = append(result.Labels, &dieterv1.Label{Id: item.ID, Name: item.Name, Color: item.Color, Instructions: item.Instructions})
 	}
 	for _, item := range value.Lanes {
-		result.Lanes = append(result.Lanes, &naucliov1.Lane{Id: item.ID, Name: item.Name})
+		result.Lanes = append(result.Lanes, &dieterv1.Lane{Id: item.ID, Name: item.Name})
 	}
 	return result
 }
 
-func protoCard(value model.Card) *naucliov1.Card {
-	result := &naucliov1.Card{
+func protoCard(value model.Card) *dieterv1.Card {
+	result := &dieterv1.Card{
 		Id: value.ID, Scope: value.Scope, ProjectId: value.ProjectID,
 		BoardId: value.BoardID, Lane: value.Lane, Position: value.Position,
 		Title: value.Title, InitialPrompt: value.InitialPrompt,
@@ -74,7 +74,7 @@ func protoCard(value model.Card) *naucliov1.Card {
 		LabelIds: append([]string(nil), value.LabelIDs...), CommentCount: int32(value.CommentCount),
 	}
 	if value.Origin != nil {
-		result.Origin = &naucliov1.CardOrigin{
+		result.Origin = &dieterv1.CardOrigin{
 			Kind: value.Origin.Kind, ScheduleId: value.Origin.ScheduleID,
 			ScheduleRunId: value.Origin.ScheduleRunID, ScheduledFor: value.Origin.ScheduledFor,
 		}
@@ -82,8 +82,8 @@ func protoCard(value model.Card) *naucliov1.Card {
 	return result
 }
 
-func protoCardDetail(value model.CardDetail) *naucliov1.CardDetail {
-	result := &naucliov1.CardDetail{
+func protoCardDetail(value model.CardDetail) *dieterv1.CardDetail {
+	result := &dieterv1.CardDetail{
 		Card: protoCard(value.Card), Project: protoProject(value.Project), Board: protoBoard(value.Board),
 	}
 	for _, item := range value.Comments {
@@ -92,22 +92,22 @@ func protoCardDetail(value model.CardDetail) *naucliov1.CardDetail {
 	return result
 }
 
-func protoComment(value model.Comment) *naucliov1.Comment {
-	return &naucliov1.Comment{
-		Id: value.ID, CardId: value.CardID, Author: &naucliov1.Author{
+func protoComment(value model.Comment) *dieterv1.Comment {
+	return &dieterv1.Comment{
+		Id: value.ID, CardId: value.CardID, Author: &dieterv1.Author{
 			Kind: value.Author.Kind, Name: value.Author.Name, ProjectId: value.Author.ProjectID,
 			CardId: value.Author.CardID, Provider: value.Author.Provider, Model: value.Author.Model,
 		}, Body: value.Body, CreatedAt: value.CreatedAt,
 	}
 }
 
-func protoConversation(value model.Conversation) *naucliov1.Conversation {
-	result := &naucliov1.Conversation{
+func protoConversation(value model.Conversation) *dieterv1.Conversation {
+	result := &dieterv1.Conversation{
 		ProjectionVersion: int32(value.ProjectionVersion), CardId: value.CardID,
 		Status: value.Status, LastSeq: value.LastSeq, UpdatedAt: value.UpdatedAt,
 	}
 	for _, item := range value.Messages {
-		message := &naucliov1.UiMessage{Id: item.ID, Role: item.Role, MetadataJson: append([]byte(nil), item.Metadata...)}
+		message := &dieterv1.UiMessage{Id: item.ID, Role: item.Role, MetadataJson: append([]byte(nil), item.Metadata...)}
 		for _, part := range item.Parts {
 			message.Parts = append(message.Parts, protoMessagePart(part))
 		}
@@ -119,7 +119,7 @@ func protoConversation(value model.Conversation) *naucliov1.Conversation {
 	for _, item := range value.PendingTools {
 		preview, hasInput, inputSize := payloadSummary(item.Input)
 		revision := toolPayloadRevision(model.UIMessagePart{Input: item.Input})
-		result.PendingTools = append(result.PendingTools, &naucliov1.PendingTool{
+		result.PendingTools = append(result.PendingTools, &dieterv1.PendingTool{
 			Id: item.ID, ToolCallId: item.ToolCallID, ToolName: item.ToolName,
 			HasInput: hasInput, InputSize: inputSize, InputPreview: preview, PayloadRevision: revision,
 		})
@@ -131,7 +131,7 @@ func protoConversation(value model.Conversation) *naucliov1.Conversation {
 		result.TaskPlans = append(result.TaskPlans, protoTaskPlan(item))
 	}
 	for _, item := range value.Queue {
-		queued := &naucliov1.QueuedMessage{Id: item.ID, Text: item.Text, CreatedAt: item.CreatedAt}
+		queued := &dieterv1.QueuedMessage{Id: item.ID, Text: item.Text, CreatedAt: item.CreatedAt}
 		for _, part := range item.Parts {
 			queued.Parts = append(queued.Parts, protoMessagePart(part))
 		}
@@ -140,16 +140,16 @@ func protoConversation(value model.Conversation) *naucliov1.Conversation {
 	return result
 }
 
-func protoTaskPlan(value model.TaskPlan) *naucliov1.TaskPlan {
-	result := &naucliov1.TaskPlan{
+func protoTaskPlan(value model.TaskPlan) *dieterv1.TaskPlan {
+	result := &dieterv1.TaskPlan{
 		Id: value.ID, Provider: value.Provider, MessageId: value.MessageID,
 		Revision: value.Revision, State: value.State, Explanation: value.Explanation,
 		Source: value.Source, UpdatedAt: value.UpdatedAt,
 	}
 	for _, phase := range value.Phases {
-		protoPhase := &naucliov1.TaskPlanPhase{Name: phase.Name}
+		protoPhase := &dieterv1.TaskPlanPhase{Name: phase.Name}
 		for _, task := range phase.Tasks {
-			protoPhase.Tasks = append(protoPhase.Tasks, &naucliov1.TaskPlanItem{
+			protoPhase.Tasks = append(protoPhase.Tasks, &dieterv1.TaskPlanItem{
 				Id: task.ID, Content: task.Content, ActiveForm: task.ActiveForm,
 				Status: task.Status, Blocker: task.Blocker, Priority: task.Priority,
 				Order: task.Order,
@@ -160,8 +160,8 @@ func protoTaskPlan(value model.TaskPlan) *naucliov1.TaskPlan {
 	return result
 }
 
-func protoSubagent(value model.Subagent) *naucliov1.Subagent {
-	return &naucliov1.Subagent{
+func protoSubagent(value model.Subagent) *dieterv1.Subagent {
+	return &dieterv1.Subagent{
 		Id: value.ID, Provider: value.Provider, MessageId: value.MessageID,
 		ParentToolCallId: value.ParentToolCallID, Name: value.Name, AgentType: value.AgentType,
 		AgentSource: value.AgentSource, Description: value.Description, Task: value.Task,
@@ -176,10 +176,10 @@ func protoSubagent(value model.Subagent) *naucliov1.Subagent {
 	}
 }
 
-func protoMessagePart(value model.UIMessagePart) *naucliov1.MessagePart {
+func protoMessagePart(value model.UIMessagePart) *dieterv1.MessagePart {
 	inputPreview, hasInput, inputSize := payloadSummary(value.Input)
 	outputPreview, hasOutput, outputSize := payloadSummary(value.Output)
-	result := &naucliov1.MessagePart{
+	result := &dieterv1.MessagePart{
 		Type: value.Type, Text: value.Text, MediaType: value.MediaType,
 		Filename: value.Filename, Url: value.URL, State: value.State,
 		ToolCallId: value.ToolCallID, ToolName: value.ToolName,
@@ -253,7 +253,7 @@ func toolPayloadRevision(value model.UIMessagePart) string {
 
 type grpcUserMessagePart struct{ Type, Text, MediaType, Filename, URL string }
 
-func modelUserMessageParts(values []*naucliov1.MessagePart) ([]model.UIMessagePart, error) {
+func modelUserMessageParts(values []*dieterv1.MessagePart) ([]model.UIMessagePart, error) {
 	wire := make([]grpcUserMessagePart, 0, len(values))
 	for _, value := range values {
 		if value == nil {
@@ -271,7 +271,7 @@ func modelUserMessageParts(values []*naucliov1.MessagePart) ([]model.UIMessagePa
 	return validateUserMessageParts(wire)
 }
 
-func modelUserAttachmentParts(values []*naucliov1.MessagePart) ([]model.UIMessagePart, error) {
+func modelUserAttachmentParts(values []*dieterv1.MessagePart) ([]model.UIMessagePart, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -287,17 +287,17 @@ func modelUserAttachmentParts(values []*naucliov1.MessagePart) ([]model.UIMessag
 	return parts, nil
 }
 
-func protoHarnessCatalog(values []harness.Adapter) *naucliov1.HarnessCatalog {
-	result := &naucliov1.HarnessCatalog{}
+func protoHarnessCatalog(values []harness.Adapter) *dieterv1.HarnessCatalog {
+	result := &dieterv1.HarnessCatalog{}
 	for _, value := range values {
-		item := &naucliov1.Harness{Id: value.ID, Name: value.Name, DefaultModel: value.DefaultModel}
+		item := &dieterv1.Harness{Id: value.ID, Name: value.Name, DefaultModel: value.DefaultModel}
 		for _, capability := range value.Capabilities {
-			item.Capabilities = append(item.Capabilities, &naucliov1.HarnessCapability{Id: capability.ID, Level: capability.Level})
+			item.Capabilities = append(item.Capabilities, &dieterv1.HarnessCapability{Id: capability.ID, Level: capability.Level})
 		}
 		for _, option := range value.Options {
-			wireOption := &naucliov1.ProviderOption{Id: option.ID, Name: option.Name, Description: option.Description, Type: option.Type, DefaultValue: option.Default}
+			wireOption := &dieterv1.ProviderOption{Id: option.ID, Name: option.Name, Description: option.Description, Type: option.Type, DefaultValue: option.Default}
 			for _, choice := range option.Choices {
-				wireOption.Choices = append(wireOption.Choices, &naucliov1.ProviderOptionChoice{Value: choice.Value, Name: choice.Name})
+				wireOption.Choices = append(wireOption.Choices, &dieterv1.ProviderOptionChoice{Value: choice.Value, Name: choice.Name})
 			}
 			item.Options = append(item.Options, wireOption)
 		}
@@ -305,15 +305,15 @@ func protoHarnessCatalog(values []harness.Adapter) *naucliov1.HarnessCatalog {
 			if model.Hidden {
 				continue
 			}
-			item.Models = append(item.Models, &naucliov1.HarnessModel{
+			item.Models = append(item.Models, &dieterv1.HarnessModel{
 				Id: model.ID, Name: model.Name, ContextWindow: int32(model.ContextWindow),
 				DefaultEffort: model.DefaultEffort, Efforts: dedupeEfforts(model.Efforts),
 			})
 		}
 		if value.Effort != nil {
-			item.Effort = &naucliov1.EffortConfig{Label: value.Effort.Label}
+			item.Effort = &dieterv1.EffortConfig{Label: value.Effort.Label}
 			for _, option := range value.Effort.Options {
-				item.Effort.Options = append(item.Effort.Options, &naucliov1.EffortOption{Id: option.ID, Name: option.Name})
+				item.Effort.Options = append(item.Effort.Options, &dieterv1.EffortOption{Id: option.ID, Name: option.Name})
 			}
 		}
 		result.Harnesses = append(result.Harnesses, item)
@@ -336,8 +336,8 @@ func dedupeEfforts(values []string) []string {
 	return result
 }
 
-func protoSchedule(value model.Schedule) *naucliov1.Schedule {
-	return &naucliov1.Schedule{
+func protoSchedule(value model.Schedule) *dieterv1.Schedule {
+	return &dieterv1.Schedule{
 		Id: value.ID, ProjectId: value.ProjectID, BoardId: value.BoardID,
 		Name: value.Name, Description: value.Description, Cron: value.Cron,
 		Timezone: value.Timezone, Enabled: value.Enabled, Action: value.Action,
@@ -352,8 +352,8 @@ func protoSchedule(value model.Schedule) *naucliov1.Schedule {
 	}
 }
 
-func protoScheduleRun(value model.ScheduleRun) *naucliov1.ScheduleRun {
-	return &naucliov1.ScheduleRun{
+func protoScheduleRun(value model.ScheduleRun) *dieterv1.ScheduleRun {
+	return &dieterv1.ScheduleRun{
 		Id: value.ID, ScheduleId: value.ScheduleID, ProjectId: value.ProjectID,
 		BoardId: value.BoardID, CardId: value.CardID, ScheduledFor: value.ScheduledFor,
 		Manual: value.Manual, Action: value.Action, Status: value.Status,

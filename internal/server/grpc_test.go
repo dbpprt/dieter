@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/store"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -65,7 +65,7 @@ func TestGRPCMachineListener(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	client := naucliov1.NewNauclioServiceClient(connection)
+	client := dieterv1.NewDieterServiceClient(connection)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -73,7 +73,7 @@ func TestGRPCMachineListener(t *testing.T) {
 	if err != nil || health.GetStatus() != "ok" {
 		t.Fatalf("gRPC health = %#v, %v", health, err)
 	}
-	state, err := client.GetState(ctx, &naucliov1.GetStateRequest{ProjectId: project.ID, BoardId: board.ID})
+	state, err := client.GetState(ctx, &dieterv1.GetStateRequest{ProjectId: project.ID, BoardId: board.ID})
 	if err != nil || len(state.GetProjects()) != 1 || len(state.GetBoards()) != 1 {
 		t.Fatalf("state = %#v, %v", state, err)
 	}
@@ -81,16 +81,16 @@ func TestGRPCMachineListener(t *testing.T) {
 	if err != nil || promptSettings.GetPromptTemplate() == "" || len(promptSettings.GetVariables()) == 0 {
 		t.Fatalf("gRPC prompt settings = %#v, %v", promptSettings, err)
 	}
-	if _, err := client.SetProjectPromptTemplate(ctx, &naucliov1.SetScopedPromptTemplateRequest{
+	if _, err := client.SetProjectPromptTemplate(ctx, &dieterv1.SetScopedPromptTemplateRequest{
 		ScopeId: project.ID, PromptTemplate: "Native prompt\n{{project.instructions_block}}\n{{labels.instructions_block}}",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	promptPreview, err := client.PreviewPrompt(ctx, &naucliov1.PreviewPromptRequest{ProjectId: project.ID, BoardId: board.ID, Scope: model.ConversationScopeBoard})
+	promptPreview, err := client.PreviewPrompt(ctx, &dieterv1.PreviewPromptRequest{ProjectId: project.ID, BoardId: board.ID, Scope: model.ConversationScopeBoard})
 	if err != nil || promptPreview.GetSource() != "project" || promptPreview.GetInstructions() == "" {
 		t.Fatalf("gRPC prompt preview = %#v, %v", promptPreview, err)
 	}
-	directories, err := client.ListDirectories(ctx, &naucliov1.ListDirectoriesRequest{Path: filepath.Dir(repo)})
+	directories, err := client.ListDirectories(ctx, &dieterv1.ListDirectoriesRequest{Path: filepath.Dir(repo)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,14 +108,14 @@ func TestGRPCMachineListener(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(secondRepo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	createdWorkspace, err := client.CreateProject(ctx, &naucliov1.CreateProjectRequest{
+	createdWorkspace, err := client.CreateProject(ctx, &dieterv1.CreateProjectRequest{
 		Mode: "open", Path: secondRepo, Name: "Remote fixture", BoardName: "Main", Workflow: model.WorkflowReview,
 	})
 	canonicalSecondRepo, canonicalErr := filepath.EvalSymlinks(secondRepo)
 	if err != nil || canonicalErr != nil || createdWorkspace.GetProject().GetPath() != canonicalSecondRepo || createdWorkspace.GetBoard().GetProjectId() != createdWorkspace.GetProject().GetId() {
 		t.Fatalf("native project creation = %#v, %v", createdWorkspace, err)
 	}
-	card, err := client.CreateCard(ctx, &naucliov1.CreateConversationRequest{
+	card, err := client.CreateCard(ctx, &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, BoardId: board.ID, Lane: model.LaneTodo,
 		Title: "Native work", Prompt: "Build the app", Provider: "codex",
 		Model: "gpt-5.5", DeferStart: true,
@@ -123,15 +123,15 @@ func TestGRPCMachineListener(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.SendMessage(ctx, &naucliov1.SendMessageRequest{
+	if _, err := client.SendMessage(ctx, &dieterv1.SendMessageRequest{
 		CardId: card.GetId(),
-		Parts:  []*naucliov1.MessagePart{{Type: "text", Text: "Start from Android"}},
+		Parts:  []*dieterv1.MessagePart{{Type: "text", Text: "Start from Android"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	var snapshot *naucliov1.ConversationSnapshot
+	var snapshot *dieterv1.ConversationSnapshot
 	for {
-		snapshot, err = client.GetConversation(ctx, &naucliov1.GetConversationRequest{CardId: card.GetId(), Limit: 30})
+		snapshot, err = client.GetConversation(ctx, &dieterv1.GetConversationRequest{CardId: card.GetId(), Limit: 30})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -157,18 +157,18 @@ func TestGRPCMachineListener(t *testing.T) {
 	if got != "Built locally" {
 		t.Fatalf("assistant response = %q", got)
 	}
-	if _, err := client.AddComment(ctx, &naucliov1.AddCommentRequest{CardId: card.GetId(), Message: "Looks good", Name: "Android"}); err != nil {
+	if _, err := client.AddComment(ctx, &dieterv1.AddCommentRequest{CardId: card.GetId(), Message: "Looks good", Name: "Android"}); err != nil {
 		t.Fatal(err)
 	}
-	files, err := client.ListFiles(ctx, &naucliov1.ListFilesRequest{ProjectId: project.ID})
+	files, err := client.ListFiles(ctx, &dieterv1.ListFilesRequest{ProjectId: project.ID})
 	if err != nil || len(files.GetEntries()) != 1 || files.GetEntries()[0].GetName() != "README.md" {
 		t.Fatalf("files = %#v, %v", files, err)
 	}
-	document, err := client.ReadFile(ctx, &naucliov1.ReadFileRequest{ProjectId: project.ID, Path: "README.md"})
+	document, err := client.ReadFile(ctx, &dieterv1.ReadFileRequest{ProjectId: project.ID, Path: "README.md"})
 	if err != nil || document.GetContent() != "# Fixture\n" {
 		t.Fatalf("document = %#v, %v", document, err)
 	}
-	schedule, err := client.CreateSchedule(ctx, &naucliov1.SaveScheduleRequest{Schedule: &naucliov1.ScheduleDraft{
+	schedule, err := client.CreateSchedule(ctx, &dieterv1.SaveScheduleRequest{Schedule: &dieterv1.ScheduleDraft{
 		ProjectId: project.ID, BoardId: board.ID, Name: "Daily",
 		Cron: "0 9 * * 1-5", Timezone: "UTC", Action: model.ScheduleActionDraft,
 		TitleTemplate: "Daily check", PromptTemplate: "Check the repository",

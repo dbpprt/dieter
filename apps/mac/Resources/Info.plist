@@ -3,21 +3,22 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleExecutable</key><string>NauclioMac</string>
-    <key>CFBundleIdentifier</key><string>com.dbpprt.nauclio.mac</string>
+    <key>CFBundleExecutable</key><string>DieterMac</string>
+    <key>CFBundleIdentifier</key><string>com.dbpprt.dieter.mac</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>Nauclio</string>
-    <key>CFBundleDisplayName</key><string>Nauclio</string>
-    <key>CFBundleIconFile</key><string>Nauclio.icns</string>
+    <key>CFBundleName</key><string>Dieter</string>
+    <key>CFBundleDisplayName</key><string>Dieter</string>
+    <key>CFBundleIconFile</key><string>Dieter.icns</string>
+    <key>ATSApplicationFontsPath</key><string>Fonts</string>
     <key>CFBundleURLTypes</key>
-    <array><dict><key>CFBundleURLName</key><string>Nauclio authentication</string><key>CFBundleURLSchemes</key><array><string>nauclio-mac</string></array></dict></array>
+    <array><dict><key>CFBundleURLName</key><string>Dieter authentication</string><key>CFBundleURLSchemes</key><array><string>dieter-mac</string></array></dict></array>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
-    <key>NSHumanReadableCopyright</key><string>Nauclio</string>
-    <key>NSLocalNetworkUsageDescription</key><string>Nauclio connects to a Nauclio server on this Mac or a trusted private network.</string>
+    <key>NSHumanReadableCopyright</key><string>Dieter</string>
+    <key>NSLocalNetworkUsageDescription</key><string>Dieter connects to a Dieter server on this Mac or a trusted private network.</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSSupportsAutomaticTermination</key><false/>
     <key>NSSupportsSuddenTermination</key><false/>

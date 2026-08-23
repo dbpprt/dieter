@@ -20,7 +20,7 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		"assets/brand/theme.css",
 		"assets/brand/tokens.json",
 		"assets/brand/manifest.webmanifest",
-		"assets/brand/assets/Nauclio.icns",
+		"assets/brand/assets/Dieter.icns",
 		"assets/brand/assets/svg/mark.svg",
 		"assets/brand/assets/svg/mark-mono-dark.svg",
 		"assets/brand/assets/svg/mark-mono-light.svg",
@@ -33,25 +33,25 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 	}
 
 	images := map[string]image.Point{
-		"assets/brand/assets/png/app-icon-dark-1024.png":                         {X: 1024, Y: 1024},
-		"assets/brand/assets/png/app-icon-light-1024.png":                        {X: 1024, Y: 1024},
-		"assets/brand/assets/png/favicon-32.png":                                 {X: 32, Y: 32},
-		"assets/brand/assets/social/og-image.png":                                {X: 1200, Y: 630},
-		"apps/android/app/src/main/res/drawable-nodpi/ic_nauclio_foreground.png": {X: 1024, Y: 1024},
-		"apps/android/app/src/main/res/drawable-nodpi/ic_nauclio_monochrome.png": {X: 1024, Y: 1024},
-		"apps/android/app/src/main/res/drawable-nodpi/ic_notification.png":       {X: 192, Y: 192},
-		"apps/android/app/src/main/res/mipmap-mdpi/ic_launcher.png":              {X: 48, Y: 48},
-		"apps/android/app/src/main/res/mipmap-hdpi/ic_launcher.png":              {X: 72, Y: 72},
-		"apps/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png":             {X: 96, Y: 96},
-		"apps/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png":            {X: 144, Y: 144},
-		"apps/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png":           {X: 192, Y: 192},
+		"assets/brand/assets/png/app-icon-dark-1024.png":                        {X: 1024, Y: 1024},
+		"assets/brand/assets/png/app-icon-light-1024.png":                       {X: 1024, Y: 1024},
+		"assets/brand/assets/png/favicon-32.png":                                {X: 32, Y: 32},
+		"assets/brand/assets/social/og-image.png":                               {X: 1200, Y: 630},
+		"apps/android/app/src/main/res/drawable-nodpi/ic_dieter_foreground.png": {X: 1024, Y: 1024},
+		"apps/android/app/src/main/res/drawable-nodpi/ic_dieter_monochrome.png": {X: 1024, Y: 1024},
+		"apps/android/app/src/main/res/drawable-nodpi/ic_notification.png":      {X: 192, Y: 192},
+		"apps/android/app/src/main/res/mipmap-mdpi/ic_launcher.png":             {X: 48, Y: 48},
+		"apps/android/app/src/main/res/mipmap-hdpi/ic_launcher.png":             {X: 72, Y: 72},
+		"apps/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png":            {X: 96, Y: 96},
+		"apps/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png":           {X: 144, Y: 144},
+		"apps/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png":          {X: 192, Y: 192},
 	}
 	for name, want := range images {
 		assertImageSize(t, filepath.Join(root, name), want)
 	}
 
 	assertContains(t, filepath.Join(root, "README.md"),
-		"One command deck. Every coding agent.",
+		"Dieter’s on it.",
 		"assets/brand/assets/social/og-image.png",
 	)
 	assertContains(t, filepath.Join(root, "apps/android/app/src/main/AndroidManifest.xml"),
@@ -59,23 +59,26 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		`android:roundIcon="@mipmap/ic_launcher_round"`,
 	)
 	assertContains(t, filepath.Join(root, "apps/android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml"),
-		`android:drawable="@drawable/ic_nauclio_foreground_layer"`,
-		`android:drawable="@drawable/ic_nauclio_monochrome_layer"`,
+		`android:drawable="@drawable/ic_dieter_foreground_layer"`,
+		`android:drawable="@drawable/ic_dieter_monochrome_layer"`,
 	)
-	assertContains(t, filepath.Join(root, "apps/android/app/src/main/java/com/dbpprt/nauclio/ui/theme/Theme.kt"),
-		"val NauclioCobalt = Color(0xFF2563EB)",
-		"val NauclioAegean = Color(0xFF22D3EE)",
-		"val NauclioSeafoam = Color(0xFF5EEAD4)",
+	assertContains(t, filepath.Join(root, "apps/android/app/src/main/java/com/dbpprt/dieter/ui/theme/Theme.kt"),
+		"val DieterShellDeep = Color(0xFF3D6E85)",
+		"val DieterShell = Color(0xFF8DD8E8)",
+		"val DieterLive = Color(0xFF62B6CB)",
+		"val DieterEyes = Color(0xFFBCEAF1)",
 	)
 	assertContains(t, filepath.Join(root, "apps/mac/scripts/build.sh"),
-		`$BRAND_ROOT/assets/Nauclio.icns`,
+		`$BRAND_ROOT/assets/Dieter.icns`,
 		`$BRAND_ROOT/assets/png/app-icon-dark-1024.png`,
 		`$BRAND_ROOT/assets/png/favicon-32.png`,
+		`$BRAND_ROOT/assets/fonts/Sora-Variable.ttf`,
 	)
-	assertContains(t, filepath.Join(root, "apps/mac/Sources/NauclioMac/UI/NauclioTheme.swift"),
-		"Color(rgb: 0x2563EB)",
-		"Color(rgb: 0x22D3EE)",
-		"Color(rgb: 0x5EEAD4)",
+	assertContains(t, filepath.Join(root, "apps/mac/Sources/DieterMac/UI/DieterTheme.swift"),
+		"dark: 0x081116",
+		"dark: 0x8DD8E8",
+		"dark: 0xBCEAF1",
+		`Font.custom("Sora"`,
 	)
 
 	tokensData, err := os.ReadFile(filepath.Join(root, "assets/brand/tokens.json"))
@@ -86,18 +89,18 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 	if err := json.Unmarshal(tokensData, &tokens); err != nil {
 		t.Fatalf("parse tokens.json: %v", err)
 	}
-	for _, value := range []string{"#071426", "#2563EB", "#22D3EE", "#5EEAD4"} {
+	for _, value := range []string{"#0D1B24", "#8DD8E8", "#3D6E85", "#62B6CB", "#BCEAF1"} {
 		if !strings.Contains(string(tokensData), value) {
 			t.Errorf("tokens.json does not contain required brand color %s", value)
 		}
 	}
 
-	icns, err := os.ReadFile(filepath.Join(root, "assets/brand/assets/Nauclio.icns"))
+	icns, err := os.ReadFile(filepath.Join(root, "assets/brand/assets/Dieter.icns"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(icns) < 8 || string(icns[:4]) != "icns" {
-		t.Fatal("Nauclio.icns does not have a valid icns header")
+		t.Fatal("Dieter.icns does not have a valid icns header")
 	}
 }
 

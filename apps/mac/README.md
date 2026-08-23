@@ -1,6 +1,6 @@
-# Nauclio for macOS
+# Dieter for macOS
 
-A native SwiftUI client for Nauclio. It signs in to the machine-only gateway,
+A native SwiftUI client for Dieter. It signs in to the machine-only gateway,
 discovers every enrolled daemon, and automatically routes native gRPC/HTTP2
 through either verified direct TLS or the bounded relay.
 
@@ -26,21 +26,23 @@ They are reproducibly generated from the supplied PDF by
 ## Develop
 
 Requirements: macOS 15+, Xcode 16+ (the current project is verified with Xcode
-26), a Nauclio gateway, and at least one enrolled daemon.
+26), a Dieter gateway, and at least one enrolled daemon.
 
 ```sh
-go run ./cmd/nauclio daemon start
+go run ./cmd/dieter daemon start
 apps/mac/scripts/run.sh
 ```
 
 For an isolated development server on another port, launch the app with
-`--nauclio-endpoint host:port`. That command-line selection is transient and
+`--dieter-endpoint host:port`. That command-line selection is transient and
 does not replace the user's saved endpoint.
 
 Saved endpoints are HTTPS gateway origins. The app signs in through GitHub
-using a native PKCE flow. Only the resulting Nauclio session is retained in the
-macOS Keychain; the GitHub token never enters the app. Daemons at the same
-origin share that one credential and form one combined workspace.
+using a native PKCE flow. Only the resulting Dieter session is retained in a
+user-only file under `~/Library/Application Support/com.dbpprt.dieter.mac`;
+the GitHub token never enters the app. The containing directory and session
+file use `0700` and `0600` permissions respectively. Daemons at the same origin
+share that one credential and form one combined workspace.
 The sidebar keeps online and offline machines visible as presence indicators,
 annotates every project with its owning hostname, and automatically routes to
 that machine before opening any project surface or conversation. This directory is
@@ -51,19 +53,14 @@ authenticated loopback TLS route; there is no separate local connection to
 configure. Other daemons transparently use the encrypted gateway relay.
 
 `Package.swift` can also be opened directly in Xcode. `scripts/build.sh`
-creates an ad-hoc-signed `apps/mac/build/Nauclio.app` that launches like a normal
-macOS app. Its explicit development-only designated requirement remains stable
-across rebuilt binaries so one Keychain approval can be retained without a
-local signing certificate. Because an ad-hoc binary can claim the same bundle
-identifier, this requirement is a development convenience rather than a
-security boundary; release packaging replaces it with the certificate-backed
-signature. The script reuses SwiftPM's incremental build directory, disables the
+creates an ad-hoc-signed `apps/mac/build/Dieter.app` that launches like a normal
+macOS app. The script reuses SwiftPM's incremental build directory, disables the
 CLI-only index store, keeps manifest and compiled-artifact caches under
-`apps/mac/.build/nauclio-local`, reuses SwiftPM's shared dependency download
+`apps/mac/.build/dieter-local`, reuses SwiftPM's shared dependency download
 cache, and avoids network version resolution. The dedicated scratch path keeps
 Xcode, direct SwiftPM commands, and concurrent project sessions from
 invalidating the app script's cache. Keep `apps/mac/.build` between builds to
-retain it, or set `NAUCLIO_SWIFT_SCRATCH_PATH` to put it elsewhere.
+retain it, or set `DIETER_SWIFT_SCRATCH_PATH` to put it elsewhere.
 
 The build packages the canonical app icon and small-size product mark directly
 from [`assets/brand`](../../assets/brand/README.md). The SwiftUI theme implements
@@ -82,8 +79,8 @@ boards, Files, and Schedules live beneath each project. Creating a chat calls
 `CreateChat` with an empty board ID; it never creates or appears as a board
 card.
 
-Terminals are global to the selected machine and owned by its daemon, not by a
-Mac window or RPC. Closing or disconnecting the app cancels only its output
+Terminals are listed across every enrolled machine and owned by the daemon for
+their project, not by a Mac window or RPC. Closing or disconnecting the app cancels only its output
 observer; the PTY and commands keep running until the shell exits, the user
 explicitly closes the terminal, or the daemon shuts down. Reopening the app
 lists the same session and resumes its sequenced output cursor. Both the daemon
@@ -103,7 +100,7 @@ apps/mac/scripts/terminal-ui-smoke.sh
 apps/mac/scripts/accessibility-smoke.sh
 ```
 
-The UI smoke test starts `nauclio serve` when needed, packages and opens the app,
+The UI smoke test starts `dieter serve` when needed, packages and opens the app,
 then delivers native mouse events to its own window to click a board, global
 Chats, a standalone conversation, project Files, and project Schedules. The app captures its own SwiftUI content after each click
 under `apps/mac/.build/ui-smoke`, so the flow does not need Accessibility or
@@ -135,4 +132,4 @@ is still running, its prior output is replayed, and it accepts more input. It
 also fills the terminal scrollback and verifies that SwiftTerm's visible caret
 tracks the emulator cursor while the live viewport follows new output. The report
 and screenshots land under `apps/mac/.build/terminal-ui-smoke`. Override the
-alternate port with `NAUCLIO_TERMINAL_SMOKE_PORT`.
+alternate port with `DIETER_TERMINAL_SMOKE_PORT`.

@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/trust"
+	"github.com/dbpprt/dieter/internal/trust"
 )
 
 type Keys struct {
@@ -111,7 +111,7 @@ func loadOrCreateEd25519(path string) (ed25519.PrivateKey, error) {
 func createCA(private ed25519.PrivateKey) ([]byte, error) {
 	now := time.Now().UTC()
 	template := &x509.Certificate{
-		SerialNumber: serialNumber(), Subject: pkix.Name{CommonName: "Nauclio daemon CA"},
+		SerialNumber: serialNumber(), Subject: pkix.Name{CommonName: "Dieter daemon CA"},
 		NotBefore: now.Add(-time.Minute), NotAfter: now.AddDate(20, 0, 0),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true, IsCA: true, MaxPathLenZero: true,
@@ -209,7 +209,7 @@ func writePrivate(path string, raw []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".nauclio-key-*")
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".dieter-key-*")
 	if err != nil {
 		return err
 	}

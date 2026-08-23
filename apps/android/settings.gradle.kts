@@ -17,5 +17,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "NauclioAndroid"
+rootProject.name = "DieterAndroid"
 include(":app")

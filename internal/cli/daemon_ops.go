@@ -19,9 +19,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/app"
-	naucliodaemon "github.com/dbpprt/nauclio/internal/daemon"
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/app"
+	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 const (
@@ -115,7 +115,7 @@ func daemonLogger(root string, serviceMode, verbose bool, stderr io.Writer) (*sl
 	if !serviceMode {
 		return slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: level})), "", func() {}, nil
 	}
-	path := naucliodaemon.LogPath(root)
+	path := dieterdaemon.LogPath(root)
 	writer, err := openRotatingLog(path)
 	if err != nil {
 		return nil, "", nil, err
@@ -124,7 +124,7 @@ func daemonLogger(root string, serviceMode, verbose bool, stderr io.Writer) (*sl
 	return logger, path, func() { _ = writer.Close() }, nil
 }
 
-func runStatusHeartbeat(ctx context.Context, writer *naucliodaemon.StatusWriter) {
+func runStatusHeartbeat(ctx context.Context, writer *dieterdaemon.StatusWriter) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -162,7 +162,7 @@ type daemonStatusView struct {
 }
 
 func (c *CLI) daemonStatus(args []string) error {
-	const usage = "Usage: nauclio daemon status [--format table|json]\n"
+	const usage = "Usage: dieter daemon status [--format table|json]\n"
 	set := flags("daemon status")
 	format := set.String("format", "table", "table or json")
 	help, err := parse(set, args, usage, c.Out)
@@ -175,23 +175,23 @@ func (c *CLI) daemonStatus(args []string) error {
 
 	view := daemonStatusView{
 		Status: "stopped", Service: "foreground", Store: c.Store.Root,
-		ListenAddress: "127.0.0.1:4242", LogPath: naucliodaemon.LogPath(c.Store.Root),
-		GatewayState: naucliodaemon.GatewayNotEnrolled,
+		ListenAddress: "127.0.0.1:4242", LogPath: dieterdaemon.LogPath(c.Store.Root),
+		GatewayState: dieterdaemon.GatewayNotEnrolled,
 	}
-	identity, identityErr := naucliodaemon.LoadIdentity(c.Store.Root)
+	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
 	if identityErr == nil {
 		view.Enrolled = identity.Enrolled()
 		view.DaemonID, view.DaemonName = identity.ID, identity.Name
 		view.GatewayURL = identity.GatewayURL
 		view.CertificateExpiresAt = identity.CertificateExpiresAt
 		if view.Enrolled {
-			view.GatewayState = naucliodaemon.GatewayDisconnected
+			view.GatewayState = dieterdaemon.GatewayDisconnected
 		}
 	} else if !errors.Is(identityErr, os.ErrNotExist) {
 		return identityErr
 	}
 
-	runtimeStatus, runtimeErr := naucliodaemon.LoadRuntimeStatus(c.Store.Root)
+	runtimeStatus, runtimeErr := dieterdaemon.LoadRuntimeStatus(c.Store.Root)
 	if runtimeErr == nil {
 		view.PID, view.Version, view.StartedAt = runtimeStatus.PID, runtimeStatus.Version, runtimeStatus.StartedAt
 		view.ListenAddress = runtimeStatus.ListenAddress
@@ -205,16 +205,16 @@ func (c *CLI) daemonStatus(args []string) error {
 			view.Service = "homebrew"
 			view.ServiceStatus = homebrewServiceStatus()
 		}
-	} else if !naucliodaemon.IsRuntimeStatusMissing(runtimeErr) {
+	} else if !dieterdaemon.IsRuntimeStatusMissing(runtimeErr) {
 		return runtimeErr
 	}
 	view.APIHealthy = daemonHealth(view.ListenAddress)
-	view.Running = view.APIHealthy && runtimeErr == nil && naucliodaemon.RuntimeStatusCurrent(runtimeStatus, time.Now().UTC())
+	view.Running = view.APIHealthy && runtimeErr == nil && dieterdaemon.RuntimeStatusCurrent(runtimeStatus, time.Now().UTC())
 	if view.Running {
 		switch {
 		case !view.Enrolled:
 			view.Status = "local-only"
-		case view.GatewayState == naucliodaemon.GatewayConnected:
+		case view.GatewayState == dieterdaemon.GatewayConnected:
 			view.Status = "healthy"
 		default:
 			view.Status = "degraded"
@@ -230,7 +230,7 @@ func (c *CLI) daemonStatus(args []string) error {
 	if *format == "json" {
 		return jsonOut(c.Out, view)
 	}
-	fmt.Fprintf(c.Out, "Nauclio daemon: %s\n", view.Status)
+	fmt.Fprintf(c.Out, "Dieter daemon: %s\n", view.Status)
 	fmt.Fprintf(c.Out, "  Service:  %s", view.Service)
 	if view.ServiceStatus != "" {
 		fmt.Fprintf(c.Out, " (%s)", view.ServiceStatus)
@@ -247,7 +247,7 @@ func (c *CLI) daemonStatus(args []string) error {
 			fmt.Fprintf(c.Out, "  Last error: %s\n", view.GatewayLastError)
 		}
 	} else {
-		fmt.Fprintln(c.Out, "  Gateway:  not enrolled · run `nauclio setup`")
+		fmt.Fprintln(c.Out, "  Gateway:  not enrolled · run `dieter setup`")
 	}
 	fmt.Fprintf(c.Out, "  Projects: %d\n", view.Projects)
 	fmt.Fprintf(c.Out, "  Store:    %s\n", view.Store)
@@ -294,7 +294,7 @@ func homebrewServiceStatus() string {
 		return "unknown"
 	}
 	for _, item := range items {
-		if item.Name == "nauclio" {
+		if item.Name == "dieter" {
 			return item.Status
 		}
 	}
@@ -302,7 +302,7 @@ func homebrewServiceStatus() string {
 }
 
 func (c *CLI) daemonLogs(args []string) error {
-	const usage = "Usage: nauclio daemon logs [--lines N] [--follow]\n"
+	const usage = "Usage: dieter daemon logs [--lines N] [--follow]\n"
 	set := flags("daemon logs")
 	lines := set.Int("lines", 100, "number of recent lines")
 	follow := set.Bool("follow", false, "continue streaming new log entries")
@@ -313,8 +313,8 @@ func (c *CLI) daemonLogs(args []string) error {
 	if set.NArg() != 0 || *lines < 0 {
 		return errors.New(usage)
 	}
-	path := naucliodaemon.LogPath(c.Store.Root)
-	if runtimeStatus, statusErr := naucliodaemon.LoadRuntimeStatus(c.Store.Root); statusErr == nil && runtimeStatus.LogPath != "" {
+	path := dieterdaemon.LogPath(c.Store.Root)
+	if runtimeStatus, statusErr := dieterdaemon.LoadRuntimeStatus(c.Store.Root); statusErr == nil && runtimeStatus.LogPath != "" {
 		path = runtimeStatus.LogPath
 	}
 	return streamLog(c.Out, path, *lines, *follow)
@@ -381,7 +381,7 @@ func streamLog(out io.Writer, path string, lines int, follow bool) error {
 }
 
 func (c *CLI) setup(args []string) error {
-	const usage = `Usage: nauclio setup [--gateway URL] [--name NAME] [--no-open] [--no-start] [PROJECT_PATH...]
+	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start] [PROJECT_PATH...]
 
 Authorize this machine with GitHub, register Git projects, and start the
 Homebrew-managed daemon. With no path, the current Git working tree is used.
@@ -397,7 +397,7 @@ Homebrew-managed daemon. With no path, the current Git working tree is used.
 		return err
 	}
 
-	identity, identityErr := naucliodaemon.LoadIdentity(c.Store.Root)
+	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
 	if errors.Is(identityErr, os.ErrNotExist) || identityErr == nil && !identity.Enrolled() {
 		enrollArgs := []string{"--gateway", *gatewayURL, "--name", *name}
 		if *noOpen {
@@ -424,7 +424,7 @@ Homebrew-managed daemon. With no path, the current Git working tree is used.
 	}
 	fmt.Fprintln(c.Out, "\n2. Project registration")
 	if len(paths) == 0 {
-		fmt.Fprintln(c.Out, "No Git project supplied; add one later with `nauclio project open PATH`.")
+		fmt.Fprintln(c.Out, "No Git project supplied; add one later with `dieter project open PATH`.")
 	}
 	for _, path := range paths {
 		project, existing, registerErr := c.setupProject(path)
@@ -440,7 +440,7 @@ Homebrew-managed daemon. With no path, the current Git working tree is used.
 
 	fmt.Fprintln(c.Out, "\n3. Daemon service")
 	if *noStart {
-		fmt.Fprintln(c.Out, "Skipped; start it with `brew services start nauclio`.")
+		fmt.Fprintln(c.Out, "Skipped; start it with `brew services start dieter`.")
 		return nil
 	}
 	started, startErr := restartHomebrewService(c.Err)
@@ -448,7 +448,7 @@ Homebrew-managed daemon. With no path, the current Git working tree is used.
 		return startErr
 	}
 	if !started {
-		fmt.Fprintln(c.Out, "Homebrew installation not detected; run `nauclio daemon start` in the foreground.")
+		fmt.Fprintln(c.Out, "Homebrew installation not detected; run `dieter daemon start` in the foreground.")
 		return nil
 	}
 	if err := waitForDaemon(c.Store.Root, 20*time.Second); err != nil {
@@ -516,13 +516,13 @@ func restartHomebrewService(output io.Writer) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
-	if err := exec.Command(brew, "list", "--formula", "nauclio").Run(); err != nil {
+	if err := exec.Command(brew, "list", "--formula", "dieter").Run(); err != nil {
 		return false, nil
 	}
 	if _, err := migrateLegacyLaunchAgents(output); err != nil {
 		return true, err
 	}
-	command := exec.Command(brew, "services", "restart", "nauclio")
+	command := exec.Command(brew, "services", "restart", "dieter")
 	command.Stdout, command.Stderr = output, output
 	if err := command.Run(); err != nil {
 		return true, fmt.Errorf("restart Homebrew service: %w", err)
@@ -593,14 +593,14 @@ func availableDisabledPath(path string) (string, error) {
 
 func waitForDaemon(root string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
-	var last naucliodaemon.RuntimeStatus
+	var last dieterdaemon.RuntimeStatus
 	for time.Now().Before(deadline) {
-		status, err := naucliodaemon.LoadRuntimeStatus(root)
+		status, err := dieterdaemon.LoadRuntimeStatus(root)
 		if err == nil {
 			last = status
 		}
-		if err == nil && naucliodaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && daemonHealth(status.ListenAddress) {
-			if !status.Enrolled || status.GatewayState == naucliodaemon.GatewayConnected {
+		if err == nil && dieterdaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && daemonHealth(status.ListenAddress) {
+			if !status.Enrolled || status.GatewayState == dieterdaemon.GatewayConnected {
 				return nil
 			}
 		}
@@ -612,5 +612,5 @@ func waitForDaemon(root string, timeout time.Duration) error {
 		}
 		return fmt.Errorf("daemon local API is healthy, but the gateway is %s", last.GatewayState)
 	}
-	return errors.New("daemon did not become healthy within 20 seconds; run `nauclio daemon logs` for details")
+	return errors.New("daemon did not become healthy within 20 seconds; run `dieter daemon logs` for details")
 }

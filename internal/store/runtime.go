@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 var (
@@ -128,7 +128,7 @@ func runtimeLeasePath(dir, cardID string) (string, error) {
 }
 
 // OrphanedTurnCards returns durable turns that claim to be active but have no
-// lease owned by a live Nauclio process. It also prunes dead-process leases via
+// lease owned by a live Dieter process. It also prunes dead-process leases via
 // activeRuntimeLeases while holding the central mutation lock.
 func (s *Store) OrphanedTurnCards() ([]model.Card, error) {
 	release, err := s.beginWrite()

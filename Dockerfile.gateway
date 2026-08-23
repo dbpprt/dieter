@@ -9,16 +9,16 @@ RUN go mod download
 COPY api ./api
 COPY cmd ./cmd
 COPY internal ./internal
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/nauclio-gateway ./cmd/nauclio-gateway
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/dieter-gateway ./cmd/dieter-gateway
 
 FROM alpine:3.23
 RUN apk add --no-cache ca-certificates \
-    && addgroup -S nauclio \
-    && adduser -S -G nauclio -h /var/lib/nauclio-gateway nauclio \
-    && install -d -o nauclio -g nauclio -m 0700 /var/lib/nauclio-gateway
-COPY --from=build /out/nauclio-gateway /usr/local/bin/nauclio-gateway
-USER nauclio
-VOLUME ["/var/lib/nauclio-gateway"]
+    && addgroup -S dieter \
+    && adduser -S -G dieter -h /var/lib/dieter-gateway dieter \
+    && install -d -o dieter -g dieter -m 0700 /var/lib/dieter-gateway
+COPY --from=build /out/dieter-gateway /usr/local/bin/dieter-gateway
+USER dieter
+VOLUME ["/var/lib/dieter-gateway"]
 EXPOSE 4243
-ENTRYPOINT ["/usr/local/bin/nauclio-gateway"]
-CMD ["--store", "/var/lib/nauclio-gateway"]
+ENTRYPOINT ["/usr/local/bin/dieter-gateway"]
+CMD ["--store", "/var/lib/dieter-gateway"]

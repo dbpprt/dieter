@@ -58,7 +58,7 @@ func (a *Auth) RegisterHTTP(mux *http.ServeMux) {
 }
 
 func (a *Auth) UnaryInterceptor(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if info.FullMethod == "/nauclio.gateway.v1.GatewayService/BeginDaemonEnrollment" || info.FullMethod == "/nauclio.gateway.v1.GatewayService/CompleteDaemonEnrollment" {
+	if info.FullMethod == "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment" || info.FullMethod == "/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment" {
 		return handler(ctx, request)
 	}
 	principal, err := a.grpcPrincipal(ctx)
@@ -69,7 +69,7 @@ func (a *Auth) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 }
 
 func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if info.FullMethod == "/nauclio.gateway.v1.DaemonLinkService/Connect" {
+	if info.FullMethod == "/dieter.gateway.v1.DaemonLinkService/Connect" {
 		return handler(service, stream)
 	}
 	principal, err := a.grpcPrincipal(stream.Context())
@@ -126,7 +126,7 @@ func (a *Auth) grpcPrincipal(ctx context.Context) (Principal, error) {
 func (a *Auth) health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.WriteString(w, `{"status":"ok","service":"nauclio-gateway"}`)
+	_, _ = io.WriteString(w, `{"status":"ok","service":"dieter-gateway"}`)
 }
 
 func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +232,7 @@ func (a *Auth) completion(w http.ResponseWriter, success bool, message string) {
 		status = http.StatusBadRequest
 	}
 	w.WriteHeader(status)
-	_ = template.Must(template.New("done").Parse(`<!doctype html><meta name="viewport" content="width=device-width"><title>Nauclio</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{font:16px ui-rounded,system-ui,sans-serif;background:radial-gradient(circle at 50% 20%,#27304c,#0a0c12 58%);color:#f7f8ff;display:grid;place-items:center;min-height:100vh;margin:0;padding:24px}main{width:min(100%,34rem);padding:36px;border:1px solid #ffffff1f;border-radius:24px;background:#11141dcc;box-shadow:0 24px 80px #0008}.mark{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:#8ca3ff;color:#0a0c12;font-weight:850;font-size:24px}h1{font-size:1.55rem;margin:24px 0 10px}p{color:#c8cede;line-height:1.6;margin:0}.state{margin-top:24px;color:{{if .Success}}#8ee6b1{{else}}#ff9b9b{{end}};font-size:.85rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}</style><main><div class="mark">N</div><div class="state">{{if .Success}}Authorization complete{{else}}Authorization failed{{end}}</div><h1>{{if .Success}}Nauclio is connected{{else}}Nauclio could not connect{{end}}</h1><p>{{.Message}}</p></main>`)).Execute(w, map[string]any{"Success": success, "Message": message})
+	_ = template.Must(template.New("done").Parse(`<!doctype html><meta name="viewport" content="width=device-width"><title>Dieter</title><style>:root{color-scheme:dark}*{box-sizing:border-box}body{font:16px ui-rounded,system-ui,sans-serif;background:radial-gradient(circle at 50% 20%,#27304c,#0a0c12 58%);color:#f7f8ff;display:grid;place-items:center;min-height:100vh;margin:0;padding:24px}main{width:min(100%,34rem);padding:36px;border:1px solid #ffffff1f;border-radius:24px;background:#11141dcc;box-shadow:0 24px 80px #0008}.mark{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;background:#8ca3ff;color:#0a0c12;font-weight:850;font-size:24px}h1{font-size:1.55rem;margin:24px 0 10px}p{color:#c8cede;line-height:1.6;margin:0}.state{margin-top:24px;color:{{if .Success}}#8ee6b1{{else}}#ff9b9b{{end}};font-size:.85rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}</style><main><div class="mark">N</div><div class="state">{{if .Success}}Authorization complete{{else}}Authorization failed{{end}}</div><h1>{{if .Success}}Dieter is connected{{else}}Dieter could not connect{{end}}</h1><p>{{.Message}}</p></main>`)).Execute(w, map[string]any{"Success": success, "Message": message})
 }
 
 func (a *Auth) nativeExchange(w http.ResponseWriter, r *http.Request) {
@@ -409,7 +409,7 @@ func (a *Auth) githubUser(ctx context.Context, token string) (struct {
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.config.GitHubAPIURL, "/")+"/user", nil)
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("User-Agent", "Nauclio Gateway")
+	request.Header.Set("User-Agent", "Dieter Gateway")
 	response, err := a.client.Do(request)
 	if err != nil {
 		return user, err

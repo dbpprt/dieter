@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/model"
-	nauclioprompt "github.com/dbpprt/nauclio/internal/prompt"
+	"github.com/dbpprt/dieter/internal/model"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 )
 
 type CreateProjectInput struct {
@@ -230,7 +230,7 @@ func (s *Store) UpdateProject(ref string, name, summary, prompt *string) (model.
 func (s *Store) UpdateProjectPromptTemplate(ref, template string) (model.Project, error) {
 	template = strings.TrimSpace(template)
 	if template != "" {
-		if err := nauclioprompt.ValidateContextTemplate(template); err != nil {
+		if err := dieterprompt.ValidateContextTemplate(template); err != nil {
 			return model.Project{}, err
 		}
 	}
@@ -366,7 +366,7 @@ func (s *Store) UpdateBoardDoneArchivePolicy(ref, policy string) (model.Board, e
 func (s *Store) UpdateBoardPromptTemplate(ref, template string) (model.Board, error) {
 	template = strings.TrimSpace(template)
 	if template != "" {
-		if err := nauclioprompt.ValidateContextTemplate(template); err != nil {
+		if err := dieterprompt.ValidateContextTemplate(template); err != nil {
 			return model.Board{}, err
 		}
 	}
@@ -730,7 +730,7 @@ func (s *Store) CreateBoardLabel(boardRef, name, color string, instructions ...s
 	if len(instructions) > 0 {
 		prompt = strings.TrimSpace(instructions[0])
 	}
-	if len(prompt) > nauclioprompt.MaxTemplateBytes {
+	if len(prompt) > dieterprompt.MaxTemplateBytes {
 		return model.Board{}, errors.New("label instructions exceed 32 KiB")
 	}
 	board.Labels = append(board.Labels, model.Label{ID: newID("label_"), Name: name, Color: color, Instructions: prompt})
@@ -747,7 +747,7 @@ func (s *Store) UpdateBoardLabel(boardRef, labelID, name, color, instructions st
 	if len(color) != 7 || color[0] != '#' {
 		return model.Board{}, errors.New("label color must be a hex color such as #6558df")
 	}
-	if len(instructions) > nauclioprompt.MaxTemplateBytes {
+	if len(instructions) > dieterprompt.MaxTemplateBytes {
 		return model.Board{}, errors.New("label instructions exceed 32 KiB")
 	}
 	release, err := s.beginWrite()

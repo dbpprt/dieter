@@ -9,8 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	gatewayv1 "github.com/dbpprt/nauclio/internal/gen/nauclio/gateway/v1"
-	"github.com/dbpprt/nauclio/internal/linkauth"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/linkauth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

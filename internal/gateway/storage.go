@@ -83,14 +83,27 @@ type DaemonRecord struct {
 }
 
 func DefaultRoot() string {
+	if value := strings.TrimSpace(os.Getenv("DIETER_GATEWAY_HOME")); value != "" {
+		return value
+	}
+	// Deprecated compatibility for custom installations upgrading in place.
 	if value := strings.TrimSpace(os.Getenv("NAUCLIO_GATEWAY_HOME")); value != "" {
 		return value
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".nauclio-gateway"
+		return ".dieter-gateway"
 	}
-	return filepath.Join(home, ".nauclio-gateway")
+	root := filepath.Join(home, ".dieter-gateway")
+	legacy := filepath.Join(home, ".nauclio-gateway")
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		if info, legacyErr := os.Stat(legacy); legacyErr == nil && info.IsDir() {
+			if renameErr := os.Rename(legacy, root); renameErr != nil {
+				return legacy
+			}
+		}
+	}
+	return root
 }
 
 func OpenStore(root string) (*Store, error) {

@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/store"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
-	t.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1")
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	data := store.New(t.TempDir())
@@ -27,7 +27,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 	}
 	client, _ := newConnectTestClient(t, data, &fakeRunner{})
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&naucliov1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000}))
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 		t.Fatalf("initial frame=%#v", initial)
 	}
 
-	request := &naucliov1.CreateConversationRequest{
+	request := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, BoardId: board.ID, Lane: model.LaneTodo,
 		Title: "Optimistic card", Prompt: "Queue me", Provider: "mock", Model: "mock", DeferStart: true,
 		ClientId: "mac-installation", CommandId: "create-1",
@@ -73,7 +73,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 		t.Fatalf("created card was not globally streamed: %v", stream.Err())
 	}
 
-	chatRequest := &naucliov1.CreateConversationRequest{
+	chatRequest := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Outbox chat", Prompt: "Wait", Provider: "mock", Model: "mock", DeferStart: true,
 		ClientId: "android-installation", CommandId: "chat-1",
 	}
@@ -81,9 +81,9 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	message := &naucliov1.SendMessageRequest{
+	message := &dieterv1.SendMessageRequest{
 		CardId: chat.Msg.GetId(), ClientId: "android-installation", CommandId: "message-1", MessageId: "msg_local_visible",
-		Provider: "mock", Model: "mock", Parts: []*naucliov1.MessagePart{{Type: "text", Text: "Send once"}},
+		Provider: "mock", Model: "mock", Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Send once"}},
 	}
 	firstSend, err := client.SendMessage(ctx, connect.NewRequest(message))
 	if err != nil {
@@ -125,7 +125,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 }
 
 func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
-	t.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1")
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	data := store.New(t.TempDir())
@@ -161,7 +161,7 @@ func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
 	t.Cleanup(stopRunner)
 	client, _ := newConnectTestClient(t, data, gatedRunner{release: release})
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&naucliov1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000}))
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
 		t.Fatalf("metadata bootstrap unexpectedly contained conversation tails: %#v", initial)
 	}
 
-	request := &naucliov1.StartCardRequest{CardId: card.ID, ClientId: "android-test", CommandId: "start-once"}
+	request := &dieterv1.StartCardRequest{CardId: card.ID, ClientId: "android-test", CommandId: "start-once"}
 	started, err := client.StartCard(ctx, connect.NewRequest(request))
 	if err != nil {
 		t.Fatal(err)
@@ -208,7 +208,7 @@ func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
 }
 
 func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
-	t.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1")
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	data := store.New(t.TempDir())
@@ -218,7 +218,7 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 	}
 	client, _ := newConnectTestClient(t, data, &fakeRunner{})
 
-	chat, err := client.CreateChat(ctx, connect.NewRequest(&naucliov1.CreateConversationRequest{
+	chat, err := client.CreateChat(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Warm cache", Prompt: "Hold", Provider: "mock", Model: "mock", DeferStart: true,
 		ClientId: "android-installation", CommandId: "bounded-chat-1",
 	}))
@@ -226,7 +226,7 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stream, err := client.WatchSync(ctx, connect.NewRequest(&naucliov1.SyncRequest{
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{
 		ConversationLimit: 20, RecentConversationLimit: 5, HeartbeatMs: 1_000,
 	}))
 	if err != nil {
@@ -249,9 +249,9 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 		t.Fatalf("bootstrap snapshot missed the recent conversation: %#v", initial.GetSnapshot().GetConversations())
 	}
 
-	if _, err = client.SendMessage(ctx, connect.NewRequest(&naucliov1.SendMessageRequest{
+	if _, err = client.SendMessage(ctx, connect.NewRequest(&dieterv1.SendMessageRequest{
 		CardId: chat.Msg.GetId(), ClientId: "android-installation", CommandId: "bounded-message-1", MessageId: "msg_bounded_delta",
-		Provider: "mock", Model: "mock", Parts: []*naucliov1.MessagePart{{Type: "text", Text: "Reach the tail"}},
+		Provider: "mock", Model: "mock", Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Reach the tail"}},
 	})); err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 }
 
 func TestSyncConversationCardsBoundsSelection(t *testing.T) {
-	cards := []*naucliov1.Card{
+	cards := []*dieterv1.Card{
 		{Id: "c_idle_old", Runtime: "idle", LastActivityAt: "2026-01-01T00:00:00Z"},
 		{Id: "c_running_old", Runtime: "running", LastActivityAt: "2026-01-02T00:00:00Z"},
 		{Id: "c_idle_recent", Runtime: "idle", LastActivityAt: "2026-03-01T00:00:00Z"},

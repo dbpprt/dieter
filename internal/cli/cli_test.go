@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	naucliodaemon "github.com/dbpprt/nauclio/internal/daemon"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/store"
+	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 type fakeRunner struct{ requests []harness.Request }
@@ -110,7 +110,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	if err := c.Run([]string{"card", "--help"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "non-triggering Nauclio annotation") {
+	if !strings.Contains(out.String(), "non-triggering Dieter annotation") {
 		t.Fatalf("help=%s", out.String())
 	}
 }
@@ -122,7 +122,7 @@ func TestConfigureHarnessCatalogUsesStoreOverride(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("NAUCLIO_HARNESS_CONFIG", "")
+	t.Setenv("DIETER_HARNESS_CONFIG", "")
 	if err := configureHarnessCatalog(root, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -175,9 +175,9 @@ func TestNewDaemonDirectRouteAdvertisesEphemeralLoopback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity := &naucliodaemon.Identity{
+	identity := &dieterdaemon.Identity{
 		ID:             "d_local",
-		GatewayURL:     "https://nauclio.example.com",
+		GatewayURL:     "https://dieter.example.com",
 		CertificatePEM: []byte("enrolled"),
 		PrivateKey:     private,
 	}
@@ -203,8 +203,8 @@ func TestNewDaemonDirectRouteAdvertisesEphemeralLoopback(t *testing.T) {
 func TestDaemonStatusAndLogs(t *testing.T) {
 	root := t.TempDir()
 	data := store.New(root)
-	if _, err := naucliodaemon.NewStatusWriter(root, naucliodaemon.RuntimeStatus{
-		State: "stopped", ListenAddress: "127.0.0.1:1", GatewayState: naucliodaemon.GatewayNotEnrolled,
+	if _, err := dieterdaemon.NewStatusWriter(root, dieterdaemon.RuntimeStatus{
+		State: "stopped", ListenAddress: "127.0.0.1:1", GatewayState: dieterdaemon.GatewayNotEnrolled,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +222,7 @@ func TestDaemonStatusAndLogs(t *testing.T) {
 		t.Fatalf("status=%#v", status)
 	}
 
-	logPath := naucliodaemon.LogPath(root)
+	logPath := dieterdaemon.LogPath(root)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestServiceLoggerWritesCentralBoundedLog(t *testing.T) {
 	}
 	logger.Info("service ready", "store", root)
 	closeLog()
-	if path != naucliodaemon.LogPath(root) {
+	if path != dieterdaemon.LogPath(root) {
 		t.Fatalf("path=%q", path)
 	}
 	raw, err := os.ReadFile(path)

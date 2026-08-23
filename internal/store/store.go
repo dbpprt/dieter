@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	md "github.com/dbpprt/nauclio/internal/markdown"
+	md "github.com/dbpprt/dieter/internal/markdown"
 )
 
 var (
@@ -25,14 +25,29 @@ type Store struct {
 }
 
 func DefaultRoot() string {
+	if value := os.Getenv("DIETER_HOME"); value != "" {
+		return value
+	}
+	// Deprecated compatibility for custom installations upgrading in place.
 	if value := os.Getenv("NAUCLIO_HOME"); value != "" {
 		return value
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".nauclio"
+		return ".dieter"
 	}
-	return filepath.Join(home, ".nauclio")
+	root := filepath.Join(home, ".dieter")
+	legacy := filepath.Join(home, ".nauclio")
+	if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+		if info, legacyErr := os.Stat(legacy); legacyErr == nil && info.IsDir() {
+			if renameErr := os.Rename(legacy, root); renameErr != nil {
+				// Never make an existing installation look empty just because its
+				// one-time rename could not be completed.
+				return legacy
+			}
+		}
+	}
+	return root
 }
 
 func New(root string) *Store {
@@ -102,7 +117,7 @@ func (s *Store) beginWrite() (func(), error) {
 			continue
 		}
 		if time.Now().After(deadline) {
-			return nil, errors.New("timed out waiting for another Nauclio writer")
+			return nil, errors.New("timed out waiting for another Dieter writer")
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -140,7 +155,7 @@ func atomicWriteMode(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".nauclio-write-*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".dieter-write-*")
 	if err != nil {
 		return err
 	}

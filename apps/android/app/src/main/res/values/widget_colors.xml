@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- The widget is intentionally dark in both themes, matching the app's dark-only palette. -->
-    <color name="widget_bg_start">#221D36</color>
-    <color name="widget_bg_end">#131019</color>
-    <color name="widget_stroke">#14FFFFFF</color>
-    <color name="widget_title">#F4F3F9</color>
-    <color name="widget_muted">#A19EB4</color>
-    <color name="widget_section">#7C7891</color>
-    <color name="widget_green">#72D493</color>
-    <color name="widget_blue">#6FAAF2</color>
+    <color name="widget_bg_start">#193A49</color>
+    <color name="widget_bg_end">#081116</color>
+    <color name="widget_stroke">#24BCEAF1</color>
+    <color name="widget_title">#F5FBFD</color>
+    <color name="widget_muted">#A8B5C3</color>
+    <color name="widget_section">#7893A2</color>
+    <color name="widget_green">#BCEAF1</color>
+    <color name="widget_blue">#62B6CB</color>
     <color name="widget_amber">#E2BE6A</color>
     <color name="widget_coral">#F1868E</color>
-    <color name="widget_chip">#5B54D8</color>
-    <color name="widget_icon_bg_neutral">#2A2740</color>
+    <color name="widget_chip">#3D6E85</color>
+    <color name="widget_icon_bg_neutral">#193A49</color>
     <color name="widget_icon_bg_amber">#39301E</color>
-    <color name="widget_icon_bg_blue">#20304A</color>
-    <color name="widget_icon_bg_green">#1D3529</color>
+    <color name="widget_icon_bg_blue">#173640</color>
+    <color name="widget_icon_bg_green">#173640</color>
     <color name="widget_icon_bg_coral">#3F2530</color>
     <color name="widget_row_highlight">#0EFFFFFF</color>
 </resources>

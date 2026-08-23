@@ -190,7 +190,7 @@ type Author struct {
 	Model     string `json:"model,omitempty" yaml:"model,omitempty"`
 }
 
-// Conversation is Nauclio's durable projection of one harness session. The
+// Conversation is Dieter's durable projection of one harness session. The
 // opaque Session value is produced by AI SDK HarnessAgent.stop and is passed
 // back untouched on the next turn.
 type Conversation struct {
@@ -210,7 +210,7 @@ type Conversation struct {
 }
 
 // ConversationTurn identifies the one in-flight response. Persisting the
-// response ID lets a restarted Nauclio process continue streaming into the same
+// response ID lets a restarted Dieter process continue streaming into the same
 // assistant message instead of creating a duplicate.
 type ConversationTurn struct {
 	ID                string   `json:"id"`

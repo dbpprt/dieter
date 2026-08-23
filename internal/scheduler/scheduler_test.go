@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/app"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/app"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 type testRunner struct{}
@@ -33,7 +33,7 @@ func (testRunner) Run(_ context.Context, request harness.Request, emit func(harn
 
 func setup(t *testing.T) (*Manager, *store.Store, model.Project, model.Board) {
 	t.Helper()
-	t.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1")
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)

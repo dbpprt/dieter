@@ -14,10 +14,10 @@ import (
 	"sync"
 	"time"
 
-	gatewayv1 "github.com/dbpprt/nauclio/internal/gen/nauclio/gateway/v1"
-	"github.com/dbpprt/nauclio/internal/linkauth"
-	"github.com/dbpprt/nauclio/internal/rpcraw"
-	"github.com/dbpprt/nauclio/internal/trust"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/rpcraw"
+	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -202,7 +202,7 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 	started := time.Now()
 	priority := relayMethodPriority(frame.GetMethod())
 	defer func() {
-		c.Log.Debug("relayed Nauclio RPC", "method", frame.GetMethod(), "stream_id", frame.GetStreamId(), "priority", priority, "elapsed", time.Since(started))
+		c.Log.Debug("relayed Dieter RPC", "method", frame.GetMethod(), "stream_id", frame.GetStreamId(), "priority", priority, "elapsed", time.Since(started))
 	}()
 	emit := func(value *gatewayv1.DaemonLinkFrame) bool { return send(value, priority) }
 	public, err := trust.PublicKeyFromPEM(c.Identity.GatewaySigningPublicKey)
@@ -279,7 +279,7 @@ func relayError(streamID uint64, code codes.Code, message string) *gatewayv1.Dae
 func firstMetadata(values metadata.MD) map[string]string {
 	result := map[string]string{}
 	for key, items := range values {
-		if len(items) > 0 && key != "authorization" && key != "cookie" && !strings.HasPrefix(key, "x-nauclio-") {
+		if len(items) > 0 && key != "authorization" && key != "cookie" && !strings.HasPrefix(key, "x-dieter-") {
 			result[key] = items[0]
 		}
 	}

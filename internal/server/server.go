@@ -11,14 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/app"
-	"github.com/dbpprt/nauclio/internal/attachments"
-	"github.com/dbpprt/nauclio/internal/gen/nauclio/v1/naucliov1connect"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/scheduler"
-	"github.com/dbpprt/nauclio/internal/store"
-	"github.com/dbpprt/nauclio/internal/terminal"
+	"github.com/dbpprt/dieter/internal/app"
+	"github.com/dbpprt/dieter/internal/attachments"
+	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/scheduler"
+	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/terminal"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -54,7 +54,7 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(),
 	}
 	manager.register(s.mux)
-	path, handler := naucliov1connect.NewNauclioServiceHandler(&connectAPI{core: &grpcAPI{server: s}})
+	path, handler := dieterv1connect.NewDieterServiceHandler(&connectAPI{core: &grpcAPI{server: s}})
 	s.mux.Handle(path, handler)
 	s.mux.HandleFunc("/", http.NotFound)
 	return s

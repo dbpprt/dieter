@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/terminal"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/terminal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -25,21 +25,21 @@ const (
 	maximumHeartbeat      = 30 * time.Second
 )
 
-func (api *grpcAPI) ListTerminals(_ context.Context, request *naucliov1.ListTerminalsRequest) (*naucliov1.TerminalsResponse, error) {
+func (api *grpcAPI) ListTerminals(_ context.Context, request *dieterv1.ListTerminalsRequest) (*dieterv1.TerminalsResponse, error) {
 	projectID := strings.TrimSpace(request.GetProjectId())
 	if projectID != "" {
 		if _, err := api.server.store.ResolveProject(projectID); err != nil {
 			return nil, grpcFailure(err)
 		}
 	}
-	result := &naucliov1.TerminalsResponse{}
+	result := &dieterv1.TerminalsResponse{}
 	for _, value := range api.server.terminals.List(projectID) {
 		result.Terminals = append(result.Terminals, protoTerminal(value))
 	}
 	return result, nil
 }
 
-func (api *grpcAPI) CreateTerminal(_ context.Context, request *naucliov1.CreateTerminalRequest) (*naucliov1.Terminal, error) {
+func (api *grpcAPI) CreateTerminal(_ context.Context, request *dieterv1.CreateTerminalRequest) (*dieterv1.Terminal, error) {
 	project, err := api.server.store.ResolveProject(strings.TrimSpace(request.GetProjectId()))
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -58,11 +58,11 @@ func (api *grpcAPI) CreateTerminal(_ context.Context, request *naucliov1.CreateT
 	return protoTerminal(value), nil
 }
 
-func (api *grpcAPI) WatchTerminal(request *naucliov1.WatchTerminalRequest, stream naucliov1.NauclioService_WatchTerminalServer) error {
+func (api *grpcAPI) WatchTerminal(request *dieterv1.WatchTerminalRequest, stream dieterv1.DieterService_WatchTerminalServer) error {
 	return api.watchTerminal(stream.Context(), request, stream.Send)
 }
 
-func (api *grpcAPI) watchTerminal(ctx context.Context, request *naucliov1.WatchTerminalRequest, send func(*naucliov1.TerminalFrame) error) error {
+func (api *grpcAPI) watchTerminal(ctx context.Context, request *dieterv1.WatchTerminalRequest, send func(*dieterv1.TerminalFrame) error) error {
 	id := strings.TrimSpace(request.GetTerminalId())
 	if id == "" {
 		return status.Error(codes.InvalidArgument, "terminal_id is required")
@@ -111,14 +111,14 @@ func (api *grpcAPI) watchTerminal(ctx context.Context, request *naucliov1.WatchT
 			if err != nil {
 				return terminalFailure(err)
 			}
-			if err := send(&naucliov1.TerminalFrame{Terminal: protoTerminal(value), Sequence: value.Sequence, Heartbeat: true}); err != nil {
+			if err := send(&dieterv1.TerminalFrame{Terminal: protoTerminal(value), Sequence: value.Sequence, Heartbeat: true}); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func (api *grpcAPI) WriteTerminal(_ context.Context, request *naucliov1.TerminalInputRequest) (*naucliov1.Terminal, error) {
+func (api *grpcAPI) WriteTerminal(_ context.Context, request *dieterv1.TerminalInputRequest) (*dieterv1.Terminal, error) {
 	value, err := api.server.terminals.Write(request.GetTerminalId(), request.GetData())
 	if err != nil {
 		return nil, terminalFailure(err)
@@ -126,7 +126,7 @@ func (api *grpcAPI) WriteTerminal(_ context.Context, request *naucliov1.Terminal
 	return protoTerminal(value), nil
 }
 
-func (api *grpcAPI) ResizeTerminal(_ context.Context, request *naucliov1.ResizeTerminalRequest) (*naucliov1.Terminal, error) {
+func (api *grpcAPI) ResizeTerminal(_ context.Context, request *dieterv1.ResizeTerminalRequest) (*dieterv1.Terminal, error) {
 	value, err := api.server.terminals.Resize(request.GetTerminalId(), int(request.GetColumns()), int(request.GetRows()))
 	if err != nil {
 		return nil, terminalFailure(err)
@@ -134,7 +134,7 @@ func (api *grpcAPI) ResizeTerminal(_ context.Context, request *naucliov1.ResizeT
 	return protoTerminal(value), nil
 }
 
-func (api *grpcAPI) RenameTerminal(_ context.Context, request *naucliov1.RenameTerminalRequest) (*naucliov1.Terminal, error) {
+func (api *grpcAPI) RenameTerminal(_ context.Context, request *dieterv1.RenameTerminalRequest) (*dieterv1.Terminal, error) {
 	value, err := api.server.terminals.Rename(request.GetTerminalId(), request.GetName())
 	if err != nil {
 		return nil, terminalFailure(err)
@@ -142,43 +142,43 @@ func (api *grpcAPI) RenameTerminal(_ context.Context, request *naucliov1.RenameT
 	return protoTerminal(value), nil
 }
 
-func (api *grpcAPI) CloseTerminal(_ context.Context, request *naucliov1.TerminalRef) (*emptypb.Empty, error) {
+func (api *grpcAPI) CloseTerminal(_ context.Context, request *dieterv1.TerminalRef) (*emptypb.Empty, error) {
 	if err := api.server.terminals.Close(request.GetTerminalId()); err != nil {
 		return nil, terminalFailure(err)
 	}
 	return &emptypb.Empty{}, nil
 }
 
-func (api *connectAPI) ListTerminals(ctx context.Context, request *connect.Request[naucliov1.ListTerminalsRequest]) (*connect.Response[naucliov1.TerminalsResponse], error) {
+func (api *connectAPI) ListTerminals(ctx context.Context, request *connect.Request[dieterv1.ListTerminalsRequest]) (*connect.Response[dieterv1.TerminalsResponse], error) {
 	return connectUnary(ctx, request, api.core.ListTerminals)
 }
 
-func (api *connectAPI) CreateTerminal(ctx context.Context, request *connect.Request[naucliov1.CreateTerminalRequest]) (*connect.Response[naucliov1.Terminal], error) {
+func (api *connectAPI) CreateTerminal(ctx context.Context, request *connect.Request[dieterv1.CreateTerminalRequest]) (*connect.Response[dieterv1.Terminal], error) {
 	return connectUnary(ctx, request, api.core.CreateTerminal)
 }
 
-func (api *connectAPI) WatchTerminal(ctx context.Context, request *connect.Request[naucliov1.WatchTerminalRequest], stream *connect.ServerStream[naucliov1.TerminalFrame]) error {
+func (api *connectAPI) WatchTerminal(ctx context.Context, request *connect.Request[dieterv1.WatchTerminalRequest], stream *connect.ServerStream[dieterv1.TerminalFrame]) error {
 	return connectFailure(api.core.watchTerminal(ctx, request.Msg, stream.Send))
 }
 
-func (api *connectAPI) WriteTerminal(ctx context.Context, request *connect.Request[naucliov1.TerminalInputRequest]) (*connect.Response[naucliov1.Terminal], error) {
+func (api *connectAPI) WriteTerminal(ctx context.Context, request *connect.Request[dieterv1.TerminalInputRequest]) (*connect.Response[dieterv1.Terminal], error) {
 	return connectUnary(ctx, request, api.core.WriteTerminal)
 }
 
-func (api *connectAPI) ResizeTerminal(ctx context.Context, request *connect.Request[naucliov1.ResizeTerminalRequest]) (*connect.Response[naucliov1.Terminal], error) {
+func (api *connectAPI) ResizeTerminal(ctx context.Context, request *connect.Request[dieterv1.ResizeTerminalRequest]) (*connect.Response[dieterv1.Terminal], error) {
 	return connectUnary(ctx, request, api.core.ResizeTerminal)
 }
 
-func (api *connectAPI) RenameTerminal(ctx context.Context, request *connect.Request[naucliov1.RenameTerminalRequest]) (*connect.Response[naucliov1.Terminal], error) {
+func (api *connectAPI) RenameTerminal(ctx context.Context, request *connect.Request[dieterv1.RenameTerminalRequest]) (*connect.Response[dieterv1.Terminal], error) {
 	return connectUnary(ctx, request, api.core.RenameTerminal)
 }
 
-func (api *connectAPI) CloseTerminal(ctx context.Context, request *connect.Request[naucliov1.TerminalRef]) (*connect.Response[emptypb.Empty], error) {
+func (api *connectAPI) CloseTerminal(ctx context.Context, request *connect.Request[dieterv1.TerminalRef]) (*connect.Response[emptypb.Empty], error) {
 	return connectUnary(ctx, request, api.core.CloseTerminal)
 }
 
-func protoTerminal(value terminal.Session) *naucliov1.Terminal {
-	result := &naucliov1.Terminal{
+func protoTerminal(value terminal.Session) *dieterv1.Terminal {
+	result := &dieterv1.Terminal{
 		Id: value.ID, ProjectId: value.ProjectID, Name: value.Name, Shell: value.Shell,
 		WorkingDirectory: value.WorkingDirectory, Status: value.Status, Pid: value.PID,
 		Columns: int32(value.Columns), Rows: int32(value.Rows), Sequence: value.Sequence,
@@ -191,8 +191,8 @@ func protoTerminal(value terminal.Session) *naucliov1.Terminal {
 	return result
 }
 
-func protoTerminalFrame(value terminal.Frame) *naucliov1.TerminalFrame {
-	return &naucliov1.TerminalFrame{
+func protoTerminalFrame(value terminal.Frame) *dieterv1.TerminalFrame {
+	return &dieterv1.TerminalFrame{
 		Terminal: protoTerminal(value.Session), Sequence: value.Sequence,
 		Data: append([]byte(nil), value.Data...), ScreenReset: value.Reset, Heartbeat: value.Heartbeat,
 	}

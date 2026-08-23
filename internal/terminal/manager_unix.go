@@ -404,7 +404,7 @@ func terminalEnvironment(values []string) []string {
 		}
 		result = append(result, value)
 	}
-	return append(result, "TERM=xterm-256color", "COLORTERM=truecolor", "TERM_PROGRAM=Nauclio")
+	return append(result, "TERM=xterm-256color", "COLORTERM=truecolor", "TERM_PROGRAM=Dieter")
 }
 
 func randomID() string {

@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/envfile"
-	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/envfile"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 const (
@@ -51,52 +51,52 @@ func LoadEnvFile(root, explicit string) error {
 }
 
 func authConfigFromEnv() (authConfig, error) {
-	mode := strings.ToLower(strings.TrimSpace(os.Getenv("NAUCLIO_AUTH_MODE")))
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("DIETER_AUTH_MODE")))
 	if mode == "" || mode == "none" || mode == "disabled" {
 		return authConfig{}, nil
 	}
 	if mode != "github" {
-		return authConfig{}, fmt.Errorf("unsupported NAUCLIO_AUTH_MODE %q", mode)
+		return authConfig{}, fmt.Errorf("unsupported DIETER_AUTH_MODE %q", mode)
 	}
-	publicURL, err := url.Parse(strings.TrimSpace(os.Getenv("NAUCLIO_PUBLIC_URL")))
+	publicURL, err := url.Parse(strings.TrimSpace(os.Getenv("DIETER_PUBLIC_URL")))
 	if err != nil || publicURL.Scheme != "https" || publicURL.Host == "" || publicURL.Path != "" || publicURL.RawQuery != "" || publicURL.Fragment != "" {
-		return authConfig{}, errors.New("NAUCLIO_PUBLIC_URL must be an https origin without a path, query, or fragment")
+		return authConfig{}, errors.New("DIETER_PUBLIC_URL must be an https origin without a path, query, or fragment")
 	}
-	clientID := strings.TrimSpace(os.Getenv("NAUCLIO_GITHUB_CLIENT_ID"))
-	clientSecret := strings.TrimSpace(os.Getenv("NAUCLIO_GITHUB_CLIENT_SECRET"))
+	clientID := strings.TrimSpace(os.Getenv("DIETER_GITHUB_CLIENT_ID"))
+	clientSecret := strings.TrimSpace(os.Getenv("DIETER_GITHUB_CLIENT_SECRET"))
 	if clientID == "" || clientSecret == "" {
-		return authConfig{}, errors.New("NAUCLIO_GITHUB_CLIENT_ID and NAUCLIO_GITHUB_CLIENT_SECRET are required")
+		return authConfig{}, errors.New("DIETER_GITHUB_CLIENT_ID and DIETER_GITHUB_CLIENT_SECRET are required")
 	}
-	allowedID, err := strconv.ParseInt(strings.TrimSpace(os.Getenv("NAUCLIO_GITHUB_ALLOWED_USER_ID")), 10, 64)
+	allowedID, err := strconv.ParseInt(strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_USER_ID")), 10, 64)
 	if err != nil || allowedID <= 0 {
-		return authConfig{}, errors.New("NAUCLIO_GITHUB_ALLOWED_USER_ID must be the allowed account's positive numeric GitHub ID")
+		return authConfig{}, errors.New("DIETER_GITHUB_ALLOWED_USER_ID must be the allowed account's positive numeric GitHub ID")
 	}
-	secret, err := hex.DecodeString(strings.TrimSpace(os.Getenv("NAUCLIO_AUTH_SECRET")))
+	secret, err := hex.DecodeString(strings.TrimSpace(os.Getenv("DIETER_AUTH_SECRET")))
 	if err != nil || len(secret) < 32 {
-		return authConfig{}, errors.New("NAUCLIO_AUTH_SECRET must be at least 32 random bytes encoded as hexadecimal")
+		return authConfig{}, errors.New("DIETER_AUTH_SECRET must be at least 32 random bytes encoded as hexadecimal")
 	}
 	ttl := 7 * 24 * time.Hour
-	if raw := strings.TrimSpace(os.Getenv("NAUCLIO_WEB_SESSION_TTL")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("DIETER_WEB_SESSION_TTL")); raw != "" {
 		ttl, err = time.ParseDuration(raw)
 		if err != nil || ttl < time.Hour || ttl > 31*24*time.Hour {
-			return authConfig{}, errors.New("NAUCLIO_WEB_SESSION_TTL must be between 1h and 744h")
+			return authConfig{}, errors.New("DIETER_WEB_SESSION_TTL must be between 1h and 744h")
 		}
 	}
 	nativeRedirects := map[string]struct{}{}
-	for _, value := range strings.Split(os.Getenv("NAUCLIO_NATIVE_REDIRECT_URIS"), ",") {
+	for _, value := range strings.Split(os.Getenv("DIETER_NATIVE_REDIRECT_URIS"), ",") {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			continue
 		}
 		parsed, parseErr := url.Parse(value)
 		if parseErr != nil || parsed.Scheme == "" || parsed.IsAbs() == false || parsed.Fragment != "" || (parsed.Scheme == "https" && parsed.Host == "") {
-			return authConfig{}, fmt.Errorf("invalid NAUCLIO_NATIVE_REDIRECT_URIS entry %q", value)
+			return authConfig{}, fmt.Errorf("invalid DIETER_NATIVE_REDIRECT_URIS entry %q", value)
 		}
 		nativeRedirects[value] = struct{}{}
 	}
 	return authConfig{
 		Enabled: true, PublicURL: publicURL, ClientID: clientID, ClientSecret: clientSecret,
-		AllowedUserID: allowedID, AllowedLogin: strings.TrimSpace(os.Getenv("NAUCLIO_GITHUB_ALLOWED_LOGIN")),
+		AllowedUserID: allowedID, AllowedLogin: strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_LOGIN")),
 		Secret: secret, SessionTTL: ttl, GitHubBaseURL: "https://github.com", GitHubAPIURL: "https://api.github.com", NativeRedirects: nativeRedirects,
 	}, nil
 }
@@ -391,7 +391,7 @@ func (a *authManager) removeSession(tokenHash string) error {
 
 func (a *authManager) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		protected := strings.HasPrefix(r.URL.Path, "/nauclio.v1.NauclioService/") || strings.HasPrefix(r.URL.Path, "/assets/agents/")
+		protected := strings.HasPrefix(r.URL.Path, "/dieter.v1.DieterService/") || strings.HasPrefix(r.URL.Path, "/assets/agents/")
 		if !a.config.Enabled || !protected {
 			next.ServeHTTP(w, r)
 			return
@@ -568,7 +568,7 @@ func (a *authManager) githubUser(ctx context.Context, token string) (struct {
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("User-Agent", "Nauclio")
+	request.Header.Set("User-Agent", "Dieter")
 	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	response, err := a.client.Do(request)
 	if err != nil {

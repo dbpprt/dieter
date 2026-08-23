@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/app"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/app"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
 	"github.com/robfig/cron/v3"
 )
 
@@ -66,7 +66,7 @@ func (m *Manager) validate(input store.ScheduleInput) (store.ScheduleInput, erro
 	if provider == "" {
 		provider = "codex"
 	}
-	adapter, configuredModel, err := harness.ResolveSelection(provider, input.Model, os.Getenv("NAUCLIO_ENABLE_MOCK_HARNESS") == "1")
+	adapter, configuredModel, err := harness.ResolveSelection(provider, input.Model, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
 	if err != nil {
 		return input, err
 	}

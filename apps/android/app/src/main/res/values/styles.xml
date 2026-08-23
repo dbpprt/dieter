@@ -1,8 +1,8 @@
 <resources>
-    <style name="Theme.Nauclio" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:colorAccent">#22D3EE</item>
+    <style name="Theme.Dieter" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#8DD8E8</item>
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowBackground">@color/nauclio_abyss</item>
+        <item name="android:windowBackground">@color/dieter_abyss</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

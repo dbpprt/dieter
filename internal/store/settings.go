@@ -6,20 +6,20 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dbpprt/nauclio/internal/model"
-	nauclioprompt "github.com/dbpprt/nauclio/internal/prompt"
+	"github.com/dbpprt/dieter/internal/model"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"gopkg.in/yaml.v3"
 )
 
 func defaultSettings() model.Settings {
-	return nauclioprompt.NormalizeSettings(model.Settings{
+	return dieterprompt.NormalizeSettings(model.Settings{
 		AgentParallelLimits: map[string]int{},
 		BoardParallelLimits: map[string]int{},
 	})
 }
 
 func normalizeSettings(value model.Settings) (model.Settings, error) {
-	value = nauclioprompt.NormalizeSettings(value)
+	value = dieterprompt.NormalizeSettings(value)
 	if value.GlobalParallelLimit < 0 {
 		return model.Settings{}, errors.New("global parallel limit cannot be negative")
 	}
@@ -49,13 +49,13 @@ func normalizeSettings(value model.Settings) (model.Settings, error) {
 			value.BoardParallelLimits[clean] = limit
 		}
 	}
-	if err := nauclioprompt.ValidateContextTemplate(value.PromptTemplate); err != nil {
+	if err := dieterprompt.ValidateContextTemplate(value.PromptTemplate); err != nil {
 		return model.Settings{}, err
 	}
-	if err := nauclioprompt.ValidateSkillTemplate(value.BoardSkillTemplate); err != nil {
+	if err := dieterprompt.ValidateSkillTemplate(value.BoardSkillTemplate); err != nil {
 		return model.Settings{}, fmt.Errorf("board skill template: %w", err)
 	}
-	if err := nauclioprompt.ValidateSkillTemplate(value.ChatSkillTemplate); err != nil {
+	if err := dieterprompt.ValidateSkillTemplate(value.ChatSkillTemplate); err != nil {
 		return model.Settings{}, fmt.Errorf("chat skill template: %w", err)
 	}
 	return value, nil

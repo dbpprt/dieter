@@ -19,8 +19,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/dbpprt/nauclio/internal/gen/nauclio/v1/naucliov1connect"
-	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
+	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -56,7 +56,7 @@ func TestGitHubAuthenticationEndToEnd(t *testing.T) {
 		Enabled: true, PublicURL: &url.URL{Scheme: "https", Host: "board.invalid"}, ClientID: "client-id", ClientSecret: "client-secret",
 		AllowedUserID: 42, AllowedLogin: "owner", Secret: []byte("01234567890123456789012345678901"), SessionTTL: time.Hour,
 		GitHubBaseURL: github.URL, GitHubAPIURL: github.URL,
-		NativeRedirects: map[string]struct{}{"nauclio-mac://oauth/callback": {}},
+		NativeRedirects: map[string]struct{}{"dieter-mac://oauth/callback": {}},
 	}
 	manager, err := newAuthManager(config, data)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestGitHubAuthenticationEndToEnd(t *testing.T) {
 		t.Fatalf("session=%#v", session)
 	}
 
-	connectClient := naucliov1connect.NewNauclioServiceClient(client, board.URL)
+	connectClient := dieterv1connect.NewDieterServiceClient(client, board.URL)
 	if _, err := connectClient.Health(context.Background(), connect.NewRequest(&emptypb.Empty{})); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Fatalf("missing CSRF accepted: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestGitHubAuthenticationEndToEnd(t *testing.T) {
 	verifier := "native-verifier-with-enough-random-material-for-pkce"
 	nativeDigest := sha256.Sum256([]byte(verifier))
 	nativeChallenge := base64.RawURLEncoding.EncodeToString(nativeDigest[:])
-	nativeStartURL := board.URL + "/auth/github/start?native_redirect_uri=" + url.QueryEscape("nauclio-mac://oauth/callback") + "&native_code_challenge=" + url.QueryEscape(nativeChallenge)
+	nativeStartURL := board.URL + "/auth/github/start?native_redirect_uri=" + url.QueryEscape("dieter-mac://oauth/callback") + "&native_code_challenge=" + url.QueryEscape(nativeChallenge)
 	nativeStart, err := client.Get(nativeStartURL)
 	if err != nil || nativeStart.StatusCode != http.StatusFound {
 		t.Fatalf("native start=%v err=%v", nativeStart, err)
@@ -162,7 +162,7 @@ func TestGitHubAuthenticationEndToEnd(t *testing.T) {
 		t.Fatalf("native callback=%v err=%v", nativeCallback, err)
 	}
 	appRedirect, err := url.Parse(nativeCallback.Header.Get("Location"))
-	if err != nil || appRedirect.Scheme != "nauclio-mac" || appRedirect.Query().Get("code") == "" {
+	if err != nil || appRedirect.Scheme != "dieter-mac" || appRedirect.Query().Get("code") == "" {
 		t.Fatalf("native app redirect=%q err=%v", nativeCallback.Header.Get("Location"), err)
 	}
 	exchangeBody, _ := json.Marshal(map[string]string{"code": appRedirect.Query().Get("code"), "verifier": verifier})
@@ -203,14 +203,14 @@ func TestGitHubAuthenticationEndToEnd(t *testing.T) {
 }
 
 func TestAuthConfigurationRejectsUnsafeValues(t *testing.T) {
-	t.Setenv("NAUCLIO_AUTH_MODE", "github")
-	t.Setenv("NAUCLIO_PUBLIC_URL", "http://nauclio.example")
+	t.Setenv("DIETER_AUTH_MODE", "github")
+	t.Setenv("DIETER_PUBLIC_URL", "http://dieter.example")
 	if _, err := authConfigFromEnv(); err == nil {
 		t.Fatal("insecure public URL accepted")
 	}
 	root := t.TempDir()
 	path := filepath.Join(root, ".env")
-	if err := os.WriteFile(path, []byte("NAUCLIO_AUTH_MODE=none\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("DIETER_AUTH_MODE=none\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := LoadEnvFile(root, ""); err == nil {

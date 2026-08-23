@@ -38,7 +38,7 @@ type DelegationClaims struct {
 }
 
 func SignCompact(private ed25519.PrivateKey, claims any) (string, error) {
-	headerRaw, _ := json.Marshal(map[string]string{"alg": "EdDSA", "typ": "JWT", "kid": "nauclio-gateway-v1"})
+	headerRaw, _ := json.Marshal(map[string]string{"alg": "EdDSA", "typ": "JWT", "kid": "dieter-gateway-v1"})
 	claimsRaw, err := json.Marshal(claims)
 	if err != nil {
 		return "", err

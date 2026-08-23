@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 const (
@@ -24,16 +24,16 @@ Working tree: {{project.path}}
 {{labels.instructions_block}}`
 
 	DefaultBoardSkillTemplate = `Board operating instructions:
-- Use the Nauclio CLI for Nauclio operations; never call the browser API or edit NAUCLIO_HOME directly.
-- Load bounded card context with: nauclio card context {{card.id}}
+- Use the Dieter CLI for Dieter operations; never call the browser API or edit DIETER_HOME directly.
+- Load bounded card context with: dieter card context {{card.id}}
 - Work directly in the registered Git working tree.
-- Post concise, non-triggering progress notes with: nauclio card comment {{card.id}} --message "..."
+- Post concise, non-triggering progress notes with: dieter card comment {{card.id}} --message "..."
 - Keep this card in Running while implementation or verification is incomplete.
-- When the requested outcome is implemented and relevant checks pass, move with: nauclio card move {{card.id}} --lane {{board.target_lane}}
+- When the requested outcome is implemented and relevant checks pass, move with: dieter card move {{card.id}} --lane {{board.target_lane}}
 - If blocked, leave the card in Running and comment the exact blocker and required next action.
-- Create a separate Todo card only when explicitly asked to capture distinct follow-up work. Use: nauclio card create --project {{project.id}} --board {{board.id}} --lane todo ...
+- Create a separate Todo card only when explicitly asked to capture distinct follow-up work. Use: dieter card create --project {{project.id}} --board {{board.id}} --lane todo ...
 - Available board labels: {{board.labels}}
-- Use exact label IDs with: nauclio card labels {{card.id}} --set <label-id>,<label-id>
+- Use exact label IDs with: dieter card labels {{card.id}} --set <label-id>,<label-id>
 - Comments never count as approval. Human messages continue this same durable harness session.`
 
 	DefaultChatSkillTemplate = `Standalone chat instructions:

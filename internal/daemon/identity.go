@@ -116,7 +116,7 @@ func atomicWrite(path string, raw []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".nauclio-daemon-*")
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".dieter-daemon-*")
 	if err != nil {
 		return err
 	}

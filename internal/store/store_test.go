@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 func gitProject(t *testing.T) string {
@@ -21,6 +21,31 @@ func gitProject(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestDefaultRootMigratesLegacyDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("DIETER_HOME", "")
+	t.Setenv("NAUCLIO_HOME", "")
+	legacy := filepath.Join(home, ".nauclio")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "marker"), []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root := DefaultRoot()
+	if want := filepath.Join(home, ".dieter"); root != want {
+		t.Fatalf("DefaultRoot() = %q, want %q", root, want)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "marker")); err != nil || string(data) != "kept" {
+		t.Fatalf("migrated marker = %q, %v", data, err)
+	}
+	if _, err := os.Stat(legacy); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy directory still exists: %v", err)
+	}
 }
 
 func TestDraftAttachmentEventsReplayBeyondLegacyScannerLimit(t *testing.T) {
@@ -83,7 +108,7 @@ func TestConversationCardLifecycle(t *testing.T) {
 	if err != nil || len(detail.Comments) != 1 || detail.Card.InitialPrompt != "Implement it." {
 		t.Fatalf("detail: %#v %v", detail, err)
 	}
-	if _, err := os.Stat(filepath.Join(p.Path, ".nauclio")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(p.Path, ".dieter")); !os.IsNotExist(err) {
 		t.Fatalf("project repository was modified: %v", err)
 	}
 }

@@ -3,7 +3,7 @@
 The PNG files in `reference/` are the transparent mockups embedded in the
 current `Native Android PWA redesign1.pdf`. They are extracted without
 rendering, cropping, or recompression. The first two pages define the new
-Connections and Display settings tabs. The next three define the Nauclio server
+Connections and Display settings tabs. The next three define the Dieter server
 connection sheet, Android notification shade, and standalone-chat subagents
 tab. The remaining pages cover Spaces, board switching, creation flows,
 unfolded layouts, and the core phone destinations.

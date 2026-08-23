@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 const maxProjectFileSize = 5 << 20
@@ -227,7 +227,7 @@ func atomicWriteProjectFile(target string, content []byte) error {
 	if err != nil {
 		return err
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(target), ".nauclio-save-*")
+	temporary, err := os.CreateTemp(filepath.Dir(target), ".dieter-save-*")
 	if err != nil {
 		return err
 	}

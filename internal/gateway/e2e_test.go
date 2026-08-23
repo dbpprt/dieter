@@ -16,20 +16,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/daemon"
-	"github.com/dbpprt/nauclio/internal/gateway"
-	gatewayv1 "github.com/dbpprt/nauclio/internal/gen/nauclio/gateway/v1"
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/server"
-	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/gateway"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
-	t.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1")
+func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -123,25 +123,25 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 		t.Fatal("daemon did not establish its reverse tunnel")
 	}
 
-	routed := metadata.AppendToOutgoingContext(authorized, "x-nauclio-daemon-id", identity.ID)
-	nauclioClient := naucliov1.NewNauclioServiceClient(connection)
-	health, err := nauclioClient.Health(routed, &emptypb.Empty{})
+	routed := metadata.AppendToOutgoingContext(authorized, "x-dieter-daemon-id", identity.ID)
+	dieterClient := dieterv1.NewDieterServiceClient(connection)
+	health, err := dieterClient.Health(routed, &emptypb.Empty{})
 	if err != nil {
-		t.Fatalf("relay NauclioService.Health: %v", err)
+		t.Fatalf("relay DieterService.Health: %v", err)
 	}
 	if health.GetStatus() != "ok" || health.GetStorePath() != boardStore.Root {
 		t.Fatalf("unexpected relayed health: %#v", health)
 	}
 	terminalCtx, stopTerminal := context.WithTimeout(routed, 10*time.Second)
 	defer stopTerminal()
-	terminalSession, err := nauclioClient.CreateTerminal(terminalCtx, &naucliov1.CreateTerminalRequest{
+	terminalSession, err := dieterClient.CreateTerminal(terminalCtx, &dieterv1.CreateTerminalRequest{
 		ProjectId: project.ID, Shell: "sh", WorkingDirectory: repositoryPath, Columns: 100, Rows: 30,
 	})
 	if err != nil || terminalSession.GetStatus() != "running" {
 		t.Fatalf("create relayed terminal=%#v err=%v", terminalSession, err)
 	}
 	firstWatchCtx, stopFirstWatch := context.WithCancel(terminalCtx)
-	firstWatch, err := nauclioClient.WatchTerminal(firstWatchCtx, &naucliov1.WatchTerminalRequest{TerminalId: terminalSession.GetId(), HeartbeatMs: 1_000})
+	firstWatch, err := dieterClient.WatchTerminal(firstWatchCtx, &dieterv1.WatchTerminalRequest{TerminalId: terminalSession.GetId(), HeartbeatMs: 1_000})
 	if err != nil {
 		t.Fatalf("watch relayed terminal: %v", err)
 	}
@@ -149,19 +149,19 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 	if err != nil || !baseline.GetScreenReset() {
 		t.Fatalf("relayed terminal baseline=%#v err=%v", baseline, err)
 	}
-	if _, err := nauclioClient.WriteTerminal(terminalCtx, &naucliov1.TerminalInputRequest{
+	if _, err := dieterClient.WriteTerminal(terminalCtx, &dieterv1.TerminalInputRequest{
 		TerminalId: terminalSession.GetId(), Data: []byte("printf 'gateway-terminal-first\\n'\n"),
 	}); err != nil {
 		t.Fatalf("write relayed terminal: %v", err)
 	}
 	firstSequence := receiveRelayedTerminalMarker(t, firstWatch, "gateway-terminal-first")
 	stopFirstWatch()
-	if _, err := nauclioClient.WriteTerminal(terminalCtx, &naucliov1.TerminalInputRequest{
+	if _, err := dieterClient.WriteTerminal(terminalCtx, &dieterv1.TerminalInputRequest{
 		TerminalId: terminalSession.GetId(), Data: []byte("printf 'gateway-terminal-resumed\\n'\n"),
 	}); err != nil {
 		t.Fatalf("write disconnected relayed terminal: %v", err)
 	}
-	resumedWatch, err := nauclioClient.WatchTerminal(terminalCtx, &naucliov1.WatchTerminalRequest{
+	resumedWatch, err := dieterClient.WatchTerminal(terminalCtx, &dieterv1.WatchTerminalRequest{
 		TerminalId: terminalSession.GetId(), AfterSequence: firstSequence, HeartbeatMs: 1_000,
 	})
 	if err != nil {
@@ -170,11 +170,11 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 	if sequence := receiveRelayedTerminalMarker(t, resumedWatch, "gateway-terminal-resumed"); sequence <= firstSequence {
 		t.Fatalf("relayed terminal sequence did not advance: %d <= %d", sequence, firstSequence)
 	}
-	if _, err := nauclioClient.CloseTerminal(terminalCtx, &naucliov1.TerminalRef{TerminalId: terminalSession.GetId()}); err != nil {
+	if _, err := dieterClient.CloseTerminal(terminalCtx, &dieterv1.TerminalRef{TerminalId: terminalSession.GetId()}); err != nil {
 		t.Fatalf("close relayed terminal: %v", err)
 	}
 
-	syncStream, err := nauclioClient.WatchSync(routed, &naucliov1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000})
+	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000})
 	if err != nil {
 		t.Fatalf("open relayed global sync: %v", err)
 	}
@@ -182,16 +182,16 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 	if err != nil || syncFrame.GetSnapshot() == nil || syncFrame.GetCursor().GetEpoch() == "" {
 		t.Fatalf("relayed global sync frame=%#v err=%v", syncFrame, err)
 	}
-	command := &naucliov1.CreateConversationRequest{
+	command := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Relayed outbox", Prompt: "deliver once",
 		Provider: "mock", Model: "mock", DeferStart: true,
 		ClientId: "gateway-e2e-client", CommandId: "gateway-e2e-command",
 	}
-	created, err := nauclioClient.CreateChat(routed, command)
+	created, err := dieterClient.CreateChat(routed, command)
 	if err != nil {
 		t.Fatalf("relayed outbox command: %v", err)
 	}
-	repeated, err := nauclioClient.CreateChat(routed, command)
+	repeated, err := dieterClient.CreateChat(routed, command)
 	if err != nil || repeated.GetId() != created.GetId() {
 		t.Fatalf("relayed idempotent command first=%q repeated=%#v err=%v", created.GetId(), repeated, err)
 	}
@@ -224,7 +224,7 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 		t.Fatal(err)
 	}
 	watchCtx, stopWatch := context.WithCancel(routed)
-	watch, err := naucliov1.NewNauclioServiceClient(connection).WatchState(watchCtx, &naucliov1.WatchStateRequest{IntervalMs: 100})
+	watch, err := dieterv1.NewDieterServiceClient(connection).WatchState(watchCtx, &dieterv1.WatchStateRequest{IntervalMs: 100})
 	if err != nil {
 		t.Fatalf("open relayed state stream: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer directConnection.Close()
-	directHealth, err := naucliov1.NewNauclioServiceClient(directConnection).Health(ctx, &emptypb.Empty{})
+	directHealth, err := dieterv1.NewDieterServiceClient(directConnection).Health(ctx, &emptypb.Empty{})
 	if err != nil || directHealth.GetStorePath() != boardStore.Root {
 		t.Fatalf("direct authenticated health=%#v err=%v", directHealth, err)
 	}
@@ -306,14 +306,14 @@ func TestGatewayEnrollsDaemonAndRelaysNauclioService(t *testing.T) {
 	if !gatewayServer.Hub.Online(identity.ID) {
 		t.Fatal("daemon did not reconnect its reverse tunnel")
 	}
-	reconnectedHealth, err := naucliov1.NewNauclioServiceClient(connection).Health(routed, &emptypb.Empty{})
+	reconnectedHealth, err := dieterv1.NewDieterServiceClient(connection).Health(routed, &emptypb.Empty{})
 	if err != nil || reconnectedHealth.GetStorePath() != boardStore.Root {
 		t.Fatalf("reconnected relay health=%#v err=%v", reconnectedHealth, err)
 	}
 }
 
 func receiveRelayedTerminalMarker(t *testing.T, stream interface {
-	Recv() (*naucliov1.TerminalFrame, error)
+	Recv() (*dieterv1.TerminalFrame, error)
 }, marker string) uint64 {
 	t.Helper()
 	var output []byte
@@ -435,8 +435,8 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 		if !gatewayServer.Hub.Online(machine.identity.ID) {
 			t.Fatalf("daemon %q did not establish its reverse tunnel", machine.identity.Name)
 		}
-		routed := metadata.AppendToOutgoingContext(authorized, "x-nauclio-daemon-id", machine.identity.ID)
-		health, err := naucliov1.NewNauclioServiceClient(connection).Health(routed, &emptypb.Empty{})
+		routed := metadata.AppendToOutgoingContext(authorized, "x-dieter-daemon-id", machine.identity.ID)
+		health, err := dieterv1.NewDieterServiceClient(connection).Health(routed, &emptypb.Empty{})
 		if err != nil || health.GetStorePath() != machine.store.Root {
 			t.Fatalf("relay %q health=%#v err=%v", machine.identity.Name, health, err)
 		}

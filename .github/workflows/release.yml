@@ -52,29 +52,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - asset: nauclio-linux-amd64
-            target: ./cmd/nauclio
-            binary: nauclio
+          - asset: dieter-linux-amd64
+            target: ./cmd/dieter
+            binary: dieter
             goos: linux
             goarch: amd64
-          - asset: nauclio-linux-arm64
-            target: ./cmd/nauclio
-            binary: nauclio
+          - asset: dieter-linux-arm64
+            target: ./cmd/dieter
+            binary: dieter
             goos: linux
             goarch: arm64
-          - asset: nauclio-darwin-arm64
-            target: ./cmd/nauclio
-            binary: nauclio
+          - asset: dieter-darwin-arm64
+            target: ./cmd/dieter
+            binary: dieter
             goos: darwin
             goarch: arm64
-          - asset: nauclio-gateway-linux-amd64
-            target: ./cmd/nauclio-gateway
-            binary: nauclio-gateway
+          - asset: dieter-gateway-linux-amd64
+            target: ./cmd/dieter-gateway
+            binary: dieter-gateway
             goos: linux
             goarch: amd64
-          - asset: nauclio-gateway-linux-arm64
-            target: ./cmd/nauclio-gateway
-            binary: nauclio-gateway
+          - asset: dieter-gateway-linux-arm64
+            target: ./cmd/dieter-gateway
+            binary: dieter-gateway
             goos: linux
             goarch: arm64
     steps:
@@ -98,8 +98,8 @@ jobs:
           set -euo pipefail
           mkdir -p "stage/${ASSET}" dist
           ldflags="-s -w"
-          if [ "${BINARY}" = "nauclio" ]; then
-            ldflags="${ldflags} -X github.com/dbpprt/nauclio/internal/cli.Version=${RELEASE_VERSION}"
+          if [ "${BINARY}" = "dieter" ]; then
+            ldflags="${ldflags} -X github.com/dbpprt/dieter/internal/cli.Version=${RELEASE_VERSION}"
           fi
           go build -trimpath -ldflags "${ldflags}" \
             -o "stage/${ASSET}/${BINARY}" "${TARGET}"
@@ -135,15 +135,15 @@ jobs:
           set -euo pipefail
           test -n "${ANDROID_KEYSTORE_BASE64}"
           printf '%s' "${ANDROID_KEYSTORE_BASE64}" |
-            base64 --decode > "${RUNNER_TEMP}/nauclio-android-release.jks"
+            base64 --decode > "${RUNNER_TEMP}/dieter-android-release.jks"
       - name: Build signed release APK
         env:
-          NAUCLIO_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/nauclio-android-release.jks
-          NAUCLIO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          NAUCLIO_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          NAUCLIO_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          NAUCLIO_RELEASE_VERSION: ${{ needs.version.outputs.number }}
-          NAUCLIO_RELEASE_VERSION_CODE: ${{ needs.version.outputs.android_code }}
+          DIETER_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/dieter-android-release.jks
+          DIETER_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          DIETER_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          DIETER_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          DIETER_RELEASE_VERSION: ${{ needs.version.outputs.number }}
+          DIETER_RELEASE_VERSION_CODE: ${{ needs.version.outputs.android_code }}
         working-directory: apps/android
         run: ./gradlew --no-daemon :app:assembleRelease
       - name: Package APK
@@ -151,15 +151,15 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           cp apps/android/app/build/outputs/apk/release/app-release.apk \
-            dist/Nauclio-Android.apk
+            dist/Dieter-Android.apk
       - name: Verify APK signature
         run: |
           "${ANDROID_HOME}/build-tools/37.0.0/apksigner" verify \
-            --verbose --print-certs dist/Nauclio-Android.apk
+            --verbose --print-certs dist/Dieter-Android.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: nauclio-android
-          path: dist/Nauclio-Android.apk
+          name: dieter-android
+          path: dist/Dieter-Android.apk
           if-no-files-found: error
           retention-days: 1
 
@@ -183,12 +183,12 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          plist="apps/mac/build/Nauclio.app/Contents/Info.plist"
+          plist="apps/mac/build/Dieter.app/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c \
             "Set :CFBundleShortVersionString ${RELEASE_VERSION}" "${plist}"
           /usr/libexec/PlistBuddy -c \
             "Set :CFBundleVersion ${BUILD_NUMBER}" "${plist}"
-          codesign --force --deep --sign - apps/mac/build/Nauclio.app
+          codesign --force --deep --sign - apps/mac/build/Dieter.app
       - name: Check signing configuration
         id: signing
         env:
@@ -227,11 +227,11 @@ jobs:
           NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
         run: |
           set -euo pipefail
-          signing_keychain="${RUNNER_TEMP}/nauclio-signing.keychain-db"
+          signing_keychain="${RUNNER_TEMP}/dieter-signing.keychain-db"
           keychain_password="$(uuidgen)"
           certificate_path="${RUNNER_TEMP}/developer-id.p12"
           notary_key_path="${RUNNER_TEMP}/notary-key.p8"
-          submission_path="${RUNNER_TEMP}/Nauclio-notarization.zip"
+          submission_path="${RUNNER_TEMP}/Dieter-notarization.zip"
           cleanup() {
             security delete-keychain "${signing_keychain}" >/dev/null 2>&1 || true
           }
@@ -253,29 +253,29 @@ jobs:
           test -n "${identity}"
 
           codesign --force --deep --options runtime --timestamp \
-            --sign "${identity}" apps/mac/build/Nauclio.app
-          codesign --verify --deep --strict --verbose=2 apps/mac/build/Nauclio.app
+            --sign "${identity}" apps/mac/build/Dieter.app
+          codesign --verify --deep --strict --verbose=2 apps/mac/build/Dieter.app
           ditto -c -k --sequesterRsrc --keepParent \
-            apps/mac/build/Nauclio.app "${submission_path}"
+            apps/mac/build/Dieter.app "${submission_path}"
           xcrun notarytool submit "${submission_path}" \
             --key "${notary_key_path}" \
             --key-id "${NOTARY_KEY_ID}" \
             --issuer "${NOTARY_ISSUER_ID}" \
             --wait
-          xcrun stapler staple apps/mac/build/Nauclio.app
-          xcrun stapler validate apps/mac/build/Nauclio.app
-          spctl --assess --type execute --verbose=4 apps/mac/build/Nauclio.app
+          xcrun stapler staple apps/mac/build/Dieter.app
+          xcrun stapler validate apps/mac/build/Dieter.app
+          spctl --assess --type execute --verbose=4 apps/mac/build/Dieter.app
       - name: Package app bundle
         run: |
           set -euo pipefail
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent \
-            apps/mac/build/Nauclio.app dist/Nauclio-macOS-arm64.zip
-          codesign --verify --deep --strict --verbose=2 apps/mac/build/Nauclio.app
+            apps/mac/build/Dieter.app dist/Dieter-macOS-arm64.zip
+          codesign --verify --deep --strict --verbose=2 apps/mac/build/Dieter.app
       - uses: actions/upload-artifact@v4
         with:
-          name: nauclio-macos-arm64
-          path: dist/Nauclio-macOS-arm64.zip
+          name: dieter-macos-arm64
+          path: dist/Dieter-macOS-arm64.zip
           if-no-files-found: error
           retention-days: 1
 
@@ -306,7 +306,7 @@ jobs:
           gh release create "${RELEASE_TAG}" dist/* \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
-            --title "Nauclio ${RELEASE_TAG}" \
+            --title "Dieter ${RELEASE_TAG}" \
             --notes "Automated signed build from ${GITHUB_SHA}." \
             --generate-notes
       - name: Keep only the newest two releases
@@ -336,11 +336,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: nauclio-darwin-arm64
+          name: dieter-darwin-arm64
           path: dist
       - uses: actions/download-artifact@v4
         with:
-          name: nauclio-macos-arm64
+          name: dieter-macos-arm64
           path: dist
       - name: Publish public daemon and app packages and update the tap
         env:
@@ -350,8 +350,8 @@ jobs:
         run: |
           set -euo pipefail
           test -n "${GH_TOKEN}"
-          daemon_asset="dist/nauclio-darwin-arm64.tar.gz"
-          app_asset="dist/Nauclio-macOS-arm64.zip"
+          daemon_asset="dist/dieter-darwin-arm64.tar.gz"
+          app_asset="dist/Dieter-macOS-arm64.zip"
           test -f "${daemon_asset}"
           test -f "${app_asset}"
           daemon_sha256="$(sha256sum "${daemon_asset}" | awk '{print $1}')"
@@ -363,8 +363,8 @@ jobs:
           else
             gh release create "${VERSION}" "${daemon_asset}" "${app_asset}" \
               --repo "${TAP_REPOSITORY}" \
-              --title "Nauclio ${VERSION}" \
-              --notes "Apple Silicon daemon and macOS app packages for Nauclio ${VERSION}."
+              --title "Dieter ${VERSION}" \
+              --notes "Apple Silicon daemon and macOS app packages for Dieter ${VERSION}."
           fi
 
           gh auth setup-git
@@ -372,12 +372,12 @@ jobs:
           ruby tap/scripts/update_formula.rb "${VERSION}" "${daemon_sha256}"
           ruby tap/scripts/update_cask.rb "${VERSION}" "${app_sha256}"
           cd tap
-          if ! git diff --quiet -- Formula/nauclio.rb Casks/nauclio-app.rb; then
+          if ! git diff --quiet -- Formula/dieter.rb Casks/dieter-app.rb; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add Formula/nauclio.rb Casks/nauclio-app.rb
+            git add Formula/dieter.rb Casks/dieter-app.rb
             git commit \
-              -m "Update Nauclio to ${VERSION}" \
+              -m "Update Dieter to ${VERSION}" \
               -m "🌸 Shipped with Kanna — https://kanna.sh" \
               -m $'Co-Authored-By: Kanna <noreply@kanna.sh>\nKanna-Agent: codex/gpt-5.6-sol'
             git push origin main

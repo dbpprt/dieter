@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	gatewayv1 "github.com/dbpprt/nauclio/internal/gen/nauclio/gateway/v1"
-	"github.com/dbpprt/nauclio/internal/rpcraw"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/rpcraw"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -37,12 +37,12 @@ func newRelayServer(store *Store, auth *Auth, keys *Keys, hub *Hub, config Confi
 func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	ctx := stream.Context()
 	method, ok := grpc.Method(ctx)
-	if !ok || !strings.HasPrefix(method, "/nauclio.v1.NauclioService/") {
-		return status.Error(codes.Unimplemented, "only NauclioService can be relayed")
+	if !ok || !strings.HasPrefix(method, "/dieter.v1.DieterService/") {
+		return status.Error(codes.Unimplemented, "only DieterService can be relayed")
 	}
 	values, _ := metadata.FromIncomingContext(ctx)
 	authorization := values.Get("authorization")
-	daemonIDs := values.Get("x-nauclio-daemon-id")
+	daemonIDs := values.Get("x-dieter-daemon-id")
 	if len(authorization) != 1 || len(daemonIDs) != 1 {
 		return status.Error(codes.Unauthenticated, "gateway session and daemon ID are required")
 	}
@@ -65,7 +65,7 @@ func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	digest := sha256.Sum256(request.Data)
 	now := time.Now().UTC()
 	// The short-lived delegation assertion authorizes opening this RPC. It is
-	// not the RPC lifetime: Nauclio's watch methods intentionally remain open.
+	// not the RPC lifetime: Dieter's watch methods intentionally remain open.
 	// Only propagate a deadline when the client actually supplied one.
 	deadlineUnixMillis := relayDeadlineUnixMillis(ctx)
 	assertion, err := r.keys.SignDelegation(r.config.PublicURL.String(), DelegationClaims{
@@ -129,7 +129,7 @@ func frameMetadata(values map[string]string) metadata.MD {
 	result := metadata.MD{}
 	for key, value := range values {
 		key = strings.ToLower(strings.TrimSpace(key))
-		if key == "" || key == "authorization" || key == "cookie" || strings.HasPrefix(key, "x-nauclio-") {
+		if key == "" || key == "authorization" || key == "cookie" || strings.HasPrefix(key, "x-dieter-") {
 			continue
 		}
 		result.Set(key, value)

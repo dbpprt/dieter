@@ -4,8 +4,8 @@ proto:
 	./scripts/generate-proto.sh
 
 build:
-	go build -trimpath -o bin/nauclio ./cmd/nauclio
-	go build -trimpath -o bin/nauclio-gateway ./cmd/nauclio-gateway
+	go build -trimpath -o bin/dieter ./cmd/dieter
+	go build -trimpath -o bin/dieter-gateway ./cmd/dieter-gateway
 
 test:
 	go test ./...
@@ -15,8 +15,8 @@ test-race:
 
 check: proto test-race
 	go vet ./...
-	go build -trimpath -o bin/nauclio ./cmd/nauclio
-	go build -trimpath -o bin/nauclio-gateway ./cmd/nauclio-gateway
+	go build -trimpath -o bin/dieter ./cmd/dieter
+	go build -trimpath -o bin/dieter-gateway ./cmd/dieter-gateway
 
 hooks:
 	@command -v pre-commit >/dev/null || { echo "pre-commit is required; install it with: brew install pre-commit" >&2; exit 1; }
@@ -27,7 +27,7 @@ pre-commit:
 	pre-commit run --all-files
 
 run:
-	go run ./cmd/nauclio serve
+	go run ./cmd/dieter serve
 
 clean:
-	rm -f bin/nauclio bin/nauclio-gateway coverage.out
+	rm -f bin/dieter bin/dieter-gateway coverage.out

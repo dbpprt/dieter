@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/rpcraw"
-	"github.com/dbpprt/nauclio/internal/trust"
+	"github.com/dbpprt/dieter/internal/rpcraw"
+	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -56,8 +56,8 @@ func (s *DirectServer) Stop() {
 func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 	ctx := stream.Context()
 	method, ok := grpc.Method(ctx)
-	if !ok || !strings.HasPrefix(method, "/nauclio.v1.NauclioService/") {
-		return status.Error(codes.Unimplemented, "only NauclioService is available")
+	if !ok || !strings.HasPrefix(method, "/dieter.v1.DieterService/") {
+		return status.Error(codes.Unimplemented, "only DieterService is available")
 	}
 	values, _ := metadata.FromIncomingContext(ctx)
 	authorization := values.Get("authorization")

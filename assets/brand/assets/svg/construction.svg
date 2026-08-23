@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" role="img" aria-label="Dieter Conductor mark construction">
+  <rect width="1200" height="1200" fill="#F5FBFD"/>
+  <g opacity="0.34" stroke="#526174" stroke-width="2" fill="none">
+    <path d="M0 600h1200M600 0v1200"/>
+    <circle cx="600" cy="600" r="410"/>
+    <circle cx="600" cy="600" r="280"/>
+    <path d="M190 0v1200M1010 0v1200M0 190h1200M0 1010h1200" stroke-dasharray="10 10"/>
+  </g>
+  <image href="mark.svg" x="100" y="100" width="1000" height="1000"/>
+  <g fill="#0D1B24" font-family="Sora, Avenir Next, sans-serif" font-size="24">
+    <text x="44" y="584">center</text>
+    <text x="195" y="1170">minimum clear-space boundary</text>
+  </g>
+</svg>

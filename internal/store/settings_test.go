@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 func TestRuntimeAdmissionEnforcesGlobalAgentAndBoardLimits(t *testing.T) {

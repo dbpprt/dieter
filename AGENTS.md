@@ -2,27 +2,27 @@
 
 ## Purpose
 
-Nauclio has a local Go daemon, a machine-only Go gateway, and native macOS and
+Dieter has a local Go daemon, a machine-only Go gateway, and native macOS and
 Android clients. Every card is one durable local AI SDK Harness conversation.
 
 ## Invariants
 
-- Store all Nauclio data centrally under `NAUCLIO_HOME` (default `~/.nauclio`). Never
-  write Nauclio metadata into project repositories.
+- Store all Dieter data centrally under `DIETER_HOME` (default `~/.dieter`). Never
+  write Dieter metadata into project repositories.
 - Every project references an existing Git working tree by canonical path and
-  has a Nauclio-generated project ID.
-- Every card has a Nauclio-generated ID and exactly one durable conversation.
-- Nauclio owns transcripts, runtime status, harness/model configuration, queues,
+  has a Dieter-generated project ID.
+- Every card has a Dieter-generated ID and exactly one durable conversation.
+- Dieter owns transcripts, runtime status, harness/model configuration, queues,
   session resume data, comments, board labels, card label assignments, and
   fixed workflow positions, schedules, occurrence history, and admission
   settings.
 - Harness workers run locally on the daemon host without a sandbox. Keep the
-  raw Nauclio data plane loopback-only. An enrolled daemon automatically
+  raw Dieter data plane loopback-only. An enrolled daemon automatically
   advertises a separate authenticated loopback TLS route; remote access goes
   through the gateway tunnel or an explicitly enabled additional direct TLS
   route.
 - The gateway stores only account sessions, daemon identities, presence, and
-  route metadata. Never put Nauclio projects, transcripts, or harness credentials
+  route metadata. Never put Dieter projects, transcripts, or harness credentials
   on the gateway.
 - A daemon proves possession of its enrolled Ed25519 key on every tunnel
   connection. Client sessions have binary full access or no access; do not add
@@ -38,11 +38,11 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
   acquisition so HTTP, CLI, and scheduled starts share one policy.
 - Treat schedule occurrence records as authoritative. Use deterministic card
   identity and never replay a turn that may already have been dispatched.
-- Start the scheduler only with `nauclio serve`; constructing an HTTP handler in
+- Start the scheduler only with `dieter serve`; constructing an HTTP handler in
   a test must not start background work.
 - Use atomic writes and the central cross-process lock for every mutation.
-- Nauclio has no web UI. The public gateway root is intentionally 404; only
-  OAuth completion pages, health, gateway gRPC, and tunneled Nauclio gRPC exist.
+- Dieter has no web UI. The public gateway root is intentionally 404; only
+  OAuth completion pages, health, gateway gRPC, and tunneled Dieter gRPC exist.
 
 ## Repository checks
 
@@ -57,20 +57,20 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 npm --prefix internal/harness/runtime ci
 go test -race ./...
 go vet ./...
-go build ./cmd/nauclio
-go build ./cmd/nauclio-gateway
+go build ./cmd/dieter
+go build ./cmd/dieter-gateway
 ```
 
 Use `gofmt` on Go files. Keep both native clients accessible and adaptive.
 
-## Use Nauclio as an agent
+## Use Dieter as an agent
 
-Read `.agents/skills/nauclio-cli/SKILL.md`. Prefer bounded context:
+Read `.agents/skills/dieter-cli/SKILL.md`. Prefer bounded context:
 
 ```sh
-nauclio card context <exact-card-id>
-nauclio card comment <exact-card-id> --message "Meaningful progress."
-nauclio card move <exact-card-id> --lane review
+dieter card context <exact-card-id>
+dieter card comment <exact-card-id> --message "Meaningful progress."
+dieter card move <exact-card-id> --lane review
 ```
 
 Do not edit central storage directly during normal operation.

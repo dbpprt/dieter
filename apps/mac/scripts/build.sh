@@ -6,44 +6,46 @@ APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$APP_ROOT/../.." && pwd)
 BRAND_ROOT="$REPO_ROOT/assets/brand"
 CONFIGURATION=${CONFIGURATION:-debug}
-SWIFT_SCRATCH_PATH=${NAUCLIO_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/nauclio-local}
+SWIFT_SCRATCH_PATH=${DIETER_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/dieter-local}
 OUTPUT_ROOT="$APP_ROOT/build"
-APP_BUNDLE="$OUTPUT_ROOT/Nauclio.app"
-BUNDLE_MANIFEST="$OUTPUT_ROOT/.Nauclio.bundle-inputs"
-BUNDLE_OUTPUT_MANIFEST="$OUTPUT_ROOT/.Nauclio.bundle-outputs"
-DEVELOPMENT_REQUIREMENTS='=designated => identifier "com.dbpprt.nauclio.mac"'
+APP_BUNDLE="$OUTPUT_ROOT/Dieter.app"
+BUNDLE_MANIFEST="$OUTPUT_ROOT/.Dieter.bundle-inputs"
+BUNDLE_OUTPUT_MANIFEST="$OUTPUT_ROOT/.Dieter.bundle-outputs"
 
 "$SCRIPT_DIR/sync-proto.sh" >&2
 "$SCRIPT_DIR/swiftpm.sh" build -c "$CONFIGURATION" >&2
-NAUCLIO_BINARY="$SWIFT_SCRATCH_PATH/$CONFIGURATION/NauclioMac"
-if [ ! -x "$NAUCLIO_BINARY" ]; then
-    echo "NauclioMac binary was not produced" >&2
+DIETER_BINARY="$SWIFT_SCRATCH_PATH/$CONFIGURATION/DieterMac"
+if [ ! -x "$DIETER_BINARY" ]; then
+    echo "DieterMac binary was not produced" >&2
     exit 1
 fi
 
 mkdir -p "$OUTPUT_ROOT"
-NEW_BUNDLE_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/nauclio-mac-bundle.XXXXXX")
-NEW_BUNDLE_OUTPUT_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/nauclio-mac-bundle-output.XXXXXX")
+NEW_BUNDLE_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/dieter-mac-bundle.XXXXXX")
+NEW_BUNDLE_OUTPUT_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/dieter-mac-bundle-output.XXXXXX")
 trap 'rm -f "$NEW_BUNDLE_MANIFEST" "$NEW_BUNDLE_OUTPUT_MANIFEST"' EXIT INT TERM
 stat -f '%N %Fm %z %i' \
     "$APP_ROOT/Resources/Info.plist" \
-    "$BRAND_ROOT/assets/Nauclio.icns" \
+    "$BRAND_ROOT/assets/Dieter.icns" \
     "$BRAND_ROOT/assets/png/app-icon-dark-1024.png" \
     "$BRAND_ROOT/assets/png/favicon-32.png" \
-    "$NAUCLIO_BINARY" >"$NEW_BUNDLE_MANIFEST"
+    "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" \
+    "$DIETER_BINARY" >"$NEW_BUNDLE_MANIFEST"
 
 BUNDLE_OUTPUTS_MATCH=0
 if [ -f "$APP_BUNDLE/Contents/Info.plist" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/Nauclio.icns" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/NauclioAppIcon.png" ] && \
-    [ -f "$APP_BUNDLE/Contents/Resources/NauclioFavicon.png" ] && \
-    [ -x "$APP_BUNDLE/Contents/MacOS/NauclioMac" ]; then
+    [ -f "$APP_BUNDLE/Contents/Resources/Dieter.icns" ] && \
+    [ -f "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png" ] && \
+    [ -f "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" ] && \
+    [ -f "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" ] && \
+    [ -x "$APP_BUNDLE/Contents/MacOS/DieterMac" ]; then
     stat -f '%N %Fm %z %i' \
         "$APP_BUNDLE/Contents/Info.plist" \
-        "$APP_BUNDLE/Contents/Resources/Nauclio.icns" \
-        "$APP_BUNDLE/Contents/Resources/NauclioAppIcon.png" \
-        "$APP_BUNDLE/Contents/Resources/NauclioFavicon.png" \
-        "$APP_BUNDLE/Contents/MacOS/NauclioMac" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
+        "$APP_BUNDLE/Contents/Resources/Dieter.icns" \
+        "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png" \
+        "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" \
+        "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" \
+        "$APP_BUNDLE/Contents/MacOS/DieterMac" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
     if [ -f "$BUNDLE_OUTPUT_MANIFEST" ] && \
         cmp -s "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"; then
         BUNDLE_OUTPUTS_MATCH=1
@@ -53,28 +55,23 @@ fi
 if [ ! -f "$BUNDLE_MANIFEST" ] || \
     ! cmp -s "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST" || \
     [ "$BUNDLE_OUTPUTS_MATCH" -ne 1 ]; then
-    mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+    mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources/Fonts"
     cp "$APP_ROOT/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
-    cp "$BRAND_ROOT/assets/Nauclio.icns" "$APP_BUNDLE/Contents/Resources/Nauclio.icns"
-    cp "$BRAND_ROOT/assets/png/app-icon-dark-1024.png" "$APP_BUNDLE/Contents/Resources/NauclioAppIcon.png"
-    cp "$BRAND_ROOT/assets/png/favicon-32.png" "$APP_BUNDLE/Contents/Resources/NauclioFavicon.png"
-    cp "$NAUCLIO_BINARY" "$APP_BUNDLE/Contents/MacOS/NauclioMac"
+    cp "$BRAND_ROOT/assets/Dieter.icns" "$APP_BUNDLE/Contents/Resources/Dieter.icns"
+    cp "$BRAND_ROOT/assets/png/app-icon-dark-1024.png" "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png"
+    cp "$BRAND_ROOT/assets/png/favicon-32.png" "$APP_BUNDLE/Contents/Resources/DieterFavicon.png"
+    cp "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf"
+    cp "$DIETER_BINARY" "$APP_BUNDLE/Contents/MacOS/DieterMac"
 fi
 
-# A default ad-hoc signature derives its designated requirement from the
-# executable's cdhash, so Keychain treats every rebuilt binary as a different
-# application. Embedding this stable development-only requirement lets one
-# explicit Keychain approval survive rebuilds without a signing certificate.
-# It is intentionally replaced by the certificate-backed signature in release
-# packaging and is not a security boundary: another ad-hoc binary can claim the
-# same identifier.
-codesign --force --deep --sign - --requirements "$DEVELOPMENT_REQUIREMENTS" "$APP_BUNDLE" >&2
+codesign --force --deep --sign - "$APP_BUNDLE" >&2
 stat -f '%N %Fm %z %i' \
     "$APP_BUNDLE/Contents/Info.plist" \
-    "$APP_BUNDLE/Contents/Resources/Nauclio.icns" \
-    "$APP_BUNDLE/Contents/Resources/NauclioAppIcon.png" \
-    "$APP_BUNDLE/Contents/Resources/NauclioFavicon.png" \
-    "$APP_BUNDLE/Contents/MacOS/NauclioMac" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
+    "$APP_BUNDLE/Contents/Resources/Dieter.icns" \
+    "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png" \
+    "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" \
+    "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" \
+    "$APP_BUNDLE/Contents/MacOS/DieterMac" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
 mv "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST"
 mv "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"
 trap - EXIT INT TERM

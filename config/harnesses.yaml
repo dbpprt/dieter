@@ -1,9 +1,9 @@
 version: 1
 
-# This is the release default embedded in the Nauclio binary. To customize the
-# catalog without rebuilding Nauclio, copy this file to
-# $NAUCLIO_HOME/harnesses.yaml (normally ~/.nauclio/harnesses.yaml), or pass a
-# different file with --harness-config / NAUCLIO_HARNESS_CONFIG.
+# This is the release default embedded in the Dieter binary. To customize the
+# catalog without rebuilding Dieter, copy this file to
+# $DIETER_HOME/harnesses.yaml (normally ~/.dieter/harnesses.yaml), or pass a
+# different file with --harness-config / DIETER_HARNESS_CONFIG.
 harnesses:
   - id: codex
     name: Codex
@@ -75,7 +75,7 @@ harnesses:
         name: Opus
       - id: haiku
         name: Haiku
-      # Keep existing Nauclio conversations resumable after a registry upgrade.
+      # Keep existing Dieter conversations resumable after a registry upgrade.
       - id: claude-sonnet-4-5
         name: Claude Sonnet 4.5
       - id: claude-opus-4-1

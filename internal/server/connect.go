@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/dbpprt/nauclio/internal/app"
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
-	nauclioprompt "github.com/dbpprt/nauclio/internal/prompt"
-	"github.com/dbpprt/nauclio/internal/store"
-	"github.com/dbpprt/nauclio/internal/terminal"
+	"github.com/dbpprt/dieter/internal/app"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
+	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/terminal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -39,23 +39,23 @@ func connectUnary[I, O any](ctx context.Context, request *connect.Request[I], ca
 	return connect.NewResponse(value), nil
 }
 
-func (api *connectAPI) Health(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[naucliov1.HealthResponse], error) {
+func (api *connectAPI) Health(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.HealthResponse], error) {
 	return connectUnary(ctx, request, api.core.Health)
 }
 
-func (api *connectAPI) GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[naucliov1.RuntimeStatus], error) {
-	return connect.NewResponse(&naucliov1.RuntimeStatus{Ready: true, Mode: "local-host", Sandboxed: false, NodeRequired: true}), nil
+func (api *connectAPI) GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.RuntimeStatus], error) {
+	return connect.NewResponse(&dieterv1.RuntimeStatus{Ready: true, Mode: "local-host", Sandboxed: false, NodeRequired: true}), nil
 }
 
-func (api *connectAPI) GetState(ctx context.Context, request *connect.Request[naucliov1.GetStateRequest]) (*connect.Response[naucliov1.State], error) {
+func (api *connectAPI) GetState(ctx context.Context, request *connect.Request[dieterv1.GetStateRequest]) (*connect.Response[dieterv1.State], error) {
 	return connectUnary(ctx, request, api.core.GetState)
 }
 
-func (api *connectAPI) WatchState(ctx context.Context, request *connect.Request[naucliov1.WatchStateRequest], stream *connect.ServerStream[naucliov1.State]) error {
+func (api *connectAPI) WatchState(ctx context.Context, request *connect.Request[dieterv1.WatchStateRequest], stream *connect.ServerStream[dieterv1.State]) error {
 	interval := boundedInterval(request.Msg.GetIntervalMs(), time.Second)
 	filter := request.Msg.GetFilter()
 	if filter == nil {
-		filter = &naucliov1.GetStateRequest{}
+		filter = &dieterv1.GetStateRequest{}
 	}
 	var previous [sha256.Size]byte
 	sendChanged := func() error {
@@ -91,7 +91,7 @@ func (api *connectAPI) WatchState(ctx context.Context, request *connect.Request[
 	}
 }
 
-func (api *connectAPI) WatchSync(ctx context.Context, request *connect.Request[naucliov1.SyncRequest], stream *connect.ServerStream[naucliov1.SyncFrame]) error {
+func (api *connectAPI) WatchSync(ctx context.Context, request *connect.Request[dieterv1.SyncRequest], stream *connect.ServerStream[dieterv1.SyncFrame]) error {
 	if err := api.core.watchSync(ctx, request.Msg, stream.Send); err != nil {
 		return connectFailure(err)
 	}
@@ -112,11 +112,11 @@ func boundedInterval(milliseconds int32, fallback time.Duration) time.Duration {
 	return interval
 }
 
-func (api *connectAPI) GetHarnesses(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[naucliov1.HarnessCatalog], error) {
+func (api *connectAPI) GetHarnesses(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.HarnessCatalog], error) {
 	return connectUnary(ctx, request, api.core.GetHarnesses)
 }
 
-func protoSettings(value model.Settings) *naucliov1.Settings {
+func protoSettings(value model.Settings) *dieterv1.Settings {
 	agents := make(map[string]int32, len(value.AgentParallelLimits))
 	for key, limit := range value.AgentParallelLimits {
 		agents[key] = int32(limit)
@@ -125,10 +125,10 @@ func protoSettings(value model.Settings) *naucliov1.Settings {
 	for key, limit := range value.BoardParallelLimits {
 		boards[key] = int32(limit)
 	}
-	return &naucliov1.Settings{GlobalParallelLimit: int32(value.GlobalParallelLimit), AgentParallelLimits: agents, BoardParallelLimits: boards, UpdatedAt: value.UpdatedAt}
+	return &dieterv1.Settings{GlobalParallelLimit: int32(value.GlobalParallelLimit), AgentParallelLimits: agents, BoardParallelLimits: boards, UpdatedAt: value.UpdatedAt}
 }
 
-func modelSettings(value *naucliov1.Settings) model.Settings {
+func modelSettings(value *dieterv1.Settings) model.Settings {
 	result := model.Settings{AgentParallelLimits: map[string]int{}, BoardParallelLimits: map[string]int{}}
 	if value == nil {
 		return result
@@ -144,7 +144,7 @@ func modelSettings(value *naucliov1.Settings) model.Settings {
 	return result
 }
 
-func (api *connectAPI) GetSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[naucliov1.Settings], error) {
+func (api *connectAPI) GetSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.Settings], error) {
 	value, err := api.core.server.store.Settings()
 	if err != nil {
 		return nil, connectFailure(err)
@@ -152,7 +152,7 @@ func (api *connectAPI) GetSettings(context.Context, *connect.Request[emptypb.Emp
 	return connect.NewResponse(protoSettings(value)), nil
 }
 
-func (api *connectAPI) GetSettingsOptions(ctx context.Context, _ *connect.Request[emptypb.Empty]) (*connect.Response[naucliov1.SettingsOptions], error) {
+func (api *connectAPI) GetSettingsOptions(ctx context.Context, _ *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.SettingsOptions], error) {
 	projects, err := api.core.server.store.ListProjects()
 	if err != nil {
 		return nil, connectFailure(err)
@@ -161,7 +161,7 @@ func (api *connectAPI) GetSettingsOptions(ctx context.Context, _ *connect.Reques
 	if err != nil {
 		return nil, connectFailure(err)
 	}
-	result := &naucliov1.SettingsOptions{Agents: protoHarnessCatalog(harness.RefreshCatalog(ctx, os.Getenv("NAUCLIO_ENABLE_MOCK_HARNESS") == "1"))}
+	result := &dieterv1.SettingsOptions{Agents: protoHarnessCatalog(harness.RefreshCatalog(ctx, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1"))}
 	for _, value := range projects {
 		result.Projects = append(result.Projects, protoProject(value))
 	}
@@ -171,7 +171,7 @@ func (api *connectAPI) GetSettingsOptions(ctx context.Context, _ *connect.Reques
 	return connect.NewResponse(result), nil
 }
 
-func (api *connectAPI) UpdateSettings(_ context.Context, request *connect.Request[naucliov1.UpdateSettingsRequest]) (*connect.Response[naucliov1.Settings], error) {
+func (api *connectAPI) UpdateSettings(_ context.Context, request *connect.Request[dieterv1.UpdateSettingsRequest]) (*connect.Response[dieterv1.Settings], error) {
 	value, err := api.core.server.store.UpdateSettings(modelSettings(request.Msg.GetSettings()))
 	if err != nil {
 		return nil, connectFailure(err)
@@ -179,47 +179,47 @@ func (api *connectAPI) UpdateSettings(_ context.Context, request *connect.Reques
 	return connect.NewResponse(protoSettings(value)), nil
 }
 
-func protoPromptSettings(value model.Settings) *naucliov1.PromptSettings {
-	value = nauclioprompt.NormalizeSettings(value)
-	return &naucliov1.PromptSettings{PromptTemplate: value.PromptTemplate, BoardSkillTemplate: value.BoardSkillTemplate, ChatSkillTemplate: value.ChatSkillTemplate, Variables: nauclioprompt.Variables()}
+func protoPromptSettings(value model.Settings) *dieterv1.PromptSettings {
+	value = dieterprompt.NormalizeSettings(value)
+	return &dieterv1.PromptSettings{PromptTemplate: value.PromptTemplate, BoardSkillTemplate: value.BoardSkillTemplate, ChatSkillTemplate: value.ChatSkillTemplate, Variables: dieterprompt.Variables()}
 }
 
-func (api *connectAPI) GetPromptSettings(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[naucliov1.PromptSettings], error) {
+func (api *connectAPI) GetPromptSettings(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.PromptSettings], error) {
 	return connectUnary(ctx, request, api.core.GetPromptSettings)
 }
 
-func (api *connectAPI) UpdatePromptSettings(ctx context.Context, request *connect.Request[naucliov1.UpdatePromptSettingsRequest]) (*connect.Response[naucliov1.PromptSettings], error) {
+func (api *connectAPI) UpdatePromptSettings(ctx context.Context, request *connect.Request[dieterv1.UpdatePromptSettingsRequest]) (*connect.Response[dieterv1.PromptSettings], error) {
 	return connectUnary(ctx, request, api.core.UpdatePromptSettings)
 }
 
-func (api *connectAPI) SetProjectPromptTemplate(ctx context.Context, request *connect.Request[naucliov1.SetScopedPromptTemplateRequest]) (*connect.Response[naucliov1.Project], error) {
+func (api *connectAPI) SetProjectPromptTemplate(ctx context.Context, request *connect.Request[dieterv1.SetScopedPromptTemplateRequest]) (*connect.Response[dieterv1.Project], error) {
 	return connectUnary(ctx, request, api.core.SetProjectPromptTemplate)
 }
 
-func (api *connectAPI) SetBoardPromptTemplate(ctx context.Context, request *connect.Request[naucliov1.SetScopedPromptTemplateRequest]) (*connect.Response[naucliov1.Board], error) {
+func (api *connectAPI) SetBoardPromptTemplate(ctx context.Context, request *connect.Request[dieterv1.SetScopedPromptTemplateRequest]) (*connect.Response[dieterv1.Board], error) {
 	return connectUnary(ctx, request, api.core.SetBoardPromptTemplate)
 }
 
-func (api *connectAPI) PreviewPrompt(ctx context.Context, request *connect.Request[naucliov1.PreviewPromptRequest]) (*connect.Response[naucliov1.PromptPreview], error) {
+func (api *connectAPI) PreviewPrompt(ctx context.Context, request *connect.Request[dieterv1.PreviewPromptRequest]) (*connect.Response[dieterv1.PromptPreview], error) {
 	return connectUnary(ctx, request, api.core.PreviewPrompt)
 }
 
-func (api *connectAPI) ListDirectories(_ context.Context, request *connect.Request[naucliov1.ListDirectoriesRequest]) (*connect.Response[naucliov1.DirectoryListing], error) {
+func (api *connectAPI) ListDirectories(_ context.Context, request *connect.Request[dieterv1.ListDirectoriesRequest]) (*connect.Response[dieterv1.DirectoryListing], error) {
 	listing, err := listProjectDirectories(request.Msg.GetPath())
 	if err != nil {
 		return nil, connectFailure(err)
 	}
-	result := &naucliov1.DirectoryListing{Path: listing.Path, Parent: listing.Parent, Name: listing.Name, GitRepository: listing.GitRepository, Separator: listing.Separator}
+	result := &dieterv1.DirectoryListing{Path: listing.Path, Parent: listing.Parent, Name: listing.Name, GitRepository: listing.GitRepository, Separator: listing.Separator}
 	for _, value := range listing.Entries {
-		result.Entries = append(result.Entries, &naucliov1.DirectoryEntry{Name: value.Name, Path: value.Path, GitRepository: value.GitRepository, Hidden: value.Hidden})
+		result.Entries = append(result.Entries, &dieterv1.DirectoryEntry{Name: value.Name, Path: value.Path, GitRepository: value.GitRepository, Hidden: value.Hidden})
 	}
 	for _, value := range listing.Locations {
-		result.Locations = append(result.Locations, &naucliov1.DirectoryLocation{Name: value.Name, Path: value.Path, Kind: value.Kind})
+		result.Locations = append(result.Locations, &dieterv1.DirectoryLocation{Name: value.Name, Path: value.Path, Kind: value.Kind})
 	}
 	return connect.NewResponse(result), nil
 }
 
-func (api *connectAPI) CreateProject(ctx context.Context, request *connect.Request[naucliov1.CreateProjectRequest]) (*connect.Response[naucliov1.CreateProjectResponse], error) {
+func (api *connectAPI) CreateProject(ctx context.Context, request *connect.Request[dieterv1.CreateProjectRequest]) (*connect.Response[dieterv1.CreateProjectResponse], error) {
 	input := request.Msg
 	project, err := api.core.server.app.RegisterProject(ctx, app.ProjectInput{Path: input.GetPath(), Name: input.GetName(), Summary: input.GetSummary(), Prompt: input.GetPrompt(), Create: input.GetMode() == "create"})
 	if err != nil {
@@ -233,10 +233,10 @@ func (api *connectAPI) CreateProject(ctx context.Context, request *connect.Reque
 	if err != nil {
 		return nil, connectFailure(err)
 	}
-	return connect.NewResponse(&naucliov1.CreateProjectResponse{Project: protoProject(project), Board: protoBoard(board)}), nil
+	return connect.NewResponse(&dieterv1.CreateProjectResponse{Project: protoProject(project), Board: protoBoard(board)}), nil
 }
 
-func (api *connectAPI) UpdateProject(_ context.Context, request *connect.Request[naucliov1.UpdateProjectRequest]) (*connect.Response[naucliov1.Project], error) {
+func (api *connectAPI) UpdateProject(_ context.Context, request *connect.Request[dieterv1.UpdateProjectRequest]) (*connect.Response[dieterv1.Project], error) {
 	value, err := api.core.server.store.UpdateProject(request.Msg.GetProjectId(), request.Msg.Name, request.Msg.Summary, request.Msg.Prompt)
 	if err != nil {
 		return nil, connectFailure(err)
@@ -244,7 +244,7 @@ func (api *connectAPI) UpdateProject(_ context.Context, request *connect.Request
 	return connect.NewResponse(protoProject(value)), nil
 }
 
-func (api *connectAPI) ArchiveProject(_ context.Context, request *connect.Request[naucliov1.ArchiveProjectRequest]) (*connect.Response[naucliov1.Project], error) {
+func (api *connectAPI) ArchiveProject(_ context.Context, request *connect.Request[dieterv1.ArchiveProjectRequest]) (*connect.Response[dieterv1.Project], error) {
 	value, err := api.core.server.store.ArchiveProject(request.Msg.GetProjectId(), request.Msg.GetArchived())
 	if err != nil {
 		return nil, connectFailure(err)
@@ -252,19 +252,19 @@ func (api *connectAPI) ArchiveProject(_ context.Context, request *connect.Reques
 	return connect.NewResponse(protoProject(value)), nil
 }
 
-func (api *connectAPI) ListArchivedProjects(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[naucliov1.ProjectsResponse], error) {
+func (api *connectAPI) ListArchivedProjects(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.ProjectsResponse], error) {
 	values, err := api.core.server.store.ListArchivedProjects()
 	if err != nil {
 		return nil, connectFailure(err)
 	}
-	result := &naucliov1.ProjectsResponse{}
+	result := &dieterv1.ProjectsResponse{}
 	for _, value := range values {
 		result.Projects = append(result.Projects, protoProject(value))
 	}
 	return connect.NewResponse(result), nil
 }
 
-func (api *connectAPI) CreateBoard(_ context.Context, request *connect.Request[naucliov1.CreateBoardRequest]) (*connect.Response[naucliov1.Board], error) {
+func (api *connectAPI) CreateBoard(_ context.Context, request *connect.Request[dieterv1.CreateBoardRequest]) (*connect.Response[dieterv1.Board], error) {
 	input := request.Msg
 	value, err := api.core.server.store.CreateBoard(store.CreateBoardInput{Project: input.GetProjectId(), Name: input.GetName(), Workflow: input.GetWorkflow(), Description: input.GetDescription(), DoneArchivePolicy: input.GetDoneArchivePolicy()})
 	if err != nil {
@@ -273,7 +273,7 @@ func (api *connectAPI) CreateBoard(_ context.Context, request *connect.Request[n
 	return connect.NewResponse(protoBoard(value)), nil
 }
 
-func (api *connectAPI) RenameBoard(_ context.Context, request *connect.Request[naucliov1.RenameBoardRequest]) (*connect.Response[naucliov1.Board], error) {
+func (api *connectAPI) RenameBoard(_ context.Context, request *connect.Request[dieterv1.RenameBoardRequest]) (*connect.Response[dieterv1.Board], error) {
 	value, err := api.core.server.store.RenameBoard(request.Msg.GetBoardId(), request.Msg.GetName())
 	if err != nil {
 		return nil, connectFailure(err)
@@ -281,7 +281,7 @@ func (api *connectAPI) RenameBoard(_ context.Context, request *connect.Request[n
 	return connect.NewResponse(protoBoard(value)), nil
 }
 
-func (api *connectAPI) SetBoardArchivePolicy(_ context.Context, request *connect.Request[naucliov1.SetBoardArchivePolicyRequest]) (*connect.Response[naucliov1.Board], error) {
+func (api *connectAPI) SetBoardArchivePolicy(_ context.Context, request *connect.Request[dieterv1.SetBoardArchivePolicyRequest]) (*connect.Response[dieterv1.Board], error) {
 	value, err := api.core.server.store.UpdateBoardDoneArchivePolicy(request.Msg.GetBoardId(), request.Msg.GetDoneArchivePolicy())
 	if err == nil {
 		_, err = api.core.server.store.ArchiveDoneCards(time.Now())
@@ -292,7 +292,7 @@ func (api *connectAPI) SetBoardArchivePolicy(_ context.Context, request *connect
 	return connect.NewResponse(protoBoard(value)), nil
 }
 
-func (api *connectAPI) ListArchivedCards(_ context.Context, request *connect.Request[naucliov1.BoardRef]) (*connect.Response[naucliov1.CardsResponse], error) {
+func (api *connectAPI) ListArchivedCards(_ context.Context, request *connect.Request[dieterv1.BoardRef]) (*connect.Response[dieterv1.CardsResponse], error) {
 	board, err := api.core.server.store.ResolveBoard("", request.Msg.GetBoardId())
 	if err != nil {
 		return nil, connectFailure(err)
@@ -301,7 +301,7 @@ func (api *connectAPI) ListArchivedCards(_ context.Context, request *connect.Req
 	if err != nil {
 		return nil, connectFailure(err)
 	}
-	result := &naucliov1.CardsResponse{}
+	result := &dieterv1.CardsResponse{}
 	for _, value := range values {
 		if value.Archived {
 			result.Cards = append(result.Cards, protoCard(value))
@@ -310,7 +310,7 @@ func (api *connectAPI) ListArchivedCards(_ context.Context, request *connect.Req
 	return connect.NewResponse(result), nil
 }
 
-func (api *connectAPI) CreateBoardLabel(_ context.Context, request *connect.Request[naucliov1.CreateBoardLabelRequest]) (*connect.Response[naucliov1.Board], error) {
+func (api *connectAPI) CreateBoardLabel(_ context.Context, request *connect.Request[dieterv1.CreateBoardLabelRequest]) (*connect.Response[dieterv1.Board], error) {
 	value, err := api.core.server.store.CreateBoardLabel(request.Msg.GetBoardId(), request.Msg.GetName(), request.Msg.GetColor(), request.Msg.GetInstructions())
 	if err != nil {
 		return nil, connectFailure(err)
@@ -318,7 +318,7 @@ func (api *connectAPI) CreateBoardLabel(_ context.Context, request *connect.Requ
 	return connect.NewResponse(protoBoard(value)), nil
 }
 
-func (api *connectAPI) UpdateBoardLabel(_ context.Context, request *connect.Request[naucliov1.UpdateBoardLabelRequest]) (*connect.Response[naucliov1.Board], error) {
+func (api *connectAPI) UpdateBoardLabel(_ context.Context, request *connect.Request[dieterv1.UpdateBoardLabelRequest]) (*connect.Response[dieterv1.Board], error) {
 	value, err := api.core.server.store.UpdateBoardLabel(request.Msg.GetBoardId(), request.Msg.GetLabelId(), request.Msg.GetName(), request.Msg.GetColor(), request.Msg.GetInstructions())
 	if err != nil {
 		return nil, connectFailure(err)
@@ -326,7 +326,7 @@ func (api *connectAPI) UpdateBoardLabel(_ context.Context, request *connect.Requ
 	return connect.NewResponse(protoBoard(value)), nil
 }
 
-func (api *connectAPI) DeleteBoardLabel(_ context.Context, request *connect.Request[naucliov1.DeleteBoardLabelRequest]) (*connect.Response[naucliov1.Board], error) {
+func (api *connectAPI) DeleteBoardLabel(_ context.Context, request *connect.Request[dieterv1.DeleteBoardLabelRequest]) (*connect.Response[dieterv1.Board], error) {
 	value, err := api.core.server.store.DeleteBoardLabel(request.Msg.GetBoardId(), request.Msg.GetLabelId())
 	if err != nil {
 		return nil, connectFailure(err)
@@ -334,87 +334,87 @@ func (api *connectAPI) DeleteBoardLabel(_ context.Context, request *connect.Requ
 	return connect.NewResponse(protoBoard(value)), nil
 }
 
-func (api *connectAPI) CreateCard(ctx context.Context, request *connect.Request[naucliov1.CreateConversationRequest]) (*connect.Response[naucliov1.Card], error) {
+func (api *connectAPI) CreateCard(ctx context.Context, request *connect.Request[dieterv1.CreateConversationRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.CreateCard)
 }
 
-func (api *connectAPI) CreateChat(ctx context.Context, request *connect.Request[naucliov1.CreateConversationRequest]) (*connect.Response[naucliov1.Card], error) {
+func (api *connectAPI) CreateChat(ctx context.Context, request *connect.Request[dieterv1.CreateConversationRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.CreateChat)
 }
 
-func (api *connectAPI) ListChats(ctx context.Context, request *connect.Request[naucliov1.ListChatsRequest]) (*connect.Response[naucliov1.ChatsResponse], error) {
+func (api *connectAPI) ListChats(ctx context.Context, request *connect.Request[dieterv1.ListChatsRequest]) (*connect.Response[dieterv1.ChatsResponse], error) {
 	return connectUnary(ctx, request, api.core.ListChats)
 }
 
-func (api *connectAPI) GetCard(ctx context.Context, request *connect.Request[naucliov1.GetCardRequest]) (*connect.Response[naucliov1.CardDetail], error) {
+func (api *connectAPI) GetCard(ctx context.Context, request *connect.Request[dieterv1.GetCardRequest]) (*connect.Response[dieterv1.CardDetail], error) {
 	return connectUnary(ctx, request, api.core.GetCard)
 }
 
-func (api *connectAPI) GetConversation(ctx context.Context, request *connect.Request[naucliov1.GetConversationRequest]) (*connect.Response[naucliov1.ConversationSnapshot], error) {
+func (api *connectAPI) GetConversation(ctx context.Context, request *connect.Request[dieterv1.GetConversationRequest]) (*connect.Response[dieterv1.ConversationSnapshot], error) {
 	return connectUnary(ctx, request, api.core.GetConversation)
 }
 
-func (api *connectAPI) PollConversation(ctx context.Context, request *connect.Request[naucliov1.PollConversationRequest]) (*connect.Response[naucliov1.ConversationUpdate], error) {
+func (api *connectAPI) PollConversation(ctx context.Context, request *connect.Request[dieterv1.PollConversationRequest]) (*connect.Response[dieterv1.ConversationUpdate], error) {
 	return connectUnary(ctx, request, api.core.PollConversation)
 }
 
-func (api *connectAPI) WatchConversation(ctx context.Context, request *connect.Request[naucliov1.WatchConversationRequest], stream *connect.ServerStream[naucliov1.ConversationUpdate]) error {
+func (api *connectAPI) WatchConversation(ctx context.Context, request *connect.Request[dieterv1.WatchConversationRequest], stream *connect.ServerStream[dieterv1.ConversationUpdate]) error {
 	return connectFailure(api.core.watchConversation(ctx, request.Msg, stream.Send))
 }
 
-func (api *connectAPI) GetToolOutput(ctx context.Context, request *connect.Request[naucliov1.GetToolOutputRequest]) (*connect.Response[naucliov1.ToolOutput], error) {
+func (api *connectAPI) GetToolOutput(ctx context.Context, request *connect.Request[dieterv1.GetToolOutputRequest]) (*connect.Response[dieterv1.ToolOutput], error) {
 	return connectUnary(ctx, request, api.core.GetToolOutput)
 }
 
-func (api *connectAPI) SendMessage(ctx context.Context, request *connect.Request[naucliov1.SendMessageRequest]) (*connect.Response[naucliov1.SendMessageResponse], error) {
+func (api *connectAPI) SendMessage(ctx context.Context, request *connect.Request[dieterv1.SendMessageRequest]) (*connect.Response[dieterv1.SendMessageResponse], error) {
 	return connectUnary(ctx, request, api.core.SendMessage)
 }
 
-func (api *connectAPI) AddComment(ctx context.Context, request *connect.Request[naucliov1.AddCommentRequest]) (*connect.Response[naucliov1.Comment], error) {
+func (api *connectAPI) AddComment(ctx context.Context, request *connect.Request[dieterv1.AddCommentRequest]) (*connect.Response[dieterv1.Comment], error) {
 	return connectUnary(ctx, request, api.core.AddComment)
 }
 
-func (api *connectAPI) MoveCard(ctx context.Context, request *connect.Request[naucliov1.MoveCardRequest]) (*connect.Response[naucliov1.Card], error) {
+func (api *connectAPI) MoveCard(ctx context.Context, request *connect.Request[dieterv1.MoveCardRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.MoveCard)
 }
 
-func (api *connectAPI) StartCard(ctx context.Context, request *connect.Request[naucliov1.StartCardRequest]) (*connect.Response[naucliov1.StartCardResponse], error) {
+func (api *connectAPI) StartCard(ctx context.Context, request *connect.Request[dieterv1.StartCardRequest]) (*connect.Response[dieterv1.StartCardResponse], error) {
 	return connectUnary(ctx, request, api.core.StartCard)
 }
 
-func (api *connectAPI) SetCardLabels(ctx context.Context, request *connect.Request[naucliov1.SetCardLabelsRequest]) (*connect.Response[naucliov1.Card], error) {
+func (api *connectAPI) SetCardLabels(ctx context.Context, request *connect.Request[dieterv1.SetCardLabelsRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.SetCardLabels)
 }
 
-func (api *connectAPI) CancelCard(ctx context.Context, request *connect.Request[naucliov1.GetCardRequest]) (*connect.Response[emptypb.Empty], error) {
+func (api *connectAPI) CancelCard(ctx context.Context, request *connect.Request[dieterv1.GetCardRequest]) (*connect.Response[emptypb.Empty], error) {
 	return connectUnary(ctx, request, api.core.CancelCard)
 }
 
-func (api *connectAPI) RenameCard(ctx context.Context, request *connect.Request[naucliov1.RenameCardRequest]) (*connect.Response[naucliov1.Card], error) {
+func (api *connectAPI) RenameCard(ctx context.Context, request *connect.Request[dieterv1.RenameCardRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.RenameCard)
 }
 
-func (api *connectAPI) UpdateCard(ctx context.Context, request *connect.Request[naucliov1.UpdateCardRequest]) (*connect.Response[naucliov1.Card], error) {
+func (api *connectAPI) UpdateCard(ctx context.Context, request *connect.Request[dieterv1.UpdateCardRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.UpdateCard)
 }
 
-func (api *connectAPI) ArchiveCard(ctx context.Context, request *connect.Request[naucliov1.ArchiveCardRequest]) (*connect.Response[naucliov1.Card], error) {
+func (api *connectAPI) ArchiveCard(ctx context.Context, request *connect.Request[dieterv1.ArchiveCardRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.ArchiveCard)
 }
 
-func (api *connectAPI) PinChat(ctx context.Context, request *connect.Request[naucliov1.PinChatRequest]) (*connect.Response[naucliov1.Card], error) {
+func (api *connectAPI) PinChat(ctx context.Context, request *connect.Request[dieterv1.PinChatRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.PinChat)
 }
 
-func (api *connectAPI) ListFiles(ctx context.Context, request *connect.Request[naucliov1.ListFilesRequest]) (*connect.Response[naucliov1.FileList], error) {
+func (api *connectAPI) ListFiles(ctx context.Context, request *connect.Request[dieterv1.ListFilesRequest]) (*connect.Response[dieterv1.FileList], error) {
 	return connectUnary(ctx, request, api.core.ListFiles)
 }
 
-func (api *connectAPI) ReadFile(ctx context.Context, request *connect.Request[naucliov1.ReadFileRequest]) (*connect.Response[naucliov1.FileDocument], error) {
+func (api *connectAPI) ReadFile(ctx context.Context, request *connect.Request[dieterv1.ReadFileRequest]) (*connect.Response[dieterv1.FileDocument], error) {
 	return connectUnary(ctx, request, api.core.ReadFile)
 }
 
-func (api *connectAPI) SaveFile(_ context.Context, request *connect.Request[naucliov1.SaveFileRequest]) (*connect.Response[naucliov1.FileDocument], error) {
+func (api *connectAPI) SaveFile(_ context.Context, request *connect.Request[dieterv1.SaveFileRequest]) (*connect.Response[dieterv1.FileDocument], error) {
 	api.core.server.filesMu.Lock()
 	defer api.core.server.filesMu.Unlock()
 	project, err := api.core.server.store.ResolveProject(request.Msg.GetProjectId())
@@ -453,10 +453,10 @@ func (api *connectAPI) SaveFile(_ context.Context, request *connect.Request[nauc
 	if err != nil {
 		return nil, connectFailure(projectPathIOError(relative, err))
 	}
-	return connect.NewResponse(&naucliov1.FileDocument{Path: relative, Name: path.Base(relative), Size: int64(len(content)), ModifiedAt: info.ModTime().UTC().Format(projectTimeFormat), Revision: projectFileRevision(content), Content: request.Msg.GetContent()}), nil
+	return connect.NewResponse(&dieterv1.FileDocument{Path: relative, Name: path.Base(relative), Size: int64(len(content)), ModifiedAt: info.ModTime().UTC().Format(projectTimeFormat), Revision: projectFileRevision(content), Content: request.Msg.GetContent()}), nil
 }
 
-func (api *connectAPI) CreateFile(_ context.Context, request *connect.Request[naucliov1.CreateFileRequest]) (*connect.Response[naucliov1.FileEntry], error) {
+func (api *connectAPI) CreateFile(_ context.Context, request *connect.Request[dieterv1.CreateFileRequest]) (*connect.Response[dieterv1.FileEntry], error) {
 	api.core.server.filesMu.Lock()
 	defer api.core.server.filesMu.Unlock()
 	project, err := api.core.server.store.ResolveProject(request.Msg.GetProjectId())
@@ -487,10 +487,10 @@ func (api *connectAPI) CreateFile(_ context.Context, request *connect.Request[na
 	if err != nil {
 		return nil, connectFailure(projectPathIOError(relative, err))
 	}
-	return connect.NewResponse(&naucliov1.FileEntry{Name: path.Base(relative), Path: relative, Kind: kind, Size: int64(len(content))}), nil
+	return connect.NewResponse(&dieterv1.FileEntry{Name: path.Base(relative), Path: relative, Kind: kind, Size: int64(len(content))}), nil
 }
 
-func (api *connectAPI) MoveFile(_ context.Context, request *connect.Request[naucliov1.MoveFileRequest]) (*connect.Response[naucliov1.MoveFileResponse], error) {
+func (api *connectAPI) MoveFile(_ context.Context, request *connect.Request[dieterv1.MoveFileRequest]) (*connect.Response[dieterv1.MoveFileResponse], error) {
 	api.core.server.filesMu.Lock()
 	defer api.core.server.filesMu.Unlock()
 	project, err := api.core.server.store.ResolveProject(request.Msg.GetProjectId())
@@ -523,10 +523,10 @@ func (api *connectAPI) MoveFile(_ context.Context, request *connect.Request[nauc
 	if err := os.Rename(source, destination); err != nil {
 		return nil, connectFailure(projectPathIOError(sourceRelative, err))
 	}
-	return connect.NewResponse(&naucliov1.MoveFileResponse{Source: sourceRelative, Destination: destinationRelative}), nil
+	return connect.NewResponse(&dieterv1.MoveFileResponse{Source: sourceRelative, Destination: destinationRelative}), nil
 }
 
-func (api *connectAPI) DeleteFile(_ context.Context, request *connect.Request[naucliov1.DeleteFileRequest]) (*connect.Response[emptypb.Empty], error) {
+func (api *connectAPI) DeleteFile(_ context.Context, request *connect.Request[dieterv1.DeleteFileRequest]) (*connect.Response[emptypb.Empty], error) {
 	api.core.server.filesMu.Lock()
 	defer api.core.server.filesMu.Unlock()
 	project, err := api.core.server.store.ResolveProject(request.Msg.GetProjectId())
@@ -559,35 +559,35 @@ func (api *connectAPI) DeleteFile(_ context.Context, request *connect.Request[na
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
 
-func (api *connectAPI) ListSchedules(ctx context.Context, request *connect.Request[naucliov1.ListSchedulesRequest]) (*connect.Response[naucliov1.SchedulesResponse], error) {
+func (api *connectAPI) ListSchedules(ctx context.Context, request *connect.Request[dieterv1.ListSchedulesRequest]) (*connect.Response[dieterv1.SchedulesResponse], error) {
 	return connectUnary(ctx, request, api.core.ListSchedules)
 }
 
-func (api *connectAPI) PreviewSchedule(ctx context.Context, request *connect.Request[naucliov1.PreviewScheduleRequest]) (*connect.Response[naucliov1.SchedulePreview], error) {
+func (api *connectAPI) PreviewSchedule(ctx context.Context, request *connect.Request[dieterv1.PreviewScheduleRequest]) (*connect.Response[dieterv1.SchedulePreview], error) {
 	return connectUnary(ctx, request, api.core.PreviewSchedule)
 }
 
-func (api *connectAPI) CreateSchedule(ctx context.Context, request *connect.Request[naucliov1.SaveScheduleRequest]) (*connect.Response[naucliov1.Schedule], error) {
+func (api *connectAPI) CreateSchedule(ctx context.Context, request *connect.Request[dieterv1.SaveScheduleRequest]) (*connect.Response[dieterv1.Schedule], error) {
 	return connectUnary(ctx, request, api.core.CreateSchedule)
 }
 
-func (api *connectAPI) UpdateSchedule(ctx context.Context, request *connect.Request[naucliov1.SaveScheduleRequest]) (*connect.Response[naucliov1.Schedule], error) {
+func (api *connectAPI) UpdateSchedule(ctx context.Context, request *connect.Request[dieterv1.SaveScheduleRequest]) (*connect.Response[dieterv1.Schedule], error) {
 	return connectUnary(ctx, request, api.core.UpdateSchedule)
 }
 
-func (api *connectAPI) DeleteSchedule(ctx context.Context, request *connect.Request[naucliov1.ScheduleRef]) (*connect.Response[emptypb.Empty], error) {
+func (api *connectAPI) DeleteSchedule(ctx context.Context, request *connect.Request[dieterv1.ScheduleRef]) (*connect.Response[emptypb.Empty], error) {
 	return connectUnary(ctx, request, api.core.DeleteSchedule)
 }
 
-func (api *connectAPI) RunSchedule(ctx context.Context, request *connect.Request[naucliov1.ScheduleRef]) (*connect.Response[naucliov1.ScheduleRun], error) {
+func (api *connectAPI) RunSchedule(ctx context.Context, request *connect.Request[dieterv1.ScheduleRef]) (*connect.Response[dieterv1.ScheduleRun], error) {
 	return connectUnary(ctx, request, api.core.RunSchedule)
 }
 
-func (api *connectAPI) SetScheduleEnabled(ctx context.Context, request *connect.Request[naucliov1.SetScheduleEnabledRequest]) (*connect.Response[naucliov1.Schedule], error) {
+func (api *connectAPI) SetScheduleEnabled(ctx context.Context, request *connect.Request[dieterv1.SetScheduleEnabledRequest]) (*connect.Response[dieterv1.Schedule], error) {
 	return connectUnary(ctx, request, api.core.SetScheduleEnabled)
 }
 
-func (api *connectAPI) ListScheduleRuns(ctx context.Context, request *connect.Request[naucliov1.ListScheduleRunsRequest]) (*connect.Response[naucliov1.ScheduleRunsResponse], error) {
+func (api *connectAPI) ListScheduleRuns(ctx context.Context, request *connect.Request[dieterv1.ListScheduleRunsRequest]) (*connect.Response[dieterv1.ScheduleRunsResponse], error) {
 	return connectUnary(ctx, request, api.core.ListScheduleRuns)
 }
 

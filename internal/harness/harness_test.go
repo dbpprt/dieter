@@ -13,7 +13,7 @@ import (
 
 func TestCancelRejectsUnverifiableLegacyWorkerPID(t *testing.T) {
 	runtimeRoot := t.TempDir()
-	workerFile := filepath.Join(runtimeRoot, ".nauclio-worker-card.pid")
+	workerFile := filepath.Join(runtimeRoot, ".dieter-worker-card.pid")
 	if err := os.WriteFile(workerFile, []byte("999999\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestHarnessEnvironmentIncludesConfigAndOptInVariables(t *testing.T) {
 	t.Setenv("CODEX_HOME", "/tmp/codex-test")
 	t.Setenv("USER", "board-user")
 	t.Setenv("LOGNAME", "board-user")
-	t.Setenv("NAUCLIO_HARNESS_ENV", "CUSTOM_MODEL_API_KEY,CUSTOM_MODEL_BASE_URL")
+	t.Setenv("DIETER_HARNESS_ENV", "CUSTOM_MODEL_API_KEY,CUSTOM_MODEL_BASE_URL")
 	t.Setenv("CUSTOM_MODEL_API_KEY", "test-key")
 	t.Setenv("CUSTOM_MODEL_BASE_URL", "https://models.example.test")
 	values := map[string]string{}
@@ -295,7 +295,7 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(runtimeDir, "node_modules")); err != nil {
 		t.Skip("local harness dependencies are not installed")
 	}
-	t.Setenv("NAUCLIO_HARNESS_RUNTIME_DIR", runtimeDir)
+	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)

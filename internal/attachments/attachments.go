@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dbpprt/nauclio/internal/model"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 )
 
 // NormalizeMessageParts validates user-authored text and file parts and
-// converts every attachment to Nauclio's durable data-URL representation.
+// converts every attachment to Dieter's durable data-URL representation.
 func NormalizeMessageParts(parts []model.UIMessagePart) ([]model.UIMessagePart, error) {
 	result := make([]model.UIMessagePart, 0, len(parts))
 	attachmentCount, totalBytes := 0, 0

@@ -4,7 +4,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$APP_ROOT/../.." && pwd)
-PORT=${NAUCLIO_TERMINAL_SMOKE_PORT:-14244}
+PORT=${DIETER_TERMINAL_SMOKE_PORT:-14244}
 ADDRESS="127.0.0.1:$PORT"
 ENDPOINT="http://$ADDRESS"
 CAPTURE_DIR="$APP_ROOT/.build/terminal-ui-smoke"
@@ -20,16 +20,16 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "Terminal UI smoke port $PORT is already in use; set NAUCLIO_TERMINAL_SMOKE_PORT to another alternate port." >&2
+    echo "Terminal UI smoke port $PORT is already in use; set DIETER_TERMINAL_SMOKE_PORT to another alternate port." >&2
     exit 1
 fi
 
-if [ "${SKIP_BUILD:-0}" = "1" ] && [ -x "$APP_ROOT/build/Nauclio.app/Contents/MacOS/NauclioMac" ]; then
-    APP_BUNDLE="$APP_ROOT/build/Nauclio.app"
+if [ "${SKIP_BUILD:-0}" = "1" ] && [ -x "$APP_ROOT/build/Dieter.app/Contents/MacOS/DieterMac" ]; then
+    APP_BUNDLE="$APP_ROOT/build/Dieter.app"
 else
     APP_BUNDLE=$($SCRIPT_DIR/build.sh)
 fi
-APP_BINARY="$APP_BUNDLE/Contents/MacOS/NauclioMac"
+APP_BINARY="$APP_BUNDLE/Contents/MacOS/DieterMac"
 
 rm -rf "$CAPTURE_DIR"
 mkdir -p "$CAPTURE_DIR"
@@ -51,7 +51,7 @@ if ! grep -q '^READY$' "$CAPTURE_DIR/gateway.env" 2>/dev/null; then
     exit 1
 fi
 
-TOKEN=$(sed -n 's/^NAUCLIO_ISOLATED_TOKEN=//p' "$CAPTURE_DIR/gateway.env")
+TOKEN=$(sed -n 's/^DIETER_ISOLATED_TOKEN=//p' "$CAPTURE_DIR/gateway.env")
 if [ -z "$TOKEN" ]; then
     echo "Isolated gateway did not print a session token." >&2
     exit 1
@@ -63,8 +63,8 @@ run_phase() {
     PHASE=$1
     REPORT=$2
     "$APP_BINARY" \
-        --nauclio-endpoint "$ENDPOINT" \
-        --nauclio-access-token-file "$TOKEN_FILE" \
+        --dieter-endpoint "$ENDPOINT" \
+        --dieter-access-token-file "$TOKEN_FILE" \
         --terminal-ui-smoke "$PHASE" \
         --ui-smoke-output "$CAPTURE_DIR" >"$CAPTURE_DIR/app-$PHASE.log" 2>&1 &
     APP_PID=$!

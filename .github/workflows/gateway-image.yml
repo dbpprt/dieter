@@ -6,10 +6,10 @@ on:
     tags: ["v*"]
     paths:
       - "api/**"
-      - "cmd/nauclio-gateway/**"
+      - "cmd/dieter-gateway/**"
       - "internal/daemon/**"
       - "internal/gateway/**"
-      - "internal/gen/nauclio/gateway/**"
+      - "internal/gen/dieter/gateway/**"
       - "internal/linkauth/**"
       - "internal/rpcraw/**"
       - "internal/trust/**"
@@ -24,7 +24,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: nauclio-gateway-image
+  group: dieter-gateway-image
   cancel-in-progress: false
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: metadata
         with:
-          images: ghcr.io/dbpprt/nauclio-gateway
+          images: ghcr.io/dbpprt/dieter-gateway
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag

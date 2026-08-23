@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-SWIFT_SCRATCH_PATH=${NAUCLIO_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/nauclio-local}
+SWIFT_SCRATCH_PATH=${DIETER_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/dieter-local}
 
 if [ "$#" -eq 0 ]; then
     echo "usage: $0 <build|test> [arguments...]" >&2

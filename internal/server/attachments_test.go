@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/model"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 type testUserMessagePart struct {
@@ -28,7 +28,7 @@ func TestValidateUserMessagePartsAcceptsDocuments(t *testing.T) {
 }
 
 func TestModelUserMessagePartsAcceptsRawAttachmentBytes(t *testing.T) {
-	parts, err := modelUserMessageParts([]*naucliov1.MessagePart{{
+	parts, err := modelUserMessageParts([]*dieterv1.MessagePart{{
 		Type: "attachment", MediaType: "text/plain", Filename: "notes.txt", Data: []byte("hello"),
 	}})
 	if err != nil {

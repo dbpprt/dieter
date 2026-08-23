@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	boardconfig "github.com/dbpprt/nauclio/config"
+	boardconfig "github.com/dbpprt/dieter/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -480,7 +480,7 @@ type Canceller interface {
 }
 
 // Suspender parks a live turn without destroying its provider bridge. The
-// worker emits a continuation state before exiting so another Nauclio process
+// worker emits a continuation state before exiting so another Dieter process
 // can attach without replaying the prompt.
 type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
@@ -525,13 +525,13 @@ func (r *SubprocessRunner) ensure(ctx context.Context) (string, error) {
 	if r.dir != "" {
 		return r.dir, nil
 	}
-	if override := strings.TrimSpace(os.Getenv("NAUCLIO_HARNESS_RUNTIME_DIR")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("DIETER_HARNESS_RUNTIME_DIR")); override != "" {
 		absolute, err := filepath.Abs(override)
 		if err != nil {
 			return "", err
 		}
 		if _, err := os.Stat(filepath.Join(absolute, "runner.mjs")); err != nil {
-			return "", fmt.Errorf("NAUCLIO_HARNESS_RUNTIME_DIR: %w", err)
+			return "", fmt.Errorf("DIETER_HARNESS_RUNTIME_DIR: %w", err)
 		}
 		r.dir = absolute
 		return absolute, nil
@@ -619,7 +619,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 			<-done
 		}
 	}()
-	workerFile := filepath.Join(request.RuntimeRoot, ".nauclio-worker-"+request.SessionID+".pid")
+	workerFile := filepath.Join(request.RuntimeRoot, ".dieter-worker-"+request.SessionID+".pid")
 	if err := os.MkdirAll(request.RuntimeRoot, 0o700); err != nil {
 		_ = command.Process.Kill()
 		return err
@@ -693,14 +693,14 @@ func (r *SubprocessRunner) Cancel(sessionID, runtimeRoot string) error {
 	if strings.ContainsAny(sessionID, `/\\`) {
 		return errors.New("invalid harness session ID")
 	}
-	raw, err := os.ReadFile(filepath.Join(runtimeRoot, ".nauclio-worker-"+sessionID+".pid"))
+	raw, err := os.ReadFile(filepath.Join(runtimeRoot, ".dieter-worker-"+sessionID+".pid"))
 	if errors.Is(err, os.ErrNotExist) {
 		return ErrNoActiveTurn
 	}
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(runtimeRoot, ".nauclio-worker-"+sessionID+".pid")
+	path := filepath.Join(runtimeRoot, ".dieter-worker-"+sessionID+".pid")
 	var record workerRecord
 	if json.Unmarshal(raw, &record) != nil {
 		// Pre-token worker files cannot be verified safely after PID reuse.
@@ -734,7 +734,7 @@ func (r *SubprocessRunner) Suspend(sessionID, runtimeRoot string) error {
 	if strings.ContainsAny(sessionID, `/\\`) {
 		return errors.New("invalid harness session ID")
 	}
-	path := filepath.Join(runtimeRoot, ".nauclio-worker-"+sessionID+".pid")
+	path := filepath.Join(runtimeRoot, ".dieter-worker-"+sessionID+".pid")
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return ErrNoActiveTurn
@@ -766,14 +766,14 @@ func (r *SubprocessRunner) Suspend(sessionID, runtimeRoot string) error {
 func harnessEnvironment() []string {
 	allowed := map[string]bool{
 		"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "TMPDIR": true, "SHELL": true, "LANG": true, "TERM": true,
-		"NAUCLIO_HARNESS_ENV": true,
-		"OPENAI_API_KEY":      true, "CODEX_API_KEY": true, "OPENAI_BASE_URL": true, "CODEX_HOME": true,
+		"DIETER_HARNESS_ENV": true,
+		"OPENAI_API_KEY":     true, "CODEX_API_KEY": true, "OPENAI_BASE_URL": true, "CODEX_HOME": true,
 		"AI_GATEWAY_API_KEY": true, "AI_GATEWAY_BASE_URL": true, "VERCEL_OIDC_TOKEN": true,
 		"ANTHROPIC_API_KEY": true, "ANTHROPIC_AUTH_TOKEN": true, "ANTHROPIC_BASE_URL": true, "CLAUDE_CODE_OAUTH_TOKEN": true, "CLAUDE_CONFIG_DIR": true,
 		"PI_AGENT_DIR": true, "PI_CODING_AGENT_DIR": true, "OMP_PROFILE": true,
 		"NODE_EXTRA_CA_CERTS": true, "HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true,
 	}
-	for _, name := range strings.Split(os.Getenv("NAUCLIO_HARNESS_ENV"), ",") {
+	for _, name := range strings.Split(os.Getenv("DIETER_HARNESS_ENV"), ",") {
 		if name = strings.TrimSpace(name); name != "" && !strings.Contains(name, "=") {
 			allowed[name] = true
 		}

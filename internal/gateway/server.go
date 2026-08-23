@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	gatewayv1 "github.com/dbpprt/nauclio/internal/gen/nauclio/gateway/v1"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -55,11 +55,11 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
-		if strings.HasPrefix(r.URL.Path, "/nauclio.gateway.v1.") {
+		if strings.HasPrefix(r.URL.Path, "/dieter.gateway.v1.") {
 			api.ServeHTTP(w, r)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/nauclio.v1.NauclioService/") {
+		if strings.HasPrefix(r.URL.Path, "/dieter.v1.DieterService/") {
 			relay.ServeHTTP(w, r)
 			return
 		}
@@ -113,7 +113,7 @@ func Listen(config Config, store *Store, logger *slog.Logger) error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	logger.Info("Nauclio gateway is ready", "address", config.Address, "public_url", config.PublicURL.String(), "store", store.Root)
+	logger.Info("Dieter gateway is ready", "address", config.Address, "public_url", config.PublicURL.String(), "store", store.Root)
 	result := make(chan error, 1)
 	go func() { result <- server.Serve(listener) }()
 	select {

@@ -27,7 +27,7 @@ func TestExchangeDecodesGitHubAccessToken(t *testing.T) {
 	}))
 	defer github.Close()
 
-	publicURL, _ := url.Parse("https://nauclio.example.com")
+	publicURL, _ := url.Parse("https://dieter.example.com")
 	auth := NewAuth(Config{
 		PublicURL: publicURL, GitHubClientID: "client", GitHubSecret: "secret",
 		GitHubBaseURL: github.URL, SessionTTL: time.Hour,

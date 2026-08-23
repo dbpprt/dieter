@@ -7,7 +7,7 @@ import test from 'node:test';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
 
 test('materializes attachments inside the session runtime and references them in the prompt', async () => {
-  const runtimeRoot = await mkdtemp(join(tmpdir(), 'nauclio-attachment-'));
+  const runtimeRoot = await mkdtemp(join(tmpdir(), 'dieter-attachment-'));
   try {
     const prompt = await promptWithLocalAttachments({
       prompt: 'Inspect both files',
@@ -33,7 +33,7 @@ test('materializes attachments inside the session runtime and references them in
 });
 
 test('rejects an attachment that is not a base64 data URL', async () => {
-  const runtimeRoot = await mkdtemp(join(tmpdir(), 'nauclio-attachment-'));
+  const runtimeRoot = await mkdtemp(join(tmpdir(), 'dieter-attachment-'));
   try {
     await assert.rejects(
       promptWithLocalAttachments({

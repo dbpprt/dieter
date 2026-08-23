@@ -328,7 +328,7 @@ ${codexTodoNeedle}`;
 
 function patchCodexBridge(content) {
   if (content.includes('send({ type: "raw", rawValue: event });')) return content;
-  if (!content.includes(codexTodoNeedle)) throw new Error('Nauclio could not find the Codex todo bridge insertion point');
+  if (!content.includes(codexTodoNeedle)) throw new Error('Dieter could not find the Codex todo bridge insertion point');
   return content.replace(codexTodoNeedle, codexTodoForwarder);
 }
 

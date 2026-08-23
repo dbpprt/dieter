@@ -17,11 +17,11 @@ sync_proto() {
 }
 
 sync_proto \
-    "$REPO_ROOT/api/proto/nauclio/v1/nauclio.proto" \
-    "$APP_ROOT/Sources/NauclioAPI/nauclio.proto"
+    "$REPO_ROOT/api/proto/dieter/v1/dieter.proto" \
+    "$APP_ROOT/Sources/DieterAPI/dieter.proto"
 sync_proto \
-    "$REPO_ROOT/api/proto/nauclio/gateway/v1/gateway.proto" \
-    "$APP_ROOT/Sources/NauclioAPI/gateway.proto"
+    "$REPO_ROOT/api/proto/dieter/gateway/v1/gateway.proto" \
+    "$APP_ROOT/Sources/DieterAPI/gateway.proto"
 
 if [ "$CHANGED" -eq 1 ] || ! "$SCRIPT_DIR/generate-swift-proto.sh" --check; then
     "$SCRIPT_DIR/generate-swift-proto.sh"

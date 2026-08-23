@@ -1,13 +1,13 @@
 import { appendFileSync } from 'node:fs';
 
 export default function boardCapabilities(pi) {
-  const path = process.env.NAUCLIO_OMP_CAPABILITY_FILE;
+  const path = process.env.DIETER_OMP_CAPABILITY_FILE;
   if (!path) return;
   const write = (kind, payload) => {
     try {
       appendFileSync(path, `${JSON.stringify({ kind, payload })}\n`, { encoding: 'utf8', mode: 0o600 });
     } catch (error) {
-      pi.logger.warn('Nauclio could not record an OMP capability event', { error: String(error) });
+      pi.logger.warn('Dieter could not record an OMP capability event', { error: String(error) });
     }
   };
   pi.events.on('task:subagent:lifecycle', payload => write('lifecycle', payload));

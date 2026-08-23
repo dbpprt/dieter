@@ -1,39 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
-  <title id="title">Nauclio mark</title>
-  <desc id="desc">Three terminal sessions docked inside a three-spoke command wheel.</desc>
+  <title id="title">Dieter Conductor mark</title>
+  <desc id="desc">A calm abstract operator inside a lowercase d-shaped conductor shell with three integrated command panes.</desc>
   <defs>
-    <linearGradient id="ring" x1="170" y1="145" x2="854" y2="880" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#22D3EE"/>
-      <stop offset="0.48" stop-color="#2563EB"/>
-      <stop offset="1" stop-color="#1546C8"/>
+    <linearGradient id="shell" x1="190" y1="160" x2="862" y2="912" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8DD8E8"/>
+      <stop offset="0.38" stop-color="#3D6E85"/>
+      <stop offset="1" stop-color="#325A6D"/>
     </linearGradient>
-    <linearGradient id="head" x1="402" y1="190" x2="624" y2="260" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#5EEAD4"/>
-      <stop offset="0.52" stop-color="#22D3EE"/>
-      <stop offset="1" stop-color="#2588F5"/>
+    <linearGradient id="pane" x1="250" y1="220" x2="730" y2="850" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D7F2F5"/>
+      <stop offset="0.46" stop-color="#8DD8E8"/>
+      <stop offset="1" stop-color="#62B6CB"/>
     </linearGradient>
-    <g id="session">
-      <rect x="402" y="190" width="220" height="205" rx="28" fill="#0B1F3A" stroke="#1E6BF1" stroke-width="14"/>
-      <path d="M402 218a28 28 0 0 1 28-28h164a28 28 0 0 1 28 28v48H402z" fill="url(#head)"/>
-      <circle cx="438" cy="228" r="10" fill="#071426"/>
-      <circle cx="470" cy="228" r="10" fill="#071426"/>
-      <circle cx="502" cy="228" r="10" fill="#071426"/>
-    </g>
   </defs>
-  <circle cx="512" cy="512" r="365" fill="none" stroke="url(#ring)" stroke-width="64"/>
-  <g fill="none" stroke="#1F5BD7" stroke-width="66" stroke-linecap="round">
-    <path d="M512 512L799 346"/>
-    <path d="M512 512L225 346"/>
-    <path d="M512 512V843"/>
+
+  <path d="M742 104h120v582c0 128-104 232-232 232H394c-128 0-232-104-232-232V493c0-193 157-350 350-350 87 0 167 32 230 83V104Z" fill="url(#shell)"/>
+  <path d="M512 342c-138 0-224 83-224 192 0 69 38 116 106 154v98c0 56 45 101 101 101h34c56 0 101-45 101-101v-98c68-38 106-85 106-154 0-109-86-192-224-192Z" fill="#0D1B24"/>
+
+  <g fill="url(#pane)">
+    <rect x="412" y="224" width="200" height="142" rx="36"/>
+    <path d="M218 668c0-32 28-54 59-46l93 25c28 8 48 33 48 63v107c0 30-28 53-57 47l-86-17c-33-7-57-36-57-69V668Z"/>
+    <path d="M806 668c0-32-28-54-59-46l-93 25c-28 8-48 33-48 63v107c0 30 28 53 57 47l86-17c33-7 57-36 57-69V668Z"/>
   </g>
-  <use href="#session"/>
-  <use href="#session" transform="rotate(120 512 512)"/>
-  <use href="#session" transform="rotate(240 512 512)"/>
-  <circle cx="512" cy="512" r="91" fill="url(#ring)"/>
-  <circle cx="512" cy="512" r="58" fill="#071426"/>
-  <g fill="#5EEAD4">
-    <rect x="481" y="110" width="62" height="62" rx="14"/>
-    <rect x="184" y="688" width="62" height="62" rx="14" transform="rotate(60 215 719)"/>
-    <rect x="778" y="688" width="62" height="62" rx="14" transform="rotate(-60 809 719)"/>
+
+  <g fill="none" stroke="#0D1B24" stroke-width="25" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m466 273 38 28-38 28M530 329h38"/>
+    <path d="m269 704 34 27-34 27M326 758h32"/>
+    <path d="m698 704 34 27-34 27M755 758h32"/>
+  </g>
+
+  <g fill="#BCEAF1">
+    <rect x="376" y="520" width="88" height="28" rx="14"/>
+    <rect x="560" y="520" width="88" height="28" rx="14"/>
   </g>
 </svg>

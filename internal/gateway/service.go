@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	gatewayv1 "github.com/dbpprt/nauclio/internal/gen/nauclio/gateway/v1"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"

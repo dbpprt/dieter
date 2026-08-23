@@ -8,7 +8,7 @@ export async function promptWithLocalAttachments(request) {
   const paths = [];
   for (const [index, attachment] of request.attachments.entries()) {
     const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(attachment.url || '');
-    if (!match) throw new Error('Nauclio received an invalid local attachment');
+    if (!match) throw new Error('Dieter received an invalid local attachment');
     const safeName = String(attachment.filename || `attachment-${index + 1}`)
       .replace(/[^A-Za-z0-9._-]+/g, '-')
       .replace(/^\.+/, '') || `attachment-${index + 1}`;

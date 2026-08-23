@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 type fakeRunner struct {
@@ -269,7 +269,7 @@ func TestCreateRunningCardStartsHarnessWithBoardInstructions(t *testing.T) {
 		return fake.count() == 1 && stored.Runtime == "idle" && len(conversation.Session) > 0 && !hasActiveTurn(service, project.ID)
 	})
 	request := fake.request(0)
-	if !strings.HasPrefix(card.ID, "c_") || request.Prompt != "Ship it" || request.ResponseMessageID == "" || !strings.Contains(request.Instructions, "Run tests.") || !strings.Contains(request.Instructions, "nauclio card comment "+card.ID) {
+	if !strings.HasPrefix(card.ID, "c_") || request.Prompt != "Ship it" || request.ResponseMessageID == "" || !strings.Contains(request.Instructions, "Run tests.") || !strings.Contains(request.Instructions, "dieter card comment "+card.ID) {
 		t.Fatalf("card=%#v request=%#v", card, request)
 	}
 }

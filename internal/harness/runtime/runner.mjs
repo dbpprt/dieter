@@ -24,7 +24,7 @@ console.log = consoleToStderr;
 console.info = consoleToStderr;
 console.debug = consoleToStderr;
 const send = value => protocolWrite(`${JSON.stringify(value)}\n`);
-const extraHarnessEnv = (process.env.NAUCLIO_HARNESS_ENV || '')
+const extraHarnessEnv = (process.env.DIETER_HARNESS_ENV || '')
   .split(',')
   .map(name => name.trim())
   .filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name));
@@ -120,7 +120,7 @@ switch (adapter) {
     await mkdir(capabilityRoot, { recursive: true, mode: 0o700 });
     await writeFile(capabilityFile, '', { mode: 0o600 });
     capabilityTailer = createNDJSONTailer(capabilityFile, event => capabilityCollector.consumeOMPEnvelope(event));
-    process.env.NAUCLIO_OMP_CAPABILITY_FILE = capabilityFile;
+    process.env.DIETER_OMP_CAPABILITY_FILE = capabilityFile;
     harness = createACP({
       harnessId: 'omp',
       source: {
@@ -131,7 +131,7 @@ switch (adapter) {
       executable: 'omp',
       args: ompACPArgs(request, fileURLToPath(new URL('./omp-capabilities-hook.mjs', import.meta.url))),
       modelId: request.model || undefined,
-      forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'NAUCLIO_OMP_CAPABILITY_FILE', ...extraHarnessEnv],
+      forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'DIETER_OMP_CAPABILITY_FILE', ...extraHarnessEnv],
     });
     break;
   }
@@ -191,7 +191,7 @@ process.once('SIGUSR1', () => {
 
 try {
   const piTaskPlanTool = tool({
-    description: 'Replace Nauclio\'s visible progress checklist for the current response. Call this before multi-step work and after each task status changes.',
+    description: 'Replace Dieter\'s visible progress checklist for the current response. Call this before multi-step work and after each task status changes.',
     inputSchema: z.object({
       explanation: z.string().optional(),
       tasks: z.array(z.object({
@@ -221,7 +221,7 @@ try {
     sessionOptions.continueFrom = request.session.continueFrom;
   } else if (request.session && !incompleteOMPSession) {
     // stop() during an interrupted turn returns a resumable session with a
-    // nested continueFrom state. Nauclio's queued message replaces that turn;
+    // nested continueFrom state. Dieter's queued message replaces that turn;
     // retain the ACP session but deliberately discard the unfinished turn.
     const { continueFrom: _discardedTurn, ...resumeFrom } = request.session;
     sessionOptions.resumeFrom = resumeFrom;
@@ -245,7 +245,7 @@ try {
     for await (const chunk of stream) {
       // The Go host owns the semantic distinction between a user interrupt
       // and a process-restart suspension. Suppress the SDK's local abort frame
-      // here; Nauclio appends one for a real cancel, while a restart preserves
+      // here; Dieter appends one for a real cancel, while a restart preserves
       // the in-flight message, task plan, and subagents for continuation.
       if (controller.signal.aborted && chunk.type === 'abort') continue;
       if (adapter === 'claude-code') {
@@ -260,7 +260,7 @@ try {
     await streamResult(await agent.stream({ session, prompt, abortSignal: controller.signal }));
   }
   if (request.continue) {
-    if (!sessionOptions.continueFrom) throw new Error('Nauclio restart recovery is missing the suspended turn continuation');
+    if (!sessionOptions.continueFrom) throw new Error('Dieter restart recovery is missing the suspended turn continuation');
     await streamResult(await agent.continueStream({ session, abortSignal: controller.signal }));
   } else {
     await streamPrompt(runtimePrompt);

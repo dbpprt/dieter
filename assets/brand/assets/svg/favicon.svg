@@ -1,14 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Nauclio">
-  <rect width="128" height="128" rx="29" fill="#071426"/>
-  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="64" cy="64" r="43" stroke="#2D83F4" stroke-width="9"/>
-    <path d="M64 64L98 45M64 64L30 45M64 64V103" stroke="#2563EB" stroke-width="9"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Dieter favicon">
+  <defs>
+    <linearGradient id="shell" x1="13" y1="9" x2="54" y2="57" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8DD8E8"/>
+      <stop offset="0.4" stop-color="#3D6E85"/>
+      <stop offset="1" stop-color="#325A6D"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#0D1B24"/>
+  <path d="M45.2 8h7.5v36.4c0 8-6.5 14.5-14.5 14.5H23.5C15.5 58.9 9 52.4 9 44.4V32.3c0-12.1 9.8-21.9 21.9-21.9 5.4 0 10.4 2 14.3 5.2V8Z" fill="url(#shell)"/>
+  <path d="M30.9 23c-8.6 0-14 5.2-14 12 0 4.3 2.4 7.3 6.6 9.6v6.1c0 3.5 2.8 6.3 6.3 6.3h2.1c3.5 0 6.3-2.8 6.3-6.3v-6.1c4.3-2.4 6.6-5.3 6.6-9.6.1-6.8-5.3-12-13.9-12Z" fill="#0D1B24"/>
+  <g fill="#8DD8E8">
+    <rect x="24.7" y="15.6" width="12.4" height="8.8" rx="2.2"/>
+    <path d="M12.5 43.3c0-2 1.8-3.4 3.7-2.9l5.8 1.6c1.8.5 3 2.1 3 3.9v6.7c0 1.9-1.8 3.3-3.6 2.9L16 54.4c-2.1-.4-3.6-2.2-3.6-4.3v-6.8Z"/>
+    <path d="M49.4 43.3c0-2-1.8-3.4-3.7-2.9L40 42c-1.8.5-3 2.1-3 3.9v6.7c0 1.9 1.8 3.3 3.6 2.9l5.4-1.1c2.1-.4 3.6-2.2 3.6-4.3v-6.8Z"/>
   </g>
-  <g fill="#22D3EE" stroke="#071426" stroke-width="2">
-    <rect x="49" y="25" width="30" height="24" rx="5"/>
-    <rect x="49" y="25" width="30" height="24" rx="5" transform="rotate(120 64 64)"/>
-    <rect x="49" y="25" width="30" height="24" rx="5" transform="rotate(240 64 64)"/>
+  <g fill="#BCEAF1">
+    <rect x="22.4" y="33" width="5.5" height="2.4" rx="1.2"/>
+    <rect x="34" y="33" width="5.5" height="2.4" rx="1.2"/>
   </g>
-  <circle cx="64" cy="64" r="12" fill="#5EEAD4"/>
-  <circle cx="64" cy="64" r="6" fill="#071426"/>
 </svg>

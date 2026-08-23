@@ -23,11 +23,11 @@ func TestChallengeBindsGatewayDaemonAndNonce(t *testing.T) {
 	}
 	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: raw})
 	challenge := []byte("unique challenge")
-	signature := Sign(private, "https://nauclio.example", "d_test", challenge)
-	if err := VerifyCertificate(certificate, "https://nauclio.example", "d_test", challenge, signature); err != nil {
+	signature := Sign(private, "https://dieter.example", "d_test", challenge)
+	if err := VerifyCertificate(certificate, "https://dieter.example", "d_test", challenge, signature); err != nil {
 		t.Fatal(err)
 	}
-	if VerifyCertificate(certificate, "https://nauclio.example", "d_other", challenge, signature) == nil {
+	if VerifyCertificate(certificate, "https://dieter.example", "d_other", challenge, signature) == nil {
 		t.Fatal("signature was not bound to the daemon ID")
 	}
 }

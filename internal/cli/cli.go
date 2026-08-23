@@ -21,15 +21,15 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/app"
-	"github.com/dbpprt/nauclio/internal/attachments"
-	naucliodaemon "github.com/dbpprt/nauclio/internal/daemon"
-	gatewayv1 "github.com/dbpprt/nauclio/internal/gen/nauclio/gateway/v1"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/scheduler"
-	"github.com/dbpprt/nauclio/internal/server"
-	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/app"
+	"github.com/dbpprt/dieter/internal/attachments"
+	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/scheduler"
+	"github.com/dbpprt/dieter/internal/server"
+	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -49,7 +49,7 @@ func New(data *store.Store) *CLI {
 func (c *CLI) service() *app.Service { return app.New(c.Store, c.Runner) }
 
 func Main(args []string) int {
-	global := flag.NewFlagSet("nauclio", flag.ContinueOnError)
+	global := flag.NewFlagSet("dieter", flag.ContinueOnError)
 	global.SetOutput(io.Discard)
 	root := global.String("store", store.DefaultRoot(), "central Markdown store")
 	short := global.String("s", "", "central Markdown store")
@@ -118,21 +118,21 @@ func (c *CLI) Run(args []string) error {
 		fmt.Fprintln(c.Out, Version)
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q; run nauclio --help", args[0])
+		return fmt.Errorf("unknown command %q; run dieter --help", args[0])
 	}
 }
 
 func (c *CLI) rootHelp() {
-	fmt.Fprint(c.Out, `Nauclio — local AI harness conversations
+	fmt.Fprint(c.Out, `Dieter — local AI harness conversations
 
 Usage:
-  nauclio [--store PATH] [--harness-config PATH] <command> [options]
+  dieter [--store PATH] [--harness-config PATH] <command> [options]
 
 Commands:
   setup       Authorize GitHub, register projects, and start the daemon
-  daemon      Run, enroll, and inspect this machine's Nauclio daemon
-  serve       Alias for "nauclio daemon start"
-  status      Show Nauclio and local harness readiness
+  daemon      Run, enroll, and inspect this machine's Dieter daemon
+  serve       Alias for "dieter daemon start"
+  status      Show Dieter and local harness readiness
   project     Create, open, list, and update Git projects
   board       Create and list fixed workflow boards
   card        Create, find, chat, comment, and move conversation cards
@@ -141,17 +141,17 @@ Commands:
   storage     Print the central Markdown store path
   version     Print the version
 
-Every card is one durable Nauclio conversation backed by a local AI SDK harness.
-All Nauclio and conversation data stays under NAUCLIO_HOME.
+Every card is one durable Dieter conversation backed by a local AI SDK harness.
+All Dieter and conversation data stays under DIETER_HOME.
 
-Run "nauclio <command> --help" for discoverable subcommands and examples.
+Run "dieter <command> --help" for discoverable subcommands and examples.
 `)
 }
 
 func configureHarnessCatalog(root, explicit string) error {
 	path := strings.TrimSpace(explicit)
 	if path == "" {
-		path = strings.TrimSpace(os.Getenv("NAUCLIO_HARNESS_CONFIG"))
+		path = strings.TrimSpace(os.Getenv("DIETER_HARNESS_CONFIG"))
 	}
 	if path == "" {
 		candidate := filepath.Join(root, "harnesses.yaml")
@@ -280,11 +280,11 @@ func (c *CLI) serve(args []string) error {
 
 func (c *CLI) daemon(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
-		fmt.Fprint(c.Out, `Usage: nauclio daemon <action>
+		fmt.Fprint(c.Out, `Usage: dieter daemon <action>
 
 Actions:
   start      Run the local data plane and persistent gateway tunnel
-  enroll     Enroll this machine with the Nauclio gateway
+  enroll     Enroll this machine with the Dieter gateway
   status     Show service, local API, enrollment, and gateway health
   logs       Show or follow the daemon service log
 `)
@@ -305,9 +305,9 @@ Actions:
 }
 
 func (c *CLI) daemonStart(args []string) error {
-	const usage = `Usage: nauclio daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST] [--env-file PATH] [--service] [--verbose]
+	const usage = `Usage: dieter daemon start [--addr ADDRESS] [--direct-addr ADDRESS --direct-host HOST] [--env-file PATH] [--service] [--verbose]
 
-Run the machine-local Nauclio data plane and, when enrolled, its persistent
+Run the machine-local Dieter data plane and, when enrolled, its persistent
 outbound gateway tunnel. The local API is always loopback-only. An enrolled
 daemon automatically advertises an authenticated loopback route; direct flags
 add an optional LAN, Tailscale, or public route.
@@ -317,7 +317,7 @@ add an optional LAN, Tailscale, or public route.
 	directAddr := set.String("direct-addr", "", "optional authenticated TLS listen address")
 	directHost := set.String("direct-host", "", "host advertised for the direct TLS route")
 	directNetwork := set.String("direct-network", "lan", "direct route kind: loopback, lan, tailscale, or public")
-	envFile := set.String("env-file", "", "environment file (default NAUCLIO_HOME/.env)")
+	envFile := set.String("env-file", "", "environment file (default DIETER_HOME/.env)")
 	serviceMode := set.Bool("service", false, "run as a managed service with bounded file logs")
 	verbose := set.Bool("verbose", false, "verbose logs")
 	help, err := parse(set, args, usage, c.Out)
@@ -342,14 +342,14 @@ add an optional LAN, Tailscale, or public route.
 	defer closeLog()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	identity, identityErr := naucliodaemon.LoadIdentity(c.Store.Root)
+	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
 	enrolled := identityErr == nil && identity.Enrolled()
 	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
-	gatewayState := naucliodaemon.GatewayNotEnrolled
+	gatewayState := dieterdaemon.GatewayNotEnrolled
 	if enrolled {
-		gatewayState = naucliodaemon.GatewayConnecting
+		gatewayState = dieterdaemon.GatewayConnecting
 	}
-	runtimeStatus := naucliodaemon.RuntimeStatus{
+	runtimeStatus := dieterdaemon.RuntimeStatus{
 		PID: os.Getpid(), Version: Version, State: "starting", StartedAt: startedAt,
 		ListenAddress: *addr, ServiceManaged: *serviceMode, LogPath: logPath,
 		Enrolled: enrolled, GatewayState: gatewayState,
@@ -358,7 +358,7 @@ add an optional LAN, Tailscale, or public route.
 		runtimeStatus.DaemonID, runtimeStatus.DaemonName = identity.ID, identity.Name
 		runtimeStatus.GatewayURL = identity.GatewayURL
 	}
-	statusWriter, err := naucliodaemon.NewStatusWriter(c.Store.Root, runtimeStatus)
+	statusWriter, err := dieterdaemon.NewStatusWriter(c.Store.Root, runtimeStatus)
 	if err != nil {
 		return fmt.Errorf("initialize daemon status: %w", err)
 	}
@@ -387,7 +387,7 @@ add an optional LAN, Tailscale, or public route.
 			serveDaemonDirectRoute(ctx, cancel, logger, direct)
 		}
 		go func() {
-			client := &naucliodaemon.GatewayClient{Identity: identity, LocalTarget: *addr, Version: Version, Routes: routes, Log: logger, OnStatus: statusWriter.Gateway}
+			client := &dieterdaemon.GatewayClient{Identity: identity, LocalTarget: *addr, Version: Version, Routes: routes, Log: logger, OnStatus: statusWriter.Gateway}
 			if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {
 				logger.Error("gateway tunnel stopped", "error", tunnelErr)
 				cancel()
@@ -396,9 +396,9 @@ add an optional LAN, Tailscale, or public route.
 	} else if identityErr != nil && !errors.Is(identityErr, os.ErrNotExist) {
 		return identityErr
 	} else {
-		logger.Warn("daemon is not enrolled; serving the loopback API only", "command", "nauclio daemon enroll")
+		logger.Warn("daemon is not enrolled; serving the loopback API only", "command", "dieter daemon enroll")
 	}
-	if err := statusWriter.Update(func(value *naucliodaemon.RuntimeStatus) { value.State = "running" }); err != nil {
+	if err := statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) { value.State = "running" }); err != nil {
 		return err
 	}
 	err = server.ListenDaemon(ctx, *addr, c.Store, c.Runner, logger)
@@ -410,11 +410,11 @@ add an optional LAN, Tailscale, or public route.
 
 type daemonDirectRoute struct {
 	listener  net.Listener
-	server    *naucliodaemon.DirectServer
+	server    *dieterdaemon.DirectServer
 	candidate *gatewayv1.DirectCandidate
 }
 
-func newDaemonDirectRoute(identity *naucliodaemon.Identity, localTarget, id, listenAddress, advertisedHost, network string, priority int32) (*daemonDirectRoute, error) {
+func newDaemonDirectRoute(identity *dieterdaemon.Identity, localTarget, id, listenAddress, advertisedHost, network string, priority int32) (*daemonDirectRoute, error) {
 	listener, err := net.Listen("tcp", strings.TrimSpace(listenAddress))
 	if err != nil {
 		return nil, err
@@ -433,7 +433,7 @@ func newDaemonDirectRoute(identity *naucliodaemon.Identity, localTarget, id, lis
 	if err != nil || port < 1 || port > 65535 {
 		return nil, fmt.Errorf("resolve direct listener port: invalid port %q", portText)
 	}
-	direct, err := naucliodaemon.NewDirectServer(identity, localTarget)
+	direct, err := dieterdaemon.NewDirectServer(identity, localTarget)
 	if err != nil {
 		return nil, err
 	}
@@ -467,9 +467,9 @@ func serveDaemonDirectRoute(ctx context.Context, cancel context.CancelFunc, logg
 }
 
 func (c *CLI) daemonEnroll(args []string) error {
-	const usage = `Usage: nauclio daemon enroll [--gateway URL] [--name NAME] [--no-open]
+	const usage = `Usage: dieter daemon enroll [--gateway URL] [--name NAME] [--no-open]
 
-Enroll this machine with the GitHub account configured by the Nauclio gateway.
+Enroll this machine with the GitHub account configured by the Dieter gateway.
 `
 	set := flags("daemon enroll")
 	gatewayURL := set.String("gateway", "https://board.dbpprt.com", "gateway origin")
@@ -480,7 +480,7 @@ Enroll this machine with the GitHub account configured by the Nauclio gateway.
 	if help || err != nil {
 		return err
 	}
-	identity, err := naucliodaemon.LoadOrCreateEnrollmentIdentity(c.Store.Root, strings.TrimSpace(*name), strings.TrimRight(strings.TrimSpace(*gatewayURL), "/"))
+	identity, err := dieterdaemon.LoadOrCreateEnrollmentIdentity(c.Store.Root, strings.TrimSpace(*name), strings.TrimRight(strings.TrimSpace(*gatewayURL), "/"))
 	if err != nil {
 		return err
 	}
@@ -489,7 +489,7 @@ Enroll this machine with the GitHub account configured by the Nauclio gateway.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
-	enrollment, err := naucliodaemon.BeginEnrollment(ctx, identity)
+	enrollment, err := dieterdaemon.BeginEnrollment(ctx, identity)
 	if err != nil {
 		return err
 	}
@@ -504,7 +504,7 @@ Enroll this machine with the GitHub account configured by the Nauclio gateway.
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {
-		credential, completeErr := naucliodaemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+		credential, completeErr := dieterdaemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
 		if completeErr == nil {
 			if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 				return err
@@ -532,15 +532,15 @@ func (c *CLI) status() error {
 
 func (c *CLI) project(args []string) error {
 	if len(args) == 0 || args[0] == "--help" {
-		fmt.Fprint(c.Out, `Usage: nauclio project <action>
+		fmt.Fprint(c.Out, `Usage: dieter project <action>
 
 Actions:
   create PATH      Create and register a Git working tree
   open PATH        Register an existing Git working tree
   list             List project overlays; pass --removed to show hidden ones
   show PROJECT     Show project metadata and prompt
-  update PROJECT   Update Nauclio's project prompt, name, or summary
-  remove PROJECT   Hide a project, its boards, and its chats from Nauclio
+  update PROJECT   Update Dieter's project prompt, name, or summary
+  remove PROJECT   Hide a project, its boards, and its chats from Dieter
   restore PROJECT  Restore a removed project
 `)
 		return nil
@@ -566,9 +566,9 @@ Actions:
 }
 
 func (c *CLI) projectRegister(args []string, create bool) error {
-	usage := "Usage: nauclio project open [--name NAME] [--prompt TEXT|--prompt-file FILE] PATH\n"
+	usage := "Usage: dieter project open [--name NAME] [--prompt TEXT|--prompt-file FILE] PATH\n"
 	if create {
-		usage = "Usage: nauclio project create [--name NAME] [--prompt TEXT|--prompt-file FILE] PATH\n"
+		usage = "Usage: dieter project create [--name NAME] [--prompt TEXT|--prompt-file FILE] PATH\n"
 	}
 	set := flags("project")
 	name := set.String("name", "", "name")
@@ -599,7 +599,7 @@ func (c *CLI) projectRegister(args []string, create bool) error {
 }
 
 func (c *CLI) projectList(args []string) error {
-	const usage = "Usage: nauclio project list [--removed] [--format table|json|jsonl|ids]\n"
+	const usage = "Usage: dieter project list [--removed] [--format table|json|jsonl|ids]\n"
 	set := flags("project list")
 	format := set.String("format", "table", "output format")
 	removed := set.Bool("removed", false, "show removed projects")
@@ -639,7 +639,7 @@ func (c *CLI) projectArchive(args []string, archived bool) error {
 		action = "restore"
 	}
 	if len(args) != 1 {
-		return fmt.Errorf("Usage: nauclio project %s PROJECT", action)
+		return fmt.Errorf("Usage: dieter project %s PROJECT", action)
 	}
 	item, err := c.Store.ArchiveProject(args[0], archived)
 	if err != nil {
@@ -650,7 +650,7 @@ func (c *CLI) projectArchive(args []string, archived bool) error {
 
 func (c *CLI) projectShow(args []string) error {
 	if len(args) != 1 {
-		return errors.New("Usage: nauclio project show PROJECT")
+		return errors.New("Usage: dieter project show PROJECT")
 	}
 	item, err := c.Store.ResolveProject(args[0])
 	if err != nil {
@@ -673,7 +673,7 @@ func (o *optional) ptr() *string {
 	return &o.value
 }
 func (c *CLI) projectUpdate(args []string) error {
-	const usage = "Usage: nauclio project update [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] PROJECT\n"
+	const usage = "Usage: dieter project update [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] PROJECT\n"
 	set := flags("project update")
 	name, summary, prompt := &optional{}, &optional{}, &optional{}
 	set.Var(name, "name", "name")
@@ -706,7 +706,7 @@ func (c *CLI) projectUpdate(args []string) error {
 
 func (c *CLI) board(args []string) error {
 	if len(args) == 0 || args[0] == "--help" {
-		fmt.Fprint(c.Out, `Usage: nauclio board <action>
+		fmt.Fprint(c.Out, `Usage: dieter board <action>
 
 Actions:
   create   Create a fixed direct or review workflow board
@@ -731,14 +731,14 @@ Actions:
 }
 func (c *CLI) boardLabel(args []string) error {
 	if len(args) == 0 || args[0] == "--help" {
-		fmt.Fprint(c.Out, "Usage: nauclio board label add --board BOARD --name NAME [--color '#6558df']\n       board board label list --board BOARD\n       board board label remove --board BOARD LABEL\n")
+		fmt.Fprint(c.Out, "Usage: dieter board label add --board BOARD --name NAME [--color '#6558df']\n       board board label list --board BOARD\n       board board label remove --board BOARD LABEL\n")
 		return nil
 	}
 	set := flags("board label " + args[0])
 	board := set.String("board", "", "board")
 	name := set.String("name", "", "name")
 	color := set.String("color", "#6558df", "hex color")
-	help, err := parse(set, args[1:], "Usage: nauclio board label add|list|remove --board BOARD [options]\n", c.Out)
+	help, err := parse(set, args[1:], "Usage: dieter board label add|list|remove --board BOARD [options]\n", c.Out)
 	if help || err != nil {
 		return err
 	}
@@ -766,7 +766,7 @@ func (c *CLI) boardLabel(args []string) error {
 	}
 }
 func (c *CLI) boardCreate(args []string) error {
-	const usage = "Usage: nauclio board create --project PROJECT --name NAME [--workflow direct|review] [--archive-done POLICY]\n"
+	const usage = "Usage: dieter board create --project PROJECT --name NAME [--workflow direct|review] [--archive-done POLICY]\n"
 	set := flags("board create")
 	project := set.String("project", "", "project")
 	name := set.String("name", "", "name")
@@ -785,7 +785,7 @@ func (c *CLI) boardCreate(args []string) error {
 }
 
 func (c *CLI) boardRetention(args []string) error {
-	const usage = "Usage: nauclio board retention --archive-done POLICY BOARD\n\nPOLICY is never, immediately, after_1_day, after_7_days, after_30_days, or after_90_days.\n"
+	const usage = "Usage: dieter board retention --archive-done POLICY BOARD\n\nPOLICY is never, immediately, after_1_day, after_7_days, after_30_days, or after_90_days.\n"
 	set := flags("board retention")
 	archiveDone := set.String("archive-done", "", "Done archive policy")
 	help, err := parse(set, args, usage, c.Out)
@@ -803,7 +803,7 @@ func (c *CLI) boardRetention(args []string) error {
 	return jsonOut(c.Out, item)
 }
 func (c *CLI) boardList(args []string) error {
-	const usage = "Usage: nauclio board list [--project PROJECT] [--format table|json|jsonl|ids]\n"
+	const usage = "Usage: dieter board list [--project PROJECT] [--format table|json|jsonl|ids]\n"
 	set := flags("board list")
 	project := set.String("project", "", "project")
 	format := set.String("format", "table", "format")
@@ -832,16 +832,16 @@ func (c *CLI) boardList(args []string) error {
 
 func (c *CLI) card(args []string) error {
 	if len(args) == 0 || args[0] == "--help" {
-		fmt.Fprint(c.Out, `Usage: nauclio card <action>
+		fmt.Fprint(c.Out, `Usage: dieter card <action>
 
 Actions:
-  create       Create a Nauclio conversation card
+  create       Create a Dieter conversation card
   list         Search compact conversation cards
-  show         Show Nauclio card metadata and comments
-  context      Print compact in-chat Nauclio context
-  transcript   Read Nauclio's durable conversation
+  show         Show Dieter card metadata and comments
+  context      Print compact in-chat Dieter context
+  transcript   Read Dieter's durable conversation
   send         Run or resume the local harness session
-  comment      Add a non-triggering Nauclio annotation
+  comment      Add a non-triggering Dieter annotation
   move         Move to todo, running, review, or done
   labels       Assign board labels to a card
   cancel       Cancel an active local turn
@@ -884,7 +884,7 @@ Actions:
 }
 
 func (c *CLI) cardLabels(args []string) error {
-	const usage = "Usage: nauclio card labels --set LABELS CARD\n\nLABELS is a comma-separated list of board label IDs or names; empty clears labels.\n"
+	const usage = "Usage: dieter card labels --set LABELS CARD\n\nLABELS is a comma-separated list of board label IDs or names; empty clears labels.\n"
 	set := flags("card labels")
 	labels := set.String("set", "", "labels")
 	help, err := parse(set, args, usage, c.Out)
@@ -916,7 +916,7 @@ func splitCSV(value string) []string {
 }
 
 func (c *CLI) cardCreate(args []string) error {
-	const usage = `Usage: nauclio card create --project PROJECT --board BOARD --title TITLE [options]
+	const usage = `Usage: dieter card create --project PROJECT --board BOARD --title TITLE [options]
 
 Options:
   --lane todo|running    Todo saves a draft; Running sends immediately
@@ -967,7 +967,7 @@ Options:
 }
 
 func (c *CLI) cardList(args []string) error {
-	const usage = "Usage: nauclio card list [--project PROJECT] [--board BOARD] [--lane LANE] [--label LABEL] [--status STATUS] [--query TEXT] [--archived] [--limit N] [--format table|json|jsonl|ids]\n"
+	const usage = "Usage: dieter card list [--project PROJECT] [--board BOARD] [--lane LANE] [--label LABEL] [--status STATUS] [--query TEXT] [--archived] [--limit N] [--format table|json|jsonl|ids]\n"
 	set := flags("card list")
 	project := set.String("project", "", "project")
 	board := set.String("board", "", "board")
@@ -1013,7 +1013,7 @@ func (c *CLI) cardList(args []string) error {
 
 func (c *CLI) cardShow(args []string, compact bool) error {
 	if len(args) != 1 {
-		return errors.New("Usage: nauclio card show CARD")
+		return errors.New("Usage: dieter card show CARD")
 	}
 	detail, err := c.Store.CardDetail(args[0])
 	if err != nil {
@@ -1025,7 +1025,7 @@ func (c *CLI) cardShow(args []string, compact bool) error {
 	return jsonOut(c.Out, detail)
 }
 func (c *CLI) cardTranscript(args []string) error {
-	const usage = "Usage: nauclio card transcript [--last N] CARD\n"
+	const usage = "Usage: dieter card transcript [--last N] CARD\n"
 	set := flags("transcript")
 	last := set.Int("last", 30, "entries")
 	help, err := parse(set, args, usage, c.Out)
@@ -1045,7 +1045,7 @@ func (c *CLI) cardTranscript(args []string) error {
 	return jsonOut(c.Out, snapshot)
 }
 func (c *CLI) cardSend(args []string) error {
-	const usage = "Usage: nauclio card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] CARD\n"
+	const usage = "Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] CARD\n"
 	set := flags("send")
 	message := set.String("message", "", "message")
 	file := set.String("file", "", "file")
@@ -1081,11 +1081,11 @@ func (c *CLI) cardSend(args []string) error {
 	return nil
 }
 func (c *CLI) cardComment(args []string) error {
-	const usage = "Usage: nauclio card comment --message TEXT CARD\n\nComments are visible Nauclio annotations and never wake the agent.\n"
+	const usage = "Usage: dieter card comment --message TEXT CARD\n\nComments are visible Dieter annotations and never wake the agent.\n"
 	set := flags("comment")
 	message := set.String("message", "", "message")
 	file := set.String("file", "", "file")
-	name := set.String("author", "Nauclio agent", "display author")
+	name := set.String("author", "Dieter agent", "display author")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -1108,7 +1108,7 @@ func (c *CLI) cardComment(args []string) error {
 	return jsonOut(c.Out, item)
 }
 func (c *CLI) cardMove(args []string) error {
-	const usage = "Usage: nauclio card move --lane todo|running|review|done CARD\n"
+	const usage = "Usage: dieter card move --lane todo|running|review|done CARD\n"
 	set := flags("move")
 	lane := set.String("lane", "", "lane")
 	help, err := parse(set, args, usage, c.Out)
@@ -1137,12 +1137,12 @@ func (c *CLI) cardMove(args []string) error {
 }
 func (c *CLI) cardCancel(args []string) error {
 	if len(args) != 1 {
-		return errors.New("Usage: nauclio card cancel CARD")
+		return errors.New("Usage: dieter card cancel CARD")
 	}
 	return c.service().CancelCard(args[0])
 }
 func (c *CLI) cardRename(args []string) error {
-	const usage = "Usage: nauclio card rename --title TITLE CARD\n"
+	const usage = "Usage: dieter card rename --title TITLE CARD\n"
 	set := flags("rename")
 	title := set.String("title", "", "title")
 	help, err := parse(set, args, usage, c.Out)
@@ -1168,7 +1168,7 @@ func (c *CLI) cardArchive(args []string, restore bool) error {
 
 func (c *CLI) schedule(args []string) error {
 	if len(args) == 0 || args[0] == "--help" {
-		fmt.Fprint(c.Out, `Usage: nauclio schedule <action>
+		fmt.Fprint(c.Out, `Usage: dieter schedule <action>
 
 Actions:
   create           Create a project schedule
@@ -1252,8 +1252,8 @@ Actions:
 }
 
 func (c *CLI) scheduleEdit(args []string, current *model.Schedule) error {
-	const usage = `Usage: nauclio schedule create --project PROJECT --board BOARD --name NAME --cron "0 9 * * 1-5" --timezone AREA/LOCATION --title TITLE --prompt TEXT [options]
-       nauclio schedule update [options] SCHEDULE
+	const usage = `Usage: dieter schedule create --project PROJECT --board BOARD --name NAME --cron "0 9 * * 1-5" --timezone AREA/LOCATION --title TITLE --prompt TEXT [options]
+       dieter schedule update [options] SCHEDULE
 
 Options:
   --action draft|run
@@ -1319,7 +1319,7 @@ Options:
 }
 
 func (c *CLI) scheduleList(args []string) error {
-	const usage = "Usage: nauclio schedule list [--project PROJECT] [--format table|json|jsonl]\n"
+	const usage = "Usage: dieter schedule list [--project PROJECT] [--format table|json|jsonl]\n"
 	set := flags("schedule list")
 	project := set.String("project", "", "project")
 	format := set.String("format", "table", "format")
@@ -1363,7 +1363,7 @@ func (c *CLI) settings(args []string) error {
 		return jsonOut(c.Out, value)
 	}
 	if args[0] != "set" && args[0] != "update" {
-		return errors.New("Usage: nauclio settings show | nauclio settings set [--global N] [--agents ID=N,...] [--boards ID=N,...]")
+		return errors.New("Usage: dieter settings show | dieter settings set [--global N] [--agents ID=N,...] [--boards ID=N,...]")
 	}
 	current, err := c.Store.Settings()
 	if err != nil {
@@ -1373,7 +1373,7 @@ func (c *CLI) settings(args []string) error {
 	global := set.Int("global", current.GlobalParallelLimit, "global limit")
 	agents := set.String("agents", "", "agent limits ID=N,...")
 	boards := set.String("boards", "", "board limits ID=N,...")
-	help, err := parse(set, args[1:], "Usage: nauclio settings set [--global N] [--agents ID=N,...] [--boards ID=N,...]\n", c.Out)
+	help, err := parse(set, args[1:], "Usage: dieter settings set [--global N] [--agents ID=N,...] [--boards ID=N,...]\n", c.Out)
 	if help || err != nil {
 		return err
 	}

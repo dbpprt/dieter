@@ -1,4 +1,4 @@
-// Command isolated-gateway runs a throwaway copy of the Nauclio gateway plus
+// Command isolated-gateway runs a throwaway copy of the Dieter gateway plus
 // an enrolled daemon and mock-harness data plane on loopback. It exists so
 // end-to-end client testing never has to touch the production gateway: it
 // prints a ready-to-use session token and blocks until interrupted.
@@ -23,11 +23,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/daemon"
-	"github.com/dbpprt/nauclio/internal/gateway"
-	"github.com/dbpprt/nauclio/internal/model"
-	"github.com/dbpprt/nauclio/internal/server"
-	boardstore "github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/daemon"
+	"github.com/dbpprt/dieter/internal/gateway"
+	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/server"
+	boardstore "github.com/dbpprt/dieter/internal/store"
 )
 
 func main() {
@@ -43,12 +43,12 @@ func main() {
 func run(address, home string) error {
 	// The mock harness answers every prompt deterministically, so end-to-end
 	// turns complete without real provider credentials.
-	if err := os.Setenv("NAUCLIO_ENABLE_MOCK_HARNESS", "1"); err != nil {
+	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
 		return err
 	}
 	if home == "" {
 		var err error
-		home, err = os.MkdirTemp("", "nauclio-isolated-*")
+		home, err = os.MkdirTemp("", "dieter-isolated-*")
 		if err != nil {
 			return err
 		}
@@ -107,7 +107,7 @@ func run(address, home string) error {
 		return err
 	}
 
-	data := boardstore.New(filepath.Join(home, "nauclio"))
+	data := boardstore.New(filepath.Join(home, "dieter"))
 	if err = data.Ensure(); err != nil {
 		return err
 	}
@@ -164,11 +164,11 @@ func run(address, home string) error {
 		return fmt.Errorf("daemon tunnel did not come online")
 	}
 
-	fmt.Printf("NAUCLIO_ISOLATED_ADDR=%s\n", gatewayListener.Addr().String())
-	fmt.Printf("NAUCLIO_ISOLATED_TOKEN=%s\n", token)
-	fmt.Printf("NAUCLIO_ISOLATED_DAEMON=%s\n", identity.ID)
-	fmt.Printf("NAUCLIO_ISOLATED_PROJECT=%s\n", project.ID)
-	fmt.Printf("NAUCLIO_ISOLATED_BOARD=%s\n", board.ID)
+	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", gatewayListener.Addr().String())
+	fmt.Printf("DIETER_ISOLATED_TOKEN=%s\n", token)
+	fmt.Printf("DIETER_ISOLATED_DAEMON=%s\n", identity.ID)
+	fmt.Printf("DIETER_ISOLATED_PROJECT=%s\n", project.ID)
+	fmt.Printf("DIETER_ISOLATED_BOARD=%s\n", board.ID)
 	fmt.Println("READY")
 
 	<-ctx.Done()

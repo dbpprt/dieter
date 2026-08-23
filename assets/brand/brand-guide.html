@@ -1,202 +1,31 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#071426">
-    <title>Nauclio Brand System</title>
-    <link rel="icon" href="assets/svg/favicon.svg">
-    <link rel="stylesheet" href="theme.css">
-    <style>
-      * { box-sizing: border-box; }
-      html { scroll-behavior: smooth; }
-      body { min-height: 100vh; }
-      .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
-      .nav { position: sticky; top: 0; z-index: 5; border-bottom: 1px solid var(--color-border); background: color-mix(in srgb, var(--color-background) 84%, transparent); backdrop-filter: blur(18px); }
-      .nav__inner { display: flex; min-height: 72px; align-items: center; justify-content: space-between; gap: 24px; }
-      .brand { display: flex; align-items: center; gap: 12px; color: var(--color-text); text-decoration: none; }
-      .brand img { width: 42px; height: 42px; }
-      .brand span { font: 650 1.35rem/1 var(--font-display); letter-spacing: -0.045em; }
-      .hero { display: grid; min-height: 680px; grid-template-columns: 1.12fr 0.88fr; align-items: center; gap: 70px; padding: 80px 0; }
-      .eyebrow { margin: 0 0 20px; color: var(--color-accent); font: 600 0.78rem/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; }
-      h1, h2, h3, p { margin-top: 0; }
-      h1 { max-width: 760px; margin-bottom: 24px; font: 650 clamp(3.2rem, 7vw, 6.8rem)/0.96 var(--font-display); letter-spacing: -0.065em; }
-      h2 { margin-bottom: 16px; font: 650 clamp(2rem, 4vw, 3.5rem)/1.05 var(--font-display); letter-spacing: -0.05em; }
-      h3 { font: 600 1.05rem/1.3 var(--font-display); letter-spacing: -0.025em; }
-      .lede { max-width: 650px; color: var(--color-text-muted); font-size: clamp(1.05rem, 2vw, 1.28rem); line-height: 1.65; }
-      .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
-      .hero-icon { position: relative; display: grid; place-items: center; }
-      .hero-icon::before { position: absolute; width: 90%; height: 90%; border-radius: 50%; background: var(--gradient-brand); content: ""; filter: blur(80px); opacity: 0.2; }
-      .hero-icon img { position: relative; width: min(100%, 520px); border-radius: 25%; box-shadow: var(--shadow-md), var(--shadow-glow); }
-      section { padding: 92px 0; border-top: 1px solid var(--color-border); }
-      .section-head { max-width: 720px; margin-bottom: 44px; }
-      .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 20px; }
-      .card { padding: 26px; }
-      .logo-card { display: grid; min-height: 280px; place-items: center; overflow: hidden; }
-      .logo-card img { width: min(86%, 520px); max-height: 180px; }
-      .logo-card--light { background: #f7fafc; }
-      .logo-card--dark { background: #071426; }
-      .span-6 { grid-column: span 6; }
-      .span-4 { grid-column: span 4; }
-      .swatch { min-height: 220px; padding: 22px; display: flex; flex-direction: column; justify-content: space-between; border-radius: var(--radius-lg); color: white; }
-      .swatch--light { color: #071426; border: 1px solid #d8e4ee; }
-      .swatch code { font: 500 0.78rem/1.4 var(--font-mono); opacity: 0.84; }
-      .type-display { font: 650 clamp(2.8rem, 6vw, 5.2rem)/1 var(--font-display); letter-spacing: -0.06em; }
-      .type-body { color: var(--color-text-muted); font-size: 1.05rem; line-height: 1.75; }
-      .type-mono { color: var(--color-accent); font: 500 0.88rem/1.8 var(--font-mono); }
-      .component-card { grid-column: span 6; padding: 28px; }
-      .button-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
-      .terminal-wrap { grid-column: span 6; }
-      .message { grid-column: span 4; padding: 28px; }
-      .message strong { display: block; margin-bottom: 9px; font-family: var(--font-display); }
-      .message p { margin: 0; color: var(--color-text-muted); line-height: 1.6; }
-      .footer { padding: 48px 0 64px; color: var(--color-text-muted); }
-      @media (max-width: 800px) {
-        .hero { min-height: auto; grid-template-columns: 1fr; padding: 64px 0; }
-        .hero-icon { order: -1; }
-        .hero-icon img { width: min(78vw, 420px); }
-        .span-6, .span-4, .component-card, .terminal-wrap, .message { grid-column: 1 / -1; }
-      }
-    </style>
-  </head>
-  <body>
-    <nav class="nav">
-      <div class="shell nav__inner">
-        <a class="brand" href="#top">
-          <img src="assets/svg/favicon.svg" alt="">
-          <span>Nauclio</span>
-        </a>
-        <button class="nauclio-button nauclio-button--secondary" id="theme-toggle" type="button">Switch theme</button>
-      </div>
-    </nav>
-
-    <main id="top">
-      <header class="shell hero">
-        <div>
-          <p class="eyebrow">Nauclio brand system · v1.0</p>
-          <h1>Command every coding agent.</h1>
-          <p class="lede">One calm command deck for every harness, shell, machine, and device. Nauclio keeps the human at the helm while the agent fleet gets the work done.</p>
-          <div class="actions">
-            <button class="nauclio-button" type="button">Open command deck</button>
-            <button class="nauclio-button nauclio-button--secondary" type="button">View active agents</button>
-          </div>
-        </div>
-        <div class="hero-icon">
-          <img id="hero-app-icon" src="reference/app-icon-dark-master.png" alt="Nauclio app icon">
-        </div>
-      </header>
-
-      <section>
-        <div class="shell">
-          <div class="section-head">
-            <p class="eyebrow">Logo system</p>
-            <h2>Three sessions. One helm.</h2>
-            <p class="lede">The mark combines three terminal sessions with a three-spoke command wheel. It represents multiple agent harnesses coordinated from one human-controlled interface.</p>
-          </div>
-          <div class="grid">
-            <div class="nauclio-card logo-card logo-card--light span-6"><img src="assets/svg/logo-horizontal-dark.svg" alt="Nauclio logo on light"></div>
-            <div class="nauclio-card logo-card logo-card--dark span-6"><img src="assets/svg/logo-horizontal-light.svg" alt="Nauclio logo on dark"></div>
-            <div class="nauclio-card logo-card logo-card--light span-6"><img src="assets/svg/mark-mono-dark.svg" alt="Nauclio monochrome dark mark"></div>
-            <div class="nauclio-card logo-card logo-card--dark span-6"><img src="assets/svg/mark-mono-light.svg" alt="Nauclio monochrome light mark"></div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="shell">
-          <div class="section-head">
-            <p class="eyebrow">Color</p>
-            <h2>Aegean signal on abyss.</h2>
-            <p class="lede">Navy conveys persistent infrastructure; cobalt communicates control; cyan and seafoam indicate live agents, connections, and successful execution.</p>
-          </div>
-          <div class="grid">
-            <div class="swatch span-4" style="background:#071426"><strong>Abyss</strong><code>#071426</code></div>
-            <div class="swatch span-4" style="background:#0B1F3A"><strong>Deep Current</strong><code>#0B1F3A</code></div>
-            <div class="swatch span-4" style="background:#2563EB"><strong>Cobalt</strong><code>#2563EB</code></div>
-            <div class="swatch span-4 swatch--light" style="background:#22D3EE"><strong>Aegean</strong><code>#22D3EE</code></div>
-            <div class="swatch span-4 swatch--light" style="background:#5EEAD4"><strong>Seafoam</strong><code>#5EEAD4</code></div>
-            <div class="swatch span-4 swatch--light" style="background:#F7FAFC"><strong>Foam</strong><code>#F7FAFC</code></div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="shell">
-          <div class="section-head">
-            <p class="eyebrow">Typography</p>
-            <h2>Technical without becoming mechanical.</h2>
-          </div>
-          <div class="grid">
-            <div class="nauclio-card card span-6">
-              <p class="eyebrow">Sora · Display</p>
-              <div class="type-display">Stay at the helm.</div>
-            </div>
-            <div class="nauclio-card card span-6">
-              <p class="eyebrow">Inter · Interface</p>
-              <p class="type-body">Built for long sessions, dense state, and fast scanning. Inter handles the product interface and all explanatory copy.</p>
-              <p class="type-mono">$ nauclio run --fleet active</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="shell">
-          <div class="section-head">
-            <p class="eyebrow">Interface direction</p>
-            <h2>Quiet surfaces. Visible state.</h2>
-            <p class="lede">The interface should feel calm when ten agents are busy. Reserve cyan and seafoam for live state, focus, and successful execution—not decoration.</p>
-          </div>
-          <div class="grid">
-            <div class="nauclio-card component-card">
-              <h3>Controls</h3>
-              <p class="type-body">Fourteen-pixel corners, direct verbs, and a clear primary action.</p>
-              <div class="button-row">
-                <button class="nauclio-button">Launch agent</button>
-                <button class="nauclio-button nauclio-button--secondary">Attach shell</button>
-              </div>
-            </div>
-            <div class="terminal-wrap">
-              <div class="nauclio-terminal">
-                <div class="nauclio-terminal__bar">
-                  <i class="nauclio-terminal__dot"></i><i class="nauclio-terminal__dot"></i><i class="nauclio-terminal__dot"></i>
-                </div>
-                <div class="nauclio-terminal__body">
-                  <div style="color:#5EEAD4">● codex-03 &nbsp; running</div>
-                  <div style="color:#9DB0C3">↳ workspace synced across 3 devices</div>
-                  <div style="color:#56C7FF">› awaiting review at command deck</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="shell">
-          <div class="section-head">
-            <p class="eyebrow">Messaging</p>
-            <h2>Calm command, not AI spectacle.</h2>
-          </div>
-          <div class="grid">
-            <article class="nauclio-card message"><strong>Primary line</strong><p>One command deck. Every coding agent.</p></article>
-            <article class="nauclio-card message"><strong>Remote line</strong><p>Your agents keep working. You stay connected.</p></article>
-            <article class="nauclio-card message"><strong>Product promise</strong><p>Run any harness, on any machine, from any device.</p></article>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="shell footer">Nauclio brand system · selected Docked Shells direction</footer>
-
-    <script>
-      const root = document.documentElement;
-      const icon = document.querySelector("#hero-app-icon");
-      document.querySelector("#theme-toggle").addEventListener("click", () => {
-        const dark = root.dataset.theme === "dark";
-        root.dataset.theme = dark ? "light" : "dark";
-        icon.src = dark ? "reference/app-icon-light-master.png" : "reference/app-icon-dark-master.png";
-      });
-    </script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dieter · Arctic Console brand pack</title>
+  <link rel="icon" href="assets/svg/favicon.svg">
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    body{min-height:100vh} .shell{width:min(1120px,calc(100% - 36px));margin:auto}
+    nav{border-bottom:1px solid var(--color-border)} nav .shell{display:flex;min-height:68px;align-items:center;justify-content:space-between}
+    .brand{display:flex;align-items:center;gap:12px;color:var(--color-text);text-decoration:none;font:700 1.3rem var(--font-display)} .brand img{width:42px;height:42px}
+    .hero{display:grid;grid-template-columns:1fr .8fr;gap:64px;align-items:center;padding:76px 0} h1{margin:.2em 0;font:700 clamp(3rem,7vw,6.5rem)/.95 var(--font-display);letter-spacing:-.065em}
+    .eyebrow{color:var(--color-accent);font:600 .8rem var(--font-mono);letter-spacing:.1em;text-transform:uppercase} .lede{max-width:620px;color:var(--color-text-muted);font-size:1.15rem;line-height:1.65}
+    .hero-icon{width:min(100%,430px);border-radius:23%;box-shadow:0 24px 70px color-mix(in srgb,var(--color-accent) 18%,transparent)} section{padding:70px 0;border-top:1px solid var(--color-border)}
+    .logos{display:grid;grid-template-columns:1fr 1fr;gap:18px} .logo-panel{display:grid;min-height:250px;place-items:center;padding:28px;border-radius:22px} .logo-panel img{width:90%}
+    .palette{display:grid;grid-template-columns:repeat(3,1fr);gap:14px} .swatch{min-height:145px;padding:20px;border-radius:22px;display:flex;flex-direction:column;justify-content:space-between} .swatch code{font-family:var(--font-mono)}
+    footer{padding:40px 0 60px;color:var(--color-text-muted)} @media(max-width:760px){.hero{grid-template-columns:1fr}.hero-icon{order:-1}.logos,.palette{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <nav><div class="shell"><a class="brand" href="#"><img src="assets/svg/favicon.svg" alt="">Dieter</a><button class="dieter-button" id="theme-toggle">Switch theme</button></div></nav>
+  <main>
+    <header class="shell hero"><div><p class="eyebrow">Palette 06 · Arctic Console</p><h1>Dieter’s on it.</h1><p class="lede">Quiet, credible, and enterprise-ready; intentionally restrained. One conductor, three command panes, every agent and device kept in sync.</p></div><img class="hero-icon" id="hero-icon" src="assets/png/app-icon-dark-1024.png" alt="Dieter Arctic Console app icon"></header>
+    <section><div class="shell"><p class="eyebrow">Logo system</p><div class="logos"><div class="logo-panel" style="background:#F5FBFD"><img src="assets/svg/logo-horizontal-dark.svg" alt="Dieter dark logo"></div><div class="logo-panel" style="background:#0D1B24"><img src="assets/svg/logo-horizontal-light.svg" alt="Dieter light logo"></div></div></div></section>
+    <section><div class="shell"><p class="eyebrow">Palette</p><div class="palette"><article class="swatch" style="background:#0D1B24;color:#F5FBFD"><strong>Dark</strong><code>#0D1B24</code></article><article class="swatch" style="background:#3D6E85;color:#F5FBFD"><strong>Shell end</strong><code>#3D6E85</code></article><article class="swatch" style="background:#8DD8E8;color:#F5FBFD"><strong>Shell start</strong><code>#8DD8E8</code></article><article class="swatch" style="background:#D7F2F5;color:#0D1B24"><strong>Pane</strong><code>#D7F2F5</code></article><article class="swatch" style="background:#BCEAF1;color:#0D1B24"><strong>Eyes</strong><code>#BCEAF1</code></article><article class="swatch" style="background:#F5FBFD;color:#0D1B24"><strong>Light</strong><code>#F5FBFD</code></article></div></div></section>
+  </main>
+  <footer class="shell">Dieter · Conductor Mask · Arctic Console</footer>
+  <script>const root=document.documentElement;const icon=document.querySelector('#hero-icon');document.querySelector('#theme-toggle').addEventListener('click',()=>{const dark=root.dataset.theme==='dark';root.dataset.theme=dark?'light':'dark';icon.src=dark?'assets/png/app-icon-light-1024.png':'assets/png/app-icon-dark-1024.png';});</script>
+</body>
 </html>

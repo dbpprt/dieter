@@ -195,7 +195,7 @@ export async function createLocalSandboxProvider({ root, projectPath }) {
     providerId: 'board-local-host',
     createSession: async () => session,
     resumeSession: async () => session,
-    // Nauclio's worker uses this only as a last-resort shutdown guard if an SDK
+    // Dieter's worker uses this only as a last-resort shutdown guard if an SDK
     // adapter fails to settle its stream. It is intentionally outside the
     // portable sandbox contract.
     stopAll: stopProcesses,

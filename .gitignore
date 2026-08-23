@@ -1,6 +1,6 @@
 # Go build and test output
-/nauclio
-/nauclio-gateway
+/dieter
+/dieter-gateway
 /bin/
 /coverage.out
 *.test
@@ -17,8 +17,8 @@
 /internal/harness/runtime/.npm/
 /apps/android/.kotlin/
 
-# Nauclio state, when NAUCLIO_HOME points at the checkout
-/.nauclio/
+# Dieter state, when DIETER_HOME points at the checkout
+/.dieter/
 /.kanna/
 
 # Local scratch output

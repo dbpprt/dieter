@@ -7,12 +7,12 @@ plugins {
     alias(libs.plugins.protobuf)
 }
 
-val releaseKeystorePath = providers.environmentVariable("NAUCLIO_ANDROID_KEYSTORE_PATH")
-val releaseKeystorePassword = providers.environmentVariable("NAUCLIO_ANDROID_KEYSTORE_PASSWORD")
-val releaseKeyAlias = providers.environmentVariable("NAUCLIO_ANDROID_KEY_ALIAS")
-val releaseKeyPassword = providers.environmentVariable("NAUCLIO_ANDROID_KEY_PASSWORD")
-val releaseVersionName = providers.environmentVariable("NAUCLIO_RELEASE_VERSION").orElse("0.1.0")
-val releaseVersionCode = providers.environmentVariable("NAUCLIO_RELEASE_VERSION_CODE").map { it.toInt() }.orElse(1)
+val releaseKeystorePath = providers.environmentVariable("DIETER_ANDROID_KEYSTORE_PATH")
+val releaseKeystorePassword = providers.environmentVariable("DIETER_ANDROID_KEYSTORE_PASSWORD")
+val releaseKeyAlias = providers.environmentVariable("DIETER_ANDROID_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("DIETER_ANDROID_KEY_PASSWORD")
+val releaseVersionName = providers.environmentVariable("DIETER_RELEASE_VERSION").orElse("0.1.0")
+val releaseVersionCode = providers.environmentVariable("DIETER_RELEASE_VERSION_CODE").map { it.toInt() }.orElse(1)
 val releaseSigningConfigured = listOf(
     releaseKeystorePath,
     releaseKeystorePassword,
@@ -21,12 +21,12 @@ val releaseSigningConfigured = listOf(
 ).all { it.isPresent }
 
 android {
-    namespace = "com.dbpprt.nauclio"
+    namespace = "com.dbpprt.dieter"
     compileSdk = 37
     compileSdkMinor = 1
 
     defaultConfig {
-        applicationId = "com.dbpprt.nauclio"
+        applicationId = "com.dbpprt.dieter"
         minSdk = 26
         targetSdk = 37
         versionCode = releaseVersionCode.get()
@@ -73,7 +73,7 @@ android {
     }
 
     packaging {
-        // Nauclio uses only Termux's pure-Java VT emulator and renderer. The
+        // Dieter uses only Termux's pure-Java VT emulator and renderer. The
         // bundled local-process JNI bridge is unused and is not 16 KiB aligned.
         jniLibs.excludes += setOf("**/libtermux.so")
         resources.excludes += setOf(

@@ -3,10 +3,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "NauclioMac",
+    name: "DieterMac",
     platforms: [.macOS(.v15)],
     products: [
-        .executable(name: "NauclioMac", targets: ["NauclioMac"]),
+        .executable(name: "DieterMac", targets: ["DieterMac"]),
     ],
     dependencies: [
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
@@ -19,7 +19,7 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "NauclioAPI",
+            name: "DieterAPI",
             dependencies: [
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
@@ -27,15 +27,15 @@ let package = Package(
             ],
             exclude: [
                 "gateway.proto",
-                "nauclio.proto",
+                "dieter.proto",
                 "grpc-swift-proto-generator-config.json",
                 "Generated/.inputs.sha256",
             ]
         ),
         .executableTarget(
-            name: "NauclioMac",
+            name: "DieterMac",
             dependencies: [
-                "NauclioAPI",
+                "DieterAPI",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
@@ -44,10 +44,10 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "NauclioMacTests",
+            name: "DieterMacTests",
             dependencies: [
-                "NauclioMac",
-                "NauclioAPI",
+                "DieterMac",
+                "DieterAPI",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ]
         ),

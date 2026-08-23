@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Nauclio ships with three local defaults and lets the user add trusted
+    <!-- Dieter ships with three local defaults and lets the user add trusted
          plaintext gRPC targets. Tailscale encrypts its tailnet hop. -->
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

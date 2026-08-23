@@ -5,7 +5,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 mkdir -p "$APP_ROOT/.build"
 CAPTURE_DIR=$(mktemp -d "$APP_ROOT/.build/sidebar-ui-smoke.XXXXXX")
-PREFERENCES_SUITE="com.dbpprt.nauclio.sidebar-smoke.$(uuidgen | tr '[:upper:]' '[:lower:]')"
+PREFERENCES_SUITE="com.dbpprt.dieter.sidebar-smoke.$(uuidgen | tr '[:upper:]' '[:lower:]')"
 APP_PID=
 
 cleanup() {
@@ -14,8 +14,8 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-if [ "${SKIP_BUILD:-0}" = "1" ] && [ -x "$APP_ROOT/build/Nauclio.app/Contents/MacOS/NauclioMac" ]; then
-    APP_BUNDLE="$APP_ROOT/build/Nauclio.app"
+if [ "${SKIP_BUILD:-0}" = "1" ] && [ -x "$APP_ROOT/build/Dieter.app/Contents/MacOS/DieterMac" ]; then
+    APP_BUNDLE="$APP_ROOT/build/Dieter.app"
 else
     APP_BUNDLE=$($SCRIPT_DIR/build.sh)
 fi
@@ -24,7 +24,7 @@ run_phase() {
     PHASE=$1
     OUTPUT="$CAPTURE_DIR/$PHASE"
     mkdir -p "$OUTPUT"
-    "$APP_BUNDLE/Contents/MacOS/NauclioMac" \
+    "$APP_BUNDLE/Contents/MacOS/DieterMac" \
         --sidebar-ui-smoke "$PHASE" \
         --sidebar-preferences-suite "$PREFERENCES_SUITE" \
         --ui-smoke-output "$OUTPUT" >"$OUTPUT/app.log" 2>&1 &

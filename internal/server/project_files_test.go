@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/store"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 func TestProjectFilesConnectEndToEnd(t *testing.T) {
@@ -38,39 +38,39 @@ func TestProjectFilesConnectEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	listing, err := client.ListFiles(ctx, connect.NewRequest(&naucliov1.ListFilesRequest{ProjectId: project.ID}))
+	listing, err := client.ListFiles(ctx, connect.NewRequest(&dieterv1.ListFilesRequest{ProjectId: project.ID}))
 	if err != nil || len(listing.Msg.GetEntries()) != 2 {
 		t.Fatalf("listing=%#v err=%v", listing, err)
 	}
-	hidden, err := client.ListFiles(ctx, connect.NewRequest(&naucliov1.ListFilesRequest{ProjectId: project.ID, ShowHidden: true}))
+	hidden, err := client.ListFiles(ctx, connect.NewRequest(&dieterv1.ListFilesRequest{ProjectId: project.ID, ShowHidden: true}))
 	if err != nil || len(hidden.Msg.GetEntries()) != 3 {
 		t.Fatalf("hidden listing=%#v err=%v", hidden, err)
 	}
-	document, err := client.ReadFile(ctx, connect.NewRequest(&naucliov1.ReadFileRequest{ProjectId: project.ID, Path: "src/main.go"}))
+	document, err := client.ReadFile(ctx, connect.NewRequest(&dieterv1.ReadFileRequest{ProjectId: project.ID, Path: "src/main.go"}))
 	if err != nil || document.Msg.GetContent() != "package main\n" || document.Msg.GetBinary() {
 		t.Fatalf("document=%#v err=%v", document, err)
 	}
-	binary, err := client.ReadFile(ctx, connect.NewRequest(&naucliov1.ReadFileRequest{ProjectId: project.ID, Path: "binary.dat"}))
+	binary, err := client.ReadFile(ctx, connect.NewRequest(&dieterv1.ReadFileRequest{ProjectId: project.ID, Path: "binary.dat"}))
 	if err != nil || !binary.Msg.GetBinary() || string(binary.Msg.GetData()) != string([]byte{'a', 0, 'b'}) {
 		t.Fatalf("binary=%#v err=%v", binary, err)
 	}
-	saved, err := client.SaveFile(ctx, connect.NewRequest(&naucliov1.SaveFileRequest{ProjectId: project.ID, Path: "src/main.go", Revision: document.Msg.GetRevision(), Content: "package board\n"}))
+	saved, err := client.SaveFile(ctx, connect.NewRequest(&dieterv1.SaveFileRequest{ProjectId: project.ID, Path: "src/main.go", Revision: document.Msg.GetRevision(), Content: "package board\n"}))
 	if err != nil || saved.Msg.GetRevision() == document.Msg.GetRevision() {
 		t.Fatalf("saved=%#v err=%v", saved, err)
 	}
-	if _, err := client.SaveFile(ctx, connect.NewRequest(&naucliov1.SaveFileRequest{ProjectId: project.ID, Path: "src/main.go", Revision: document.Msg.GetRevision(), Content: "stale"})); err == nil {
+	if _, err := client.SaveFile(ctx, connect.NewRequest(&dieterv1.SaveFileRequest{ProjectId: project.ID, Path: "src/main.go", Revision: document.Msg.GetRevision(), Content: "stale"})); err == nil {
 		t.Fatal("expected stale revision error")
 	}
-	if _, err := client.CreateFile(ctx, connect.NewRequest(&naucliov1.CreateFileRequest{ProjectId: project.ID, Path: "notes", Kind: "directory"})); err != nil {
+	if _, err := client.CreateFile(ctx, connect.NewRequest(&dieterv1.CreateFileRequest{ProjectId: project.ID, Path: "notes", Kind: "directory"})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CreateFile(ctx, connect.NewRequest(&naucliov1.CreateFileRequest{ProjectId: project.ID, Path: "notes/todo.md", Kind: "file", Content: "todo\n"})); err != nil {
+	if _, err := client.CreateFile(ctx, connect.NewRequest(&dieterv1.CreateFileRequest{ProjectId: project.ID, Path: "notes/todo.md", Kind: "file", Content: "todo\n"})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.MoveFile(ctx, connect.NewRequest(&naucliov1.MoveFileRequest{ProjectId: project.ID, Source: "notes/todo.md", Destination: "notes/done.md"})); err != nil {
+	if _, err := client.MoveFile(ctx, connect.NewRequest(&dieterv1.MoveFileRequest{ProjectId: project.ID, Source: "notes/todo.md", Destination: "notes/done.md"})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.DeleteFile(ctx, connect.NewRequest(&naucliov1.DeleteFileRequest{ProjectId: project.ID, Path: "notes", Recursive: true})); err != nil {
+	if _, err := client.DeleteFile(ctx, connect.NewRequest(&dieterv1.DeleteFileRequest{ProjectId: project.ID, Path: "notes", Recursive: true})); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(repo, "notes")); !os.IsNotExist(err) {
@@ -100,14 +100,14 @@ func TestProjectFilesConnectRejectsTraversalAndEscapingSymlinks(t *testing.T) {
 	defer cancel()
 
 	for _, path := range []string{"../outside.txt", ".git/config", "/tmp/outside"} {
-		if _, err := client.ReadFile(ctx, connect.NewRequest(&naucliov1.ReadFileRequest{ProjectId: project.ID, Path: path})); err == nil {
+		if _, err := client.ReadFile(ctx, connect.NewRequest(&dieterv1.ReadFileRequest{ProjectId: project.ID, Path: path})); err == nil {
 			t.Fatalf("expected read rejection for %q", path)
 		}
 	}
-	if _, err := client.ReadFile(ctx, connect.NewRequest(&naucliov1.ReadFileRequest{ProjectId: project.ID, Path: "escape"})); err == nil {
+	if _, err := client.ReadFile(ctx, connect.NewRequest(&dieterv1.ReadFileRequest{ProjectId: project.ID, Path: "escape"})); err == nil {
 		t.Fatal("expected escaping symlink rejection")
 	}
-	if _, err := client.DeleteFile(ctx, connect.NewRequest(&naucliov1.DeleteFileRequest{ProjectId: project.ID, Path: "escape"})); err != nil {
+	if _, err := client.DeleteFile(ctx, connect.NewRequest(&dieterv1.DeleteFileRequest{ProjectId: project.ID, Path: "escape"})); err != nil {
 		t.Fatalf("delete symlink: %v", err)
 	}
 	raw, err := os.ReadFile(outside)

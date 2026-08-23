@@ -1,15 +1,15 @@
-# Nauclio for Android
+# Dieter for Android
 
-Native Kotlin/Jetpack Compose client for Nauclio. It follows the 19 phone and
+Native Kotlin/Jetpack Compose client for Dieter. It follows the 19 phone and
 unfolded views extracted losslessly from `Native Android PWA redesign1.pdf`,
 including the cross-project Spaces overview and board quick switcher. It uses
 an adaptive master-detail layout for medium and expanded windows at 600 dp and
-above, including unfolded Galaxy Fold displays, and talks to Nauclio through the
+above, including unfolded Galaxy Fold displays, and talks to Dieter through the
 machine-only gateway protocol and native gRPC/Protobuf Lite.
 
 The default endpoint is `https://board.dbpprt.com`. One native OAuth/PKCE
 session discovers every daemon enrolled to the GitHub account. The connection
-dialog shows their presence and route state. Nauclio automatically works across
+dialog shows their presence and route state. Dieter automatically works across
 all online machines, tries gateway-provided authenticated TLS candidates, and
 falls back to the encrypted relay. Local-route discovery is automatic and never
 requires ADB port mapping or a manually entered daemon address.
@@ -21,7 +21,7 @@ mutations. This project-to-host directory lives only in the Android process;
 the gateway remains a machine and presence directory.
 
 Additional gateways can be added with an `https://` address. The resulting
-Nauclio session is encrypted with a device-bound Android Keystore key. GitHub
+Dieter session is encrypted with a device-bound Android Keystore key. GitHub
 credentials, GitHub access tokens, daemon certificates, and harness credentials
 are never persisted by the app.
 
@@ -47,7 +47,7 @@ window-size changes over gRPC. Output is resumed from a monotonic sequence
 cursor after Android process death or a route reconnect; leaving the screen or
 closing the app never closes the shell. Only the explicit **Close terminal**
 confirmation ends the daemon session. The bundled Termux local-process JNI
-bridge is deliberately excluded because Nauclio never starts a process on the
+bridge is deliberately excluded because Dieter never starts a process on the
 phone.
 
 App
@@ -65,11 +65,11 @@ overflow menu. Project chat sections show the five most recent entries until
 expanded. Model reasoning traces are hidden by default and can be enabled
 globally under App Settings > Chat display.
 
-The app checks the latest public `dbpprt/nauclio` GitHub release when it
-starts. When a newer semantic version includes `Nauclio-Android.apk`, Nauclio
+The app checks the latest public `dbpprt/dieter` GitHub release when it
+starts. When a newer semantic version includes `Dieter-Android.apk`, Dieter
 offers to download it, verifies GitHub's published SHA-256 asset digest, and
 hands the APK to Android's package installer. Android requires the user to
-allow Nauclio as an install source and confirm each installation; background
+allow Dieter as an install source and confirm each installation; background
 or silent replacement is intentionally not attempted. A manual check is
 available under App Settings > Updates.
 
@@ -99,20 +99,20 @@ committed bitmap derivatives on macOS with:
 Enroll and run a daemon on the machine that owns the projects:
 
 ```sh
-nauclio daemon enroll --gateway https://board.dbpprt.com --name "Studio Mac"
-nauclio daemon start
+dieter daemon enroll --gateway https://board.dbpprt.com --name "Studio Mac"
+dieter daemon start
 ```
 
 Install and open the debug application:
 
 ```sh
 ./apps/android/gradlew --project-dir apps/android installDebug
-adb shell am start -n com.dbpprt.nauclio/.MainActivity
+adb shell am start -n com.dbpprt.dieter/.MainActivity
 ```
 
 When more than one device is attached, add `-s <serial>` to each `adb` command.
 
-The application validates Nauclio API version 2 before opening the workspace.
+The application validates Dieter API version 2 before opening the workspace.
 The daemon's raw port 4242 remains loopback-only. Native access always uses an
 authenticated route or the gateway relay as documented in the root README.
 
@@ -127,7 +127,7 @@ The conversation and terminal replay reducers are covered by Kotlin unit tests.
 Real-process instrumentation verifies health, runtime, state streaming,
 harnesses, project files, schedule preview, and a terminal that stays alive
 across a complete Android gRPC channel teardown and cursor-based reconnect,
-all through the configured gateway and selected real daemon:
+all through the configured gateway and automatically routed real daemon:
 
 ```sh
 ANDROID_SERIAL=emulator-5554 ./apps/android/gradlew \
@@ -135,4 +135,4 @@ ANDROID_SERIAL=emulator-5554 ./apps/android/gradlew \
 ```
 
 End-to-end UI checks use semantic inspection and active interaction on the
-visible emulator. They never start a fixture or mock Nauclio server.
+visible emulator. They never start a fixture or mock Dieter server.

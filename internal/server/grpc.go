@@ -16,13 +16,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dbpprt/nauclio/internal/app"
-	naucliov1 "github.com/dbpprt/nauclio/internal/gen/nauclio/v1"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
-	nauclioprompt "github.com/dbpprt/nauclio/internal/prompt"
-	"github.com/dbpprt/nauclio/internal/store"
-	"github.com/dbpprt/nauclio/internal/terminal"
+	"github.com/dbpprt/dieter/internal/app"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
+	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/terminal"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -30,7 +30,7 @@ import (
 )
 
 type grpcAPI struct {
-	naucliov1.UnimplementedNauclioServiceServer
+	dieterv1.UnimplementedDieterServiceServer
 	server            *Server
 	conversationMu    sync.Mutex
 	conversationCache map[string]cachedConversation
@@ -51,7 +51,7 @@ const maxCachedConversations = 12
 
 type sequencedSnapshot struct {
 	seq      int64
-	snapshot *naucliov1.ConversationSnapshot
+	snapshot *dieterv1.ConversationSnapshot
 }
 
 type snapshotHistory struct {
@@ -61,11 +61,11 @@ type snapshotHistory struct {
 
 const maxSnapshotsPerConversation = 8
 
-func (api *grpcAPI) Health(context.Context, *emptypb.Empty) (*naucliov1.HealthResponse, error) {
-	return &naucliov1.HealthResponse{Status: "ok", Version: "2", StorePath: api.server.store.Root}, nil
+func (api *grpcAPI) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthResponse, error) {
+	return &dieterv1.HealthResponse{Status: "ok", Version: "2", StorePath: api.server.store.Root}, nil
 }
 
-func (api *grpcAPI) RenameBoard(_ context.Context, request *naucliov1.RenameBoardRequest) (*naucliov1.Board, error) {
+func (api *grpcAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoardRequest) (*dieterv1.Board, error) {
 	value, err := api.server.store.RenameBoard(request.GetBoardId(), request.GetName())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -73,7 +73,7 @@ func (api *grpcAPI) RenameBoard(_ context.Context, request *naucliov1.RenameBoar
 	return protoBoard(value), nil
 }
 
-func (api *grpcAPI) GetState(_ context.Context, request *naucliov1.GetStateRequest) (*naucliov1.State, error) {
+func (api *grpcAPI) GetState(_ context.Context, request *dieterv1.GetStateRequest) (*dieterv1.State, error) {
 	value, err := api.server.store.State(request.GetProjectId(), store.CardFilter{
 		Board: request.GetBoardId(), Lane: request.GetLane(), Runtime: request.GetRuntime(),
 		Query: request.GetQuery(), Label: request.GetLabelId(), Limit: int(request.GetLimit()),
@@ -84,11 +84,11 @@ func (api *grpcAPI) GetState(_ context.Context, request *naucliov1.GetStateReque
 	return protoState(value), nil
 }
 
-func (api *grpcAPI) GetHarnesses(ctx context.Context, _ *emptypb.Empty) (*naucliov1.HarnessCatalog, error) {
-	return protoHarnessCatalog(harness.RefreshCatalog(ctx, os.Getenv("NAUCLIO_ENABLE_MOCK_HARNESS") == "1")), nil
+func (api *grpcAPI) GetHarnesses(ctx context.Context, _ *emptypb.Empty) (*dieterv1.HarnessCatalog, error) {
+	return protoHarnessCatalog(harness.RefreshCatalog(ctx, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")), nil
 }
 
-func (api *grpcAPI) GetPromptSettings(context.Context, *emptypb.Empty) (*naucliov1.PromptSettings, error) {
+func (api *grpcAPI) GetPromptSettings(context.Context, *emptypb.Empty) (*dieterv1.PromptSettings, error) {
 	value, err := api.server.store.Settings()
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -96,7 +96,7 @@ func (api *grpcAPI) GetPromptSettings(context.Context, *emptypb.Empty) (*nauclio
 	return protoPromptSettings(value), nil
 }
 
-func (api *grpcAPI) UpdatePromptSettings(_ context.Context, request *naucliov1.UpdatePromptSettingsRequest) (*naucliov1.PromptSettings, error) {
+func (api *grpcAPI) UpdatePromptSettings(_ context.Context, request *dieterv1.UpdatePromptSettingsRequest) (*dieterv1.PromptSettings, error) {
 	value, err := api.server.store.UpdatePromptSettings(request.GetPromptTemplate(), request.GetBoardSkillTemplate(), request.GetChatSkillTemplate())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -104,7 +104,7 @@ func (api *grpcAPI) UpdatePromptSettings(_ context.Context, request *naucliov1.U
 	return protoPromptSettings(value), nil
 }
 
-func (api *grpcAPI) SetProjectPromptTemplate(_ context.Context, request *naucliov1.SetScopedPromptTemplateRequest) (*naucliov1.Project, error) {
+func (api *grpcAPI) SetProjectPromptTemplate(_ context.Context, request *dieterv1.SetScopedPromptTemplateRequest) (*dieterv1.Project, error) {
 	template := request.GetPromptTemplate()
 	if request.GetInherit() {
 		template = ""
@@ -116,7 +116,7 @@ func (api *grpcAPI) SetProjectPromptTemplate(_ context.Context, request *nauclio
 	return protoProject(value), nil
 }
 
-func (api *grpcAPI) SetBoardPromptTemplate(_ context.Context, request *naucliov1.SetScopedPromptTemplateRequest) (*naucliov1.Board, error) {
+func (api *grpcAPI) SetBoardPromptTemplate(_ context.Context, request *dieterv1.SetScopedPromptTemplateRequest) (*dieterv1.Board, error) {
 	template := request.GetPromptTemplate()
 	if request.GetInherit() {
 		template = ""
@@ -128,7 +128,7 @@ func (api *grpcAPI) SetBoardPromptTemplate(_ context.Context, request *naucliov1
 	return protoBoard(value), nil
 }
 
-func (api *grpcAPI) PreviewPrompt(_ context.Context, request *naucliov1.PreviewPromptRequest) (*naucliov1.PromptPreview, error) {
+func (api *grpcAPI) PreviewPrompt(_ context.Context, request *dieterv1.PreviewPromptRequest) (*dieterv1.PromptPreview, error) {
 	var detail model.CardDetail
 	var err error
 	if request.GetCardId() != "" {
@@ -158,22 +158,22 @@ func (api *grpcAPI) PreviewPrompt(_ context.Context, request *naucliov1.PreviewP
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	resolved, err := nauclioprompt.Resolve(settings, detail, labelIDs)
+	resolved, err := dieterprompt.Resolve(settings, detail, labelIDs)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	result := &naucliov1.PromptPreview{
+	result := &dieterv1.PromptPreview{
 		Source: resolved.Source, PromptTemplate: resolved.Template, Context: resolved.Context,
 		Skill: resolved.Skill, Instructions: resolved.Instructions,
 		Characters: int32(len(resolved.Instructions)), EstimatedTokens: int32((len(resolved.Instructions) + 3) / 4),
 	}
 	for _, label := range resolved.AppliedLabels {
-		result.AppliedLabels = append(result.AppliedLabels, &naucliov1.Label{Id: label.ID, Name: label.Name, Color: label.Color, Instructions: label.Instructions})
+		result.AppliedLabels = append(result.AppliedLabels, &dieterv1.Label{Id: label.ID, Name: label.Name, Color: label.Color, Instructions: label.Instructions})
 	}
 	return result, nil
 }
 
-func conversationInput(request *naucliov1.CreateConversationRequest) (app.CardInput, error) {
+func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInput, error) {
 	attachments, err := modelUserAttachmentParts(request.GetAttachments())
 	if err != nil {
 		return app.CardInput{}, err
@@ -186,7 +186,7 @@ func conversationInput(request *naucliov1.CreateConversationRequest) (app.CardIn
 	}, nil
 }
 
-func (api *grpcAPI) idempotentConversation(ctx context.Context, request *naucliov1.CreateConversationRequest, scope string) (*naucliov1.Card, error) {
+func (api *grpcAPI) idempotentConversation(ctx context.Context, request *dieterv1.CreateConversationRequest, scope string) (*dieterv1.Card, error) {
 	clientID, commandID := strings.TrimSpace(request.GetClientId()), strings.TrimSpace(request.GetCommandId())
 	if clientID == "" && commandID == "" {
 		input, err := conversationInput(request)
@@ -265,15 +265,15 @@ func cloneProtoStringMap(values map[string]string) map[string]string {
 	return result
 }
 
-func (api *grpcAPI) CreateCard(ctx context.Context, request *naucliov1.CreateConversationRequest) (*naucliov1.Card, error) {
+func (api *grpcAPI) CreateCard(ctx context.Context, request *dieterv1.CreateConversationRequest) (*dieterv1.Card, error) {
 	return api.idempotentConversation(ctx, request, model.ConversationScopeBoard)
 }
 
-func (api *grpcAPI) CreateChat(ctx context.Context, request *naucliov1.CreateConversationRequest) (*naucliov1.Card, error) {
+func (api *grpcAPI) CreateChat(ctx context.Context, request *dieterv1.CreateConversationRequest) (*dieterv1.Card, error) {
 	return api.idempotentConversation(ctx, request, model.ConversationScopeChat)
 }
 
-func (api *grpcAPI) ListChats(_ context.Context, request *naucliov1.ListChatsRequest) (*naucliov1.ChatsResponse, error) {
+func (api *grpcAPI) ListChats(_ context.Context, request *dieterv1.ListChatsRequest) (*dieterv1.ChatsResponse, error) {
 	projects, err := api.server.store.ListProjects()
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -284,7 +284,7 @@ func (api *grpcAPI) ListChats(_ context.Context, request *naucliov1.ListChatsReq
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	result := &naucliov1.ChatsResponse{}
+	result := &dieterv1.ChatsResponse{}
 	for _, value := range projects {
 		result.Projects = append(result.Projects, protoProject(value))
 	}
@@ -306,7 +306,7 @@ func (api *grpcAPI) ListChats(_ context.Context, request *naucliov1.ListChatsReq
 	return result, nil
 }
 
-func (api *grpcAPI) GetCard(_ context.Context, request *naucliov1.GetCardRequest) (*naucliov1.CardDetail, error) {
+func (api *grpcAPI) GetCard(_ context.Context, request *dieterv1.GetCardRequest) (*dieterv1.CardDetail, error) {
 	value, err := api.server.store.CardDetail(request.GetCardId())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -353,7 +353,7 @@ func (api *grpcAPI) conversation(cardID string) (model.Conversation, error) {
 	return conversation, nil
 }
 
-func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32) (*naucliov1.ConversationSnapshot, error) {
+func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32) (*dieterv1.ConversationSnapshot, error) {
 	detail, err := api.server.store.CardDetail(cardID)
 	if err != nil {
 		return nil, err
@@ -394,9 +394,9 @@ func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32
 		}
 	}
 	conversation.TaskPlans = visibleTaskPlans
-	snapshot := &naucliov1.ConversationSnapshot{
+	snapshot := &dieterv1.ConversationSnapshot{
 		Detail: protoCardDetail(detail), Conversation: protoConversation(conversation),
-		Page: &naucliov1.ConversationPage{
+		Page: &dieterv1.ConversationPage{
 			Start: int32(start), End: int32(end), Total: int32(total), HasMore: start > 0,
 		},
 	}
@@ -406,7 +406,7 @@ func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32
 	return snapshot, nil
 }
 
-func (api *grpcAPI) rememberConversationSnapshot(cardID string, snapshot *naucliov1.ConversationSnapshot) {
+func (api *grpcAPI) rememberConversationSnapshot(cardID string, snapshot *dieterv1.ConversationSnapshot) {
 	seq := snapshot.GetConversation().GetLastSeq()
 	api.snapshotMu.Lock()
 	defer api.snapshotMu.Unlock()
@@ -437,7 +437,7 @@ func (api *grpcAPI) rememberConversationSnapshot(cardID string, snapshot *naucli
 	delete(api.snapshotCache, oldestID)
 }
 
-func (api *grpcAPI) rememberedConversationSnapshot(cardID string, seq int64) *naucliov1.ConversationSnapshot {
+func (api *grpcAPI) rememberedConversationSnapshot(cardID string, seq int64) *dieterv1.ConversationSnapshot {
 	api.snapshotMu.Lock()
 	defer api.snapshotMu.Unlock()
 	history, ok := api.snapshotCache[cardID]
@@ -455,7 +455,7 @@ func (api *grpcAPI) rememberedConversationSnapshot(cardID string, seq int64) *na
 	return nil
 }
 
-func (api *grpcAPI) GetConversation(_ context.Context, request *naucliov1.GetConversationRequest) (*naucliov1.ConversationSnapshot, error) {
+func (api *grpcAPI) GetConversation(_ context.Context, request *dieterv1.GetConversationRequest) (*dieterv1.ConversationSnapshot, error) {
 	value, err := api.conversationSnapshot(request.GetCardId(), int(request.GetLimit()), request.Before)
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -463,14 +463,14 @@ func (api *grpcAPI) GetConversation(_ context.Context, request *naucliov1.GetCon
 	return value, nil
 }
 
-func (api *grpcAPI) PollConversation(_ context.Context, request *naucliov1.PollConversationRequest) (*naucliov1.ConversationUpdate, error) {
+func (api *grpcAPI) PollConversation(_ context.Context, request *dieterv1.PollConversationRequest) (*dieterv1.ConversationUpdate, error) {
 	snapshot, err := api.conversationSnapshot(request.GetCardId(), int(request.GetLimit()), nil)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
 	conversation := snapshot.GetConversation()
 	if request.AfterSeq != nil && request.GetAfterSeq() == conversation.GetLastSeq() {
-		return &naucliov1.ConversationUpdate{
+		return &dieterv1.ConversationUpdate{
 			Status: conversation.GetStatus(), LastSeq: conversation.GetLastSeq(), UpdatedAt: conversation.GetUpdatedAt(),
 		}, nil
 	}
@@ -479,10 +479,10 @@ func (api *grpcAPI) PollConversation(_ context.Context, request *naucliov1.PollC
 			return conversationDelta(previous, snapshot), nil
 		}
 	}
-	return &naucliov1.ConversationUpdate{Snapshot: snapshot}, nil
+	return &dieterv1.ConversationUpdate{Snapshot: snapshot}, nil
 }
 
-func (api *grpcAPI) GetToolOutput(_ context.Context, request *naucliov1.GetToolOutputRequest) (*naucliov1.ToolOutput, error) {
+func (api *grpcAPI) GetToolOutput(_ context.Context, request *dieterv1.GetToolOutputRequest) (*dieterv1.ToolOutput, error) {
 	conversation, err := api.conversation(request.GetCardId())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -495,7 +495,7 @@ func (api *grpcAPI) GetToolOutput(_ context.Context, request *naucliov1.GetToolO
 			if part.ToolCallID != request.GetToolCallId() || (part.Type != "dynamic-tool" && !strings.HasPrefix(part.Type, "tool-")) {
 				continue
 			}
-			return &naucliov1.ToolOutput{
+			return &dieterv1.ToolOutput{
 				CardId: conversation.CardID, MessageId: message.ID,
 				ToolCallId: part.ToolCallID, ToolName: part.ToolName, State: part.State,
 				InputJson: append([]byte(nil), part.Input...), OutputJson: append([]byte(nil), part.Output...),
@@ -506,7 +506,7 @@ func (api *grpcAPI) GetToolOutput(_ context.Context, request *naucliov1.GetToolO
 	return nil, status.Errorf(codes.NotFound, "tool call %q was not found in message %q", request.GetToolCallId(), request.GetMessageId())
 }
 
-func (api *grpcAPI) watchConversation(ctx context.Context, request *naucliov1.WatchConversationRequest, send func(*naucliov1.ConversationUpdate) error) error {
+func (api *grpcAPI) watchConversation(ctx context.Context, request *dieterv1.WatchConversationRequest, send func(*dieterv1.ConversationUpdate) error) error {
 	interval := time.Duration(request.GetIntervalMs()) * time.Millisecond
 	if interval <= 0 {
 		interval = 350 * time.Millisecond
@@ -518,7 +518,7 @@ func (api *grpcAPI) watchConversation(ctx context.Context, request *naucliov1.Wa
 		interval = 5 * time.Second
 	}
 	var previous [sha256.Size]byte
-	var previousSnapshot *naucliov1.ConversationSnapshot
+	var previousSnapshot *dieterv1.ConversationSnapshot
 	resumeSeq := request.GetAfterSeq()
 	sendChanged := func() error {
 		snapshot, err := api.conversationSnapshot(request.GetCardId(), int(request.GetLimit()), nil)
@@ -563,15 +563,15 @@ func (api *grpcAPI) watchConversation(ctx context.Context, request *naucliov1.Wa
 	}
 }
 
-func (api *grpcAPI) WatchConversation(request *naucliov1.WatchConversationRequest, stream naucliov1.NauclioService_WatchConversationServer) error {
+func (api *grpcAPI) WatchConversation(request *dieterv1.WatchConversationRequest, stream dieterv1.DieterService_WatchConversationServer) error {
 	return api.watchConversation(stream.Context(), request, stream.Send)
 }
 
-func conversationDelta(previous, current *naucliov1.ConversationSnapshot) *naucliov1.ConversationUpdate {
+func conversationDelta(previous, current *dieterv1.ConversationSnapshot) *dieterv1.ConversationUpdate {
 	if previous == nil {
-		return &naucliov1.ConversationUpdate{Snapshot: current}
+		return &dieterv1.ConversationUpdate{Snapshot: current}
 	}
-	update := &naucliov1.ConversationUpdate{
+	update := &dieterv1.ConversationUpdate{
 		Status:           current.GetConversation().GetStatus(),
 		PendingTools:     current.GetConversation().GetPendingTools(),
 		Queue:            current.GetConversation().GetQueue(),
@@ -582,7 +582,7 @@ func conversationDelta(previous, current *naucliov1.ConversationSnapshot) *naucl
 		TaskPlans:        current.GetConversation().GetTaskPlans(),
 		DraftAttachments: current.GetConversation().GetDraftAttachments(),
 	}
-	before := make(map[string]*naucliov1.UiMessage, len(previous.GetConversation().GetMessages()))
+	before := make(map[string]*dieterv1.UiMessage, len(previous.GetConversation().GetMessages()))
 	for _, message := range previous.GetConversation().GetMessages() {
 		before[message.GetId()] = message
 	}
@@ -604,7 +604,7 @@ func conversationDelta(previous, current *naucliov1.ConversationSnapshot) *naucl
 	return update
 }
 
-func (api *grpcAPI) SendMessage(_ context.Context, request *naucliov1.SendMessageRequest) (*naucliov1.SendMessageResponse, error) {
+func (api *grpcAPI) SendMessage(_ context.Context, request *dieterv1.SendMessageRequest) (*dieterv1.SendMessageResponse, error) {
 	parts, err := modelUserMessageParts(request.GetParts())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -620,7 +620,7 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *naucliov1.SendMessag
 		if submitErr != nil {
 			return nil, grpcFailure(submitErr)
 		}
-		return &naucliov1.SendMessageResponse{Sent: !queued, Queued: queued}, nil
+		return &dieterv1.SendMessageResponse{Sent: !queued, Queued: queued}, nil
 	}
 	api.commandMu.Lock()
 	defer api.commandMu.Unlock()
@@ -630,7 +630,7 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *naucliov1.SendMessag
 		if result.Kind != "send_message" {
 			return nil, status.Error(codes.AlreadyExists, "command_id was already used for another operation")
 		}
-		return &naucliov1.SendMessageResponse{Sent: result.Sent, Queued: result.Queued, MessageId: result.MessageID}, nil
+		return &dieterv1.SendMessageResponse{Sent: result.Sent, Queued: result.Queued, MessageId: result.MessageID}, nil
 	}
 	messageID := strings.TrimSpace(request.GetMessageId())
 	if messageID == "" {
@@ -649,7 +649,7 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *naucliov1.SendMessag
 				if saveErr := api.server.store.SaveCommandResult(clientID, commandID, result); saveErr != nil {
 					return nil, grpcFailure(saveErr)
 				}
-				return &naucliov1.SendMessageResponse{Sent: true, MessageId: messageID}, nil
+				return &dieterv1.SendMessageResponse{Sent: true, MessageId: messageID}, nil
 			}
 		}
 		for _, queuedMessage := range conversation.Queue {
@@ -658,7 +658,7 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *naucliov1.SendMessag
 				if saveErr := api.server.store.SaveCommandResult(clientID, commandID, result); saveErr != nil {
 					return nil, grpcFailure(saveErr)
 				}
-				return &naucliov1.SendMessageResponse{Queued: true, MessageId: messageID}, nil
+				return &dieterv1.SendMessageResponse{Queued: true, MessageId: messageID}, nil
 			}
 		}
 	}
@@ -673,10 +673,10 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *naucliov1.SendMessag
 	if err := api.server.store.SaveCommandResult(clientID, commandID, result); err != nil {
 		return nil, grpcFailure(err)
 	}
-	return &naucliov1.SendMessageResponse{Sent: !queued, Queued: queued, MessageId: messageID}, nil
+	return &dieterv1.SendMessageResponse{Sent: !queued, Queued: queued, MessageId: messageID}, nil
 }
 
-func (api *grpcAPI) AddComment(_ context.Context, request *naucliov1.AddCommentRequest) (*naucliov1.Comment, error) {
+func (api *grpcAPI) AddComment(_ context.Context, request *dieterv1.AddCommentRequest) (*dieterv1.Comment, error) {
 	card, err := api.server.store.ResolveCard(request.GetCardId())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -688,7 +688,7 @@ func (api *grpcAPI) AddComment(_ context.Context, request *naucliov1.AddCommentR
 	return protoComment(value), nil
 }
 
-func (api *grpcAPI) MoveCard(_ context.Context, request *naucliov1.MoveCardRequest) (*naucliov1.Card, error) {
+func (api *grpcAPI) MoveCard(_ context.Context, request *dieterv1.MoveCardRequest) (*dieterv1.Card, error) {
 	before, err := api.server.store.ResolveCard(request.GetCardId())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -718,7 +718,7 @@ func (api *grpcAPI) MoveCard(_ context.Context, request *naucliov1.MoveCardReque
 	return protoCard(value), nil
 }
 
-func (api *grpcAPI) StartCard(_ context.Context, request *naucliov1.StartCardRequest) (*naucliov1.StartCardResponse, error) {
+func (api *grpcAPI) StartCard(_ context.Context, request *dieterv1.StartCardRequest) (*dieterv1.StartCardResponse, error) {
 	clientID, commandID := strings.TrimSpace(request.GetClientId()), strings.TrimSpace(request.GetCommandId())
 	if clientID == "" || commandID == "" {
 		return nil, status.Error(codes.InvalidArgument, "client_id and command_id are required")
@@ -735,7 +735,7 @@ func (api *grpcAPI) StartCard(_ context.Context, request *naucliov1.StartCardReq
 		if resolveErr != nil {
 			return nil, grpcFailure(resolveErr)
 		}
-		return &naucliov1.StartCardResponse{Card: protoCard(card), Accepted: true, Replayed: true, CommandId: commandID}, nil
+		return &dieterv1.StartCardResponse{Card: protoCard(card), Accepted: true, Replayed: true, CommandId: commandID}, nil
 	}
 
 	card, err := api.server.store.ResolveCard(request.GetCardId())
@@ -750,7 +750,7 @@ func (api *grpcAPI) StartCard(_ context.Context, request *naucliov1.StartCardReq
 			if saveErr := api.server.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: "start_card", CardID: card.ID}); saveErr != nil {
 				return nil, grpcFailure(saveErr)
 			}
-			return &naucliov1.StartCardResponse{Card: protoCard(card), Accepted: true, AlreadyRunning: true, CommandId: commandID}, nil
+			return &dieterv1.StartCardResponse{Card: protoCard(card), Accepted: true, AlreadyRunning: true, CommandId: commandID}, nil
 		}
 		return nil, status.Error(codes.FailedPrecondition, "card has already been started; send a message to resume its conversation")
 	}
@@ -767,10 +767,10 @@ func (api *grpcAPI) StartCard(_ context.Context, request *naucliov1.StartCardReq
 	if err := api.server.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: "start_card", CardID: fresh.ID}); err != nil {
 		return nil, grpcFailure(err)
 	}
-	return &naucliov1.StartCardResponse{Card: protoCard(fresh), Accepted: true, CommandId: commandID}, nil
+	return &dieterv1.StartCardResponse{Card: protoCard(fresh), Accepted: true, CommandId: commandID}, nil
 }
 
-func (api *grpcAPI) SetCardLabels(_ context.Context, request *naucliov1.SetCardLabelsRequest) (*naucliov1.Card, error) {
+func (api *grpcAPI) SetCardLabels(_ context.Context, request *dieterv1.SetCardLabelsRequest) (*dieterv1.Card, error) {
 	value, err := api.server.store.SetCardLabels(request.GetCardId(), request.GetLabelIds())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -778,14 +778,14 @@ func (api *grpcAPI) SetCardLabels(_ context.Context, request *naucliov1.SetCardL
 	return protoCard(value), nil
 }
 
-func (api *grpcAPI) CancelCard(_ context.Context, request *naucliov1.GetCardRequest) (*emptypb.Empty, error) {
+func (api *grpcAPI) CancelCard(_ context.Context, request *dieterv1.GetCardRequest) (*emptypb.Empty, error) {
 	if err := api.server.app.CancelCard(request.GetCardId()); err != nil {
 		return nil, grpcFailure(err)
 	}
 	return &emptypb.Empty{}, nil
 }
 
-func (api *grpcAPI) RenameCard(_ context.Context, request *naucliov1.RenameCardRequest) (*naucliov1.Card, error) {
+func (api *grpcAPI) RenameCard(_ context.Context, request *dieterv1.RenameCardRequest) (*dieterv1.Card, error) {
 	value, err := api.server.store.RenameCard(request.GetCardId(), request.GetTitle())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -793,7 +793,7 @@ func (api *grpcAPI) RenameCard(_ context.Context, request *naucliov1.RenameCardR
 	return protoCard(value), nil
 }
 
-func (api *grpcAPI) UpdateCard(_ context.Context, request *naucliov1.UpdateCardRequest) (*naucliov1.Card, error) {
+func (api *grpcAPI) UpdateCard(_ context.Context, request *dieterv1.UpdateCardRequest) (*dieterv1.Card, error) {
 	value, err := api.server.store.UpdateCard(request.GetCardId(), request.GetTitle(), request.GetInitialPrompt())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -801,7 +801,7 @@ func (api *grpcAPI) UpdateCard(_ context.Context, request *naucliov1.UpdateCardR
 	return protoCard(value), nil
 }
 
-func (api *grpcAPI) ArchiveCard(_ context.Context, request *naucliov1.ArchiveCardRequest) (*naucliov1.Card, error) {
+func (api *grpcAPI) ArchiveCard(_ context.Context, request *dieterv1.ArchiveCardRequest) (*dieterv1.Card, error) {
 	value, err := api.server.store.ArchiveCard(request.GetCardId(), request.GetArchived())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -809,7 +809,7 @@ func (api *grpcAPI) ArchiveCard(_ context.Context, request *naucliov1.ArchiveCar
 	return protoCard(value), nil
 }
 
-func (api *grpcAPI) PinChat(_ context.Context, request *naucliov1.PinChatRequest) (*naucliov1.Card, error) {
+func (api *grpcAPI) PinChat(_ context.Context, request *dieterv1.PinChatRequest) (*dieterv1.Card, error) {
 	value, err := api.server.store.PinChat(request.GetCardId(), request.GetPinned())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -817,7 +817,7 @@ func (api *grpcAPI) PinChat(_ context.Context, request *naucliov1.PinChatRequest
 	return protoCard(value), nil
 }
 
-func (api *grpcAPI) ListFiles(_ context.Context, request *naucliov1.ListFilesRequest) (*naucliov1.FileList, error) {
+func (api *grpcAPI) ListFiles(_ context.Context, request *dieterv1.ListFilesRequest) (*dieterv1.FileList, error) {
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
 	project, err := api.server.store.ResolveProject(request.GetProjectId())
@@ -861,9 +861,9 @@ func (api *grpcAPI) ListFiles(_ context.Context, request *naucliov1.ListFilesReq
 		}
 		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 	})
-	result := &naucliov1.FileList{Path: relative}
+	result := &dieterv1.FileList{Path: relative}
 	for _, entry := range entries {
-		result.Entries = append(result.Entries, &naucliov1.FileEntry{
+		result.Entries = append(result.Entries, &dieterv1.FileEntry{
 			Name: entry.Name, Path: entry.Path, Kind: entry.Kind, Size: entry.Size,
 			ModifiedAt: entry.ModifiedAt, Hidden: entry.Hidden, Symlink: entry.Symlink,
 		})
@@ -871,7 +871,7 @@ func (api *grpcAPI) ListFiles(_ context.Context, request *naucliov1.ListFilesReq
 	return result, nil
 }
 
-func (api *grpcAPI) ReadFile(_ context.Context, request *naucliov1.ReadFileRequest) (*naucliov1.FileDocument, error) {
+func (api *grpcAPI) ReadFile(_ context.Context, request *dieterv1.ReadFileRequest) (*dieterv1.FileDocument, error) {
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
 	project, err := api.server.store.ResolveProject(request.GetProjectId())
@@ -898,7 +898,7 @@ func (api *grpcAPI) ReadFile(_ context.Context, request *naucliov1.ReadFileReque
 		return nil, grpcFailure(err)
 	}
 	binary := !utf8.Valid(content) || containsNUL(content)
-	result := &naucliov1.FileDocument{
+	result := &dieterv1.FileDocument{
 		Path: relative, Name: path.Base(relative), Binary: binary, Size: info.Size(),
 		ModifiedAt: info.ModTime().UTC().Format(projectTimeFormat),
 		Revision:   projectFileRevision(content), MimeType: mime.TypeByExtension(strings.ToLower(filepath.Ext(target))),
@@ -911,27 +911,27 @@ func (api *grpcAPI) ReadFile(_ context.Context, request *naucliov1.ReadFileReque
 	return result, nil
 }
 
-func (api *grpcAPI) ListSchedules(_ context.Context, request *naucliov1.ListSchedulesRequest) (*naucliov1.SchedulesResponse, error) {
+func (api *grpcAPI) ListSchedules(_ context.Context, request *dieterv1.ListSchedulesRequest) (*dieterv1.SchedulesResponse, error) {
 	values, err := api.server.schedules.List(request.GetProjectId())
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	result := &naucliov1.SchedulesResponse{}
+	result := &dieterv1.SchedulesResponse{}
 	for _, value := range values {
 		result.Schedules = append(result.Schedules, protoSchedule(value))
 	}
 	return result, nil
 }
 
-func (api *grpcAPI) PreviewSchedule(_ context.Context, request *naucliov1.PreviewScheduleRequest) (*naucliov1.SchedulePreview, error) {
+func (api *grpcAPI) PreviewSchedule(_ context.Context, request *dieterv1.PreviewScheduleRequest) (*dieterv1.SchedulePreview, error) {
 	values, err := api.server.schedules.Preview(request.GetCron(), request.GetTimezone(), int(request.GetCount()))
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	return &naucliov1.SchedulePreview{Times: values}, nil
+	return &dieterv1.SchedulePreview{Times: values}, nil
 }
 
-func scheduleInput(request *naucliov1.SaveScheduleRequest) (store.ScheduleInput, error) {
+func scheduleInput(request *dieterv1.SaveScheduleRequest) (store.ScheduleInput, error) {
 	value := request.GetSchedule()
 	if value == nil {
 		return store.ScheduleInput{}, errors.New("schedule is required")
@@ -947,7 +947,7 @@ func scheduleInput(request *naucliov1.SaveScheduleRequest) (store.ScheduleInput,
 	}, nil
 }
 
-func (api *grpcAPI) CreateSchedule(_ context.Context, request *naucliov1.SaveScheduleRequest) (*naucliov1.Schedule, error) {
+func (api *grpcAPI) CreateSchedule(_ context.Context, request *dieterv1.SaveScheduleRequest) (*dieterv1.Schedule, error) {
 	input, err := scheduleInput(request)
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -959,7 +959,7 @@ func (api *grpcAPI) CreateSchedule(_ context.Context, request *naucliov1.SaveSch
 	return protoSchedule(value), nil
 }
 
-func (api *grpcAPI) UpdateSchedule(_ context.Context, request *naucliov1.SaveScheduleRequest) (*naucliov1.Schedule, error) {
+func (api *grpcAPI) UpdateSchedule(_ context.Context, request *dieterv1.SaveScheduleRequest) (*dieterv1.Schedule, error) {
 	input, err := scheduleInput(request)
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -974,14 +974,14 @@ func (api *grpcAPI) UpdateSchedule(_ context.Context, request *naucliov1.SaveSch
 	return protoSchedule(value), nil
 }
 
-func (api *grpcAPI) DeleteSchedule(_ context.Context, request *naucliov1.ScheduleRef) (*emptypb.Empty, error) {
+func (api *grpcAPI) DeleteSchedule(_ context.Context, request *dieterv1.ScheduleRef) (*emptypb.Empty, error) {
 	if err := api.server.store.DeleteSchedule(request.GetScheduleId()); err != nil {
 		return nil, grpcFailure(err)
 	}
 	return &emptypb.Empty{}, nil
 }
 
-func (api *grpcAPI) RunSchedule(_ context.Context, request *naucliov1.ScheduleRef) (*naucliov1.ScheduleRun, error) {
+func (api *grpcAPI) RunSchedule(_ context.Context, request *dieterv1.ScheduleRef) (*dieterv1.ScheduleRun, error) {
 	value, err := api.server.schedules.RunNow(request.GetScheduleId())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -989,7 +989,7 @@ func (api *grpcAPI) RunSchedule(_ context.Context, request *naucliov1.ScheduleRe
 	return protoScheduleRun(value), nil
 }
 
-func (api *grpcAPI) SetScheduleEnabled(_ context.Context, request *naucliov1.SetScheduleEnabledRequest) (*naucliov1.Schedule, error) {
+func (api *grpcAPI) SetScheduleEnabled(_ context.Context, request *dieterv1.SetScheduleEnabledRequest) (*dieterv1.Schedule, error) {
 	value, err := api.server.schedules.SetEnabled(request.GetScheduleId(), request.GetEnabled())
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -997,12 +997,12 @@ func (api *grpcAPI) SetScheduleEnabled(_ context.Context, request *naucliov1.Set
 	return protoSchedule(value), nil
 }
 
-func (api *grpcAPI) ListScheduleRuns(_ context.Context, request *naucliov1.ListScheduleRunsRequest) (*naucliov1.ScheduleRunsResponse, error) {
+func (api *grpcAPI) ListScheduleRuns(_ context.Context, request *dieterv1.ListScheduleRunsRequest) (*dieterv1.ScheduleRunsResponse, error) {
 	values, err := api.server.store.ListScheduleRuns(request.GetScheduleId(), int(request.GetLimit()))
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	result := &naucliov1.ScheduleRunsResponse{}
+	result := &dieterv1.ScheduleRunsResponse{}
 	for _, value := range values {
 		result.Runs = append(result.Runs, protoScheduleRun(value))
 	}

@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dbpprt/nauclio/internal/attachments"
-	"github.com/dbpprt/nauclio/internal/harness"
-	"github.com/dbpprt/nauclio/internal/model"
-	nauclioprompt "github.com/dbpprt/nauclio/internal/prompt"
-	"github.com/dbpprt/nauclio/internal/store"
+	"github.com/dbpprt/dieter/internal/attachments"
+	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/model"
+	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 type Service struct {
@@ -53,7 +53,7 @@ func New(data *store.Store, runner harness.Runner) *Service {
 }
 
 // ReconcileOrphanedTurns resumes turns that were cleanly suspended by a
-// previous Nauclio process. A turn without a provider continuation is closed as
+// previous Dieter process. A turn without a provider continuation is closed as
 // interrupted; its prompt is never replayed because that could duplicate file
 // edits or external side effects.
 func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
@@ -110,11 +110,11 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	if !hasTurnContinuation(conversation.Session) {
 		return errNoTurnContinuation
 	}
-	adapter, configuredModel, err := resolvePersistedSelection(detail.Card.Provider, detail.Card.Model, os.Getenv("NAUCLIO_ENABLE_MOCK_HARNESS") == "1")
+	adapter, configuredModel, err := resolvePersistedSelection(detail.Card.Provider, detail.Card.Model, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
 	if err != nil {
 		return err
 	}
-	// Provider discovery may not have run yet in a freshly restarted Nauclio
+	// Provider discovery may not have run yet in a freshly restarted Dieter
 	// process. The locked model and effort were validated when the conversation
 	// was created, so recovery must trust those persisted values rather than
 	// rejecting a live continuation against the smaller release fallback list.
@@ -123,7 +123,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	if err != nil {
 		return err
 	}
-	resolution := nauclioprompt.Resolution{}
+	resolution := dieterprompt.Resolution{}
 	if conversation.ActiveTurn != nil && conversation.ActiveTurn.Instructions != "" {
 		resolution.Instructions = conversation.ActiveTurn.Instructions
 		resolution.Source = conversation.ActiveTurn.InstructionSource
@@ -158,7 +158,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		s.mu.Unlock()
 		cancel()
 		_ = s.Store.ReleaseRuntimeLease(lease)
-		return errors.New("Nauclio is shutting down")
+		return errors.New("Dieter is shutting down")
 	}
 	if active := s.active[detail.Card.ID]; active != nil {
 		s.mu.Unlock()
@@ -320,7 +320,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	if provider == "" {
 		provider = "codex"
 	}
-	adapter, configuredModel, err := harness.ResolveSelection(provider, input.Model, os.Getenv("NAUCLIO_ENABLE_MOCK_HARNESS") == "1")
+	adapter, configuredModel, err := harness.ResolveSelection(provider, input.Model, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -369,12 +369,12 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	return s.Store.ResolveCard(card.ID)
 }
 
-func (s *Service) resolveInstructions(detail model.CardDetail) (nauclioprompt.Resolution, error) {
+func (s *Service) resolveInstructions(detail model.CardDetail) (dieterprompt.Resolution, error) {
 	settings, err := s.Store.Settings()
 	if err != nil {
-		return nauclioprompt.Resolution{}, err
+		return dieterprompt.Resolution{}, err
 	}
-	return nauclioprompt.Resolve(settings, detail, detail.Card.LabelIDs)
+	return dieterprompt.Resolve(settings, detail, detail.Card.LabelIDs)
 }
 
 func (s *Service) StartCard(ref, content, provider, modelName, effort string) (<-chan TurnUpdate, error) {
@@ -455,7 +455,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if effort == "" && !explicitDefaultEffort {
 		effort = detail.Card.Effort
 	}
-	adapter, configuredModel, err := harness.ResolveSelection(provider, modelName, os.Getenv("NAUCLIO_ENABLE_MOCK_HARNESS") == "1")
+	adapter, configuredModel, err := harness.ResolveSelection(provider, modelName, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	s.mu.Lock()
 	if s.shuttingDown {
 		s.mu.Unlock()
-		return nil, errors.New("Nauclio is shutting down")
+		return nil, errors.New("Dieter is shutting down")
 	}
 	if active := s.active[detail.Card.ID]; active != nil {
 		s.mu.Unlock()
@@ -882,7 +882,7 @@ func (s *Service) SubmitCardPartsWithMessageID(ref string, parts []model.UIMessa
 			return false, fmt.Errorf("conversation effort is locked to %q", locked)
 		}
 		if providerOptions != nil && !providerOptionsEqual(providerOptions, card.ProviderOptions) {
-			adapter, valid := harness.ResolveAdapter(card.Provider, os.Getenv("NAUCLIO_ENABLE_MOCK_HARNESS") == "1")
+			adapter, valid := harness.ResolveAdapter(card.Provider, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
 			if !valid {
 				s.mu.Unlock()
 				return false, fmt.Errorf("unsupported harness %q", card.Provider)
