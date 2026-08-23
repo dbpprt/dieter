@@ -204,7 +204,7 @@ func (s *Store) ArchiveProject(ref string, archived bool) (model.Project, error)
 	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
 }
 
-func (s *Store) UpdateProject(ref string, name, summary, prompt *string) (model.Project, error) {
+func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths ...*string) (model.Project, error) {
 	release, err := s.beginWrite()
 	if err != nil {
 		return model.Project{}, err
@@ -222,6 +222,22 @@ func (s *Store) UpdateProject(ref string, name, summary, prompt *string) (model.
 	}
 	if prompt != nil {
 		project.Prompt = strings.TrimSpace(*prompt)
+	}
+	if len(paths) > 0 && paths[0] != nil {
+		path, normalizeErr := normalizePath(*paths[0])
+		if normalizeErr != nil {
+			return model.Project{}, normalizeErr
+		}
+		projects, listErr := s.listProjects()
+		if listErr != nil {
+			return model.Project{}, listErr
+		}
+		for _, candidate := range projects {
+			if candidate.ID != project.ID && candidate.Path == path {
+				return model.Project{}, fmt.Errorf("project path is already registered as %s", candidate.ID)
+			}
+		}
+		project.Path = path
 	}
 	project.UpdatedAt = timestamp()
 	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)

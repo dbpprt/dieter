@@ -70,6 +70,30 @@ func TestDefaultRootDefersMigrationWhileLegacyDaemonIsActive(t *testing.T) {
 	}
 }
 
+func TestUpdateProjectRelocatesCanonicalWorkingTree(t *testing.T) {
+	s, project, _ := setup(t, model.WorkflowDirect)
+	relocated := gitProject(t)
+	updated, err := s.UpdateProject(project.ID, nil, nil, nil, &relocated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath, err := filepath.EvalSymlinks(relocated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != project.ID || updated.Path != wantPath {
+		t.Fatalf("relocated project = %#v", updated)
+	}
+
+	other, err := s.CreateProject(CreateProjectInput{Path: gitProject(t), Name: "Other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateProject(project.ID, nil, nil, nil, &other.Path); err == nil {
+		t.Fatal("expected duplicate project path to be rejected")
+	}
+}
+
 func TestDraftAttachmentEventsReplayBeyondLegacyScannerLimit(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Large attachment", Prompt: "Inspect it"})

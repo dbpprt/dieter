@@ -673,9 +673,10 @@ func (o *optional) ptr() *string {
 	return &o.value
 }
 func (c *CLI) projectUpdate(args []string) error {
-	const usage = "Usage: dieter project update [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] PROJECT\n"
+	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] PROJECT\n"
 	set := flags("project update")
-	name, summary, prompt := &optional{}, &optional{}, &optional{}
+	path, name, summary, prompt := &optional{}, &optional{}, &optional{}, &optional{}
+	set.Var(path, "path", "existing Git working tree")
 	set.Var(name, "name", "name")
 	set.Var(summary, "summary", "summary")
 	set.Var(prompt, "prompt", "prompt")
@@ -697,7 +698,15 @@ func (c *CLI) projectUpdate(args []string) error {
 	} else {
 		promptPtr = prompt.ptr()
 	}
-	item, err := c.Store.UpdateProject(set.Arg(0), name.ptr(), summary.ptr(), promptPtr)
+	var pathPtr *string
+	if path.set {
+		root, rootErr := gitWorkingTreeRoot(path.value)
+		if rootErr != nil {
+			return rootErr
+		}
+		pathPtr = &root
+	}
+	item, err := c.Store.UpdateProject(set.Arg(0), name.ptr(), summary.ptr(), promptPtr, pathPtr)
 	if err != nil {
 		return err
 	}
