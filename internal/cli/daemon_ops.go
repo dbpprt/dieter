@@ -22,6 +22,7 @@ import (
 	"github.com/dbpprt/dieter/internal/app"
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/store"
 )
 
 const (
@@ -450,6 +451,12 @@ Homebrew-managed daemon. With no path, the current Git working tree is used.
 	if !started {
 		fmt.Fprintln(c.Out, "Homebrew installation not detected; run `dieter daemon start` in the foreground.")
 		return nil
+	}
+	// The CLI may have opened the legacy root while its old service was still
+	// active. Once that service is disabled, the Dieter service (or this call)
+	// can complete the atomic directory migration; follow it before waiting.
+	if migratedRoot := store.DefaultRoot(); migratedRoot != c.Store.Root {
+		c.Store.Root = migratedRoot
 	}
 	if err := waitForDaemon(c.Store.Root, 20*time.Second); err != nil {
 		fmt.Fprintln(c.Out, "Homebrew service started, but onboarding is not fully healthy.")
