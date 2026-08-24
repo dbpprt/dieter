@@ -68,6 +68,14 @@ enum class ConnectionPhase { STOPPED, CONNECTING, SYNCING, CONNECTED, RECONNECTI
 
 enum class EndpointPhase { PENDING, TRYING, CONNECTED, FAILED }
 
+internal const val SYNC_STALE_AFTER_MS = 20_000L
+
+internal fun syncStreamIsStale(
+    lastFrameAtMs: Long,
+    nowMs: Long = System.currentTimeMillis(),
+    staleAfterMs: Long = SYNC_STALE_AFTER_MS,
+): Boolean = lastFrameAtMs > 0 && nowMs >= lastFrameAtMs && nowMs - lastFrameAtMs >= staleAfterMs
+
 data class EndpointConnection(
     val id: String,
     val label: String,
@@ -188,25 +196,19 @@ class DieterConnectionManager(
         }
         if (_state.value.desiredConnected && _state.value.backgroundSyncEnabled) DieterSyncService.start(appContext)
         reconcile()
-        probeStaleConnection()
+        recoverStaleConnection()
     }
 
     /**
      * Doze can silently kill the transport underneath an "active" stream. When
      * the app comes back with a connection that claims to be healthy but has
-     * not produced a sync frame in longer than the heartbeat interval, verify
-     * it with a short health check and rebuild immediately on failure instead
-     * of waiting for keepalive to notice.
+     * not produced a sync frame in longer than the heartbeat interval, rebuild
+     * it immediately. A successful unary health RPC cannot prove that the
+     * separate server-streaming call is still delivering frames.
      */
-    private fun probeStaleConnection() {
-        val probedGeneration = synchronized(lock) { generation }
-        val lastFrame = lastSyncFrameAtMs
-        val stale = lastFrame > 0 && System.currentTimeMillis() - lastFrame > STALE_SYNC_PROBE_MS
-        if (!stale || _state.value.phase != ConnectionPhase.CONNECTED) return
-        scope.launch {
-            val healthy = runCatching { repository.health(timeoutSeconds = 2).status == "ok" }.getOrDefault(false)
-            val current = synchronized(lock) { generation }
-            if (!healthy && shouldRun() && current == probedGeneration) restart()
+    private fun recoverStaleConnection() {
+        if (_state.value.phase == ConnectionPhase.CONNECTED && syncStreamIsStale(lastSyncFrameAtMs)) {
+            restart()
         }
     }
 
@@ -548,6 +550,7 @@ class DieterConnectionManager(
                 retryAttempt = 0
                 coroutineScope {
                     launch { collectGlobalSync(currentGeneration) }
+                    launch { monitorGlobalSync(currentGeneration) }
                     launch { drainOutbox(currentGeneration) }
                     launch { watchDaemonPresence(currentGeneration) }
                     launch { maintainMachineDirectory(currentGeneration) }
@@ -562,6 +565,11 @@ class DieterConnectionManager(
                 throw cancelled
             } catch (error: Throwable) {
                 if (!shouldRun() || currentGeneration != synchronized(lock) { generation }) return
+                if (error is StaleSyncStream) {
+                    repository.reconnect()
+                    retryAttempt = 0
+                    continue
+                }
                 if (error is DirectCredentialRefresh) {
                     retryAttempt = 0
                     continue
@@ -658,6 +666,9 @@ class DieterConnectionManager(
     }
 
     private suspend fun collectGlobalSync(currentGeneration: Long) {
+        // Give each newly opened stream one complete heartbeat window to
+        // deliver its bootstrap frame before the liveness monitor intervenes.
+        lastSyncFrameAtMs = System.currentTimeMillis()
         repository.watchSync(
             syncCursor,
             conversationLimit = SYNC_CONVERSATION_MESSAGES,
@@ -689,6 +700,13 @@ class DieterConnectionManager(
                 applyGlobalSnapshot(it)
             }
             _state.update { it.copy(phase = ConnectionPhase.CONNECTED, connectionInterruptedAtMs = null, error = null) }
+        }
+    }
+
+    private suspend fun monitorGlobalSync(currentGeneration: Long) {
+        while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
+            delay(SYNC_LIVENESS_CHECK_MS)
+            if (syncStreamIsStale(lastSyncFrameAtMs)) throw StaleSyncStream()
         }
     }
 
@@ -1478,8 +1496,7 @@ class DieterConnectionManager(
         private const val SYNC_CONVERSATION_MESSAGES = 30
         /** Recently active conversations kept warm beyond the running ones. */
         private const val SYNC_RECENT_CONVERSATIONS = 8
-        /** One missed heartbeat (15 s) plus slack marks the stream suspect. */
-        private const val STALE_SYNC_PROBE_MS = 20_000L
+        private const val SYNC_LIVENESS_CHECK_MS = 5_000L
     }
 }
 
@@ -1492,6 +1509,8 @@ private data class MachineSnapshot(
 )
 
 private class DirectCredentialRefresh : RuntimeException()
+
+private class StaleSyncStream : RuntimeException("Live sync stopped producing frames")
 
 fun isActiveRuntime(runtime: String): Boolean = runtime.lowercase() in setOf(
     "running",

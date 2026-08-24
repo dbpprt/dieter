@@ -405,6 +405,7 @@ final class DieterStore {
     private var terminalWatchTask: Task<Void, Never>?
     private var conversationHistoryRequestID: UUID?
     private var syncTask: Task<Void, Never>?
+    private var syncLivenessTask: Task<Void, Never>?
     private var outboxTask: Task<Void, Never>?
     private var connectionGeneration: UInt64 = 0
     private var pendingCardMoves: [String: OptimisticCardMove] = [:]
@@ -598,7 +599,7 @@ final class DieterStore {
         connectionGeneration &+= 1
         let generation = connectionGeneration
         phase = .connecting
-        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel()
+        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel()
         terminalStreamConnected = false
         rpc?.shutdown()
         rpc = nil
@@ -700,6 +701,7 @@ final class DieterStore {
             self.settingsOptions = initialOptions
             phase = .connected(version: initialHealth.version)
             startGlobalSync()
+            startSyncLivenessMonitor()
             startOutboxWorker()
             await refreshMachineDirectory()
             startMachineDirectoryRefresh()
@@ -890,7 +892,7 @@ final class DieterStore {
 
     func disconnect() {
         connectionGeneration &+= 1
-        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); reconnectTask?.cancel()
+        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); reconnectTask?.cancel()
         reconnectTask = nil
         terminalStreamConnected = false
         rpc?.shutdown(); rpc = nil
@@ -1065,11 +1067,33 @@ final class DieterStore {
                 guard !Task.isCancelled, let self else { return }
                 await self.refreshDaemonPresence()
                 await self.refreshMachineDirectory()
+            }
+        }
+    }
+
+    /// Directory refreshes are independent RPCs and may themselves stall on a
+    /// half-open transport. Keep sync liveness on its own task so those calls
+    /// can never prevent recovery of the stream which owns the visible board.
+    private func startSyncLivenessMonitor() {
+        syncLivenessTask?.cancel()
+        syncLivenessTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await DieterTaskSleep.seconds(15)
+                guard !Task.isCancelled, let self else { return }
+                guard self.phase.isConnected, self.rpc != nil else { continue }
                 if SyncStreamLiveness.shouldRestart(lastFrameAt: self.lastSyncFrameAt) {
                     self.startGlobalSync()
                 }
             }
         }
+    }
+
+    /// Waking or reopening the app is an explicit consistency boundary. A new
+    /// WatchSync subscription returns a fresh bounded snapshot immediately,
+    /// while retaining the durable cursor for subsequent deltas.
+    func applicationDidBecomeActive() {
+        guard phase.isConnected, rpc != nil else { return }
+        startGlobalSync()
     }
 
     private func refreshDaemonPresence() async {
@@ -2445,7 +2469,7 @@ final class DieterStore {
         } catch { show(error) }
     }
 
-    static func shouldOpenCreatedConversation(chat: Bool, lane: String) -> Bool {
+    nonisolated static func shouldOpenCreatedConversation(chat: Bool, lane: String) -> Bool {
         chat || lane.caseInsensitiveCompare("todo") != .orderedSame
     }
 

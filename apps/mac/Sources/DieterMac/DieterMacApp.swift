@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct DieterMacApp: App {
     @State private var store: DieterStore
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
     private var appearanceValue = DieterAppearance.defaultValue.rawValue
     @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
@@ -25,6 +26,9 @@ struct DieterMacApp: App {
                 .onAppear { DieterAppIcon.apply(palette) }
                 .onChange(of: paletteValue) { _, value in
                     DieterAppIcon.apply(DieterPalette.resolve(value))
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { store.applicationDidBecomeActive() }
                 }
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
