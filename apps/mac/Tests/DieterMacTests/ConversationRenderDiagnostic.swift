@@ -40,21 +40,18 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
         let store = DieterStore()
         store.showReasoning = showReasoning
         var conversation = Dieter_V1_ConversationSnapshot()
+        conversation.detail.card.id = "c_render"
+        conversation.detail.card.scope = "chat"
         conversation.conversation.messages = messages
         store.conversation = conversation
+        store.selectedChatID = conversation.detail.card.id
 
-        let timeline = VStack(alignment: .leading, spacing: 15) {
-            ForEach(ConversationTimelineItem.group(messages, showReasoning: showReasoning)) { item in
-                if let message = item.messages.first {
-                    MessageView(message: message).environment(store)
-                }
-            }
-        }
-        .frame(width: 700)
-        .environment(store)
+        let timeline = ConversationTimeline()
+            .frame(width: 700, height: 600)
+            .environment(store)
 
         let renderer = ImageRenderer(content: timeline)
-        renderer.proposedSize = .init(width: 700, height: nil)
+        renderer.proposedSize = .init(width: 700, height: 600)
         #expect(renderer.nsImage != nil, "timeline must render with showReasoning=\(showReasoning)")
     }
 

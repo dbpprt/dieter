@@ -43,8 +43,11 @@ data class CachedMachineDirectory(
 )
 
 /** Atomic, disposable native projection plus the durable client outbox. */
-class DieterSyncStore(context: Context) {
-    private val root = File(context.filesDir, "global-sync").apply { mkdirs() }
+class DieterSyncStore(
+    context: Context,
+    root: File = File(context.filesDir, "global-sync"),
+) {
+    private val root = root.apply { mkdirs() }
     private val outboxFile = AtomicFile(File(root, "outbox.json"))
     private val preferences = context.getSharedPreferences("dieter_sync", Context.MODE_PRIVATE)
 
@@ -65,6 +68,14 @@ class DieterSyncStore(context: Context) {
     fun saveProjection(scope: String, snapshot: GlobalSnapshot?, cursor: SyncCursor?) {
         if (snapshot != null) write(projectionFile(scope, "snapshot.pb"), snapshot.toByteArray())
         if (cursor != null) write(projectionFile(scope, "cursor.pb"), cursor.toByteArray())
+    }
+
+    /** Clears disposable server projections while leaving the durable outbox and client identity intact. */
+    @Synchronized
+    fun clearProjections() {
+        root.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("projection-") }
+            ?.forEach(File::deleteRecursively)
     }
 
     @Synchronized

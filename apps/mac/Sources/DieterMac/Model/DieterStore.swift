@@ -900,6 +900,21 @@ final class DieterStore {
         phase = .disconnected
     }
 
+    func cleanSync() async {
+        let gateway = activeGateway
+        disconnect()
+        syncDiskState.clearProjections()
+        syncProjection = .empty
+        clearDeploymentWorkspace()
+        do {
+            try await syncPersistence.save(syncDiskState)
+        } catch {
+            show(error)
+            return
+        }
+        await connect(to: gateway)
+    }
+
     func chooseGateway(_ gateway: DieterEndpoint) async {
         guard gateway.daemonID == nil else { return }
         if !gatewayOrigins.contains(where: { $0.credentialID == gateway.credentialID }) {
@@ -1515,21 +1530,35 @@ final class DieterStore {
     private func applySyncFrame(_ frame: Dieter_V1_SyncFrame, endpointID: String) async {
         guard endpoint.id == endpointID else { return }
         lastSyncFrameAt = Date()
+        var projectionChanged = false
         if frame.hasSnapshot {
-            syncProjection.snapshot = try? frame.snapshot.serializedData()
-            applyGlobalSnapshot(frame.snapshot, endpointID: endpointID)
+            let current = syncProjection.snapshot.flatMap {
+                try? Dieter_V1_GlobalSnapshot(serializedBytes: $0)
+            }
+            let serialized = try? frame.snapshot.serializedData()
+            if current != frame.snapshot {
+                syncProjection.snapshot = serialized
+                applyGlobalSnapshot(frame.snapshot, endpointID: endpointID)
+                projectionChanged = true
+            }
         } else if frame.hasDelta,
+                  GlobalProjectionReducer.changesProjection(frame.delta),
                   let raw = syncProjection.snapshot,
                   let current = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) {
             let next = GlobalProjectionReducer.applying(frame.delta, to: current)
-            syncProjection.snapshot = try? next.serializedData()
-            applyGlobalSnapshot(next, endpointID: endpointID)
+            if next != current {
+                syncProjection.snapshot = try? next.serializedData()
+                applyGlobalSnapshot(next, endpointID: endpointID)
+                projectionChanged = true
+            }
         }
         if frame.hasCursor {
             syncProjection.cursor = try? frame.cursor.serializedData()
         }
         persistActiveProjection(endpointID: endpointID)
-        reconcileOutboxWithProjection()
+        if projectionChanged {
+            reconcileOutboxWithProjection()
+        }
         try? await syncPersistence.save(syncDiskState)
     }
 
@@ -1743,7 +1772,10 @@ final class DieterStore {
                     self.reconcileOutboxWithProjection()
                     try? await self.syncPersistence.save(self.syncDiskState)
                     if shouldOpenCreatedConversation, let serverID = entry.serverID {
-                        await self.openConversation(cardID: serverID, chat: entry.kind == .createChat)
+                        self.scheduleCreatedConversationOpen(
+                            cardID: serverID,
+                            chat: entry.kind == .createChat
+                        )
                     }
                 } catch {
                     entry.attempts += 1
@@ -1866,6 +1898,16 @@ final class DieterStore {
             snapshot.detail.card.runtime = status
             conversation = snapshot
             selectedDetail = snapshot.detail
+        }
+    }
+
+    /// Creation is durable as soon as the outbox RPC returns. Open the accepted
+    /// conversation in a new task so cancellation of the mutation worker cannot
+    /// cancel the follow-up read and leave the optimistic conversation stranded.
+    private func scheduleCreatedConversationOpen(cardID: String, chat: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self, (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
+            await self.openConversation(cardID: cardID, chat: chat)
         }
     }
 
@@ -2007,6 +2049,15 @@ final class DieterStore {
             errorMessage = "The project host is not connected."
             return
         }
+        await fetchConversation(cardID: cardID, chat: chat, rpc: rpc)
+    }
+
+    private func fetchConversation(
+        cardID: String,
+        chat: Bool,
+        rpc: DieterRPC,
+        cancellationRetries: Int = 0
+    ) async {
         do {
             let snapshot = try await rpc.conversation(cardID: cardID, limit: conversationPageSize)
             guard (selectedCardID ?? selectedChatID) == cardID else { return }
@@ -2024,8 +2075,34 @@ final class DieterStore {
                 }
             }
         } catch {
-            conversationLoading = false
-            errorMessage = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
+            switch DieterConversationOpenFailurePolicy.disposition(
+                for: error,
+                selectionMatches: (selectedCardID ?? selectedChatID) == cardID,
+                cancellationRetries: cancellationRetries
+            ) {
+            case .ignore:
+                return
+            case .retry:
+                Task { @MainActor [weak self] in
+                    await Task.yield()
+                    guard let self,
+                          (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
+                    guard let currentRPC = self.rpc else {
+                        self.conversationLoading = false
+                        self.errorMessage = "The project host is not connected."
+                        return
+                    }
+                    await self.fetchConversation(
+                        cardID: cardID,
+                        chat: chat,
+                        rpc: currentRPC,
+                        cancellationRetries: cancellationRetries + 1
+                    )
+                }
+            case .report:
+                conversationLoading = false
+                errorMessage = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
+            }
         }
     }
 
@@ -2103,6 +2180,7 @@ final class DieterStore {
         if let selectedChatID, let card = chats.first(where: { $0.id == selectedChatID }) { markChatRead(card) }
         conversationTask?.cancel(); conversationTask = nil
         conversation = nil; selectedDetail = nil; selectedCardID = nil; selectedChatID = nil
+        conversationLoading = false
         resetConversationHistory()
     }
 

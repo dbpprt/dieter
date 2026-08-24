@@ -151,7 +151,34 @@ private struct ConversationTabBar: View {
 // timeline body per frame — with a long transcript that pegs the main thread.
 final class ConversationViewportReader {
     var latest: ConversationViewport?
+    var processed: ConversationViewport?
+    var updateScheduled = false
     var anchored = false
+}
+
+private struct ConversationTimelineRow: View {
+    let item: ConversationTimelineItem
+    let plans: [Dieter_V1_TaskPlan]
+    let subagents: [Dieter_V1_Subagent]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            if item.isToolCallGroup {
+                ToolCallGroupView(items: item.toolCalls)
+            } else if let message = item.messages.first {
+                MessageView(message: message)
+            }
+            ForEach(item.messages, id: \.id) { message in
+                ForEach(plans.filter { $0.messageID == message.id }, id: \.id) {
+                    TaskPlanView(plan: $0)
+                }
+                let messageAgents = subagents.filter { $0.messageID == message.id }
+                if !messageAgents.isEmpty {
+                    SubagentTimelineGroup(agents: messageAgents)
+                }
+            }
+        }
+    }
 }
 
 struct ConversationTimeline: View {
@@ -210,16 +237,8 @@ struct ConversationTimeline: View {
                         }
 
                         ForEach(timelineItems) { item in
-                            if item.isToolCallGroup {
-                                ToolCallGroupView(items: item.toolCalls).id(item.id)
-                            } else if let message = item.messages.first {
-                                MessageView(message: message).id(message.id)
-                            }
-                            ForEach(item.messages, id: \.id) { message in
-                                ForEach(plans.filter { $0.messageID == message.id }, id: \.id) { TaskPlanView(plan: $0) }
-                                let messageAgents = subagents.filter { $0.messageID == message.id }
-                                if !messageAgents.isEmpty { SubagentTimelineGroup(agents: messageAgents) }
-                            }
+                            ConversationTimelineRow(item: item, plans: plans, subagents: subagents)
+                                .id(item.scrollAnchorID)
                         }
 
                         ForEach(plans.filter { plan in !plan.messageID.isEmpty && messages.contains(where: { $0.id == plan.messageID }) == false }, id: \.id) {
@@ -237,28 +256,13 @@ struct ConversationTimeline: View {
                 .background(DieterTheme.background)
                 .onScrollGeometryChange(for: ConversationViewport.self) { geometry in
                     ConversationViewport(
-                        offsetY: geometry.contentOffset.y,
-                        visibleMaxY: geometry.visibleRect.maxY,
-                        visibleHeight: geometry.visibleRect.height,
-                        contentHeight: geometry.contentSize.height
+                        offsetY: ConversationViewport.quantized(geometry.contentOffset.y),
+                        visibleMaxY: ConversationViewport.quantized(geometry.visibleRect.maxY),
+                        visibleHeight: ConversationViewport.quantized(geometry.visibleRect.height),
+                        contentHeight: ConversationViewport.quantized(geometry.contentSize.height)
                     )
                 } action: { oldViewport, newViewport in
-                    viewportReader.latest = newViewport
-                    if newViewport.isNearBottom {
-                        if !followsLatest { followsLatest = true }
-                        if jumpToLatestVisible { jumpToLatestVisible = false }
-                    } else if !programmaticScroll, oldViewport.isNearBottom, newViewport.contentHeight > oldViewport.contentHeight {
-                        followsLatest = true
-                        Task { @MainActor in
-                            await Task.yield()
-                            scrollToLatest(proxy, animated: true)
-                        }
-                    } else if !programmaticScroll, ConversationScrollBehavior.isUserNavigation(from: oldViewport, to: newViewport) {
-                        if followsLatest { followsLatest = false }
-                    }
-                    if viewportReader.anchored {
-                        requestEarlierMessages(ifNeededFor: newViewport, proxy: proxy)
-                    }
+                    scheduleViewportUpdate(from: oldViewport, to: newViewport, proxy: proxy)
                 }
 
                 if jumpToLatestVisible {
@@ -275,6 +279,8 @@ struct ConversationTimeline: View {
                 // must not be mistaken for the user reaching the oldest page.
                 historyLoadInFlight = false
                 viewportReader.latest = nil
+                viewportReader.processed = nil
+                viewportReader.updateScheduled = false
                 viewportReader.anchored = false
                 await Task.yield()
                 scrollToLatest(proxy, animated: false)
@@ -294,6 +300,48 @@ struct ConversationTimeline: View {
                     withAnimation(.easeOut(duration: 0.16)) { jumpToLatestVisible = true }
                 }
             }
+        }
+    }
+
+    private func scheduleViewportUpdate(
+        from oldViewport: ConversationViewport,
+        to newViewport: ConversationViewport,
+        proxy: ScrollViewProxy
+    ) {
+        viewportReader.latest = newViewport
+        guard !viewportReader.updateScheduled else { return }
+        viewportReader.updateScheduled = true
+        let expectedConversationID = conversationID
+        Task { @MainActor in
+            await Task.yield()
+            viewportReader.updateScheduled = false
+            guard expectedConversationID == conversationID,
+                  let latest = viewportReader.latest else { return }
+            let previous = viewportReader.processed ?? oldViewport
+            viewportReader.processed = latest
+            applyViewportUpdate(from: previous, to: latest, proxy: proxy)
+        }
+    }
+
+    private func applyViewportUpdate(
+        from oldViewport: ConversationViewport,
+        to newViewport: ConversationViewport,
+        proxy: ScrollViewProxy
+    ) {
+        if newViewport.isNearBottom {
+            if !followsLatest { followsLatest = true }
+            if jumpToLatestVisible { jumpToLatestVisible = false }
+        } else if !programmaticScroll, oldViewport.isNearBottom,
+                  newViewport.contentHeight > oldViewport.contentHeight {
+            followsLatest = true
+            scrollToLatest(proxy, animated: true)
+        } else if !programmaticScroll,
+                  ConversationScrollBehavior.isUserNavigation(from: oldViewport, to: newViewport),
+                  followsLatest {
+            followsLatest = false
+        }
+        if viewportReader.anchored {
+            requestEarlierMessages(ifNeededFor: newViewport, proxy: proxy)
         }
     }
 
@@ -355,6 +403,11 @@ struct ConversationViewport: Equatable {
     let visibleMaxY: CGFloat
     let visibleHeight: CGFloat
     let contentHeight: CGFloat
+
+    static func quantized(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return value }
+        return (value * 2).rounded() / 2
+    }
 
     var isNearBottom: Bool {
         ConversationScrollBehavior.isNearBottom(visibleMaxY: visibleMaxY, contentHeight: contentHeight)
@@ -623,17 +676,8 @@ struct ConversationToolCall: Identifiable {
 struct ConversationTimelineItem: Identifiable {
     var messages: [Dieter_V1_UiMessage]
     let isToolCallGroup: Bool
-
-    var id: String {
-        let prefix = isToolCallGroup ? "tools" : "message"
-        return "\(prefix):\(messages.first?.id ?? "unknown")"
-    }
-
-    // The id this item's row registers with ScrollViewReader: grouped tool
-    // rows use the item id, plain message rows the raw message id.
-    var scrollAnchorID: String {
-        isToolCallGroup ? id : (messages.first?.id ?? id)
-    }
+    let id: String
+    let scrollAnchorID: String
 
     var toolCalls: [ConversationToolCall] {
         messages.flatMap { message in
@@ -645,7 +689,7 @@ struct ConversationTimelineItem: Identifiable {
 
     static func group(_ messages: [Dieter_V1_UiMessage], showReasoning: Bool = true) -> [ConversationTimelineItem] {
         var result: [ConversationTimelineItem] = []
-        for message in messages {
+        for (position, message) in messages.enumerated() {
             let toolOnly = message.role.lowercased() != "user" &&
                 message.parts.contains(where: ConversationMessagePartGroup.isToolCall) &&
                 message.parts.allSatisfy { part in
@@ -657,7 +701,15 @@ struct ConversationTimelineItem: Identifiable {
             if toolOnly, result.last?.isToolCallGroup == true {
                 result[result.count - 1].messages.append(message)
             } else {
-                result.append(.init(messages: [message], isToolCallGroup: toolOnly))
+                let prefix = toolOnly ? "tools" : "message"
+                let sourceID = message.id.isEmpty ? "position:\(position)" : message.id
+                let itemID = "\(prefix):\(sourceID)"
+                result.append(.init(
+                    messages: [message],
+                    isToolCallGroup: toolOnly,
+                    id: itemID,
+                    scrollAnchorID: toolOnly || message.id.isEmpty ? itemID : message.id
+                ))
             }
         }
         return result

@@ -570,6 +570,7 @@ struct ConnectionSettings: View {
     @State private var address = ""
     @State private var pendingRevoke: DieterEndpoint?
     @State private var pendingRename: DieterEndpoint?
+    @State private var pendingCleanSync = false
 
     var body: some View {
         SettingsPage {
@@ -588,6 +589,14 @@ struct ConnectionSettings: View {
                 pendingRevoke = nil
             }
         } message: { Text("This machine will lose gateway and direct access until it is enrolled again.") }
+        .confirmationDialog("Start a clean sync?", isPresented: $pendingCleanSync) {
+            Button("Clean sync", role: .destructive) {
+                Task { await store.cleanSync() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Dieter will remove all cached workspace data on this Mac, keep your sign-in and pending changes, then download fresh snapshots. Content may briefly disappear.")
+        }
     }
 
     private var connectionExplanation: some View {
@@ -625,8 +634,14 @@ struct ConnectionSettings: View {
                     Text("Project actions are routed to their host automatically.").font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
-                Button("Reconnect") { Task { await store.connect() } }
+                HStack(spacing: 8) {
+                    Button("Reconnect") { Task { await store.connect() } }
+                    Button("Clean sync…") { pendingCleanSync = true }
+                        .accessibilityIdentifier("settings.connection.clean-sync")
+                }
             }
+            Text("Clean sync discards this Mac's cached snapshots and sync cursors, then rebuilds the workspace from every machine. Sign-in and pending changes are kept.")
+                .font(.caption2).foregroundStyle(DieterTheme.tertiary).fixedSize(horizontal: false, vertical: true)
         }
     }
 

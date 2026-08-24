@@ -124,6 +124,12 @@ struct DieterSyncDiskState: Codable, Sendable {
         outbox = try values.decodeIfPresent([DieterOutboxEntry].self, forKey: .outbox) ?? []
     }
 
+    mutating func clearProjections() {
+        projections.removeAll()
+        cursor = nil
+        snapshot = nil
+    }
+
     static let empty = DieterSyncDiskState()
 }
 
@@ -150,6 +156,17 @@ enum DieterSyncProjectionCache {
 }
 
 enum GlobalProjectionReducer {
+    static func changesProjection(_ delta: Dieter_V1_GlobalDelta) -> Bool {
+        !delta.projects.isEmpty || !delta.removedProjectIds.isEmpty ||
+            !delta.boards.isEmpty || !delta.removedBoardIds.isEmpty ||
+            !delta.cards.isEmpty || !delta.removedCardIds.isEmpty ||
+            !delta.chats.isEmpty || !delta.removedChatIds.isEmpty ||
+            !delta.schedules.isEmpty || !delta.removedScheduleIds.isEmpty ||
+            !delta.scheduleRuns.isEmpty || !delta.removedScheduleRunIds.isEmpty ||
+            delta.hasSettings ||
+            !delta.conversations.isEmpty || !delta.removedConversationIds.isEmpty
+    }
+
     static func applying(
         _ delta: Dieter_V1_GlobalDelta,
         to snapshot: Dieter_V1_GlobalSnapshot
@@ -159,37 +176,43 @@ enum GlobalProjectionReducer {
             next.state.projects,
             changed: delta.projects,
             removed: Set(delta.removedProjectIds),
-            id: \Dieter_V1_Project.id
+            id: { $0.id }
         )
         next.state.boards = merge(
             next.state.boards,
             changed: delta.boards,
             removed: Set(delta.removedBoardIds),
-            id: \Dieter_V1_Board.id
+            id: { $0.id }
         )
         next.state.cards = merge(
             next.state.cards,
             changed: delta.cards,
             removed: Set(delta.removedCardIds),
-            id: \Dieter_V1_Card.id
+            id: { $0.id }
         )
         next.state.chats = merge(
             next.state.chats,
             changed: delta.chats,
             removed: Set(delta.removedChatIds),
-            id: \Dieter_V1_Card.id
+            id: { $0.id }
         )
         next.schedules = merge(
             next.schedules,
             changed: delta.schedules,
             removed: Set(delta.removedScheduleIds),
-            id: \Dieter_V1_Schedule.id
+            id: { $0.id }
         )
         next.scheduleRuns = merge(
             next.scheduleRuns,
             changed: delta.scheduleRuns,
             removed: Set(delta.removedScheduleRunIds),
-            id: \Dieter_V1_ScheduleRun.id
+            id: { $0.id }
+        )
+        next.conversations = merge(
+            next.conversations,
+            changed: delta.conversations,
+            removed: Set(delta.removedConversationIds),
+            id: { $0.detail.card.id }
         )
         if delta.hasSettings { next.settings = delta.settings }
         return next
@@ -199,18 +222,18 @@ enum GlobalProjectionReducer {
         _ current: [Value],
         changed: [Value],
         removed: Set<String>,
-        id: KeyPath<Value, String>
+        id: (Value) -> String
     ) -> [Value] {
-        let replacements = Dictionary(uniqueKeysWithValues: changed.map { ($0[keyPath: id], $0) })
+        let replacements = Dictionary(uniqueKeysWithValues: changed.map { (id($0), $0) })
         var consumed: Set<String> = []
         var next = current.compactMap { value -> Value? in
-            let valueID = value[keyPath: id]
+            let valueID = id(value)
             guard !removed.contains(valueID) else { return nil }
             guard let replacement = replacements[valueID] else { return value }
             consumed.insert(valueID)
             return replacement
         }
-        next.append(contentsOf: changed.filter { !removed.contains($0[keyPath: id]) && !consumed.contains($0[keyPath: id]) })
+        next.append(contentsOf: changed.filter { !removed.contains(id($0)) && !consumed.contains(id($0)) })
         return next
     }
 }

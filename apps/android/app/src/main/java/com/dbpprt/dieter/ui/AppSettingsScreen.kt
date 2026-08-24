@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -116,6 +117,7 @@ fun AppSettingsScreen(
     }
     var selectedTab by remember { mutableIntStateOf(CONNECTIONS_TAB) }
     var confirmation by remember { mutableStateOf<String?>(null) }
+    var cleanSyncConfirmation by remember { mutableStateOf(false) }
     val parsed = drafts.map { draft ->
         runCatching { dieterEndpointFromAddress(draft.id, draft.label, draft.address) }
     }
@@ -155,6 +157,7 @@ fun AppSettingsScreen(
                         drafts = it
                         confirmation = null
                     },
+                    onCleanSync = { cleanSyncConfirmation = true },
                 )
                 DISPLAY_TAB -> DisplaySettings(state, model)
                 else -> UpdateSettings(updateManager)
@@ -182,6 +185,28 @@ fun AppSettingsScreen(
                 },
             )
         }
+    }
+    if (cleanSyncConfirmation) {
+        AlertDialog(
+            onDismissRequest = { cleanSyncConfirmation = false },
+            title = { Text("Start a clean sync?") },
+            text = {
+                Text("Dieter will remove all cached workspace data on this device, keep your sign-in and pending changes, then download fresh snapshots. Content may briefly disappear.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        cleanSyncConfirmation = false
+                        confirmation = "Clean sync started."
+                        model.cleanSync()
+                    },
+                    modifier = Modifier.testTag("confirm-clean-sync"),
+                ) { Text("Clean sync") }
+            },
+            dismissButton = {
+                TextButton(onClick = { cleanSyncConfirmation = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -226,6 +251,7 @@ private fun ConnectionsSettings(
     activeGatewayId: String,
     onSelectGateway: (String) -> Unit,
     onDraftsChanged: (List<ConnectionDraft>) -> Unit,
+    onCleanSync: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("settings-connections-content"),
@@ -241,6 +267,7 @@ private fun ConnectionsSettings(
             )
         }
         item { ConnectionStatusCard(state, model) }
+        item { CleanSyncCard(onCleanSync) }
         item {
             Text(
                 "Gateway connections",
@@ -310,6 +337,34 @@ private fun ConnectionsSettings(
             item { Text(validationError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         } else if (confirmation != null) {
             item { Text(confirmation, color = DieterEyes, fontSize = 12.sp) }
+        }
+    }
+}
+
+@Composable
+private fun CleanSyncCard(onCleanSync: () -> Unit) {
+    Surface(
+        color = DieterSurface,
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Complete clean sync", color = DieterText, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text(
+                    "Discard cached snapshots and cursors, then rebuild from every machine. Sign-in and pending changes are kept.",
+                    color = DieterMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            TextButton(onClick = onCleanSync, modifier = Modifier.testTag("clean-sync")) {
+                Text("Clean sync", color = DieterShell, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }

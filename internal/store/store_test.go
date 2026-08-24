@@ -399,6 +399,78 @@ func TestDoneArchivePolicyHidesAndRestoresCompletedCards(t *testing.T) {
 	}
 }
 
+func TestArchiveDoneCardsNoopDoesNotAdvanceSyncHighwater(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	now := time.Now().UTC()
+	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Recent completion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MoveCard(card.ID, model.LaneDone, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveAfter7Days); err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := s.SyncEvents(0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 4 {
+		archived, archiveErr := s.ArchiveDoneCards(now)
+		if archiveErr != nil || len(archived) != 0 {
+			t.Fatalf("no-op archive=%#v err=%v", archived, archiveErr)
+		}
+	}
+	after, events, err := s.SyncEvents(before.Sequence, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before || len(events) != 0 {
+		t.Fatalf("no-op archiving advanced sync: before=%#v after=%#v events=%#v", before, after, events)
+	}
+}
+
+func TestArchiveDoneCardsActiveCandidateDoesNotPublishNoop(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	now := time.Now().UTC()
+	if _, err := s.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveAfter7Days); err != nil {
+		t.Fatal(err)
+	}
+	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Active old completion"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err = s.MoveCard(card.ID, model.LaneDone, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card.PhaseChangedAt = now.Add(-8 * 24 * time.Hour).Format(time.RFC3339Nano)
+	if err := s.writeCard(card); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := s.AcquireRuntimeLease(project.ID, card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.ReleaseRuntimeLease(lease) }()
+	before, _, err := s.SyncEvents(0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := s.ArchiveDoneCards(now)
+	if err != nil || len(archived) != 0 {
+		t.Fatalf("active archive=%#v err=%v", archived, err)
+	}
+	after, events, err := s.SyncEvents(before.Sequence, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before || len(events) != 0 {
+		t.Fatalf("active no-op advanced sync: before=%#v after=%#v events=%#v", before, after, events)
+	}
+}
+
 func TestDirectWorkflowRejectsReview(t *testing.T) {
 	s, p, b := setup(t, model.WorkflowDirect)
 	card, err := s.CreateCard(CreateCardInput{Project: p.ID, Board: b.ID, ID: "card_direct", Title: "Direct"})

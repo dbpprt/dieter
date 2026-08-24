@@ -32,6 +32,25 @@ enum DieterRPCFailure {
     }
 }
 
+enum DieterConversationOpenFailureDisposition: Equatable {
+    case ignore
+    case retry
+    case report
+}
+
+enum DieterConversationOpenFailurePolicy {
+    static func disposition(
+        for error: Error,
+        selectionMatches: Bool,
+        cancellationRetries: Int
+    ) -> DieterConversationOpenFailureDisposition {
+        guard selectionMatches else { return .ignore }
+        let cancelled = error is CancellationError || (error as? RPCError)?.code == .cancelled
+        if cancelled && cancellationRetries == 0 { return .retry }
+        return .report
+    }
+}
+
 enum DieterOutboxPolicy {
     static func nextIndex(
         in entries: [DieterOutboxEntry],

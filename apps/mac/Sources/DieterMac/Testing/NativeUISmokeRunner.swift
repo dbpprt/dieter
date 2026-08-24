@@ -151,6 +151,14 @@ enum NativeUISmokeRunner {
         await captureAppearances(window, named: "10-settings-connection.png", in: output)
         results["10-settings-connection"] = "passed"
 
+        await store.cleanSync()
+        let cleanSyncRecovered = await waitUntil(timeout: 20) {
+            store.phase.isConnected && !store.projects.isEmpty
+        }
+        results["10b-settings-clean-sync"] = cleanSyncRecovered
+            ? "passed"
+            : "failed: clean sync did not rebuild the workspace (\(store.phase.label), \(store.projects.count) projects)"
+
         click(window: window, x: 320, distanceFromTop: 187)
         try? await DieterTaskSleep.seconds(1)
         await captureAppearances(window, named: "11-settings-prompts.png", in: output)
@@ -212,6 +220,31 @@ enum NativeUISmokeRunner {
         } else {
             results["13b-todo-card-stays-on-board"] = "failed: fixture board has no Todo lane"
         }
+
+        store.section = .chats
+        store.closeConversation()
+        store.errorMessage = nil
+        let chatTitle = "Native UI chat creation \(UUID().uuidString.lowercased())"
+        let chatHarness = store.harnessCatalog.harnesses.first(where: { $0.id == "mock" })
+            ?? store.harnessCatalog.harnesses.first
+        await store.createConversation(
+            title: chatTitle,
+            prompt: "Create and open this standalone chat.",
+            chat: true,
+            provider: chatHarness?.id ?? "",
+            model: chatHarness?.defaultModel ?? "",
+            effort: chatHarness?.models.first(where: { $0.id == chatHarness?.defaultModel })?.defaultEffort ?? "",
+            deferred: false,
+            projectID: project.id
+        )
+        let openedChat = await waitUntil(timeout: 10) {
+            guard let chatID = store.selectedChatID, DieterConversationID.isServerBacked(chatID) else { return false }
+            return store.conversation?.detail.card.id == chatID && !store.conversationLoading
+        }
+        results["13c-standalone-chat-opens"] = openedChat && store.errorMessage == nil
+            ? "passed"
+            : "failed: selected=\(store.selectedChatID ?? "none"), loading=\(store.conversationLoading), error=\(store.errorMessage ?? "none")"
+        store.closeConversation()
 
         store.createProjectPresented = true
         try? await DieterTaskSleep.milliseconds(700)

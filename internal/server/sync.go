@@ -247,6 +247,10 @@ func globalDelta(previous, current *dieterv1.GlobalSnapshot) *dieterv1.GlobalDel
 	return delta
 }
 
+func globalDeltaEmpty(delta *dieterv1.GlobalDelta) bool {
+	return delta == nil || proto.Equal(delta, &dieterv1.GlobalDelta{})
+}
+
 func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest, send func(*dieterv1.SyncFrame) error) error {
 	heartbeat := boundedInterval(request.GetHeartbeatMs(), 15*time.Second)
 	if heartbeat < time.Second {
@@ -326,7 +330,9 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest
 			Event:  protoSyncEvent(last),
 		}
 		if deltaMode {
-			frame.Delta = globalDelta(projection, snapshot)
+			if delta := globalDelta(projection, snapshot); !globalDeltaEmpty(delta) {
+				frame.Delta = delta
+			}
 		} else {
 			frame.Snapshot = snapshot
 		}

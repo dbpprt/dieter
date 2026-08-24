@@ -44,6 +44,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -268,6 +269,55 @@ class DieterConnectionManager(
     fun reconnect() {
         if (!_state.value.desiredConnected) return
         restart()
+    }
+
+    fun cleanSync() {
+        val previousJob = synchronized(lock) {
+            generation++
+            connectionJob.also { connectionJob = null }
+        }
+        _state.update {
+            it.copy(
+                phase = if (it.desiredConnected) ConnectionPhase.SYNCING else ConnectionPhase.STOPPED,
+                connectionInterruptedAtMs = if (it.desiredConnected) System.currentTimeMillis() else null,
+                error = null,
+            )
+        }
+        scope.launch {
+            previousJob?.cancelAndJoin()
+            repository.reconnect()
+            syncStore.clearProjections()
+            synchronized(lock) {
+                cachedDirectory = null
+                preferredEndpointId = null
+                activeProjectionKey = ""
+                selectedProjectId = ""
+                discoveredEndpoints = emptyList()
+            }
+            preferences.edit().remove(KEY_PREFERRED_ENDPOINT).remove(KEY_PREFERRED_DAEMON).apply()
+            globalSnapshot = null
+            syncCursor = null
+            lastSyncFrameAtMs = 0L
+            _state.update {
+                it.copy(
+                    phase = if (it.desiredConnected) ConnectionPhase.CONNECTING else ConnectionPhase.STOPPED,
+                    endpoint = null,
+                    endpointConnections = configuredEndpointRows(),
+                    selectedState = null,
+                    projects = emptyList(),
+                    projectHosts = emptyMap(),
+                    boards = emptyList(),
+                    cards = emptyList(),
+                    chats = emptyList(),
+                    activeConversations = emptyMap(),
+                    schedules = emptyList(),
+                    scheduleRuns = emptyList(),
+                    error = null,
+                )
+            }
+            updateSelectedState()
+            if (shouldRun()) ensureStarted()
+        }
     }
 
     fun refreshProjectDirectory() {
@@ -679,11 +729,17 @@ class DieterConnectionManager(
             DieterWidgetPrefs.recordSyncFrame(appContext, lastSyncFrameAtMs)
             var projectionChanged = false
             if (frame.hasSnapshot()) {
-                globalSnapshot = frame.snapshot
-                projectionChanged = true
-            } else if (frame.hasDelta() && globalSnapshot != null) {
-                globalSnapshot = applyGlobalDelta(requireNotNull(globalSnapshot), frame.delta)
-                projectionChanged = true
+                if (globalSnapshot != frame.snapshot) {
+                    globalSnapshot = frame.snapshot
+                    projectionChanged = true
+                }
+            } else if (frame.hasDelta() && frame.delta.changesProjection() && globalSnapshot != null) {
+                val current = requireNotNull(globalSnapshot)
+                val next = applyGlobalDelta(current, frame.delta)
+                if (next != current) {
+                    globalSnapshot = next
+                    projectionChanged = true
+                }
             }
             if (frame.hasCursor()) {
                 syncCursor = frame.cursor
@@ -695,9 +751,11 @@ class DieterConnectionManager(
                     frame.cursor.takeIf { frame.hasCursor() },
                 )
             }
-            globalSnapshot?.let {
-                reconcileOutbox(it)
-                applyGlobalSnapshot(it)
+            if (projectionChanged) {
+                globalSnapshot?.let {
+                    reconcileOutbox(it)
+                    applyGlobalSnapshot(it)
+                }
             }
             _state.update { it.copy(phase = ConnectionPhase.CONNECTED, connectionInterruptedAtMs = null, error = null) }
         }

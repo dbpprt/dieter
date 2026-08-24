@@ -207,6 +207,41 @@ func TestMetadataDeltaAndIdempotentStartAdmission(t *testing.T) {
 	stopRunner()
 }
 
+func TestMetadataSyncSuppressesSemanticallyEmptyDelta(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	data := store.New(t.TempDir())
+	if _, err := data.CreateProject(store.CreateProjectInput{Name: "Empty delta", Path: testRepository(t)}); err != nil {
+		t.Fatal(err)
+	}
+	client, _ := newConnectTestClient(t, data, &fakeRunner{})
+	stream, err := client.WatchSync(ctx, connect.NewRequest(&dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() {
+		t.Fatalf("initial metadata sync: %v", stream.Err())
+	}
+	initial := stream.Msg()
+	if initial.GetSnapshot() == nil {
+		t.Fatalf("initial frame=%#v", initial)
+	}
+	if err := data.SaveCommandResult("sync-test", "projection-neutral", store.CommandResult{Kind: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	for stream.Receive() {
+		frame := stream.Msg()
+		if frame.GetHeartbeat() || frame.GetCursor().GetSequence() <= initial.GetCursor().GetSequence() {
+			continue
+		}
+		if frame.GetDelta() != nil || frame.GetSnapshot() != nil || len(frame.GetEvents()) == 0 {
+			t.Fatalf("projection-neutral event was not cursor-only: delta=%v frame=%#v", frame.GetDelta(), frame)
+		}
+		return
+	}
+	t.Fatalf("projection-neutral event was not streamed: %v", stream.Err())
+}
+
 func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

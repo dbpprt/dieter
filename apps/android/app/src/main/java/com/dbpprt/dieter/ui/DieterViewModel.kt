@@ -353,6 +353,8 @@ class DieterViewModel(
         }
     }
 
+    fun cleanSync() = connectionManager.cleanSync()
+
     fun selectGateway(id: String) = connectionManager.selectGateway(id)
 
     fun showConnectionDialog() {

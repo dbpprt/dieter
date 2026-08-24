@@ -1086,11 +1086,51 @@ func (s *Store) ArchiveCard(ref string, archived bool) (model.Card, error) {
 }
 
 func (s *Store) ArchiveDoneCards(now time.Time) ([]model.Card, error) {
-	release, err := s.beginWrite()
+	possible, err := s.doneCardsPossiblyDueForArchive(now)
+	if err != nil || len(possible) == 0 {
+		return possible, err
+	}
+	release, err := s.beginWriteLock()
 	if err != nil {
 		return nil, err
 	}
 	defer release()
+	due, err := s.doneCardsDueForArchive(now)
+	if err != nil || len(due) == 0 {
+		return due, err
+	}
+	if _, err := s.prepareSyncMutation(); err != nil {
+		return nil, err
+	}
+	archived := make([]model.Card, 0, len(due))
+	archivedAt := now.UTC().Format(time.RFC3339Nano)
+	for _, card := range due {
+		card.Archived, card.UpdatedAt = true, archivedAt
+		if err := s.writeCard(card); err != nil {
+			return archived, err
+		}
+		archived = append(archived, card)
+	}
+	return archived, nil
+}
+
+func (s *Store) doneCardsPossiblyDueForArchive(now time.Time) ([]model.Card, error) {
+	return s.doneCardsEligibleForArchive(now, nil)
+}
+
+func (s *Store) doneCardsDueForArchive(now time.Time) ([]model.Card, error) {
+	leases, err := activeRuntimeLeases(filepath.Join(s.runtimeDir(), "leases"))
+	if err != nil {
+		return nil, err
+	}
+	activeCards := make(map[string]bool, len(leases))
+	for _, lease := range leases {
+		activeCards[lease.CardID] = true
+	}
+	return s.doneCardsEligibleForArchive(now, activeCards)
+}
+
+func (s *Store) doneCardsEligibleForArchive(now time.Time, activeCards map[string]bool) ([]model.Card, error) {
 	projects, err := s.listProjects()
 	if err != nil {
 		return nil, err
@@ -1114,20 +1154,11 @@ func (s *Store) ArchiveDoneCards(now time.Time) ([]model.Card, error) {
 	if len(delays) == 0 {
 		return []model.Card{}, nil
 	}
-	leases, err := activeRuntimeLeases(filepath.Join(s.runtimeDir(), "leases"))
-	if err != nil {
-		return nil, err
-	}
-	activeCards := make(map[string]bool, len(leases))
-	for _, lease := range leases {
-		activeCards[lease.CardID] = true
-	}
 	cards, err := s.listCards()
 	if err != nil {
 		return nil, err
 	}
-	archived := make([]model.Card, 0)
-	archivedAt := now.UTC().Format(time.RFC3339Nano)
+	due := make([]model.Card, 0)
 	for _, card := range cards {
 		delay, enabled := delays[card.BoardID]
 		if !enabled || card.Scope != model.ConversationScopeBoard || card.Lane != model.LaneDone || card.Archived || card.DoneArchiveExempt || activeCards[card.ID] || card.Runtime == "running" || card.Runtime == "starting" {
@@ -1140,13 +1171,9 @@ func (s *Store) ArchiveDoneCards(now time.Time) ([]model.Card, error) {
 		if parseErr != nil || now.Before(phaseChangedAt.Add(delay)) {
 			continue
 		}
-		card.Archived, card.UpdatedAt = true, archivedAt
-		if err := s.writeCard(card); err != nil {
-			return archived, err
-		}
-		archived = append(archived, card)
+		due = append(due, card)
 	}
-	return archived, nil
+	return due, nil
 }
 
 func (s *Store) CardDetail(ref string) (model.CardDetail, error) {

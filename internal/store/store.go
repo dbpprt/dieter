@@ -64,10 +64,12 @@ func (s *Store) Ensure() error {
 	return nil
 }
 
-// beginWrite serializes mutations both within the process and across CLI/server
-// processes. Directory creation is the portable atomic primitive; a stale lock
-// is reclaimed after 30 seconds so a killed process cannot wedge the store.
-func (s *Store) beginWrite() (func(), error) {
+// beginWriteLock serializes access both within the process and across CLI/server
+// processes without publishing a sync mutation. Conditional writers use it to
+// revalidate that a domain change is still necessary before advancing the sync
+// journal. Directory creation is the portable atomic primitive; a stale lock is
+// reclaimed after 30 seconds so a killed process cannot wedge the store.
+func (s *Store) beginWriteLock() (func(), error) {
 	writeMu.Lock()
 	releaseProcess := true
 	defer func() {
@@ -83,11 +85,6 @@ func (s *Store) beginWrite() (func(), error) {
 	for {
 		err := os.Mkdir(lockPath, 0o700)
 		if err == nil {
-			_, prepareErr := s.prepareSyncMutation()
-			if prepareErr != nil {
-				_ = os.Remove(lockPath)
-				return nil, prepareErr
-			}
 			releaseProcess = false
 			return func() {
 				_ = os.Remove(lockPath)
@@ -106,6 +103,20 @@ func (s *Store) beginWrite() (func(), error) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// beginWrite acquires the central writer lock and publishes a durable sync
+// invalidation before the caller changes domain files.
+func (s *Store) beginWrite() (func(), error) {
+	release, err := s.beginWriteLock()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.prepareSyncMutation(); err != nil {
+		release()
+		return nil, err
+	}
+	return release, nil
 }
 
 func (s *Store) projectDir() string      { return filepath.Join(s.Root, "projects") }

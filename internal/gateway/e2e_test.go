@@ -174,7 +174,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatalf("close relayed terminal: %v", err)
 	}
 
-	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 20, HeartbeatMs: 1_000})
+	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000})
 	if err != nil {
 		t.Fatalf("open relayed global sync: %v", err)
 	}
@@ -182,6 +182,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || syncFrame.GetSnapshot() == nil || syncFrame.GetCursor().GetEpoch() == "" {
 		t.Fatalf("relayed global sync frame=%#v err=%v", syncFrame, err)
 	}
+	syncSequence := syncFrame.GetCursor().GetSequence()
 	command := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Relayed outbox", Prompt: "deliver once",
 		Provider: "mock", Model: "mock", DeferStart: true,
@@ -201,12 +202,31 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 			t.Fatalf("receive relayed command event: %v", receiveErr)
 		}
 		found := false
-		for _, chat := range frame.GetSnapshot().GetState().GetChats() {
+		for _, chat := range frame.GetDelta().GetChats() {
 			found = found || chat.GetId() == created.GetId()
+		}
+		if frame.GetCursor().GetSequence() > syncSequence {
+			syncSequence = frame.GetCursor().GetSequence()
 		}
 		if found {
 			break
 		}
+	}
+	if err := boardStore.SaveCommandResult("gateway-e2e-client", "projection-neutral", store.CommandResult{Kind: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		frame, receiveErr := syncStream.Recv()
+		if receiveErr != nil {
+			t.Fatalf("receive relayed projection-neutral event: %v", receiveErr)
+		}
+		if frame.GetHeartbeat() || frame.GetCursor().GetSequence() <= syncSequence {
+			continue
+		}
+		if frame.GetDelta() != nil || frame.GetSnapshot() != nil || len(frame.GetEvents()) == 0 {
+			t.Fatalf("relayed projection-neutral event was not cursor-only: delta=%v frame=%#v", frame.GetDelta(), frame)
+		}
+		break
 	}
 	if err := filepath.Walk(config.Root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil || info.IsDir() {

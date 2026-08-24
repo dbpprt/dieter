@@ -149,6 +149,24 @@ func TestTickArchivesDoneCardsUsingBoardPolicy(t *testing.T) {
 	}
 }
 
+func TestIdleTicksDoNotAdvanceSyncHighwater(t *testing.T) {
+	manager, data, _, _ := setup(t)
+	before, _, err := data.SyncEvents(0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 4 {
+		manager.Tick()
+	}
+	after, events, err := data.SyncEvents(before.Sequence, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before || len(events) != 0 {
+		t.Fatalf("idle ticks advanced sync: before=%#v after=%#v events=%#v", before, after, events)
+	}
+}
+
 func TestDueRunUsesLatestMisfireAndAdvancesCursor(t *testing.T) {
 	manager, data, project, board := setup(t)
 	clock := time.Date(2026, 8, 13, 7, 29, 0, 0, time.UTC)

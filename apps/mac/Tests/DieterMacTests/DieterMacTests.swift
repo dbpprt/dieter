@@ -675,6 +675,15 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(items[1].id == "message:message_3")
 }
 
+@Test func emptyMessageIDsReceiveUniqueStableTimelineFallbacks() {
+    var first = Dieter_V1_UiMessage(); first.role = "user"
+    var second = Dieter_V1_UiMessage(); second.role = "assistant"
+    let items = ConversationTimelineItem.group([first, second])
+
+    #expect(items.map(\.id) == ["message:position:0", "message:position:1"])
+    #expect(items.map(\.scrollAnchorID) == items.map(\.id))
+}
+
 @Test func toolCallGroupSummaryMatchesCompactEditAndCommandLabels() {
     #expect(ToolCallGroupSummary(toolNames: ["Bash"]).title == "1 command")
     #expect(ToolCallGroupSummary(toolNames: Array(repeating: "Edit", count: 14) + Array(repeating: "exec_command", count: 7)).title == "14 edits, 7 commands")
@@ -869,6 +878,38 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(restored.outbox.first?.endpointID == endpointID)
 }
 
+@Test func cleanSyncClearsEveryProjectionAndPreservesOutbox() throws {
+    let firstEndpointID = "https://one.example:443#daemon-one"
+    let secondEndpointID = "https://two.example:443#daemon-two"
+    let entry = DieterOutboxEntry(
+        commandID: "command-one",
+        clientID: "mac-one",
+        endpointID: firstEndpointID,
+        kind: .sendMessage,
+        request: Data([1, 2, 3]),
+        optimisticID: "message-one",
+        attempts: 0,
+        createdAt: Date(timeIntervalSince1970: 1)
+    )
+    var state = DieterSyncDiskState(
+        projections: [
+            firstEndpointID: .init(cursor: Data([1]), snapshot: Data([2])),
+            secondEndpointID: .init(cursor: Data([3]), snapshot: Data([4])),
+        ],
+        cursor: Data([5]),
+        snapshot: Data([6]),
+        outbox: [entry]
+    )
+
+    state.clearProjections()
+
+    #expect(state.projections.isEmpty)
+    #expect(state.cursor == nil)
+    #expect(state.snapshot == nil)
+    #expect(state.outbox.count == 1)
+    #expect(state.outbox.first?.commandID == entry.commandID)
+}
+
 @Test func permanentOutboxFailureDoesNotBlockLaterCreate() throws {
     let endpointID = "gateway#daemon"
     var send = Dieter_V1_SendMessageRequest()
@@ -935,6 +976,26 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(!DieterRPCFailure.message(for: error).contains("RPCError error 1"))
 }
 
+@Test func cancelledConversationOpenRetriesOnceWithoutReportingStaleFailures() {
+    let cancelled = RPCError(code: .cancelled, message: "request cancelled")
+
+    #expect(DieterConversationOpenFailurePolicy.disposition(
+        for: cancelled,
+        selectionMatches: true,
+        cancellationRetries: 0
+    ) == .retry)
+    #expect(DieterConversationOpenFailurePolicy.disposition(
+        for: cancelled,
+        selectionMatches: true,
+        cancellationRetries: 1
+    ) == .report)
+    #expect(DieterConversationOpenFailurePolicy.disposition(
+        for: RPCError(code: .notFound, message: "missing"),
+        selectionMatches: false,
+        cancellationRetries: 0
+    ) == .ignore)
+}
+
 @Test func globalProjectionReducerAppliesMetadataChangesAndTombstones() {
     var retained = Dieter_V1_Project(); retained.id = "p_keep"; retained.name = "Before"
     var removed = Dieter_V1_Project(); removed.id = "p_remove"
@@ -960,6 +1021,35 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(reduced.state.cards.isEmpty)
     #expect(reduced.state.chats.map(\.id) == ["chat_add"])
     #expect(reduced.settings.globalParallelLimit == 7)
+}
+
+@Test func emptyGlobalDeltaDoesNotChangeProjection() {
+    var snapshot = Dieter_V1_GlobalSnapshot()
+    var project = Dieter_V1_Project(); project.id = "p_keep"
+    snapshot.state.projects = [project]
+    let delta = Dieter_V1_GlobalDelta()
+
+    #expect(!GlobalProjectionReducer.changesProjection(delta))
+    #expect(GlobalProjectionReducer.applying(delta, to: snapshot) == snapshot)
+
+    var changed = delta
+    changed.removedProjectIds = [project.id]
+    #expect(GlobalProjectionReducer.changesProjection(changed))
+}
+
+@Test func globalProjectionReducerAppliesConversationChangesAndTombstones() {
+    var retained = Dieter_V1_ConversationSnapshot(); retained.detail.card.id = "c_keep"
+    var removed = Dieter_V1_ConversationSnapshot(); removed.detail.card.id = "c_remove"
+    var snapshot = Dieter_V1_GlobalSnapshot(); snapshot.conversations = [retained, removed]
+    retained.conversation.lastSeq = 9
+    var added = Dieter_V1_ConversationSnapshot(); added.detail.card.id = "c_add"
+    var delta = Dieter_V1_GlobalDelta()
+    delta.conversations = [retained, added]
+    delta.removedConversationIds = ["c_remove"]
+
+    let reduced = GlobalProjectionReducer.applying(delta, to: snapshot)
+    #expect(reduced.conversations.map { $0.detail.card.id } == ["c_keep", "c_add"])
+    #expect(reduced.conversations.first?.conversation.lastSeq == 9)
 }
 
 @Test func directorySnapshotInvalidatesItsPreviousSyncCursor() throws {
