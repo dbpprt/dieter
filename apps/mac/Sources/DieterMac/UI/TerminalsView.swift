@@ -132,7 +132,7 @@ struct TerminalsView: View {
                 }
             )
             .id(terminal.id)
-            .background(Color(nsColor: NSColor(rgb: 0x0A0A0E)))
+            .background(DieterTheme.terminalBackground)
 
             Divider().overlay(DieterTheme.border)
             HStack(spacing: 8) {
@@ -386,10 +386,7 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         let view = SwiftTerm.TerminalView(frame: .zero, font: font)
         view.terminalDelegate = context.coordinator
-        view.nativeForegroundColor = NSColor(rgb: 0xE8E8ED)
-        view.nativeBackgroundColor = NSColor(rgb: 0x0A0A0E)
-        view.caretColor = NSColor(rgb: 0x5EEAD4)
-        view.layer?.backgroundColor = NSColor(rgb: 0x0A0A0E).cgColor
+        applyPalette(to: view)
         context.coordinator.apply(screen, to: view)
         DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
         return view
@@ -400,7 +397,15 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         context.coordinator.send = send
         context.coordinator.resize = resize
         context.coordinator.acceptsInput = acceptsInput
+        applyPalette(to: view)
         context.coordinator.apply(screen, to: view)
+    }
+
+    private func applyPalette(to view: SwiftTerm.TerminalView) {
+        view.nativeForegroundColor = DieterTheme.terminalForegroundColor
+        view.nativeBackgroundColor = DieterTheme.terminalBackgroundColor
+        view.caretColor = DieterTheme.terminalCaretColor
+        view.layer?.backgroundColor = DieterTheme.terminalBackgroundColor.cgColor
     }
 
     @MainActor
@@ -475,16 +480,5 @@ final class RemoteTerminalScreenRenderer {
             let empty = [UInt8]()
             view.feed(byteArray: empty[...])
         }
-    }
-}
-
-private extension NSColor {
-    convenience init(rgb: UInt32) {
-        self.init(
-            red: Double((rgb >> 16) & 0xff) / 255,
-            green: Double((rgb >> 8) & 0xff) / 255,
-            blue: Double(rgb & 0xff) / 255,
-            alpha: 1
-        )
     }
 }

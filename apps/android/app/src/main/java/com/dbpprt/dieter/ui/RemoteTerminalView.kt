@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.text.InputType
@@ -26,6 +25,7 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.terminal.TextStyle
 import com.termux.view.TerminalRenderer
+import com.dbpprt.dieter.settings.DieterPalette
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -33,7 +33,10 @@ import kotlin.math.max
  * A native, remote-only terminal surface. Termux supplies the ANSI/VT emulator
  * and glyph renderer; all process ownership and I/O remain in the Dieter daemon.
  */
-class RemoteTerminalView(context: Context) : android.view.View(context) {
+class RemoteTerminalView(
+    context: Context,
+    palette: DieterPalette = DieterPalette.DEFAULT,
+) : android.view.View(context) {
     var onInput: (ByteArray) -> Unit = {}
     var onResize: (columns: Int, rows: Int) -> Unit = { _, _ -> }
     var onControlChanged: (Boolean) -> Unit = {}
@@ -51,6 +54,7 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
     private var cursorBlinkRunning = false
     private val horizontalInset = (10f * resources.displayMetrics.density).toInt()
     private val verticalInset = (8f * resources.displayMetrics.density).toInt()
+    private val paletteTokens = palette.tokens
 
     private val cursorBlinkRunnable = object : Runnable {
         override fun run() {
@@ -111,9 +115,9 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
         10_000,
         sessionClient,
     ).apply {
-        mColors.mCurrentColors[TextStyle.COLOR_INDEX_FOREGROUND] = Color.rgb(236, 239, 244)
-        mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND] = Color.rgb(8, 9, 13)
-        mColors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] = Color.rgb(182, 173, 246)
+        mColors.mCurrentColors[TextStyle.COLOR_INDEX_FOREGROUND] = paletteTokens.lightInt
+        mColors.mCurrentColors[TextStyle.COLOR_INDEX_BACKGROUND] = paletteTokens.darkBackgroundInt
+        mColors.mCurrentColors[TextStyle.COLOR_INDEX_CURSOR] = paletteTokens.shellStartInt
         setCursorBlinkingEnabled(true)
         setCursorBlinkState(true)
     }
@@ -158,7 +162,7 @@ class RemoteTerminalView(context: Context) : android.view.View(context) {
     init {
         isFocusable = true
         isFocusableInTouchMode = true
-        setBackgroundColor(Color.rgb(8, 9, 13))
+        setBackgroundColor(paletteTokens.darkBackgroundInt)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         contentDescription = "Interactive remote terminal"
     }

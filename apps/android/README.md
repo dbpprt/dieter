@@ -84,11 +84,15 @@ Android Studio's bundled JDK and the default macOS Android SDK are detected by:
 The project targets Android 37.1 and supports API 26+. Open `apps/android` in
 Android Studio for interactive development.
 
-Launcher resources include legacy density variants, an adaptive foreground,
-and Android 13+ monochrome artwork derived from the canonical
-[`assets/brand`](../../assets/brand/README.md) masters. The notification mark and
-Compose dark theme use the same identity and semantic palette. Regenerate the
-committed bitmap derivatives on macOS with:
+Display settings include all eight official Dieter palette packs. Selection is
+persisted locally and updates Compose surfaces, terminal colors, widgets,
+notification accents, and the launcher icon. Each launcher variant includes
+legacy density images, an adaptive foreground, and Android 13+ monochrome
+artwork. Android launchers may briefly cache the prior icon after a change.
+
+The default Arctic Console assets are still derived from the canonical
+[`assets/brand`](../../assets/brand/README.md) masters. Regenerate those default
+bitmap derivatives on macOS with:
 
 ```sh
 ./apps/android/scripts/sync-brand-assets.sh

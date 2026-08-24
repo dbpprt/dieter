@@ -53,10 +53,13 @@ import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterText
 import com.dbpprt.dieter.ui.theme.DieterPane
 import com.dbpprt.dieter.ui.theme.DieterAbyss
+import com.dbpprt.dieter.ui.theme.DieterGlassDockFill
+import com.dbpprt.dieter.ui.theme.DieterGlassFadeSoft
+import com.dbpprt.dieter.ui.theme.DieterGlassFadeStrong
 
-internal val GlassFadeSoft = Color(0x6616151D)
-internal val GlassFadeStrong = Color(0xCC0D0C12)
-internal val GlassDockFill = Color(0xE6181722)
+internal val GlassFadeSoft get() = DieterGlassFadeSoft
+internal val GlassFadeStrong get() = DieterGlassFadeStrong
+internal val GlassDockFill get() = DieterGlassDockFill
 
 private data class GlassDestination(val destination: Destination, val label: String, val icon: ImageVector)
 

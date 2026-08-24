@@ -28,6 +28,7 @@ struct DieterRootView: View {
         }
         .animation(.snappy(duration: 0.24), value: navigationCollapsed)
         .background(DieterTheme.background)
+        .background(WindowTitleBarDoubleClickHandler())
         .foregroundStyle(DieterTheme.text)
         .overlay {
             if !store.phase.isConnected && (!store.hasLoadedWorkspace || store.phase.needsConnectionOverlay) { ConnectionOverlay() }

@@ -8,13 +8,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.core.content.ContextCompat
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.R
 import com.dbpprt.dieter.connection.DieterConnectionState
 import com.dbpprt.dieter.connection.DieterSyncService
 import com.dbpprt.dieter.data.DieterSyncStore
+import com.dbpprt.dieter.settings.AppPreferences
 
 /**
  * Home-screen activity feed. Renders entirely from the cached global-sync
@@ -62,6 +62,14 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             val compact = isCompact(config.style, manager.getAppWidgetOptions(appWidgetId))
             val state = connectionState(context)
             val views = android.widget.RemoteViews(context.packageName, R.layout.widget_activity)
+            val palette = AppPreferences.selectedPalette(context)
+            val colors = palette.tokens
+
+            views.setInt(R.id.widget_root, "setBackgroundResource", palette.widgetBackground())
+            views.setInt(R.id.widget_app_icon, "setBackgroundResource", palette.widgetAppChip())
+            views.setTextColor(R.id.widget_header_title, colors.lightInt)
+            views.setTextColor(R.id.widget_empty_title, colors.lightInt)
+            views.setTextColor(R.id.widget_empty_body, colors.mutedInt)
 
             views.setTextViewText(
                 R.id.widget_header_title,
@@ -73,7 +81,7 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_status, "● " + statusLine(hostname(context, state), lastSyncAtMs, now))
             views.setTextColor(
                 R.id.widget_status,
-                ContextCompat.getColor(context, if (online) R.color.widget_green else R.color.widget_muted),
+                if (online) colors.eyesInt else colors.mutedInt,
             )
             views.setTextViewText(
                 R.id.widget_empty_title,

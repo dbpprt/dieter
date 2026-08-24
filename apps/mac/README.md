@@ -62,10 +62,12 @@ Xcode, direct SwiftPM commands, and concurrent project sessions from
 invalidating the app script's cache. Keep `apps/mac/.build` between builds to
 retain it, or set `DIETER_SWIFT_SCRATCH_PATH` to put it elsewhere.
 
-The build packages the canonical app icon and small-size product mark directly
-from [`assets/brand`](../../assets/brand/README.md). The SwiftUI theme implements
-the same dark semantic palette; platform-specific copies are intentionally not
-kept in this app directory.
+General settings include all eight official Dieter palette packs. Selection is
+persisted locally and updates every SwiftUI surface, terminal colors, menu-bar
+surface, and the running Dock app icon. The build packages the canonical
+fallback icon and small-size product mark from
+[`assets/brand`](../../assets/brand/README.md), plus the supplied 1024-pixel
+palette icon variants under `Resources/PaletteIcons` for runtime switching.
 
 Public SwiftProtobuf messages and grpc-swift v2 client stubs are checked in so
 ordinary builds do not compile `protoc` and both Swift generator plugins. The

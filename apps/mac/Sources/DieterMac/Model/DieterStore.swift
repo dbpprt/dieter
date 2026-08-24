@@ -2411,6 +2411,7 @@ final class DieterStore {
         request.clientID = syncClientID
         request.commandID = UUID().uuidString.lowercased()
         do {
+            let shouldOpenConversation = Self.shouldOpenCreatedConversation(chat: chat, lane: request.lane)
             let optimisticID = "local_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
             let target = projectEndpointIDs[destinationProjectID].flatMap { id in endpoints.first { $0.id == id } }
             syncDiskState.outbox.append(DieterOutboxEntry(
@@ -2425,21 +2426,27 @@ final class DieterStore {
             ))
             createConversationPresented = false
             rebuildOutboxOverlays()
-            let card = (chat ? chats : state.cards).first { $0.id == optimisticID } ?? Dieter_V1_Card()
-            var local = Dieter_V1_ConversationSnapshot()
-            local.detail.card = card
-            local.detail.project = projectDirectory[destinationProjectID] ?? Dieter_V1_Project()
-            if !chat { local.detail.board = board(id: request.boardID) ?? Dieter_V1_Board() }
-            local.conversation.cardID = optimisticID
-            local.conversation.status = "pending"
-            local.conversation.draftAttachments = attachments
-            conversation = local
-            selectedDetail = local.detail
-            selectedCardID = chat ? nil : optimisticID
-            selectedChatID = chat ? optimisticID : nil
+            if shouldOpenConversation {
+                let card = (chat ? chats : state.cards).first { $0.id == optimisticID } ?? Dieter_V1_Card()
+                var local = Dieter_V1_ConversationSnapshot()
+                local.detail.card = card
+                local.detail.project = projectDirectory[destinationProjectID] ?? Dieter_V1_Project()
+                if !chat { local.detail.board = board(id: request.boardID) ?? Dieter_V1_Board() }
+                local.conversation.cardID = optimisticID
+                local.conversation.status = "pending"
+                local.conversation.draftAttachments = attachments
+                conversation = local
+                selectedDetail = local.detail
+                selectedCardID = chat ? nil : optimisticID
+                selectedChatID = chat ? optimisticID : nil
+            }
             section = chat ? .chats : .board
             await persistAndDrainOutbox()
         } catch { show(error) }
+    }
+
+    static func shouldOpenCreatedConversation(chat: Bool, lane: String) -> Bool {
+        chat || lane.caseInsensitiveCompare("todo") != .orderedSame
     }
 
     private func markChatRead(_ card: Dieter_V1_Card) {

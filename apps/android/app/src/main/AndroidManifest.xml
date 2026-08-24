@@ -26,16 +26,116 @@
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="dieter-android" android:host="oauth" android:path="/callback" />
             </intent-filter>
         </activity>
+        <activity-alias
+            android:name=".LauncherElectricBlue"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_electric_blue"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_electric_blue_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherJadeOperator"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_jade_operator"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_jade_operator_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherCopperCircuit"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_copper_circuit"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_copper_circuit_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherUltravioletRelay"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_ultraviolet_relay"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_ultraviolet_relay_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherSolarCommand"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_solar_command"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_solar_command_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherArcticConsole"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_arctic_console"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_arctic_console_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherCoralSignal"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_coral_signal"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_coral_signal_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".LauncherAcidTerminal"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_acid_terminal"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_acid_terminal_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".widget.DieterWidgetConfigActivity"
             android:exported="true"

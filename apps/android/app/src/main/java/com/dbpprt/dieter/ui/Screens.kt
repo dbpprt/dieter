@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -734,6 +735,78 @@ private fun BoardQuickSwitcher(state: DieterUiState, model: DieterViewModel, onD
                 Icon(Icons.Outlined.ViewKanban, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("All spaces")
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ProjectPickerSheet(
+    state: DieterUiState,
+    target: Destination,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    val isFiles = target == Destination.FILES
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = DieterSurfaceHigh) {
+        Column(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (isFiles) Icons.Outlined.FolderOpen else Icons.Outlined.CalendarMonth,
+                    contentDescription = null,
+                    tint = DieterShell,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    if (isFiles) "Open files in" else "Open schedules in",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Text(
+                "Choose a project to browse.",
+                color = DieterMuted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 2.dp, bottom = 4.dp),
+            )
+            state.projects.forEach { project ->
+                val selected = project.id == state.selectedProjectId
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                        .then(
+                            if (selected) {
+                                Modifier.background(DieterShellTint.copy(alpha = 0.55f))
+                                    .border(1.dp, DieterShell.copy(alpha = 0.65f), RoundedCornerShape(16.dp))
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .clickable { onSelect(project.id) }
+                        .padding(horizontal = 12.dp, vertical = 12.dp)
+                        .testTag("project-picker-${project.id}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BoardMark(stableAccent(project.id), Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(project.name, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                        Text(
+                            buildString {
+                                state.projectHosts[project.id]?.let { append(it.hostname).append("  ·  ") }
+                                append(compactProjectPath(project.path))
+                            },
+                            color = DieterMuted,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (selected) Icon(Icons.Default.Check, "Current project", tint = DieterShell)
+                }
             }
         }
     }

@@ -6,8 +6,11 @@ struct DieterMacApp: App {
     @State private var store: DieterStore
     @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
     private var appearanceValue = DieterAppearance.defaultValue.rawValue
+    @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
+    private var paletteValue = DieterPalette.defaultValue.rawValue
 
     private var appearance: DieterAppearance { DieterAppearance.resolve(appearanceValue) }
+    private var palette: DieterPalette { DieterPalette.resolve(paletteValue) }
 
     init() {
         _store = State(initialValue: DieterStore())
@@ -17,7 +20,12 @@ struct DieterMacApp: App {
         WindowGroup("Dieter") {
             DieterRootView()
                 .environment(store)
+                .id(paletteValue)
                 .preferredColorScheme(appearance.colorScheme)
+                .onAppear { DieterAppIcon.apply(palette) }
+                .onChange(of: paletteValue) { _, value in
+                    DieterAppIcon.apply(DieterPalette.resolve(value))
+                }
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
                     let arguments = ProcessInfo.processInfo.arguments
@@ -85,6 +93,18 @@ struct DieterMacApp: App {
     }
 }
 
+@MainActor
+enum DieterAppIcon {
+    static func apply(_ palette: DieterPalette) {
+        guard let url = Bundle.main.url(
+            forResource: palette.rawValue,
+            withExtension: "png",
+            subdirectory: "PaletteIcons"
+        ), let image = NSImage(contentsOf: url) else { return }
+        NSApp.applicationIconImage = image
+    }
+}
+
 /// Menu bar (status bar) glyph: the Dieter wheel drawn as a template alpha mask so
 /// macOS tints it for light/dark menu bars instead of showing an opaque bitmap.
 enum MenuBarIcon {
@@ -118,6 +138,8 @@ struct MenuBarContent: View {
     @Environment(DieterStore.self) private var store
     @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
     private var appearanceValue = DieterAppearance.defaultValue.rawValue
+    @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
+    private var paletteValue = DieterPalette.defaultValue.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -148,6 +170,7 @@ struct MenuBarContent: View {
         .padding(16)
         .frame(width: 384)
         .background(DieterTheme.background)
+        .id(paletteValue)
         .preferredColorScheme(DieterAppearance.resolve(appearanceValue).colorScheme)
     }
 

@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -57,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -72,6 +75,7 @@ import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.dieterEndpointFromAddress
 import com.dbpprt.dieter.settings.NavigationStyle
+import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.update.AppUpdateState
 import com.dbpprt.dieter.ui.theme.DieterDivider
@@ -497,6 +501,9 @@ private fun DisplaySettings(state: DieterUiState, model: DieterViewModel) {
             )
         }
         item {
+            PaletteSetting(state.palette, model::setPalette)
+        }
+        item {
             GlassNavigationSetting(state.navigationStyle == NavigationStyle.GLASS) { enabled ->
                 model.setNavigationStyle(if (enabled) NavigationStyle.GLASS else NavigationStyle.CLASSIC)
             }
@@ -513,6 +520,69 @@ private fun DisplaySettings(state: DieterUiState, model: DieterViewModel) {
                 enabled = state.showReasoningTraces,
                 onToggle = model::setShowReasoningTraces,
             )
+        }
+    }
+}
+
+@Composable
+private fun PaletteSetting(selected: DieterPalette, onSelect: (DieterPalette) -> Unit) {
+    Surface(color = DieterSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Palette", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text(
+                    "Changes every app surface, terminal, widget, notification accent, and launcher icon.",
+                    color = DieterMuted,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                )
+            }
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                items(DieterPalette.entries, key = DieterPalette::slug) { palette ->
+                    val active = palette == selected
+                    Surface(
+                        onClick = { onSelect(palette) },
+                        color = if (active) DieterEyesTint else DieterSurfaceHigh,
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, if (active) DieterShell else DieterOutline),
+                        modifier = Modifier.width(158.dp).height(64.dp)
+                            .testTag("palette-${palette.slug}")
+                            .semantics {
+                                contentDescription = "${palette.displayName} palette${if (active) ", selected" else ""}"
+                            },
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        ) {
+                            Box(
+                                Modifier.size(28.dp).clip(CircleShape).background(
+                                    Brush.linearGradient(
+                                        listOf(
+                                            Color(palette.tokens.shellStart),
+                                            Color(palette.tokens.shellEnd),
+                                            Color(palette.tokens.paneEnd),
+                                        ),
+                                    ),
+                                ),
+                            )
+                            Text(
+                                palette.displayName,
+                                modifier = Modifier.weight(1f),
+                                fontSize = 12.sp,
+                                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (active) Text("✓", color = DieterShell, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
     }
 }

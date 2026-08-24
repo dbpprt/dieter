@@ -5,9 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
-import androidx.core.content.ContextCompat
 import com.dbpprt.dieter.R
 import com.dbpprt.dieter.connection.DieterSyncService
+import com.dbpprt.dieter.settings.AppPreferences
 
 class DieterWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = ActivityRemoteViewsFactory(
@@ -22,6 +22,8 @@ internal class ActivityRemoteViewsFactory(
 ) : RemoteViewsService.RemoteViewsFactory {
     private var rows: List<WidgetRow> = emptyList()
     private var compact = false
+    private val palette get() = AppPreferences.selectedPalette(context)
+    private val colors get() = palette.tokens
 
     override fun onCreate() = Unit
 
@@ -48,6 +50,7 @@ internal class ActivityRemoteViewsFactory(
         return when (val row = rows.getOrNull(position)) {
             is WidgetRow.Section -> RemoteViews(context.packageName, R.layout.widget_row_section).apply {
                 setTextViewText(R.id.widget_section_title, row.title)
+                setTextColor(R.id.widget_section_title, colors.tertiaryInt)
             }
             is WidgetRow.Item -> itemView(row)
             null -> RemoteViews(context.packageName, R.layout.widget_row_section)
@@ -59,12 +62,14 @@ internal class ActivityRemoteViewsFactory(
         val views = RemoteViews(context.packageName, layout)
         views.setTextViewText(R.id.widget_row_title, row.title)
         views.setTextViewText(R.id.widget_row_trailing, row.trailing)
+        views.setTextColor(R.id.widget_row_title, colors.lightInt)
         views.setImageViewResource(R.id.widget_row_icon, iconRes(row.kind))
-        views.setInt(R.id.widget_row_icon, "setColorFilter", color(iconColor(row.kind)))
+        views.setInt(R.id.widget_row_icon, "setColorFilter", iconColor(row.kind))
         views.setInt(R.id.widget_row_icon, "setBackgroundResource", iconBgRes(row.kind))
-        views.setTextColor(R.id.widget_row_trailing, color(trailingColor(row.kind)))
+        views.setTextColor(R.id.widget_row_trailing, trailingColor(row.kind))
         if (!compact) {
             views.setTextViewText(R.id.widget_row_subtitle, row.subtitle)
+            views.setTextColor(R.id.widget_row_subtitle, colors.mutedInt)
             views.setInt(
                 R.id.widget_row_root,
                 "setBackgroundResource",
@@ -78,8 +83,6 @@ internal class ActivityRemoteViewsFactory(
         return views
     }
 
-    private fun color(res: Int): Int = ContextCompat.getColor(context, res)
-
     private fun iconRes(kind: WidgetRowKind): Int = when (kind) {
         WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> R.drawable.ic_widget_eye
         WidgetRowKind.RUNNING -> R.drawable.ic_widget_running
@@ -88,26 +91,26 @@ internal class ActivityRemoteViewsFactory(
     }
 
     private fun iconColor(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> R.color.widget_amber
-        WidgetRowKind.RUNNING -> R.color.widget_blue
-        WidgetRowKind.DONE -> R.color.widget_green
-        WidgetRowKind.FAILED -> R.color.widget_coral
-        WidgetRowKind.CHAT -> R.color.widget_muted
+        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> 0xFFE2BE6A.toInt()
+        WidgetRowKind.RUNNING -> colors.paneEndInt
+        WidgetRowKind.DONE -> colors.eyesInt
+        WidgetRowKind.FAILED -> 0xFFF1868E.toInt()
+        WidgetRowKind.CHAT -> colors.mutedInt
     }
 
     private fun iconBgRes(kind: WidgetRowKind): Int = when (kind) {
         WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> R.drawable.bg_widget_icon_amber
-        WidgetRowKind.RUNNING -> R.drawable.bg_widget_icon_blue
-        WidgetRowKind.DONE -> R.drawable.bg_widget_icon_green
+        WidgetRowKind.RUNNING -> palette.widgetIconBackground()
+        WidgetRowKind.DONE -> palette.widgetIconBackground()
         WidgetRowKind.FAILED -> R.drawable.bg_widget_icon_coral
-        WidgetRowKind.CHAT -> R.drawable.bg_widget_icon_neutral
+        WidgetRowKind.CHAT -> palette.widgetIconBackground()
     }
 
     private fun trailingColor(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> R.color.widget_amber
-        WidgetRowKind.RUNNING -> R.color.widget_blue
-        WidgetRowKind.FAILED -> R.color.widget_coral
-        else -> R.color.widget_muted
+        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> 0xFFE2BE6A.toInt()
+        WidgetRowKind.RUNNING -> colors.paneEndInt
+        WidgetRowKind.FAILED -> 0xFFF1868E.toInt()
+        else -> colors.mutedInt
     }
 
     override fun getLoadingView(): RemoteViews? = null

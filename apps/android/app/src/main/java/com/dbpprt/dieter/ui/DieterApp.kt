@@ -120,6 +120,7 @@ fun DieterApp(container: DieterContainer) {
     val context = LocalContext.current
     var notificationPermissionRequested by remember { mutableStateOf(false) }
     var fileCreateVisible by remember { mutableStateOf(false) }
+    var projectPickerTarget by remember { mutableStateOf<Destination?>(null) }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         notificationPermissionRequested = true
     }
@@ -163,6 +164,16 @@ fun DieterApp(container: DieterContainer) {
         }
     }
 
+    // Files and Schedules are project-scoped but live in the top-level navigation.
+    // Tapping either offers a project picker so the surface never falls back to a stale project.
+    val handleNavigate: (Destination) -> Unit = { destination ->
+        if ((destination == Destination.FILES || destination == Destination.SCHEDULES) && state.projects.size > 1) {
+            projectPickerTarget = destination
+        } else {
+            model.navigate(destination)
+        }
+    }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val tabletLayout = usesTabletLayout(maxWidth.value)
         if (state.appSurface != null) {
@@ -178,7 +189,7 @@ fun DieterApp(container: DieterContainer) {
                 Row(Modifier.fillMaxSize()) {
                     DieterNavigationRail(
                         selected = state.destination,
-                        onSelect = model::navigate,
+                        onSelect = handleNavigate,
                         onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                         onCreate = {
                             when (state.destination) {
@@ -224,13 +235,13 @@ fun DieterApp(container: DieterContainer) {
                         if (state.navigationStyle == NavigationStyle.GLASS) {
                             GlassNavigationDock(
                                 state = state,
-                                onNavigate = model::navigate,
+                                onNavigate = handleNavigate,
                                 onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                             )
                         } else {
                             DieterBottomBar(
                                 selected = state.destination,
-                                onSelect = model::navigate,
+                                onSelect = handleNavigate,
                                 onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                             )
                         }
@@ -269,6 +280,18 @@ fun DieterApp(container: DieterContainer) {
                 fileCreateVisible = false
                 model.createFile(path, directory)
             }
+        }
+        projectPickerTarget?.let { target ->
+            ProjectPickerSheet(
+                state = state,
+                target = target,
+                onDismiss = { projectPickerTarget = null },
+                onSelect = { projectId ->
+                    projectPickerTarget = null
+                    if (projectId != state.selectedProjectId) model.selectProject(projectId)
+                    model.navigate(target)
+                },
+            )
         }
     }
     AppUpdateDialog(container.appUpdateManager)

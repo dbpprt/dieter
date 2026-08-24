@@ -58,7 +58,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -77,11 +76,13 @@ import com.dbpprt.dieter.ui.theme.DieterEyes
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
+import com.dbpprt.dieter.ui.theme.DieterTerminalBar
+import com.dbpprt.dieter.ui.theme.DieterTerminalCanvas
 import com.dbpprt.dieter.v1.Project
 import com.dbpprt.dieter.v1.Terminal
 
-private val TerminalCanvas = Color(0xFF08090D)
-private val TerminalBar = Color(0xFF111218)
+private val TerminalCanvas get() = DieterTerminalCanvas
+private val TerminalBar get() = DieterTerminalBar
 
 @Composable
 fun TerminalsScreen(
@@ -149,10 +150,10 @@ fun TerminalsScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth()
                     .padding(horizontal = if (expanded) 14.dp else 0.dp),
             ) {
-                key(selected.id) {
+                key(selected.id, state.palette) {
                     AndroidView(
                         factory = { context ->
-                            RemoteTerminalView(context).also { view ->
+                            RemoteTerminalView(context, state.palette).also { view ->
                                 terminalView = view
                                 view.onInput = { bytes -> if (running) model.sendTerminalInput(selected.id, bytes) }
                                 view.onResize = { columns, rows -> model.resizeTerminal(selected.id, columns, rows) }

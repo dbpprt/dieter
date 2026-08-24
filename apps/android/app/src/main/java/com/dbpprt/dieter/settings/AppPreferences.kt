@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.settings
 
 import android.content.Context
+import com.dbpprt.dieter.widget.DieterActivityWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -9,9 +10,12 @@ import org.json.JSONArray
 enum class NavigationStyle { CLASSIC, GLASS }
 
 class AppPreferences(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val _navigationStyle = MutableStateFlow(readNavigationStyle())
     val navigationStyle: StateFlow<NavigationStyle> = _navigationStyle.asStateFlow()
+    private val _palette = MutableStateFlow(readPalette())
+    val palette: StateFlow<DieterPalette> = _palette.asStateFlow()
     private val _showReasoningTraces = MutableStateFlow(
         preferences.getBoolean(KEY_SHOW_REASONING_TRACES, false),
     )
@@ -21,9 +25,20 @@ class AppPreferences(context: Context) {
     private val _projectOrder = MutableStateFlow(readProjectOrder())
     val projectOrder: StateFlow<List<String>> = _projectOrder.asStateFlow()
 
+    init {
+        DieterLauncherIcon.apply(appContext, _palette.value)
+    }
+
     fun setNavigationStyle(style: NavigationStyle) {
         preferences.edit().putString(KEY_NAVIGATION_STYLE, style.name).apply()
         _navigationStyle.value = style
+    }
+
+    fun setPalette(palette: DieterPalette) {
+        preferences.edit().putString(KEY_PALETTE, palette.slug).apply()
+        _palette.value = palette
+        DieterLauncherIcon.apply(appContext, palette)
+        DieterActivityWidgetProvider.updateAll(appContext)
     }
 
     fun setShowReasoningTraces(show: Boolean) {
@@ -54,6 +69,8 @@ class AppPreferences(context: Context) {
         )
     }.getOrDefault(NavigationStyle.CLASSIC)
 
+    private fun readPalette(): DieterPalette = selectedPalette(appContext)
+
     private fun readNotificationBoardIds(): Set<String> =
         preferences.getStringSet(KEY_NOTIFICATION_BOARD_IDS, emptySet()).orEmpty().toSet()
 
@@ -70,8 +87,14 @@ class AppPreferences(context: Context) {
     companion object {
         private const val PREFERENCES = "dieter_app_settings"
         private const val KEY_NAVIGATION_STYLE = "navigation_style"
+        private const val KEY_PALETTE = "palette"
         private const val KEY_SHOW_REASONING_TRACES = "show_reasoning_traces"
         private const val KEY_NOTIFICATION_BOARD_IDS = "notification_board_ids"
         private const val KEY_PROJECT_ORDER = "project_order"
+
+        fun selectedPalette(context: Context): DieterPalette = DieterPalette.resolve(
+            context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getString(KEY_PALETTE, DieterPalette.DEFAULT.slug),
+        )
     }
 }

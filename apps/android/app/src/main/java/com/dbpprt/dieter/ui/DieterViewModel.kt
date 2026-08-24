@@ -16,6 +16,7 @@ import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.settings.AppPreferences
+import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.NavigationStyle
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Card
@@ -95,6 +96,7 @@ data class DieterUiState(
     val desiredConnected: Boolean = true,
     val backgroundSyncEnabled: Boolean = true,
     val navigationStyle: NavigationStyle = NavigationStyle.CLASSIC,
+    val palette: DieterPalette = DieterPalette.DEFAULT,
     val showReasoningTraces: Boolean = false,
     val notificationBoardIds: Set<String> = emptySet(),
     val endpointConnections: List<EndpointConnection> = DIETER_ENDPOINTS.map {
@@ -221,6 +223,11 @@ class DieterViewModel(
             }
         }
         viewModelScope.launch {
+            appPreferences.palette.collectLatest { palette ->
+                _state.update { it.copy(palette = palette) }
+            }
+        }
+        viewModelScope.launch {
             appPreferences.showReasoningTraces.collectLatest { show ->
                 _state.update { it.copy(showReasoningTraces = show) }
             }
@@ -302,6 +309,10 @@ class DieterViewModel(
 
     fun setNavigationStyle(style: NavigationStyle) {
         appPreferences.setNavigationStyle(style)
+    }
+
+    fun setPalette(palette: DieterPalette) {
+        appPreferences.setPalette(palette)
     }
 
     fun setShowReasoningTraces(show: Boolean) {

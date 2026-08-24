@@ -30,10 +30,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import com.dbpprt.dieter.DieterApplication
 
 /** Per-instance widget options; also launched for reconfiguration from the launcher. */
 class DieterWidgetConfigActivity : ComponentActivity() {
@@ -48,8 +50,10 @@ class DieterWidgetConfigActivity : ComponentActivity() {
             finish()
             return
         }
+        val container = (application as DieterApplication).container
         setContent {
-            DieterTheme {
+            val palette by container.appPreferences.palette.collectAsStateWithLifecycle()
+            DieterTheme(palette) {
                 WidgetConfigScreen(
                     initial = DieterWidgetPrefs.config(this, appWidgetId),
                     onCancel = { finish() },

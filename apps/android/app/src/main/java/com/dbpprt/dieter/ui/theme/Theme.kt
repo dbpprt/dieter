@@ -8,39 +8,50 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.R
+import com.dbpprt.dieter.settings.DieterPalette
 
-// Arctic Console: cold shell blues on a deep terminal canvas.
-val DieterAbyss = Color(0xFF0D1B24)
-val DieterBackground = Color(0xFF081116)
-val DieterSurface = Color(0xFF122834)
-val DieterSurfaceHigh = Color(0xFF193A49)
-val DieterOutline = Color(0xFF264554)
-val DieterShellDeep = Color(0xFF3D6E85)
-val DieterShell = Color(0xFF8DD8E8)
-val DieterPane = Color(0xFFD7F2F5)
-val DieterLive = Color(0xFF62B6CB)
-val DieterEyes = Color(0xFFBCEAF1)
-val DieterRunning = DieterLive
+private var activePalette = DieterPalette.DEFAULT
+private val activeTokens get() = activePalette.tokens
+
+// Extended semantic colors stay source-compatible with the existing UI while
+// resolving through the palette selected by the root DieterTheme.
+val DieterAbyss get() = Color(activeTokens.darkBrand)
+val DieterBackground get() = Color(activeTokens.darkBackground)
+val DieterSurface get() = Color(activeTokens.darkSurface)
+val DieterSurfaceHigh get() = Color(activeTokens.darkRaised)
+val DieterOutline get() = lerp(DieterSurfaceHigh, DieterText, 0.12f)
+val DieterShellDeep get() = Color(activeTokens.shellEnd)
+val DieterShell get() = Color(activeTokens.shellStart)
+val DieterPane get() = Color(activeTokens.paneStart)
+val DieterLive get() = Color(activeTokens.paneEnd)
+val DieterEyes get() = Color(activeTokens.eyes)
+val DieterRunning get() = DieterLive
 val DieterAmber = Color(0xFFE2BE6A)
 val DieterCoral = Color(0xFFF1868E)
-val DieterText = Color(0xFFF5FBFD)
-val DieterMuted = Color(0xFFA8B5C3)
-val DieterDivider = Color(0xFF182D39)
-val DieterScrim = Color(0xB3081116)
+val DieterText get() = Color(activeTokens.light)
+val DieterMuted get() = lerp(DieterText, DieterAbyss, 0.30f)
+val DieterDivider get() = lerp(DieterSurface, DieterText, 0.06f)
+val DieterScrim get() = DieterBackground.copy(alpha = 0.70f)
 
-// Cool tinted fills used for selected chips, icon tiles, and highlights.
-val DieterShellTint = Color(0xFF193A49)
-val DieterShellTintDeep = Color(0xFF10242E)
+// Palette-tinted fills used for selected chips, icon tiles, and highlights.
+val DieterShellTint get() = DieterSurfaceHigh
+val DieterShellTintDeep get() = lerp(DieterBackground, DieterShellDeep, 0.18f)
 val DieterAmberTint = Color(0xFF2C2410)
-val DieterEyesTint = Color(0xFF173640)
+val DieterEyesTint get() = lerp(DieterBackground, DieterEyes, 0.16f)
+val DieterGlassFadeSoft get() = DieterBackground.copy(alpha = 0.40f)
+val DieterGlassFadeStrong get() = DieterBackground.copy(alpha = 0.82f)
+val DieterGlassDockFill get() = DieterSurface.copy(alpha = 0.92f)
+val DieterTerminalCanvas get() = DieterBackground
+val DieterTerminalBar get() = lerp(DieterBackground, DieterSurface, 0.55f)
 
-private val colors = darkColorScheme(
+private fun paletteColorScheme() = darkColorScheme(
     primary = DieterShell,
     onPrimary = DieterAbyss,
     primaryContainer = DieterShellDeep,
@@ -54,10 +65,10 @@ private val colors = darkColorScheme(
     surfaceVariant = DieterSurfaceHigh,
     onSurfaceVariant = DieterMuted,
     surfaceContainerLowest = DieterBackground,
-    surfaceContainerLow = Color(0xFF0E2029),
+    surfaceContainerLow = lerp(DieterBackground, DieterSurface, 0.46f),
     surfaceContainer = DieterSurface,
     surfaceContainerHigh = DieterSurfaceHigh,
-    surfaceContainerHighest = Color(0xFF234352),
+    surfaceContainerHighest = lerp(DieterSurfaceHigh, DieterPane, 0.14f),
     outline = DieterOutline,
     outlineVariant = DieterDivider,
     error = DieterCoral,
@@ -98,9 +109,13 @@ private val boardShapes = Shapes(
 )
 
 @Composable
-fun DieterTheme(content: @Composable () -> Unit) {
+fun DieterTheme(
+    palette: DieterPalette = DieterPalette.DEFAULT,
+    content: @Composable () -> Unit,
+) {
+    activePalette = palette
     MaterialTheme(
-        colorScheme = colors,
+        colorScheme = paletteColorScheme(),
         typography = boardTypography,
         shapes = boardShapes,
         content = content,

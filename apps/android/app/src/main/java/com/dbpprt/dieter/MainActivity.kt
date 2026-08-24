@@ -6,6 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dbpprt.dieter.ui.DieterApp
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.connection.DieterSyncService
@@ -20,7 +22,8 @@ class MainActivity : ComponentActivity() {
         val container = (application as DieterApplication).container
         handleIntent(intent, container)
         setContent {
-            DieterTheme {
+            val palette by container.appPreferences.palette.collectAsStateWithLifecycle()
+            DieterTheme(palette) {
                 DieterApp(container)
             }
         }

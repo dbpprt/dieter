@@ -728,6 +728,17 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(DieterAppearance.resolve("dark").colorScheme == .dark)
 }
 
+@Test func palettePreferenceRecognizesEveryOfficialPackAndDefaultsToArctic() {
+    #expect(DieterPalette.resolve(nil) == .arcticConsole)
+    #expect(DieterPalette.resolve("unknown") == .arcticConsole)
+    #expect(DieterPalette.allCases.map(\.rawValue) == [
+        "electric-blue", "jade-operator", "copper-circuit", "ultraviolet-relay",
+        "solar-command", "arctic-console", "coral-signal", "acid-terminal",
+    ])
+    #expect(Set(DieterPalette.allCases.map(\.title)).count == 8)
+    #expect(DieterPalette.allCases.allSatisfy { DieterPalette.resolve($0.rawValue) == $0 })
+}
+
 @Test func onlyAuthenticationRequiresAConnectionOverlay() {
     #expect(ConnectionPhase.authenticationRequired.needsConnectionOverlay)
     #expect(!ConnectionPhase.connecting.needsConnectionOverlay)
@@ -1084,6 +1095,13 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(try store.pasteboardAttachmentParts(pasteboard) == nil)
     #expect(!store.attachPasteboard(pasteboard))
     #expect(store.composerAttachments.isEmpty)
+}
+
+@Test func creatingTodoCardsDoesNotOpenTheirConversation() {
+    #expect(!DieterStore.shouldOpenCreatedConversation(chat: false, lane: "todo"))
+    #expect(!DieterStore.shouldOpenCreatedConversation(chat: false, lane: "Todo"))
+    #expect(DieterStore.shouldOpenCreatedConversation(chat: false, lane: "running"))
+    #expect(DieterStore.shouldOpenCreatedConversation(chat: true, lane: "todo"))
 }
 
 @Test @MainActor func pasteboardFileURLsAttachTheUnderlyingFiles() throws {

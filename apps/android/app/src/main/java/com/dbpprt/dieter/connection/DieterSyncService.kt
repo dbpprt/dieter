@@ -9,6 +9,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -32,6 +34,7 @@ import androidx.core.content.ContextCompat
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.R
+import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +56,9 @@ class DieterSyncService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var postedRunningChatIds: Set<String> = emptySet()
     private var postedReviewCardIds: Set<String> = emptySet()
+    private val paletteTokens get() = AppPreferences.selectedPalette(this).tokens
+    private val notificationAccent get() = paletteTokens.shellStartInt
+    private val reviewAccent get() = Color.rgb(226, 190, 106)
 
     override fun onCreate() {
         super.onCreate()
@@ -66,6 +72,9 @@ class DieterSyncService : Service() {
             manager.state
                 .combine((application as DieterApplication).container.appPreferences.notificationBoardIds) { state, boardIds ->
                     state to boardIds
+                }
+                .combine((application as DieterApplication).container.appPreferences.palette) { stateAndBoards, _ ->
+                    stateAndBoards
                 }
                 .collectLatest { (state, boardIds) -> render(state, boardIds) }
         }
@@ -233,7 +242,7 @@ class DieterSyncService : Service() {
                 },
             )
             .setLargeIcon(connectionBadge(connected))
-            .setColor(NOTIFICATION_ACCENT)
+            .setColor(notificationAccent)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -277,6 +286,16 @@ class DieterSyncService : Service() {
         view.setTextViewText(R.id.notification_title, title)
         view.setTextViewText(R.id.notification_text, summary)
         view.setTextViewText(R.id.notification_chip_boards, "$boards ${if (boards == 1) "board" else "boards"}")
+        val darkMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        val neutralBackground = if (darkMode) paletteTokens.darkRaisedInt else paletteTokens.paneStartInt
+        val neutralText = if (darkMode) paletteTokens.paneStartInt else paletteTokens.darkRaisedInt
+        view.setTextColor(R.id.notification_chip_boards, neutralText)
+        view.setTextColor(R.id.notification_chip_subagents, neutralText)
+        if (Build.VERSION.SDK_INT >= 31) {
+            val tint = ColorStateList.valueOf(neutralBackground)
+            view.setColorStateList(R.id.notification_chip_boards, "setBackgroundTintList", tint)
+            view.setColorStateList(R.id.notification_chip_subagents, "setBackgroundTintList", tint)
+        }
         if (reviews > 0) {
             view.setTextViewText(R.id.notification_chip_reviews, "$reviews ${if (reviews == 1) "review" else "reviews"}")
             view.setViewVisibility(R.id.notification_chip_reviews, View.VISIBLE)
@@ -309,11 +328,11 @@ class DieterSyncService : Service() {
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val tile = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (connected) Color.rgb(24, 46, 34) else Color.rgb(40, 39, 51)
+            color = if (connected) paletteTokens.eyesTintInt else paletteTokens.darkRaisedInt
         }
         canvas.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), 52f, 52f, tile)
         val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (connected) Color.rgb(102, 199, 138) else Color.rgb(161, 158, 180)
+            color = if (connected) paletteTokens.eyesInt else paletteTokens.mutedInt
             style = Paint.Style.STROKE
             strokeWidth = 14f
             strokeCap = Paint.Cap.ROUND
@@ -338,7 +357,7 @@ class DieterSyncService : Service() {
             .setContentTitle(chat.title.ifBlank { "Running chat" })
             .setContentText(activity)
             .setSubText(activeNowLabel(preview.totalCount))
-            .setColor(NOTIFICATION_ACCENT)
+            .setColor(notificationAccent)
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
@@ -369,7 +388,7 @@ class DieterSyncService : Service() {
             .setSummaryText(activitySummary(preview, "Tap to open conversation"))
 
     private fun activityLine(label: String, detail: String): CharSequence = SpannableStringBuilder()
-        .append("●  ", ForegroundColorSpan(NOTIFICATION_ACCENT), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        .append("●  ", ForegroundColorSpan(notificationAccent), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         .append(label, StyleSpan(Typeface.BOLD), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         .append("  ·  ")
         .append(detail)
@@ -397,7 +416,7 @@ class DieterSyncService : Service() {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(chatTitle)
-            .setColor(NOTIFICATION_ACCENT)
+            .setColor(notificationAccent)
             .setCategory(Notification.CATEGORY_STATUS)
             .setAutoCancel(true)
             .setGroup(RESULTS_GROUP)
@@ -419,7 +438,7 @@ class DieterSyncService : Service() {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Ready for review")
             .setContentText("$cardTitle · ${boardName.ifBlank { "Board" }}")
-            .setColor(REVIEW_ACCENT)
+            .setColor(reviewAccent)
             .setCategory(Notification.CATEGORY_STATUS)
             .setAutoCancel(true)
             .setGroup(RESULTS_GROUP)
@@ -443,7 +462,7 @@ class DieterSyncService : Service() {
     /** Collapses agent results into one tidy stack in the shade. */
     private fun resultsGroupSummary(): Notification = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_notification)
-        .setColor(NOTIFICATION_ACCENT)
+        .setColor(notificationAccent)
         .setCategory(Notification.CATEGORY_STATUS)
         .setGroup(RESULTS_GROUP)
         .setGroupSummary(true)
@@ -544,8 +563,6 @@ class DieterSyncService : Service() {
         private const val WAKE_LOCK_RENEW_MS = 10 * 60 * 1_000L
         private const val RESULTS_GROUP = "dieter_agent_results"
         private const val RESULTS_SUMMARY_NOTIFICATION_ID = 1002
-        private val NOTIFICATION_ACCENT = Color.rgb(101, 84, 232)
-        private val REVIEW_ACCENT = Color.rgb(226, 190, 106)
         const val RUNNING_CHAT_CHANNEL_ID = "dieter_agent_running"
         const val AGENT_RESULTS_CHANNEL_ID = "dieter_agent_activity"
         const val CONNECTION_NOTIFICATION_ID = 1001

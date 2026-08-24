@@ -412,6 +412,8 @@ struct GeneralSettings: View {
     @Environment(DieterStore.self) private var store
     @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
     private var appearanceValue = DieterAppearance.defaultValue.rawValue
+    @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
+    private var paletteValue = DieterPalette.defaultValue.rawValue
     @State private var archiveConfirmation = false
 
     var body: some View {
@@ -450,6 +452,18 @@ struct GeneralSettings: View {
                         }
                     }
                 }
+                SettingsPanel(title: "Palette", subtitle: "Changes every Dieter surface, terminal, accent, and the running app icon.") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: 4), spacing: 9) {
+                        ForEach(DieterPalette.allCases) { palette in
+                            PaletteOption(
+                                palette: palette,
+                                selected: palette.rawValue == paletteValue
+                            ) {
+                                paletteValue = palette.rawValue
+                            }
+                        }
+                    }
+                }
                 SettingsPanel(title: "Current project route", subtitle: "Dieter routes each project to the machine that owns it.") {
                     SettingsValueRow(title: "Store", value: store.health.storePath)
                     Divider().overlay(DieterTheme.border)
@@ -476,6 +490,42 @@ struct GeneralSettings: View {
         .confirmationDialog("Archive \(store.selectedProject?.name ?? "project")?", isPresented: $archiveConfirmation) {
             Button("Archive project", role: .destructive) { Task { await store.setProjectArchived(id: store.selectedProjectID, archived: true) } }
         }
+    }
+}
+
+private struct PaletteOption: View {
+    let palette: DieterPalette
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Circle()
+                    .fill(LinearGradient(colors: palette.previewColors, startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .overlay(Circle().stroke(.white.opacity(0.24)))
+                    .frame(width: 24, height: 24)
+                Text(palette.title)
+                    .font(.system(size: 11, weight: selected ? .semibold : .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(selected ? DieterTheme.shell : DieterTheme.tertiary)
+            }
+            .foregroundStyle(DieterTheme.text)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(selected ? DieterTheme.selection : DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .stroke(selected ? DieterTheme.shell.opacity(0.48) : DieterTheme.border)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(palette.title) palette")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
+        .accessibilityIdentifier("settings.palette.\(palette.rawValue)")
     }
 }
 

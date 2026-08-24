@@ -48,6 +48,125 @@ enum DieterAppearance: String, CaseIterable, Identifiable {
     }
 }
 
+enum DieterPalette: String, CaseIterable, Identifiable {
+    case electricBlue = "electric-blue"
+    case jadeOperator = "jade-operator"
+    case copperCircuit = "copper-circuit"
+    case ultravioletRelay = "ultraviolet-relay"
+    case solarCommand = "solar-command"
+    case arcticConsole = "arctic-console"
+    case coralSignal = "coral-signal"
+    case acidTerminal = "acid-terminal"
+
+    static let storageKey = "DieterPalette"
+    static let defaultValue = DieterPalette.arcticConsole
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .electricBlue: "Electric Blue"
+        case .jadeOperator: "Jade Operator"
+        case .copperCircuit: "Copper Circuit"
+        case .ultravioletRelay: "Ultraviolet Relay"
+        case .solarCommand: "Solar Command"
+        case .arcticConsole: "Arctic Console"
+        case .coralSignal: "Coral Signal"
+        case .acidTerminal: "Acid Terminal"
+        }
+    }
+
+    static func resolve(_ storedValue: String?) -> DieterPalette {
+        storedValue.flatMap(Self.init(rawValue:)) ?? defaultValue
+    }
+
+    static var selected: DieterPalette {
+        resolve(DieterAppearance.applicationDefaults().string(forKey: storageKey))
+    }
+
+    var previewColors: [Color] {
+        [spec.shellStart, spec.shellEnd, spec.paneEnd].map { Color(nsColor: NSColor(rgb: $0)) }
+    }
+
+    fileprivate var spec: PaletteSpec {
+        switch self {
+        case .electricBlue:
+            PaletteSpec(0x071426, 0x102746, 0x22D3EE, 0x2563EB, 0x73F4E4, 0x2588F5, 0x5EEAD4, 0xFAF9F6, 0x040C18, 0x0B1C33)
+        case .jadeOperator:
+            PaletteSpec(0x06211D, 0x123C32, 0x34D399, 0x087F5B, 0xA7F3D0, 0x14B8A6, 0xD1FAE5, 0xF4FBF8, 0x041412, 0x0B2C26)
+        case .copperCircuit:
+            PaletteSpec(0x1A1210, 0x3A241A, 0xF59E6C, 0xB84C2F, 0xFFD08A, 0xE97850, 0xFFE0B2, 0xFFF8F1, 0x100B0A, 0x271A14)
+        case .ultravioletRelay:
+            PaletteSpec(0x130C2B, 0x2B1850, 0xC084FC, 0x6D5EF8, 0xE9D5FF, 0xA855F7, 0xDDD6FE, 0xFCFAFF, 0x0C071B, 0x1D113B)
+        case .solarCommand:
+            PaletteSpec(0x151A22, 0x34321C, 0xFDE047, 0xF59E0B, 0xFEF3C7, 0xFB923C, 0xFDE68A, 0xFFFBEA, 0x0D1015, 0x22241F)
+        case .arcticConsole:
+            PaletteSpec(0x0D1B24, 0x193A49, 0x8DD8E8, 0x3D6E85, 0xD7F2F5, 0x62B6CB, 0xBCEAF1, 0xF5FBFD, 0x081116, 0x122834)
+        case .coralSignal:
+            PaletteSpec(0x28101F, 0x4A1D33, 0xFF8A7A, 0xE44568, 0xFFD0C7, 0xFF6B8A, 0xFFD6CC, 0xFFF5F3, 0x190A13, 0x361527)
+        case .acidTerminal:
+            PaletteSpec(0x11161A, 0x2C3516, 0xC7F241, 0x49A942, 0xE7FF9F, 0x5DD8B2, 0xD9FF75, 0xF8FCEB, 0x0B0E10, 0x1C2318)
+        }
+    }
+}
+
+private struct PaletteSpec {
+    let darkBrand: UInt32
+    let darkRaised: UInt32
+    let shellStart: UInt32
+    let shellEnd: UInt32
+    let paneStart: UInt32
+    let paneEnd: UInt32
+    let eyes: UInt32
+    let light: UInt32
+    let darkBackground: UInt32
+    let darkSurface: UInt32
+
+    init(
+        _ darkBrand: UInt32,
+        _ darkRaised: UInt32,
+        _ shellStart: UInt32,
+        _ shellEnd: UInt32,
+        _ paneStart: UInt32,
+        _ paneEnd: UInt32,
+        _ eyes: UInt32,
+        _ light: UInt32,
+        _ darkBackground: UInt32,
+        _ darkSurface: UInt32
+    ) {
+        self.darkBrand = darkBrand
+        self.darkRaised = darkRaised
+        self.shellStart = shellStart
+        self.shellEnd = shellEnd
+        self.paneStart = paneStart
+        self.paneEnd = paneEnd
+        self.eyes = eyes
+        self.light = light
+        self.darkBackground = darkBackground
+        self.darkSurface = darkSurface
+    }
+
+    var lightSurface: UInt32 { mix(light, 0xFFFFFF, amount: 0.72) }
+    var lightRaised: UInt32 { mix(light, darkRaised, amount: 0.07) }
+    var lightSidebar: UInt32 { mix(light, darkBrand, amount: 0.045) }
+    var lightSubtle: UInt32 { mix(darkBrand, light, amount: 0.34) }
+    var lightTertiary: UInt32 { mix(darkBrand, light, amount: 0.43) }
+    var darkElevated: UInt32 { mix(darkRaised, paneEnd, amount: 0.16) }
+    var darkInput: UInt32 { mix(darkBackground, 0x000000, amount: 0.18) }
+    var darkSubtle: UInt32 { mix(light, darkBrand, amount: 0.30) }
+    var darkTertiary: UInt32 { mix(light, darkBrand, amount: 0.48) }
+}
+
+private func mix(_ first: UInt32, _ second: UInt32, amount: Double) -> UInt32 {
+    let clamped = min(max(amount, 0), 1)
+    func channel(_ shift: UInt32) -> UInt32 {
+        let a = Double((first >> shift) & 0xff)
+        let b = Double((second >> shift) & 0xff)
+        return UInt32((a + ((b - a) * clamped)).rounded())
+    }
+    return (channel(16) << 16) | (channel(8) << 8) | channel(0)
+}
+
 private extension NSColor {
     convenience init(rgb: UInt32, alpha: CGFloat = 1) {
         self.init(
@@ -71,29 +190,36 @@ private extension Color {
     }
 }
 
-/// Arctic Console surfaces and cold shell-blue accents, adapted for both Aqua
-/// and Dark Aqua while retaining the palette's contrast hierarchy.
+/// Palette-backed surfaces adapted for both Aqua and Dark Aqua while retaining
+/// a consistent contrast hierarchy across every supplied Dieter palette.
 enum DieterTheme {
-    static let background = Color(light: 0xF5FBFD, dark: 0x081116)
-    static let sidebar = Color(light: 0xEAF6F8, dark: 0x0D1B24)
-    static let surface = Color(light: 0xFFFFFF, dark: 0x122834)
-    static let raised = Color(light: 0xEDF7F9, dark: 0x193A49)
-    static let elevated = Color(light: 0xD7F2F5, dark: 0x234352)
-    static let input = Color(light: 0xFFFFFF, dark: 0x071015)
-    static let border = Color(light: 0x0D1B24, dark: 0xBCEAF1, lightAlpha: 0.10, darkAlpha: 0.09)
-    static let strongBorder = Color(light: 0x0D1B24, dark: 0xBCEAF1, lightAlpha: 0.18, darkAlpha: 0.16)
-    static let text = Color(light: 0x0D1B24, dark: 0xF5FBFD)
-    static let subtle = Color(light: 0x526774, dark: 0xA8B5C3)
-    static let tertiary = Color(light: 0x617784, dark: 0x7893A2)
-    static let shellDeep = Color(light: 0x315B6F, dark: 0x3D6E85)
-    static let shell = Color(light: 0x327E91, dark: 0x8DD8E8)
-    static let primary = Color(light: 0x315B6F, dark: 0x8DD8E8)
-    static let eyes = Color(light: 0x327E91, dark: 0xBCEAF1)
+    private static var colors: PaletteSpec { DieterPalette.selected.spec }
+
+    static var background: Color { Color(light: colors.light, dark: colors.darkBackground) }
+    static var sidebar: Color { Color(light: colors.lightSidebar, dark: colors.darkBrand) }
+    static var surface: Color { Color(light: colors.lightSurface, dark: colors.darkSurface) }
+    static var raised: Color { Color(light: colors.lightRaised, dark: colors.darkRaised) }
+    static var elevated: Color { Color(light: colors.paneStart, dark: colors.darkElevated) }
+    static var input: Color { Color(light: colors.lightSurface, dark: colors.darkInput) }
+    static var border: Color { Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.10, darkAlpha: 0.09) }
+    static var strongBorder: Color { Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.18, darkAlpha: 0.16) }
+    static var text: Color { Color(light: colors.darkBrand, dark: colors.light) }
+    static var subtle: Color { Color(light: colors.lightSubtle, dark: colors.darkSubtle) }
+    static var tertiary: Color { Color(light: colors.lightTertiary, dark: colors.darkTertiary) }
+    static var shellDeep: Color { Color(light: colors.shellEnd, dark: colors.shellEnd) }
+    static var shell: Color { Color(light: colors.shellEnd, dark: colors.shellStart) }
+    static var primary: Color { Color(light: colors.shellEnd, dark: colors.shellStart) }
+    static var eyes: Color { Color(light: colors.shellEnd, dark: colors.eyes) }
     static let amber = Color(light: 0xA84C08, dark: 0xE8A33D)
     static let coral = Color(light: 0xD52D4B, dark: 0xF26D80)
 
     /// Background for the selected navigation or list row.
-    static let selection = Color(light: 0x3D6E85, dark: 0x8DD8E8, lightAlpha: 0.13, darkAlpha: 0.20)
+    static var selection: Color { Color(light: colors.shellEnd, dark: colors.shellStart, lightAlpha: 0.13, darkAlpha: 0.20) }
+
+    static var terminalBackground: Color { Color(nsColor: terminalBackgroundColor) }
+    static var terminalBackgroundColor: NSColor { NSColor(rgb: colors.darkBackground) }
+    static var terminalForegroundColor: NSColor { NSColor(rgb: colors.light) }
+    static var terminalCaretColor: NSColor { NSColor(rgb: colors.shellStart) }
 }
 
 enum DieterMetrics {

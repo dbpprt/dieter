@@ -74,6 +74,18 @@ enum NativeUISmokeRunner {
             "connection": "passed",
             "fixture-project": project.name,
         ]
+        let originalWindowFrame = window.frame
+        let originalZoomedState = window.isZoomed
+        doubleClickTitleBar(of: window)
+        try? await DieterTaskSleep.seconds(1)
+        results["window-titlebar-double-click"] = window.isZoomed != originalZoomedState && window.frame != originalWindowFrame
+            ? "passed"
+            : "failed: hidden title-bar double-click did not toggle the window zoom state"
+        doubleClickTitleBar(of: window)
+        try? await DieterTaskSleep.seconds(1)
+        if window.frame != originalWindowFrame {
+            window.setFrame(originalWindowFrame, display: true)
+        }
         let appearanceDefaults = DieterAppearance.applicationDefaults()
         appearanceDefaults.set(DieterAppearance.dark.rawValue, forKey: DieterAppearance.storageKey)
         try? await DieterTaskSleep.milliseconds(300)
@@ -175,6 +187,32 @@ enum NativeUISmokeRunner {
         store.createConversationPresented = false
         try? await DieterTaskSleep.milliseconds(350)
 
+        store.section = .board
+        store.closeConversation()
+        let todoLane = board.lanes.first(where: { $0.id.caseInsensitiveCompare("todo") == .orderedSame })
+        if let todoLane {
+            let title = "Native UI todo creation \(UUID().uuidString.lowercased())"
+            let harness = store.harnessCatalog.harnesses.first
+            await store.createConversation(
+                title: title,
+                prompt: "Create this deferred card without opening its conversation.",
+                chat: false,
+                provider: harness?.id ?? "",
+                model: harness?.defaultModel ?? "",
+                effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort ?? "",
+                deferred: true,
+                lane: todoLane.id
+            )
+            let created = await waitUntil(timeout: 10) {
+                store.state.cards.contains { $0.title == title && $0.lane.caseInsensitiveCompare("todo") == .orderedSame }
+            }
+            results["13b-todo-card-stays-on-board"] = created && store.section == .board && store.selectedCardID == nil
+                ? "passed"
+                : "failed: created=\(created), section=\(store.section.rawValue), selected=\(store.selectedCardID ?? "none")"
+        } else {
+            results["13b-todo-card-stays-on-board"] = "failed: fixture board has no Todo lane"
+        }
+
         store.createProjectPresented = true
         try? await DieterTaskSleep.milliseconds(700)
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
@@ -241,6 +279,30 @@ enum NativeUISmokeRunner {
                 pressure: type == .leftMouseDown ? 1 : 0
             )
             if let event { window.sendEvent(event) }
+        }
+    }
+
+    private static func doubleClickTitleBar(of window: NSWindow) {
+        let point = NSPoint(
+            x: window.contentLayoutRect.midX,
+            y: window.contentLayoutRect.maxY + ((window.frame.height - window.contentLayoutRect.maxY) / 2)
+        )
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        for clickCount in [1, 2] {
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = NSEvent.mouseEvent(
+                    with: type,
+                    location: point,
+                    modifierFlags: [],
+                    timestamp: timestamp + (Double(clickCount - 1) * 0.08),
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    eventNumber: clickCount,
+                    clickCount: clickCount,
+                    pressure: type == .leftMouseDown ? 1 : 0
+                )
+                if let event { NSApp.sendEvent(event) }
+            }
         }
     }
 
