@@ -204,6 +204,19 @@ import com.dbpprt.dieter.ui.theme.DieterAbyss
 
 private const val PROJECT_CHAT_PREVIEW_COUNT = 5
 
+internal fun conversationRefreshLabel(lastRefreshedAtMillis: Long?, syncing: Boolean, nowMillis: Long): String {
+    if (lastRefreshedAtMillis == null) return if (syncing) "Refreshing…" else "Not refreshed yet"
+    val ageMillis = (nowMillis - lastRefreshedAtMillis).coerceAtLeast(0L)
+    val freshness = when {
+        ageMillis < 60_000L -> "just now"
+        ageMillis < 3_600_000L -> "${ageMillis / 60_000L}m ago"
+        ageMillis < 86_400_000L -> "${ageMillis / 3_600_000L}h ago"
+        else -> DateTimeFormatter.ofPattern("MMM d · HH:mm", Locale.getDefault())
+            .format(Instant.ofEpochMilli(lastRefreshedAtMillis).atZone(ZoneId.systemDefault()))
+    }
+    return "Last refreshed $freshness" + if (syncing) " · Refreshing…" else ""
+}
+
 /** Dashed rounded outline used by the reference design for "add" affordances and empty states. */
 internal fun Modifier.dashedBorder(
     color: Color,
@@ -1625,6 +1638,14 @@ private fun CardDetailScreen(
     var renameOpen by remember { mutableStateOf(false) }
     var labelsOpen by remember { mutableStateOf(false) }
     var actionsOpen by remember { mutableStateOf(false) }
+    var refreshClockMillis by remember(state.selectedCardId) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(state.selectedCardId, state.conversationLastRefreshedAtMillis) {
+        refreshClockMillis = System.currentTimeMillis()
+        while (true) {
+            delay(30_000L)
+            refreshClockMillis = System.currentTimeMillis()
+        }
+    }
     if (card == null) {
         LoadingState(modifier)
         return
@@ -1670,6 +1691,16 @@ private fun CardDetailScreen(
                     },
                     color = DieterMuted,
                     fontSize = 11.sp,
+                )
+                Text(
+                    conversationRefreshLabel(
+                        state.conversationLastRefreshedAtMillis,
+                        state.conversationSyncing,
+                        refreshClockMillis,
+                    ),
+                    color = DieterMuted,
+                    fontSize = 10.sp,
+                    modifier = Modifier.testTag("conversation-last-refreshed"),
                 )
             }
             StatusPill(displayRuntime)

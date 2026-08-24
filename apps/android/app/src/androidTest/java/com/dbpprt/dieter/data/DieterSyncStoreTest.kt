@@ -7,6 +7,7 @@ import com.dbpprt.dieter.v1.SyncCursor
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -35,11 +36,13 @@ class DieterSyncStoreTest {
             store.saveProjection(firstScope, snapshot, cursor)
             store.saveProjection(secondScope, snapshot, cursor)
             store.saveOutbox(listOf(entry))
+            assertTrue(requireNotNull(store.projectionRefreshedAtMillis(firstScope)) > 0L)
 
             store.clearProjections()
 
             assertNull(store.loadSnapshot(firstScope))
             assertNull(store.loadCursor(firstScope))
+            assertNull(store.projectionRefreshedAtMillis(firstScope))
             assertNull(store.loadSnapshot(secondScope))
             assertNull(store.loadCursor(secondScope))
             val restoredOutbox = store.loadOutbox()

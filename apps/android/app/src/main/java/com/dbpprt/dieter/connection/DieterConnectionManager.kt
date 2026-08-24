@@ -113,6 +113,7 @@ data class DieterConnectionState(
     val cards: List<Card> = emptyList(),
     val chats: List<Card> = emptyList(),
     val activeConversations: Map<String, ConversationSnapshot> = emptyMap(),
+    val conversationRefreshedAtMillis: Map<String, Long> = emptyMap(),
     val schedules: List<Schedule> = emptyList(),
     val scheduleRuns: List<ScheduleRun> = emptyList(),
     val pendingCardIds: Set<String> = emptySet(),
@@ -146,6 +147,8 @@ class DieterConnectionManager(
     private var activeProjectionKey = preferredEndpointId.orEmpty()
     private var globalSnapshot = activeProjectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadSnapshot)
     private var syncCursor = activeProjectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadCursor).takeIf { globalSnapshot != null }
+    private var activeProjectionRefreshedAtMillis = activeProjectionKey.takeIf(String::isNotBlank)
+        ?.let(syncStore::projectionRefreshedAtMillis)
     private val outbox = syncStore.loadOutbox()
     private val conversationIdResolutions = linkedMapOf<String, String>().apply {
         outbox.forEach { entry ->
@@ -187,7 +190,13 @@ class DieterConnectionManager(
             synchronized(lock) { selectedProjectId = _state.value.projects.first().id }
             updateSelectedState()
         }
-        globalSnapshot?.let(::applyGlobalSnapshot)
+        globalSnapshot?.let { snapshot ->
+            applyGlobalSnapshot(
+                snapshot,
+                refreshedConversationIds = snapshot.conversationsList.mapTo(hashSetOf()) { it.detail.card.id },
+                refreshedAtMillis = activeProjectionRefreshedAtMillis,
+            )
+        }
     }
 
     fun onAppForegrounded(projectId: String = selectedProjectId) {
@@ -297,6 +306,7 @@ class DieterConnectionManager(
             preferences.edit().remove(KEY_PREFERRED_ENDPOINT).remove(KEY_PREFERRED_DAEMON).apply()
             globalSnapshot = null
             syncCursor = null
+            activeProjectionRefreshedAtMillis = null
             lastSyncFrameAtMs = 0L
             _state.update {
                 it.copy(
@@ -310,6 +320,7 @@ class DieterConnectionManager(
                     cards = emptyList(),
                     chats = emptyList(),
                     activeConversations = emptyMap(),
+                    conversationRefreshedAtMillis = emptyMap(),
                     schedules = emptyList(),
                     scheduleRuns = emptyList(),
                     error = null,
@@ -396,6 +407,7 @@ class DieterConnectionManager(
             activeProjectionKey = ""
             globalSnapshot = null
             syncCursor = null
+            activeProjectionRefreshedAtMillis = null
         }
         _state.update {
             it.copy(
@@ -412,6 +424,7 @@ class DieterConnectionManager(
                 cards = if (gatewayChanged) nextDirectory?.state?.cardsList.orEmpty() else it.cards,
                 chats = if (gatewayChanged) nextDirectory?.state?.chatsList.orEmpty() else it.chats,
                 activeConversations = if (gatewayChanged) emptyMap() else it.activeConversations,
+                conversationRefreshedAtMillis = if (gatewayChanged) emptyMap() else it.conversationRefreshedAtMillis,
                 schedules = if (gatewayChanged) emptyList() else it.schedules,
                 scheduleRuns = if (gatewayChanged) emptyList() else it.scheduleRuns,
                 error = null,
@@ -441,6 +454,7 @@ class DieterConnectionManager(
         activeProjectionKey = ""
         globalSnapshot = null
         syncCursor = null
+        activeProjectionRefreshedAtMillis = null
         repository.replaceEndpoints(listOf(gateway))
         _state.update {
             it.copy(
@@ -456,6 +470,7 @@ class DieterConnectionManager(
                 cards = nextDirectory?.state?.cardsList.orEmpty(),
                 chats = nextDirectory?.state?.chatsList.orEmpty(),
                 activeConversations = emptyMap(),
+                conversationRefreshedAtMillis = emptyMap(),
                 schedules = emptyList(),
                 scheduleRuns = emptyList(),
                 error = null,
@@ -481,6 +496,7 @@ class DieterConnectionManager(
                 endpoint = null,
                 endpointConnections = configuredEndpointRows(),
                 activeConversations = emptyMap(),
+                conversationRefreshedAtMillis = emptyMap(),
                 error = null,
             )
         }
@@ -725,8 +741,14 @@ class DieterConnectionManager(
             recentConversationLimit = SYNC_RECENT_CONVERSATIONS,
         ).collect { frame ->
             if (currentGeneration != synchronized(lock) { generation }) return@collect
-            lastSyncFrameAtMs = System.currentTimeMillis()
-            DieterWidgetPrefs.recordSyncFrame(appContext, lastSyncFrameAtMs)
+            val receivedAtMillis = System.currentTimeMillis()
+            lastSyncFrameAtMs = receivedAtMillis
+            DieterWidgetPrefs.recordSyncFrame(appContext, receivedAtMillis)
+            val refreshedConversationIds = when {
+                frame.hasSnapshot() -> frame.snapshot.conversationsList.mapTo(hashSetOf()) { it.detail.card.id }
+                frame.hasDelta() -> frame.delta.conversationsList.mapTo(hashSetOf()) { it.detail.card.id }
+                else -> emptySet()
+            }
             var projectionChanged = false
             if (frame.hasSnapshot()) {
                 if (globalSnapshot != frame.snapshot) {
@@ -744,17 +766,22 @@ class DieterConnectionManager(
             if (frame.hasCursor()) {
                 syncCursor = frame.cursor
             }
-            if (activeProjectionKey.isNotBlank() && (projectionChanged || frame.hasCursor() && !frame.heartbeat)) {
+            if (refreshedConversationIds.isNotEmpty()) {
+                activeProjectionRefreshedAtMillis = receivedAtMillis
+            }
+            if (activeProjectionKey.isNotBlank() &&
+                (projectionChanged || refreshedConversationIds.isNotEmpty() || frame.hasCursor() && !frame.heartbeat)
+            ) {
                 syncStore.saveProjection(
                     activeProjectionKey,
-                    globalSnapshot.takeIf { projectionChanged },
+                    globalSnapshot.takeIf { projectionChanged || refreshedConversationIds.isNotEmpty() },
                     frame.cursor.takeIf { frame.hasCursor() },
                 )
             }
-            if (projectionChanged) {
+            if (projectionChanged || refreshedConversationIds.isNotEmpty()) {
                 globalSnapshot?.let {
                     reconcileOutbox(it)
-                    applyGlobalSnapshot(it)
+                    applyGlobalSnapshot(it, refreshedConversationIds, receivedAtMillis)
                 }
             }
             _state.update { it.copy(phase = ConnectionPhase.CONNECTED, connectionInterruptedAtMs = null, error = null) }
@@ -800,14 +827,24 @@ class DieterConnectionManager(
             activeProjectionKey = endpoint.id
             preferredEndpointId = endpoint.id
             preferences.edit().putString(KEY_PREFERRED_ENDPOINT, endpoint.id).apply()
-            globalSnapshot = syncStore.loadSnapshot(endpoint.id)
-                ?: endpoint.daemonId?.let(syncStore::loadSnapshot)
+            val currentSnapshot = syncStore.loadSnapshot(endpoint.id)
+            val legacyScope = endpoint.daemonId.takeIf { currentSnapshot == null }
+            globalSnapshot = currentSnapshot ?: legacyScope?.let(syncStore::loadSnapshot)
             syncCursor = (syncStore.loadCursor(endpoint.id)
                 ?: endpoint.daemonId?.let(syncStore::loadCursor)).takeIf { globalSnapshot != null }
+            activeProjectionRefreshedAtMillis = if (currentSnapshot != null) {
+                syncStore.projectionRefreshedAtMillis(endpoint.id)
+            } else {
+                legacyScope?.let(syncStore::projectionRefreshedAtMillis)
+            }
         }
         val cached = globalSnapshot
         if (cached != null) {
-            applyGlobalSnapshot(cached)
+            applyGlobalSnapshot(
+                cached,
+                cached.conversationsList.mapTo(hashSetOf()) { it.detail.card.id },
+                activeProjectionRefreshedAtMillis,
+            )
         } else {
             updateSelectedState()
         }
@@ -942,7 +979,11 @@ class DieterConnectionManager(
             .build()
     }
 
-    private fun applyGlobalSnapshot(snapshot: GlobalSnapshot) {
+    private fun applyGlobalSnapshot(
+        snapshot: GlobalSnapshot,
+        refreshedConversationIds: Set<String> = emptySet(),
+        refreshedAtMillis: Long? = null,
+    ) {
         _state.update { current ->
             // Read the outbox inside StateFlow's CAS update. The lambda may be
             // retried after a foreground conversation frame reconciles a send;
@@ -1066,6 +1107,15 @@ class DieterConnectionManager(
                 }
             }
             conversations.replaceAll { _, conversation -> overlayOptimisticMessages(conversation, entries) }
+            val conversationRefreshes = current.conversationRefreshedAtMillis.toMutableMap().apply {
+                resolvedConversationIds.forEach { (localId, serverId) ->
+                    remove(localId)?.let { localRefresh -> put(serverId, maxOf(get(serverId) ?: 0L, localRefresh)) }
+                }
+                if (refreshedAtMillis != null) {
+                    refreshedConversationIds.forEach { cardId -> put(cardId, refreshedAtMillis) }
+                }
+                keys.retainAll(conversations.keys)
+            }
 
             val retainedSchedules = current.schedules.filter { it.projectId in retainedProjectIds }
             val schedules = (retainedSchedules + snapshot.schedulesList).distinctBy { it.id }
@@ -1083,6 +1133,7 @@ class DieterConnectionManager(
                 cards = cards,
                 chats = chats.sortedByDescending { it.lastActivityAt.ifBlank { it.updatedAt } },
                 activeConversations = conversations,
+                conversationRefreshedAtMillis = conversationRefreshes,
                 schedules = schedules,
                 scheduleRuns = scheduleRuns,
                 pendingCardIds = pendingCardIds(entries),
@@ -1192,8 +1243,13 @@ class DieterConnectionManager(
             while (conversations.size > MAX_ACTIVE_CONVERSATIONS && conversations.keys.first() != cardId) {
                 conversations.remove(conversations.keys.first())
             }
+            val refreshed = current.conversationRefreshedAtMillis.toMutableMap().apply {
+                put(cardId, System.currentTimeMillis())
+                keys.retainAll(conversations.keys)
+            }
             current.copy(
                 activeConversations = conversations,
+                conversationRefreshedAtMillis = refreshed,
                 pendingCardIds = pendingCardIds(entries),
                 pendingMessageIds = pendingMessageIds(entries),
                 acceptedOutboxIds = acceptedOutboxIds(entries),
@@ -1428,7 +1484,10 @@ class DieterConnectionManager(
             } else {
                 ids.forEach(conversations::remove)
             }
-            current.copy(activeConversations = conversations)
+            current.copy(
+                activeConversations = conversations,
+                conversationRefreshedAtMillis = current.conversationRefreshedAtMillis.filterKeys(conversations::containsKey),
+            )
         }
         globalSnapshot?.let(::applyGlobalSnapshot)
     }

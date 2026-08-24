@@ -62,3 +62,55 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     let shown = ConversationMessagePartGroup.group(assistant.parts, showReasoning: true)
     #expect(shown.filter(\.isToolCallGroup).count == 2)
 }
+
+@Test @MainActor func conversationViewSettlesAfterUnrelatedMachineDirectoryInvalidation() {
+    let store = DieterStore()
+    var activeProject = Dieter_V1_Project()
+    activeProject.id = "project-active"
+    activeProject.name = "Active"
+    var chat = Dieter_V1_Card()
+    chat.id = "c_render"
+    chat.projectID = activeProject.id
+    chat.scope = "chat"
+    chat.title = "Render regression"
+    var user = Dieter_V1_UiMessage()
+    user.id = "message-user"
+    user.role = "user"
+    user.parts = [part("text", text: "A short message")]
+    var assistant = Dieter_V1_UiMessage()
+    assistant.id = "message-assistant"
+    assistant.role = "assistant"
+    assistant.parts = [part("text", text: "A short response")]
+    var conversation = Dieter_V1_ConversationSnapshot()
+    conversation.detail.project = activeProject
+    conversation.detail.card = chat
+    conversation.conversation.cardID = chat.id
+    conversation.conversation.messages = [user, assistant]
+
+    store.projectDirectory = [activeProject.id: activeProject]
+    store.projectEndpointIDs = [activeProject.id: store.endpoint.id]
+    store.selectedProjectID = activeProject.id
+    store.state.project = activeProject
+    store.state.chats = [chat]
+    store.chats = [chat]
+    store.selectedChatID = chat.id
+    store.conversation = conversation
+    store.selectedDetail = conversation.detail
+
+    let hostingView = NSHostingView(rootView: ConversationView().environment(store))
+    hostingView.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
+    hostingView.layoutSubtreeIfNeeded()
+
+    // A second machine coming online is a legitimate outer-view invalidation.
+    // It must complete without trapping the conversation's text/scroll layout
+    // in a permanent AttributeGraph transaction.
+    for index in 0..<12 {
+        var otherProject = Dieter_V1_Project()
+        otherProject.id = "project-other-\(index)"
+        otherProject.name = "Other \(index)"
+        store.projectDirectory[otherProject.id] = otherProject
+        hostingView.layoutSubtreeIfNeeded()
+    }
+
+    #expect(store.conversation == conversation)
+}

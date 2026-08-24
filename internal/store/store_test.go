@@ -129,6 +129,75 @@ func TestConversationCardLifecycle(t *testing.T) {
 	}
 }
 
+func TestConversationEventDoesNotOverwriteConcurrentLaneMove(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	card, err := s.CreateCard(CreateCardInput{
+		Project: project.ID, Board: board.ID, ID: "card_lane_race", Lane: model.LaneRunning,
+		Title: "Preserve review lane", Prompt: "Implement it.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate another Dieter process holding the central storage lock. The
+	// conversation writer must acquire that lock before reading the card whose
+	// activity timestamp it will update.
+	lockPath := filepath.Join(s.Root, ".write-lock")
+	if err := os.Mkdir(lockPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lockHeld := true
+	t.Cleanup(func() {
+		if lockHeld {
+			_ = os.Remove(lockPath)
+		}
+	})
+
+	appended := make(chan error, 1)
+	go func() {
+		_, _, appendErr := s.AppendUIChunk(card.ID, "turn_1", json.RawMessage(`{"type":"text","text":"Ready"}`))
+		appended <- appendErr
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for writeMu.TryLock() {
+		writeMu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("conversation writer did not wait on the storage lock")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// This direct write represents the mutation completed by the process that
+	// owns lockPath. Releasing the lock lets the event writer continue.
+	card.Lane = model.LaneReview
+	card.PhaseChangedAt = "2026-08-24T07:34:45Z"
+	card.UpdatedAt = card.PhaseChangedAt
+	if err := s.writeCard(card); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	lockHeld = false
+
+	select {
+	case err := <-appended:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("conversation event did not finish")
+	}
+	stored, err := s.ResolveCard(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Lane != model.LaneReview || stored.PhaseChangedAt != card.PhaseChangedAt {
+		t.Fatalf("conversation event restored stale lane metadata: %#v", stored)
+	}
+}
+
 func TestRenameBoardPersistsNameWithoutChangingIdentity(t *testing.T) {
 	s, _, board := setup(t, model.WorkflowReview)
 	updated, err := s.RenameBoard(board.ID, "  Platform delivery  ")

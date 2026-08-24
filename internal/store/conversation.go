@@ -153,15 +153,15 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 }
 
 func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID string, data any) (model.ConversationEvent, model.Conversation, error) {
-	card, err := s.ResolveCard(cardRef)
-	if err != nil {
-		return model.ConversationEvent{}, model.Conversation{}, err
-	}
 	release, err := s.beginWrite()
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}
 	defer release()
+	card, err := s.ResolveCard(cardRef)
+	if err != nil {
+		return model.ConversationEvent{}, model.Conversation{}, err
+	}
 	conversation, err := s.loadConversation(card.ID)
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err

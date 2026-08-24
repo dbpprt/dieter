@@ -64,6 +64,7 @@ class ConversationUiCacheTest {
         historyStart = start,
         historyTotal = live.size + older.size,
         historyHasMore = false,
+        refreshedAtMillis = 1_000L,
     )
 
     private fun message(id: String): UiMessage = UiMessage.newBuilder().setId(id).build()

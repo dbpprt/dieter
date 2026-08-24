@@ -63,10 +63,15 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		`android:drawable="@drawable/ic_dieter_monochrome_layer"`,
 	)
 	assertContains(t, filepath.Join(root, "apps/android/app/src/main/java/com/dbpprt/dieter/ui/theme/Theme.kt"),
-		"val DieterShellDeep = Color(0xFF3D6E85)",
-		"val DieterShell = Color(0xFF8DD8E8)",
-		"val DieterLive = Color(0xFF62B6CB)",
-		"val DieterEyes = Color(0xFFBCEAF1)",
+		"val DieterShellDeep get() = Color(activeTokens.shellEnd)",
+		"val DieterShell get() = Color(activeTokens.shellStart)",
+		"val DieterLive get() = Color(activeTokens.paneEnd)",
+		"val DieterEyes get() = Color(activeTokens.eyes)",
+	)
+	assertContains(t, filepath.Join(root, "apps/android/app/src/main/java/com/dbpprt/dieter/settings/DieterPalette.kt"),
+		"DieterPaletteTokens(0xFF0D1B24, 0xFF193A49, 0xFF8DD8E8, 0xFF3D6E85",
+		"0xFF62B6CB, 0xFFBCEAF1, 0xFFF5FBFD, 0xFF081116",
+		"val DEFAULT = ARCTIC_CONSOLE",
 	)
 	assertContains(t, filepath.Join(root, "apps/mac/scripts/build.sh"),
 		`$BRAND_ROOT/assets/Dieter.icns`,
@@ -75,9 +80,10 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		`$BRAND_ROOT/assets/fonts/Sora-Variable.ttf`,
 	)
 	assertContains(t, filepath.Join(root, "apps/mac/Sources/DieterMac/UI/DieterTheme.swift"),
-		"dark: 0x081116",
-		"dark: 0x8DD8E8",
-		"dark: 0xBCEAF1",
+		"PaletteSpec(0x0D1B24, 0x193A49, 0x8DD8E8, 0x3D6E85",
+		"0x62B6CB, 0xBCEAF1, 0xF5FBFD, 0x081116",
+		"static var background: Color { Color(light: colors.light, dark: colors.darkBackground) }",
+		"static var shell: Color { Color(light: colors.shellEnd, dark: colors.shellStart) }",
 		`Font.custom("Sora"`,
 	)
 

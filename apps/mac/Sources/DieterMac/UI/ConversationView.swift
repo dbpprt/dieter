@@ -6,6 +6,25 @@ enum ComposerReturnPolicy {
     static func sendsMessage(shiftPressed: Bool) -> Bool { !shiftPressed }
 }
 
+enum ConversationRefreshText {
+    static func label(lastRefreshedAt: Date?, syncing: Bool, now: Date = Date()) -> String {
+        guard let lastRefreshedAt else { return syncing ? "Refreshing…" : "Not refreshed yet" }
+        let seconds = max(0, now.timeIntervalSince(lastRefreshedAt))
+        let freshness: String
+        switch seconds {
+        case ..<60:
+            freshness = "just now"
+        case ..<3_600:
+            freshness = "\(Int(seconds / 60))m ago"
+        case ..<86_400:
+            freshness = "\(Int(seconds / 3_600))h ago"
+        default:
+            freshness = lastRefreshedAt.formatted(date: .abbreviated, time: .shortened)
+        }
+        return "Last refreshed \(freshness)" + (syncing ? " · Refreshing…" : "")
+    }
+}
+
 struct ConversationView: View {
     @Environment(DieterStore.self) private var store
     var compact = false
@@ -83,6 +102,21 @@ private struct ConversationChrome: View {
                             Text(standalone ? "· Standalone chat" : "/ \(detail.board.name)").lineLimit(1)
                         }
                         if let id = card?.id, !id.isEmpty { Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()) }
+                        if card != nil {
+                            Text("·")
+                            TimelineView(.periodic(from: .now, by: 30)) { context in
+                                Text(ConversationRefreshText.label(
+                                    lastRefreshedAt: store.conversationLastRefreshedAt,
+                                    syncing: store.conversationSyncing,
+                                    now: context.date
+                                ))
+                                .accessibilityIdentifier("conversation-last-refreshed")
+                            }
+                            if store.conversationSyncing {
+                                ProgressView().controlSize(.mini)
+                                    .accessibilityLabel("Refreshing conversation")
+                            }
+                        }
                     }
                     .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
                 }
@@ -146,20 +180,9 @@ private struct ConversationTabBar: View {
     }
 }
 
-// Deliberately not @Observable: the scroll geometry callback writes here every
-// frame, and an observable (or @State value) write would re-evaluate the whole
-// timeline body per frame — with a long transcript that pegs the main thread.
-final class ConversationViewportReader {
-    var latest: ConversationViewport?
-    var processed: ConversationViewport?
-    var updateScheduled = false
-    var anchored = false
-}
-
 private struct ConversationTimelineRow: View {
     let item: ConversationTimelineItem
-    let plans: [Dieter_V1_TaskPlan]
-    let subagents: [Dieter_V1_Subagent]
+    let details: [ConversationTimelineMessageDetails]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -168,26 +191,34 @@ private struct ConversationTimelineRow: View {
             } else if let message = item.messages.first {
                 MessageView(message: message)
             }
-            ForEach(item.messages, id: \.id) { message in
-                ForEach(plans.filter { $0.messageID == message.id }, id: \.id) {
+            ForEach(details) { detail in
+                ForEach(detail.plans, id: \.id) {
                     TaskPlanView(plan: $0)
                 }
-                let messageAgents = subagents.filter { $0.messageID == message.id }
-                if !messageAgents.isEmpty {
-                    SubagentTimelineGroup(agents: messageAgents)
+                if !detail.subagents.isEmpty {
+                    SubagentTimelineGroup(agents: detail.subagents)
                 }
             }
         }
     }
 }
 
+private struct ConversationTimelineMessageDetails: Identifiable {
+    let id: String
+    let plans: [Dieter_V1_TaskPlan]
+    let subagents: [Dieter_V1_Subagent]
+}
+
+private struct ConversationTimelineRowContent: Identifiable {
+    let item: ConversationTimelineItem
+    let details: [ConversationTimelineMessageDetails]
+
+    var id: String { item.id }
+}
+
 struct ConversationTimeline: View {
     @Environment(DieterStore.self) private var store
-    @State private var followsLatest = true
-    @State private var jumpToLatestVisible = false
-    @State private var programmaticScroll = false
     @State private var historyLoadInFlight = false
-    @State private var viewportReader = ConversationViewportReader()
 
     private var messages: [Dieter_V1_UiMessage] { store.conversationMessages }
     private var timelineItems: [ConversationTimelineItem] {
@@ -195,6 +226,22 @@ struct ConversationTimeline: View {
     }
     private var plans: [Dieter_V1_TaskPlan] { store.conversation?.conversation.taskPlans ?? [] }
     private var subagents: [Dieter_V1_Subagent] { store.conversation?.conversation.subagents ?? [] }
+    private var timelineRows: [ConversationTimelineRowContent] {
+        let plansByMessage = Dictionary(grouping: plans, by: \.messageID)
+        let subagentsByMessage = Dictionary(grouping: subagents, by: \.messageID)
+        return timelineItems.map { item in
+            ConversationTimelineRowContent(
+                item: item,
+                details: item.messages.enumerated().map { index, message in
+                    ConversationTimelineMessageDetails(
+                        id: message.id.isEmpty ? "\(item.id):\(index)" : message.id,
+                        plans: plansByMessage[message.id] ?? [],
+                        subagents: subagentsByMessage[message.id] ?? []
+                    )
+                }
+            )
+        }
+    }
     private var conversationID: String { store.selectedCardID ?? store.selectedChatID ?? "" }
     private var draftPrompt: String {
         let card = store.selectedCard ?? store.selectedDetail?.card
@@ -206,273 +253,103 @@ struct ConversationTimeline: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            ZStack(alignment: .bottom) {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 15) {
-                        if store.conversationHistoryLoading {
-                            HStack(spacing: 8) {
-                                ProgressView().controlSize(.small)
-                                Text("Loading earlier messages…")
-                                    .font(.caption)
-                                    .foregroundStyle(DieterTheme.tertiary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .id("conversation.history-loading")
-                        } else if store.conversationHistoryHasMore {
-                            Button("Load earlier messages · \(messages.count) of \(store.conversationHistoryTotal)") {
-                                loadEarlierHistory(keepLatestVisible: false, proxy: proxy)
-                            }
-                            .buttonStyle(.plain)
-                            .font(.caption)
-                            .foregroundStyle(DieterTheme.tertiary)
-                            .frame(maxWidth: .infinity)
+            ScrollView {
+                // The server delivers a bounded page, so eager layout is both
+                // affordable and avoids the macOS LazyVStack/SelectionOverlay
+                // anchor-translation cycle that can trap AttributeGraph in one
+                // transaction indefinitely.
+                VStack(alignment: .leading, spacing: 15) {
+                    if store.conversationHistoryLoading {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading earlier messages…")
+                                .font(.caption)
+                                .foregroundStyle(DieterTheme.tertiary)
                         }
-
-                        if messages.isEmpty {
-                            EmptyConversationView(
-                                standalone: store.selectedCard?.scope == "chat",
-                                prompt: draftPrompt,
-                                attachments: draftAttachments
-                            )
+                        .frame(maxWidth: .infinity)
+                        .id("conversation.history-loading")
+                    } else if store.conversationHistoryHasMore {
+                        Button("Load earlier messages · \(messages.count) of \(store.conversationHistoryTotal)") {
+                            loadEarlierHistory(proxy: proxy)
                         }
-
-                        ForEach(timelineItems) { item in
-                            ConversationTimelineRow(item: item, plans: plans, subagents: subagents)
-                                .id(item.scrollAnchorID)
-                        }
-
-                        ForEach(plans.filter { plan in !plan.messageID.isEmpty && messages.contains(where: { $0.id == plan.messageID }) == false }, id: \.id) {
-                            TaskPlanView(plan: $0)
-                        }
-
-                        let pendingTools = store.conversation?.conversation.pendingTools ?? []
-                        if !pendingTools.isEmpty {
-                            PendingToolGroupView(tools: pendingTools)
-                        }
-                        Color.clear.frame(height: 1).id(ConversationScrollBehavior.bottomID)
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .frame(maxWidth: .infinity)
                     }
-                    .padding(.horizontal, 18).padding(.vertical, 17)
-                }
-                .background(DieterTheme.background)
-                .onScrollGeometryChange(for: ConversationViewport.self) { geometry in
-                    ConversationViewport(
-                        offsetY: ConversationViewport.quantized(geometry.contentOffset.y),
-                        visibleMaxY: ConversationViewport.quantized(geometry.visibleRect.maxY),
-                        visibleHeight: ConversationViewport.quantized(geometry.visibleRect.height),
-                        contentHeight: ConversationViewport.quantized(geometry.contentSize.height)
-                    )
-                } action: { oldViewport, newViewport in
-                    scheduleViewportUpdate(from: oldViewport, to: newViewport, proxy: proxy)
-                }
 
-                if jumpToLatestVisible {
-                    JumpToLatestButton {
-                        scrollToLatest(proxy, animated: false)
+                    if messages.isEmpty {
+                        EmptyConversationView(
+                            standalone: store.selectedCard?.scope == "chat",
+                            prompt: draftPrompt,
+                            attachments: draftAttachments
+                        )
                     }
-                    .padding(.bottom, 14)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+
+                    ForEach(timelineRows) { row in
+                        ConversationTimelineRow(item: row.item, details: row.details)
+                            .id(row.id)
+                    }
+
+                    ForEach(plans.filter { plan in !plan.messageID.isEmpty && messages.contains(where: { $0.id == plan.messageID }) == false }, id: \.id) {
+                        TaskPlanView(plan: $0)
+                    }
+
+                    let pendingTools = store.conversation?.conversation.pendingTools ?? []
+                    if !pendingTools.isEmpty {
+                        PendingToolGroupView(tools: pendingTools)
+                    }
+                    Color.clear.frame(height: 1).id(ConversationScrollBehavior.bottomID)
                 }
+                .padding(.horizontal, 18).padding(.vertical, 17)
             }
+            .textSelection(.disabled)
+            .background(DieterTheme.background)
             .task(id: conversationID) {
-                // History loads stay gated until the transcript is anchored at
-                // the bottom; the first geometry event fires at offset zero and
-                // must not be mistaken for the user reaching the oldest page.
                 historyLoadInFlight = false
-                viewportReader.latest = nil
-                viewportReader.processed = nil
-                viewportReader.updateScheduled = false
-                viewportReader.anchored = false
                 await Task.yield()
-                scrollToLatest(proxy, animated: false)
-                await Task.yield()
-                viewportReader.anchored = true
-                if let latest = viewportReader.latest {
-                    requestEarlierMessages(ifNeededFor: latest, proxy: proxy)
-                }
+                scrollToLatest(proxy)
             }
             .onChange(of: store.conversation?.conversation.lastSeq) { _, _ in
-                if followsLatest {
-                    Task { @MainActor in
-                        await Task.yield()
-                        scrollToLatest(proxy, animated: true)
-                    }
-                } else if !jumpToLatestVisible {
-                    withAnimation(.easeOut(duration: 0.16)) { jumpToLatestVisible = true }
+                Task { @MainActor in
+                    await Task.yield()
+                    scrollToLatest(proxy)
                 }
             }
         }
     }
 
-    private func scheduleViewportUpdate(
-        from oldViewport: ConversationViewport,
-        to newViewport: ConversationViewport,
-        proxy: ScrollViewProxy
-    ) {
-        viewportReader.latest = newViewport
-        guard !viewportReader.updateScheduled else { return }
-        viewportReader.updateScheduled = true
-        let expectedConversationID = conversationID
-        Task { @MainActor in
-            await Task.yield()
-            viewportReader.updateScheduled = false
-            guard expectedConversationID == conversationID,
-                  let latest = viewportReader.latest else { return }
-            let previous = viewportReader.processed ?? oldViewport
-            viewportReader.processed = latest
-            applyViewportUpdate(from: previous, to: latest, proxy: proxy)
-        }
+    private func scrollToLatest(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom)
     }
 
-    private func applyViewportUpdate(
-        from oldViewport: ConversationViewport,
-        to newViewport: ConversationViewport,
-        proxy: ScrollViewProxy
-    ) {
-        if newViewport.isNearBottom {
-            if !followsLatest { followsLatest = true }
-            if jumpToLatestVisible { jumpToLatestVisible = false }
-        } else if !programmaticScroll, oldViewport.isNearBottom,
-                  newViewport.contentHeight > oldViewport.contentHeight {
-            followsLatest = true
-            scrollToLatest(proxy, animated: true)
-        } else if !programmaticScroll,
-                  ConversationScrollBehavior.isUserNavigation(from: oldViewport, to: newViewport),
-                  followsLatest {
-            followsLatest = false
-        }
-        if viewportReader.anchored {
-            requestEarlierMessages(ifNeededFor: newViewport, proxy: proxy)
-        }
-    }
-
-    private func scrollToLatest(_ proxy: ScrollViewProxy, animated: Bool) {
-        programmaticScroll = true
-        let scroll = { proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom) }
-        if animated { withAnimation(.easeOut(duration: 0.22), scroll) }
-        else { scroll() }
-        if !followsLatest { followsLatest = true }
-        if jumpToLatestVisible { jumpToLatestVisible = false }
-        Task { @MainActor in
-            try? await DieterTaskSleep.milliseconds(animated ? 320 : 80)
-            programmaticScroll = false
-        }
-    }
-
-    private func requestEarlierMessages(ifNeededFor viewport: ConversationViewport, proxy: ScrollViewProxy) {
-        guard !historyLoadInFlight,
-              ConversationScrollBehavior.shouldLoadEarlier(
-                viewport: viewport,
-                hasMore: store.conversationHistoryHasMore,
-                loading: store.conversationHistoryLoading
-              ) else { return }
-        loadEarlierHistory(keepLatestVisible: followsLatest && viewport.isNearBottom, proxy: proxy)
-    }
-
-    private func loadEarlierHistory(keepLatestVisible: Bool, proxy: ScrollViewProxy) {
+    private func loadEarlierHistory(proxy: ScrollViewProxy) {
         guard !historyLoadInFlight else { return }
         historyLoadInFlight = true
         // Anchor by message id, not timeline-item id: prepending a page can
         // merge the current first item into a differently-identified tool
         // group, and a missed scroll restore leaves the viewport at offset
         // zero, which would chain-load the entire history.
-        let anchorMessageID = keepLatestVisible ? nil : timelineItems.first?.messages.first?.id
+        let anchorMessageID = timelineItems.first?.messages.first?.id
         Task { @MainActor in
             let loaded = await store.loadEarlierMessages()
             if loaded {
                 await Task.yield()
-                if keepLatestVisible {
-                    scrollToLatest(proxy, animated: false)
-                    try? await DieterTaskSleep.milliseconds(80)
-                } else if let anchor = ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: timelineItems) {
-                    programmaticScroll = true
+                if let anchor = ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: timelineItems) {
                     proxy.scrollTo(anchor, anchor: .top)
-                    try? await DieterTaskSleep.milliseconds(80)
-                    programmaticScroll = false
                 }
             }
             historyLoadInFlight = false
-            if loaded, let latest = viewportReader.latest, latest.needsBackfill {
-                requestEarlierMessages(ifNeededFor: latest, proxy: proxy)
-            }
         }
-    }
-}
-
-struct ConversationViewport: Equatable {
-    let offsetY: CGFloat
-    let visibleMaxY: CGFloat
-    let visibleHeight: CGFloat
-    let contentHeight: CGFloat
-
-    static func quantized(_ value: CGFloat) -> CGFloat {
-        guard value.isFinite else { return value }
-        return (value * 2).rounded() / 2
-    }
-
-    var isNearBottom: Bool {
-        ConversationScrollBehavior.isNearBottom(visibleMaxY: visibleMaxY, contentHeight: contentHeight)
-    }
-
-    var isNearTop: Bool {
-        ConversationScrollBehavior.isNearTop(offsetY: offsetY)
-    }
-
-    var needsBackfill: Bool {
-        ConversationScrollBehavior.needsBackfill(contentHeight: contentHeight, visibleHeight: visibleHeight)
     }
 }
 
 enum ConversationScrollBehavior {
     static let bottomID = "conversation.bottom"
-    static let followThreshold: CGFloat = 72
-    static let historyPrefetchThreshold: CGFloat = 160
-
-    static func isNearBottom(visibleMaxY: CGFloat, contentHeight: CGFloat) -> Bool {
-        max(0, contentHeight - visibleMaxY) <= followThreshold
-    }
-
-    static func isNearTop(offsetY: CGFloat) -> Bool {
-        offsetY <= historyPrefetchThreshold
-    }
-
-    static func needsBackfill(contentHeight: CGFloat, visibleHeight: CGFloat) -> Bool {
-        contentHeight <= visibleHeight + 1
-    }
-
-    static func shouldLoadEarlier(viewport: ConversationViewport, hasMore: Bool, loading: Bool) -> Bool {
-        hasMore && !loading && (viewport.isNearTop || viewport.needsBackfill)
-    }
-
-    static func isUserNavigation(from old: ConversationViewport, to new: ConversationViewport) -> Bool {
-        abs(new.offsetY - old.offsetY) > 0.5 && abs(new.contentHeight - old.contentHeight) <= 0.5
-    }
 
     static func anchorItem(containing messageID: String?, in items: [ConversationTimelineItem]) -> String? {
         guard let messageID, !messageID.isEmpty else { return nil }
-        return items.first { item in item.messages.contains { $0.id == messageID } }?.scrollAnchorID
-    }
-}
-
-private struct JumpToLatestButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 7) {
-                Circle().fill(DieterTheme.primary).frame(width: 6, height: 6)
-                Text("Jump to latest")
-                Image(systemName: "arrow.down").font(.system(size: 10, weight: .bold))
-            }
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(DieterTheme.text)
-            .padding(.horizontal, 13).frame(height: 32)
-            .background(DieterTheme.elevated, in: Capsule())
-            .shadow(color: Color.black.opacity(0.42), radius: 12, y: 5)
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut(.end, modifiers: [.command])
-        .accessibilityIdentifier("conversation.jump-to-latest")
-        .help("Jump to the newest message (⌘End)")
+        return items.first { item in item.messages.contains { $0.id == messageID } }?.id
     }
 }
 
@@ -488,7 +365,7 @@ private struct EmptyConversationView: View {
                 .font(.caption).foregroundStyle(DieterTheme.tertiary).multilineTextAlignment(.center)
             if !prompt.isEmpty || !attachments.isEmpty {
                 VStack(alignment: .leading, spacing: 9) {
-                    if !prompt.isEmpty { Text(prompt).font(.callout).textSelection(.enabled) }
+                    if !prompt.isEmpty { Text(prompt).font(.callout) }
                     if !attachments.isEmpty {
                         HStack(spacing: 8) {
                             ForEach(Array(attachments.enumerated()), id: \.offset) { _, part in
@@ -677,7 +554,6 @@ struct ConversationTimelineItem: Identifiable {
     var messages: [Dieter_V1_UiMessage]
     let isToolCallGroup: Bool
     let id: String
-    let scrollAnchorID: String
 
     var toolCalls: [ConversationToolCall] {
         messages.flatMap { message in
@@ -707,8 +583,7 @@ struct ConversationTimelineItem: Identifiable {
                 result.append(.init(
                     messages: [message],
                     isToolCallGroup: toolOnly,
-                    id: itemID,
-                    scrollAnchorID: toolOnly || message.id.isEmpty ? itemID : message.id
+                    id: itemID
                 ))
             }
         }
@@ -781,7 +656,7 @@ struct MessagePartView: View {
                             Text("Reasoning").font(.caption.weight(.medium))
                         }.foregroundStyle(DieterTheme.tertiary)
                         if reasoningExpanded {
-                            Text(part.text).font(.caption).foregroundStyle(DieterTheme.subtle).textSelection(.enabled).lineSpacing(3)
+                            Text(part.text).font(.caption).foregroundStyle(DieterTheme.subtle).lineSpacing(3)
                                 .padding(.leading, 15)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
@@ -814,7 +689,7 @@ struct MessagePartView: View {
                 Text(markdown(part.text))
                     .font(.system(size: 13))
                     .foregroundStyle(inUserBubble ? Color.white : DieterTheme.text)
-                    .textSelection(.enabled).lineSpacing(4)
+                    .lineSpacing(4)
             }
         }
     }
@@ -864,7 +739,7 @@ struct ToolCallView: View {
                     if !input.isEmpty { CodeBlock(title: "Input", value: input) }
                     if !result.isEmpty { CodeBlock(title: "Output", value: result) }
                     let error = output?.errorText ?? part.errorText
-                    if !error.isEmpty { Text(error).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral).textSelection(.enabled) }
+                    if !error.isEmpty { Text(error).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral) }
                 }
                 .padding(.horizontal, 10).padding(.bottom, 10)
             }
@@ -926,7 +801,7 @@ struct CodeBlock: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title.uppercased()).font(.system(size: 9, weight: .bold)).tracking(0.7).foregroundStyle(DieterTheme.tertiary)
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(value).font(.system(size: 11, design: .monospaced)).foregroundStyle(DieterTheme.subtle).textSelection(.enabled).lineSpacing(3)
+                Text(value).font(.system(size: 11, design: .monospaced)).foregroundStyle(DieterTheme.subtle).lineSpacing(3)
             }
         }
         .padding(10).background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))

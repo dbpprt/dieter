@@ -100,27 +100,38 @@ struct DieterSyncDiskState: Codable, Sendable {
     /// Legacy single-daemon fields retained only for an in-place migration.
     var cursor: Data?
     var snapshot: Data?
+    /// Endpoint ID -> card ID -> the wall-clock time at which the native
+    /// client last received authoritative conversation data.
+    var conversationRefreshedAt: [String: [String: Date]]
     var outbox: [DieterOutboxEntry]
 
     init(
         projections: [String: DieterSyncProjection] = [:],
         cursor: Data? = nil,
         snapshot: Data? = nil,
+        conversationRefreshedAt: [String: [String: Date]] = [:],
         outbox: [DieterOutboxEntry] = []
     ) {
         self.projections = projections
         self.cursor = cursor
         self.snapshot = snapshot
+        self.conversationRefreshedAt = conversationRefreshedAt
         self.outbox = outbox
     }
 
-    private enum CodingKeys: String, CodingKey { case projections, cursor, snapshot, outbox }
+    private enum CodingKeys: String, CodingKey {
+        case projections, cursor, snapshot, conversationRefreshedAt, outbox
+    }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         projections = try values.decodeIfPresent([String: DieterSyncProjection].self, forKey: .projections) ?? [:]
         cursor = try values.decodeIfPresent(Data.self, forKey: .cursor)
         snapshot = try values.decodeIfPresent(Data.self, forKey: .snapshot)
+        conversationRefreshedAt = try values.decodeIfPresent(
+            [String: [String: Date]].self,
+            forKey: .conversationRefreshedAt
+        ) ?? [:]
         outbox = try values.decodeIfPresent([DieterOutboxEntry].self, forKey: .outbox) ?? []
     }
 
@@ -128,6 +139,7 @@ struct DieterSyncDiskState: Codable, Sendable {
         projections.removeAll()
         cursor = nil
         snapshot = nil
+        conversationRefreshedAt.removeAll()
     }
 
     static let empty = DieterSyncDiskState()

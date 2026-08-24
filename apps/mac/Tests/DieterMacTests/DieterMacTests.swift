@@ -325,31 +325,136 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(synchronized.pending.isEmpty)
 }
 
-@Test func conversationScrollBehaviorUsesANearBottomThreshold() {
-    #expect(ConversationScrollBehavior.isNearBottom(visibleMaxY: 928, contentHeight: 1_000))
-    #expect(!ConversationScrollBehavior.isNearBottom(visibleMaxY: 927, contentHeight: 1_000))
-    #expect(ConversationScrollBehavior.isNearBottom(visibleMaxY: 500, contentHeight: 400))
+@Test func conversationRefreshTextDistinguishesCachedAndRefreshingState() {
+    let now = Date(timeIntervalSince1970: 10_000)
+    #expect(ConversationRefreshText.label(lastRefreshedAt: nil, syncing: true, now: now) == "Refreshing…")
+    #expect(ConversationRefreshText.label(
+        lastRefreshedAt: now.addingTimeInterval(-20),
+        syncing: true,
+        now: now
+    ) == "Last refreshed just now · Refreshing…")
+    #expect(ConversationRefreshText.label(
+        lastRefreshedAt: now.addingTimeInterval(-300),
+        syncing: false,
+        now: now
+    ) == "Last refreshed 5m ago")
 }
 
-@Test func conversationScrollBehaviorDistinguishesUserNavigationFromContentGrowth() {
-    let initial = ConversationViewport(offsetY: 400, visibleMaxY: 900, visibleHeight: 500, contentHeight: 1_000)
-    let userScrolled = ConversationViewport(offsetY: 250, visibleMaxY: 750, visibleHeight: 500, contentHeight: 1_000)
-    let messageArrived = ConversationViewport(offsetY: 400, visibleMaxY: 900, visibleHeight: 500, contentHeight: 1_180)
-
-    #expect(ConversationScrollBehavior.isUserNavigation(from: initial, to: userScrolled))
-    #expect(!ConversationScrollBehavior.isUserNavigation(from: initial, to: messageArrived))
+@Test func cursorOnlySyncPersistenceIsThrottledWithoutDelayingProjectionChanges() {
+    let initial = Date(timeIntervalSince1970: 1_000)
+    #expect(SyncCursorPersistencePolicy.shouldPersist(
+        projectionChanged: false,
+        lastPersistedAt: nil,
+        now: initial
+    ))
+    #expect(!SyncCursorPersistencePolicy.shouldPersist(
+        projectionChanged: false,
+        lastPersistedAt: initial,
+        now: initial.addingTimeInterval(14)
+    ))
+    #expect(SyncCursorPersistencePolicy.shouldPersist(
+        projectionChanged: false,
+        lastPersistedAt: initial,
+        now: initial.addingTimeInterval(15)
+    ))
+    #expect(SyncCursorPersistencePolicy.shouldPersist(
+        projectionChanged: true,
+        lastPersistedAt: initial,
+        now: initial.addingTimeInterval(1)
+    ))
 }
 
-@Test func conversationHistoryLoadsNearTheTopAndUntilTheViewportIsFilled() {
-    let nearTop = ConversationViewport(offsetY: 120, visibleMaxY: 720, visibleHeight: 600, contentHeight: 1_400)
-    let shortPage = ConversationViewport(offsetY: 0, visibleMaxY: 420, visibleHeight: 600, contentHeight: 420)
-    let middle = ConversationViewport(offsetY: 360, visibleMaxY: 960, visibleHeight: 600, contentHeight: 1_400)
+@Test func equalInactiveMachineRefreshProducesAnEqualDirectoryProjection() {
+    let endpoint = DieterEndpoint(
+        name: "Other Mac",
+        host: "dieter.example",
+        port: 443,
+        secure: true,
+        daemonID: "daemon-other"
+    )
+    var project = Dieter_V1_Project()
+    project.id = "project-other"
+    project.name = "Other project"
+    var board = Dieter_V1_Board()
+    board.id = "board-other"
+    board.projectID = project.id
+    var card = Dieter_V1_Card()
+    card.id = "card-other"
+    card.projectID = project.id
+    card.boardID = board.id
+    var chat = Dieter_V1_Card()
+    chat.id = "chat-other"
+    chat.projectID = project.id
+    chat.scope = "chat"
+    chat.updatedAt = "2026-08-24T10:00:00Z"
 
-    #expect(ConversationScrollBehavior.shouldLoadEarlier(viewport: nearTop, hasMore: true, loading: false))
-    #expect(ConversationScrollBehavior.shouldLoadEarlier(viewport: shortPage, hasMore: true, loading: false))
-    #expect(!ConversationScrollBehavior.shouldLoadEarlier(viewport: middle, hasMore: true, loading: false))
-    #expect(!ConversationScrollBehavior.shouldLoadEarlier(viewport: nearTop, hasMore: true, loading: true))
-    #expect(!ConversationScrollBehavior.shouldLoadEarlier(viewport: nearTop, hasMore: false, loading: false))
+    let current = MachineDirectoryProjection(
+        projects: [project.id: project],
+        projectEndpointIDs: [project.id: endpoint.id],
+        boards: [project.id: [board]],
+        cards: [project.id: [card]],
+        chats: [chat]
+    )
+    let snapshot = MachineSnapshot(
+        endpoint: endpoint,
+        connection: MachineConnectionStatus(route: .gateway, latencyMilliseconds: 12),
+        projects: [project],
+        boards: [board],
+        cards: [card],
+        chats: [chat]
+    )
+
+    #expect(MachineDirectoryReducer.merging(current, snapshots: [snapshot]) == current)
+}
+
+@Test func inactiveMachineMergePreservesTheActiveMachineProjection() {
+    let activeEndpoint = DieterEndpoint(
+        name: "Active Mac",
+        host: "dieter.example",
+        port: 443,
+        secure: true,
+        daemonID: "daemon-active"
+    )
+    let otherEndpoint = DieterEndpoint(
+        name: "Other Mac",
+        host: "dieter.example",
+        port: 443,
+        secure: true,
+        daemonID: "daemon-other"
+    )
+    var activeProject = Dieter_V1_Project()
+    activeProject.id = "project-active"
+    var activeCard = Dieter_V1_Card()
+    activeCard.id = "card-active"
+    activeCard.projectID = activeProject.id
+    var otherProject = Dieter_V1_Project()
+    otherProject.id = "project-other"
+    var otherChat = Dieter_V1_Card()
+    otherChat.id = "chat-other"
+    otherChat.projectID = otherProject.id
+    otherChat.scope = "chat"
+
+    let current = MachineDirectoryProjection(
+        projects: [activeProject.id: activeProject],
+        projectEndpointIDs: [activeProject.id: activeEndpoint.id],
+        boards: [activeProject.id: []],
+        cards: [activeProject.id: [activeCard]],
+        chats: []
+    )
+    let next = MachineDirectoryReducer.merging(current, snapshots: [MachineSnapshot(
+        endpoint: otherEndpoint,
+        connection: MachineConnectionStatus(route: .gateway, latencyMilliseconds: 8),
+        projects: [otherProject],
+        boards: [],
+        cards: [],
+        chats: [otherChat]
+    )])
+
+    #expect(next.projects[activeProject.id] == activeProject)
+    #expect(next.projectEndpointIDs[activeProject.id] == activeEndpoint.id)
+    #expect(next.cards[activeProject.id] == [activeCard])
+    #expect(next.projects[otherProject.id] == otherProject)
+    #expect(next.chats == [otherChat])
 }
 
 private func historyToolMessage(_ id: String) -> Dieter_V1_UiMessage {
@@ -393,8 +498,8 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     ])
     #expect(ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: merged) == "tools:m_19")
 
-    // Plain message rows register their raw message id with ScrollViewReader.
-    #expect(ConversationScrollBehavior.anchorItem(containing: "m_21", in: merged) == "m_21")
+    // Plain message rows use the same identity for ForEach and ScrollViewReader.
+    #expect(ConversationScrollBehavior.anchorItem(containing: "m_21", in: merged) == "message:m_21")
     #expect(ConversationScrollBehavior.anchorItem(containing: "gone", in: merged) == nil)
     #expect(ConversationScrollBehavior.anchorItem(containing: nil, in: merged) == nil)
 }
@@ -681,7 +786,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     let items = ConversationTimelineItem.group([first, second])
 
     #expect(items.map(\.id) == ["message:position:0", "message:position:1"])
-    #expect(items.map(\.scrollAnchorID) == items.map(\.id))
+    #expect(Set(items.map(\.id)).count == items.count)
 }
 
 @Test func toolCallGroupSummaryMatchesCompactEditAndCommandLabels() {
@@ -861,8 +966,10 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         createdAt: Date(timeIntervalSince1970: 1)
     )
     let endpointID = "https://dieter.example:443#daemon-one"
+    let refreshedAt = Date(timeIntervalSince1970: 100)
     try await persistence.save(.init(
         projections: [endpointID: .init(cursor: try cursor.serializedData(), snapshot: try snapshot.serializedData())],
+        conversationRefreshedAt: [endpointID: ["c_one": refreshedAt]],
         outbox: [entry]
     ))
 
@@ -874,6 +981,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     let restoredSnapshot = try Dieter_V1_GlobalSnapshot(serializedBytes: snapshotData)
     #expect(restoredCursor.sequence == 42)
     #expect(restoredSnapshot.state.projects.first?.id == "p_one")
+    #expect(restored.conversationRefreshedAt[endpointID]?["c_one"] == refreshedAt)
     #expect(restored.outbox.first?.optimisticID == "msg_one")
     #expect(restored.outbox.first?.endpointID == endpointID)
 }
@@ -898,6 +1006,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         ],
         cursor: Data([5]),
         snapshot: Data([6]),
+        conversationRefreshedAt: [firstEndpointID: ["c_one": Date(timeIntervalSince1970: 10)]],
         outbox: [entry]
     )
 
@@ -906,6 +1015,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(state.projections.isEmpty)
     #expect(state.cursor == nil)
     #expect(state.snapshot == nil)
+    #expect(state.conversationRefreshedAt.isEmpty)
     #expect(state.outbox.count == 1)
     #expect(state.outbox.first?.commandID == entry.commandID)
 }

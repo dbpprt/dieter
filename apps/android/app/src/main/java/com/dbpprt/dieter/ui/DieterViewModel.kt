@@ -134,6 +134,7 @@ data class DieterUiState(
     val conversationRefreshing: Boolean = false,
     /** True while the open transcript is served from cache pending a live frame. */
     val conversationSyncing: Boolean = false,
+    val conversationLastRefreshedAtMillis: Long? = null,
     val conversationScrollRequest: Long = 0,
     val detailTab: Int = 0,
     val filePath: String = "",
@@ -449,6 +450,9 @@ class DieterViewModel(
                 ),
                 selectedCardId = selectedCardId,
                 conversation = selectedCardId?.let(connection.activeConversations::get) ?: current.conversation,
+                conversationLastRefreshedAtMillis = selectedCardId
+                    ?.let(connection.conversationRefreshedAtMillis::get)
+                    ?: current.conversationLastRefreshedAtMillis,
                 schedules = connection.schedules.filter { it.projectId == current.selectedProjectId },
                 scheduleRuns = current.selectedScheduleId?.let { id -> connection.scheduleRuns.filter { it.scheduleId == id } }.orEmpty(),
                 pendingCardIds = connection.pendingCardIds,
@@ -753,7 +757,14 @@ class DieterViewModel(
         val resolvedCard = (connection.cards + connection.chats).firstOrNull { it.id == cardId }
             ?: if (card.id == cardId) card else card.toBuilder().setId(cardId).build()
         val cached = connection.activeConversations[cardId]?.let {
-            CachedConversationUi(it, emptyList(), it.page.start, it.page.total, it.page.hasMore)
+            CachedConversationUi(
+                it,
+                emptyList(),
+                it.page.start,
+                it.page.total,
+                it.page.hasMore,
+                connection.conversationRefreshedAtMillis[cardId],
+            )
         } ?: conversationCache[cardId]
         val projectId = resolvedCard.projectId.ifBlank { _state.value.selectedProjectId }
         _state.update {
@@ -770,6 +781,7 @@ class DieterViewModel(
                 historyLoading = false,
                 conversationRefreshing = false,
                 conversationSyncing = isServerConversationId(cardId),
+                conversationLastRefreshedAtMillis = cached?.refreshedAtMillis,
                 conversationScrollRequest = it.conversationScrollRequest + 1,
                 detailTab = 0,
                 error = connectionManager.outboxFailure(cardId),
@@ -851,6 +863,7 @@ class DieterViewModel(
             current.copy(
                 conversation = accepted,
                 conversationSyncing = false,
+                conversationLastRefreshedAtMillis = connection.conversationRefreshedAtMillis[cardId],
                 connectionPhase = ConnectionPhase.CONNECTED,
                 error = null,
                 // A foreground transcript frame is also the durable delivery
@@ -892,6 +905,7 @@ class DieterViewModel(
                             historyHasMore = if (older.isEmpty()) snapshot.page.hasMore else current.historyHasMore,
                             conversationRefreshing = false,
                             conversationSyncing = false,
+                            conversationLastRefreshedAtMillis = connection.conversationRefreshedAtMillis[cardId],
                             pendingMessageIds = connection.pendingMessageIds,
                             acceptedOutboxIds = connection.acceptedOutboxIds,
                             failedOutboxIds = connection.failedOutboxIds,
@@ -961,7 +975,14 @@ class DieterViewModel(
     fun closeDetail() {
         rememberConversation()
         cancelConversationStream()
-        _state.update { it.copy(selectedCardId = null, conversation = null, olderMessages = emptyList()) }
+        _state.update {
+            it.copy(
+                selectedCardId = null,
+                conversation = null,
+                olderMessages = emptyList(),
+                conversationLastRefreshedAtMillis = null,
+            )
+        }
     }
 
     private fun cancelConversationStream() {
@@ -982,6 +1003,7 @@ class DieterViewModel(
                 historyStart = current.historyStart,
                 historyTotal = current.historyTotal,
                 historyHasMore = current.historyHasMore,
+                refreshedAtMillis = current.conversationLastRefreshedAtMillis,
             ),
         )
     }

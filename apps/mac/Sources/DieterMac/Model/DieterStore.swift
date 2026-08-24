@@ -9,6 +9,9 @@ import UserNotifications
 
 private let dieterExpectedAPIVersion = "2"
 private let conversationPageSize: Int32 = 30
+private let syncConversationMessageLimit: Int32 = 30
+private let syncRecentConversationLimit: Int32 = 8
+private let cachedConversationLimit = 24
 private let terminalClientBufferLimit = 2 * 1_024 * 1_024
 private let outboxLogger = Logger(subsystem: "com.dbpprt.dieter.mac", category: "Outbox")
 
@@ -94,13 +97,71 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-private struct MachineSnapshot {
+struct MachineSnapshot {
     let endpoint: DieterEndpoint
     let connection: MachineConnectionStatus
     let projects: [Dieter_V1_Project]
     let boards: [Dieter_V1_Board]
     let cards: [Dieter_V1_Card]
     let chats: [Dieter_V1_Card]
+}
+
+struct MachineDirectoryProjection: Equatable {
+    var projects: [String: Dieter_V1_Project]
+    var projectEndpointIDs: [String: String]
+    var boards: [String: [Dieter_V1_Board]]
+    var cards: [String: [Dieter_V1_Card]]
+    var chats: [Dieter_V1_Card]
+
+    var sortedProjects: [Dieter_V1_Project] {
+        projects.values.sorted {
+            if $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedSame { return $0.id < $1.id }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+}
+
+enum MachineDirectoryReducer {
+    static func merging(
+        _ current: MachineDirectoryProjection,
+        snapshots: [MachineSnapshot]
+    ) -> MachineDirectoryProjection {
+        let refreshedEndpointIDs = Set(snapshots.map(\.endpoint.id))
+        var nextProjects = current.projects.filter {
+            current.projectEndpointIDs[$0.key].map { !refreshedEndpointIDs.contains($0) } ?? false
+        }
+        var nextProjectEndpoints = current.projectEndpointIDs.filter { !refreshedEndpointIDs.contains($0.value) }
+        var nextBoards = current.boards.filter { projectID, _ in nextProjectEndpoints[projectID] != nil }
+        var nextCards = current.cards.filter { projectID, _ in nextProjectEndpoints[projectID] != nil }
+        var nextChats = current.chats.filter { chat in nextProjectEndpoints[chat.projectID] != nil }
+
+        for snapshot in snapshots {
+            for project in snapshot.projects {
+                nextProjects[project.id] = project
+                nextProjectEndpoints[project.id] = snapshot.endpoint.id
+                nextBoards[project.id] = snapshot.boards.filter { $0.projectID == project.id }
+                nextCards[project.id] = snapshot.cards.filter { $0.projectID == project.id }
+            }
+            nextChats.append(contentsOf: snapshot.chats)
+        }
+        let chats = nextChats
+            .filter { $0.scope == "chat" && $0.boardID.isEmpty }
+            .reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }
+            .values
+            .sorted {
+                let lhsActivity = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
+                let rhsActivity = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
+                if lhsActivity == rhsActivity { return $0.id < $1.id }
+                return lhsActivity > rhsActivity
+            }
+        return MachineDirectoryProjection(
+            projects: nextProjects,
+            projectEndpointIDs: nextProjectEndpoints,
+            boards: nextBoards,
+            cards: nextCards,
+            chats: chats
+        )
+    }
 }
 
 private struct DataPlaneConnection {
@@ -129,6 +190,14 @@ enum SyncStreamLiveness {
     static func shouldRestart(lastFrameAt: Date?, now: Date = Date()) -> Bool {
         guard let lastFrameAt else { return true }
         return now.timeIntervalSince(lastFrameAt) >= timeout
+    }
+}
+
+enum SyncCursorPersistencePolicy {
+    static let interval: TimeInterval = 15
+
+    static func shouldPersist(projectionChanged: Bool, lastPersistedAt: Date?, now: Date) -> Bool {
+        projectionChanged || lastPersistedAt.map { now.timeIntervalSince($0) >= interval } ?? true
     }
 }
 
@@ -336,6 +405,8 @@ final class DieterStore {
     var conversationHistoryLoading = false
     var selectedDetail: Dieter_V1_CardDetail?
     var conversationLoading = false
+    var conversationSyncing = false
+    var conversationLastRefreshedAt: Date?
     var composerText = ""
     var composerAttachments: [Dieter_V1_MessagePart] = []
     var composerProvider = ""
@@ -413,7 +484,8 @@ final class DieterStore {
     private var pendingBoards: [String: Dieter_V1_Board] = [:]
     private var pendingProjects: [String: Dieter_V1_Project] = [:]
     private var notificationStatuses: [String: String] = [:]
-    private var lastSyncFrameAt: Date?
+    @ObservationIgnored private var lastSyncFrameAt: Date?
+    @ObservationIgnored private var lastSyncPersistenceAt: [String: Date] = [:]
     private var persistConnectionSelection = true
     private let accessTokenOverride: String?
     private var gatewayOrigins: [DieterEndpoint]
@@ -1026,52 +1098,50 @@ final class DieterStore {
         }
         guard !snapshots.isEmpty else { return }
 
-        let refreshedEndpointIDs = Set(snapshots.map(\.endpoint.id))
-        var nextProjects = projectDirectory.filter { projectEndpointIDs[$0.key].map { !refreshedEndpointIDs.contains($0) } ?? false }
-        var nextProjectEndpoints = projectEndpointIDs.filter { !refreshedEndpointIDs.contains($0.value) }
-        var nextBoards = navigationBoards.filter { projectID, _ in nextProjectEndpoints[projectID] != nil }
-        var nextCards = navigationCards.filter { projectID, _ in nextProjectEndpoints[projectID] != nil }
-        var nextChats = chats.filter { chat in nextProjectEndpoints[chat.projectID] != nil }
-
+        var persistenceChanged = false
         for snapshot in snapshots {
-            machineConnectionStatuses[snapshot.endpoint.id] = snapshot.connection
-            persistInactiveMachineSnapshot(snapshot)
-            for project in snapshot.projects {
-                nextProjects[project.id] = project
-                nextProjectEndpoints[project.id] = snapshot.endpoint.id
+            if machineConnectionStatuses[snapshot.endpoint.id] != snapshot.connection {
+                machineConnectionStatuses[snapshot.endpoint.id] = snapshot.connection
             }
-            for project in snapshot.projects {
-                nextBoards[project.id] = snapshot.boards.filter { $0.projectID == project.id }
-                nextCards[project.id] = snapshot.cards.filter { $0.projectID == project.id }
-            }
-            nextChats.append(contentsOf: snapshot.chats)
+            persistenceChanged = persistInactiveMachineSnapshot(snapshot) || persistenceChanged
         }
-        projectDirectory = nextProjects
-        projectEndpointIDs = nextProjectEndpoints
-        navigationBoards = nextBoards
-        navigationCards = nextCards
-        chatProjects = projects
-        chats = nextChats
-            .filter { $0.scope == "chat" && $0.boardID.isEmpty }
-            .reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }
-            .values
-            .sorted { ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt) }
-        updateSelectedState()
+
+        let current = MachineDirectoryProjection(
+            projects: projectDirectory,
+            projectEndpointIDs: projectEndpointIDs,
+            boards: navigationBoards,
+            cards: navigationCards,
+            chats: chats
+        )
+        let next = MachineDirectoryReducer.merging(current, snapshots: snapshots)
+        if projectDirectory != next.projects { projectDirectory = next.projects }
+        if projectEndpointIDs != next.projectEndpointIDs { projectEndpointIDs = next.projectEndpointIDs }
+        if navigationBoards != next.boards { navigationBoards = next.boards }
+        if navigationCards != next.cards { navigationCards = next.cards }
+        if chats != next.chats { chats = next.chats }
+        let nextChatProjects = next.sortedProjects
+        if chatProjects != nextChatProjects { chatProjects = nextChatProjects }
+        if current != next { updateSelectedState() }
         if let selectedChatID, let selected = chats.first(where: { $0.id == selectedChatID }) {
             markChatRead(selected)
         }
-        try? await syncPersistence.save(syncDiskState)
+        if persistenceChanged { try? await syncPersistence.save(syncDiskState) }
     }
 
-    private func persistInactiveMachineSnapshot(_ machine: MachineSnapshot) {
-        guard machine.endpoint.id != endpoint.id else { return }
-        syncDiskState.projections[machine.endpoint.id] = DieterSyncProjectionCache.replacingMetadata(
-            in: syncDiskState.projections[machine.endpoint.id] ?? .empty,
+    @discardableResult
+    private func persistInactiveMachineSnapshot(_ machine: MachineSnapshot) -> Bool {
+        guard machine.endpoint.id != endpoint.id else { return false }
+        let current = syncDiskState.projections[machine.endpoint.id] ?? .empty
+        let next = DieterSyncProjectionCache.replacingMetadata(
+            in: current,
             projects: machine.projects,
             boards: machine.boards,
             cards: machine.cards,
             chats: machine.chats
         )
+        guard current.cursor != next.cursor || current.snapshot != next.snapshot else { return false }
+        syncDiskState.projections[machine.endpoint.id] = next
+        return true
     }
 
     private func startMachineDirectoryRefresh() {
@@ -1109,6 +1179,15 @@ final class DieterStore {
     func applicationDidBecomeActive() {
         guard phase.isConnected, rpc != nil else { return }
         startGlobalSync()
+        guard let cardID = selectedCardID ?? selectedChatID,
+              DieterConversationID.isServerBacked(cardID) else { return }
+        conversationSyncing = true
+        conversationTask?.cancel()
+        Task { @MainActor [weak self] in
+            guard let self, let rpc = self.rpc,
+                  (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
+            await self.fetchConversation(cardID: cardID, chat: self.selectedChatID == cardID, rpc: rpc)
+        }
     }
 
     private func refreshDaemonPresence() async {
@@ -1509,7 +1588,8 @@ final class DieterStore {
         lastSyncFrameAt = Date()
         let endpointID = endpoint.id
         var request = Dieter_V1_SyncRequest()
-        request.conversationLimit = 0
+        request.conversationLimit = syncConversationMessageLimit
+        request.recentConversationLimit = syncRecentConversationLimit
         request.heartbeatMs = 15_000
         if syncProjection.snapshot != nil,
            let raw = syncProjection.cursor, let cursor = try? Dieter_V1_SyncCursor(serializedBytes: raw) {
@@ -1529,9 +1609,11 @@ final class DieterStore {
 
     private func applySyncFrame(_ frame: Dieter_V1_SyncFrame, endpointID: String) async {
         guard endpoint.id == endpointID else { return }
-        lastSyncFrameAt = Date()
+        let receivedAt = Date()
+        lastSyncFrameAt = receivedAt
         var projectionChanged = false
         if frame.hasSnapshot {
+            markConversationsRefreshed(frame.snapshot.conversations, endpointID: endpointID, at: receivedAt)
             let current = syncProjection.snapshot.flatMap {
                 try? Dieter_V1_GlobalSnapshot(serializedBytes: $0)
             }
@@ -1545,6 +1627,7 @@ final class DieterStore {
                   GlobalProjectionReducer.changesProjection(frame.delta),
                   let raw = syncProjection.snapshot,
                   let current = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) {
+            markConversationsRefreshed(frame.delta.conversations, endpointID: endpointID, at: receivedAt)
             let next = GlobalProjectionReducer.applying(frame.delta, to: current)
             if next != current {
                 syncProjection.snapshot = try? next.serializedData()
@@ -1559,7 +1642,14 @@ final class DieterStore {
         if projectionChanged {
             reconcileOutboxWithProjection()
         }
-        try? await syncPersistence.save(syncDiskState)
+        if SyncCursorPersistencePolicy.shouldPersist(
+            projectionChanged: projectionChanged,
+            lastPersistedAt: lastSyncPersistenceAt[endpointID],
+            now: receivedAt
+        ) {
+            try? await syncPersistence.save(syncDiskState)
+            lastSyncPersistenceAt[endpointID] = receivedAt
+        }
     }
 
     private func applyGlobalSnapshot(_ snapshot: Dieter_V1_GlobalSnapshot, endpointID: String) {
@@ -1588,24 +1678,37 @@ final class DieterStore {
             notificationStatuses[card.id] = card.runtime
         }
         let previousProjectIDs = Set(projectEndpointIDs.compactMap { $0.value == endpointID ? $0.key : nil })
+        var nextProjectDirectory = projectDirectory
+        var nextProjectEndpointIDs = projectEndpointIDs
+        var nextNavigationBoards = navigationBoards
+        var nextNavigationCards = navigationCards
         for projectID in previousProjectIDs {
-            projectDirectory.removeValue(forKey: projectID)
-            projectEndpointIDs.removeValue(forKey: projectID)
-            navigationBoards.removeValue(forKey: projectID)
-            navigationCards.removeValue(forKey: projectID)
+            nextProjectDirectory.removeValue(forKey: projectID)
+            nextProjectEndpointIDs.removeValue(forKey: projectID)
+            nextNavigationBoards.removeValue(forKey: projectID)
+            nextNavigationCards.removeValue(forKey: projectID)
         }
         for project in global.projects {
-            projectDirectory[project.id] = project
-            projectEndpointIDs[project.id] = endpointID
-            navigationBoards[project.id] = global.boards.filter { $0.projectID == project.id }
-            navigationCards[project.id] = global.cards.filter { $0.projectID == project.id }
+            nextProjectDirectory[project.id] = project
+            nextProjectEndpointIDs[project.id] = endpointID
+            nextNavigationBoards[project.id] = global.boards.filter { $0.projectID == project.id }
+            nextNavigationCards[project.id] = global.cards.filter { $0.projectID == project.id }
         }
-        chats.removeAll { previousProjectIDs.contains($0.projectID) }
-        chats.append(contentsOf: global.chats)
-        chats = Array(chats.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
-            ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt)
+        var nextChats = chats.filter { !previousProjectIDs.contains($0.projectID) }
+        nextChats.append(contentsOf: global.chats)
+        nextChats = Array(nextChats.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
+            let lhsActivity = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
+            let rhsActivity = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
+            if lhsActivity == rhsActivity { return $0.id < $1.id }
+            return lhsActivity > rhsActivity
         }
-        chatProjects = projects
+        if projectDirectory != nextProjectDirectory { projectDirectory = nextProjectDirectory }
+        if projectEndpointIDs != nextProjectEndpointIDs { projectEndpointIDs = nextProjectEndpointIDs }
+        if navigationBoards != nextNavigationBoards { navigationBoards = nextNavigationBoards }
+        if navigationCards != nextNavigationCards { navigationCards = nextNavigationCards }
+        if chats != nextChats { chats = nextChats }
+        let nextChatProjects = projects
+        if chatProjects != nextChatProjects { chatProjects = nextChatProjects }
         updateSelectedState(base: global)
         if projectEndpointIDs[selectedProjectID] == endpointID {
             schedules = snapshot.schedules.filter { $0.projectID == selectedProjectID }
@@ -1621,9 +1724,10 @@ final class DieterStore {
         }
         if let selectedID = selectedCardID ?? selectedChatID,
            let projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID }) {
-            conversation = projected
-            selectedDetail = projected.detail
+            if conversation != projected { conversation = projected }
+            if selectedDetail != projected.detail { selectedDetail = projected.detail }
             conversationLoading = false
+            conversationLastRefreshedAt = conversationRefreshDate(cardID: selectedID, endpointID: endpointID)
         }
         rebuildOutboxOverlays()
     }
@@ -1633,21 +1737,74 @@ final class DieterStore {
             selectedProjectID = projects.first?.id ?? ""
         }
         var selected = base ?? state
-        selected.projects = projects
         selected.project = projectDirectory[selectedProjectID] ?? Dieter_V1_Project()
         selected.boards = navigationBoards[selectedProjectID] ?? []
         selected.cards = navigationCards[selectedProjectID] ?? []
         selected.chats = chats.filter { $0.projectID == selectedProjectID }
-        state = selected
+        if state != selected { state = selected }
         if selectedBoardID.isEmpty || !selected.boards.contains(where: { $0.id == selectedBoardID }) {
             selectedBoardID = selected.boards.first?.id ?? ""
         }
     }
 
-    private func projectedConversation(cardID: String) -> Dieter_V1_ConversationSnapshot? {
-        guard let raw = syncProjection.snapshot,
+    private func projectedConversation(cardID: String, endpointID: String) -> Dieter_V1_ConversationSnapshot? {
+        let projection = endpointID == endpoint.id ? syncProjection : syncDiskState.projections[endpointID]
+        guard let raw = projection?.snapshot,
               let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) else { return nil }
         return snapshot.conversations.first { $0.detail.card.id == cardID }
+    }
+
+    private func conversationRefreshDate(cardID: String, endpointID: String) -> Date? {
+        syncDiskState.conversationRefreshedAt[endpointID]?[cardID]
+    }
+
+    private func markConversationsRefreshed(
+        _ conversations: [Dieter_V1_ConversationSnapshot],
+        endpointID: String,
+        at date: Date
+    ) {
+        guard !conversations.isEmpty else { return }
+        var refreshed = syncDiskState.conversationRefreshedAt[endpointID] ?? [:]
+        for snapshot in conversations where !snapshot.detail.card.id.isEmpty {
+            refreshed[snapshot.detail.card.id] = date
+        }
+        syncDiskState.conversationRefreshedAt[endpointID] = refreshed
+        if let selectedID = selectedCardID ?? selectedChatID,
+           conversations.contains(where: { $0.detail.card.id == selectedID }) {
+            conversationLastRefreshedAt = date
+        }
+    }
+
+    /// Retain a bounded durable tail for conversations opened outside the
+    /// global stream's recent set. This makes revisiting them local-first too.
+    private func cacheConversation(
+        _ conversation: Dieter_V1_ConversationSnapshot,
+        endpointID: String,
+        refreshedAt: Date
+    ) {
+        let cardID = conversation.detail.card.id
+        guard !cardID.isEmpty else { return }
+        var projection = endpointID == endpoint.id
+            ? syncProjection
+            : (syncDiskState.projections[endpointID] ?? .empty)
+        var snapshot = projection.snapshot
+            .flatMap { try? Dieter_V1_GlobalSnapshot(serializedBytes: $0) }
+            ?? Dieter_V1_GlobalSnapshot()
+        snapshot.conversations.removeAll { $0.detail.card.id == cardID }
+        snapshot.conversations.append(conversation)
+        if snapshot.conversations.count > cachedConversationLimit {
+            snapshot.conversations.removeFirst(snapshot.conversations.count - cachedConversationLimit)
+        }
+        projection.snapshot = try? snapshot.serializedData()
+        syncDiskState.projections[endpointID] = projection
+        if endpointID == endpoint.id { syncProjection = projection }
+        markConversationsRefreshed([conversation], endpointID: endpointID, at: refreshedAt)
+
+        let retainedIDs = Set(snapshot.conversations.map { $0.detail.card.id })
+        syncDiskState.conversationRefreshedAt[endpointID] =
+            syncDiskState.conversationRefreshedAt[endpointID]?.filter { retainedIDs.contains($0.key) }
+        let diskState = syncDiskState
+        Task { [syncPersistence] in try? await syncPersistence.save(diskState) }
     }
 
     private func rebuildOutboxOverlays() {
@@ -2014,15 +2171,19 @@ final class DieterStore {
     func openConversation(cardID: String, chat: Bool = false) async {
         let card = chats.first(where: { $0.id == cardID })
             ?? navigationCards.values.lazy.compactMap({ $0.first(where: { $0.id == cardID }) }).first
-        if let projectID = card?.projectID, !projectID.isEmpty,
-           !(await ensureProjectConnection(projectID)) { return }
+        let projectID = card?.projectID ?? ""
+        let endpointID = projectEndpointIDs[projectID] ?? endpoint.id
         selectedCardID = chat ? nil : cardID
         selectedChatID = chat ? cardID : nil
         if chat { newChatProjectID = "" }
         resetConversationHistory()
         conversationTask?.cancel()
+        conversation = nil
+        selectedDetail = nil
+        conversationLastRefreshedAt = nil
         guard DieterConversationID.isServerBacked(cardID) else {
             conversationLoading = false
+            conversationSyncing = false
             if let entry = syncDiskState.outbox.first(where: { $0.optimisticID == cardID }),
                let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request) {
                 var snapshot = Dieter_V1_ConversationSnapshot()
@@ -2040,12 +2201,29 @@ final class DieterStore {
             }
             return
         }
-        conversationLoading = true
-        if let cached = projectedConversation(cardID: cardID) {
-            acceptConversation(cached, chat: chat)
+
+        if let cached = projectedConversation(cardID: cardID, endpointID: endpointID) {
+            acceptConversation(
+                cached,
+                chat: chat,
+                refreshedAt: conversationRefreshDate(cardID: cardID, endpointID: endpointID),
+                cache: false
+            )
+            conversationLoading = false
+        } else {
+            conversationLoading = true
         }
+        conversationSyncing = true
+        if !projectID.isEmpty, !(await ensureProjectConnection(projectID)) {
+            guard (selectedCardID ?? selectedChatID) == cardID else { return }
+            conversationLoading = false
+            conversationSyncing = false
+            return
+        }
+        guard (selectedCardID ?? selectedChatID) == cardID else { return }
         guard let rpc else {
             conversationLoading = false
+            conversationSyncing = false
             errorMessage = "The project host is not connected."
             return
         }
@@ -2071,6 +2249,7 @@ final class DieterStore {
                 } catch where Self.isExpectedCancellation(error) { }
                 catch {
                     guard let self, (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
+                    self.conversationSyncing = false
                     self.errorMessage = "Conversation updates paused: \(DieterRPCFailure.message(for: error))"
                 }
             }
@@ -2089,6 +2268,7 @@ final class DieterStore {
                           (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
                     guard let currentRPC = self.rpc else {
                         self.conversationLoading = false
+                        self.conversationSyncing = false
                         self.errorMessage = "The project host is not connected."
                         return
                     }
@@ -2101,16 +2281,26 @@ final class DieterStore {
                 }
             case .report:
                 conversationLoading = false
+                conversationSyncing = false
                 errorMessage = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
             }
         }
     }
 
-    private func acceptConversation(_ snapshot: Dieter_V1_ConversationSnapshot, chat: Bool) {
-        resetConversationHistory(from: snapshot)
-        conversation = snapshot
-        selectedDetail = snapshot.detail
+    private func acceptConversation(
+        _ snapshot: Dieter_V1_ConversationSnapshot,
+        chat: Bool,
+        refreshedAt: Date? = Date(),
+        cache: Bool = true
+    ) {
+        if conversation != snapshot {
+            resetConversationHistory(from: snapshot)
+            conversation = snapshot
+        }
+        if selectedDetail != snapshot.detail { selectedDetail = snapshot.detail }
         conversationLoading = false
+        conversationSyncing = false
+        conversationLastRefreshedAt = refreshedAt
         composerProvider = snapshot.detail.card.provider
         composerModel = snapshot.detail.card.model
         composerEffort = snapshot.detail.card.effort
@@ -2118,6 +2308,9 @@ final class DieterStore {
         composerProviderOptions = ProviderOptionValues.defaults(for: selectedHarness)
         composerProviderOptions.merge(snapshot.detail.card.providerOptions) { _, saved in saved }
         if chat, let card = chats.first(where: { $0.id == snapshot.detail.card.id }) { markChatRead(card) }
+        if cache, let refreshedAt {
+            cacheConversation(snapshot, endpointID: endpoint.id, refreshedAt: refreshedAt)
+        }
     }
 
     @discardableResult
@@ -2174,6 +2367,10 @@ final class DieterStore {
     private func applyConversationUpdate(_ update: Dieter_V1_ConversationUpdate, cardID: String) {
         guard (selectedCardID ?? selectedChatID) == cardID else { return }
         apply(update)
+        conversationSyncing = false
+        if let conversation {
+            cacheConversation(conversation, endpointID: endpoint.id, refreshedAt: Date())
+        }
     }
 
     func closeConversation() {
@@ -2181,6 +2378,8 @@ final class DieterStore {
         conversationTask?.cancel(); conversationTask = nil
         conversation = nil; selectedDetail = nil; selectedCardID = nil; selectedChatID = nil
         conversationLoading = false
+        conversationSyncing = false
+        conversationLastRefreshedAt = nil
         resetConversationHistory()
     }
 

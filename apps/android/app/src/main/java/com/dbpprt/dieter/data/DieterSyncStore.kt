@@ -64,6 +64,11 @@ class DieterSyncStore(
     fun loadCursor(scope: String): SyncCursor? = read(projectionFile(scope, "cursor.pb"))
         ?.let { runCatching { SyncCursor.parseFrom(it) }.getOrNull() }
 
+    /** Wall-clock time of the last authoritative snapshot stored for this endpoint. */
+    @Synchronized
+    fun projectionRefreshedAtMillis(scope: String): Long? =
+        projectionFile(scope, "snapshot.pb").baseFile.lastModified().takeIf { it > 0L }
+
     @Synchronized
     fun saveProjection(scope: String, snapshot: GlobalSnapshot?, cursor: SyncCursor?) {
         if (snapshot != null) write(projectionFile(scope, "snapshot.pb"), snapshot.toByteArray())

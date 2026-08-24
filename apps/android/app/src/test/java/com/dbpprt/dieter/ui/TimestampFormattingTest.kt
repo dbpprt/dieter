@@ -22,4 +22,18 @@ class TimestampFormattingTest {
     fun formatsOlderCommentsAsShortDate() {
         assertEquals("Aug 13", shortTimestamp("2026-08-13T12:00:00Z", now, utc))
     }
+
+    @Test
+    fun formatsConversationRefreshStatusWhileKeepingCachedDataVisible() {
+        val nowMillis = now.toEpochMilli()
+        assertEquals("Refreshing…", conversationRefreshLabel(null, syncing = true, nowMillis = nowMillis))
+        assertEquals(
+            "Last refreshed just now · Refreshing…",
+            conversationRefreshLabel(nowMillis - 20_000L, syncing = true, nowMillis = nowMillis),
+        )
+        assertEquals(
+            "Last refreshed 5m ago",
+            conversationRefreshLabel(nowMillis - 300_000L, syncing = false, nowMillis = nowMillis),
+        )
+    }
 }

@@ -9,6 +9,7 @@ internal data class CachedConversationUi(
     val historyStart: Int,
     val historyTotal: Int,
     val historyHasMore: Boolean,
+    val refreshedAtMillis: Long?,
 )
 
 /** Small, process-local LRU for instant chat switching without retaining unbounded transcripts. */
