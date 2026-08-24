@@ -108,6 +108,15 @@ class CardStartPolicyTest {
         assertFalse(isActiveCardRuntime("idle"))
     }
 
+    @Test
+    fun agentWorkingIndicatorPersistsForTheWholeActiveTurn() {
+        assertTrue(shouldShowAgentWorking(activeTurn = true, awaitingAgent = false))
+        assertTrue(shouldShowAgentWorking(activeTurn = false, awaitingAgent = true))
+        assertFalse(shouldShowAgentWorking(activeTurn = false, awaitingAgent = false))
+        assertEquals("Thinking", agentWorkingLabel(""))
+        assertEquals("Working · Run command", agentWorkingLabel("tool-run_command"))
+    }
+
     private fun card(
         id: String = "",
         scope: String = "board",

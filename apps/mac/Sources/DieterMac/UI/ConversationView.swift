@@ -25,6 +25,19 @@ enum ConversationRefreshText {
     }
 }
 
+enum ConversationActivityPresentation {
+    private static let activeStatuses = Set(["starting", "running", "working", "streaming", "cancelling"])
+
+    static func isActive(conversationStatus: String, cardRuntime: String) -> Bool {
+        activeStatuses.contains(conversationStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            || activeStatuses.contains(cardRuntime.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    static func label(hasPendingTool: Bool) -> String {
+        hasPendingTool ? "Working…" : "Thinking…"
+    }
+}
+
 struct ConversationView: View {
     @Environment(DieterStore.self) private var store
     var compact = false
@@ -250,6 +263,16 @@ struct ConversationTimeline: View {
     private var draftAttachments: [Dieter_V1_MessagePart] {
         store.conversation?.conversation.draftAttachments ?? []
     }
+    private var pendingTools: [Dieter_V1_PendingTool] {
+        store.conversation?.conversation.pendingTools ?? []
+    }
+    private var agentIsWorking: Bool {
+        let card = store.selectedCard ?? store.selectedDetail?.card
+        return ConversationActivityPresentation.isActive(
+            conversationStatus: store.conversation?.conversation.status ?? "",
+            cardRuntime: card?.runtime ?? ""
+        )
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -278,7 +301,7 @@ struct ConversationTimeline: View {
                         .frame(maxWidth: .infinity)
                     }
 
-                    if messages.isEmpty {
+                    if messages.isEmpty && !agentIsWorking {
                         EmptyConversationView(
                             standalone: store.selectedCard?.scope == "chat",
                             prompt: draftPrompt,
@@ -295,9 +318,12 @@ struct ConversationTimeline: View {
                         TaskPlanView(plan: $0)
                     }
 
-                    let pendingTools = store.conversation?.conversation.pendingTools ?? []
                     if !pendingTools.isEmpty {
                         PendingToolGroupView(tools: pendingTools)
+                    }
+                    if agentIsWorking {
+                        ConversationAgentWorkingIndicator(hasPendingTool: !pendingTools.isEmpty)
+                            .id("conversation.agent-working")
                     }
                     Color.clear.frame(height: 1).id(ConversationScrollBehavior.bottomID)
                 }
@@ -311,6 +337,13 @@ struct ConversationTimeline: View {
                 scrollToLatest(proxy)
             }
             .onChange(of: store.conversation?.conversation.lastSeq) { _, _ in
+                Task { @MainActor in
+                    await Task.yield()
+                    scrollToLatest(proxy)
+                }
+            }
+            .onChange(of: agentIsWorking) { _, active in
+                guard active else { return }
                 Task { @MainActor in
                     await Task.yield()
                     scrollToLatest(proxy)
@@ -341,6 +374,28 @@ struct ConversationTimeline: View {
             }
             historyLoadInFlight = false
         }
+    }
+}
+
+private struct ConversationAgentWorkingIndicator: View {
+    let hasPendingTool: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            DieterActivityIndicator(size: 12)
+                .accessibilityHidden(true)
+            Text(ConversationActivityPresentation.label(hasPendingTool: hasPendingTool))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(DieterTheme.subtle)
+        }
+        .padding(.horizontal, 11)
+        .frame(height: 34)
+        .background(DieterTheme.surface.opacity(0.85), in: Capsule())
+        .overlay(Capsule().stroke(DieterTheme.primary.opacity(0.18)))
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(ConversationActivityPresentation.label(hasPendingTool: hasPendingTool))
+        .accessibilityIdentifier("conversation.agent-working")
     }
 }
 

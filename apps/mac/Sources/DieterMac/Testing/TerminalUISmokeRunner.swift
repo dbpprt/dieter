@@ -12,6 +12,7 @@ enum TerminalUISmokeRunner {
     private static let firstMarker = "DIETER_TERMINAL_BEFORE_CLIENT_EXIT"
     private static let secondMarker = "DIETER_TERMINAL_AFTER_CLIENT_RESTART"
     private static let followMarker = "DIETER_TERMINAL_CURSOR_FOLLOW"
+    private static let resizeMarker = "DIETER_TERMINAL_AFTER_WINDOW_RESIZE"
 
     static func run(store: DieterStore) async {
         let output = outputDirectory()
@@ -43,8 +44,12 @@ enum TerminalUISmokeRunner {
 
     private static func create(store: DieterStore, window: NSWindow, output: URL) async {
         await store.openTerminals()
-        guard await waitUntil(timeout: 15, condition: { !store.projects.isEmpty }),
-              let project = store.projects.first else {
+        guard await waitUntil(timeout: 15, condition: {
+            store.projects.contains { store.projectEndpointIDs[$0.id] == store.endpoint.id }
+        }),
+              let project = store.projects.first(where: {
+                  store.projectEndpointIDs[$0.id] == store.endpoint.id
+              }) else {
             writeReport(["project": "failed: isolated project was not loaded"], named: "create-report.json", to: output)
             return
         }
@@ -77,6 +82,31 @@ enum TerminalUISmokeRunner {
         let presentation = terminalPresentation(in: window)
         capture(window, to: output.appending(path: "01-cursor-follow.png"))
 
+        let initialGrid = terminalGrid(in: window)
+        window.setContentSize(NSSize(width: 920, height: 620))
+        let shrank = await waitUntil(timeout: 10, condition: {
+            guard let grid = terminalGrid(in: window), let initialGrid else { return false }
+            return grid.columns < initialGrid.columns
+                && store.selectedTerminal.map { Int($0.columns) == grid.columns && Int($0.rows) == grid.rows } == true
+        })
+        store.sendTerminalInput(id: terminalID, data: command(printing: resizeMarker))
+        let resizedOutput = await waitUntil(timeout: 20, condition: {
+            terminalVisibleText(in: window).contains(resizeMarker)
+        })
+        try? await DieterTaskSleep.milliseconds(500)
+        let narrowPresentation = terminalPresentation(in: window)
+        capture(window, to: output.appending(path: "01-after-window-shrink.png"))
+
+        let narrowGrid = terminalGrid(in: window)
+        window.setContentSize(NSSize(width: 1_500, height: 900))
+        let expanded = await waitUntil(timeout: 10, condition: {
+            guard let grid = terminalGrid(in: window), let narrowGrid else { return false }
+            return grid.columns > narrowGrid.columns
+                && store.selectedTerminal.map { Int($0.columns) == grid.columns && Int($0.rows) == grid.rows } == true
+        })
+        try? await DieterTaskSleep.milliseconds(500)
+        capture(window, to: output.appending(path: "01-after-window-expand.png"))
+
         writeReport([
             "connection": "passed",
             "terminal-id": terminalID,
@@ -89,6 +119,18 @@ enum TerminalUISmokeRunner {
             "viewport-follow": presentation.viewportFollows
                 ? "passed"
                 : "failed: live output did not keep the terminal viewport at the cursor",
+            "window-shrink-grid": shrank
+                ? "passed"
+                : "failed: shrinking the AppKit window did not resize both emulator and PTY grids",
+            "window-expand-grid": expanded
+                ? "passed"
+                : "failed: expanding the AppKit window did not resize both emulator and PTY grids",
+            "resize-output": resizedOutput
+                ? "passed"
+                : "failed: output after a window resize was not rendered in the visible emulator",
+            "resize-cursor-tracking": narrowPresentation.cursorTracks
+                ? "passed"
+                : "failed: the caret left the resized terminal bounds",
             "terminal-running": store.selectedTerminal?.status == "running" ? "passed" : "failed: terminal was not running",
         ], named: "create-report.json", to: output)
     }
@@ -111,7 +153,15 @@ enum TerminalUISmokeRunner {
 
         store.sendTerminalInput(id: terminalID, data: command(printing: secondMarker))
         let continued = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(secondMarker) })
+        let rendered = await waitUntil(timeout: 20, condition: {
+            terminalVisibleText(in: window).contains(secondMarker)
+        })
         try? await DieterTaskSleep.seconds(1)
+        let restartPresentation = terminalPresentation(in: window)
+        let restartGrid = terminalGrid(in: window)
+        let remoteGrid = store.terminals.first(where: { $0.id == terminalID }).map {
+            (columns: Int($0.columns), rows: Int($0.rows))
+        }
         capture(window, to: output.appending(path: "02-after-client-restart.png"))
 
         writeReport([
@@ -121,6 +171,15 @@ enum TerminalUISmokeRunner {
             "listed-after-restart": listed ? "passed" : "failed: daemon-owned terminal was not listed",
             "scrollback-replayed": replayed ? "passed" : "failed: pre-disconnect output was not replayed",
             "input-after-restart": continued ? "passed" : "failed: resumed terminal did not accept input",
+            "rendered-after-restart": rendered
+                ? "passed"
+                : "failed: resumed output reached the store but not the visible emulator",
+            "restart-grid": restartGrid != nil && restartGrid?.columns == remoteGrid?.columns && restartGrid?.rows == remoteGrid?.rows
+                ? "passed"
+                : "failed: the resumed emulator and persisted PTY geometry diverged",
+            "restart-cursor-tracking": restartPresentation.cursorTracks
+                ? "passed"
+                : "failed: the resumed caret did not track the emulator cursor",
             "terminal-running": store.terminals.first(where: { $0.id == terminalID })?.status == "running"
                 ? "passed"
                 : "failed: terminal was not running after restart",
@@ -150,6 +209,18 @@ enum TerminalUISmokeRunner {
             cursorTracks: caretTracks,
             viewportFollows: caretTracks && view.terminal.getTopVisibleRow() > 0
         )
+    }
+
+    private static func terminalGrid(in window: NSWindow) -> (columns: Int, rows: Int)? {
+        guard let view = terminalView(in: window.contentView) else { return nil }
+        return (view.terminal.cols, view.terminal.rows)
+    }
+
+    private static func terminalVisibleText(in window: NSWindow) -> String {
+        guard let view = terminalView(in: window.contentView) else { return "" }
+        return (0..<view.terminal.rows)
+            .compactMap { view.terminal.getLine(row: $0)?.translateToString(trimRight: true) }
+            .joined(separator: "\n")
     }
 
     private static func terminalView(in root: NSView?) -> SwiftTerm.TerminalView? {
@@ -210,6 +281,11 @@ enum TerminalUISmokeRunner {
     private static func writeReport(_ values: [String: String], named name: String, to directory: URL) {
         let data = try? JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
         try? data?.write(to: directory.appending(path: name), options: .atomic)
+        // `open -W` waits for the application but terminating that wrapper does
+        // not terminate a separately launched `-n` app instance. End each
+        // smoke phase from inside the app so restart coverage always uses one
+        // clean client process at a time.
+        DispatchQueue.main.async { NSApp.terminate(nil) }
     }
 
     private static func progress(_ message: String, in directory: URL) {

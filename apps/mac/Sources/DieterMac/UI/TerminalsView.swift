@@ -124,6 +124,8 @@ struct TerminalsView: View {
         VStack(spacing: 0) {
             RemoteTerminalSurface(
                 terminalID: terminal.id,
+                initialColumns: Int(terminal.columns),
+                initialRows: Int(terminal.rows),
                 screen: store.terminalScreens[terminal.id] ?? TerminalScreenState(),
                 acceptsInput: terminal.status == "running" && store.terminalStreamConnected,
                 send: { store.sendTerminalInput(id: terminal.id, data: $0) },
@@ -373,6 +375,8 @@ private struct NewTerminalSheet: View {
 
 private struct RemoteTerminalSurface: NSViewRepresentable {
     let terminalID: String
+    let initialColumns: Int
+    let initialRows: Int
     let screen: TerminalScreenState
     let acceptsInput: Bool
     let send: (Data) -> Void
@@ -382,9 +386,14 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         Coordinator(terminalID: terminalID, send: send, resize: resize)
     }
 
-    func makeNSView(context: Context) -> SwiftTerm.TerminalView {
+    func makeNSView(context: Context) -> RemoteTerminalView {
         let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        let view = SwiftTerm.TerminalView(frame: .zero, font: font)
+        let view = RemoteTerminalView(frame: .zero, font: font)
+        // NSViewRepresentable creates AppKit views before SwiftUI assigns their
+        // real frame. Replay at the PTY's persisted geometry instead of
+        // SwiftTerm's two-column minimum so reconnect output cannot be
+        // permanently reflowed from a zero-sized bootstrap frame.
+        view.prepareForReplay(columns: initialColumns, rows: initialRows)
         view.terminalDelegate = context.coordinator
         applyPalette(to: view)
         context.coordinator.apply(screen, to: view)
@@ -392,7 +401,7 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ view: SwiftTerm.TerminalView, context: Context) {
+    func updateNSView(_ view: RemoteTerminalView, context: Context) {
         context.coordinator.terminalID = terminalID
         context.coordinator.send = send
         context.coordinator.resize = resize
@@ -448,6 +457,43 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
             NSPasteboard.general.setData(content, forType: .string)
         }
         func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) { }
+    }
+}
+
+/// Keeps SwiftTerm's emulator grid aligned with the AppKit view under Auto
+/// Layout. SwiftTerm 1.5.1 only processes geometry in its `frame` setter; AppKit
+/// can resize an NSView through `setFrameSize`, which otherwise stretches the
+/// surface without resizing the terminal buffer.
+@MainActor
+final class RemoteTerminalView: SwiftTerm.TerminalView {
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        synchronizeGridToBounds()
+    }
+
+    func prepareForReplay(columns: Int, rows: Int) {
+        terminal.resize(cols: max(2, columns), rows: max(1, rows))
+    }
+
+    private func synchronizeGridToBounds() {
+        guard terminal != nil, bounds.width > 0, bounds.height > 0 else { return }
+        let cellSize = caretFrame.size
+        guard cellSize.width > 0, cellSize.height > 0 else { return }
+
+        // SwiftTerm reserves a legacy scroller beside the terminal cells. Its
+        // public optimal-frame calculation lets us recover that inset without
+        // reaching into the dependency's private view state.
+        let optimalWidth = getOptimalFrameSize().width
+        let cellsWidth = cellSize.width * CGFloat(terminal.cols)
+        let scrollerWidth = max(0, optimalWidth - cellsWidth)
+        let columns = max(2, Int((bounds.width - scrollerWidth) / cellSize.width))
+        let rows = max(1, Int(bounds.height / cellSize.height))
+        guard columns != terminal.cols || rows != terminal.rows else { return }
+
+        terminal.resize(cols: columns, rows: rows)
+        let empty = [UInt8]()
+        feed(byteArray: empty[...])
+        terminalDelegate?.sizeChanged(source: self, newCols: columns, newRows: rows)
     }
 }
 

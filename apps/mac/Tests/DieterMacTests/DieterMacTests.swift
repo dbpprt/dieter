@@ -648,6 +648,52 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(view.caretFrame.origin.y == firstCaret.origin.y)
 }
 
+@Test @MainActor func remoteTerminalViewUsesPersistedGeometryBeforeReconnectReplay() async throws {
+    let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    let view = RemoteTerminalView(frame: .zero, font: font)
+    view.prepareForReplay(columns: 120, rows: 36)
+
+    let renderer = RemoteTerminalScreenRenderer()
+    var screen = TerminalScreenState()
+    screen.data = Data("persisted prompt stays on one row".utf8)
+    screen.revision = 1
+    renderer.apply(screen, to: view)
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    #expect(view.terminal.cols == 120)
+    #expect(view.terminal.rows == 36)
+    #expect(view.terminal.getCursorLocation().x == 33)
+    #expect(view.terminal.getCursorLocation().y == 0)
+}
+
+@Test @MainActor func remoteTerminalViewTracksSetFrameSizeGeometry() async throws {
+    let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    let view = RemoteTerminalView(
+        frame: NSRect(x: 0, y: 0, width: 900, height: 500),
+        font: font
+    )
+    view.prepareForReplay(columns: 120, rows: 36)
+    view.feed(text: "terminal resize remains coherent")
+
+    view.setFrameSize(NSSize(width: 520, height: 260))
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    let narrowColumns = view.terminal.cols
+    let narrowRows = view.terminal.rows
+    #expect(narrowColumns > 2 && narrowColumns < 120)
+    #expect(narrowRows > 1 && narrowRows < 36)
+    #expect(view.terminal.getCursorLocation().x == 32)
+    #expect(view.terminal.getCursorLocation().x < narrowColumns)
+
+    view.setFrameSize(NSSize(width: 1_100, height: 620))
+    try await Task.sleep(nanoseconds: 50_000_000)
+
+    #expect(view.terminal.cols > narrowColumns)
+    #expect(view.terminal.rows > narrowRows)
+    #expect(view.terminal.getCursorLocation().x == 32)
+    #expect(view.bounds.intersects(view.caretFrame))
+}
+
 @Test func chatActivityTextUsesCompactUnits() throws {
     let now = try #require(ISO8601DateFormatter().date(from: "2026-08-19T12:00:00Z"))
     #expect(ChatActivityText.compact("2026-08-19T11:59:35Z", relativeTo: now) == "now")
@@ -879,6 +925,47 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         from: [offlinePreferred],
         preferredDaemonID: "mac"
     ) == nil)
+}
+
+@Test func transientRPCFailuresAreEligibleForSilentReconnect() {
+    #expect(DieterRPCFailure.isTransient(RPCError(code: .unavailable, message: "stream unexpectedly closed")))
+    #expect(DieterRPCFailure.isTransient(RPCError(code: .deadlineExceeded, message: "timed out")))
+    #expect(!DieterRPCFailure.isTransient(RPCError(code: .notFound, message: "board missing")))
+}
+
+@Test @MainActor func cachedBoardSelectionSwitchesTheVisibleProjectWithoutAnRPC() {
+    let store = DieterStore()
+    var firstProject = Dieter_V1_Project()
+    firstProject.id = "p_first"
+    firstProject.name = "First"
+    var secondProject = Dieter_V1_Project()
+    secondProject.id = "p_second"
+    secondProject.name = "Second"
+    var firstBoard = Dieter_V1_Board()
+    firstBoard.id = "b_first"
+    firstBoard.projectID = firstProject.id
+    var secondBoard = Dieter_V1_Board()
+    secondBoard.id = "b_second"
+    secondBoard.projectID = secondProject.id
+    var secondCard = Dieter_V1_Card()
+    secondCard.id = "c_second"
+    secondCard.projectID = secondProject.id
+    secondCard.boardID = secondBoard.id
+
+    store.projectDirectory = [firstProject.id: firstProject, secondProject.id: secondProject]
+    store.navigationBoards = [firstProject.id: [firstBoard], secondProject.id: [secondBoard]]
+    store.navigationCards = [firstProject.id: [], secondProject.id: [secondCard]]
+    store.selectedProjectID = firstProject.id
+    store.selectedBoardID = firstBoard.id
+    store.state.project = firstProject
+    store.state.boards = [firstBoard]
+
+    store.selectCachedBoard(secondBoard.id, projectID: secondProject.id)
+
+    #expect(store.selectedProjectID == secondProject.id)
+    #expect(store.selectedBoard?.id == secondBoard.id)
+    #expect(store.state.project.id == secondProject.id)
+    #expect(store.boardCards.map(\.id) == [secondCard.id])
 }
 
 @Test func projectFileLanguageDetectionCoversCommonSourceFormats() {

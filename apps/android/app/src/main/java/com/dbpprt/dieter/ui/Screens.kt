@@ -2082,13 +2082,10 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
     )
     val activeTurn = isActiveCardRuntime(runtime)
     val assistantCount = messages.count { it.role.equals("assistant", true) || it.role.equals("agent", true) }
-    val latestMessage = allMessages.lastOrNull()
-    val latestPlan = latestMessage?.let { plansByMessage[it.id] }
-    val latestSubagents = latestMessage?.let { subagentsByMessage[it.id] }.orEmpty()
-    val latestIsRenderableAssistant = latestMessage != null &&
-        (latestMessage.role.equals("assistant", true) || latestMessage.role.equals("agent", true)) &&
-        latestMessage.hasRenderableConversationContent(latestPlan, latestSubagents, state.showReasoningTraces)
-    val showAgentWorking = (activeTurn || awaitingAgent) && !latestIsRenderableAssistant
+    // Keep the live cue at the transcript tail for the whole turn. Partial
+    // assistant text must not make the agent appear idle while it is still
+    // generating more text or running tools.
+    val showAgentWorking = shouldShowAgentWorking(activeTurn, awaitingAgent)
     fun addPickedAttachments(uris: List<android.net.Uri>, imagesOnly: Boolean) {
         if (uris.isEmpty()) return
         scope.launch {
@@ -2962,7 +2959,7 @@ private fun AgentWorkingIndicator(toolName: String) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    if (toolName.isBlank()) "Working" else "Working · ${displayToolName(toolName)}",
+                    agentWorkingLabel(toolName),
                     color = DieterMuted,
                     fontSize = 11.sp,
                     maxLines = 1,

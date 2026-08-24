@@ -9,6 +9,15 @@ enum DieterConversationID {
 }
 
 enum DieterRPCFailure {
+    static func isTransient(_ error: Error) -> Bool {
+        guard let rpcError = error as? RPCError else { return false }
+        return [
+            .cancelled,
+            .deadlineExceeded,
+            .unavailable,
+        ].contains(rpcError.code)
+    }
+
     static func isPermanent(_ error: Error) -> Bool {
         guard let rpcError = error as? RPCError else { return false }
         return [.notFound, .invalidArgument, .permissionDenied, .failedPrecondition].contains(rpcError.code)

@@ -63,6 +63,14 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     #expect(shown.filter(\.isToolCallGroup).count == 2)
 }
 
+@Test func activeConversationKeepsAVisibleActivityPresentation() {
+    #expect(ConversationActivityPresentation.isActive(conversationStatus: "running", cardRuntime: "idle"))
+    #expect(ConversationActivityPresentation.isActive(conversationStatus: "idle", cardRuntime: "streaming"))
+    #expect(!ConversationActivityPresentation.isActive(conversationStatus: "idle", cardRuntime: "running-lane"))
+    #expect(ConversationActivityPresentation.label(hasPendingTool: false) == "Thinking…")
+    #expect(ConversationActivityPresentation.label(hasPendingTool: true) == "Working…")
+}
+
 @Test @MainActor func conversationViewSettlesAfterUnrelatedMachineDirectoryInvalidation() {
     let store = DieterStore()
     var activeProject = Dieter_V1_Project()

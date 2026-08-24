@@ -86,8 +86,33 @@ enum ConversationUISmokeRunner {
         } else {
             await runHistoryChecks(store: store, window: window, results: &results, output: output)
         }
+        await runActivityIndicatorCheck(store: store, window: window, results: &results, output: output)
 
         writeReport(results, to: output)
+    }
+
+    /// Leaves a deterministic active conversation at the transcript tail so
+    /// the packaged-app capture proves that Running has a matching live cue.
+    private static func runActivityIndicatorCheck(
+        store: DieterStore,
+        window: NSWindow,
+        results: inout [String: String],
+        output: URL
+    ) async {
+        guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            results["agent-activity-indicator"] = "failed: renderer fixture unavailable"
+            return
+        }
+        snapshot.conversation.status = "running"
+        snapshot.detail.card.runtime = "running"
+        store.conversation = snapshot
+        store.selectedDetail = snapshot.detail
+        try? await DieterTaskSleep.seconds(1)
+        capture(window, to: output.appending(path: "06-agent-thinking.png"))
+        results["agent-activity-indicator"] = ConversationActivityPresentation.isActive(
+            conversationStatus: snapshot.conversation.status,
+            cardRuntime: snapshot.detail.card.runtime
+        ) ? "passed" : "failed: active fixture was not presented as working"
     }
 
     /// Proves a long transcript opens with a bounded page instead of

@@ -274,6 +274,36 @@ enum NativeUISmokeRunner {
             ? "passed"
             : "failed: light appearance did not persist"
 
+        if let rpc = store.rpc {
+            var request = Dieter_V1_CreateBoardRequest()
+            request.projectID = project.id
+            request.name = "Offline navigation smoke \(UUID().uuidString.lowercased())"
+            request.workflow = "review"
+            request.doneArchivePolicy = "never"
+            do {
+                let cachedBoard = try await rpc.createBoard(request)
+                await store.refreshState()
+                try? await DieterTaskSleep.seconds(1)
+                await store.openBoard(board.id, projectID: project.id)
+                store.errorMessage = nil
+                store.disconnect()
+                await store.openBoard(cachedBoard.id, projectID: project.id)
+                try? await DieterTaskSleep.milliseconds(700)
+                let stayedUsable = store.section == .board &&
+                    store.selectedBoard?.id == cachedBoard.id &&
+                    store.errorMessage == nil &&
+                    store.hasLoadedWorkspace
+                results["17-offline-cached-board-navigation"] = stayedUsable
+                    ? "passed"
+                    : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), error=\(store.errorMessage ?? "none")"
+                await captureAppearances(window, named: "17-offline-cached-board-navigation.png", in: output)
+            } catch {
+                results["17-offline-cached-board-navigation"] = "failed: could not prepare cached board: \(error.localizedDescription)"
+            }
+        } else {
+            results["17-offline-cached-board-navigation"] = "failed: RPC client missing"
+        }
+
         writeReport(results, to: output)
     }
 

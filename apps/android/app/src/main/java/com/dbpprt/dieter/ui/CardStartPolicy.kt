@@ -62,3 +62,15 @@ internal fun resolvedCardRuntime(
 
 internal fun isActiveCardRuntime(runtime: String): Boolean =
     runtime.lowercase() in setOf("starting", "running", "working", "streaming", "cancelling")
+
+internal fun shouldShowAgentWorking(activeTurn: Boolean, awaitingAgent: Boolean): Boolean =
+    activeTurn || awaitingAgent
+
+internal fun agentWorkingLabel(toolName: String): String =
+    if (toolName.isBlank()) "Thinking" else "Working · ${displayAgentToolName(toolName)}"
+
+private fun displayAgentToolName(name: String): String = name
+    .removePrefix("tool-")
+    .replace('_', ' ')
+    .replace('-', ' ')
+    .replaceFirstChar { it.uppercase() }

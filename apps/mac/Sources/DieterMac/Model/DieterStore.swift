@@ -479,6 +479,7 @@ final class DieterStore {
     private var syncLivenessTask: Task<Void, Never>?
     private var outboxTask: Task<Void, Never>?
     private var connectionGeneration: UInt64 = 0
+    private var boardSelectionGeneration: UInt64 = 0
     private var pendingCardMoves: [String: OptimisticCardMove] = [:]
     private var pendingCardLabelUpdates: [String: OptimisticCardLabels] = [:]
     private var pendingBoards: [String: Dieter_V1_Board] = [:]
@@ -617,7 +618,7 @@ final class DieterStore {
     }
 
     var selectedBoard: Dieter_V1_Board? {
-        state.boards.first { $0.id == selectedBoardID }
+        board(id: selectedBoardID)
     }
 
     var renameBoardTarget: Dieter_V1_Board? {
@@ -1067,10 +1068,12 @@ final class DieterStore {
     }
 
     @discardableResult
-    private func ensureProjectConnection(_ projectID: String) async -> Bool {
+    private func ensureProjectConnection(_ projectID: String, reportOffline: Bool = true) async -> Bool {
         guard let target = machine(forProjectID: projectID) else { return true }
         guard target.online else {
-            errorMessage = "\(target.name) is offline. Start Dieter on that machine to open this project."
+            if reportOffline {
+                errorMessage = "\(target.name) is offline. Start Dieter on that machine to open this project."
+            }
             return false
         }
         guard target.id != endpoint.id else { return true }
@@ -1298,15 +1301,27 @@ final class DieterStore {
     }
 
     func openBoard(_ boardID: String, projectID: String) async {
-        guard await ensureProjectConnection(projectID) else { return }
+        boardSelectionGeneration &+= 1
+        let generation = boardSelectionGeneration
         stopTerminalWatch()
         closeConversation()
         section = .board
-        selectedProjectID = projectID
-        selectedBoardID = boardID
+        selectCachedBoard(boardID, projectID: projectID)
         filePath = ""; fileNavigation.reset(); fileDocument = nil
         query = ""; runtimeFilter = ""; labelFilter = ""
+        guard await ensureProjectConnection(projectID, reportOffline: false) else { return }
+        guard generation == boardSelectionGeneration, section == .board else { return }
+        selectCachedBoard(boardID, projectID: projectID)
         await refreshState()
+    }
+
+    /// Board navigation is backed by the synchronized projection. Selecting it
+    /// must never wait for the host RPC: a refresh can follow when connectivity
+    /// is available, while the cached workspace remains immediately usable.
+    func selectCachedBoard(_ boardID: String, projectID: String) {
+        selectedProjectID = projectID
+        selectedBoardID = boardID
+        updateSelectedState()
     }
 
     func openProject(_ projectID: String, section destination: AppSection) async {
@@ -2079,7 +2094,11 @@ final class DieterStore {
         do {
             acceptState(try await rpc.state(stateRequest()))
         } catch {
-            show(error)
+            if DieterRPCFailure.isTransient(error) {
+                connectionStopped(error, client: rpc)
+            } else {
+                show(error)
+            }
         }
     }
 
