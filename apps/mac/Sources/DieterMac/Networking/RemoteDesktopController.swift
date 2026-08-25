@@ -401,7 +401,7 @@ final class RemoteDesktopController {
     leaseTask?.cancel()
     leaseTask = Task { [weak self] in
       while !Task.isCancelled {
-        try? await DieterTaskSleep.seconds(10)
+        try? await DieterTaskSleep.seconds(5)
         guard !Task.isCancelled, let self, let connection = self.connection, !self.sessionID.isEmpty
         else { return }
         var signal = Dieter_V1_RemoteDesktopSignal()

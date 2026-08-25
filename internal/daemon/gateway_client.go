@@ -133,6 +133,14 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 		return err
 	}
 	defer local.Close()
+	// Scope every local relayed RPC to this specific tunnel generation. A
+	// gateway disconnect previously returned from runOnce while its local
+	// StartRemoteDesktop stream stayed alive under the daemon-wide context,
+	// leaving capture reconciliation to the much slower session lease. Canceling
+	// the link scope tears all relays down immediately; a reconnected tunnel
+	// creates fresh streams explicitly.
+	linkCtx, cancelLink := context.WithCancel(ctx)
+	defer cancelLink()
 	prioritySend := make(chan *gatewayv1.DaemonLinkFrame, 16)
 	streamSend := make(chan *gatewayv1.DaemonLinkFrame, 8)
 	var relayActive atomic.Bool
@@ -145,7 +153,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 			queue = prioritySend
 		}
 		select {
-		case <-ctx.Done():
+		case <-linkCtx.Done():
 			return false
 		case queue <- frame:
 			return true
@@ -167,8 +175,8 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 			default:
 			}
 			select {
-			case <-ctx.Done():
-				sendErr <- ctx.Err()
+			case <-linkCtx.Done():
+				sendErr <- linkCtx.Err()
 				return
 			case frame := <-prioritySend:
 				if err := stream.Send(frame); err != nil {
@@ -215,7 +223,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 			relayActive.Store(true)
 			switch frame.GetKind() {
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC:
-				callCtx, cancel := context.WithCancel(ctx)
+				callCtx, cancel := context.WithCancel(linkCtx)
 				calls.Store(frame.GetStreamId(), cancel)
 				go func(frame *gatewayv1.DaemonLinkFrame) {
 					defer calls.Delete(frame.GetStreamId())

@@ -100,7 +100,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 			PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey,
 		},
 		Source: remotedesktop.SourceOptions{Kind: "synthetic", FPS: 10},
-		Logger: logger,
+		Logger: logger, DetachGrace: 100 * time.Millisecond, MonitorInterval: 10 * time.Millisecond,
 	})
 	repositoryPath := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(repositoryPath, ".git"), 0o755); err != nil {
@@ -321,7 +321,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || rtcClaims.ID != rtc.GetConfigurationId() || len(rtc.GetIceServers()) != 1 {
 		t.Fatalf("verify RTC configuration claims=%#v config=%#v err=%v", rtcClaims, rtc, err)
 	}
-	testRemoteDesktopThroughGateway(t, routed, dieterClient, rtc, identity)
+	testRemoteDesktopThroughGateway(t, routed, dieterClient, rtc, identity, remoteDesktop)
 	route, err := gatewayClient.ResolveDaemonRoute(authorized, &gatewayv1.DaemonRef{DaemonId: identity.ID})
 	if err != nil || string(route.GetDaemonCaPem()) != string(identity.DaemonCAPEM) || string(route.GetDaemonCertificatePem()) != string(identity.CertificatePEM) {
 		t.Fatalf("resolve route=%#v err=%v", route, err)
@@ -558,7 +558,7 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 	}
 }
 
-func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, client dieterv1.DieterServiceClient, rtc *gatewayv1.RTCConfiguration, identity *daemon.Identity) {
+func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, client dieterv1.DieterServiceClient, rtc *gatewayv1.RTCConfiguration, identity *daemon.Identity, manager *remotedesktop.Manager) {
 	t.Helper()
 	settings := webrtc.SettingEngine{}
 	settings.SetIncludeLoopbackCandidate(true)
@@ -627,9 +627,16 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 			if !answerApplied || binding == nil || sessionID == "" {
 				t.Fatal("received media before authenticating the daemon answer")
 			}
-			_, closeErr := client.CloseRemoteDesktop(routed, &dieterv1.RemoteDesktopRef{SessionId: sessionID})
-			if closeErr != nil {
-				t.Fatalf("close remote desktop: %v", closeErr)
+			// Model an ungraceful viewer disappearance. Canceling the gateway
+			// stream must cancel the relayed local RPC, detach its subscription,
+			// and stop the host capture without relying on CloseRemoteDesktop.
+			cancelStream()
+			deadline := time.Now().Add(2 * time.Second)
+			for manager.Capabilities(true, false).GetActiveSession() && time.Now().Before(deadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if manager.Capabilities(true, false).GetActiveSession() {
+				t.Fatal("remote desktop session survived viewer relay cancellation")
 			}
 			return
 		case signal := <-signals:

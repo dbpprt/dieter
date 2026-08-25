@@ -284,11 +284,12 @@ func (c *CLI) daemon(args []string) error {
 		fmt.Fprint(c.Out, `Usage: dieter daemon <action>
 
 Actions:
-  start      Run the local data plane and persistent gateway tunnel
-  enroll     Enroll this machine with the Dieter gateway
-  unenroll   Revoke this machine and remove its local gateway credential
-  status     Show service, local API, enrollment, and gateway health
-  logs       Show or follow the daemon service log
+  start        Run the local data plane and persistent gateway tunnel
+  enroll       Enroll this machine with the Dieter gateway
+  unenroll     Revoke this machine and remove its local gateway credential
+  status       Show service, local API, enrollment, and gateway health
+  logs         Show or follow the daemon service log
+  permissions  Guide and verify host screen-capture permissions
 `)
 		return nil
 	}
@@ -303,6 +304,8 @@ Actions:
 		return c.daemonStatus(args[1:])
 	case "logs":
 		return c.daemonLogs(args[1:])
+	case "permissions":
+		return c.daemonPermissions(args[1:])
 	default:
 		return fmt.Errorf("unknown daemon action %q", args[0])
 	}
@@ -348,14 +351,7 @@ add an optional LAN, Tailscale, or public route.
 	defer cancel()
 	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
 	enrolled := identityErr == nil && identity.Enrolled()
-	remoteDesktopOptions := remotedesktop.Options{
-		Logger: logger,
-		Source: remotedesktop.SourceOptions{
-			Kind:       strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_SOURCE")),
-			FFmpegPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_FFMPEG")),
-			Display:    strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_DISPLAY")),
-		},
-	}
+	remoteDesktopOptions := remotedesktop.Options{Logger: logger, Source: remoteDesktopSourceOptions(logger)}
 	if enrolled {
 		remoteDesktopOptions.Identity = remotedesktop.Identity{
 			DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation,
@@ -436,6 +432,15 @@ add an optional LAN, Tailscale, or public route.
 		return nil
 	}
 	return err
+}
+
+func remoteDesktopSourceOptions(logger *slog.Logger) remotedesktop.SourceOptions {
+	return remotedesktop.SourceOptions{
+		Kind:       strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_SOURCE")),
+		FFmpegPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_FFMPEG")),
+		Display:    strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_DISPLAY")),
+		Logger:     logger,
+	}
 }
 
 type daemonDirectRoute struct {

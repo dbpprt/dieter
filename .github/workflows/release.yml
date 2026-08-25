@@ -385,6 +385,7 @@ jobs:
           git clone "https://github.com/${TAP_REPOSITORY}.git" tap
           ruby tap/scripts/update_formula.rb "${VERSION}" "${daemon_sha256}"
           ruby tap/scripts/update_cask.rb "${VERSION}" "${app_sha256}"
+          grep -F 'depends_on "ffmpeg"' tap/Formula/dieter.rb
           cd tap
           if ! git diff --quiet -- Formula/dieter.rb Casks/dieter-app.rb; then
             git config user.name "github-actions[bot]"

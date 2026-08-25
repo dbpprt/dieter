@@ -29,8 +29,8 @@ const (
 	maxInitialCandidates = 64
 	maxSignalHistory     = 96
 	maxSubscribers       = 4
-	defaultSessionLease  = 30 * time.Second
-	defaultDetachGrace   = 10 * time.Second
+	defaultSessionLease  = 15 * time.Second
+	defaultDetachGrace   = 5 * time.Second
 )
 
 var (
@@ -50,18 +50,29 @@ type Identity struct {
 }
 
 type Options struct {
-	Identity     Identity
-	Source       SourceOptions
-	SessionLease time.Duration
-	DetachGrace  time.Duration
-	Logger       *slog.Logger
-	Now          func() time.Time
+	Identity        Identity
+	Source          SourceOptions
+	SessionLease    time.Duration
+	DetachGrace     time.Duration
+	MonitorInterval time.Duration
+	CaptureProbe    func(context.Context, SourceOptions) error
+	SourceFactory   func(SourceOptions) (FrameSource, error)
+	Logger          *slog.Logger
+	Now             func() time.Time
 }
 
 type Manager struct {
 	options Options
 	mu      sync.Mutex
 	session *Session
+	probeMu sync.Mutex
+	probe   captureProbeResult
+}
+
+type captureProbeResult struct {
+	permission string
+	reason     string
+	checkedAt  time.Time
 }
 
 type Subscription struct {
@@ -84,6 +95,15 @@ func New(options Options) *Manager {
 	if options.DetachGrace <= 0 {
 		options.DetachGrace = defaultDetachGrace
 	}
+	if options.MonitorInterval <= 0 {
+		options.MonitorInterval = time.Second
+	}
+	if options.CaptureProbe == nil {
+		options.CaptureProbe = ProbeCapture
+	}
+	if options.SourceFactory == nil {
+		options.SourceFactory = NewFrameSource
+	}
 	if options.Logger == nil {
 		options.Logger = slog.Default()
 	}
@@ -94,19 +114,37 @@ func New(options Options) *Manager {
 }
 
 func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDesktopCapabilities {
+	return m.capabilities(enabled, controlEnabled, false)
+}
+
+func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieterv1.RemoteDesktopCapabilities {
 	available, reason := SourceAvailable(m.options.Source)
 	m.mu.Lock()
-	active := m.session != nil && !m.session.closed
+	session := m.session
 	m.mu.Unlock()
-	ready := enabled && available && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
-	if !enabled {
-		reason = "Remote desktop is disabled on this machine"
-	} else if m.options.Identity.DaemonID == "" {
-		reason = "The daemon is not enrolled"
+	active := false
+	if session != nil {
+		session.mu.Lock()
+		active = !session.closed
+		session.mu.Unlock()
 	}
 	permission := "unknown"
-	if m.options.Source.Kind == "synthetic" {
+	if strings.TrimSpace(m.options.Source.Kind) == "synthetic" {
 		permission = "granted"
+	} else if enabled && available {
+		permission, reason = m.captureReadiness(forceProbe)
+	}
+	ready := enabled && available && permission == "granted" && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
+	if !enabled {
+		reason = "Remote desktop is disabled on this machine"
+	} else if !available {
+		// SourceAvailable already supplied the actionable dependency/session reason.
+	} else if permission != "granted" {
+		if reason == "" {
+			reason = "Screen capture permission has not been verified"
+		}
+	} else if m.options.Identity.DaemonID == "" {
+		reason = "The daemon is not enrolled"
 	}
 	return &dieterv1.RemoteDesktopCapabilities{
 		Platform: runtime.GOOS, GraphicalSessionActive: available, Enabled: enabled,
@@ -118,13 +156,28 @@ func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDes
 	}
 }
 
+func (m *Manager) captureReadiness(force bool) (string, string) {
+	m.probeMu.Lock()
+	defer m.probeMu.Unlock()
+	now := m.options.Now().UTC()
+	if !force && m.probe.permission != "" {
+		return m.probe.permission, m.probe.reason
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), captureProbeTimeout+time.Second)
+	defer cancel()
+	result := captureProbeResult{permission: "granted", checkedAt: now}
+	if err := m.options.CaptureProbe(ctx, m.options.Source); err != nil {
+		result.permission = "denied"
+		result.reason = err.Error()
+		m.options.Logger.Warn("remote desktop capture readiness check failed", "error", err)
+	}
+	m.probe = result
+	return result.permission, result.reason
+}
+
 func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, controlEnabled bool, operatorSubject string) (*Subscription, error) {
 	if !enabled {
 		return nil, ErrDisabled
-	}
-	capabilities := m.Capabilities(enabled, controlEnabled)
-	if !capabilities.GetReady() {
-		return nil, errors.New(capabilities.GetUnavailableReason())
 	}
 	// This slice is intentionally view-only. Keep the wire setting so a later
 	// input channel can be added without another compatibility break, but never
@@ -137,7 +190,7 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 	}
 
 	m.mu.Lock()
-	if current := m.session; current != nil && !current.closed {
+	if current := m.session; current != nil && current.active() {
 		offerHash := sha256.Sum256([]byte(request.GetOffer().GetSdp()))
 		if current.clientNonce != request.GetClientNonce() || current.operatorSubject != operatorSubject || current.offerHash != offerHash {
 			m.mu.Unlock()
@@ -148,6 +201,12 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 		return subscription, err
 	}
 	m.mu.Unlock()
+	// A new session must prove that the exact production capture path still
+	// works. Reattachments above reuse a stream that already passed this gate.
+	capabilities := m.capabilities(enabled, controlEnabled, true)
+	if !capabilities.GetReady() {
+		return nil, errors.New(capabilities.GetUnavailableReason())
+	}
 	if _, err := m.verifyRTCConfiguration(request.GetRtcConfiguration(), operatorSubject); err != nil {
 		return nil, err
 	}
@@ -157,7 +216,7 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 		return nil, err
 	}
 	m.mu.Lock()
-	if current := m.session; current != nil && !current.closed {
+	if current := m.session; current != nil && current.active() {
 		m.mu.Unlock()
 		session.close("replaced before admission")
 		return nil, ErrBusy
@@ -273,6 +332,13 @@ type Session struct {
 	nextSubscriber uint64
 	leaseExpiresAt time.Time
 	detachedAt     time.Time
+	peerDetachedAt time.Time
+}
+
+func (s *Session) active() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !s.closed
 }
 
 func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, operatorSubject string) (*Session, error) {
@@ -326,9 +392,17 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {
 		case webrtc.PeerConnectionStateConnected:
+			session.mu.Lock()
+			session.peerDetachedAt = time.Time{}
+			session.mu.Unlock()
 			session.emitState("streaming", "")
 			session.startOnce.Do(func() { go session.streamSource(request) })
 		case webrtc.PeerConnectionStateDisconnected:
+			session.mu.Lock()
+			if session.peerDetachedAt.IsZero() {
+				session.peerDetachedAt = manager.options.Now().UTC()
+			}
+			session.mu.Unlock()
 			session.emitState("reconnecting", "ICE disconnected")
 		case webrtc.PeerConnectionStateFailed:
 			session.emitError("peer_failed", "WebRTC peer connection failed", false)
@@ -527,7 +601,7 @@ func (s *Session) streamSource(request *dieterv1.StartRemoteDesktopRequest) {
 	if request.GetMaxBitrateKbps() > 0 {
 		options.Bitrate = int(request.GetMaxBitrateKbps())
 	}
-	source, err := NewFrameSource(options)
+	source, err := s.manager.options.SourceFactory(options)
 	if err != nil {
 		s.emitError("capture_unavailable", err.Error(), false)
 		s.close(err.Error())
@@ -541,7 +615,7 @@ func (s *Session) streamSource(request *dieterv1.StartRemoteDesktopRequest) {
 }
 
 func (s *Session) monitor() {
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(s.manager.options.MonitorInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -552,6 +626,7 @@ func (s *Session) monitor() {
 			s.mu.Lock()
 			leaseExpired := !now.Before(s.leaseExpiresAt)
 			detachedExpired := !s.detachedAt.IsZero() && now.Sub(s.detachedAt) >= s.manager.options.DetachGrace
+			peerDetachedExpired := !s.peerDetachedAt.IsZero() && now.Sub(s.peerDetachedAt) >= s.manager.options.DetachGrace
 			s.mu.Unlock()
 			if leaseExpired {
 				s.close("session lease expired")
@@ -559,6 +634,10 @@ func (s *Session) monitor() {
 			}
 			if detachedExpired {
 				s.close("signaling observer did not reconnect")
+				return
+			}
+			if peerDetachedExpired {
+				s.close("WebRTC peer did not reconnect")
 				return
 			}
 		}

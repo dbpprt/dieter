@@ -25,6 +25,12 @@ final class DieterRPC: Sendable {
         return options
     }
 
+    private static func remoteDesktopControlCallOptions() -> CallOptions {
+        var options = CallOptions.defaults
+        options.timeout = .seconds(3)
+        return options
+    }
+
     struct DirectRoute: Sendable {
         let host: String
         let port: Int
@@ -463,12 +469,16 @@ final class DieterRPC: Sendable {
 	}
 
 	func sendRemoteDesktopSignal(_ signal: Dieter_V1_RemoteDesktopSignal) async throws {
-		_ = try await service.sendRemoteDesktopSignal(request: .init(message: signal)) as Google_Protobuf_Empty
+		_ = try await service.sendRemoteDesktopSignal(
+			request: .init(message: signal), options: Self.remoteDesktopControlCallOptions()
+		) as Google_Protobuf_Empty
 	}
 
 	func closeRemoteDesktop(sessionID: String) async throws {
 		var request = Dieter_V1_RemoteDesktopRef(); request.sessionID = sessionID
-		_ = try await service.closeRemoteDesktop(request: .init(message: request)) as Google_Protobuf_Empty
+		_ = try await service.closeRemoteDesktop(
+			request: .init(message: request), options: Self.remoteDesktopControlCallOptions()
+		) as Google_Protobuf_Empty
 	}
 
     func schedules(projectID: String) async throws -> Dieter_V1_SchedulesResponse {

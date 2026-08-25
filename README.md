@@ -76,8 +76,16 @@ brew install dbpprt/tap/dieter
 dieter setup ~/Development/my-project
 ```
 
-`dieter setup` registers the Git working tree, enrolls the Mac, and starts the
-daemon as a Homebrew service.
+`dieter setup` registers the Git working tree, enrolls the Mac, guides the
+macOS Screen & System Audio Recording permission, proves the exact
+FFmpeg/libvpx capture path with one discarded frame, enables view-only screen
+sharing only after that probe succeeds, and starts the daemon as a Homebrew
+service. Use `--skip-screen-sharing` during fresh setup on hosts that must not
+capture their display. Re-run the standalone check at any time with:
+
+```sh
+dieter daemon permissions --check
+```
 
 ### Install the Mac app
 
@@ -265,13 +273,17 @@ The direct listener does not accept the gateway session itself. It requires a
 short-lived token targeted to this daemon and serves the enrolled daemon
 certificate. Do not advertise raw port 4242; that port stays loopback-only.
 
-The first Screens host requires FFmpeg with `libvpx` in the daemon's graphical
-user session. It captures the primary display by default after sharing is
-enabled from the Mac app. `DIETER_REMOTE_DESKTOP_FFMPEG` selects another FFmpeg
-binary and `DIETER_REMOTE_DESKTOP_DISPLAY` selects another capture source;
+Screens requires FFmpeg with `libvpx` in the daemon's graphical user session;
+the Homebrew formula installs that dependency. It captures the primary display
+by default after guided `dieter setup` verifies macOS Screen Recording access.
+Run `dieter daemon permissions` to reopen the permission guide after a denial
+or revocation. `DIETER_REMOTE_DESKTOP_FFMPEG` selects another FFmpeg binary and
+`DIETER_REMOTE_DESKTOP_DISPLAY` selects another capture source;
 `DIETER_REMOTE_DESKTOP_SOURCE=synthetic` is reserved for isolated transport
 diagnostics. Capture is lazy and runs only while an admitted WebRTC session is
-connected.
+connected. A clean viewer close stops it immediately; an ungraceful signaling
+or WebRTC disconnect gets a five-second reconnect grace, after which the daemon
+cancels and reaps the complete capture process group.
 
 ## Run the gateway
 

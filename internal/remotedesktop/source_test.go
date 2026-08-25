@@ -1,9 +1,24 @@
 package remotedesktop
 
 import (
+	"context"
+	"errors"
 	"slices"
 	"testing"
 )
+
+func TestProbeCaptureDiscardsSyntheticFrame(t *testing.T) {
+	if err := ProbeCapture(context.Background(), SourceOptions{Kind: "synthetic", FPS: 30}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCaptureFailureExplainsMacScreenRecordingPermission(t *testing.T) {
+	err := captureFailure("darwin", errors.New("read FFmpeg IVF header: EOF"), "Not authorized to capture video")
+	if err == nil || err.Error() != "macOS Screen Recording permission is not granted to FFmpeg; run `dieter daemon permissions` on the host: read FFmpeg IVF header: EOF" {
+		t.Fatalf("permission error=%v", err)
+	}
+}
 
 func TestFFmpegMacCaptureSelectsScreenByName(t *testing.T) {
 	arguments, err := ffmpegArgs("darwin", "primary", 30, 4_000, map[string]string{})

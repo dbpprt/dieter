@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -34,6 +35,41 @@ type SourceOptions struct {
 	FPS        int
 	Bitrate    int
 	Logger     *slog.Logger
+}
+
+const captureProbeTimeout = 15 * time.Second
+
+var errCaptureProbeComplete = errors.New("capture probe completed")
+
+// ProbeCapture runs the production capture path until its first encoded frame.
+// It deliberately discards the frame: callers use it to verify the graphical
+// session, macOS Screen Recording permission, FFmpeg, and the VP8 encoder as one
+// readiness check without retaining any screen content.
+func ProbeCapture(ctx context.Context, options SourceOptions) error {
+	source, err := NewFrameSource(options)
+	if err != nil {
+		return err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, captureProbeTimeout)
+	defer cancel()
+	captured := false
+	err = source.Stream(probeCtx, func(sample media.Sample) error {
+		if len(sample.Data) == 0 {
+			return errors.New("capture produced an empty video frame")
+		}
+		captured = true
+		return errCaptureProbeComplete
+	})
+	if captured && (err == nil || errors.Is(err, errCaptureProbeComplete)) {
+		return nil
+	}
+	if probeCtx.Err() != nil {
+		return fmt.Errorf("screen capture probe timed out: %w", probeCtx.Err())
+	}
+	if err != nil {
+		return err
+	}
+	return errors.New("screen capture ended before producing a video frame")
 }
 
 func NewFrameSource(options SourceOptions) (FrameSource, error) {
@@ -150,15 +186,13 @@ func (s ffmpegSource) Stream(ctx context.Context, write func(media.Sample) error
 	captureContext, cancelCapture := context.WithCancel(ctx)
 	defer cancelCapture()
 	command := exec.CommandContext(captureContext, s.path, arguments...)
+	configureCaptureCommand(command)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("open FFmpeg output: %w", err)
 	}
-	if s.logger != nil {
-		command.Stderr = slogWriter{s.logger}
-	} else {
-		command.Stderr = os.Stderr
-	}
+	stderr := &captureStderr{log: s.logger}
+	command.Stderr = stderr
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start FFmpeg: %w", err)
 	}
@@ -176,16 +210,16 @@ func (s ffmpegSource) Stream(ctx context.Context, write func(media.Sample) error
 	}
 	select {
 	case <-startupTimedOut:
-		return finishCapture(ctx, wait, fmt.Errorf("FFmpeg produced no video within %s; check screen recording permission and the display selector", ffmpegStartupTimeout))
+		return captureFailure(s.platform, finishCapture(ctx, wait, fmt.Errorf("FFmpeg produced no video within %s", ffmpegStartupTimeout)), stderr.String())
 	default:
 	}
 	if err != nil {
 		cancelCapture()
-		return finishCapture(ctx, wait, fmt.Errorf("read FFmpeg IVF header: %w", err))
+		return captureFailure(s.platform, finishCapture(ctx, wait, fmt.Errorf("read FFmpeg IVF header: %w", err)), stderr.String())
 	}
 	if header.FourCC != "VP80" {
 		cancelCapture()
-		return finishCapture(ctx, wait, fmt.Errorf("FFmpeg emitted unsupported IVF codec %q", header.FourCC))
+		return captureFailure(s.platform, finishCapture(ctx, wait, fmt.Errorf("FFmpeg emitted unsupported IVF codec %q", header.FourCC)), stderr.String())
 	}
 	frameDuration := time.Duration(header.TimebaseNumerator) * time.Second / time.Duration(header.TimebaseDenominator)
 	if frameDuration <= 0 || frameDuration > time.Second {
@@ -196,25 +230,60 @@ func (s ffmpegSource) Stream(ctx context.Context, write func(media.Sample) error
 		if readErr != nil {
 			cancelCapture()
 			if errors.Is(readErr, io.EOF) && ctx.Err() != nil {
-				return finishCapture(ctx, wait, nil)
+				return captureFailure(s.platform, finishCapture(ctx, wait, nil), stderr.String())
 			}
-			return finishCapture(ctx, wait, fmt.Errorf("read FFmpeg frame: %w", readErr))
+			return captureFailure(s.platform, finishCapture(ctx, wait, fmt.Errorf("read FFmpeg frame: %w", readErr)), stderr.String())
 		}
 		if err := write(media.Sample{Data: frame, Duration: frameDuration}); err != nil {
 			cancelCapture()
-			return finishCapture(ctx, wait, err)
+			return captureFailure(s.platform, finishCapture(ctx, wait, err), stderr.String())
 		}
 	}
 }
 
-type slogWriter struct{ log *slog.Logger }
+type captureStderr struct {
+	mu  sync.Mutex
+	log *slog.Logger
+	raw []byte
+}
 
-func (w slogWriter) Write(value []byte) (int, error) {
+func (w *captureStderr) Write(value []byte) (int, error) {
+	w.mu.Lock()
+	w.raw = append(w.raw, value...)
+	if len(w.raw) > 8<<10 {
+		w.raw = append([]byte(nil), w.raw[len(w.raw)-(8<<10):]...)
+	}
+	w.mu.Unlock()
 	message := strings.TrimSpace(string(value))
-	if message != "" {
+	if message != "" && w.log != nil {
 		w.log.Warn("remote desktop capture", "message", message)
 	}
 	return len(value), nil
+}
+
+func (w *captureStderr) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return strings.TrimSpace(string(w.raw))
+}
+
+func captureFailure(platform string, err error, diagnostic string) error {
+	if err == nil || errors.Is(err, errCaptureProbeComplete) {
+		return err
+	}
+	lower := strings.ToLower(diagnostic)
+	switch {
+	case platform == "darwin" && (strings.Contains(lower, "not authorized") ||
+		strings.Contains(lower, "screen recording permission") ||
+		strings.Contains(lower, "permission denied")):
+		return fmt.Errorf("macOS Screen Recording permission is not granted to FFmpeg; run `dieter daemon permissions` on the host: %w", err)
+	case strings.Contains(lower, "unknown encoder") && strings.Contains(lower, "libvpx"):
+		return fmt.Errorf("FFmpeg does not include the required VP8/libvpx encoder: %w", err)
+	case strings.Contains(lower, "capture screen") && strings.Contains(lower, "not found"):
+		return fmt.Errorf("FFmpeg could not find the selected macOS display: %w", err)
+	default:
+		return err
+	}
 }
 
 func finishCapture(ctx context.Context, wait <-chan error, streamErr error) error {
@@ -231,7 +300,12 @@ func finishCapture(ctx context.Context, wait <-chan error, streamErr error) erro
 		}
 		return nil
 	case <-ctx.Done():
-		return nil
+		select {
+		case <-wait:
+			return nil
+		case <-time.After(2 * time.Second):
+			return errors.New("FFmpeg did not stop after capture cancellation")
+		}
 	case <-time.After(2 * time.Second):
 		if streamErr != nil {
 			return streamErr

@@ -1,6 +1,7 @@
 package remotedesktop
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -15,9 +16,24 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/trust"
 	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+type blockingFrameSource struct {
+	started chan struct{}
+	stopped chan struct{}
+}
+
+func (s *blockingFrameSource) Description() string { return "blocking test source" }
+
+func (s *blockingFrameSource) Stream(ctx context.Context, _ func(media.Sample) error) error {
+	close(s.started)
+	<-ctx.Done()
+	close(s.stopped)
+	return nil
+}
 
 func TestManagerStreamsSyntheticVP8AndSignsBinding(t *testing.T) {
 	manager, request, daemonPublic := testManagerAndRequest(t, "github:7")
@@ -144,6 +160,97 @@ func TestManagerReattachesSameOperatorWithoutReusingGatewayAdmission(t *testing.
 		t.Fatalf("other operator reattach error=%v, want %v", err, ErrBusy)
 	}
 	manager.CloseActive("test complete")
+}
+
+func TestManagerCapabilityRequiresRealCaptureProbe(t *testing.T) {
+	t.Setenv("DISPLAY", ":99")
+	manager, _, _ := testManagerAndRequest(t, "github:7")
+	manager.options.Source = SourceOptions{Kind: "screen", FFmpegPath: "/usr/bin/true"}
+	manager.options.CaptureProbe = func(context.Context, SourceOptions) error {
+		return errors.New("macOS Screen Recording permission is not granted to FFmpeg")
+	}
+	capabilities := manager.Capabilities(true, false)
+	if capabilities.GetReady() || capabilities.GetCapturePermission() != "denied" {
+		t.Fatalf("capabilities=%#v", capabilities)
+	}
+	if capabilities.GetUnavailableReason() != "macOS Screen Recording permission is not granted to FFmpeg" {
+		t.Fatalf("unavailable reason=%q", capabilities.GetUnavailableReason())
+	}
+
+	manager.probe = captureProbeResult{}
+	manager.options.CaptureProbe = func(context.Context, SourceOptions) error { return nil }
+	capabilities = manager.Capabilities(true, false)
+	if !capabilities.GetReady() || capabilities.GetCapturePermission() != "granted" {
+		t.Fatalf("capabilities after permission=%#v", capabilities)
+	}
+}
+
+func TestManagerStopsCaptureWhenSignalingObserverDisconnects(t *testing.T) {
+	manager, request, _ := testManagerAndRequest(t, "github:7")
+	viewer := testViewer(t, request)
+	defer viewer.Close()
+	source := &blockingFrameSource{started: make(chan struct{}), stopped: make(chan struct{})}
+	manager.options.CaptureProbe = func(context.Context, SourceOptions) error { return nil }
+	manager.options.SourceFactory = func(SourceOptions) (FrameSource, error) { return source, nil }
+	manager.options.DetachGrace = 25 * time.Millisecond
+	manager.options.MonitorInterval = 5 * time.Millisecond
+	subscription, err := manager.Start(request, true, false, "github:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	session := manager.session
+	manager.mu.Unlock()
+	session.startOnce.Do(func() { go session.streamSource(request) })
+	select {
+	case <-source.started:
+	case <-time.After(time.Second):
+		t.Fatal("capture source did not start")
+	}
+
+	subscription.Close()
+	select {
+	case <-source.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("capture source was not canceled after the signaling observer disconnected")
+	}
+	if capabilities := manager.Capabilities(true, false); capabilities.GetActiveSession() {
+		t.Fatalf("session remained active after disconnect: %#v", capabilities)
+	}
+}
+
+func TestManagerStopsCaptureWhenWebRTCPeerDoesNotReconnect(t *testing.T) {
+	manager, request, _ := testManagerAndRequest(t, "github:7")
+	viewer := testViewer(t, request)
+	defer viewer.Close()
+	source := &blockingFrameSource{started: make(chan struct{}), stopped: make(chan struct{})}
+	manager.options.CaptureProbe = func(context.Context, SourceOptions) error { return nil }
+	manager.options.SourceFactory = func(SourceOptions) (FrameSource, error) { return source, nil }
+	manager.options.DetachGrace = 25 * time.Millisecond
+	manager.options.MonitorInterval = 5 * time.Millisecond
+	subscription, err := manager.Start(request, true, false, "github:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+	manager.mu.Lock()
+	session := manager.session
+	manager.mu.Unlock()
+	session.startOnce.Do(func() { go session.streamSource(request) })
+	select {
+	case <-source.started:
+	case <-time.After(time.Second):
+		t.Fatal("capture source did not start")
+	}
+	session.mu.Lock()
+	session.peerDetachedAt = time.Now().Add(-manager.options.DetachGrace)
+	session.mu.Unlock()
+
+	select {
+	case <-source.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("capture source was not canceled after the WebRTC peer disconnected")
+	}
 }
 
 func testManagerAndRequest(t *testing.T, operator string) (*Manager, *dieterv1.StartRemoteDesktopRequest, ed25519.PublicKey) {
