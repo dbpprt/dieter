@@ -31,7 +31,7 @@ func TestEmbeddedRuntimeAssets(t *testing.T) {
 	if err := stageRuntimeAssets(destination); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"runtime/package.json", "runtime/package-lock.json", "runtime/runner.mjs", "runtime/local-attachments.mjs", "runtime/local-sandbox.mjs", "runtime/capabilities.mjs", "runtime/stream-reconciliation.mjs", "runtime/omp-capabilities-hook.mjs", "runtime/provider-options.mjs"} {
+	for _, name := range []string{"runtime/package.json", "runtime/package-lock.json", "runtime/runner.mjs", "runtime/claude-resilience.mjs", "runtime/local-attachments.mjs", "runtime/local-sandbox.mjs", "runtime/capabilities.mjs", "runtime/stream-reconciliation.mjs", "runtime/omp-capabilities-hook.mjs", "runtime/provider-options.mjs"} {
 		data, err := runtimeAssets.ReadFile(name)
 		if err != nil || len(data) == 0 {
 			t.Fatalf("asset %s: %v", name, err)

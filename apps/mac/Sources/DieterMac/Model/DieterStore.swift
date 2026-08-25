@@ -193,6 +193,23 @@ enum SyncStreamLiveness {
     }
 }
 
+enum SyncFreshnessPresentation {
+    static func lastConnectedLabel(lastConnectedAt: Date?, now: Date = Date()) -> String {
+        guard let lastConnectedAt else { return "Last connected unknown" }
+        let elapsed = max(0, now.timeIntervalSince(lastConnectedAt))
+        switch elapsed {
+        case ..<60:
+            return "Last connected just now"
+        case ..<3_600:
+            return "Last connected \(max(1, Int(elapsed / 60)))m ago"
+        case ..<86_400:
+            return "Last connected \(max(1, Int(elapsed / 3_600)))h ago"
+        default:
+            return "Last connected \(max(1, Int(elapsed / 86_400)))d ago"
+        }
+    }
+}
+
 enum SyncCursorPersistencePolicy {
     static let interval: TimeInterval = 15
 
@@ -424,6 +441,12 @@ final class DieterStore {
     private(set) var pendingMessageIDs: Set<String> = []
     private(set) var acceptedOutboxIDs: Set<String> = []
     private(set) var failedOutboxIDs: Set<String> = []
+    private(set) var globalSyncing = false
+    private(set) var lastSyncedAt: Date?
+
+    var workspaceIsLive: Bool {
+        phase.isConnected && !globalSyncing
+    }
 
     var conversationMessages: [Dieter_V1_UiMessage] {
         let live = conversation?.conversation.messages ?? []
@@ -471,6 +494,7 @@ final class DieterStore {
     private var reconnectTask: Task<Void, Never>?
     private var directRefreshTask: Task<Void, Never>?
     private var machineDirectoryTask: Task<Void, Never>?
+    private var syncRestoreTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
     private var conversationTask: Task<Void, Never>?
     private var terminalWatchTask: Task<Void, Never>?
@@ -515,7 +539,7 @@ final class DieterStore {
             endpoint = override
             gatewayOrigins = [override]
             persistConnectionSelection = false
-            Task { [weak self] in await self?.restorePersistentSync() }
+            syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
             return
         }
 
@@ -533,7 +557,7 @@ final class DieterStore {
             endpoint = loadedEndpoints[0]
         }
         if loadedEndpoints != storedEndpoints { persistEndpoints() }
-        Task { [weak self] in await self?.restorePersistentSync() }
+        syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
     }
 
     private func accessToken(for endpoint: DieterEndpoint) async -> String? {
@@ -665,6 +689,10 @@ final class DieterStore {
     }
 
     func connect(to newEndpoint: DieterEndpoint? = nil, automatic: Bool = false) async {
+        if let syncRestoreTask {
+            await syncRestoreTask.value
+            self.syncRestoreTask = nil
+        }
         if !automatic { reconnectTask?.cancel(); reconnectTask = nil }
         let requested = newEndpoint ?? endpoint
         let preferredDaemonID = requested.daemonID ?? (requested.credentialID == endpoint.credentialID ? endpoint.daemonID : nil)
@@ -803,7 +831,9 @@ final class DieterStore {
                 scheduleReconnect(to: requested)
             } else {
                 phase = .failed(error.localizedDescription)
-                errorMessage = "Could not connect to \(requested.address): \(error.localizedDescription)"
+                // The connection overlay already presents startup failures in
+                // context. Do not duplicate expected offline state as a modal.
+                errorMessage = nil
             }
         }
     }
@@ -942,6 +972,10 @@ final class DieterStore {
             phase = .failed(error.localizedDescription)
             return
         }
+        // A lost daemon is connectivity state, not an application error. Keep
+        // the cached projection visible and let the workspace badge report the
+        // interruption while the normal reconnect loop rebuilds the streams.
+        errorMessage = nil
         phase = .connecting
         scheduleReconnect(to: endpoint)
     }
@@ -970,6 +1004,7 @@ final class DieterStore {
         terminalStreamConnected = false
         rpc?.shutdown(); rpc = nil
         lastSyncFrameAt = nil
+        globalSyncing = false
         phase = .disconnected
     }
 
@@ -1556,6 +1591,8 @@ final class DieterStore {
         let deploymentProjections = restored.projections
             .filter { $0.key.hasPrefix(activePrefix) }
             .sorted { $0.key < $1.key }
+        lastSyncedAt = restored.projections[endpoint.id]?.refreshedAt
+            ?? deploymentProjections.compactMap(\.value.refreshedAt).max()
         for (endpointID, projection) in deploymentProjections {
             if let raw = projection.snapshot,
                let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) {
@@ -1579,6 +1616,7 @@ final class DieterStore {
             syncDiskState.cursor = nil
             syncDiskState.snapshot = nil
         }
+        lastSyncedAt = syncProjection.refreshedAt
         if let daemonID = endpoint.daemonID {
             for index in syncDiskState.outbox.indices where syncDiskState.outbox[index].endpointID == daemonID {
                 syncDiskState.outbox[index].endpointID = endpoint.id
@@ -1600,6 +1638,7 @@ final class DieterStore {
     private func startGlobalSync() {
         syncTask?.cancel()
         guard let rpc else { return }
+        globalSyncing = true
         lastSyncFrameAt = Date()
         let endpointID = endpoint.id
         var request = Dieter_V1_SyncRequest()
@@ -1626,6 +1665,9 @@ final class DieterStore {
         guard endpoint.id == endpointID else { return }
         let receivedAt = Date()
         lastSyncFrameAt = receivedAt
+        lastSyncedAt = receivedAt
+        globalSyncing = false
+        syncProjection.refreshedAt = receivedAt
         var projectionChanged = false
         if frame.hasSnapshot {
             markConversationsRefreshed(frame.snapshot.conversations, endpointID: endpointID, at: receivedAt)
@@ -2233,7 +2275,7 @@ final class DieterStore {
             conversationLoading = true
         }
         conversationSyncing = true
-        if !projectID.isEmpty, !(await ensureProjectConnection(projectID)) {
+        if !projectID.isEmpty, !(await ensureProjectConnection(projectID, reportOffline: false)) {
             guard (selectedCardID ?? selectedChatID) == cardID else { return }
             conversationLoading = false
             conversationSyncing = false
@@ -2243,7 +2285,6 @@ final class DieterStore {
         guard let rpc else {
             conversationLoading = false
             conversationSyncing = false
-            errorMessage = "The project host is not connected."
             return
         }
         await fetchConversation(cardID: cardID, chat: chat, rpc: rpc)
@@ -2269,7 +2310,11 @@ final class DieterStore {
                 catch {
                     guard let self, (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
                     self.conversationSyncing = false
-                    self.errorMessage = "Conversation updates paused: \(DieterRPCFailure.message(for: error))"
+                    if DieterRPCFailure.isTransient(error) {
+                        self.connectionStopped(error, client: rpc)
+                    } else {
+                        self.errorMessage = "Conversation updates paused: \(DieterRPCFailure.message(for: error))"
+                    }
                 }
             }
         } catch {
@@ -2288,7 +2333,6 @@ final class DieterStore {
                     guard let currentRPC = self.rpc else {
                         self.conversationLoading = false
                         self.conversationSyncing = false
-                        self.errorMessage = "The project host is not connected."
                         return
                     }
                     await self.fetchConversation(
@@ -2301,7 +2345,11 @@ final class DieterStore {
             case .report:
                 conversationLoading = false
                 conversationSyncing = false
-                errorMessage = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
+                if DieterRPCFailure.isTransient(error) {
+                    connectionStopped(error, client: rpc)
+                } else {
+                    errorMessage = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
+                }
             }
         }
     }
@@ -2369,7 +2417,11 @@ final class DieterStore {
         } catch {
             guard conversationHistoryRequestID == requestID,
                   (selectedCardID ?? selectedChatID) == cardID else { return false }
-            errorMessage = "Could not load earlier messages: \(error.localizedDescription)"
+            if DieterRPCFailure.isTransient(error) {
+                connectionStopped(error, client: rpc)
+            } else {
+                errorMessage = "Could not load earlier messages: \(error.localizedDescription)"
+            }
             return false
         }
     }
@@ -3189,6 +3241,10 @@ final class DieterStore {
 
     func show(_ error: Error) {
         guard !Self.isExpectedCancellation(error) else { return }
+        if DieterRPCFailure.isTransient(error), let rpc {
+            connectionStopped(error, client: rpc)
+            return
+        }
         errorMessage = DieterRPCFailure.message(for: error)
     }
 }

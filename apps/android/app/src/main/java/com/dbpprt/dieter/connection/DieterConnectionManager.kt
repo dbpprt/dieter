@@ -77,6 +77,9 @@ internal fun syncStreamIsStale(
     staleAfterMs: Long = SYNC_STALE_AFTER_MS,
 ): Boolean = lastFrameAtMs > 0 && nowMs >= lastFrameAtMs && nowMs - lastFrameAtMs >= staleAfterMs
 
+internal fun foregroundConnectionPhase(current: ConnectionPhase, becameForeground: Boolean): ConnectionPhase =
+    if (becameForeground && current == ConnectionPhase.CONNECTED) ConnectionPhase.SYNCING else current
+
 data class EndpointConnection(
     val id: String,
     val label: String,
@@ -100,6 +103,7 @@ data class DieterConnectionState(
     val backgroundSyncEnabled: Boolean,
     val phase: ConnectionPhase = ConnectionPhase.STOPPED,
     val connectionInterruptedAtMs: Long? = null,
+    val lastConnectedAtMs: Long? = null,
     val endpoint: DieterEndpoint? = null,
     val activeGatewayId: String,
     val configuredConnections: List<EndpointConnection>,
@@ -174,6 +178,7 @@ class DieterConnectionManager(
             activeGatewayId = activeGatewayId,
             configuredConnections = configuredEndpointRows(),
             endpointConnections = configuredEndpointRows(),
+            lastConnectedAtMs = DieterWidgetPrefs.lastSyncAtMs(appContext).takeIf { it > 0L },
             projects = cachedDirectory?.state?.projectsList.orEmpty(),
             projectHosts = cachedDirectory?.hosts.orEmpty().mapValues { (_, host) ->
                 ProjectHost(host.endpointId, host.daemonId, host.hostname, online = false)
@@ -200,9 +205,21 @@ class DieterConnectionManager(
     }
 
     fun onAppForegrounded(projectId: String = selectedProjectId) {
-        synchronized(lock) {
+        val becameForeground = synchronized(lock) {
+            val changed = !appForeground
             appForeground = true
             if (projectId.isNotBlank()) selectedProjectId = projectId
+            changed
+        }
+        if (becameForeground) {
+            val foregroundedAt = System.currentTimeMillis()
+            _state.update { current ->
+                val phase = foregroundConnectionPhase(current.phase, becameForeground = true)
+                if (phase == current.phase) current else current.copy(
+                    phase = phase,
+                    connectionInterruptedAtMs = foregroundedAt,
+                )
+            }
         }
         if (_state.value.desiredConnected && _state.value.backgroundSyncEnabled) DieterSyncService.start(appContext)
         reconcile()
@@ -217,7 +234,9 @@ class DieterConnectionManager(
      * separate server-streaming call is still delivering frames.
      */
     private fun recoverStaleConnection() {
-        if (_state.value.phase == ConnectionPhase.CONNECTED && syncStreamIsStale(lastSyncFrameAtMs)) {
+        if (_state.value.phase in setOf(ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED) &&
+            syncStreamIsStale(lastSyncFrameAtMs)
+        ) {
             restart()
         }
     }
@@ -784,7 +803,14 @@ class DieterConnectionManager(
                     applyGlobalSnapshot(it, refreshedConversationIds, receivedAtMillis)
                 }
             }
-            _state.update { it.copy(phase = ConnectionPhase.CONNECTED, connectionInterruptedAtMs = null, error = null) }
+            _state.update {
+                it.copy(
+                    phase = ConnectionPhase.CONNECTED,
+                    connectionInterruptedAtMs = null,
+                    lastConnectedAtMs = receivedAtMillis,
+                    error = null,
+                )
+            }
         }
     }
 
@@ -836,6 +862,9 @@ class DieterConnectionManager(
                 syncStore.projectionRefreshedAtMillis(endpoint.id)
             } else {
                 legacyScope?.let(syncStore::projectionRefreshedAtMillis)
+            }
+            _state.update { current ->
+                current.copy(lastConnectedAtMs = activeProjectionRefreshedAtMillis ?: current.lastConnectedAtMs)
             }
         }
         val cached = globalSnapshot

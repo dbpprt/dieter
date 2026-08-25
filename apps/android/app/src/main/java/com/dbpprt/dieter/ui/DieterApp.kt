@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -265,8 +266,10 @@ fun DieterApp(container: DieterContainer) {
             }
         }
         if (state.desiredConnected && state.connectionPhase != ConnectionPhase.CONNECTED) {
-            ReconnectingIndicator(
-                Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 6.dp, end = 10.dp),
+            ConnectionStatusIndicator(
+                syncing = state.connectionPhase == ConnectionPhase.SYNCING,
+                lastConnectedAtMillis = state.lastConnectedAtMillis,
+                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 6.dp, end = 10.dp),
             )
         }
         if (state.connectionDialogVisible) {
@@ -298,19 +301,58 @@ fun DieterApp(container: DieterContainer) {
 }
 
 @Composable
-private fun ReconnectingIndicator(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(32.dp)
-            .semantics { contentDescription = "Reconnecting to Dieter" },
-        contentAlignment = Alignment.Center,
+private fun ConnectionStatusIndicator(
+    syncing: Boolean,
+    lastConnectedAtMillis: Long?,
+    modifier: Modifier = Modifier,
+) {
+    val label = if (syncing) "Syncing" else "Offline"
+    val freshness = lastConnectedLabel(lastConnectedAtMillis)
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(50),
+        color = DieterSurfaceHigh,
     ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(17.dp),
-            color = DieterShell.copy(alpha = 0.82f),
-            trackColor = DieterOutline.copy(alpha = 0.28f),
-            strokeWidth = 1.8.dp,
-        )
+        Row(
+            modifier = Modifier
+                .height(32.dp)
+                .padding(horizontal = 10.dp)
+                .semantics { contentDescription = "$label, $freshness" },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            if (syncing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    color = DieterShell.copy(alpha = 0.82f),
+                    trackColor = DieterOutline.copy(alpha = 0.28f),
+                    strokeWidth = 1.8.dp,
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.WifiOff,
+                    contentDescription = null,
+                    tint = DieterCoral.copy(alpha = 0.8f),
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            Text(label, color = DieterText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(freshness, color = DieterMuted, fontSize = 10.sp)
+        }
+    }
+}
+
+internal fun lastConnectedLabel(
+    lastConnectedAtMillis: Long?,
+    nowMillis: Long = System.currentTimeMillis(),
+): String {
+    if (lastConnectedAtMillis == null || lastConnectedAtMillis <= 0L) return "Last connected unknown"
+    val elapsedSeconds = ((nowMillis - lastConnectedAtMillis).coerceAtLeast(0L) / 1_000L)
+    return when {
+        elapsedSeconds < 60L -> "Last connected just now"
+        elapsedSeconds < 3_600L -> "Last connected ${maxOf(1L, elapsedSeconds / 60L)}m ago"
+        elapsedSeconds < 86_400L -> "Last connected ${maxOf(1L, elapsedSeconds / 3_600L)}h ago"
+        else -> "Last connected ${maxOf(1L, elapsedSeconds / 86_400L)}d ago"
     }
 }
 

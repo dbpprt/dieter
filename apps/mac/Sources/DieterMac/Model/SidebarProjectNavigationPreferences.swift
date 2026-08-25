@@ -2,7 +2,9 @@ import Foundation
 
 struct SidebarProjectNavigationPreferences: Equatable {
     static let orderKey = "DieterSidebarProjectOrder"
-    static let collapsedKey = "DieterSidebarCollapsedProjects"
+    // Projects are compressed (title + initials only) by default. This set records
+    // the projects the person has explicitly expanded to reveal boards inline.
+    static let expandedKey = "DieterSidebarExpandedProjects"
 
     static func applicationDefaults(arguments: [String] = ProcessInfo.processInfo.arguments) -> UserDefaults {
         guard let flag = arguments.firstIndex(of: "--sidebar-preferences-suite"),
@@ -12,23 +14,23 @@ struct SidebarProjectNavigationPreferences: Equatable {
     }
 
     private(set) var projectOrder: [String]
-    private(set) var collapsedProjectIDs: Set<String>
+    private(set) var expandedProjectIDs: Set<String>
 
-    init(projectOrder: [String] = [], collapsedProjectIDs: Set<String> = []) {
+    init(projectOrder: [String] = [], expandedProjectIDs: Set<String> = []) {
         self.projectOrder = Self.unique(projectOrder)
-        self.collapsedProjectIDs = collapsedProjectIDs
+        self.expandedProjectIDs = expandedProjectIDs
     }
 
     static func load(from defaults: UserDefaults = .standard) -> Self {
         Self(
             projectOrder: defaults.stringArray(forKey: orderKey) ?? [],
-            collapsedProjectIDs: Set(defaults.stringArray(forKey: collapsedKey) ?? [])
+            expandedProjectIDs: Set(defaults.stringArray(forKey: expandedKey) ?? [])
         )
     }
 
     func save(to defaults: UserDefaults = .standard) {
         defaults.set(projectOrder, forKey: Self.orderKey)
-        defaults.set(collapsedProjectIDs.sorted(), forKey: Self.collapsedKey)
+        defaults.set(expandedProjectIDs.sorted(), forKey: Self.expandedKey)
     }
 
     func orderedIDs(from availableIDs: [String]) -> [String] {
@@ -39,13 +41,13 @@ struct SidebarProjectNavigationPreferences: Equatable {
         return preferred + available.filter { !preferredSet.contains($0) }
     }
 
-    func isCollapsed(_ projectID: String) -> Bool {
-        collapsedProjectIDs.contains(projectID)
+    func isExpanded(_ projectID: String) -> Bool {
+        expandedProjectIDs.contains(projectID)
     }
 
-    mutating func toggleCollapsed(_ projectID: String) {
-        if !collapsedProjectIDs.insert(projectID).inserted {
-            collapsedProjectIDs.remove(projectID)
+    mutating func toggleExpanded(_ projectID: String) {
+        if !expandedProjectIDs.insert(projectID).inserted {
+            expandedProjectIDs.remove(projectID)
         }
     }
 

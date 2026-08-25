@@ -718,7 +718,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if err == nil && !streamFailed {
 		conversation, conversationErr := s.Store.Conversation(detail.Card.ID)
 		if conversationErr == nil && assistantResponseEmpty(conversation) {
-			message := fmt.Sprintf("%s completed without a response; verify that the local harness is authenticated and that model %q is available", request.Harness, request.ConfiguredModel)
+			message := emptyHarnessResponseMessage(request)
 			chunk, _ := json.Marshal(map[string]any{"type": "error", "errorText": message})
 			_, _, _ = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk)
 			streamFailed = true
@@ -769,6 +769,13 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	case updates <- TurnUpdate{Done: true}:
 	case <-ctx.Done():
 	}
+}
+
+func emptyHarnessResponseMessage(request harness.Request) string {
+	if request.Adapter == "claude-code" || request.Harness == "claude-code" {
+		return "Claude Code completed without producing output; the durable session is preserved and can be resumed with another message"
+	}
+	return fmt.Sprintf("%s completed without a response; verify that the local harness is authenticated and that model %q is available", request.Harness, request.ConfiguredModel)
 }
 
 func (s *Service) turnIsSuspending(cardID, turnID string) bool {

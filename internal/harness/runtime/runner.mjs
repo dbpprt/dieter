@@ -14,11 +14,23 @@ import { createLocalSandboxProvider } from './local-sandbox.mjs';
 import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
 import { ompACPArgs } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
+import {
+  createClaudeDiagnosticTracker,
+  createClaudeTurnSummary,
+  observeClaudeTurnChunk,
+  retryEmptyClaudeResume,
+} from './claude-resilience.mjs';
 
 // Stdout is the worker protocol. Some harness bootstraps log package-manager
 // progress with console.log; keep those diagnostics on stderr so a first-run
 // install cannot corrupt the NDJSON stream consumed by Go.
 const protocolWrite = process.stdout.write.bind(process.stdout);
+const rawStderrWrite = process.stderr.write.bind(process.stderr);
+const claudeDiagnostics = createClaudeDiagnosticTracker();
+process.stderr.write = (chunk, encoding, callback) => {
+  claudeDiagnostics.observeStderr(chunk, encoding);
+  return rawStderrWrite(chunk, encoding, callback);
+};
 const consoleToStderr = (...values) => process.stderr.write(`${values.map(value => typeof value === 'string' ? value : JSON.stringify(value)).join(' ')}\n`);
 console.log = consoleToStderr;
 console.info = consoleToStderr;
@@ -231,7 +243,7 @@ try {
   const contextWindowTokens = request.contextWindow || (adapter === 'codex' ? await codexContextWindow(request.model) : undefined);
   let claudeDelegationSeen = false;
   let claudeFinalTextSeen = false;
-  async function streamResult(result) {
+  async function streamResult(result, summary, diagnosticTurn) {
     const stream = toUIMessageStream({
       stream: result.stream,
       onError: harnessErrorMessage,
@@ -249,6 +261,7 @@ try {
       // the in-flight message, task plan, and subagents for continuation.
       if (controller.signal.aborted && chunk.type === 'abort') continue;
       if (adapter === 'claude-code') {
+        if (observeClaudeTurnChunk(summary, chunk)) claudeDiagnostics.observeActivity(diagnosticTurn);
         if (chunk.type === 'tool-input-available' && ['agent', 'task'].includes(String(chunk.toolName || '').toLowerCase())) claudeDelegationSeen = true;
         if (claudeDelegationSeen && chunk.type === 'text-delta' && String(chunk.delta || '').trim()) claudeFinalTextSeen = true;
       }
@@ -256,15 +269,37 @@ try {
       send({ type: 'chunk', chunk });
     }
   }
-  async function streamPrompt(prompt) {
-    await streamResult(await agent.stream({ session, prompt, abortSignal: controller.signal }));
+  async function runStream(start) {
+    const summary = createClaudeTurnSummary();
+    const diagnosticTurn = adapter === 'claude-code' ? claudeDiagnostics.beginTurn() : undefined;
+    let streamError;
+    try {
+      await streamResult(await start(), summary, diagnosticTurn);
+    } catch (error) {
+      streamError = error;
+    }
+    const providerFailure = diagnosticTurn ? claudeDiagnostics.endTurn(diagnosticTurn) : undefined;
+    if (providerFailure) throw new Error(providerFailure, streamError ? { cause: streamError } : undefined);
+    if (streamError) throw streamError;
+    return summary;
   }
+  async function streamPrompt(prompt) {
+    return runStream(() => agent.stream({ session, prompt, abortSignal: controller.signal }));
+  }
+  let primarySummary;
   if (request.continue) {
     if (!sessionOptions.continueFrom) throw new Error('Dieter restart recovery is missing the suspended turn continuation');
-    await streamResult(await agent.continueStream({ session, abortSignal: controller.signal }));
+    primarySummary = await runStream(() => agent.continueStream({ session, abortSignal: controller.signal }));
   } else {
-    await streamPrompt(runtimePrompt);
+    primarySummary = await streamPrompt(runtimePrompt);
   }
+  await retryEmptyClaudeResume({
+    adapter,
+    hasResumeSession: Boolean(request.session),
+    continuing: request.continue === true,
+    firstSummary: primarySummary,
+    retry: streamPrompt,
+  });
   // Claude Agent SDK 0.3.213 can end a provider-executed Agent step after
   // returning the child result without streaming the parent's final prose.
   // Continue the same durable session once and keep one logical UI response.

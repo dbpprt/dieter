@@ -11,7 +11,9 @@ struct DieterRootView: View {
         HStack(spacing: 0) {
             AppSidebar(collapsed: $navigationCollapsed)
                 .frame(width: navigationCollapsed ? DieterMetrics.sidebarCollapsedWidth : DieterMetrics.sidebarExpandedWidth)
-            Divider().overlay(DieterTheme.border)
+            Rectangle()
+                .fill(DieterTheme.paneSeparator)
+                .frame(width: 1)
                 .ignoresSafeArea(.container, edges: .top)
             Group {
                 switch store.section {
@@ -33,14 +35,6 @@ struct DieterRootView: View {
         .overlay {
             if !store.phase.isConnected && (!store.hasLoadedWorkspace || store.phase.needsConnectionOverlay) { ConnectionOverlay() }
         }
-        .overlay(alignment: .topTrailing) {
-            if !store.phase.isConnected && store.hasLoadedWorkspace {
-                HStack(spacing: 7) { ProgressView().controlSize(.mini); Text("Reconnecting…") }
-                    .font(.caption.weight(.medium)).padding(.horizontal, 11).frame(height: 30)
-                    .background(DieterTheme.elevated, in: Capsule()).padding(10)
-                    .accessibilityIdentifier("connection.reconnecting")
-            }
-        }
         .sheet(isPresented: $store.createConversationPresented) { NewConversationSheet().environment(store) }
         .sheet(isPresented: $store.createProjectPresented) { NewProjectSheet().environment(store) }
         .sheet(isPresented: $store.createBoardPresented) { NewBoardSheet().environment(store) }
@@ -52,6 +46,68 @@ struct DieterRootView: View {
         .alert("Dieter", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("OK") { store.errorMessage = nil }
         } message: { Text(store.errorMessage ?? "") }
+    }
+}
+
+/// Compact workspace connection state, docked in the sidebar footer so it never
+/// floats over a pane header. Shows a dot + label when expanded, a dot when
+/// collapsed; the full freshness lives in the tooltip and accessibility label.
+private struct SidebarConnectionStatus: View {
+    @Environment(DieterStore.self) private var store
+    var compact = false
+
+    private var dotColor: Color {
+        if store.workspaceIsLive { return DieterTheme.eyes }
+        if store.phase.isConnected { return DieterTheme.amber }
+        return DieterTheme.coral
+    }
+
+    private var label: String {
+        if store.workspaceIsLive { return "Online" }
+        if store.phase.isConnected { return "Syncing" }
+        return "Offline"
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            Group {
+                if compact {
+                    Circle().fill(dotColor).frame(width: 7, height: 7)
+                        .padding(4)
+                } else {
+                    HStack(spacing: 5) {
+                        if store.phase.isConnected, !store.workspaceIsLive {
+                            ProgressView().controlSize(.mini).accessibilityHidden(true)
+                        } else {
+                            Circle().fill(dotColor).frame(width: 6, height: 6).accessibilityHidden(true)
+                        }
+                        Text(label)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(store.workspaceIsLive ? DieterTheme.subtle : dotColor)
+                    }
+                }
+            }
+            .help(accessibilityLabel(now: context.date))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityLabel(now: context.date))
+            .accessibilityIdentifier(accessibilityIdentifier)
+        }
+    }
+
+    private func accessibilityLabel(now: Date) -> String {
+        let freshness = SyncFreshnessPresentation.lastConnectedLabel(
+            lastConnectedAt: store.lastSyncedAt,
+            now: now
+        )
+        if store.workspaceIsLive { return "Dieter is online, \(freshness)" }
+        if store.phase.isConnected { return "Dieter is syncing, \(freshness)" }
+        return "Dieter is offline, \(freshness)"
+    }
+
+    private var accessibilityIdentifier: String {
+        if store.workspaceIsLive { return "connection.online" }
+        if store.phase.isConnected { return "connection.syncing" }
+        return "connection.offline"
     }
 }
 
@@ -79,6 +135,9 @@ struct AppSidebar: View {
         }
         .background(DieterTheme.sidebar)
         .clipped()
+        // Extend the sidebar tone up behind the traffic lights so the title-bar
+        // strip matches the nav instead of showing the darker window background.
+        .background(DieterTheme.sidebar.ignoresSafeArea(.container, edges: .top))
     }
 
     @ViewBuilder private var sidebarHeader: some View {
@@ -89,7 +148,7 @@ struct AppSidebar: View {
             .accessibilityLabel("Expand navigation")
             .accessibilityIdentifier("sidebar.toggle")
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
         } else {
             HStack(spacing: 9) {
                 DieterBrandIcon(size: 24)
@@ -100,7 +159,7 @@ struct AppSidebar: View {
                     .accessibilityIdentifier("sidebar.toggle")
                 SidebarUtilityButton(symbol: "plus", help: "Add Git project") { store.createProjectPresented = true }
             }
-            .padding(.horizontal, 12).padding(.vertical, 10)
+            .padding(.horizontal, 12).padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
         }
     }
 
@@ -171,55 +230,39 @@ struct AppSidebar: View {
 
     private var expandedProjects: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("PROJECTS").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
+                if !visibleProjects.isEmpty {
+                    Text("· \(visibleProjects.count)")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary.opacity(0.7))
+                }
+                Spacer()
+                Button { store.createProjectPresented = true } label: {
+                    Image(systemName: "plus").font(.system(size: 10, weight: .bold))
+                }
+                .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary).help("Add Git project")
+            }
+            .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 4)
+
             ForEach(visibleProjects, id: \.id) { project in
                 SidebarProjectInsertionTarget(beforeProjectID: project.id) { moveProject($0, before: project.id) }
-                SidebarExpandedProject(
+                SidebarProjectRow(
                     project: project,
                     projectIDs: visibleProjects.map(\.id),
-                    collapsed: projectNavigation.isCollapsed(project.id),
-                    toggleCollapsed: { toggleProject(project.id) },
+                    expanded: projectNavigation.isExpanded(project.id),
+                    toggleExpanded: { toggleProject(project.id) },
                     moveProject: moveProject
                 )
             }
             SidebarProjectInsertionTarget(beforeProjectID: nil) { moveProject($0, before: nil) }
         }
-        .padding(.horizontal, 8).padding(.vertical, 10)
+        .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 10)
     }
 
     private var collapsedProjects: some View {
-        LazyVStack(spacing: 8) {
+        LazyVStack(spacing: 7) {
             ForEach(visibleProjects, id: \.id) { project in
-                VStack(spacing: 5) {
-                    if let machine = store.machine(forProjectID: project.id) {
-                        Text(machine.name.prefix(2).uppercased())
-                            .font(.system(size: 7, weight: .bold, design: .rounded))
-                            .foregroundStyle(machine.online ? DieterTheme.eyes : DieterTheme.tertiary)
-                            .frame(width: 24, height: 13)
-                            .background((machine.online ? DieterTheme.eyes : DieterTheme.tertiary).opacity(0.1), in: Capsule())
-                            .help("\(project.name) · \(machine.name) · \(machine.online ? "Online" : "Offline")")
-                    } else {
-                        Rectangle().fill(DieterTheme.border).frame(width: 24, height: 1).padding(.vertical, 3)
-                    }
-                    ForEach(store.boards(for: project.id), id: \.id) { board in
-                        SidebarRailDestination(
-                            title: "\(project.name) / \(board.name)",
-                            symbol: "rectangle.split.3x1",
-                            selected: store.section == .board && store.selectedBoardID == board.id,
-                            badge: board.projectID == store.selectedProjectID ? activeCount(board.id) : 0
-                        ) { Task { await store.openBoard(board.id, projectID: project.id) } }
-                        .accessibilityIdentifier("sidebar.board.\(board.id)")
-                        .contextMenu {
-                            Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
-                            Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
-                        }
-                    }
-                    SidebarRailDestination(title: "\(project.name) files", symbol: "folder", selected: store.section == .files && store.selectedProjectID == project.id) {
-                        Task { await store.openProject(project.id, section: .files) }
-                    }.accessibilityIdentifier("sidebar.files.\(project.id)")
-                    SidebarRailDestination(title: "\(project.name) schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
-                        Task { await store.openProject(project.id, section: .schedules) }
-                    }.accessibilityIdentifier("sidebar.schedules.\(project.id)")
-                }
+                SidebarProjectRail(project: project)
             }
         }.padding(.vertical, 10)
     }
@@ -227,6 +270,7 @@ struct AppSidebar: View {
     @ViewBuilder private var sidebarFooter: some View {
         if collapsed {
             VStack(spacing: 6) {
+                SidebarConnectionStatus(compact: true)
                 ForEach(store.machines) { machine in
                     ZStack(alignment: .bottomTrailing) {
                         Text(machine.name.prefix(1).uppercased())
@@ -251,7 +295,7 @@ struct AppSidebar: View {
                     HStack {
                         Text("MACHINES").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
                         Spacer()
-                        Text("\(store.machines.filter(\.online).count) online").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                        SidebarConnectionStatus()
                     }
                     ForEach(store.machines) { machine in
                         HStack(spacing: 8) {
@@ -279,12 +323,8 @@ struct AppSidebar: View {
         }
     }
 
-    private func activeCount(_ boardID: String) -> Int {
-        store.navigationCards.values.flatMap { $0 }.filter { $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime) }.count
-    }
-
     private func toggleProject(_ projectID: String) {
-        projectNavigation.toggleCollapsed(projectID)
+        projectNavigation.toggleExpanded(projectID)
         projectNavigation.save(to: SidebarProjectNavigationPreferences.applicationDefaults())
     }
 
@@ -300,48 +340,73 @@ struct AppSidebar: View {
     }
 }
 
-private struct SidebarExpandedProject: View {
+/// Compressed project row (default): initials avatar + name. Tapping the row body
+/// opens a quick-nav popover (boards · files · schedules); the trailing chevron
+/// expands the same destinations inline.
+private struct SidebarProjectRow: View {
     @Environment(DieterStore.self) private var store
     let project: Dieter_V1_Project
     let projectIDs: [String]
-    let collapsed: Bool
-    let toggleCollapsed: () -> Void
+    let expanded: Bool
+    let toggleExpanded: () -> Void
     let moveProject: (String, String?) -> Void
     @State private var dropTargeted = false
+    @State private var hovering = false
+    @State private var popoverPresented = false
+
+    private var selected: Bool {
+        store.selectedProjectID == project.id &&
+            [.board, .files, .schedules].contains(store.section)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Button(action: toggleCollapsed) {
-                    Image(systemName: collapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(DieterTheme.tertiary)
-                        .frame(width: 10, height: 18)
+            HStack(spacing: 8) {
+                Button { popoverPresented = true } label: {
+                    HStack(spacing: 8) {
+                        ProjectAvatar(name: project.name, online: store.machine(forProjectID: project.id)?.online)
+                        Text(project.name)
+                            .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                            .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
+                            .lineLimit(1)
+                        Spacer(minLength: 2)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(collapsed ? "Expand \(project.name)" : "Collapse \(project.name)")
-                .accessibilityLabel(collapsed ? "Expand \(project.name)" : "Collapse \(project.name)")
-                .accessibilityIdentifier("sidebar.project.\(project.id).toggle")
+                .help("\(project.name) — boards, files, schedules")
+                .accessibilityIdentifier("sidebar.project.\(project.id)")
 
-                Text(project.name.uppercased())
-                    .font(DieterFont.sectionLabel).tracking(0.8)
-                    .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
-                if let machine = store.machine(forProjectID: project.id) {
-                    ProjectMachineBadge(machine: machine)
+                if hovering {
+                    Button { store.presentNewBoard(projectID: project.id) } label: {
+                        Image(systemName: "plus").font(.system(size: 10, weight: .bold))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
+                    .help("New board in \(project.name)")
+                    .transition(.opacity)
                 }
-                Spacer()
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(dropTargeted ? DieterTheme.shell : DieterTheme.tertiary.opacity(0.65))
-                    .accessibilityHidden(true)
-                Button { store.presentNewBoard(projectID: project.id) } label: {
-                    Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+
+                Button(action: toggleExpanded) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .frame(width: 16, height: 20)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).foregroundStyle(DieterTheme.subtle).help("New board in \(project.name)")
+                .buttonStyle(.plain)
+                .help(expanded ? "Collapse \(project.name)" : "Expand \(project.name)")
+                .accessibilityLabel(expanded ? "Collapse \(project.name)" : "Expand \(project.name)")
+                .accessibilityIdentifier("sidebar.project.\(project.id).toggle")
             }
-            .padding(.horizontal, 9).frame(height: 24)
+            .padding(.horizontal, 8).frame(height: DieterMetrics.navigationRowHeight)
+            .background(
+                dropTargeted ? DieterTheme.shellDeep.opacity(0.16)
+                    : (selected ? DieterTheme.selection : (hovering ? DieterTheme.surface.opacity(0.7) : .clear)),
+                in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
+            )
             .contentShape(Rectangle())
-            .background(dropTargeted ? DieterTheme.shellDeep.opacity(0.14) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+            .onHover { hovering = $0 }
             .draggable(SidebarProjectDragPayload(projectID: project.id).encoded) {
                 SidebarProjectDragPreview(project: project)
             }
@@ -349,7 +414,7 @@ private struct SidebarExpandedProject: View {
                 guard let value = values.first, let payload = SidebarProjectDragPayload(value), payload.projectID != project.id else { return false }
                 let targetIndex = projectIDs.firstIndex(of: project.id) ?? 0
                 let beforeProjectID: String?
-                if location.y < 12 {
+                if location.y < 16 {
                     beforeProjectID = project.id
                 } else if projectIDs.indices.contains(targetIndex + 1) {
                     beforeProjectID = projectIDs[targetIndex + 1]
@@ -360,39 +425,156 @@ private struct SidebarExpandedProject: View {
                 return true
             } isTargeted: { dropTargeted = $0 }
             .animation(.easeOut(duration: 0.12), value: dropTargeted)
-            .help("Drag to reorder \(project.name)")
-            .accessibilityIdentifier("sidebar.project.\(project.id)")
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .popover(isPresented: $popoverPresented, arrowEdge: .trailing) {
+                ProjectQuickNav(project: project) { popoverPresented = false }
+                    .environment(store)
+            }
 
-            if !collapsed {
-                ForEach(store.boards(for: project.id), id: \.id) { board in
-                    SidebarDestination(
-                        title: board.name,
-                        symbol: "rectangle.split.3x1",
-                        selected: store.section == .board && store.selectedBoardID == board.id,
-                        badge: board.projectID == store.selectedProjectID ? activeCount(board.id) : 0
-                    ) { Task { await store.openBoard(board.id, projectID: project.id) } }
-                    .accessibilityIdentifier("sidebar.board.\(board.id)")
-                    .contextMenu {
-                        Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
-                        Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
-                    }
-                }
-
-                SidebarDestination(title: "Files", symbol: "folder", selected: store.section == .files && store.selectedProjectID == project.id) {
-                    Task { await store.openProject(project.id, section: .files) }
-                }.accessibilityIdentifier("sidebar.files.\(project.id)")
-
-                SidebarDestination(title: "Schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
-                    Task { await store.openProject(project.id, section: .schedules) }
-                }.accessibilityIdentifier("sidebar.schedules.\(project.id)")
+            if expanded {
+                SidebarProjectDestinations(project: project)
+                    .padding(.leading, 6)
             }
         }
-        .padding(.bottom, 4)
-        .animation(.snappy(duration: 0.18), value: collapsed)
+        .padding(.bottom, 2)
+        .animation(.snappy(duration: 0.18), value: expanded)
+    }
+}
+
+/// Inline boards · files · schedules rows shown when a project row is expanded,
+/// and reused (without indentation) inside the quick-nav popover.
+private struct SidebarProjectDestinations: View {
+    @Environment(DieterStore.self) private var store
+    let project: Dieter_V1_Project
+    var onNavigate: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(store.boards(for: project.id), id: \.id) { board in
+                SidebarDestination(
+                    title: board.name,
+                    symbol: "rectangle.split.3x1",
+                    selected: store.section == .board && store.selectedBoardID == board.id,
+                    badge: activeCount(board.id)
+                ) { onNavigate?(); Task { await store.openBoard(board.id, projectID: project.id) } }
+                .accessibilityIdentifier("sidebar.board.\(board.id)")
+                .contextMenu {
+                    Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
+                    Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
+                }
+            }
+            SidebarDestination(title: "Files", symbol: "folder", selected: store.section == .files && store.selectedProjectID == project.id) {
+                onNavigate?(); Task { await store.openProject(project.id, section: .files) }
+            }.accessibilityIdentifier("sidebar.files.\(project.id)")
+            SidebarDestination(title: "Schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
+                onNavigate?(); Task { await store.openProject(project.id, section: .schedules) }
+            }.accessibilityIdentifier("sidebar.schedules.\(project.id)")
+        }
     }
 
     private func activeCount(_ boardID: String) -> Int {
         store.navigationCards.values.flatMap { $0 }.filter { $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime) }.count
+    }
+}
+
+/// Collapsed-rail project: the initials avatar alone, opening the quick-nav popover.
+private struct SidebarProjectRail: View {
+    @Environment(DieterStore.self) private var store
+    let project: Dieter_V1_Project
+    @State private var popoverPresented = false
+    @State private var hovering = false
+
+    private var selected: Bool {
+        store.selectedProjectID == project.id &&
+            [.board, .files, .schedules].contains(store.section)
+    }
+
+    var body: some View {
+        Button { popoverPresented = true } label: {
+            ProjectAvatar(name: project.name, online: store.machine(forProjectID: project.id)?.online, size: 30)
+                .padding(3)
+                .background(
+                    selected ? DieterTheme.selection : (hovering ? DieterTheme.surface.opacity(0.7) : .clear),
+                    in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("\(project.name) — boards, files, schedules")
+        .accessibilityIdentifier("sidebar.project.\(project.id)")
+        .popover(isPresented: $popoverPresented, arrowEdge: .trailing) {
+            ProjectQuickNav(project: project) { popoverPresented = false }
+                .environment(store)
+        }
+    }
+}
+
+/// Rounded initials tile with a small machine-presence dot.
+private struct ProjectAvatar: View {
+    let name: String
+    var online: Bool?
+    var size: CGFloat = 22
+
+    private var initials: String {
+        let words = name.split(whereSeparator: { $0 == " " || $0 == "-" || $0 == "_" || $0 == "/" })
+        if words.count >= 2 {
+            return (words[0].prefix(1) + words[1].prefix(1)).uppercased()
+        }
+        return name.replacingOccurrences(of: " ", with: "").prefix(2).uppercased()
+    }
+
+    var body: some View {
+        Text(initials)
+            .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
+            .foregroundStyle(DieterTheme.subtle)
+            .frame(width: size, height: size)
+            .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).stroke(DieterTheme.border))
+            .overlay(alignment: .bottomTrailing) {
+                if let online {
+                    Circle().fill(online ? DieterTheme.eyes : DieterTheme.tertiary)
+                        .frame(width: size * 0.3, height: size * 0.3)
+                        .overlay(Circle().stroke(DieterTheme.sidebar, lineWidth: 1.5))
+                        .offset(x: size * 0.12, y: size * 0.12)
+                }
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Quick-navigation flyout for a project, shared by the expanded row and the
+/// collapsed rail. Lists the project's boards, files, and schedules.
+private struct ProjectQuickNav: View {
+    @Environment(DieterStore.self) private var store
+    let project: Dieter_V1_Project
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 9) {
+                ProjectAvatar(name: project.name, online: store.machine(forProjectID: project.id)?.online, size: 26)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(project.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    if let machine = store.machine(forProjectID: project.id) {
+                        Text("\(machine.name) · \(machine.online ? "Online" : "Offline")")
+                            .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 4)
+
+            Divider().overlay(DieterTheme.border)
+
+            SidebarProjectDestinations(project: project, onNavigate: dismiss)
+
+            Divider().overlay(DieterTheme.border)
+
+            SidebarFooterButton(title: "New board…", symbol: "plus") { dismiss(); store.presentNewBoard(projectID: project.id) }
+        }
+        .padding(10)
+        .frame(width: 244)
+        .background(DieterTheme.surface)
     }
 }
 
@@ -454,22 +636,6 @@ struct SidebarProjectDragPayload: Equatable {
     }
 
     var encoded: String { Self.prefix + projectID }
-}
-
-private struct ProjectMachineBadge: View {
-    let machine: DieterEndpoint
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Circle().fill(machine.online ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 5, height: 5)
-            Text(machine.name).lineLimit(1)
-        }
-        .font(.system(size: 8, weight: .semibold))
-        .foregroundStyle(machine.online ? DieterTheme.subtle : DieterTheme.tertiary)
-        .padding(.horizontal, 5).frame(height: 15)
-        .background((machine.online ? DieterTheme.eyes : DieterTheme.tertiary).opacity(0.08), in: Capsule())
-        .help("Runs on \(machine.name) · \(machine.online ? "Online" : "Offline")")
-    }
 }
 
 private struct SidebarRailToggle: View {

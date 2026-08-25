@@ -460,7 +460,7 @@ func TestStreamProtocolErrorRemainsFailed(t *testing.T) {
 	}
 }
 
-func TestEmptyHarnessCompletionBecomesDescriptiveFailure(t *testing.T) {
+func TestEmptyClaudeCompletionPreservesSessionInFailureMessage(t *testing.T) {
 	service, _, project, board := appSetup(t)
 	service.Runner = emptyResponseRunner{}
 	card, err := service.CreateCard(context.Background(), CardInput{
@@ -480,7 +480,7 @@ func TestEmptyHarnessCompletionBecomesDescriptiveFailure(t *testing.T) {
 	stored, _ := service.Store.ResolveCard(card.ID)
 	conversation, _ := service.Store.Conversation(card.ID)
 	last := conversation.Messages[len(conversation.Messages)-1]
-	if stored.Runtime != "failed" || conversation.Status != "failed" || len(last.Parts) != 1 || !strings.Contains(last.Parts[0].Text, "completed without a response") || !strings.Contains(last.Parts[0].Text, "authenticated") {
+	if stored.Runtime != "failed" || conversation.Status != "failed" || len(last.Parts) != 1 || !strings.Contains(last.Parts[0].Text, "without producing output") || !strings.Contains(last.Parts[0].Text, "durable session is preserved") || strings.Contains(last.Parts[0].Text, "authenticated") {
 		t.Fatalf("card=%#v conversation=%#v", stored, conversation)
 	}
 }

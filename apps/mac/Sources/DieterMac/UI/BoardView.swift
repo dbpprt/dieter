@@ -100,6 +100,22 @@ enum KanbanLaneSizing {
     }
 }
 
+enum BoardPresentationState: Equatable {
+    case loading
+    case empty
+    case loaded
+
+    static func resolve(
+        hasLoadedWorkspace: Bool,
+        selectedBoardID: String,
+        hasSelectedBoard: Bool
+    ) -> Self {
+        if hasSelectedBoard { return .loaded }
+        if !hasLoadedWorkspace || !selectedBoardID.isEmpty { return .loading }
+        return .empty
+    }
+}
+
 private struct ConversationResizeDivider: View {
     let onChanged: (CGFloat) -> Void
     let onEnded: () -> Void
@@ -109,10 +125,11 @@ private struct ConversationResizeDivider: View {
         ZStack {
             Rectangle().fill(Color.clear)
             Rectangle()
-                .fill(hovering ? DieterTheme.shell.opacity(0.62) : DieterTheme.border)
+                .fill(hovering ? DieterTheme.shell.opacity(0.62) : DieterTheme.paneSeparator)
                 .frame(width: hovering ? 2 : 1)
         }
         .frame(width: ConversationPaneSizing.dividerWidth)
+        .ignoresSafeArea(.container, edges: .top)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -173,16 +190,41 @@ struct BoardView: View {
     }
 
     private var boardContent: some View {
-        VStack(spacing: 0) {
-            BoardHeader()
-            if let board = store.selectedBoard {
-                KanbanView(board: board)
-            } else {
-                ContentUnavailableView(
-                    "No board selected",
-                    systemImage: "rectangle.split.3x1",
-                    description: Text("Create or select a board for this project.")
-                )
+        Group {
+            switch BoardPresentationState.resolve(
+                hasLoadedWorkspace: store.hasLoadedWorkspace,
+                selectedBoardID: store.selectedBoardID,
+                hasSelectedBoard: store.selectedBoard != nil
+            ) {
+            case .loading:
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                    Text("Loading board…")
+                        .font(DieterFont.meta)
+                        .foregroundStyle(DieterTheme.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Loading board")
+                .accessibilityIdentifier("board.loading")
+            case .loaded:
+                VStack(spacing: 0) {
+                    BoardHeader()
+                    if let board = store.selectedBoard {
+                        KanbanView(board: board)
+                    }
+                }
+            case .empty:
+                VStack(spacing: 0) {
+                    BoardHeader()
+                    ContentUnavailableView(
+                        "No board selected",
+                        systemImage: "rectangle.split.3x1",
+                        description: Text("Create or select a board for this project.")
+                    )
+                }
             }
         }
     }

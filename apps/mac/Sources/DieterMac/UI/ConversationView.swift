@@ -99,7 +99,7 @@ private struct ConversationChrome: View {
     private var subagentCount: Int { store.conversation?.conversation.subagents.count ?? 0 }
 
     var body: some View {
-        FluidPaneChrome(background: DieterTheme.sidebar, spacing: 8) {
+        FluidPaneChrome(background: DieterTheme.background, spacing: 8) {
             HStack(spacing: 10) {
                 if compact {
                     Button { store.closeConversation() } label: { Image(systemName: "xmark") }
@@ -108,7 +108,7 @@ private struct ConversationChrome: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(card?.title.isEmpty == false ? card!.title : "Conversation")
-                        .font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                        .font(DieterFont.paneTitle).lineLimit(1)
                     HStack(spacing: 4) {
                         if let detail = store.selectedDetail {
                             Text(detail.project.name).lineLimit(1)

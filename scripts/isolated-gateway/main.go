@@ -33,14 +33,15 @@ import (
 func main() {
 	address := flag.String("addr", "127.0.0.1:14243", "loopback listen address for the gateway copy")
 	home := flag.String("home", "", "state root (default: a fresh temporary directory)")
+	offlineTrigger := flag.String("offline-trigger", "", "optional file whose creation disconnects the enrolled daemon while leaving the gateway online")
 	flag.Parse()
-	if err := run(*address, *home); err != nil {
+	if err := run(*address, *home, *offlineTrigger); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home string) error {
+func run(address, home, offlineTrigger string) error {
 	// The mock harness answers every prompt deterministically, so end-to-end
 	// turns complete without real provider credentials.
 	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
@@ -133,7 +134,26 @@ func run(address, home string) error {
 	defer boardHTTP.Close()
 
 	tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "isolated-e2e", Log: logger}
-	go func() { _ = tunnel.Run(ctx) }()
+	daemonContext, disconnectDaemon := context.WithCancel(ctx)
+	defer disconnectDaemon()
+	go func() { _ = tunnel.Run(daemonContext) }()
+	if offlineTrigger != "" {
+		go func() {
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if _, err := os.Stat(offlineTrigger); err == nil {
+						disconnectDaemon()
+						return
+					}
+				}
+			}
+		}()
+	}
 
 	tokenBytes := make([]byte, 24)
 	if _, err = rand.Read(tokenBytes); err != nil {

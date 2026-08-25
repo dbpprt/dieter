@@ -91,6 +91,7 @@ data class DieterUiState(
     val editingScheduleId: String? = null,
     val endpoint: String = DIETER_LOCAL_ENDPOINT,
     val connectionPhase: ConnectionPhase = ConnectionPhase.STOPPED,
+    val lastConnectedAtMillis: Long? = null,
     val connectionDialogVisible: Boolean = false,
     val connectionError: String? = null,
     val desiredConnected: Boolean = true,
@@ -425,6 +426,7 @@ class DieterViewModel(
                     ?: connection.configuredConnections.firstOrNull { it.id == connection.activeGatewayId }?.address
                     ?: current.endpoint,
                 connectionPhase = connection.phase,
+                lastConnectedAtMillis = connection.lastConnectedAtMs,
                 connectionDialogVisible = when {
                     !connection.desiredConnected -> true
                     connection.phase == ConnectionPhase.CONNECTED && !connectionDialogManuallyRequested -> false

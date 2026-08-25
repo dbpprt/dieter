@@ -203,6 +203,8 @@ enum DieterTheme {
     static var input: Color { Color(light: colors.lightSurface, dark: colors.darkInput) }
     static var border: Color { Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.10, darkAlpha: 0.09) }
     static var strongBorder: Color { Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.18, darkAlpha: 0.16) }
+    /// Crisp 1px seam separating the three primary panes (nav · workspace · conversation).
+    static var paneSeparator: Color { Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.22, darkAlpha: 0.18) }
     static var text: Color { Color(light: colors.darkBrand, dark: colors.light) }
     static var subtle: Color { Color(light: colors.lightSubtle, dark: colors.darkSubtle) }
     static var tertiary: Color { Color(light: colors.lightTertiary, dark: colors.darkTertiary) }
@@ -225,11 +227,13 @@ enum DieterTheme {
 enum DieterMetrics {
     static let browserWidth: CGFloat = 320
     static let browserMaximumWidth: CGFloat = 340
-    static let sidebarExpandedWidth: CGFloat = 224
-    static let sidebarCollapsedWidth: CGFloat = 58
+    static let sidebarExpandedWidth: CGFloat = 234
+    static let sidebarCollapsedWidth: CGFloat = 60
     static let navigationRowHeight: CGFloat = 32
     static let controlRadius: CGFloat = 8
     static let cardRadius: CGFloat = 10
+    /// Shared top inset for every pane header so titles land on one horizontal band.
+    static let headerTopPadding: CGFloat = 14
 }
 
 /// Shared type scale so every pane uses the same few text styles.
@@ -287,7 +291,7 @@ struct FluidPaneChrome<Primary: View, Secondary: View>: View {
             if hasSecondary { secondary.frame(maxWidth: .infinity, alignment: .leading) }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 14)
+        .padding(.top, DieterMetrics.headerTopPadding)
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background)

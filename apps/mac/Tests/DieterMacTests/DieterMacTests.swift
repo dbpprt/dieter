@@ -927,10 +927,44 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     ) == nil)
 }
 
+@Test func boardPresentationUsesLoadingStateUntilASelectionCanBeResolved() {
+    #expect(BoardPresentationState.resolve(
+        hasLoadedWorkspace: false,
+        selectedBoardID: "",
+        hasSelectedBoard: false
+    ) == .loading)
+    #expect(BoardPresentationState.resolve(
+        hasLoadedWorkspace: true,
+        selectedBoardID: "b_loading",
+        hasSelectedBoard: false
+    ) == .loading)
+    #expect(BoardPresentationState.resolve(
+        hasLoadedWorkspace: true,
+        selectedBoardID: "b_loaded",
+        hasSelectedBoard: true
+    ) == .loaded)
+}
+
+@Test func boardPresentationPreservesTheEmptyStateForABoardlessWorkspace() {
+    #expect(BoardPresentationState.resolve(
+        hasLoadedWorkspace: true,
+        selectedBoardID: "",
+        hasSelectedBoard: false
+    ) == .empty)
+}
+
 @Test func transientRPCFailuresAreEligibleForSilentReconnect() {
     #expect(DieterRPCFailure.isTransient(RPCError(code: .unavailable, message: "stream unexpectedly closed")))
     #expect(DieterRPCFailure.isTransient(RPCError(code: .deadlineExceeded, message: "timed out")))
     #expect(!DieterRPCFailure.isTransient(RPCError(code: .notFound, message: "board missing")))
+}
+
+@Test func offlineConnectionLabelsUseCompactRelativeAges() {
+    let now = Date(timeIntervalSince1970: 100_000)
+    #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: nil, now: now) == "Last connected unknown")
+    #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-59), now: now) == "Last connected just now")
+    #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-60), now: now) == "Last connected 1m ago")
+    #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-3_600), now: now) == "Last connected 1h ago")
 }
 
 @Test @MainActor func cachedBoardSelectionSwitchesTheVisibleProjectWithoutAnRPC() {
@@ -1487,20 +1521,22 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(!ignoredSelfMove)
 }
 
-@Test func sidebarProjectPreferencesPersistOrderAndCollapsedStateAcrossReload() throws {
+@Test func sidebarProjectPreferencesPersistOrderAndExpandedStateAcrossReload() throws {
     let suite = "dieter-sidebar-tests-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
 
+    // Projects are compressed by default; only explicit expansions persist.
     var preferences = SidebarProjectNavigationPreferences()
+    #expect(!preferences.isExpanded("p_two"))
     _ = preferences.move("p_three", before: "p_one", availableIDs: ["p_one", "p_two", "p_three"])
-    preferences.toggleCollapsed("p_two")
+    preferences.toggleExpanded("p_two")
     preferences.save(to: defaults)
 
     let restored = SidebarProjectNavigationPreferences.load(from: defaults)
     #expect(restored.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_three", "p_one", "p_two"])
-    #expect(restored.isCollapsed("p_two"))
-    #expect(!restored.isCollapsed("p_one"))
+    #expect(restored.isExpanded("p_two"))
+    #expect(!restored.isExpanded("p_one"))
 }
 
 @Test func sidebarProjectDragPayloadRejectsOtherStringDrops() {

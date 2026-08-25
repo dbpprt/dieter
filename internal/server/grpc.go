@@ -604,6 +604,9 @@ func conversationDelta(previous, current *dieterv1.ConversationSnapshot) *dieter
 	return update
 }
 
+// SendMessage only uses the RPC context for admission. SubmitCardParts creates
+// a daemon-owned turn context, so a client disconnect after this method returns
+// never cancels an admitted agent turn.
 func (api *grpcAPI) SendMessage(_ context.Context, request *dieterv1.SendMessageRequest) (*dieterv1.SendMessageResponse, error) {
 	parts, err := modelUserMessageParts(request.GetParts())
 	if err != nil {

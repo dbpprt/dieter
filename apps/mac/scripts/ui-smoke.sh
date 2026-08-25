@@ -10,6 +10,7 @@ PORT=${DIETER_UI_SMOKE_PORT:-14245}
 ADDRESS="127.0.0.1:$PORT"
 ENDPOINT="http://$ADDRESS"
 TOKEN_FILE="$CAPTURE_DIR/session-token"
+OFFLINE_TRIGGER="$CAPTURE_DIR/daemon-offline"
 GATEWAY_PID=
 APP_PID=
 
@@ -18,7 +19,7 @@ cleanup() {
     pkill -x DieterMac 2>/dev/null || true
     if [ -n "$GATEWAY_PID" ]; then kill "$GATEWAY_PID" 2>/dev/null || true; fi
     defaults delete "$APPEARANCE_SUITE" >/dev/null 2>&1 || true
-    rm -f "$TOKEN_FILE" "$CAPTURE_DIR/gateway.env"
+    rm -f "$TOKEN_FILE" "$CAPTURE_DIR/gateway.env" "$OFFLINE_TRIGGER"
 }
 trap cleanup EXIT INT TERM
 
@@ -30,7 +31,7 @@ fi
 rm -rf "$CAPTURE_DIR"
 mkdir -p "$CAPTURE_DIR"
 (cd "$REPO_ROOT" && go build -o "$CAPTURE_DIR/isolated-gateway" ./scripts/isolated-gateway)
-"$CAPTURE_DIR/isolated-gateway" --addr "$ADDRESS" >"$CAPTURE_DIR/gateway.env" 2>"$CAPTURE_DIR/gateway.log" &
+"$CAPTURE_DIR/isolated-gateway" --addr "$ADDRESS" --offline-trigger "$OFFLINE_TRIGGER" >"$CAPTURE_DIR/gateway.env" 2>"$CAPTURE_DIR/gateway.log" &
 GATEWAY_PID=$!
 
 COUNT=0
@@ -64,6 +65,7 @@ pkill -x DieterMac 2>/dev/null || true
 open -n -W "$APP_BUNDLE" --args --dieter-endpoint "$ENDPOINT" \
     --dieter-access-token-file "$TOKEN_FILE" \
     --ui-smoke --ui-smoke-output "$CAPTURE_DIR" \
+    --ui-smoke-offline-trigger "$OFFLINE_TRIGGER" \
     --appearance-defaults-suite "$APPEARANCE_SUITE" >"$CAPTURE_DIR/app.log" 2>&1 &
 APP_PID=$!
 

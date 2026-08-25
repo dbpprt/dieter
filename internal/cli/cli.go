@@ -889,7 +889,7 @@ Actions:
   show         Show Dieter card metadata and comments
   context      Print compact in-chat Dieter context
   transcript   Read Dieter's durable conversation
-  send         Run or resume the local harness session
+  send         Submit a message; the running daemon owns the agent turn
   comment      Add a non-triggering Dieter annotation
   move         Move to todo, running, review, or done
   labels       Assign board labels to a card
@@ -1123,6 +1123,19 @@ func (c *CLI) cardSend(args []string) error {
 		return err
 	}
 	parts = append(parts, files...)
+	if submitted, queued, submitErr := c.sendCardThroughDaemon(context.Background(), set.Arg(0), parts, *provider, *modelName, *effort); submitted {
+		if submitErr != nil {
+			return submitErr
+		}
+		if queued {
+			fmt.Fprintln(c.Out, "queued")
+		} else {
+			fmt.Fprintln(c.Out, "sent")
+		}
+		return nil
+	} else if submitErr != nil {
+		return submitErr
+	}
 	if err = c.service().SendCardParts(context.Background(), set.Arg(0), parts, *provider, *modelName, *effort); err != nil {
 		return err
 	}

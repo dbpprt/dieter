@@ -46,13 +46,20 @@ enum SidebarNavigationUISmokeRunner {
         writeReport(results, to: output)
     }
 
+    // Projects are compressed by default; the trailing chevron of each row sits
+    // near the right edge of the 234pt sidebar. Rows share a 42pt vertical pitch
+    // once the PROJECTS section header and title-bar inset are accounted for.
+    private static let chevronX: CGFloat = 211
+    private static let firstRowTop: CGFloat = 240
+    private static let secondRowTop: CGFloat = 282
+
     private static func prepare(window: NSWindow, results: inout [String: String]) async {
-        click(window: window, x: 22, distanceFromTop: 217)
+        click(window: window, x: chevronX, distanceFromTop: firstRowTop)
         try? await DieterTaskSleep.milliseconds(450)
         var preferences = loadPreferences()
-        results["collapse-click"] = preferences.isCollapsed(projectIDs[0]) ? "passed" : "failed: first project did not collapse"
+        results["expand-click"] = preferences.isExpanded(projectIDs[0]) ? "passed" : "failed: first project did not expand"
 
-        await drag(window: window, fromX: 100, fromTop: 360, toX: 100, toTop: 180)
+        await drag(window: window, fromX: 100, fromTop: 324, toX: 100, toTop: 210)
         try? await DieterTaskSleep.milliseconds(700)
         preferences = loadPreferences()
         if preferences.orderedIDs(from: projectIDs) != [projectIDs[2], projectIDs[0], projectIDs[1]] {
@@ -69,28 +76,28 @@ enum SidebarNavigationUISmokeRunner {
         preferences = loadPreferences()
         let order = preferences.orderedIDs(from: projectIDs)
         results["drag-order"] = order == [projectIDs[2], projectIDs[0], projectIDs[1]] ? "passed" : "failed: \(order.joined(separator: ","))"
-        results["saved-collapse"] = preferences.isCollapsed(projectIDs[0]) ? "passed" : "failed: collapsed state was not saved"
+        results["saved-expand"] = preferences.isExpanded(projectIDs[0]) ? "passed" : "failed: expanded state was not saved"
     }
 
     private static func verify(window: NSWindow, results: inout [String: String]) async {
         let restored = loadPreferences()
         results["restored-order"] = restored.orderedIDs(from: projectIDs) == [projectIDs[2], projectIDs[0], projectIDs[1]] ? "passed" : "failed"
-        results["restored-collapse"] = restored.isCollapsed(projectIDs[0]) ? "passed" : "failed"
+        results["restored-expand"] = restored.isExpanded(projectIDs[0]) ? "passed" : "failed"
 
-        // The reordered third project is the first visible header after relaunch.
-        click(window: window, x: 22, distanceFromTop: 217)
+        // The reordered third project is the first visible row after relaunch.
+        click(window: window, x: chevronX, distanceFromTop: firstRowTop)
         try? await DieterTaskSleep.milliseconds(350)
         var interacted = loadPreferences()
-        results["order-in-relaunched-ui"] = interacted.isCollapsed(projectIDs[2]) ? "passed" : "failed: first visible toggle was not the reordered project"
-        click(window: window, x: 22, distanceFromTop: 217)
+        results["order-in-relaunched-ui"] = interacted.isExpanded(projectIDs[2]) ? "passed" : "failed: first visible toggle was not the reordered project"
+        click(window: window, x: chevronX, distanceFromTop: firstRowTop)
         try? await DieterTaskSleep.milliseconds(350)
 
-        // With the first project expanded, the saved-collapsed project is second.
-        click(window: window, x: 22, distanceFromTop: 355)
+        // The saved-expanded project renders second; collapsing it clears the flag.
+        click(window: window, x: chevronX, distanceFromTop: secondRowTop)
         try? await DieterTaskSleep.milliseconds(350)
         interacted = loadPreferences()
-        results["collapse-in-relaunched-ui"] = !interacted.isCollapsed(projectIDs[0]) ? "passed" : "failed: saved collapsed project was not rendered second"
-        click(window: window, x: 22, distanceFromTop: 355)
+        results["expand-in-relaunched-ui"] = !interacted.isExpanded(projectIDs[0]) ? "passed" : "failed: saved expanded project was not rendered second"
+        click(window: window, x: chevronX, distanceFromTop: secondRowTop)
         try? await DieterTaskSleep.milliseconds(350)
     }
 

@@ -88,6 +88,10 @@ struct DieterOutboxEntry: Codable, Identifiable, Sendable {
 struct DieterSyncProjection: Codable, Sendable {
     var cursor: Data?
     var snapshot: Data?
+    /// Wall-clock time of the most recent authoritative WatchSync frame.
+    /// Persisting this separately from the snapshot lets the UI report the
+    /// age of a cursor-only heartbeat after relaunching.
+    var refreshedAt: Date? = nil
 
     static let empty = DieterSyncProjection(cursor: nil, snapshot: nil)
 }
@@ -163,7 +167,11 @@ enum DieterSyncProjectionCache {
         snapshot.state.boards = boards
         snapshot.state.cards = cards
         snapshot.state.chats = chats
-        return DieterSyncProjection(cursor: nil, snapshot: try? snapshot.serializedData())
+        return DieterSyncProjection(
+            cursor: nil,
+            snapshot: try? snapshot.serializedData(),
+            refreshedAt: projection.refreshedAt
+        )
     }
 }
 
