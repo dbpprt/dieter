@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,7 +18,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const maxRelayPayload = 16 << 20
+const (
+	maxRelayPayload               = 16 << 20
+	defaultRelayFrameBuffer       = 4
+	remoteDesktopRelayFrameBuffer = 128
+)
 
 const (
 	daemonHeartbeatLease      = 30 * time.Second
@@ -233,9 +238,12 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		link.mu.Unlock()
 		return nil, status.Error(codes.ResourceExhausted, "daemon relay concurrency is exhausted")
 	}
-	// Keep only four bounded frames waiting per RPC. Slow consumers are failed
-	// independently rather than stalling every stream on this daemon link.
-	frames := make(chan *gatewayv1.DaemonLinkFrame, 4)
+	// Keep every RPC bounded. Remote-desktop admission legitimately bursts its
+	// signed binding, SDP answer, state, and gathered ICE candidates before the
+	// gateway handler is scheduled to drain them, so it needs enough room for
+	// the daemon's bounded signaling history. Other RPCs retain the small buffer
+	// that promptly isolates genuinely slow consumers.
+	frames := make(chan *gatewayv1.DaemonLinkFrame, relayFrameBuffer(frame.GetMethod()))
 	link.streams[id] = frames
 	link.mu.Unlock()
 	frame.StreamId, frame.DaemonId = id, daemonID
@@ -253,6 +261,13 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		}
 	}()
 	return result, nil
+}
+
+func relayFrameBuffer(method string) int {
+	if strings.HasSuffix(method, "/StartRemoteDesktop") {
+		return remoteDesktopRelayFrameBuffer
+	}
+	return defaultRelayFrameBuffer
 }
 
 func (l *daemonLink) markSeen(now time.Time) {

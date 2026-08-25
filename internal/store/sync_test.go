@@ -1,6 +1,7 @@
 package store
 
 import (
+	"os"
 	"sync"
 	"testing"
 )
@@ -54,6 +55,33 @@ func TestSyncEventsAreDurableAndGloballyMonotonic(t *testing.T) {
 	resumed, tail, err := reopened.SyncEvents(writers-1, 10)
 	if err != nil || resumed != cursor || len(tail) != 1 || tail[0].Sequence != writers {
 		t.Fatalf("reopened cursor=%#v tail=%#v err=%v", resumed, tail, err)
+	}
+}
+
+func TestSyncEventsAtCurrentCursorDoesNotReadJournal(t *testing.T) {
+	data := New(t.TempDir())
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	release, err := data.beginWrite()
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+	cursor, _, err := data.SyncEvents(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(data.syncEventsPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(data.syncEventsPath(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	current, events, err := data.SyncEvents(cursor.Sequence, 10)
+	if err != nil || current != cursor || len(events) != 0 {
+		t.Fatalf("current cursor=%#v events=%#v err=%v", current, events, err)
 	}
 }
 

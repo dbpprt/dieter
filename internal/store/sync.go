@@ -245,6 +245,29 @@ func (s *Store) SyncEvents(after uint64, limit int) (SyncCursor, []SyncEvent, er
 	if limit < 1 || limit > 256 {
 		limit = 256
 	}
+	highwater, err := s.syncHighwater()
+	if err != nil {
+		return SyncCursor{}, nil, err
+	}
+	pending, err := s.readPendingSyncEvent()
+	if err != nil {
+		return SyncCursor{}, nil, err
+	}
+	current := highwater
+	if pending != nil && pending.Sequence > current {
+		current = pending.Sequence
+	}
+	// Watchers spend almost all of their lifetime at the current cursor. Avoid
+	// reopening and decoding the complete durable journal on every poll when no
+	// committed row can possibly follow it. A pending crash-recovery event is
+	// still surfaced below when it is newer than the committed highwater.
+	if after >= highwater {
+		result := make([]SyncEvent, 0, 1)
+		if pending != nil && pending.Sequence > after && pending.Sequence > highwater {
+			result = append(result, *pending)
+		}
+		return SyncCursor{Epoch: epoch, Sequence: current}, result, nil
+	}
 	result := make([]SyncEvent, 0)
 	file, err := os.Open(s.syncEventsPath())
 	if err == nil {
@@ -270,17 +293,8 @@ func (s *Store) SyncEvents(after uint64, limit int) (SyncCursor, []SyncEvent, er
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return SyncCursor{}, nil, err
 	}
-	highwater, err := s.syncHighwater()
-	if err != nil {
-		return SyncCursor{}, nil, err
-	}
-	if pending, pendingErr := s.readPendingSyncEvent(); pendingErr != nil {
-		return SyncCursor{}, nil, pendingErr
-	} else if pending != nil && pending.Sequence > after && pending.Sequence > highwater && len(result) < limit {
+	if pending != nil && pending.Sequence > after && pending.Sequence > highwater && len(result) < limit {
 		result = append(result, *pending)
-		if pending.Sequence > highwater {
-			highwater = pending.Sequence
-		}
 	}
-	return SyncCursor{Epoch: epoch, Sequence: highwater}, result, nil
+	return SyncCursor{Epoch: epoch, Sequence: current}, result, nil
 }

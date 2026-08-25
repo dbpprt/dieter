@@ -157,6 +157,7 @@ final class RemoteDesktopController {
   private var signalingTask: Task<Void, Never>?
   private var leaseTask: Task<Void, Never>?
   private var videoTrack: RTCVideoTrack?
+  private var signalingReceiveFailure: String?
 
   init() {
     delegate.owner = self
@@ -224,6 +225,7 @@ final class RemoteDesktopController {
     remoteDescriptionApplied = false
     pendingLocalCandidates.removeAll()
     pendingRemoteCandidates.removeAll()
+    signalingReceiveFailure = nil
     sessionID = ""
     routeLabel = ""
     if case .failed = phase {} else { phase = .idle }
@@ -296,9 +298,15 @@ final class RemoteDesktopController {
       var attempt = 0
       while !Task.isCancelled {
         do {
+          self?.signalingReceiveFailure = nil
           try await connection.rpc.startRemoteDesktop(request) { [weak self] signal in
             guard let self else { throw CancellationError() }
-            try await self.receive(signal)
+            do {
+              try await self.receive(signal)
+            } catch {
+              await self.rememberSignalingReceiveFailure(DieterRPCFailure.message(for: error))
+              throw error
+            }
           }
           if !Task.isCancelled {
             throw NSError(
@@ -308,9 +316,10 @@ final class RemoteDesktopController {
         } catch is CancellationError {
           return
         } catch {
+          let failureMessage = self?.signalingReceiveFailure ?? DieterRPCFailure.message(for: error)
           attempt += 1
           guard attempt <= 2, self?.peerConnection != nil else {
-            self?.fail(error)
+            self?.fail(message: failureMessage)
             return
           }
           self?.setReconnecting()
@@ -456,9 +465,17 @@ final class RemoteDesktopController {
   private func setReconnecting() { if phase != .idle { phase = .reconnecting } }
 
   private func fail(_ error: Error) {
-    errorMessage = error.localizedDescription
-    phase = .failed(error.localizedDescription)
+    fail(message: DieterRPCFailure.message(for: error))
+  }
+
+  private func fail(message: String) {
+    errorMessage = message
+    phase = .failed(message)
     disconnect()
+  }
+
+  private func rememberSignalingReceiveFailure(_ message: String) {
+    signalingReceiveFailure = message
   }
 
   private func createOffer(_ peer: RTCPeerConnection, constraints: RTCMediaConstraints) async throws

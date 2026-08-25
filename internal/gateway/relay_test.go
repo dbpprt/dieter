@@ -30,3 +30,12 @@ func TestDaemonLinkHeartbeatLease(t *testing.T) {
 		t.Fatal("daemon link should be offline once its heartbeat lease expires")
 	}
 }
+
+func TestRemoteDesktopRelayAllowsBoundedSignalingBurst(t *testing.T) {
+	if got := relayFrameBuffer("/dieter.v1.DieterService/StartRemoteDesktop"); got != remoteDesktopRelayFrameBuffer {
+		t.Fatalf("remote desktop relay buffer = %d, want %d", got, remoteDesktopRelayFrameBuffer)
+	}
+	if got := relayFrameBuffer("/dieter.v1.DieterService/WatchSync"); got != defaultRelayFrameBuffer {
+		t.Fatalf("default relay buffer = %d, want %d", got, defaultRelayFrameBuffer)
+	}
+}
