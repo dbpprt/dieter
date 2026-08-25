@@ -20,6 +20,13 @@ if [ ! -x "$DIETER_BINARY" ]; then
     echo "DieterMac binary was not produced" >&2
     exit 1
 fi
+WEBRTC_FRAMEWORK="$SWIFT_SCRATCH_PATH/$CONFIGURATION/WebRTC.framework"
+WEBRTC_BINARY="$WEBRTC_FRAMEWORK/Versions/A/WebRTC"
+WEBRTC_INFO_PLIST="$WEBRTC_FRAMEWORK/Versions/A/Resources/Info.plist"
+if [ ! -x "$WEBRTC_BINARY" ] || [ ! -f "$WEBRTC_INFO_PLIST" ]; then
+    echo "WebRTC.framework was not produced alongside DieterMac" >&2
+    exit 1
+fi
 
 mkdir -p "$OUTPUT_ROOT"
 NEW_BUNDLE_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/dieter-mac-bundle.XXXXXX")
@@ -31,7 +38,9 @@ stat -f '%N %Fm %z %i' \
     "$BRAND_ROOT/assets/png/app-icon-dark-1024.png" \
     "$BRAND_ROOT/assets/png/favicon-32.png" \
     "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" \
-    "$DIETER_BINARY" >"$NEW_BUNDLE_MANIFEST"
+    "$DIETER_BINARY" \
+    "$WEBRTC_BINARY" \
+    "$WEBRTC_INFO_PLIST" >"$NEW_BUNDLE_MANIFEST"
 find "$PALETTE_ICON_ROOT" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_MANIFEST"
 
 BUNDLE_OUTPUTS_MATCH=0
@@ -41,14 +50,18 @@ if [ -f "$APP_BUNDLE/Contents/Info.plist" ] && \
     [ -f "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" ] && \
     [ -d "$APP_BUNDLE/Contents/Resources/PaletteIcons" ] && \
     [ -f "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" ] && \
-    [ -x "$APP_BUNDLE/Contents/MacOS/DieterMac" ]; then
+    [ -x "$APP_BUNDLE/Contents/MacOS/DieterMac" ] && \
+    [ -x "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" ] && \
+    [ -f "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" ]; then
     stat -f '%N %Fm %z %i' \
         "$APP_BUNDLE/Contents/Info.plist" \
         "$APP_BUNDLE/Contents/Resources/Dieter.icns" \
         "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png" \
         "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" \
         "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" \
-        "$APP_BUNDLE/Contents/MacOS/DieterMac" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
+        "$APP_BUNDLE/Contents/MacOS/DieterMac" \
+        "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" \
+        "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
     find "$APP_BUNDLE/Contents/Resources/PaletteIcons" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
     if [ -f "$BUNDLE_OUTPUT_MANIFEST" ] && \
         cmp -s "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"; then
@@ -59,7 +72,7 @@ fi
 if [ ! -f "$BUNDLE_MANIFEST" ] || \
     ! cmp -s "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST" || \
     [ "$BUNDLE_OUTPUTS_MATCH" -ne 1 ]; then
-    mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources/Fonts" "$APP_BUNDLE/Contents/Resources/PaletteIcons"
+    mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Frameworks" "$APP_BUNDLE/Contents/Resources/Fonts" "$APP_BUNDLE/Contents/Resources/PaletteIcons"
     cp "$APP_ROOT/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
     cp "$BRAND_ROOT/assets/Dieter.icns" "$APP_BUNDLE/Contents/Resources/Dieter.icns"
     cp "$BRAND_ROOT/assets/png/app-icon-dark-1024.png" "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png"
@@ -67,16 +80,22 @@ if [ ! -f "$BUNDLE_MANIFEST" ] || \
     cp "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf"
     cp "$PALETTE_ICON_ROOT"/*.png "$APP_BUNDLE/Contents/Resources/PaletteIcons/"
     cp "$DIETER_BINARY" "$APP_BUNDLE/Contents/MacOS/DieterMac"
+    rm -rf "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
+    ditto "$WEBRTC_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
 fi
 
+codesign --force --sign - "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework" >&2
 codesign --force --deep --sign - "$APP_BUNDLE" >&2
+"$SCRIPT_DIR/verify-bundle.sh" "$APP_BUNDLE" >&2
 stat -f '%N %Fm %z %i' \
     "$APP_BUNDLE/Contents/Info.plist" \
     "$APP_BUNDLE/Contents/Resources/Dieter.icns" \
     "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png" \
     "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" \
     "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" \
-    "$APP_BUNDLE/Contents/MacOS/DieterMac" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
+    "$APP_BUNDLE/Contents/MacOS/DieterMac" \
+    "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" \
+    "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
 find "$APP_BUNDLE/Contents/Resources/PaletteIcons" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
 mv "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST"
 mv "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"

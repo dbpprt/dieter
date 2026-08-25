@@ -173,6 +173,11 @@ jobs:
           persist-credentials: false
       - name: Select Xcode 26.3
         run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Restore compiled Swift release dependencies
+        uses: actions/cache@v4
+        with:
+          path: apps/mac/.build/dieter-local
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.3-dieter-mac-release-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
       - name: Build release app
         env:
           CONFIGURATION: release
@@ -188,6 +193,8 @@ jobs:
             "Set :CFBundleShortVersionString ${RELEASE_VERSION}" "${plist}"
           /usr/libexec/PlistBuddy -c \
             "Set :CFBundleVersion ${BUILD_NUMBER}" "${plist}"
+          codesign --force --sign - \
+            apps/mac/build/Dieter.app/Contents/Frameworks/WebRTC.framework
           codesign --force --deep --sign - apps/mac/build/Dieter.app
       - name: Check signing configuration
         id: signing
@@ -252,7 +259,10 @@ jobs:
             awk '/Developer ID Application/ {print $2; exit}')"
           test -n "${identity}"
 
-          codesign --force --deep --options runtime --timestamp \
+          codesign --force --options runtime --timestamp \
+            --sign "${identity}" \
+            apps/mac/build/Dieter.app/Contents/Frameworks/WebRTC.framework
+          codesign --force --options runtime --timestamp \
             --sign "${identity}" apps/mac/build/Dieter.app
           codesign --verify --deep --strict --verbose=2 apps/mac/build/Dieter.app
           ditto -c -k --sequesterRsrc --keepParent \
@@ -269,9 +279,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+          apps/mac/scripts/verify-bundle.sh apps/mac/build/Dieter.app
           ditto -c -k --sequesterRsrc --keepParent \
             apps/mac/build/Dieter.app dist/Dieter-macOS-arm64.zip
-          codesign --verify --deep --strict --verbose=2 apps/mac/build/Dieter.app
+          extracted_bundle="$(mktemp -d)"
+          trap 'rm -rf "${extracted_bundle}"' EXIT
+          ditto -x -k dist/Dieter-macOS-arm64.zip "${extracted_bundle}"
+          apps/mac/scripts/verify-bundle.sh "${extracted_bundle}/Dieter.app"
       - uses: actions/upload-artifact@v4
         with:
           name: dieter-macos-arm64
