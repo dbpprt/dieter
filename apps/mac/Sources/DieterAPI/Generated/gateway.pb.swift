@@ -160,6 +160,39 @@ public nonisolated struct Dieter_Gateway_V1_Daemon: Sendable {
 
   public var directCandidates: [Dieter_Gateway_V1_DirectCandidate] = []
 
+  public var remoteDesktop: Dieter_Gateway_V1_RemoteDesktopPresence {
+    get {_remoteDesktop ?? Dieter_Gateway_V1_RemoteDesktopPresence()}
+    set {_remoteDesktop = newValue}
+  }
+  /// Returns true if `remoteDesktop` has been explicitly set.
+  public var hasRemoteDesktop: Bool {self._remoteDesktop != nil}
+  /// Clears the value of `remoteDesktop`. Subsequent reads from it will return its default value.
+  public mutating func clearRemoteDesktop() {self._remoteDesktop = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _remoteDesktop: Dieter_Gateway_V1_RemoteDesktopPresence? = nil
+}
+
+/// RemoteDesktopPresence is intentionally coarse gateway metadata. Display
+/// names, geometry, and OS permission details remain daemon-owned data.
+public nonisolated struct Dieter_Gateway_V1_RemoteDesktopPresence: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var platform: String = String()
+
+  public var helperVersion: String = String()
+
+  public var ready: Bool = false
+
+  public var reason: String = String()
+
+  public var activeSession: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -378,51 +411,157 @@ public nonisolated struct Dieter_Gateway_V1_DaemonRoute: Sendable {
   /// authenticated account and is never needed for the gateway relay path.
   public var daemonCaPem: Data = Data()
 
+  /// The authenticated owner uses the enrolled leaf certificate to verify
+  /// daemon-signed remote-desktop session bindings on both relay and direct
+  /// signaling routes.
+  public var daemonCertificatePem: Data = Data()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 }
 
-public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: Sendable {
+public nonisolated struct Dieter_Gateway_V1_RTCIceServer: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var kind: Dieter_Gateway_V1_DaemonLinkFrameKind = .unspecified
+  public var urls: [String] = []
 
-  public var streamID: UInt64 = 0
+  public var username: String = String()
 
-  public var daemonID: String = String()
-
-  public var requestID: String = String()
-
-  public var method: String = String()
-
-  public var payload: Data = Data()
-
-  public var payloadSha256: Data = Data()
-
-  public var delegationAssertion: String = String()
-
-  public var deadlineUnixMillis: Int64 = 0
-
-  public var statusCode: Int32 = 0
-
-  public var statusMessage: String = String()
-
-  public var metadata: Dictionary<String,String> = [:]
-
-  public var windowBytes: UInt32 = 0
-
-  public var version: String = String()
-
-  public var generation: UInt64 = 0
-
-  public var directCandidates: [Dieter_Gateway_V1_DirectCandidate] = []
+  public var credential: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_RTCConfiguration: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var iceServers: [Dieter_Gateway_V1_RTCIceServer] = []
+
+  public var expiresAt: String = String()
+
+  public var daemonID: String = String()
+
+  public var signedEnvelope: Data = Data()
+
+  public var operatorSubject: String = String()
+
+  public var configurationID: String = String()
+
+  public var daemonGeneration: UInt64 = 0
+
+  public var issuedAt: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var kind: Dieter_Gateway_V1_DaemonLinkFrameKind {
+    get {_storage._kind}
+    set {_uniqueStorage()._kind = newValue}
+  }
+
+  public var streamID: UInt64 {
+    get {_storage._streamID}
+    set {_uniqueStorage()._streamID = newValue}
+  }
+
+  public var daemonID: String {
+    get {_storage._daemonID}
+    set {_uniqueStorage()._daemonID = newValue}
+  }
+
+  public var requestID: String {
+    get {_storage._requestID}
+    set {_uniqueStorage()._requestID = newValue}
+  }
+
+  public var method: String {
+    get {_storage._method}
+    set {_uniqueStorage()._method = newValue}
+  }
+
+  public var payload: Data {
+    get {_storage._payload}
+    set {_uniqueStorage()._payload = newValue}
+  }
+
+  public var payloadSha256: Data {
+    get {_storage._payloadSha256}
+    set {_uniqueStorage()._payloadSha256 = newValue}
+  }
+
+  public var delegationAssertion: String {
+    get {_storage._delegationAssertion}
+    set {_uniqueStorage()._delegationAssertion = newValue}
+  }
+
+  public var deadlineUnixMillis: Int64 {
+    get {_storage._deadlineUnixMillis}
+    set {_uniqueStorage()._deadlineUnixMillis = newValue}
+  }
+
+  public var statusCode: Int32 {
+    get {_storage._statusCode}
+    set {_uniqueStorage()._statusCode = newValue}
+  }
+
+  public var statusMessage: String {
+    get {_storage._statusMessage}
+    set {_uniqueStorage()._statusMessage = newValue}
+  }
+
+  public var metadata: Dictionary<String,String> {
+    get {_storage._metadata}
+    set {_uniqueStorage()._metadata = newValue}
+  }
+
+  public var windowBytes: UInt32 {
+    get {_storage._windowBytes}
+    set {_uniqueStorage()._windowBytes = newValue}
+  }
+
+  public var version: String {
+    get {_storage._version}
+    set {_uniqueStorage()._version = newValue}
+  }
+
+  public var generation: UInt64 {
+    get {_storage._generation}
+    set {_uniqueStorage()._generation = newValue}
+  }
+
+  public var directCandidates: [Dieter_Gateway_V1_DirectCandidate] {
+    get {_storage._directCandidates}
+    set {_uniqueStorage()._directCandidates = newValue}
+  }
+
+  public var remoteDesktop: Dieter_Gateway_V1_RemoteDesktopPresence {
+    get {_storage._remoteDesktop ?? Dieter_Gateway_V1_RemoteDesktopPresence()}
+    set {_uniqueStorage()._remoteDesktop = newValue}
+  }
+  /// Returns true if `remoteDesktop` has been explicitly set.
+  public var hasRemoteDesktop: Bool {_storage._remoteDesktop != nil}
+  /// Clears the value of `remoteDesktop`. Subsequent reads from it will return its default value.
+  public mutating func clearRemoteDesktop() {_uniqueStorage()._remoteDesktop = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
@@ -500,7 +639,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonRef: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Daemon"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{3}last_seen_at\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{3}last_seen_at\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -515,12 +654,17 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
       case 5: try { try decoder.decodeSingularStringField(value: &self.version) }()
       case 6: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.directCandidates) }()
+      case 8: try { try decoder.decodeSingularMessageField(value: &self._remoteDesktop) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.id.isEmpty {
       try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
     }
@@ -542,6 +686,9 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
     if !self.directCandidates.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.directCandidates, fieldNumber: 7)
     }
+    try { if let v = self._remoteDesktop {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -553,6 +700,57 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
     if lhs.version != rhs.version {return false}
     if lhs.generation != rhs.generation {return false}
     if lhs.directCandidates != rhs.directCandidates {return false}
+    if lhs._remoteDesktop != rhs._remoteDesktop {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_RemoteDesktopPresence: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopPresence"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}helper_version\0\u{1}ready\0\u{1}reason\0\u{3}active_session\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.platform) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.helperVersion) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.ready) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.reason) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.activeSession) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.platform.isEmpty {
+      try visitor.visitSingularStringField(value: self.platform, fieldNumber: 1)
+    }
+    if !self.helperVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.helperVersion, fieldNumber: 2)
+    }
+    if self.ready != false {
+      try visitor.visitSingularBoolField(value: self.ready, fieldNumber: 3)
+    }
+    if !self.reason.isEmpty {
+      try visitor.visitSingularStringField(value: self.reason, fieldNumber: 4)
+    }
+    if self.activeSession != false {
+      try visitor.visitSingularBoolField(value: self.activeSession, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_RemoteDesktopPresence, rhs: Dieter_Gateway_V1_RemoteDesktopPresence) -> Bool {
+    if lhs.platform != rhs.platform {return false}
+    if lhs.helperVersion != rhs.helperVersion {return false}
+    if lhs.ready != rhs.ready {return false}
+    if lhs.reason != rhs.reason {return false}
+    if lhs.activeSession != rhs.activeSession {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1045,7 +1243,7 @@ nonisolated extension Dieter_Gateway_V1_DirectCandidate: SwiftProtobuf.Message, 
 
 nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonRoute"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}relay_available\0\u{3}direct_candidates\0\u{1}generation\0\u{3}daemon_ca_pem\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}relay_available\0\u{3}direct_candidates\0\u{1}generation\0\u{3}daemon_ca_pem\0\u{3}daemon_certificate_pem\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1058,6 +1256,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
       case 3: try { try decoder.decodeRepeatedMessageField(value: &self.directCandidates) }()
       case 4: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
       case 5: try { try decoder.decodeSingularBytesField(value: &self.daemonCaPem) }()
+      case 6: try { try decoder.decodeSingularBytesField(value: &self.daemonCertificatePem) }()
       default: break
       }
     }
@@ -1079,6 +1278,9 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
     if !self.daemonCaPem.isEmpty {
       try visitor.visitSingularBytesField(value: self.daemonCaPem, fieldNumber: 5)
     }
+    if !self.daemonCertificatePem.isEmpty {
+      try visitor.visitSingularBytesField(value: self.daemonCertificatePem, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -1088,14 +1290,15 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
     if lhs.directCandidates != rhs.directCandidates {return false}
     if lhs.generation != rhs.generation {return false}
     if lhs.daemonCaPem != rhs.daemonCaPem {return false}
+    if lhs.daemonCertificatePem != rhs.daemonCertificatePem {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
 }
 
-nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".DaemonLinkFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0")
+nonisolated extension Dieter_Gateway_V1_RTCIceServer: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RTCIceServer"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}urls\0\u{1}username\0\u{1}credential\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -1103,96 +1306,278 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       // allocates stack space for every case branch when no optimizations are
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
-      case 1: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
-      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.streamID) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
-      case 4: try { try decoder.decodeSingularStringField(value: &self.requestID) }()
-      case 5: try { try decoder.decodeSingularStringField(value: &self.method) }()
-      case 6: try { try decoder.decodeSingularBytesField(value: &self.payload) }()
-      case 7: try { try decoder.decodeSingularBytesField(value: &self.payloadSha256) }()
-      case 8: try { try decoder.decodeSingularStringField(value: &self.delegationAssertion) }()
-      case 9: try { try decoder.decodeSingularInt64Field(value: &self.deadlineUnixMillis) }()
-      case 10: try { try decoder.decodeSingularInt32Field(value: &self.statusCode) }()
-      case 11: try { try decoder.decodeSingularStringField(value: &self.statusMessage) }()
-      case 12: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.metadata) }()
-      case 13: try { try decoder.decodeSingularUInt32Field(value: &self.windowBytes) }()
-      case 14: try { try decoder.decodeSingularStringField(value: &self.version) }()
-      case 15: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
-      case 16: try { try decoder.decodeRepeatedMessageField(value: &self.directCandidates) }()
+      case 1: try { try decoder.decodeRepeatedStringField(value: &self.urls) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.username) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.credential) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if self.kind != .unspecified {
-      try visitor.visitSingularEnumField(value: self.kind, fieldNumber: 1)
+    if !self.urls.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.urls, fieldNumber: 1)
     }
-    if self.streamID != 0 {
-      try visitor.visitSingularUInt64Field(value: self.streamID, fieldNumber: 2)
+    if !self.username.isEmpty {
+      try visitor.visitSingularStringField(value: self.username, fieldNumber: 2)
+    }
+    if !self.credential.isEmpty {
+      try visitor.visitSingularStringField(value: self.credential, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_RTCIceServer, rhs: Dieter_Gateway_V1_RTCIceServer) -> Bool {
+    if lhs.urls != rhs.urls {return false}
+    if lhs.username != rhs.username {return false}
+    if lhs.credential != rhs.credential {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_RTCConfiguration: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RTCConfiguration"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}ice_servers\0\u{3}expires_at\0\u{3}daemon_id\0\u{3}signed_envelope\0\u{3}operator_subject\0\u{3}configuration_id\0\u{3}daemon_generation\0\u{3}issued_at\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.iceServers) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.expiresAt) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.signedEnvelope) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.operatorSubject) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.configurationID) }()
+      case 7: try { try decoder.decodeSingularUInt64Field(value: &self.daemonGeneration) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.issuedAt) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.iceServers.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.iceServers, fieldNumber: 1)
+    }
+    if !self.expiresAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.expiresAt, fieldNumber: 2)
     }
     if !self.daemonID.isEmpty {
       try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 3)
     }
-    if !self.requestID.isEmpty {
-      try visitor.visitSingularStringField(value: self.requestID, fieldNumber: 4)
+    if !self.signedEnvelope.isEmpty {
+      try visitor.visitSingularBytesField(value: self.signedEnvelope, fieldNumber: 4)
     }
-    if !self.method.isEmpty {
-      try visitor.visitSingularStringField(value: self.method, fieldNumber: 5)
+    if !self.operatorSubject.isEmpty {
+      try visitor.visitSingularStringField(value: self.operatorSubject, fieldNumber: 5)
     }
-    if !self.payload.isEmpty {
-      try visitor.visitSingularBytesField(value: self.payload, fieldNumber: 6)
+    if !self.configurationID.isEmpty {
+      try visitor.visitSingularStringField(value: self.configurationID, fieldNumber: 6)
     }
-    if !self.payloadSha256.isEmpty {
-      try visitor.visitSingularBytesField(value: self.payloadSha256, fieldNumber: 7)
+    if self.daemonGeneration != 0 {
+      try visitor.visitSingularUInt64Field(value: self.daemonGeneration, fieldNumber: 7)
     }
-    if !self.delegationAssertion.isEmpty {
-      try visitor.visitSingularStringField(value: self.delegationAssertion, fieldNumber: 8)
+    if !self.issuedAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.issuedAt, fieldNumber: 8)
     }
-    if self.deadlineUnixMillis != 0 {
-      try visitor.visitSingularInt64Field(value: self.deadlineUnixMillis, fieldNumber: 9)
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_RTCConfiguration, rhs: Dieter_Gateway_V1_RTCConfiguration) -> Bool {
+    if lhs.iceServers != rhs.iceServers {return false}
+    if lhs.expiresAt != rhs.expiresAt {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.signedEnvelope != rhs.signedEnvelope {return false}
+    if lhs.operatorSubject != rhs.operatorSubject {return false}
+    if lhs.configurationID != rhs.configurationID {return false}
+    if lhs.daemonGeneration != rhs.daemonGeneration {return false}
+    if lhs.issuedAt != rhs.issuedAt {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DaemonLinkFrame"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0")
+
+  fileprivate class _StorageClass {
+    var _kind: Dieter_Gateway_V1_DaemonLinkFrameKind = .unspecified
+    var _streamID: UInt64 = 0
+    var _daemonID: String = String()
+    var _requestID: String = String()
+    var _method: String = String()
+    var _payload: Data = Data()
+    var _payloadSha256: Data = Data()
+    var _delegationAssertion: String = String()
+    var _deadlineUnixMillis: Int64 = 0
+    var _statusCode: Int32 = 0
+    var _statusMessage: String = String()
+    var _metadata: Dictionary<String,String> = [:]
+    var _windowBytes: UInt32 = 0
+    var _version: String = String()
+    var _generation: UInt64 = 0
+    var _directCandidates: [Dieter_Gateway_V1_DirectCandidate] = []
+    var _remoteDesktop: Dieter_Gateway_V1_RemoteDesktopPresence? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _kind = source._kind
+      _streamID = source._streamID
+      _daemonID = source._daemonID
+      _requestID = source._requestID
+      _method = source._method
+      _payload = source._payload
+      _payloadSha256 = source._payloadSha256
+      _delegationAssertion = source._delegationAssertion
+      _deadlineUnixMillis = source._deadlineUnixMillis
+      _statusCode = source._statusCode
+      _statusMessage = source._statusMessage
+      _metadata = source._metadata
+      _windowBytes = source._windowBytes
+      _version = source._version
+      _generation = source._generation
+      _directCandidates = source._directCandidates
+      _remoteDesktop = source._remoteDesktop
     }
-    if self.statusCode != 0 {
-      try visitor.visitSingularInt32Field(value: self.statusCode, fieldNumber: 10)
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
     }
-    if !self.statusMessage.isEmpty {
-      try visitor.visitSingularStringField(value: self.statusMessage, fieldNumber: 11)
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularEnumField(value: &_storage._kind) }()
+        case 2: try { try decoder.decodeSingularUInt64Field(value: &_storage._streamID) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._daemonID) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._requestID) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._method) }()
+        case 6: try { try decoder.decodeSingularBytesField(value: &_storage._payload) }()
+        case 7: try { try decoder.decodeSingularBytesField(value: &_storage._payloadSha256) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._delegationAssertion) }()
+        case 9: try { try decoder.decodeSingularInt64Field(value: &_storage._deadlineUnixMillis) }()
+        case 10: try { try decoder.decodeSingularInt32Field(value: &_storage._statusCode) }()
+        case 11: try { try decoder.decodeSingularStringField(value: &_storage._statusMessage) }()
+        case 12: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._metadata) }()
+        case 13: try { try decoder.decodeSingularUInt32Field(value: &_storage._windowBytes) }()
+        case 14: try { try decoder.decodeSingularStringField(value: &_storage._version) }()
+        case 15: try { try decoder.decodeSingularUInt64Field(value: &_storage._generation) }()
+        case 16: try { try decoder.decodeRepeatedMessageField(value: &_storage._directCandidates) }()
+        case 17: try { try decoder.decodeSingularMessageField(value: &_storage._remoteDesktop) }()
+        default: break
+        }
+      }
     }
-    if !self.metadata.isEmpty {
-      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.metadata, fieldNumber: 12)
-    }
-    if self.windowBytes != 0 {
-      try visitor.visitSingularUInt32Field(value: self.windowBytes, fieldNumber: 13)
-    }
-    if !self.version.isEmpty {
-      try visitor.visitSingularStringField(value: self.version, fieldNumber: 14)
-    }
-    if self.generation != 0 {
-      try visitor.visitSingularUInt64Field(value: self.generation, fieldNumber: 15)
-    }
-    if !self.directCandidates.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.directCandidates, fieldNumber: 16)
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if _storage._kind != .unspecified {
+        try visitor.visitSingularEnumField(value: _storage._kind, fieldNumber: 1)
+      }
+      if _storage._streamID != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._streamID, fieldNumber: 2)
+      }
+      if !_storage._daemonID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._daemonID, fieldNumber: 3)
+      }
+      if !_storage._requestID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._requestID, fieldNumber: 4)
+      }
+      if !_storage._method.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._method, fieldNumber: 5)
+      }
+      if !_storage._payload.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._payload, fieldNumber: 6)
+      }
+      if !_storage._payloadSha256.isEmpty {
+        try visitor.visitSingularBytesField(value: _storage._payloadSha256, fieldNumber: 7)
+      }
+      if !_storage._delegationAssertion.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._delegationAssertion, fieldNumber: 8)
+      }
+      if _storage._deadlineUnixMillis != 0 {
+        try visitor.visitSingularInt64Field(value: _storage._deadlineUnixMillis, fieldNumber: 9)
+      }
+      if _storage._statusCode != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._statusCode, fieldNumber: 10)
+      }
+      if !_storage._statusMessage.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._statusMessage, fieldNumber: 11)
+      }
+      if !_storage._metadata.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._metadata, fieldNumber: 12)
+      }
+      if _storage._windowBytes != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._windowBytes, fieldNumber: 13)
+      }
+      if !_storage._version.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._version, fieldNumber: 14)
+      }
+      if _storage._generation != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._generation, fieldNumber: 15)
+      }
+      if !_storage._directCandidates.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._directCandidates, fieldNumber: 16)
+      }
+      try { if let v = _storage._remoteDesktop {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_Gateway_V1_DaemonLinkFrame, rhs: Dieter_Gateway_V1_DaemonLinkFrame) -> Bool {
-    if lhs.kind != rhs.kind {return false}
-    if lhs.streamID != rhs.streamID {return false}
-    if lhs.daemonID != rhs.daemonID {return false}
-    if lhs.requestID != rhs.requestID {return false}
-    if lhs.method != rhs.method {return false}
-    if lhs.payload != rhs.payload {return false}
-    if lhs.payloadSha256 != rhs.payloadSha256 {return false}
-    if lhs.delegationAssertion != rhs.delegationAssertion {return false}
-    if lhs.deadlineUnixMillis != rhs.deadlineUnixMillis {return false}
-    if lhs.statusCode != rhs.statusCode {return false}
-    if lhs.statusMessage != rhs.statusMessage {return false}
-    if lhs.metadata != rhs.metadata {return false}
-    if lhs.windowBytes != rhs.windowBytes {return false}
-    if lhs.version != rhs.version {return false}
-    if lhs.generation != rhs.generation {return false}
-    if lhs.directCandidates != rhs.directCandidates {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._kind != rhs_storage._kind {return false}
+        if _storage._streamID != rhs_storage._streamID {return false}
+        if _storage._daemonID != rhs_storage._daemonID {return false}
+        if _storage._requestID != rhs_storage._requestID {return false}
+        if _storage._method != rhs_storage._method {return false}
+        if _storage._payload != rhs_storage._payload {return false}
+        if _storage._payloadSha256 != rhs_storage._payloadSha256 {return false}
+        if _storage._delegationAssertion != rhs_storage._delegationAssertion {return false}
+        if _storage._deadlineUnixMillis != rhs_storage._deadlineUnixMillis {return false}
+        if _storage._statusCode != rhs_storage._statusCode {return false}
+        if _storage._statusMessage != rhs_storage._statusMessage {return false}
+        if _storage._metadata != rhs_storage._metadata {return false}
+        if _storage._windowBytes != rhs_storage._windowBytes {return false}
+        if _storage._version != rhs_storage._version {return false}
+        if _storage._generation != rhs_storage._generation {return false}
+        if _storage._directCandidates != rhs_storage._directCandidates {return false}
+        if _storage._remoteDesktop != rhs_storage._remoteDesktop {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

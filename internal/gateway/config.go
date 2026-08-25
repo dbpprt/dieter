@@ -29,6 +29,10 @@ type Config struct {
 	TLSKeyFile      string
 	DevInsecure     bool
 	ProxyMode       bool
+	RTCSTUNURLs     []string
+	RTCTURNURLs     []string
+	RTCTURNSecret   []byte
+	RTCTTL          time.Duration
 }
 
 func ConfigFromEnv(root string) (Config, error) {
@@ -36,7 +40,7 @@ func ConfigFromEnv(root string) (Config, error) {
 		Root: root, Address: envOr("DIETER_GATEWAY_ADDR", "127.0.0.1:4243"), SessionTTL: 30 * 24 * time.Hour,
 		GitHubBaseURL: envOr("DIETER_GITHUB_BASE_URL", "https://github.com"), GitHubAPIURL: envOr("DIETER_GITHUB_API_URL", "https://api.github.com"),
 		TLSCertFile: strings.TrimSpace(os.Getenv("DIETER_GATEWAY_TLS_CERT")), TLSKeyFile: strings.TrimSpace(os.Getenv("DIETER_GATEWAY_TLS_KEY")),
-		DevInsecure: os.Getenv("DIETER_GATEWAY_DEV_INSECURE") == "1", ProxyMode: os.Getenv("DIETER_GATEWAY_PROXY_MODE") == "1", NativeRedirects: map[string]struct{}{},
+		DevInsecure: os.Getenv("DIETER_GATEWAY_DEV_INSECURE") == "1", ProxyMode: os.Getenv("DIETER_GATEWAY_PROXY_MODE") == "1", NativeRedirects: map[string]struct{}{}, RTCTTL: 5 * time.Minute,
 	}
 	publicURL, err := url.Parse(strings.TrimSpace(os.Getenv("DIETER_PUBLIC_URL")))
 	if err != nil || publicURL.Host == "" || publicURL.Path != "" || publicURL.RawQuery != "" || publicURL.Fragment != "" || (!config.DevInsecure && publicURL.Scheme != "https") || (config.DevInsecure && publicURL.Scheme != "http" && publicURL.Scheme != "https") {
@@ -74,6 +78,29 @@ func ConfigFromEnv(root string) (Config, error) {
 		}
 		config.NativeRedirects[value] = struct{}{}
 	}
+	config.RTCSTUNURLs, err = rtcURLs(os.Getenv("DIETER_RTC_STUN_URLS"), "stun:", "stuns:")
+	if err != nil {
+		return config, err
+	}
+	config.RTCTURNURLs, err = rtcURLs(os.Getenv("DIETER_RTC_TURN_URLS"), "turn:", "turns:")
+	if err != nil {
+		return config, err
+	}
+	if raw := strings.TrimSpace(os.Getenv("DIETER_RTC_TTL")); raw != "" {
+		config.RTCTTL, err = time.ParseDuration(raw)
+		if err != nil || config.RTCTTL < time.Minute || config.RTCTTL > 10*time.Minute {
+			return config, errors.New("DIETER_RTC_TTL must be between 1m and 10m")
+		}
+	}
+	if raw := strings.TrimSpace(os.Getenv("DIETER_RTC_TURN_SECRET")); raw != "" {
+		config.RTCTURNSecret, err = hex.DecodeString(raw)
+		if err != nil || len(config.RTCTURNSecret) < 32 {
+			return config, errors.New("DIETER_RTC_TURN_SECRET must contain at least 32 random bytes encoded as hexadecimal")
+		}
+	}
+	if len(config.RTCTURNURLs) > 0 && len(config.RTCTURNSecret) == 0 {
+		return config, errors.New("DIETER_RTC_TURN_SECRET is required when DIETER_RTC_TURN_URLS is configured")
+	}
 	if config.TLSCertFile == "" || config.TLSKeyFile == "" {
 		if !config.DevInsecure && !config.ProxyMode {
 			return config, errors.New("DIETER_GATEWAY_TLS_CERT and DIETER_GATEWAY_TLS_KEY are required")
@@ -88,6 +115,28 @@ func ConfigFromEnv(root string) (Config, error) {
 		return config, errors.New("DIETER_GATEWAY_PROXY_MODE and DIETER_GATEWAY_DEV_INSECURE are mutually exclusive")
 	}
 	return config, nil
+}
+
+func rtcURLs(raw string, prefixes ...string) ([]string, error) {
+	var result []string
+	for _, value := range strings.Split(raw, ",") {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		valid := false
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(strings.ToLower(value), prefix) {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("invalid RTC URL %q", value)
+		}
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 func envOr(key, fallback string) string {

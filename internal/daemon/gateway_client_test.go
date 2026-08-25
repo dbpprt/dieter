@@ -1,6 +1,22 @@
 package daemon
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestGatewayHeartbeatIntervalBacksOffAndResetsOnActivity(t *testing.T) {
+	interval := gatewayHeartbeatActiveInterval
+	for _, want := range []time.Duration{10 * time.Second, 20 * time.Second, 20 * time.Second} {
+		interval = nextGatewayHeartbeatInterval(interval, false)
+		if interval != want {
+			t.Fatalf("idle heartbeat interval = %s, want %s", interval, want)
+		}
+	}
+	if got := nextGatewayHeartbeatInterval(interval, true); got != gatewayHeartbeatActiveInterval {
+		t.Fatalf("active heartbeat interval = %s, want %s", got, gatewayHeartbeatActiveInterval)
+	}
+}
 
 func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
 	for _, method := range []string{

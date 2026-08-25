@@ -20,6 +20,7 @@ struct DieterRootView: View {
                 case .board: BoardView()
                 case .chats: ChatsView()
                 case .terminals: TerminalsView()
+				case .screens: ScreensView()
                 case .files: FilesView()
                 case .schedules: SchedulesView()
                 case .archive: ArchiveView()
@@ -226,6 +227,23 @@ struct AppSidebar: View {
             .padding(.horizontal, 8)
             .accessibilityIdentifier("sidebar.terminals")
         }
+
+		if collapsed {
+			SidebarRailDestination(
+				title: "Screens",
+				symbol: "rectangle.inset.filled.and.person.filled",
+				selected: store.section == .screens
+			) { store.openScreens() }
+			.accessibilityIdentifier("sidebar.screens")
+		} else {
+			SidebarDestination(
+				title: "Screens",
+				symbol: "rectangle.inset.filled.and.person.filled",
+				selected: store.section == .screens
+			) { store.openScreens() }
+			.padding(.horizontal, 8)
+			.accessibilityIdentifier("sidebar.screens")
+		}
     }
 
     private var expandedProjects: some View {
@@ -294,6 +312,13 @@ struct AppSidebar: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("MACHINES").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            if let age = MachinePresenceText.freshestAge(store.machines.map(\.lastSeenAt), relativeTo: context.date) {
+                                Text(age)
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundStyle(DieterTheme.tertiary.opacity(0.65))
+                            }
+                        }
                         Spacer()
                         SidebarConnectionStatus()
                     }
@@ -465,10 +490,16 @@ private struct SidebarProjectDestinations: View {
             }
             SidebarDestination(title: "Files", symbol: "folder", selected: store.section == .files && store.selectedProjectID == project.id) {
                 onNavigate?(); Task { await store.openProject(project.id, section: .files) }
-            }.accessibilityIdentifier("sidebar.files.\(project.id)")
+            }
+            .disabled(store.machine(forProjectID: project.id)?.online == false)
+            .opacity(store.machine(forProjectID: project.id)?.online == false ? 0.42 : 1)
+            .accessibilityIdentifier("sidebar.files.\(project.id)")
             SidebarDestination(title: "Schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
                 onNavigate?(); Task { await store.openProject(project.id, section: .schedules) }
-            }.accessibilityIdentifier("sidebar.schedules.\(project.id)")
+            }
+            .disabled(store.machine(forProjectID: project.id)?.online == false)
+            .opacity(store.machine(forProjectID: project.id)?.online == false ? 0.42 : 1)
+            .accessibilityIdentifier("sidebar.schedules.\(project.id)")
         }
     }
 

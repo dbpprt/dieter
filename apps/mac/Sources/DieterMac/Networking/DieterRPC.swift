@@ -148,6 +148,11 @@ final class DieterRPC: Sendable {
         return try await gatewayService.resolveDaemonRoute(request: .init(message: request))
     }
 
+	func rtcConfiguration(daemonID: String) async throws -> Dieter_Gateway_V1_RTCConfiguration {
+		var request = Dieter_Gateway_V1_DaemonRef(); request.daemonID = daemonID
+		return try await gatewayService.getRTCConfiguration(request: .init(message: request))
+	}
+
     func daemonAccessToken(daemonID: String) async throws -> Dieter_Gateway_V1_DaemonAccessToken {
         var request = Dieter_Gateway_V1_ExchangeDaemonTokenRequest(); request.daemonID = daemonID
         return try await gatewayService.exchangeDaemonToken(request: .init(message: request))
@@ -429,6 +434,42 @@ final class DieterRPC: Sendable {
         var request = Dieter_V1_TerminalRef(); request.terminalID = id
         _ = try await service.closeTerminal(request: .init(message: request)) as Google_Protobuf_Empty
     }
+
+	func remoteDesktopCapabilities() async throws -> Dieter_V1_RemoteDesktopCapabilities {
+		try await service.getRemoteDesktopCapabilities(request: .init(message: Google_Protobuf_Empty()))
+	}
+
+	func remoteDesktopSettings() async throws -> Dieter_V1_RemoteDesktopSettings {
+		try await service.getRemoteDesktopSettings(request: .init(message: Google_Protobuf_Empty()))
+	}
+
+	func updateRemoteDesktopSettings(enabled: Bool) async throws -> Dieter_V1_RemoteDesktopSettings {
+		var request = Dieter_V1_UpdateRemoteDesktopSettingsRequest()
+		request.enabled = enabled
+		request.controlEnabled = false
+		return try await service.updateRemoteDesktopSettings(request: .init(message: request))
+	}
+
+	func startRemoteDesktop(
+		_ request: Dieter_V1_StartRemoteDesktopRequest,
+		receive: @Sendable @escaping (Dieter_V1_RemoteDesktopSignal) async throws -> Void
+	) async throws {
+		try await service.startRemoteDesktop(request: .init(message: request)) { response in
+			for try await signal in response.messages {
+				try Task.checkCancellation()
+				try await receive(signal)
+			}
+		}
+	}
+
+	func sendRemoteDesktopSignal(_ signal: Dieter_V1_RemoteDesktopSignal) async throws {
+		_ = try await service.sendRemoteDesktopSignal(request: .init(message: signal)) as Google_Protobuf_Empty
+	}
+
+	func closeRemoteDesktop(sessionID: String) async throws {
+		var request = Dieter_V1_RemoteDesktopRef(); request.sessionID = sessionID
+		_ = try await service.closeRemoteDesktop(request: .init(message: request)) as Google_Protobuf_Empty
+	}
 
     func schedules(projectID: String) async throws -> Dieter_V1_SchedulesResponse {
         var request = Dieter_V1_ListSchedulesRequest(); request.projectID = projectID

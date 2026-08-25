@@ -1,4 +1,4 @@
-package main
+package remotedesktop
 
 import (
 	"bytes"
@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -19,29 +19,88 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media/ivfreader"
 )
 
-// FrameSource emits complete encoded VP8 frames. The source owns pacing.
+// FrameSource emits complete encoded VP8 frames and owns their pacing.
+// The production host keeps this small boundary so ScreenCaptureKit or a
+// native helper can replace FFmpeg without changing session admission.
 type FrameSource interface {
 	Description() string
 	Stream(context.Context, func(media.Sample) error) error
 }
 
-type syntheticSource struct {
-	interval time.Duration
+type SourceOptions struct {
+	Kind       string
+	FFmpegPath string
+	Display    string
+	FPS        int
+	Bitrate    int
+	Logger     *slog.Logger
 }
 
-// A one-frame 320x180 IVF generated with libvpx. Repeating its VP8 keyframe
-// gives browser viewers a deterministic dark-blue frame while keeping the
-// automated experiment independent of capture permissions and FFmpeg.
-const syntheticIVFBase64 = "REtJRgAAIABWUDgwQAG0AAEAAAABAAAA/////wAAAACVAAAAAAAAAAAAAABQDwCdASpAAbQAAEcIhYWImYSIAgICdaoCBmZlqMPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZNkD+/y6p/q7E+FCCfxvN5rViAA=="
+func NewFrameSource(options SourceOptions) (FrameSource, error) {
+	if options.FPS <= 0 {
+		options.FPS = 30
+	}
+	if options.Bitrate <= 0 {
+		options.Bitrate = 4_000
+	}
+	switch strings.TrimSpace(options.Kind) {
+	case "", "screen":
+		if options.FFmpegPath == "" {
+			options.FFmpegPath = "ffmpeg"
+		}
+		if _, err := exec.LookPath(options.FFmpegPath); err != nil {
+			return nil, fmt.Errorf("find FFmpeg %q: %w", options.FFmpegPath, err)
+		}
+		return ffmpegSource{
+			path: options.FFmpegPath, platform: runtime.GOOS, display: options.Display,
+			fps: options.FPS, bitrateKbps: options.Bitrate, logger: options.Logger,
+			environ: currentEnvironment(),
+		}, nil
+	case "synthetic":
+		return syntheticSource{interval: time.Second / time.Duration(options.FPS)}, nil
+	default:
+		return nil, fmt.Errorf("remote desktop source must be screen or synthetic, got %q", options.Kind)
+	}
+}
 
-func (s syntheticSource) Description() string { return "synthetic VP8 keyframe" }
+func SourceAvailable(options SourceOptions) (bool, string) {
+	if strings.TrimSpace(options.Kind) == "synthetic" {
+		return true, ""
+	}
+	path := options.FFmpegPath
+	if path == "" {
+		path = "ffmpeg"
+	}
+	if _, err := exec.LookPath(path); err != nil {
+		return false, "FFmpeg with libvpx is unavailable"
+	}
+	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" {
+		if os.Getenv("WAYLAND_DISPLAY") != "" {
+			return false, "Wayland portal capture is not available in the Pion host"
+		}
+		return false, "No graphical X11 session is active"
+	}
+	switch runtime.GOOS {
+	case "darwin", "windows", "linux":
+		return true, ""
+	default:
+		return false, "Screen capture is unsupported on this platform"
+	}
+}
+
+type syntheticSource struct{ interval time.Duration }
+
+// A deterministic 320x180 VP8 keyframe used by isolated integration tests.
+const syntheticIVFBase64 = "REtJRgAAIABWUDgwQAG0AAEAAAABAAAA/////wAAAACVAAAAAAAAAAAAAABQDwCdASpAAbQAAEcIhYWImYSIAgICdaoCBmZlqMPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZOcPZNkD+/y6p/q7E+FCCfxvN5rViAA=="
+
+func (syntheticSource) Description() string { return "synthetic VP8 keyframe" }
 
 func (s syntheticSource) Stream(ctx context.Context, write func(media.Sample) error) error {
-	data, err := base64.StdEncoding.DecodeString(syntheticIVFBase64)
+	raw, err := base64.StdEncoding.DecodeString(syntheticIVFBase64)
 	if err != nil {
 		return fmt.Errorf("decode synthetic IVF: %w", err)
 	}
-	reader, _, err := ivfreader.NewWith(bytes.NewReader(data))
+	reader, _, err := ivfreader.NewWith(bytes.NewReader(raw))
 	if err != nil {
 		return fmt.Errorf("open synthetic IVF: %w", err)
 	}
@@ -73,7 +132,7 @@ type ffmpegSource struct {
 	display     string
 	fps         int
 	bitrateKbps int
-	logger      *log.Logger
+	logger      *slog.Logger
 	environ     map[string]string
 }
 
@@ -84,19 +143,19 @@ func (s ffmpegSource) Description() string {
 }
 
 func (s ffmpegSource) Stream(ctx context.Context, write func(media.Sample) error) error {
-	args, err := ffmpegArgs(s.platform, s.display, s.fps, s.bitrateKbps, s.environ)
+	arguments, err := ffmpegArgs(s.platform, s.display, s.fps, s.bitrateKbps, s.environ)
 	if err != nil {
 		return err
 	}
-	captureCtx, cancelCapture := context.WithCancel(ctx)
+	captureContext, cancelCapture := context.WithCancel(ctx)
 	defer cancelCapture()
-	command := exec.CommandContext(captureCtx, s.path, args...)
+	command := exec.CommandContext(captureContext, s.path, arguments...)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("open FFmpeg output: %w", err)
 	}
 	if s.logger != nil {
-		command.Stderr = s.logger.Writer()
+		command.Stderr = slogWriter{s.logger}
 	} else {
 		command.Stderr = os.Stderr
 	}
@@ -117,7 +176,7 @@ func (s ffmpegSource) Stream(ctx context.Context, write func(media.Sample) error
 	}
 	select {
 	case <-startupTimedOut:
-		return finishCapture(ctx, wait, fmt.Errorf("FFmpeg produced no video within %s; check screen-capture permission and the display selector", ffmpegStartupTimeout))
+		return finishCapture(ctx, wait, fmt.Errorf("FFmpeg produced no video within %s; check screen recording permission and the display selector", ffmpegStartupTimeout))
 	default:
 	}
 	if err != nil {
@@ -146,6 +205,16 @@ func (s ffmpegSource) Stream(ctx context.Context, write func(media.Sample) error
 			return finishCapture(ctx, wait, err)
 		}
 	}
+}
+
+type slogWriter struct{ log *slog.Logger }
+
+func (w slogWriter) Write(value []byte) (int, error) {
+	message := strings.TrimSpace(string(value))
+	if message != "" {
+		w.log.Warn("remote desktop capture", "message", message)
+	}
+	return len(value), nil
 }
 
 func finishCapture(ctx context.Context, wait <-chan error, streamErr error) error {
@@ -181,47 +250,36 @@ func ffmpegArgs(platform, display string, fps, bitrateKbps int, environ map[stri
 	input := []string{"-hide_banner", "-loglevel", "warning"}
 	switch platform {
 	case "darwin":
-		if display == "" {
-			// Use FFmpeg's explicit screen selector. Numeric AVFoundation
-			// indices can address a camera instead of a display.
+		if display == "" || display == "primary" {
+			// AVFoundation mixes cameras and screens in one device index. Naming
+			// the screen explicitly avoids ever selecting camera index 0.
 			display = "Capture screen 0"
 		}
-		// AVFoundation otherwise infers the output yuv420p format as a capture
-		// request on some FFmpeg builds. Capture as NV12 and let libvpx convert.
 		input = append(input, "-f", "avfoundation", "-capture_cursor", "1", "-pixel_format", "nv12", "-framerate", strconv.Itoa(fps), "-i", display+":none")
 	case "windows":
-		if display == "" {
+		if display == "" || display == "primary" {
 			display = "desktop"
 		}
 		input = append(input, "-f", "gdigrab", "-draw_mouse", "1", "-framerate", strconv.Itoa(fps), "-i", display)
 	case "linux":
-		if display == "" {
+		if display == "" || display == "primary" {
 			display = environ["DISPLAY"]
 		}
 		if display == "" {
 			if environ["WAYLAND_DISPLAY"] != "" {
-				return nil, errors.New("the phase-one FFmpeg source does not automate Wayland portal capture; run an X11 session or use -source synthetic")
+				return nil, errors.New("the Pion host does not automate Wayland portal capture")
 			}
-			return nil, errors.New("DISPLAY is empty; set -display or use -source synthetic")
+			return nil, errors.New("DISPLAY is empty")
 		}
 		input = append(input, "-f", "x11grab", "-draw_mouse", "1", "-framerate", strconv.Itoa(fps), "-i", display)
 	default:
 		return nil, fmt.Errorf("screen capture is not configured for %q", platform)
 	}
-
 	keyframeInterval := fps * 2
 	output := []string{
-		"-an",
-		"-c:v", "libvpx",
-		"-deadline", "realtime",
-		"-cpu-used", "8",
-		"-lag-in-frames", "0",
-		"-error-resilient", "1",
-		"-g", strconv.Itoa(keyframeInterval),
-		"-b:v", strconv.Itoa(bitrateKbps) + "k",
-		"-pix_fmt", "yuv420p",
-		"-f", "ivf",
-		"pipe:1",
+		"-an", "-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "8",
+		"-lag-in-frames", "0", "-error-resilient", "1", "-g", strconv.Itoa(keyframeInterval),
+		"-b:v", strconv.Itoa(bitrateKbps) + "k", "-pix_fmt", "yuv420p", "-f", "ivf", "pipe:1",
 	}
 	return append(input, output...), nil
 }
@@ -235,26 +293,4 @@ func currentEnvironment() map[string]string {
 		}
 	}
 	return values
-}
-
-func newFrameSource(config experimentConfig, logger *log.Logger) (FrameSource, error) {
-	switch config.source {
-	case "synthetic":
-		return syntheticSource{interval: time.Second / time.Duration(config.fps)}, nil
-	case "screen":
-		if _, err := exec.LookPath(config.ffmpegPath); err != nil {
-			return nil, fmt.Errorf("find FFmpeg %q: %w", config.ffmpegPath, err)
-		}
-		return ffmpegSource{
-			path:        config.ffmpegPath,
-			platform:    runtime.GOOS,
-			display:     config.display,
-			fps:         config.fps,
-			bitrateKbps: config.bitrateKbps,
-			logger:      logger,
-			environ:     currentEnvironment(),
-		}, nil
-	default:
-		return nil, fmt.Errorf("source must be screen or synthetic, got %q", config.source)
-	}
 }

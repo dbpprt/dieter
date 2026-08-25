@@ -1,8 +1,8 @@
 # Dieter Remote Desktop Plan
 
-Status: architecture approved for experimentation; production implementation not yet selected.
+Status: first authenticated, view-only production slice implemented; native host helpers and control remain planned.
 
-Last reviewed: 2026-08-22.
+Last reviewed: 2026-08-25.
 
 ## 1. Outcome
 
@@ -27,6 +27,37 @@ Mac app <-> existing direct gRPC or gateway tunnel <-> daemon <-> local IPC <-> 
      \---------- WebRTC ICE + DTLS/SRTP + SCTP data channels ------------/
                             \-- coturn only when direct ICE fails --/
 ```
+
+### Implemented first slice
+
+The first product slice selects the Pion challenger for the daemon media host
+and an exactly pinned Google WebRTC 151.0.0 XCFramework for the macOS viewer.
+It deliberately remains view-only and uses FFmpeg/libvpx as a replaceable
+capture boundary while native ScreenCaptureKit/Windows/Wayland helpers are
+developed.
+
+The implemented control path includes:
+
+- a native macOS **Screens** destination below **Terminals**, using an
+  independent direct-TLS-or-gateway signaling connection and Metal rendering;
+- gateway-issued, operator- and daemon-bound RTC configuration with optional
+  coturn REST credentials and a five-minute default lifetime;
+- coarse screen readiness in daemon presence, with detailed capabilities kept
+  on the daemon;
+- trickled ICE over bounded unary/server-streaming Dieter RPCs, while video
+  remains ICE/DTLS/SRTP peer-to-peer or uses separately configured TURN;
+- an Ed25519 session binding over the client offer, daemon DTLS fingerprint,
+  nonce, session ID, and lease expiry, verified by the Mac before applying the
+  answer;
+- explicit per-machine enablement, one active session, view-only enforcement,
+  a 30-second renewable lease, bounded detach/reconnect grace, and capture only
+  after WebRTC connects; and
+- race-tested Pion media plus an isolated full gateway-relay-to-daemon test
+  that receives a real synthetic VP8 RTP frame.
+
+The remaining sections describe the target beyond this slice. In particular,
+control/data channels, native graphical-session helpers, hardware encoding,
+cursor separation, statistics UI, and Android viewing are not implemented yet.
 
 ## 2. Product principles
 

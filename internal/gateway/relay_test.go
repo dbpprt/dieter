@@ -18,3 +18,15 @@ func TestRelayDeadlineOnlyPropagatesClientDeadline(t *testing.T) {
 		t.Fatalf("relay deadline = %d, want %d", got, deadline.UnixMilli())
 	}
 }
+
+func TestDaemonLinkHeartbeatLease(t *testing.T) {
+	link := &daemonLink{}
+	now := time.Now()
+	link.markSeen(now)
+	if !link.isAlive(now.Add(daemonHeartbeatLease - time.Millisecond)) {
+		t.Fatal("daemon link should remain online inside its heartbeat lease")
+	}
+	if link.isAlive(now.Add(daemonHeartbeatLease)) {
+		t.Fatal("daemon link should be offline once its heartbeat lease expires")
+	}
+}

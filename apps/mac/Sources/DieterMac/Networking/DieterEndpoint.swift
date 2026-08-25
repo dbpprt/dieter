@@ -11,6 +11,9 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
     var online: Bool
     var lastSeenAt: String
     var version: String
+	var remoteDesktopReady: Bool
+	var remoteDesktopReason: String
+	var remoteDesktopPlatform: String
 
     var address: String { "\(secure ? "https" : "http")://\(host):\(port)" }
     var gatewayEndpoint: DieterEndpoint {
@@ -47,7 +50,10 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
         return DieterEndpoint(name: name, host: trimmed, port: secure ? 443 : 4242, secure: secure)
     }
 
-    private enum CodingKeys: String, CodingKey { case name, host, port, secure, daemonID, online, lastSeenAt, version }
+	private enum CodingKeys: String, CodingKey {
+		case name, host, port, secure, daemonID, online, lastSeenAt, version
+		case remoteDesktopReady, remoteDesktopReason, remoteDesktopPlatform
+	}
     init(
         name: String,
         host: String,
@@ -56,7 +62,10 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
         daemonID: String? = nil,
         online: Bool = true,
         lastSeenAt: String = "",
-        version: String = ""
+		version: String = "",
+		remoteDesktopReady: Bool = false,
+		remoteDesktopReason: String = "",
+		remoteDesktopPlatform: String = ""
     ) {
         self.name = name
         self.host = host
@@ -66,6 +75,9 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.online = online
         self.lastSeenAt = lastSeenAt
         self.version = version
+		self.remoteDesktopReady = remoteDesktopReady
+		self.remoteDesktopReason = remoteDesktopReason
+		self.remoteDesktopPlatform = remoteDesktopPlatform
     }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -75,6 +87,9 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
         online = try values.decodeIfPresent(Bool.self, forKey: .online) ?? true
         lastSeenAt = try values.decodeIfPresent(String.self, forKey: .lastSeenAt) ?? ""
         version = try values.decodeIfPresent(String.self, forKey: .version) ?? ""
+		remoteDesktopReady = try values.decodeIfPresent(Bool.self, forKey: .remoteDesktopReady) ?? false
+		remoteDesktopReason = try values.decodeIfPresent(String.self, forKey: .remoteDesktopReason) ?? ""
+		remoteDesktopPlatform = try values.decodeIfPresent(String.self, forKey: .remoteDesktopPlatform) ?? ""
     }
 }
 
@@ -108,6 +123,31 @@ enum ConnectionPhase: Equatable, Sendable {
 }
 
 enum MachinePresenceText {
+    static let offlineAfter: TimeInterval = 30
+
+    static func online(serverOnline: Bool, lastSeenAt: String, relativeTo now: Date = Date()) -> Bool {
+        guard serverOnline else { return false }
+        guard parse(lastSeenAt) != nil else { return true }
+        return isFresh(lastSeenAt, relativeTo: now)
+    }
+
+    static func isFresh(_ value: String, relativeTo now: Date = Date()) -> Bool {
+        guard let date = parse(value) else { return false }
+        let age = now.timeIntervalSince(date)
+        return age >= 0 && age < offlineAfter
+    }
+
+    static func freshestAge(_ values: [String], relativeTo now: Date = Date()) -> String? {
+        guard let date = values.compactMap(parse).max() else { return nil }
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        switch seconds {
+        case ..<60: return "\(seconds)s ago"
+        case ..<3_600: return "\(seconds / 60)m ago"
+        case ..<86_400: return "\(seconds / 3_600)h ago"
+        default: return "\(seconds / 86_400)d ago"
+        }
+    }
+
     static func lastSeen(_ value: String, relativeTo now: Date = Date()) -> String {
         guard let date = parse(value) else { return "Last seen unknown" }
         let seconds = max(0, Int(now.timeIntervalSince(date)))

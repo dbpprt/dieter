@@ -13,6 +13,9 @@ through either verified direct TLS or the bounded relay.
   standalone conversations grouped by project, plus live server streams
 - Daemon-owned terminal tabs with a real VT renderer, reconnectable scrollback,
   working-directory and shell selection, resize forwarding, and explicit close
+- A machine-oriented Screens workspace with explicit host enablement, signed
+  WebRTC admission, Metal-rendered view-only VP8 video, and reconnectable
+  signaling over direct TLS or the gateway
 - Message parts, reasoning, lazy full tool output, plans, subagents, and comments
 - Project file browsing/editing and file mutations
 - Schedule editing, previewing, enabling, manual runs, and occurrence history
@@ -91,10 +94,21 @@ priority unary calls so output backpressure cannot make typing wait behind the
 long-lived stream. A terminal may only start inside its registered project
 tree, after symlink resolution.
 
+Screens are intentionally independent of the project RPC connection. The app
+selects a machine, prefers its verified direct route, falls back to the gateway
+for signaling, and then establishes peer-to-peer WebRTC media. It verifies the
+daemon's Ed25519 signature over the client offer, DTLS fingerprint, nonce,
+session ID, and lease before accepting the answer. The current slice is
+view-only, VP8-only, and limited to one session per daemon; keyboard, pointer,
+clipboard, audio, file transfer, native capture helpers, and Android viewing
+remain future work. The exactly pinned Google WebRTC 151.0.0 community
+XCFramework is the prototype viewer dependency pending a Dieter-built,
+reproducibly packaged artifact.
+
 ## Verify
 
 ```sh
-swift test --package-path apps/mac
+swift test --disable-keychain --package-path apps/mac
 apps/mac/scripts/ui-smoke.sh
 apps/mac/scripts/conversation-ui-smoke.sh
 apps/mac/scripts/sidebar-ui-smoke.sh

@@ -1228,20 +1228,6 @@ private struct ConversationComposer: View {
                 .buttonStyle(DieterIconButtonStyle())
                 .help("Attach files")
 
-            Button { store.showReasoning.toggle() } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "brain.head.profile")
-                        .font(.system(size: 10, weight: .semibold))
-                    Capsule().fill(store.showReasoning ? DieterTheme.shellDeep : DieterTheme.elevated).frame(width: 25, height: 14)
-                        .overlay(alignment: store.showReasoning ? .trailing : .leading) { Circle().fill(.white).frame(width: 10, height: 10).padding(2) }
-                }
-                .foregroundStyle(store.showReasoning ? DieterTheme.shell : DieterTheme.subtle)
-                .padding(.horizontal, 9).frame(height: 28)
-                .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 7))
-            }
-            .buttonStyle(.plain)
-            .help(store.showReasoning ? "Hide reasoning" : "Show reasoning")
-
             Menu {
                 ForEach(store.harnessCatalog.harnesses, id: \.id) { item in
                     Button(item.name) {

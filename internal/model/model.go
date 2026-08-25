@@ -127,13 +127,15 @@ const (
 // Settings are global admission controls. Zero means unlimited. Overrides
 // are keyed by stable harness and board IDs so renames do not change policy.
 type Settings struct {
-	GlobalParallelLimit int            `json:"globalParallelLimit" yaml:"global_parallel_limit"`
-	AgentParallelLimits map[string]int `json:"agentParallelLimits,omitempty" yaml:"agent_parallel_limits,omitempty"`
-	BoardParallelLimits map[string]int `json:"boardParallelLimits,omitempty" yaml:"board_parallel_limits,omitempty"`
-	PromptTemplate      string         `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	BoardSkillTemplate  string         `json:"boardSkillTemplate,omitempty" yaml:"board_skill_template,omitempty"`
-	ChatSkillTemplate   string         `json:"chatSkillTemplate,omitempty" yaml:"chat_skill_template,omitempty"`
-	UpdatedAt           string         `json:"updatedAt,omitempty" yaml:"updated_at,omitempty"`
+	GlobalParallelLimit         int            `json:"globalParallelLimit" yaml:"global_parallel_limit"`
+	AgentParallelLimits         map[string]int `json:"agentParallelLimits,omitempty" yaml:"agent_parallel_limits,omitempty"`
+	BoardParallelLimits         map[string]int `json:"boardParallelLimits,omitempty" yaml:"board_parallel_limits,omitempty"`
+	PromptTemplate              string         `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	BoardSkillTemplate          string         `json:"boardSkillTemplate,omitempty" yaml:"board_skill_template,omitempty"`
+	ChatSkillTemplate           string         `json:"chatSkillTemplate,omitempty" yaml:"chat_skill_template,omitempty"`
+	RemoteDesktopEnabled        bool           `json:"remoteDesktopEnabled,omitempty" yaml:"remote_desktop_enabled,omitempty"`
+	RemoteDesktopControlEnabled bool           `json:"remoteDesktopControlEnabled,omitempty" yaml:"remote_desktop_control_enabled,omitempty"`
+	UpdatedAt                   string         `json:"updatedAt,omitempty" yaml:"updated_at,omitempty"`
 }
 
 type Schedule struct {

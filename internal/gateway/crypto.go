@@ -29,6 +29,7 @@ type Keys struct {
 
 type DaemonTokenClaims = trust.DaemonTokenClaims
 type DelegationClaims = trust.DelegationClaims
+type RTCConfigurationClaims = trust.RTCConfigurationClaims
 
 func LoadOrCreateKeys(root string) (*Keys, error) {
 	dir := filepath.Join(root, "signing")
@@ -176,12 +177,21 @@ func (k *Keys) SignDelegation(publicURL string, claims DelegationClaims) (string
 	return trust.SignCompact(k.SigningPrivate, claims)
 }
 
+func (k *Keys) SignRTCConfiguration(publicURL string, claims RTCConfigurationClaims) (string, error) {
+	claims.Issuer = strings.TrimRight(publicURL, "/")
+	return trust.SignCompact(k.SigningPrivate, claims)
+}
+
 func ParseAndVerifyDaemonToken(public ed25519.PublicKey, token, issuer, daemonID string, generation uint64, now time.Time) (DaemonTokenClaims, error) {
 	return trust.ParseAndVerifyDaemonToken(public, token, issuer, daemonID, generation, now)
 }
 
 func ParseAndVerifyDelegation(public ed25519.PublicKey, token, issuer, daemonID, requestID, method string, payload []byte, generation uint64, now time.Time) (DelegationClaims, error) {
 	return trust.ParseAndVerifyDelegation(public, token, issuer, daemonID, requestID, method, payload, generation, now)
+}
+
+func ParseAndVerifyRTCConfiguration(public ed25519.PublicKey, token, issuer, daemonID, operatorSubject, configurationID string, digest []byte, generation uint64, now time.Time) (RTCConfigurationClaims, error) {
+	return trust.ParseAndVerifyRTCConfiguration(public, token, issuer, daemonID, operatorSubject, configurationID, digest, generation, now)
 }
 
 func PublicKeyFromPEM(raw []byte) (ed25519.PublicKey, error) {

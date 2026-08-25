@@ -23,6 +23,10 @@ service GatewayService {
   rpc RevokeDaemon(DaemonRef) returns (google.protobuf.Empty);
   rpc ExchangeDaemonToken(ExchangeDaemonTokenRequest) returns (DaemonAccessToken);
   rpc ResolveDaemonRoute(DaemonRef) returns (DaemonRoute);
+  // GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+  // The signed envelope is verified by the daemon before a desktop session is
+  // admitted; the gateway never participates in the WebRTC media path.
+  rpc GetRTCConfiguration(DaemonRef) returns (RTCConfiguration);
 }
 
 // DaemonLinkService is a persistent daemon-initiated reverse tunnel. Every
@@ -49,6 +53,17 @@ message Daemon {
   string version = 5;
   uint64 generation = 6;
   repeated DirectCandidate direct_candidates = 7;
+  RemoteDesktopPresence remote_desktop = 8;
+}
+
+// RemoteDesktopPresence is intentionally coarse gateway metadata. Display
+// names, geometry, and OS permission details remain daemon-owned data.
+message RemoteDesktopPresence {
+  string platform = 1;
+  string helper_version = 2;
+  bool ready = 3;
+  string reason = 4;
+  bool active_session = 5;
 }
 
 message ListDaemonsResponse {
@@ -134,6 +149,27 @@ message DaemonRoute {
   // Trust anchor for direct daemon TLS. It is returned only to the owning
   // authenticated account and is never needed for the gateway relay path.
   bytes daemon_ca_pem = 5;
+  // The authenticated owner uses the enrolled leaf certificate to verify
+  // daemon-signed remote-desktop session bindings on both relay and direct
+  // signaling routes.
+  bytes daemon_certificate_pem = 6;
+}
+
+message RTCIceServer {
+  repeated string urls = 1;
+  string username = 2;
+  string credential = 3;
+}
+
+message RTCConfiguration {
+  repeated RTCIceServer ice_servers = 1;
+  string expires_at = 2;
+  string daemon_id = 3;
+  bytes signed_envelope = 4;
+  string operator_subject = 5;
+  string configuration_id = 6;
+  uint64 daemon_generation = 7;
+  string issued_at = 8;
 }
 
 enum DaemonLinkFrameKind {
@@ -172,4 +208,5 @@ message DaemonLinkFrame {
   string version = 14;
   uint64 generation = 15;
   repeated DirectCandidate direct_candidates = 16;
+  RemoteDesktopPresence remote_desktop = 17;
 }

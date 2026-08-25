@@ -106,6 +106,12 @@ private val navigationItems = listOf(
     NavItem(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
 )
 
+private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
+    this == Destination.FILES || this == Destination.SCHEDULES
+
+internal fun projectScopedNavigationEnabled(state: DieterUiState): Boolean =
+    state.projects.any { state.projectHosts[it.id]?.online != false }
+
 internal const val TABLET_LAYOUT_MIN_WIDTH_DP = 600
 
 internal fun usesTabletLayout(availableWidthDp: Float): Boolean =
@@ -168,10 +174,12 @@ fun DieterApp(container: DieterContainer) {
     // Files and Schedules are project-scoped but live in the top-level navigation.
     // Tapping either offers a project picker so the surface never falls back to a stale project.
     val handleNavigate: (Destination) -> Unit = { destination ->
-        if ((destination == Destination.FILES || destination == Destination.SCHEDULES) && state.projects.size > 1) {
-            projectPickerTarget = destination
-        } else {
-            model.navigate(destination)
+        if (!destination.isOfflineSensitiveProjectSurface() || projectScopedNavigationEnabled(state)) {
+            if (destination.isOfflineSensitiveProjectSurface() && state.projects.size > 1) {
+                projectPickerTarget = destination
+            } else {
+                model.navigate(destination)
+            }
         }
     }
 
@@ -190,6 +198,7 @@ fun DieterApp(container: DieterContainer) {
                 Row(Modifier.fillMaxSize()) {
                     DieterNavigationRail(
                         selected = state.destination,
+                        projectSurfacesEnabled = projectScopedNavigationEnabled(state),
                         onSelect = handleNavigate,
                         onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                         onCreate = {
@@ -226,7 +235,14 @@ fun DieterApp(container: DieterContainer) {
                     .distinctUntilChanged()
                     .collect { page ->
                         val next = navigationItems[page].destination
-                        if (next != destination) model.navigate(next)
+                        if (next != destination) {
+                            if (next.isOfflineSensitiveProjectSurface() && !projectScopedNavigationEnabled(state)) {
+                                val currentPage = navigationItems.indexOfFirst { it.destination == destination }.coerceAtLeast(0)
+                                pagerState.animateScrollToPage(currentPage)
+                            } else {
+                                model.navigate(next)
+                            }
+                        }
                     }
             }
             Scaffold(
@@ -242,6 +258,7 @@ fun DieterApp(container: DieterContainer) {
                         } else {
                             DieterBottomBar(
                                 selected = state.destination,
+                                projectSurfacesEnabled = projectScopedNavigationEnabled(state),
                                 onSelect = handleNavigate,
                                 onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                             )
@@ -552,6 +569,7 @@ private fun AppSurfaceContent(
 @Composable
 private fun DieterBottomBar(
     selected: Destination,
+    projectSurfacesEnabled: Boolean,
     onSelect: (Destination) -> Unit,
     onSettings: () -> Unit,
 ) {
@@ -563,6 +581,7 @@ private fun DieterBottomBar(
         navigationItems.forEach { item ->
             NavigationBarItem(
                 selected = item.destination == selected,
+                enabled = projectSurfacesEnabled || !item.destination.isOfflineSensitiveProjectSurface(),
                 onClick = { onSelect(item.destination) },
                 icon = { Icon(item.icon, contentDescription = null, modifier = Modifier.size(22.dp)) },
                 label = { Text(item.label, fontSize = 11.sp) },
@@ -581,6 +600,7 @@ private fun DieterBottomBar(
 @Composable
 private fun DieterNavigationRail(
     selected: Destination,
+    projectSurfacesEnabled: Boolean,
     onSelect: (Destination) -> Unit,
     onSettings: () -> Unit,
     onCreate: () -> Unit,
@@ -600,6 +620,7 @@ private fun DieterNavigationRail(
         navigationItems.forEach { item ->
             NavigationRailItem(
                 selected = item.destination == selected,
+                enabled = projectSurfacesEnabled || !item.destination.isOfflineSensitiveProjectSurface(),
                 onClick = { onSelect(item.destination) },
                 icon = { Icon(item.icon, contentDescription = null) },
                 label = { Text(item.label) },

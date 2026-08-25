@@ -33,7 +33,7 @@ func TestFFmpegArgsForSupportedPlatforms(t *testing.T) {
 		environ  map[string]string
 		contains []string
 	}{
-		{platform: "darwin", contains: []string{"avfoundation", "-pixel_format nv12", "0:none", "libvpx", "pipe:1"}},
+		{platform: "darwin", contains: []string{"avfoundation", "-pixel_format nv12", "Capture screen 0:none", "libvpx", "pipe:1"}},
 		{platform: "windows", contains: []string{"gdigrab", "desktop", "libvpx", "pipe:1"}},
 		{platform: "linux", environ: map[string]string{"DISPLAY": ":1.0"}, contains: []string{"x11grab", ":1.0", "libvpx", "pipe:1"}},
 	}

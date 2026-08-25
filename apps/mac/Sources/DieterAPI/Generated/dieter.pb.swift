@@ -2676,6 +2676,356 @@ public nonisolated struct Dieter_V1_RenameTerminalRequest: Sendable {
   public init() {}
 }
 
+public nonisolated struct Dieter_V1_RemoteDesktopCapabilities: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var platform: String = String()
+
+  public var graphicalSessionActive: Bool = false
+
+  public var enabled: Bool = false
+
+  public var ready: Bool = false
+
+  public var unavailableReason: String = String()
+
+  public var helperVersion: String = String()
+
+  public var capturePermission: String = String()
+
+  public var controlPermission: String = String()
+
+  public var displays: [Dieter_V1_RemoteDesktopDisplay] = []
+
+  public var codecs: [String] = []
+
+  public var hardwareEncoderAvailable: Bool = false
+
+  public var controlSupported: Bool = false
+
+  public var clipboardSupported: Bool = false
+
+  public var audioSupported: Bool = false
+
+  public var fileTransferSupported: Bool = false
+
+  public var activeSession: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopDisplay: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var name: String = String()
+
+  public var logicalWidth: Int32 = 0
+
+  public var logicalHeight: Int32 = 0
+
+  public var physicalWidth: Int32 = 0
+
+  public var physicalHeight: Int32 = 0
+
+  public var scale: Double = 0
+
+  public var rotation: Int32 = 0
+
+  public var primary: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopSettings: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var enabled: Bool = false
+
+  public var controlEnabled: Bool = false
+
+  public var updatedAt: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_UpdateRemoteDesktopSettingsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var enabled: Bool = false
+
+  public var controlEnabled: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopSessionDescription: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var type: String = String()
+
+  public var sdp: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopICECandidate: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var candidate: String = String()
+
+  public var sdpMid: String = String()
+
+  public var sdpMlineIndex: Int32 = 0
+
+  public var usernameFragment: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_StartRemoteDesktopRequest: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var clientNonce: String {
+    get {_storage._clientNonce}
+    set {_uniqueStorage()._clientNonce = newValue}
+  }
+
+  public var rtcConfiguration: Dieter_Gateway_V1_RTCConfiguration {
+    get {_storage._rtcConfiguration ?? Dieter_Gateway_V1_RTCConfiguration()}
+    set {_uniqueStorage()._rtcConfiguration = newValue}
+  }
+  /// Returns true if `rtcConfiguration` has been explicitly set.
+  public var hasRtcConfiguration: Bool {_storage._rtcConfiguration != nil}
+  /// Clears the value of `rtcConfiguration`. Subsequent reads from it will return its default value.
+  public mutating func clearRtcConfiguration() {_uniqueStorage()._rtcConfiguration = nil}
+
+  public var offer: Dieter_V1_RemoteDesktopSessionDescription {
+    get {_storage._offer ?? Dieter_V1_RemoteDesktopSessionDescription()}
+    set {_uniqueStorage()._offer = newValue}
+  }
+  /// Returns true if `offer` has been explicitly set.
+  public var hasOffer: Bool {_storage._offer != nil}
+  /// Clears the value of `offer`. Subsequent reads from it will return its default value.
+  public mutating func clearOffer() {_uniqueStorage()._offer = nil}
+
+  public var initialCandidates: [Dieter_V1_RemoteDesktopICECandidate] {
+    get {_storage._initialCandidates}
+    set {_uniqueStorage()._initialCandidates = newValue}
+  }
+
+  public var displayID: String {
+    get {_storage._displayID}
+    set {_uniqueStorage()._displayID = newValue}
+  }
+
+  public var control: Bool {
+    get {_storage._control}
+    set {_uniqueStorage()._control = newValue}
+  }
+
+  public var maxWidth: Int32 {
+    get {_storage._maxWidth}
+    set {_uniqueStorage()._maxWidth = newValue}
+  }
+
+  public var maxHeight: Int32 {
+    get {_storage._maxHeight}
+    set {_uniqueStorage()._maxHeight = newValue}
+  }
+
+  public var maxFps: Int32 {
+    get {_storage._maxFps}
+    set {_uniqueStorage()._maxFps = newValue}
+  }
+
+  public var maxBitrateKbps: Int32 {
+    get {_storage._maxBitrateKbps}
+    set {_uniqueStorage()._maxBitrateKbps = newValue}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopRef: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sessionID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopSessionBinding: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var clientNonce: String = String()
+
+  public var helperDtlsFingerprint: String = String()
+
+  public var expiresAt: String = String()
+
+  public var offerSha256: Data = Data()
+
+  public var daemonSignature: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopSessionState: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var phase: String = String()
+
+  public var reason: String = String()
+
+  public var route: String = String()
+
+  public var codec: String = String()
+
+  public var width: Int32 = 0
+
+  public var height: Int32 = 0
+
+  public var fps: Int32 = 0
+
+  public var bitrateKbps: Int32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopSessionError: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var code: String = String()
+
+  public var message: String = String()
+
+  public var recoverable: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopSignal: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sessionID: String = String()
+
+  public var sequence: UInt64 = 0
+
+  public var payload: Dieter_V1_RemoteDesktopSignal.OneOf_Payload? = nil
+
+  public var binding: Dieter_V1_RemoteDesktopSessionBinding {
+    get {
+      if case .binding(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopSessionBinding()
+    }
+    set {payload = .binding(newValue)}
+  }
+
+  public var description_p: Dieter_V1_RemoteDesktopSessionDescription {
+    get {
+      if case .description_p(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopSessionDescription()
+    }
+    set {payload = .description_p(newValue)}
+  }
+
+  public var candidate: Dieter_V1_RemoteDesktopICECandidate {
+    get {
+      if case .candidate(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopICECandidate()
+    }
+    set {payload = .candidate(newValue)}
+  }
+
+  public var state: Dieter_V1_RemoteDesktopSessionState {
+    get {
+      if case .state(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopSessionState()
+    }
+    set {payload = .state(newValue)}
+  }
+
+  public var error: Dieter_V1_RemoteDesktopSessionError {
+    get {
+      if case .error(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopSessionError()
+    }
+    set {payload = .error(newValue)}
+  }
+
+  public var leaseHeartbeat: SwiftProtobuf.Google_Protobuf_Empty {
+    get {
+      if case .leaseHeartbeat(let v)? = payload {return v}
+      return SwiftProtobuf.Google_Protobuf_Empty()
+    }
+    set {payload = .leaseHeartbeat(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Payload: Equatable, Sendable {
+    case binding(Dieter_V1_RemoteDesktopSessionBinding)
+    case description_p(Dieter_V1_RemoteDesktopSessionDescription)
+    case candidate(Dieter_V1_RemoteDesktopICECandidate)
+    case state(Dieter_V1_RemoteDesktopSessionState)
+    case error(Dieter_V1_RemoteDesktopSessionError)
+    case leaseHeartbeat(SwiftProtobuf.Google_Protobuf_Empty)
+
+  }
+
+  public init() {}
+}
+
 public nonisolated struct Dieter_V1_SaveFileRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -8832,6 +9182,799 @@ nonisolated extension Dieter_V1_RenameTerminalRequest: SwiftProtobuf.Message, Sw
   public static func ==(lhs: Dieter_V1_RenameTerminalRequest, rhs: Dieter_V1_RenameTerminalRequest) -> Bool {
     if lhs.terminalID != rhs.terminalID {return false}
     if lhs.name != rhs.name {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopCapabilities"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}hardware_encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.platform) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.graphicalSessionActive) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.ready) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.unavailableReason) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.helperVersion) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.capturePermission) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.controlPermission) }()
+      case 9: try { try decoder.decodeRepeatedMessageField(value: &self.displays) }()
+      case 10: try { try decoder.decodeRepeatedStringField(value: &self.codecs) }()
+      case 11: try { try decoder.decodeSingularBoolField(value: &self.hardwareEncoderAvailable) }()
+      case 12: try { try decoder.decodeSingularBoolField(value: &self.controlSupported) }()
+      case 13: try { try decoder.decodeSingularBoolField(value: &self.clipboardSupported) }()
+      case 14: try { try decoder.decodeSingularBoolField(value: &self.audioSupported) }()
+      case 15: try { try decoder.decodeSingularBoolField(value: &self.fileTransferSupported) }()
+      case 16: try { try decoder.decodeSingularBoolField(value: &self.activeSession) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.platform.isEmpty {
+      try visitor.visitSingularStringField(value: self.platform, fieldNumber: 1)
+    }
+    if self.graphicalSessionActive != false {
+      try visitor.visitSingularBoolField(value: self.graphicalSessionActive, fieldNumber: 2)
+    }
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 3)
+    }
+    if self.ready != false {
+      try visitor.visitSingularBoolField(value: self.ready, fieldNumber: 4)
+    }
+    if !self.unavailableReason.isEmpty {
+      try visitor.visitSingularStringField(value: self.unavailableReason, fieldNumber: 5)
+    }
+    if !self.helperVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.helperVersion, fieldNumber: 6)
+    }
+    if !self.capturePermission.isEmpty {
+      try visitor.visitSingularStringField(value: self.capturePermission, fieldNumber: 7)
+    }
+    if !self.controlPermission.isEmpty {
+      try visitor.visitSingularStringField(value: self.controlPermission, fieldNumber: 8)
+    }
+    if !self.displays.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.displays, fieldNumber: 9)
+    }
+    if !self.codecs.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.codecs, fieldNumber: 10)
+    }
+    if self.hardwareEncoderAvailable != false {
+      try visitor.visitSingularBoolField(value: self.hardwareEncoderAvailable, fieldNumber: 11)
+    }
+    if self.controlSupported != false {
+      try visitor.visitSingularBoolField(value: self.controlSupported, fieldNumber: 12)
+    }
+    if self.clipboardSupported != false {
+      try visitor.visitSingularBoolField(value: self.clipboardSupported, fieldNumber: 13)
+    }
+    if self.audioSupported != false {
+      try visitor.visitSingularBoolField(value: self.audioSupported, fieldNumber: 14)
+    }
+    if self.fileTransferSupported != false {
+      try visitor.visitSingularBoolField(value: self.fileTransferSupported, fieldNumber: 15)
+    }
+    if self.activeSession != false {
+      try visitor.visitSingularBoolField(value: self.activeSession, fieldNumber: 16)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopCapabilities, rhs: Dieter_V1_RemoteDesktopCapabilities) -> Bool {
+    if lhs.platform != rhs.platform {return false}
+    if lhs.graphicalSessionActive != rhs.graphicalSessionActive {return false}
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.ready != rhs.ready {return false}
+    if lhs.unavailableReason != rhs.unavailableReason {return false}
+    if lhs.helperVersion != rhs.helperVersion {return false}
+    if lhs.capturePermission != rhs.capturePermission {return false}
+    if lhs.controlPermission != rhs.controlPermission {return false}
+    if lhs.displays != rhs.displays {return false}
+    if lhs.codecs != rhs.codecs {return false}
+    if lhs.hardwareEncoderAvailable != rhs.hardwareEncoderAvailable {return false}
+    if lhs.controlSupported != rhs.controlSupported {return false}
+    if lhs.clipboardSupported != rhs.clipboardSupported {return false}
+    if lhs.audioSupported != rhs.audioSupported {return false}
+    if lhs.fileTransferSupported != rhs.fileTransferSupported {return false}
+    if lhs.activeSession != rhs.activeSession {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopDisplay: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopDisplay"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{3}logical_width\0\u{3}logical_height\0\u{3}physical_width\0\u{3}physical_height\0\u{1}scale\0\u{1}rotation\0\u{1}primary\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.logicalWidth) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.logicalHeight) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.physicalWidth) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.physicalHeight) }()
+      case 7: try { try decoder.decodeSingularDoubleField(value: &self.scale) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.rotation) }()
+      case 9: try { try decoder.decodeSingularBoolField(value: &self.primary) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 2)
+    }
+    if self.logicalWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.logicalWidth, fieldNumber: 3)
+    }
+    if self.logicalHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.logicalHeight, fieldNumber: 4)
+    }
+    if self.physicalWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.physicalWidth, fieldNumber: 5)
+    }
+    if self.physicalHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.physicalHeight, fieldNumber: 6)
+    }
+    if self.scale.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.scale, fieldNumber: 7)
+    }
+    if self.rotation != 0 {
+      try visitor.visitSingularInt32Field(value: self.rotation, fieldNumber: 8)
+    }
+    if self.primary != false {
+      try visitor.visitSingularBoolField(value: self.primary, fieldNumber: 9)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopDisplay, rhs: Dieter_V1_RemoteDesktopDisplay) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.logicalWidth != rhs.logicalWidth {return false}
+    if lhs.logicalHeight != rhs.logicalHeight {return false}
+    if lhs.physicalWidth != rhs.physicalWidth {return false}
+    if lhs.physicalHeight != rhs.physicalHeight {return false}
+    if lhs.scale != rhs.scale {return false}
+    if lhs.rotation != rhs.rotation {return false}
+    if lhs.primary != rhs.primary {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSettings"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}control_enabled\0\u{3}updated_at\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.controlEnabled) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.updatedAt) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 1)
+    }
+    if self.controlEnabled != false {
+      try visitor.visitSingularBoolField(value: self.controlEnabled, fieldNumber: 2)
+    }
+    if !self.updatedAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.updatedAt, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopSettings, rhs: Dieter_V1_RemoteDesktopSettings) -> Bool {
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.controlEnabled != rhs.controlEnabled {return false}
+    if lhs.updatedAt != rhs.updatedAt {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_UpdateRemoteDesktopSettingsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".UpdateRemoteDesktopSettingsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}control_enabled\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.controlEnabled) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 1)
+    }
+    if self.controlEnabled != false {
+      try visitor.visitSingularBoolField(value: self.controlEnabled, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_UpdateRemoteDesktopSettingsRequest, rhs: Dieter_V1_UpdateRemoteDesktopSettingsRequest) -> Bool {
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.controlEnabled != rhs.controlEnabled {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopSessionDescription: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSessionDescription"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}sdp\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.type) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.sdp) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.type.isEmpty {
+      try visitor.visitSingularStringField(value: self.type, fieldNumber: 1)
+    }
+    if !self.sdp.isEmpty {
+      try visitor.visitSingularStringField(value: self.sdp, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopSessionDescription, rhs: Dieter_V1_RemoteDesktopSessionDescription) -> Bool {
+    if lhs.type != rhs.type {return false}
+    if lhs.sdp != rhs.sdp {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopICECandidate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopICECandidate"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}candidate\0\u{3}sdp_mid\0\u{3}sdp_mline_index\0\u{3}username_fragment\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.candidate) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.sdpMid) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.sdpMlineIndex) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.usernameFragment) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.candidate.isEmpty {
+      try visitor.visitSingularStringField(value: self.candidate, fieldNumber: 1)
+    }
+    if !self.sdpMid.isEmpty {
+      try visitor.visitSingularStringField(value: self.sdpMid, fieldNumber: 2)
+    }
+    if self.sdpMlineIndex != 0 {
+      try visitor.visitSingularInt32Field(value: self.sdpMlineIndex, fieldNumber: 3)
+    }
+    if !self.usernameFragment.isEmpty {
+      try visitor.visitSingularStringField(value: self.usernameFragment, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopICECandidate, rhs: Dieter_V1_RemoteDesktopICECandidate) -> Bool {
+    if lhs.candidate != rhs.candidate {return false}
+    if lhs.sdpMid != rhs.sdpMid {return false}
+    if lhs.sdpMlineIndex != rhs.sdpMlineIndex {return false}
+    if lhs.usernameFragment != rhs.usernameFragment {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_StartRemoteDesktopRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".StartRemoteDesktopRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_nonce\0\u{3}rtc_configuration\0\u{1}offer\0\u{3}initial_candidates\0\u{3}display_id\0\u{1}control\0\u{3}max_width\0\u{3}max_height\0\u{3}max_fps\0\u{3}max_bitrate_kbps\0")
+
+  fileprivate class _StorageClass {
+    var _clientNonce: String = String()
+    var _rtcConfiguration: Dieter_Gateway_V1_RTCConfiguration? = nil
+    var _offer: Dieter_V1_RemoteDesktopSessionDescription? = nil
+    var _initialCandidates: [Dieter_V1_RemoteDesktopICECandidate] = []
+    var _displayID: String = String()
+    var _control: Bool = false
+    var _maxWidth: Int32 = 0
+    var _maxHeight: Int32 = 0
+    var _maxFps: Int32 = 0
+    var _maxBitrateKbps: Int32 = 0
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _clientNonce = source._clientNonce
+      _rtcConfiguration = source._rtcConfiguration
+      _offer = source._offer
+      _initialCandidates = source._initialCandidates
+      _displayID = source._displayID
+      _control = source._control
+      _maxWidth = source._maxWidth
+      _maxHeight = source._maxHeight
+      _maxFps = source._maxFps
+      _maxBitrateKbps = source._maxBitrateKbps
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._clientNonce) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._rtcConfiguration) }()
+        case 3: try { try decoder.decodeSingularMessageField(value: &_storage._offer) }()
+        case 4: try { try decoder.decodeRepeatedMessageField(value: &_storage._initialCandidates) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._displayID) }()
+        case 6: try { try decoder.decodeSingularBoolField(value: &_storage._control) }()
+        case 7: try { try decoder.decodeSingularInt32Field(value: &_storage._maxWidth) }()
+        case 8: try { try decoder.decodeSingularInt32Field(value: &_storage._maxHeight) }()
+        case 9: try { try decoder.decodeSingularInt32Field(value: &_storage._maxFps) }()
+        case 10: try { try decoder.decodeSingularInt32Field(value: &_storage._maxBitrateKbps) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._clientNonce.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._clientNonce, fieldNumber: 1)
+      }
+      try { if let v = _storage._rtcConfiguration {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      try { if let v = _storage._offer {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+      } }()
+      if !_storage._initialCandidates.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._initialCandidates, fieldNumber: 4)
+      }
+      if !_storage._displayID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._displayID, fieldNumber: 5)
+      }
+      if _storage._control != false {
+        try visitor.visitSingularBoolField(value: _storage._control, fieldNumber: 6)
+      }
+      if _storage._maxWidth != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._maxWidth, fieldNumber: 7)
+      }
+      if _storage._maxHeight != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._maxHeight, fieldNumber: 8)
+      }
+      if _storage._maxFps != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._maxFps, fieldNumber: 9)
+      }
+      if _storage._maxBitrateKbps != 0 {
+        try visitor.visitSingularInt32Field(value: _storage._maxBitrateKbps, fieldNumber: 10)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_StartRemoteDesktopRequest, rhs: Dieter_V1_StartRemoteDesktopRequest) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._clientNonce != rhs_storage._clientNonce {return false}
+        if _storage._rtcConfiguration != rhs_storage._rtcConfiguration {return false}
+        if _storage._offer != rhs_storage._offer {return false}
+        if _storage._initialCandidates != rhs_storage._initialCandidates {return false}
+        if _storage._displayID != rhs_storage._displayID {return false}
+        if _storage._control != rhs_storage._control {return false}
+        if _storage._maxWidth != rhs_storage._maxWidth {return false}
+        if _storage._maxHeight != rhs_storage._maxHeight {return false}
+        if _storage._maxFps != rhs_storage._maxFps {return false}
+        if _storage._maxBitrateKbps != rhs_storage._maxBitrateKbps {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopRef: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopRef"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopRef, rhs: Dieter_V1_RemoteDesktopRef) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopSessionBinding: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSessionBinding"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_nonce\0\u{3}helper_dtls_fingerprint\0\u{3}expires_at\0\u{3}offer_sha256\0\u{3}daemon_signature\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.clientNonce) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.helperDtlsFingerprint) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.expiresAt) }()
+      case 4: try { try decoder.decodeSingularBytesField(value: &self.offerSha256) }()
+      case 5: try { try decoder.decodeSingularBytesField(value: &self.daemonSignature) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.clientNonce.isEmpty {
+      try visitor.visitSingularStringField(value: self.clientNonce, fieldNumber: 1)
+    }
+    if !self.helperDtlsFingerprint.isEmpty {
+      try visitor.visitSingularStringField(value: self.helperDtlsFingerprint, fieldNumber: 2)
+    }
+    if !self.expiresAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.expiresAt, fieldNumber: 3)
+    }
+    if !self.offerSha256.isEmpty {
+      try visitor.visitSingularBytesField(value: self.offerSha256, fieldNumber: 4)
+    }
+    if !self.daemonSignature.isEmpty {
+      try visitor.visitSingularBytesField(value: self.daemonSignature, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopSessionBinding, rhs: Dieter_V1_RemoteDesktopSessionBinding) -> Bool {
+    if lhs.clientNonce != rhs.clientNonce {return false}
+    if lhs.helperDtlsFingerprint != rhs.helperDtlsFingerprint {return false}
+    if lhs.expiresAt != rhs.expiresAt {return false}
+    if lhs.offerSha256 != rhs.offerSha256 {return false}
+    if lhs.daemonSignature != rhs.daemonSignature {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSessionState"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{1}reason\0\u{1}route\0\u{1}codec\0\u{1}width\0\u{1}height\0\u{1}fps\0\u{3}bitrate_kbps\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.phase) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.reason) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.route) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.codec) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.width) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.height) }()
+      case 7: try { try decoder.decodeSingularInt32Field(value: &self.fps) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.bitrateKbps) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.phase.isEmpty {
+      try visitor.visitSingularStringField(value: self.phase, fieldNumber: 1)
+    }
+    if !self.reason.isEmpty {
+      try visitor.visitSingularStringField(value: self.reason, fieldNumber: 2)
+    }
+    if !self.route.isEmpty {
+      try visitor.visitSingularStringField(value: self.route, fieldNumber: 3)
+    }
+    if !self.codec.isEmpty {
+      try visitor.visitSingularStringField(value: self.codec, fieldNumber: 4)
+    }
+    if self.width != 0 {
+      try visitor.visitSingularInt32Field(value: self.width, fieldNumber: 5)
+    }
+    if self.height != 0 {
+      try visitor.visitSingularInt32Field(value: self.height, fieldNumber: 6)
+    }
+    if self.fps != 0 {
+      try visitor.visitSingularInt32Field(value: self.fps, fieldNumber: 7)
+    }
+    if self.bitrateKbps != 0 {
+      try visitor.visitSingularInt32Field(value: self.bitrateKbps, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopSessionState, rhs: Dieter_V1_RemoteDesktopSessionState) -> Bool {
+    if lhs.phase != rhs.phase {return false}
+    if lhs.reason != rhs.reason {return false}
+    if lhs.route != rhs.route {return false}
+    if lhs.codec != rhs.codec {return false}
+    if lhs.width != rhs.width {return false}
+    if lhs.height != rhs.height {return false}
+    if lhs.fps != rhs.fps {return false}
+    if lhs.bitrateKbps != rhs.bitrateKbps {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopSessionError: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSessionError"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}code\0\u{1}message\0\u{1}recoverable\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.code) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.recoverable) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.code.isEmpty {
+      try visitor.visitSingularStringField(value: self.code, fieldNumber: 1)
+    }
+    if !self.message.isEmpty {
+      try visitor.visitSingularStringField(value: self.message, fieldNumber: 2)
+    }
+    if self.recoverable != false {
+      try visitor.visitSingularBoolField(value: self.recoverable, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopSessionError, rhs: Dieter_V1_RemoteDesktopSessionError) -> Bool {
+    if lhs.code != rhs.code {return false}
+    if lhs.message != rhs.message {return false}
+    if lhs.recoverable != rhs.recoverable {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopSignal: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSignal"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{1}sequence\0\u{1}binding\0\u{1}description\0\u{1}candidate\0\u{1}state\0\u{1}error\0\u{3}lease_heartbeat\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.sequence) }()
+      case 3: try {
+        var v: Dieter_V1_RemoteDesktopSessionBinding?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .binding(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .binding(v)
+        }
+      }()
+      case 4: try {
+        var v: Dieter_V1_RemoteDesktopSessionDescription?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .description_p(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .description_p(v)
+        }
+      }()
+      case 5: try {
+        var v: Dieter_V1_RemoteDesktopICECandidate?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .candidate(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .candidate(v)
+        }
+      }()
+      case 6: try {
+        var v: Dieter_V1_RemoteDesktopSessionState?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .state(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .state(v)
+        }
+      }()
+      case 7: try {
+        var v: Dieter_V1_RemoteDesktopSessionError?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .error(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .error(v)
+        }
+      }()
+      case 8: try {
+        var v: SwiftProtobuf.Google_Protobuf_Empty?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .leaseHeartbeat(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .leaseHeartbeat(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    if self.sequence != 0 {
+      try visitor.visitSingularUInt64Field(value: self.sequence, fieldNumber: 2)
+    }
+    switch self.payload {
+    case .binding?: try {
+      guard case .binding(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case .description_p?: try {
+      guard case .description_p(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case .candidate?: try {
+      guard case .candidate(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    }()
+    case .state?: try {
+      guard case .state(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    }()
+    case .error?: try {
+      guard case .error(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+    }()
+    case .leaseHeartbeat?: try {
+      guard case .leaseHeartbeat(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopSignal, rhs: Dieter_V1_RemoteDesktopSignal) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.sequence != rhs.sequence {return false}
+    if lhs.payload != rhs.payload {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

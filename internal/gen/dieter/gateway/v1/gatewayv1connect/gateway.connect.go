@@ -66,6 +66,9 @@ const (
 	// GatewayServiceResolveDaemonRouteProcedure is the fully-qualified name of the GatewayService's
 	// ResolveDaemonRoute RPC.
 	GatewayServiceResolveDaemonRouteProcedure = "/dieter.gateway.v1.GatewayService/ResolveDaemonRoute"
+	// GatewayServiceGetRTCConfigurationProcedure is the fully-qualified name of the GatewayService's
+	// GetRTCConfiguration RPC.
+	GatewayServiceGetRTCConfigurationProcedure = "/dieter.gateway.v1.GatewayService/GetRTCConfiguration"
 	// DaemonLinkServiceConnectProcedure is the fully-qualified name of the DaemonLinkService's Connect
 	// RPC.
 	DaemonLinkServiceConnectProcedure = "/dieter.gateway.v1.DaemonLinkService/Connect"
@@ -83,6 +86,10 @@ type GatewayServiceClient interface {
 	RevokeDaemon(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[emptypb.Empty], error)
 	ExchangeDaemonToken(context.Context, *connect.Request[v1.ExchangeDaemonTokenRequest]) (*connect.Response[v1.DaemonAccessToken], error)
 	ResolveDaemonRoute(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.DaemonRoute], error)
+	// GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+	// The signed envelope is verified by the daemon before a desktop session is
+	// admitted; the gateway never participates in the WebRTC media path.
+	GetRTCConfiguration(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.RTCConfiguration], error)
 }
 
 // NewGatewayServiceClient constructs a client for the dieter.gateway.v1.GatewayService service. By
@@ -156,6 +163,12 @@ func NewGatewayServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(gatewayServiceMethods.ByName("ResolveDaemonRoute")),
 			connect.WithClientOptions(opts...),
 		),
+		getRTCConfiguration: connect.NewClient[v1.DaemonRef, v1.RTCConfiguration](
+			httpClient,
+			baseURL+GatewayServiceGetRTCConfigurationProcedure,
+			connect.WithSchema(gatewayServiceMethods.ByName("GetRTCConfiguration")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -171,6 +184,7 @@ type gatewayServiceClient struct {
 	revokeDaemon             *connect.Client[v1.DaemonRef, emptypb.Empty]
 	exchangeDaemonToken      *connect.Client[v1.ExchangeDaemonTokenRequest, v1.DaemonAccessToken]
 	resolveDaemonRoute       *connect.Client[v1.DaemonRef, v1.DaemonRoute]
+	getRTCConfiguration      *connect.Client[v1.DaemonRef, v1.RTCConfiguration]
 }
 
 // GetAccount calls dieter.gateway.v1.GatewayService.GetAccount.
@@ -223,6 +237,11 @@ func (c *gatewayServiceClient) ResolveDaemonRoute(ctx context.Context, req *conn
 	return c.resolveDaemonRoute.CallUnary(ctx, req)
 }
 
+// GetRTCConfiguration calls dieter.gateway.v1.GatewayService.GetRTCConfiguration.
+func (c *gatewayServiceClient) GetRTCConfiguration(ctx context.Context, req *connect.Request[v1.DaemonRef]) (*connect.Response[v1.RTCConfiguration], error) {
+	return c.getRTCConfiguration.CallUnary(ctx, req)
+}
+
 // GatewayServiceHandler is an implementation of the dieter.gateway.v1.GatewayService service.
 type GatewayServiceHandler interface {
 	GetAccount(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Account], error)
@@ -235,6 +254,10 @@ type GatewayServiceHandler interface {
 	RevokeDaemon(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[emptypb.Empty], error)
 	ExchangeDaemonToken(context.Context, *connect.Request[v1.ExchangeDaemonTokenRequest]) (*connect.Response[v1.DaemonAccessToken], error)
 	ResolveDaemonRoute(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.DaemonRoute], error)
+	// GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+	// The signed envelope is verified by the daemon before a desktop session is
+	// admitted; the gateway never participates in the WebRTC media path.
+	GetRTCConfiguration(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.RTCConfiguration], error)
 }
 
 // NewGatewayServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -304,6 +327,12 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 		connect.WithSchema(gatewayServiceMethods.ByName("ResolveDaemonRoute")),
 		connect.WithHandlerOptions(opts...),
 	)
+	gatewayServiceGetRTCConfigurationHandler := connect.NewUnaryHandler(
+		GatewayServiceGetRTCConfigurationProcedure,
+		svc.GetRTCConfiguration,
+		connect.WithSchema(gatewayServiceMethods.ByName("GetRTCConfiguration")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/dieter.gateway.v1.GatewayService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GatewayServiceGetAccountProcedure:
@@ -326,6 +355,8 @@ func NewGatewayServiceHandler(svc GatewayServiceHandler, opts ...connect.Handler
 			gatewayServiceExchangeDaemonTokenHandler.ServeHTTP(w, r)
 		case GatewayServiceResolveDaemonRouteProcedure:
 			gatewayServiceResolveDaemonRouteHandler.ServeHTTP(w, r)
+		case GatewayServiceGetRTCConfigurationProcedure:
+			gatewayServiceGetRTCConfigurationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -373,6 +404,10 @@ func (UnimplementedGatewayServiceHandler) ExchangeDaemonToken(context.Context, *
 
 func (UnimplementedGatewayServiceHandler) ResolveDaemonRoute(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.DaemonRoute], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.ResolveDaemonRoute is not implemented"))
+}
+
+func (UnimplementedGatewayServiceHandler) GetRTCConfiguration(context.Context, *connect.Request[v1.DaemonRef]) (*connect.Response[v1.RTCConfiguration], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.gateway.v1.GatewayService.GetRTCConfiguration is not implemented"))
 }
 
 // DaemonLinkServiceClient is a client for the dieter.gateway.v1.DaemonLinkService service.

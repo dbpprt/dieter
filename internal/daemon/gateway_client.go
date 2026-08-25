@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
@@ -28,12 +29,36 @@ import (
 )
 
 type GatewayClient struct {
-	Identity    *Identity
-	LocalTarget string
-	Version     string
-	Routes      []*gatewayv1.DirectCandidate
-	Log         *slog.Logger
-	OnStatus    func(GatewayEvent)
+	Identity              *Identity
+	LocalTarget           string
+	Version               string
+	Routes                []*gatewayv1.DirectCandidate
+	Log                   *slog.Logger
+	OnStatus              func(GatewayEvent)
+	RemoteDesktopPresence func() *gatewayv1.RemoteDesktopPresence
+}
+
+func (c *GatewayClient) remoteDesktopPresence() *gatewayv1.RemoteDesktopPresence {
+	if c.RemoteDesktopPresence == nil {
+		return nil
+	}
+	return c.RemoteDesktopPresence()
+}
+
+const (
+	gatewayHeartbeatActiveInterval  = 5 * time.Second
+	gatewayHeartbeatIdleMaxInterval = 20 * time.Second
+)
+
+func nextGatewayHeartbeatInterval(current time.Duration, active bool) time.Duration {
+	if active || current < gatewayHeartbeatActiveInterval {
+		return gatewayHeartbeatActiveInterval
+	}
+	next := current * 2
+	if next > gatewayHeartbeatIdleMaxInterval {
+		return gatewayHeartbeatIdleMaxInterval
+	}
+	return next
 }
 
 func (c *GatewayClient) report(state string, err error) {
@@ -87,7 +112,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes}); err != nil {
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
 		return err
 	}
 	challenge, err := stream.Recv()
@@ -110,7 +135,11 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 	defer local.Close()
 	prioritySend := make(chan *gatewayv1.DaemonLinkFrame, 16)
 	streamSend := make(chan *gatewayv1.DaemonLinkFrame, 8)
+	var relayActive atomic.Bool
 	enqueue := func(frame *gatewayv1.DaemonLinkFrame, priority bool) bool {
+		if frame.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT {
+			relayActive.Store(true)
+		}
 		queue := streamSend
 		if priority {
 			queue = prioritySend
@@ -155,7 +184,8 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 		}
 	}()
 	var calls sync.Map
-	heartbeat := time.NewTicker(10 * time.Second)
+	heartbeatInterval := gatewayHeartbeatActiveInterval
+	heartbeat := time.NewTimer(heartbeatInterval)
 	defer heartbeat.Stop()
 	recv := make(chan *gatewayv1.DaemonLinkFrame, 8)
 	recvErr := make(chan error, 1)
@@ -178,8 +208,11 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 		case err := <-recvErr:
 			return err
 		case <-heartbeat.C:
-			enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes}, true)
+			enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}, true)
+			heartbeatInterval = nextGatewayHeartbeatInterval(heartbeatInterval, relayActive.Swap(false))
+			heartbeat.Reset(heartbeatInterval)
 		case frame := <-recv:
+			relayActive.Store(true)
 			switch frame.GetKind() {
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC:
 				callCtx, cancel := context.WithCancel(ctx)
@@ -207,8 +240,11 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 	}()
 	emit := func(value *gatewayv1.DaemonLinkFrame) bool { return send(value, priority) }
 	public, err := trust.PublicKeyFromPEM(c.Identity.GatewaySigningPublicKey)
+	var operatorSubject string
 	if err == nil {
-		_, err = trust.ParseAndVerifyDelegation(public, frame.GetDelegationAssertion(), c.Identity.GatewayURL, c.Identity.ID, frame.GetRequestId(), frame.GetMethod(), frame.GetPayload(), frame.GetGeneration(), time.Now().UTC())
+		var claims trust.DelegationClaims
+		claims, err = trust.ParseAndVerifyDelegation(public, frame.GetDelegationAssertion(), c.Identity.GatewayURL, c.Identity.ID, frame.GetRequestId(), frame.GetMethod(), frame.GetPayload(), frame.GetGeneration(), time.Now().UTC())
+		operatorSubject = claims.Subject
 	}
 	if err != nil {
 		emit(relayError(frame.GetStreamId(), codes.Unauthenticated, "relay assertion is invalid"))
@@ -219,6 +255,7 @@ func (c *GatewayClient) relayLocal(ctx context.Context, local *grpc.ClientConn, 
 		ctx, cancel = context.WithDeadline(ctx, time.UnixMilli(deadline))
 		defer cancel()
 	}
+	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("x-dieter-operator-subject", operatorSubject))
 	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
 	call, err := local.NewStream(ctx, description, frame.GetMethod(), grpc.ForceCodec(rpcraw.Codec{}))
 	if err != nil {
@@ -265,7 +302,8 @@ func relayMethodPriority(method string) bool {
 	return !strings.HasSuffix(method, "/WatchSync") &&
 		!strings.HasSuffix(method, "/WatchConversation") &&
 		!strings.HasSuffix(method, "/WatchState") &&
-		!strings.HasSuffix(method, "/WatchTerminal")
+		!strings.HasSuffix(method, "/WatchTerminal") &&
+		!strings.HasSuffix(method, "/StartRemoteDesktop")
 }
 
 func relayStatusError(streamID uint64, err error) *gatewayv1.DaemonLinkFrame {

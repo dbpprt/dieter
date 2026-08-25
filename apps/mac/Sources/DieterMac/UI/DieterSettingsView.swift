@@ -464,6 +464,22 @@ struct GeneralSettings: View {
                         }
                     }
                 }
+                SettingsPanel(
+                    title: "Conversations",
+                    subtitle: "Choose what appears in every conversation timeline. This preference is saved on this Mac."
+                ) {
+                    Toggle(
+                        "Show reasoning traces",
+                        isOn: Binding(
+                            get: { store.showReasoning },
+                            set: { store.showReasoning = $0 }
+                        )
+                    )
+                    .accessibilityIdentifier("settings.showReasoningTraces")
+                    Text("Reasoning traces are hidden by default. Turn this on to show them alongside messages and tool calls.")
+                        .font(.caption)
+                        .foregroundStyle(DieterTheme.tertiary)
+                }
                 SettingsPanel(title: "Current project route", subtitle: "Dieter routes each project to the machine that owns it.") {
                     SettingsValueRow(title: "Store", value: store.health.storePath)
                     Divider().overlay(DieterTheme.border)

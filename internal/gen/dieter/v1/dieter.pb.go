@@ -7,6 +7,7 @@
 package dieterv1
 
 import (
+	v1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
@@ -7627,6 +7628,1068 @@ func (x *RenameTerminalRequest) GetName() string {
 	return ""
 }
 
+type RemoteDesktopCapabilities struct {
+	state                    protoimpl.MessageState  `protogen:"open.v1"`
+	Platform                 string                  `protobuf:"bytes,1,opt,name=platform,proto3" json:"platform,omitempty"`
+	GraphicalSessionActive   bool                    `protobuf:"varint,2,opt,name=graphical_session_active,json=graphicalSessionActive,proto3" json:"graphical_session_active,omitempty"`
+	Enabled                  bool                    `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Ready                    bool                    `protobuf:"varint,4,opt,name=ready,proto3" json:"ready,omitempty"`
+	UnavailableReason        string                  `protobuf:"bytes,5,opt,name=unavailable_reason,json=unavailableReason,proto3" json:"unavailable_reason,omitempty"`
+	HelperVersion            string                  `protobuf:"bytes,6,opt,name=helper_version,json=helperVersion,proto3" json:"helper_version,omitempty"`
+	CapturePermission        string                  `protobuf:"bytes,7,opt,name=capture_permission,json=capturePermission,proto3" json:"capture_permission,omitempty"`
+	ControlPermission        string                  `protobuf:"bytes,8,opt,name=control_permission,json=controlPermission,proto3" json:"control_permission,omitempty"`
+	Displays                 []*RemoteDesktopDisplay `protobuf:"bytes,9,rep,name=displays,proto3" json:"displays,omitempty"`
+	Codecs                   []string                `protobuf:"bytes,10,rep,name=codecs,proto3" json:"codecs,omitempty"`
+	HardwareEncoderAvailable bool                    `protobuf:"varint,11,opt,name=hardware_encoder_available,json=hardwareEncoderAvailable,proto3" json:"hardware_encoder_available,omitempty"`
+	ControlSupported         bool                    `protobuf:"varint,12,opt,name=control_supported,json=controlSupported,proto3" json:"control_supported,omitempty"`
+	ClipboardSupported       bool                    `protobuf:"varint,13,opt,name=clipboard_supported,json=clipboardSupported,proto3" json:"clipboard_supported,omitempty"`
+	AudioSupported           bool                    `protobuf:"varint,14,opt,name=audio_supported,json=audioSupported,proto3" json:"audio_supported,omitempty"`
+	FileTransferSupported    bool                    `protobuf:"varint,15,opt,name=file_transfer_supported,json=fileTransferSupported,proto3" json:"file_transfer_supported,omitempty"`
+	ActiveSession            bool                    `protobuf:"varint,16,opt,name=active_session,json=activeSession,proto3" json:"active_session,omitempty"`
+	unknownFields            protoimpl.UnknownFields
+	sizeCache                protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopCapabilities) Reset() {
+	*x = RemoteDesktopCapabilities{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[100]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopCapabilities) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopCapabilities) ProtoMessage() {}
+
+func (x *RemoteDesktopCapabilities) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[100]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopCapabilities.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopCapabilities) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{100}
+}
+
+func (x *RemoteDesktopCapabilities) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
+}
+
+func (x *RemoteDesktopCapabilities) GetGraphicalSessionActive() bool {
+	if x != nil {
+		return x.GraphicalSessionActive
+	}
+	return false
+}
+
+func (x *RemoteDesktopCapabilities) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *RemoteDesktopCapabilities) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *RemoteDesktopCapabilities) GetUnavailableReason() string {
+	if x != nil {
+		return x.UnavailableReason
+	}
+	return ""
+}
+
+func (x *RemoteDesktopCapabilities) GetHelperVersion() string {
+	if x != nil {
+		return x.HelperVersion
+	}
+	return ""
+}
+
+func (x *RemoteDesktopCapabilities) GetCapturePermission() string {
+	if x != nil {
+		return x.CapturePermission
+	}
+	return ""
+}
+
+func (x *RemoteDesktopCapabilities) GetControlPermission() string {
+	if x != nil {
+		return x.ControlPermission
+	}
+	return ""
+}
+
+func (x *RemoteDesktopCapabilities) GetDisplays() []*RemoteDesktopDisplay {
+	if x != nil {
+		return x.Displays
+	}
+	return nil
+}
+
+func (x *RemoteDesktopCapabilities) GetCodecs() []string {
+	if x != nil {
+		return x.Codecs
+	}
+	return nil
+}
+
+func (x *RemoteDesktopCapabilities) GetHardwareEncoderAvailable() bool {
+	if x != nil {
+		return x.HardwareEncoderAvailable
+	}
+	return false
+}
+
+func (x *RemoteDesktopCapabilities) GetControlSupported() bool {
+	if x != nil {
+		return x.ControlSupported
+	}
+	return false
+}
+
+func (x *RemoteDesktopCapabilities) GetClipboardSupported() bool {
+	if x != nil {
+		return x.ClipboardSupported
+	}
+	return false
+}
+
+func (x *RemoteDesktopCapabilities) GetAudioSupported() bool {
+	if x != nil {
+		return x.AudioSupported
+	}
+	return false
+}
+
+func (x *RemoteDesktopCapabilities) GetFileTransferSupported() bool {
+	if x != nil {
+		return x.FileTransferSupported
+	}
+	return false
+}
+
+func (x *RemoteDesktopCapabilities) GetActiveSession() bool {
+	if x != nil {
+		return x.ActiveSession
+	}
+	return false
+}
+
+type RemoteDesktopDisplay struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name           string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	LogicalWidth   int32                  `protobuf:"varint,3,opt,name=logical_width,json=logicalWidth,proto3" json:"logical_width,omitempty"`
+	LogicalHeight  int32                  `protobuf:"varint,4,opt,name=logical_height,json=logicalHeight,proto3" json:"logical_height,omitempty"`
+	PhysicalWidth  int32                  `protobuf:"varint,5,opt,name=physical_width,json=physicalWidth,proto3" json:"physical_width,omitempty"`
+	PhysicalHeight int32                  `protobuf:"varint,6,opt,name=physical_height,json=physicalHeight,proto3" json:"physical_height,omitempty"`
+	Scale          float64                `protobuf:"fixed64,7,opt,name=scale,proto3" json:"scale,omitempty"`
+	Rotation       int32                  `protobuf:"varint,8,opt,name=rotation,proto3" json:"rotation,omitempty"`
+	Primary        bool                   `protobuf:"varint,9,opt,name=primary,proto3" json:"primary,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopDisplay) Reset() {
+	*x = RemoteDesktopDisplay{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopDisplay) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopDisplay) ProtoMessage() {}
+
+func (x *RemoteDesktopDisplay) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopDisplay.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopDisplay) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *RemoteDesktopDisplay) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *RemoteDesktopDisplay) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RemoteDesktopDisplay) GetLogicalWidth() int32 {
+	if x != nil {
+		return x.LogicalWidth
+	}
+	return 0
+}
+
+func (x *RemoteDesktopDisplay) GetLogicalHeight() int32 {
+	if x != nil {
+		return x.LogicalHeight
+	}
+	return 0
+}
+
+func (x *RemoteDesktopDisplay) GetPhysicalWidth() int32 {
+	if x != nil {
+		return x.PhysicalWidth
+	}
+	return 0
+}
+
+func (x *RemoteDesktopDisplay) GetPhysicalHeight() int32 {
+	if x != nil {
+		return x.PhysicalHeight
+	}
+	return 0
+}
+
+func (x *RemoteDesktopDisplay) GetScale() float64 {
+	if x != nil {
+		return x.Scale
+	}
+	return 0
+}
+
+func (x *RemoteDesktopDisplay) GetRotation() int32 {
+	if x != nil {
+		return x.Rotation
+	}
+	return 0
+}
+
+func (x *RemoteDesktopDisplay) GetPrimary() bool {
+	if x != nil {
+		return x.Primary
+	}
+	return false
+}
+
+type RemoteDesktopSettings struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Enabled        bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ControlEnabled bool                   `protobuf:"varint,2,opt,name=control_enabled,json=controlEnabled,proto3" json:"control_enabled,omitempty"`
+	UpdatedAt      string                 `protobuf:"bytes,3,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopSettings) Reset() {
+	*x = RemoteDesktopSettings{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopSettings) ProtoMessage() {}
+
+func (x *RemoteDesktopSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopSettings.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopSettings) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{102}
+}
+
+func (x *RemoteDesktopSettings) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *RemoteDesktopSettings) GetControlEnabled() bool {
+	if x != nil {
+		return x.ControlEnabled
+	}
+	return false
+}
+
+func (x *RemoteDesktopSettings) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+type UpdateRemoteDesktopSettingsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Enabled        bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	ControlEnabled bool                   `protobuf:"varint,2,opt,name=control_enabled,json=controlEnabled,proto3" json:"control_enabled,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *UpdateRemoteDesktopSettingsRequest) Reset() {
+	*x = UpdateRemoteDesktopSettingsRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[103]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRemoteDesktopSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRemoteDesktopSettingsRequest) ProtoMessage() {}
+
+func (x *UpdateRemoteDesktopSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[103]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRemoteDesktopSettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateRemoteDesktopSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{103}
+}
+
+func (x *UpdateRemoteDesktopSettingsRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *UpdateRemoteDesktopSettingsRequest) GetControlEnabled() bool {
+	if x != nil {
+		return x.ControlEnabled
+	}
+	return false
+}
+
+type RemoteDesktopSessionDescription struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Sdp           string                 `protobuf:"bytes,2,opt,name=sdp,proto3" json:"sdp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopSessionDescription) Reset() {
+	*x = RemoteDesktopSessionDescription{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[104]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopSessionDescription) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopSessionDescription) ProtoMessage() {}
+
+func (x *RemoteDesktopSessionDescription) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[104]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopSessionDescription.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopSessionDescription) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{104}
+}
+
+func (x *RemoteDesktopSessionDescription) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionDescription) GetSdp() string {
+	if x != nil {
+		return x.Sdp
+	}
+	return ""
+}
+
+type RemoteDesktopICECandidate struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Candidate        string                 `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	SdpMid           string                 `protobuf:"bytes,2,opt,name=sdp_mid,json=sdpMid,proto3" json:"sdp_mid,omitempty"`
+	SdpMlineIndex    int32                  `protobuf:"varint,3,opt,name=sdp_mline_index,json=sdpMlineIndex,proto3" json:"sdp_mline_index,omitempty"`
+	UsernameFragment string                 `protobuf:"bytes,4,opt,name=username_fragment,json=usernameFragment,proto3" json:"username_fragment,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopICECandidate) Reset() {
+	*x = RemoteDesktopICECandidate{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[105]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopICECandidate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopICECandidate) ProtoMessage() {}
+
+func (x *RemoteDesktopICECandidate) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[105]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopICECandidate.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopICECandidate) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{105}
+}
+
+func (x *RemoteDesktopICECandidate) GetCandidate() string {
+	if x != nil {
+		return x.Candidate
+	}
+	return ""
+}
+
+func (x *RemoteDesktopICECandidate) GetSdpMid() string {
+	if x != nil {
+		return x.SdpMid
+	}
+	return ""
+}
+
+func (x *RemoteDesktopICECandidate) GetSdpMlineIndex() int32 {
+	if x != nil {
+		return x.SdpMlineIndex
+	}
+	return 0
+}
+
+func (x *RemoteDesktopICECandidate) GetUsernameFragment() string {
+	if x != nil {
+		return x.UsernameFragment
+	}
+	return ""
+}
+
+type StartRemoteDesktopRequest struct {
+	state             protoimpl.MessageState           `protogen:"open.v1"`
+	ClientNonce       string                           `protobuf:"bytes,1,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
+	RtcConfiguration  *v1.RTCConfiguration             `protobuf:"bytes,2,opt,name=rtc_configuration,json=rtcConfiguration,proto3" json:"rtc_configuration,omitempty"`
+	Offer             *RemoteDesktopSessionDescription `protobuf:"bytes,3,opt,name=offer,proto3" json:"offer,omitempty"`
+	InitialCandidates []*RemoteDesktopICECandidate     `protobuf:"bytes,4,rep,name=initial_candidates,json=initialCandidates,proto3" json:"initial_candidates,omitempty"`
+	DisplayId         string                           `protobuf:"bytes,5,opt,name=display_id,json=displayId,proto3" json:"display_id,omitempty"`
+	Control           bool                             `protobuf:"varint,6,opt,name=control,proto3" json:"control,omitempty"`
+	MaxWidth          int32                            `protobuf:"varint,7,opt,name=max_width,json=maxWidth,proto3" json:"max_width,omitempty"`
+	MaxHeight         int32                            `protobuf:"varint,8,opt,name=max_height,json=maxHeight,proto3" json:"max_height,omitempty"`
+	MaxFps            int32                            `protobuf:"varint,9,opt,name=max_fps,json=maxFps,proto3" json:"max_fps,omitempty"`
+	MaxBitrateKbps    int32                            `protobuf:"varint,10,opt,name=max_bitrate_kbps,json=maxBitrateKbps,proto3" json:"max_bitrate_kbps,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *StartRemoteDesktopRequest) Reset() {
+	*x = StartRemoteDesktopRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[106]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartRemoteDesktopRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartRemoteDesktopRequest) ProtoMessage() {}
+
+func (x *StartRemoteDesktopRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[106]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartRemoteDesktopRequest.ProtoReflect.Descriptor instead.
+func (*StartRemoteDesktopRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{106}
+}
+
+func (x *StartRemoteDesktopRequest) GetClientNonce() string {
+	if x != nil {
+		return x.ClientNonce
+	}
+	return ""
+}
+
+func (x *StartRemoteDesktopRequest) GetRtcConfiguration() *v1.RTCConfiguration {
+	if x != nil {
+		return x.RtcConfiguration
+	}
+	return nil
+}
+
+func (x *StartRemoteDesktopRequest) GetOffer() *RemoteDesktopSessionDescription {
+	if x != nil {
+		return x.Offer
+	}
+	return nil
+}
+
+func (x *StartRemoteDesktopRequest) GetInitialCandidates() []*RemoteDesktopICECandidate {
+	if x != nil {
+		return x.InitialCandidates
+	}
+	return nil
+}
+
+func (x *StartRemoteDesktopRequest) GetDisplayId() string {
+	if x != nil {
+		return x.DisplayId
+	}
+	return ""
+}
+
+func (x *StartRemoteDesktopRequest) GetControl() bool {
+	if x != nil {
+		return x.Control
+	}
+	return false
+}
+
+func (x *StartRemoteDesktopRequest) GetMaxWidth() int32 {
+	if x != nil {
+		return x.MaxWidth
+	}
+	return 0
+}
+
+func (x *StartRemoteDesktopRequest) GetMaxHeight() int32 {
+	if x != nil {
+		return x.MaxHeight
+	}
+	return 0
+}
+
+func (x *StartRemoteDesktopRequest) GetMaxFps() int32 {
+	if x != nil {
+		return x.MaxFps
+	}
+	return 0
+}
+
+func (x *StartRemoteDesktopRequest) GetMaxBitrateKbps() int32 {
+	if x != nil {
+		return x.MaxBitrateKbps
+	}
+	return 0
+}
+
+type RemoteDesktopRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopRef) Reset() {
+	*x = RemoteDesktopRef{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[107]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopRef) ProtoMessage() {}
+
+func (x *RemoteDesktopRef) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[107]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopRef.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopRef) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{107}
+}
+
+func (x *RemoteDesktopRef) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type RemoteDesktopSessionBinding struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ClientNonce           string                 `protobuf:"bytes,1,opt,name=client_nonce,json=clientNonce,proto3" json:"client_nonce,omitempty"`
+	HelperDtlsFingerprint string                 `protobuf:"bytes,2,opt,name=helper_dtls_fingerprint,json=helperDtlsFingerprint,proto3" json:"helper_dtls_fingerprint,omitempty"`
+	ExpiresAt             string                 `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	OfferSha256           []byte                 `protobuf:"bytes,4,opt,name=offer_sha256,json=offerSha256,proto3" json:"offer_sha256,omitempty"`
+	DaemonSignature       []byte                 `protobuf:"bytes,5,opt,name=daemon_signature,json=daemonSignature,proto3" json:"daemon_signature,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopSessionBinding) Reset() {
+	*x = RemoteDesktopSessionBinding{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[108]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopSessionBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopSessionBinding) ProtoMessage() {}
+
+func (x *RemoteDesktopSessionBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[108]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopSessionBinding.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopSessionBinding) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{108}
+}
+
+func (x *RemoteDesktopSessionBinding) GetClientNonce() string {
+	if x != nil {
+		return x.ClientNonce
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionBinding) GetHelperDtlsFingerprint() string {
+	if x != nil {
+		return x.HelperDtlsFingerprint
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionBinding) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionBinding) GetOfferSha256() []byte {
+	if x != nil {
+		return x.OfferSha256
+	}
+	return nil
+}
+
+func (x *RemoteDesktopSessionBinding) GetDaemonSignature() []byte {
+	if x != nil {
+		return x.DaemonSignature
+	}
+	return nil
+}
+
+type RemoteDesktopSessionState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Phase         string                 `protobuf:"bytes,1,opt,name=phase,proto3" json:"phase,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Route         string                 `protobuf:"bytes,3,opt,name=route,proto3" json:"route,omitempty"`
+	Codec         string                 `protobuf:"bytes,4,opt,name=codec,proto3" json:"codec,omitempty"`
+	Width         int32                  `protobuf:"varint,5,opt,name=width,proto3" json:"width,omitempty"`
+	Height        int32                  `protobuf:"varint,6,opt,name=height,proto3" json:"height,omitempty"`
+	Fps           int32                  `protobuf:"varint,7,opt,name=fps,proto3" json:"fps,omitempty"`
+	BitrateKbps   int32                  `protobuf:"varint,8,opt,name=bitrate_kbps,json=bitrateKbps,proto3" json:"bitrate_kbps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopSessionState) Reset() {
+	*x = RemoteDesktopSessionState{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[109]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopSessionState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopSessionState) ProtoMessage() {}
+
+func (x *RemoteDesktopSessionState) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[109]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopSessionState.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopSessionState) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{109}
+}
+
+func (x *RemoteDesktopSessionState) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionState) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionState) GetRoute() string {
+	if x != nil {
+		return x.Route
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionState) GetCodec() string {
+	if x != nil {
+		return x.Codec
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionState) GetWidth() int32 {
+	if x != nil {
+		return x.Width
+	}
+	return 0
+}
+
+func (x *RemoteDesktopSessionState) GetHeight() int32 {
+	if x != nil {
+		return x.Height
+	}
+	return 0
+}
+
+func (x *RemoteDesktopSessionState) GetFps() int32 {
+	if x != nil {
+		return x.Fps
+	}
+	return 0
+}
+
+func (x *RemoteDesktopSessionState) GetBitrateKbps() int32 {
+	if x != nil {
+		return x.BitrateKbps
+	}
+	return 0
+}
+
+type RemoteDesktopSessionError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Recoverable   bool                   `protobuf:"varint,3,opt,name=recoverable,proto3" json:"recoverable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopSessionError) Reset() {
+	*x = RemoteDesktopSessionError{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[110]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopSessionError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopSessionError) ProtoMessage() {}
+
+func (x *RemoteDesktopSessionError) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[110]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopSessionError.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopSessionError) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{110}
+}
+
+func (x *RemoteDesktopSessionError) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionError) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSessionError) GetRecoverable() bool {
+	if x != nil {
+		return x.Recoverable
+	}
+	return false
+}
+
+type RemoteDesktopSignal struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Sequence  uint64                 `protobuf:"varint,2,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*RemoteDesktopSignal_Binding
+	//	*RemoteDesktopSignal_Description
+	//	*RemoteDesktopSignal_Candidate
+	//	*RemoteDesktopSignal_State
+	//	*RemoteDesktopSignal_Error
+	//	*RemoteDesktopSignal_LeaseHeartbeat
+	Payload       isRemoteDesktopSignal_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoteDesktopSignal) Reset() {
+	*x = RemoteDesktopSignal{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[111]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoteDesktopSignal) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoteDesktopSignal) ProtoMessage() {}
+
+func (x *RemoteDesktopSignal) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[111]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoteDesktopSignal.ProtoReflect.Descriptor instead.
+func (*RemoteDesktopSignal) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{111}
+}
+
+func (x *RemoteDesktopSignal) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *RemoteDesktopSignal) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *RemoteDesktopSignal) GetPayload() isRemoteDesktopSignal_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *RemoteDesktopSignal) GetBinding() *RemoteDesktopSessionBinding {
+	if x != nil {
+		if x, ok := x.Payload.(*RemoteDesktopSignal_Binding); ok {
+			return x.Binding
+		}
+	}
+	return nil
+}
+
+func (x *RemoteDesktopSignal) GetDescription() *RemoteDesktopSessionDescription {
+	if x != nil {
+		if x, ok := x.Payload.(*RemoteDesktopSignal_Description); ok {
+			return x.Description
+		}
+	}
+	return nil
+}
+
+func (x *RemoteDesktopSignal) GetCandidate() *RemoteDesktopICECandidate {
+	if x != nil {
+		if x, ok := x.Payload.(*RemoteDesktopSignal_Candidate); ok {
+			return x.Candidate
+		}
+	}
+	return nil
+}
+
+func (x *RemoteDesktopSignal) GetState() *RemoteDesktopSessionState {
+	if x != nil {
+		if x, ok := x.Payload.(*RemoteDesktopSignal_State); ok {
+			return x.State
+		}
+	}
+	return nil
+}
+
+func (x *RemoteDesktopSignal) GetError() *RemoteDesktopSessionError {
+	if x != nil {
+		if x, ok := x.Payload.(*RemoteDesktopSignal_Error); ok {
+			return x.Error
+		}
+	}
+	return nil
+}
+
+func (x *RemoteDesktopSignal) GetLeaseHeartbeat() *emptypb.Empty {
+	if x != nil {
+		if x, ok := x.Payload.(*RemoteDesktopSignal_LeaseHeartbeat); ok {
+			return x.LeaseHeartbeat
+		}
+	}
+	return nil
+}
+
+type isRemoteDesktopSignal_Payload interface {
+	isRemoteDesktopSignal_Payload()
+}
+
+type RemoteDesktopSignal_Binding struct {
+	Binding *RemoteDesktopSessionBinding `protobuf:"bytes,3,opt,name=binding,proto3,oneof"`
+}
+
+type RemoteDesktopSignal_Description struct {
+	Description *RemoteDesktopSessionDescription `protobuf:"bytes,4,opt,name=description,proto3,oneof"`
+}
+
+type RemoteDesktopSignal_Candidate struct {
+	Candidate *RemoteDesktopICECandidate `protobuf:"bytes,5,opt,name=candidate,proto3,oneof"`
+}
+
+type RemoteDesktopSignal_State struct {
+	State *RemoteDesktopSessionState `protobuf:"bytes,6,opt,name=state,proto3,oneof"`
+}
+
+type RemoteDesktopSignal_Error struct {
+	Error *RemoteDesktopSessionError `protobuf:"bytes,7,opt,name=error,proto3,oneof"`
+}
+
+type RemoteDesktopSignal_LeaseHeartbeat struct {
+	LeaseHeartbeat *emptypb.Empty `protobuf:"bytes,8,opt,name=lease_heartbeat,json=leaseHeartbeat,proto3,oneof"`
+}
+
+func (*RemoteDesktopSignal_Binding) isRemoteDesktopSignal_Payload() {}
+
+func (*RemoteDesktopSignal_Description) isRemoteDesktopSignal_Payload() {}
+
+func (*RemoteDesktopSignal_Candidate) isRemoteDesktopSignal_Payload() {}
+
+func (*RemoteDesktopSignal_State) isRemoteDesktopSignal_Payload() {}
+
+func (*RemoteDesktopSignal_Error) isRemoteDesktopSignal_Payload() {}
+
+func (*RemoteDesktopSignal_LeaseHeartbeat) isRemoteDesktopSignal_Payload() {}
+
 type SaveFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
@@ -7639,7 +8702,7 @@ type SaveFileRequest struct {
 
 func (x *SaveFileRequest) Reset() {
 	*x = SaveFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[100]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[112]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7651,7 +8714,7 @@ func (x *SaveFileRequest) String() string {
 func (*SaveFileRequest) ProtoMessage() {}
 
 func (x *SaveFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[100]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[112]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7664,7 +8727,7 @@ func (x *SaveFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveFileRequest.ProtoReflect.Descriptor instead.
 func (*SaveFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{100}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{112}
 }
 
 func (x *SaveFileRequest) GetProjectId() string {
@@ -7707,7 +8770,7 @@ type CreateFileRequest struct {
 
 func (x *CreateFileRequest) Reset() {
 	*x = CreateFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[101]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[113]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7719,7 +8782,7 @@ func (x *CreateFileRequest) String() string {
 func (*CreateFileRequest) ProtoMessage() {}
 
 func (x *CreateFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[101]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[113]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7732,7 +8795,7 @@ func (x *CreateFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateFileRequest.ProtoReflect.Descriptor instead.
 func (*CreateFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{101}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{113}
 }
 
 func (x *CreateFileRequest) GetProjectId() string {
@@ -7774,7 +8837,7 @@ type MoveFileRequest struct {
 
 func (x *MoveFileRequest) Reset() {
 	*x = MoveFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[102]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[114]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7786,7 +8849,7 @@ func (x *MoveFileRequest) String() string {
 func (*MoveFileRequest) ProtoMessage() {}
 
 func (x *MoveFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[102]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[114]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7799,7 +8862,7 @@ func (x *MoveFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveFileRequest.ProtoReflect.Descriptor instead.
 func (*MoveFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{102}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{114}
 }
 
 func (x *MoveFileRequest) GetProjectId() string {
@@ -7833,7 +8896,7 @@ type MoveFileResponse struct {
 
 func (x *MoveFileResponse) Reset() {
 	*x = MoveFileResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[103]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[115]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7845,7 +8908,7 @@ func (x *MoveFileResponse) String() string {
 func (*MoveFileResponse) ProtoMessage() {}
 
 func (x *MoveFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[103]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[115]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7858,7 +8921,7 @@ func (x *MoveFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MoveFileResponse.ProtoReflect.Descriptor instead.
 func (*MoveFileResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{103}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{115}
 }
 
 func (x *MoveFileResponse) GetSource() string {
@@ -7886,7 +8949,7 @@ type DeleteFileRequest struct {
 
 func (x *DeleteFileRequest) Reset() {
 	*x = DeleteFileRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[104]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[116]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7898,7 +8961,7 @@ func (x *DeleteFileRequest) String() string {
 func (*DeleteFileRequest) ProtoMessage() {}
 
 func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[104]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[116]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7911,7 +8974,7 @@ func (x *DeleteFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteFileRequest.ProtoReflect.Descriptor instead.
 func (*DeleteFileRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{104}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{116}
 }
 
 func (x *DeleteFileRequest) GetProjectId() string {
@@ -7944,7 +9007,7 @@ type ListSchedulesRequest struct {
 
 func (x *ListSchedulesRequest) Reset() {
 	*x = ListSchedulesRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[105]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[117]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7956,7 +9019,7 @@ func (x *ListSchedulesRequest) String() string {
 func (*ListSchedulesRequest) ProtoMessage() {}
 
 func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[105]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[117]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7969,7 +9032,7 @@ func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
 func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{105}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{117}
 }
 
 func (x *ListSchedulesRequest) GetProjectId() string {
@@ -7988,7 +9051,7 @@ type SchedulesResponse struct {
 
 func (x *SchedulesResponse) Reset() {
 	*x = SchedulesResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[106]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[118]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8000,7 +9063,7 @@ func (x *SchedulesResponse) String() string {
 func (*SchedulesResponse) ProtoMessage() {}
 
 func (x *SchedulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[106]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[118]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8013,7 +9076,7 @@ func (x *SchedulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulesResponse.ProtoReflect.Descriptor instead.
 func (*SchedulesResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{106}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{118}
 }
 
 func (x *SchedulesResponse) GetSchedules() []*Schedule {
@@ -8055,7 +9118,7 @@ type Schedule struct {
 
 func (x *Schedule) Reset() {
 	*x = Schedule{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[107]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[119]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8067,7 +9130,7 @@ func (x *Schedule) String() string {
 func (*Schedule) ProtoMessage() {}
 
 func (x *Schedule) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[107]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[119]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8080,7 +9143,7 @@ func (x *Schedule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
 func (*Schedule) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{107}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{119}
 }
 
 func (x *Schedule) GetId() string {
@@ -8277,7 +9340,7 @@ type ScheduleDraft struct {
 
 func (x *ScheduleDraft) Reset() {
 	*x = ScheduleDraft{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[108]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[120]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8289,7 +9352,7 @@ func (x *ScheduleDraft) String() string {
 func (*ScheduleDraft) ProtoMessage() {}
 
 func (x *ScheduleDraft) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[108]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[120]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8302,7 +9365,7 @@ func (x *ScheduleDraft) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleDraft.ProtoReflect.Descriptor instead.
 func (*ScheduleDraft) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{108}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{120}
 }
 
 func (x *ScheduleDraft) GetProjectId() string {
@@ -8441,7 +9504,7 @@ type SaveScheduleRequest struct {
 
 func (x *SaveScheduleRequest) Reset() {
 	*x = SaveScheduleRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[109]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[121]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8453,7 +9516,7 @@ func (x *SaveScheduleRequest) String() string {
 func (*SaveScheduleRequest) ProtoMessage() {}
 
 func (x *SaveScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[109]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[121]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8466,7 +9529,7 @@ func (x *SaveScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveScheduleRequest.ProtoReflect.Descriptor instead.
 func (*SaveScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{109}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{121}
 }
 
 func (x *SaveScheduleRequest) GetScheduleId() string {
@@ -8494,7 +9557,7 @@ type PreviewScheduleRequest struct {
 
 func (x *PreviewScheduleRequest) Reset() {
 	*x = PreviewScheduleRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[110]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[122]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8506,7 +9569,7 @@ func (x *PreviewScheduleRequest) String() string {
 func (*PreviewScheduleRequest) ProtoMessage() {}
 
 func (x *PreviewScheduleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[110]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[122]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8519,7 +9582,7 @@ func (x *PreviewScheduleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PreviewScheduleRequest.ProtoReflect.Descriptor instead.
 func (*PreviewScheduleRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{110}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{122}
 }
 
 func (x *PreviewScheduleRequest) GetCron() string {
@@ -8552,7 +9615,7 @@ type SchedulePreview struct {
 
 func (x *SchedulePreview) Reset() {
 	*x = SchedulePreview{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[111]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8564,7 +9627,7 @@ func (x *SchedulePreview) String() string {
 func (*SchedulePreview) ProtoMessage() {}
 
 func (x *SchedulePreview) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[111]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8577,7 +9640,7 @@ func (x *SchedulePreview) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SchedulePreview.ProtoReflect.Descriptor instead.
 func (*SchedulePreview) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{111}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *SchedulePreview) GetTimes() []string {
@@ -8596,7 +9659,7 @@ type ScheduleRef struct {
 
 func (x *ScheduleRef) Reset() {
 	*x = ScheduleRef{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[112]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8608,7 +9671,7 @@ func (x *ScheduleRef) String() string {
 func (*ScheduleRef) ProtoMessage() {}
 
 func (x *ScheduleRef) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[112]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8621,7 +9684,7 @@ func (x *ScheduleRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRef.ProtoReflect.Descriptor instead.
 func (*ScheduleRef) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{112}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *ScheduleRef) GetScheduleId() string {
@@ -8641,7 +9704,7 @@ type SetScheduleEnabledRequest struct {
 
 func (x *SetScheduleEnabledRequest) Reset() {
 	*x = SetScheduleEnabledRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[113]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8653,7 +9716,7 @@ func (x *SetScheduleEnabledRequest) String() string {
 func (*SetScheduleEnabledRequest) ProtoMessage() {}
 
 func (x *SetScheduleEnabledRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[113]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8666,7 +9729,7 @@ func (x *SetScheduleEnabledRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetScheduleEnabledRequest.ProtoReflect.Descriptor instead.
 func (*SetScheduleEnabledRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{113}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *SetScheduleEnabledRequest) GetScheduleId() string {
@@ -8693,7 +9756,7 @@ type ListScheduleRunsRequest struct {
 
 func (x *ListScheduleRunsRequest) Reset() {
 	*x = ListScheduleRunsRequest{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[114]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8705,7 +9768,7 @@ func (x *ListScheduleRunsRequest) String() string {
 func (*ListScheduleRunsRequest) ProtoMessage() {}
 
 func (x *ListScheduleRunsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[114]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8718,7 +9781,7 @@ func (x *ListScheduleRunsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListScheduleRunsRequest.ProtoReflect.Descriptor instead.
 func (*ListScheduleRunsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{114}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *ListScheduleRunsRequest) GetScheduleId() string {
@@ -8758,7 +9821,7 @@ type ScheduleRun struct {
 
 func (x *ScheduleRun) Reset() {
 	*x = ScheduleRun{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[115]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8770,7 +9833,7 @@ func (x *ScheduleRun) String() string {
 func (*ScheduleRun) ProtoMessage() {}
 
 func (x *ScheduleRun) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[115]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8783,7 +9846,7 @@ func (x *ScheduleRun) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRun.ProtoReflect.Descriptor instead.
 func (*ScheduleRun) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{115}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *ScheduleRun) GetId() string {
@@ -8900,7 +9963,7 @@ type ScheduleRunsResponse struct {
 
 func (x *ScheduleRunsResponse) Reset() {
 	*x = ScheduleRunsResponse{}
-	mi := &file_dieter_v1_dieter_proto_msgTypes[116]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8912,7 +9975,7 @@ func (x *ScheduleRunsResponse) String() string {
 func (*ScheduleRunsResponse) ProtoMessage() {}
 
 func (x *ScheduleRunsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_v1_dieter_proto_msgTypes[116]
+	mi := &file_dieter_v1_dieter_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8925,7 +9988,7 @@ func (x *ScheduleRunsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScheduleRunsResponse.ProtoReflect.Descriptor instead.
 func (*ScheduleRunsResponse) Descriptor() ([]byte, []int) {
-	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{116}
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *ScheduleRunsResponse) GetRuns() []*ScheduleRun {
@@ -8939,7 +10002,7 @@ var File_dieter_v1_dieter_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\n" +
-	"\x16dieter/v1/dieter.proto\x12\tdieter.v1\x1a\x1bgoogle/protobuf/empty.proto\"a\n" +
+	"\x16dieter/v1/dieter.proto\x12\tdieter.v1\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fdieter/gateway/v1/gateway.proto\"a\n" +
 	"\x0eHealthResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1d\n" +
@@ -9662,7 +10725,99 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x15RenameTerminalRequest\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"z\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xce\x05\n" +
+	"\x19RemoteDesktopCapabilities\x12\x1a\n" +
+	"\bplatform\x18\x01 \x01(\tR\bplatform\x128\n" +
+	"\x18graphical_session_active\x18\x02 \x01(\bR\x16graphicalSessionActive\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\x12\x14\n" +
+	"\x05ready\x18\x04 \x01(\bR\x05ready\x12-\n" +
+	"\x12unavailable_reason\x18\x05 \x01(\tR\x11unavailableReason\x12%\n" +
+	"\x0ehelper_version\x18\x06 \x01(\tR\rhelperVersion\x12-\n" +
+	"\x12capture_permission\x18\a \x01(\tR\x11capturePermission\x12-\n" +
+	"\x12control_permission\x18\b \x01(\tR\x11controlPermission\x12;\n" +
+	"\bdisplays\x18\t \x03(\v2\x1f.dieter.v1.RemoteDesktopDisplayR\bdisplays\x12\x16\n" +
+	"\x06codecs\x18\n" +
+	" \x03(\tR\x06codecs\x12<\n" +
+	"\x1ahardware_encoder_available\x18\v \x01(\bR\x18hardwareEncoderAvailable\x12+\n" +
+	"\x11control_supported\x18\f \x01(\bR\x10controlSupported\x12/\n" +
+	"\x13clipboard_supported\x18\r \x01(\bR\x12clipboardSupported\x12'\n" +
+	"\x0faudio_supported\x18\x0e \x01(\bR\x0eaudioSupported\x126\n" +
+	"\x17file_transfer_supported\x18\x0f \x01(\bR\x15fileTransferSupported\x12%\n" +
+	"\x0eactive_session\x18\x10 \x01(\bR\ractiveSession\"\xa2\x02\n" +
+	"\x14RemoteDesktopDisplay\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
+	"\rlogical_width\x18\x03 \x01(\x05R\flogicalWidth\x12%\n" +
+	"\x0elogical_height\x18\x04 \x01(\x05R\rlogicalHeight\x12%\n" +
+	"\x0ephysical_width\x18\x05 \x01(\x05R\rphysicalWidth\x12'\n" +
+	"\x0fphysical_height\x18\x06 \x01(\x05R\x0ephysicalHeight\x12\x14\n" +
+	"\x05scale\x18\a \x01(\x01R\x05scale\x12\x1a\n" +
+	"\brotation\x18\b \x01(\x05R\brotation\x12\x18\n" +
+	"\aprimary\x18\t \x01(\bR\aprimary\"y\n" +
+	"\x15RemoteDesktopSettings\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12'\n" +
+	"\x0fcontrol_enabled\x18\x02 \x01(\bR\x0econtrolEnabled\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x03 \x01(\tR\tupdatedAt\"g\n" +
+	"\"UpdateRemoteDesktopSettingsRequest\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12'\n" +
+	"\x0fcontrol_enabled\x18\x02 \x01(\bR\x0econtrolEnabled\"G\n" +
+	"\x1fRemoteDesktopSessionDescription\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12\x10\n" +
+	"\x03sdp\x18\x02 \x01(\tR\x03sdp\"\xa7\x01\n" +
+	"\x19RemoteDesktopICECandidate\x12\x1c\n" +
+	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12\x17\n" +
+	"\asdp_mid\x18\x02 \x01(\tR\x06sdpMid\x12&\n" +
+	"\x0fsdp_mline_index\x18\x03 \x01(\x05R\rsdpMlineIndex\x12+\n" +
+	"\x11username_fragment\x18\x04 \x01(\tR\x10usernameFragment\"\xdf\x03\n" +
+	"\x19StartRemoteDesktopRequest\x12!\n" +
+	"\fclient_nonce\x18\x01 \x01(\tR\vclientNonce\x12P\n" +
+	"\x11rtc_configuration\x18\x02 \x01(\v2#.dieter.gateway.v1.RTCConfigurationR\x10rtcConfiguration\x12@\n" +
+	"\x05offer\x18\x03 \x01(\v2*.dieter.v1.RemoteDesktopSessionDescriptionR\x05offer\x12S\n" +
+	"\x12initial_candidates\x18\x04 \x03(\v2$.dieter.v1.RemoteDesktopICECandidateR\x11initialCandidates\x12\x1d\n" +
+	"\n" +
+	"display_id\x18\x05 \x01(\tR\tdisplayId\x12\x18\n" +
+	"\acontrol\x18\x06 \x01(\bR\acontrol\x12\x1b\n" +
+	"\tmax_width\x18\a \x01(\x05R\bmaxWidth\x12\x1d\n" +
+	"\n" +
+	"max_height\x18\b \x01(\x05R\tmaxHeight\x12\x17\n" +
+	"\amax_fps\x18\t \x01(\x05R\x06maxFps\x12(\n" +
+	"\x10max_bitrate_kbps\x18\n" +
+	" \x01(\x05R\x0emaxBitrateKbps\"1\n" +
+	"\x10RemoteDesktopRef\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\xe5\x01\n" +
+	"\x1bRemoteDesktopSessionBinding\x12!\n" +
+	"\fclient_nonce\x18\x01 \x01(\tR\vclientNonce\x126\n" +
+	"\x17helper_dtls_fingerprint\x18\x02 \x01(\tR\x15helperDtlsFingerprint\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x03 \x01(\tR\texpiresAt\x12!\n" +
+	"\foffer_sha256\x18\x04 \x01(\fR\vofferSha256\x12)\n" +
+	"\x10daemon_signature\x18\x05 \x01(\fR\x0fdaemonSignature\"\xd8\x01\n" +
+	"\x19RemoteDesktopSessionState\x12\x14\n" +
+	"\x05phase\x18\x01 \x01(\tR\x05phase\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x14\n" +
+	"\x05route\x18\x03 \x01(\tR\x05route\x12\x14\n" +
+	"\x05codec\x18\x04 \x01(\tR\x05codec\x12\x14\n" +
+	"\x05width\x18\x05 \x01(\x05R\x05width\x12\x16\n" +
+	"\x06height\x18\x06 \x01(\x05R\x06height\x12\x10\n" +
+	"\x03fps\x18\a \x01(\x05R\x03fps\x12!\n" +
+	"\fbitrate_kbps\x18\b \x01(\x05R\vbitrateKbps\"k\n" +
+	"\x19RemoteDesktopSessionError\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12 \n" +
+	"\vrecoverable\x18\x03 \x01(\bR\vrecoverable\"\xf4\x03\n" +
+	"\x13RemoteDesktopSignal\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1a\n" +
+	"\bsequence\x18\x02 \x01(\x04R\bsequence\x12B\n" +
+	"\abinding\x18\x03 \x01(\v2&.dieter.v1.RemoteDesktopSessionBindingH\x00R\abinding\x12N\n" +
+	"\vdescription\x18\x04 \x01(\v2*.dieter.v1.RemoteDesktopSessionDescriptionH\x00R\vdescription\x12D\n" +
+	"\tcandidate\x18\x05 \x01(\v2$.dieter.v1.RemoteDesktopICECandidateH\x00R\tcandidate\x12<\n" +
+	"\x05state\x18\x06 \x01(\v2$.dieter.v1.RemoteDesktopSessionStateH\x00R\x05state\x12<\n" +
+	"\x05error\x18\a \x01(\v2$.dieter.v1.RemoteDesktopSessionErrorH\x00R\x05error\x12A\n" +
+	"\x0flease_heartbeat\x18\b \x01(\v2\x16.google.protobuf.EmptyH\x00R\x0eleaseHeartbeatB\t\n" +
+	"\apayload\"z\n" +
 	"\x0fSaveFileRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
@@ -9796,7 +10951,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\vfinished_at\x18\x0f \x01(\tR\n" +
 	"finishedAt\"B\n" +
 	"\x14ScheduleRunsResponse\x12*\n" +
-	"\x04runs\x18\x01 \x03(\v2\x16.dieter.v1.ScheduleRunR\x04runs2\xbc$\n" +
+	"\x04runs\x18\x01 \x03(\v2\x16.dieter.v1.ScheduleRunR\x04runs2\xdc(\n" +
 	"\rDieterService\x12;\n" +
 	"\x06Health\x12\x16.google.protobuf.Empty\x1a\x19.dieter.v1.HealthResponse\x12D\n" +
 	"\x10GetRuntimeStatus\x12\x16.google.protobuf.Empty\x1a\x18.dieter.v1.RuntimeStatus\x128\n" +
@@ -9863,7 +11018,13 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\rWriteTerminal\x12\x1f.dieter.v1.TerminalInputRequest\x1a\x13.dieter.v1.Terminal\x12G\n" +
 	"\x0eResizeTerminal\x12 .dieter.v1.ResizeTerminalRequest\x1a\x13.dieter.v1.Terminal\x12G\n" +
 	"\x0eRenameTerminal\x12 .dieter.v1.RenameTerminalRequest\x1a\x13.dieter.v1.Terminal\x12?\n" +
-	"\rCloseTerminal\x12\x16.dieter.v1.TerminalRef\x1a\x16.google.protobuf.Empty\x12N\n" +
+	"\rCloseTerminal\x12\x16.dieter.v1.TerminalRef\x1a\x16.google.protobuf.Empty\x12\\\n" +
+	"\x1cGetRemoteDesktopCapabilities\x12\x16.google.protobuf.Empty\x1a$.dieter.v1.RemoteDesktopCapabilities\x12T\n" +
+	"\x18GetRemoteDesktopSettings\x12\x16.google.protobuf.Empty\x1a .dieter.v1.RemoteDesktopSettings\x12n\n" +
+	"\x1bUpdateRemoteDesktopSettings\x12-.dieter.v1.UpdateRemoteDesktopSettingsRequest\x1a .dieter.v1.RemoteDesktopSettings\x12\\\n" +
+	"\x12StartRemoteDesktop\x12$.dieter.v1.StartRemoteDesktopRequest\x1a\x1e.dieter.v1.RemoteDesktopSignal0\x01\x12Q\n" +
+	"\x17SendRemoteDesktopSignal\x12\x1e.dieter.v1.RemoteDesktopSignal\x1a\x16.google.protobuf.Empty\x12I\n" +
+	"\x12CloseRemoteDesktop\x12\x1b.dieter.v1.RemoteDesktopRef\x1a\x16.google.protobuf.Empty\x12N\n" +
 	"\rListSchedules\x12\x1f.dieter.v1.ListSchedulesRequest\x1a\x1c.dieter.v1.SchedulesResponse\x12P\n" +
 	"\x0fPreviewSchedule\x12!.dieter.v1.PreviewScheduleRequest\x1a\x1a.dieter.v1.SchedulePreview\x12E\n" +
 	"\x0eCreateSchedule\x12\x1e.dieter.v1.SaveScheduleRequest\x1a\x13.dieter.v1.Schedule\x12E\n" +
@@ -9886,133 +11047,146 @@ func file_dieter_v1_dieter_proto_rawDescGZIP() []byte {
 	return file_dieter_v1_dieter_proto_rawDescData
 }
 
-var file_dieter_v1_dieter_proto_msgTypes = make([]protoimpl.MessageInfo, 124)
+var file_dieter_v1_dieter_proto_msgTypes = make([]protoimpl.MessageInfo, 136)
 var file_dieter_v1_dieter_proto_goTypes = []any{
-	(*HealthResponse)(nil),                 // 0: dieter.v1.HealthResponse
-	(*RuntimeStatus)(nil),                  // 1: dieter.v1.RuntimeStatus
-	(*GetStateRequest)(nil),                // 2: dieter.v1.GetStateRequest
-	(*WatchStateRequest)(nil),              // 3: dieter.v1.WatchStateRequest
-	(*State)(nil),                          // 4: dieter.v1.State
-	(*SyncCursor)(nil),                     // 5: dieter.v1.SyncCursor
-	(*SyncRequest)(nil),                    // 6: dieter.v1.SyncRequest
-	(*SyncEvent)(nil),                      // 7: dieter.v1.SyncEvent
-	(*GlobalSnapshot)(nil),                 // 8: dieter.v1.GlobalSnapshot
-	(*GlobalDelta)(nil),                    // 9: dieter.v1.GlobalDelta
-	(*SyncFrame)(nil),                      // 10: dieter.v1.SyncFrame
-	(*ProjectsResponse)(nil),               // 11: dieter.v1.ProjectsResponse
-	(*CardsResponse)(nil),                  // 12: dieter.v1.CardsResponse
-	(*Project)(nil),                        // 13: dieter.v1.Project
-	(*Board)(nil),                          // 14: dieter.v1.Board
-	(*Label)(nil),                          // 15: dieter.v1.Label
-	(*Lane)(nil),                           // 16: dieter.v1.Lane
-	(*Card)(nil),                           // 17: dieter.v1.Card
-	(*CardOrigin)(nil),                     // 18: dieter.v1.CardOrigin
-	(*CardDetail)(nil),                     // 19: dieter.v1.CardDetail
-	(*Comment)(nil),                        // 20: dieter.v1.Comment
-	(*Author)(nil),                         // 21: dieter.v1.Author
-	(*Conversation)(nil),                   // 22: dieter.v1.Conversation
-	(*Subagent)(nil),                       // 23: dieter.v1.Subagent
-	(*TaskPlan)(nil),                       // 24: dieter.v1.TaskPlan
-	(*TaskPlanPhase)(nil),                  // 25: dieter.v1.TaskPlanPhase
-	(*TaskPlanItem)(nil),                   // 26: dieter.v1.TaskPlanItem
-	(*UiMessage)(nil),                      // 27: dieter.v1.UiMessage
-	(*MessagePart)(nil),                    // 28: dieter.v1.MessagePart
-	(*PendingTool)(nil),                    // 29: dieter.v1.PendingTool
-	(*QueuedMessage)(nil),                  // 30: dieter.v1.QueuedMessage
-	(*ConversationPage)(nil),               // 31: dieter.v1.ConversationPage
-	(*ConversationSnapshot)(nil),           // 32: dieter.v1.ConversationSnapshot
-	(*HarnessCatalog)(nil),                 // 33: dieter.v1.HarnessCatalog
-	(*Harness)(nil),                        // 34: dieter.v1.Harness
-	(*ProviderOption)(nil),                 // 35: dieter.v1.ProviderOption
-	(*ProviderOptionChoice)(nil),           // 36: dieter.v1.ProviderOptionChoice
-	(*HarnessCapability)(nil),              // 37: dieter.v1.HarnessCapability
-	(*HarnessModel)(nil),                   // 38: dieter.v1.HarnessModel
-	(*EffortConfig)(nil),                   // 39: dieter.v1.EffortConfig
-	(*Settings)(nil),                       // 40: dieter.v1.Settings
-	(*SettingsOptions)(nil),                // 41: dieter.v1.SettingsOptions
-	(*UpdateSettingsRequest)(nil),          // 42: dieter.v1.UpdateSettingsRequest
-	(*PromptSettings)(nil),                 // 43: dieter.v1.PromptSettings
-	(*UpdatePromptSettingsRequest)(nil),    // 44: dieter.v1.UpdatePromptSettingsRequest
-	(*SetScopedPromptTemplateRequest)(nil), // 45: dieter.v1.SetScopedPromptTemplateRequest
-	(*PreviewPromptRequest)(nil),           // 46: dieter.v1.PreviewPromptRequest
-	(*PromptPreview)(nil),                  // 47: dieter.v1.PromptPreview
-	(*ListDirectoriesRequest)(nil),         // 48: dieter.v1.ListDirectoriesRequest
-	(*DirectoryEntry)(nil),                 // 49: dieter.v1.DirectoryEntry
-	(*DirectoryLocation)(nil),              // 50: dieter.v1.DirectoryLocation
-	(*DirectoryListing)(nil),               // 51: dieter.v1.DirectoryListing
-	(*CreateProjectRequest)(nil),           // 52: dieter.v1.CreateProjectRequest
-	(*CreateProjectResponse)(nil),          // 53: dieter.v1.CreateProjectResponse
-	(*UpdateProjectRequest)(nil),           // 54: dieter.v1.UpdateProjectRequest
-	(*ArchiveProjectRequest)(nil),          // 55: dieter.v1.ArchiveProjectRequest
-	(*CreateBoardRequest)(nil),             // 56: dieter.v1.CreateBoardRequest
-	(*RenameBoardRequest)(nil),             // 57: dieter.v1.RenameBoardRequest
-	(*BoardRef)(nil),                       // 58: dieter.v1.BoardRef
-	(*SetBoardArchivePolicyRequest)(nil),   // 59: dieter.v1.SetBoardArchivePolicyRequest
-	(*CreateBoardLabelRequest)(nil),        // 60: dieter.v1.CreateBoardLabelRequest
-	(*UpdateBoardLabelRequest)(nil),        // 61: dieter.v1.UpdateBoardLabelRequest
-	(*DeleteBoardLabelRequest)(nil),        // 62: dieter.v1.DeleteBoardLabelRequest
-	(*EffortOption)(nil),                   // 63: dieter.v1.EffortOption
-	(*CreateConversationRequest)(nil),      // 64: dieter.v1.CreateConversationRequest
-	(*ListChatsRequest)(nil),               // 65: dieter.v1.ListChatsRequest
-	(*ChatsResponse)(nil),                  // 66: dieter.v1.ChatsResponse
-	(*GetCardRequest)(nil),                 // 67: dieter.v1.GetCardRequest
-	(*GetConversationRequest)(nil),         // 68: dieter.v1.GetConversationRequest
-	(*WatchConversationRequest)(nil),       // 69: dieter.v1.WatchConversationRequest
-	(*PollConversationRequest)(nil),        // 70: dieter.v1.PollConversationRequest
-	(*ConversationUpdate)(nil),             // 71: dieter.v1.ConversationUpdate
-	(*GetToolOutputRequest)(nil),           // 72: dieter.v1.GetToolOutputRequest
-	(*ToolOutput)(nil),                     // 73: dieter.v1.ToolOutput
-	(*SendMessageRequest)(nil),             // 74: dieter.v1.SendMessageRequest
-	(*SendMessageResponse)(nil),            // 75: dieter.v1.SendMessageResponse
-	(*AddCommentRequest)(nil),              // 76: dieter.v1.AddCommentRequest
-	(*MoveCardRequest)(nil),                // 77: dieter.v1.MoveCardRequest
-	(*StartCardRequest)(nil),               // 78: dieter.v1.StartCardRequest
-	(*StartCardResponse)(nil),              // 79: dieter.v1.StartCardResponse
-	(*SetCardLabelsRequest)(nil),           // 80: dieter.v1.SetCardLabelsRequest
-	(*RenameCardRequest)(nil),              // 81: dieter.v1.RenameCardRequest
-	(*UpdateCardRequest)(nil),              // 82: dieter.v1.UpdateCardRequest
-	(*ArchiveCardRequest)(nil),             // 83: dieter.v1.ArchiveCardRequest
-	(*PinChatRequest)(nil),                 // 84: dieter.v1.PinChatRequest
-	(*ListFilesRequest)(nil),               // 85: dieter.v1.ListFilesRequest
-	(*FileEntry)(nil),                      // 86: dieter.v1.FileEntry
-	(*FileList)(nil),                       // 87: dieter.v1.FileList
-	(*ReadFileRequest)(nil),                // 88: dieter.v1.ReadFileRequest
-	(*FileDocument)(nil),                   // 89: dieter.v1.FileDocument
-	(*Terminal)(nil),                       // 90: dieter.v1.Terminal
-	(*TerminalRef)(nil),                    // 91: dieter.v1.TerminalRef
-	(*ListTerminalsRequest)(nil),           // 92: dieter.v1.ListTerminalsRequest
-	(*TerminalsResponse)(nil),              // 93: dieter.v1.TerminalsResponse
-	(*CreateTerminalRequest)(nil),          // 94: dieter.v1.CreateTerminalRequest
-	(*WatchTerminalRequest)(nil),           // 95: dieter.v1.WatchTerminalRequest
-	(*TerminalFrame)(nil),                  // 96: dieter.v1.TerminalFrame
-	(*TerminalInputRequest)(nil),           // 97: dieter.v1.TerminalInputRequest
-	(*ResizeTerminalRequest)(nil),          // 98: dieter.v1.ResizeTerminalRequest
-	(*RenameTerminalRequest)(nil),          // 99: dieter.v1.RenameTerminalRequest
-	(*SaveFileRequest)(nil),                // 100: dieter.v1.SaveFileRequest
-	(*CreateFileRequest)(nil),              // 101: dieter.v1.CreateFileRequest
-	(*MoveFileRequest)(nil),                // 102: dieter.v1.MoveFileRequest
-	(*MoveFileResponse)(nil),               // 103: dieter.v1.MoveFileResponse
-	(*DeleteFileRequest)(nil),              // 104: dieter.v1.DeleteFileRequest
-	(*ListSchedulesRequest)(nil),           // 105: dieter.v1.ListSchedulesRequest
-	(*SchedulesResponse)(nil),              // 106: dieter.v1.SchedulesResponse
-	(*Schedule)(nil),                       // 107: dieter.v1.Schedule
-	(*ScheduleDraft)(nil),                  // 108: dieter.v1.ScheduleDraft
-	(*SaveScheduleRequest)(nil),            // 109: dieter.v1.SaveScheduleRequest
-	(*PreviewScheduleRequest)(nil),         // 110: dieter.v1.PreviewScheduleRequest
-	(*SchedulePreview)(nil),                // 111: dieter.v1.SchedulePreview
-	(*ScheduleRef)(nil),                    // 112: dieter.v1.ScheduleRef
-	(*SetScheduleEnabledRequest)(nil),      // 113: dieter.v1.SetScheduleEnabledRequest
-	(*ListScheduleRunsRequest)(nil),        // 114: dieter.v1.ListScheduleRunsRequest
-	(*ScheduleRun)(nil),                    // 115: dieter.v1.ScheduleRun
-	(*ScheduleRunsResponse)(nil),           // 116: dieter.v1.ScheduleRunsResponse
-	nil,                                    // 117: dieter.v1.Card.ProviderOptionsEntry
-	nil,                                    // 118: dieter.v1.Settings.AgentParallelLimitsEntry
-	nil,                                    // 119: dieter.v1.Settings.BoardParallelLimitsEntry
-	nil,                                    // 120: dieter.v1.CreateConversationRequest.ProviderOptionsEntry
-	nil,                                    // 121: dieter.v1.SendMessageRequest.ProviderOptionsEntry
-	nil,                                    // 122: dieter.v1.Schedule.ProviderOptionsEntry
-	nil,                                    // 123: dieter.v1.ScheduleDraft.ProviderOptionsEntry
-	(*emptypb.Empty)(nil),                  // 124: google.protobuf.Empty
+	(*HealthResponse)(nil),                     // 0: dieter.v1.HealthResponse
+	(*RuntimeStatus)(nil),                      // 1: dieter.v1.RuntimeStatus
+	(*GetStateRequest)(nil),                    // 2: dieter.v1.GetStateRequest
+	(*WatchStateRequest)(nil),                  // 3: dieter.v1.WatchStateRequest
+	(*State)(nil),                              // 4: dieter.v1.State
+	(*SyncCursor)(nil),                         // 5: dieter.v1.SyncCursor
+	(*SyncRequest)(nil),                        // 6: dieter.v1.SyncRequest
+	(*SyncEvent)(nil),                          // 7: dieter.v1.SyncEvent
+	(*GlobalSnapshot)(nil),                     // 8: dieter.v1.GlobalSnapshot
+	(*GlobalDelta)(nil),                        // 9: dieter.v1.GlobalDelta
+	(*SyncFrame)(nil),                          // 10: dieter.v1.SyncFrame
+	(*ProjectsResponse)(nil),                   // 11: dieter.v1.ProjectsResponse
+	(*CardsResponse)(nil),                      // 12: dieter.v1.CardsResponse
+	(*Project)(nil),                            // 13: dieter.v1.Project
+	(*Board)(nil),                              // 14: dieter.v1.Board
+	(*Label)(nil),                              // 15: dieter.v1.Label
+	(*Lane)(nil),                               // 16: dieter.v1.Lane
+	(*Card)(nil),                               // 17: dieter.v1.Card
+	(*CardOrigin)(nil),                         // 18: dieter.v1.CardOrigin
+	(*CardDetail)(nil),                         // 19: dieter.v1.CardDetail
+	(*Comment)(nil),                            // 20: dieter.v1.Comment
+	(*Author)(nil),                             // 21: dieter.v1.Author
+	(*Conversation)(nil),                       // 22: dieter.v1.Conversation
+	(*Subagent)(nil),                           // 23: dieter.v1.Subagent
+	(*TaskPlan)(nil),                           // 24: dieter.v1.TaskPlan
+	(*TaskPlanPhase)(nil),                      // 25: dieter.v1.TaskPlanPhase
+	(*TaskPlanItem)(nil),                       // 26: dieter.v1.TaskPlanItem
+	(*UiMessage)(nil),                          // 27: dieter.v1.UiMessage
+	(*MessagePart)(nil),                        // 28: dieter.v1.MessagePart
+	(*PendingTool)(nil),                        // 29: dieter.v1.PendingTool
+	(*QueuedMessage)(nil),                      // 30: dieter.v1.QueuedMessage
+	(*ConversationPage)(nil),                   // 31: dieter.v1.ConversationPage
+	(*ConversationSnapshot)(nil),               // 32: dieter.v1.ConversationSnapshot
+	(*HarnessCatalog)(nil),                     // 33: dieter.v1.HarnessCatalog
+	(*Harness)(nil),                            // 34: dieter.v1.Harness
+	(*ProviderOption)(nil),                     // 35: dieter.v1.ProviderOption
+	(*ProviderOptionChoice)(nil),               // 36: dieter.v1.ProviderOptionChoice
+	(*HarnessCapability)(nil),                  // 37: dieter.v1.HarnessCapability
+	(*HarnessModel)(nil),                       // 38: dieter.v1.HarnessModel
+	(*EffortConfig)(nil),                       // 39: dieter.v1.EffortConfig
+	(*Settings)(nil),                           // 40: dieter.v1.Settings
+	(*SettingsOptions)(nil),                    // 41: dieter.v1.SettingsOptions
+	(*UpdateSettingsRequest)(nil),              // 42: dieter.v1.UpdateSettingsRequest
+	(*PromptSettings)(nil),                     // 43: dieter.v1.PromptSettings
+	(*UpdatePromptSettingsRequest)(nil),        // 44: dieter.v1.UpdatePromptSettingsRequest
+	(*SetScopedPromptTemplateRequest)(nil),     // 45: dieter.v1.SetScopedPromptTemplateRequest
+	(*PreviewPromptRequest)(nil),               // 46: dieter.v1.PreviewPromptRequest
+	(*PromptPreview)(nil),                      // 47: dieter.v1.PromptPreview
+	(*ListDirectoriesRequest)(nil),             // 48: dieter.v1.ListDirectoriesRequest
+	(*DirectoryEntry)(nil),                     // 49: dieter.v1.DirectoryEntry
+	(*DirectoryLocation)(nil),                  // 50: dieter.v1.DirectoryLocation
+	(*DirectoryListing)(nil),                   // 51: dieter.v1.DirectoryListing
+	(*CreateProjectRequest)(nil),               // 52: dieter.v1.CreateProjectRequest
+	(*CreateProjectResponse)(nil),              // 53: dieter.v1.CreateProjectResponse
+	(*UpdateProjectRequest)(nil),               // 54: dieter.v1.UpdateProjectRequest
+	(*ArchiveProjectRequest)(nil),              // 55: dieter.v1.ArchiveProjectRequest
+	(*CreateBoardRequest)(nil),                 // 56: dieter.v1.CreateBoardRequest
+	(*RenameBoardRequest)(nil),                 // 57: dieter.v1.RenameBoardRequest
+	(*BoardRef)(nil),                           // 58: dieter.v1.BoardRef
+	(*SetBoardArchivePolicyRequest)(nil),       // 59: dieter.v1.SetBoardArchivePolicyRequest
+	(*CreateBoardLabelRequest)(nil),            // 60: dieter.v1.CreateBoardLabelRequest
+	(*UpdateBoardLabelRequest)(nil),            // 61: dieter.v1.UpdateBoardLabelRequest
+	(*DeleteBoardLabelRequest)(nil),            // 62: dieter.v1.DeleteBoardLabelRequest
+	(*EffortOption)(nil),                       // 63: dieter.v1.EffortOption
+	(*CreateConversationRequest)(nil),          // 64: dieter.v1.CreateConversationRequest
+	(*ListChatsRequest)(nil),                   // 65: dieter.v1.ListChatsRequest
+	(*ChatsResponse)(nil),                      // 66: dieter.v1.ChatsResponse
+	(*GetCardRequest)(nil),                     // 67: dieter.v1.GetCardRequest
+	(*GetConversationRequest)(nil),             // 68: dieter.v1.GetConversationRequest
+	(*WatchConversationRequest)(nil),           // 69: dieter.v1.WatchConversationRequest
+	(*PollConversationRequest)(nil),            // 70: dieter.v1.PollConversationRequest
+	(*ConversationUpdate)(nil),                 // 71: dieter.v1.ConversationUpdate
+	(*GetToolOutputRequest)(nil),               // 72: dieter.v1.GetToolOutputRequest
+	(*ToolOutput)(nil),                         // 73: dieter.v1.ToolOutput
+	(*SendMessageRequest)(nil),                 // 74: dieter.v1.SendMessageRequest
+	(*SendMessageResponse)(nil),                // 75: dieter.v1.SendMessageResponse
+	(*AddCommentRequest)(nil),                  // 76: dieter.v1.AddCommentRequest
+	(*MoveCardRequest)(nil),                    // 77: dieter.v1.MoveCardRequest
+	(*StartCardRequest)(nil),                   // 78: dieter.v1.StartCardRequest
+	(*StartCardResponse)(nil),                  // 79: dieter.v1.StartCardResponse
+	(*SetCardLabelsRequest)(nil),               // 80: dieter.v1.SetCardLabelsRequest
+	(*RenameCardRequest)(nil),                  // 81: dieter.v1.RenameCardRequest
+	(*UpdateCardRequest)(nil),                  // 82: dieter.v1.UpdateCardRequest
+	(*ArchiveCardRequest)(nil),                 // 83: dieter.v1.ArchiveCardRequest
+	(*PinChatRequest)(nil),                     // 84: dieter.v1.PinChatRequest
+	(*ListFilesRequest)(nil),                   // 85: dieter.v1.ListFilesRequest
+	(*FileEntry)(nil),                          // 86: dieter.v1.FileEntry
+	(*FileList)(nil),                           // 87: dieter.v1.FileList
+	(*ReadFileRequest)(nil),                    // 88: dieter.v1.ReadFileRequest
+	(*FileDocument)(nil),                       // 89: dieter.v1.FileDocument
+	(*Terminal)(nil),                           // 90: dieter.v1.Terminal
+	(*TerminalRef)(nil),                        // 91: dieter.v1.TerminalRef
+	(*ListTerminalsRequest)(nil),               // 92: dieter.v1.ListTerminalsRequest
+	(*TerminalsResponse)(nil),                  // 93: dieter.v1.TerminalsResponse
+	(*CreateTerminalRequest)(nil),              // 94: dieter.v1.CreateTerminalRequest
+	(*WatchTerminalRequest)(nil),               // 95: dieter.v1.WatchTerminalRequest
+	(*TerminalFrame)(nil),                      // 96: dieter.v1.TerminalFrame
+	(*TerminalInputRequest)(nil),               // 97: dieter.v1.TerminalInputRequest
+	(*ResizeTerminalRequest)(nil),              // 98: dieter.v1.ResizeTerminalRequest
+	(*RenameTerminalRequest)(nil),              // 99: dieter.v1.RenameTerminalRequest
+	(*RemoteDesktopCapabilities)(nil),          // 100: dieter.v1.RemoteDesktopCapabilities
+	(*RemoteDesktopDisplay)(nil),               // 101: dieter.v1.RemoteDesktopDisplay
+	(*RemoteDesktopSettings)(nil),              // 102: dieter.v1.RemoteDesktopSettings
+	(*UpdateRemoteDesktopSettingsRequest)(nil), // 103: dieter.v1.UpdateRemoteDesktopSettingsRequest
+	(*RemoteDesktopSessionDescription)(nil),    // 104: dieter.v1.RemoteDesktopSessionDescription
+	(*RemoteDesktopICECandidate)(nil),          // 105: dieter.v1.RemoteDesktopICECandidate
+	(*StartRemoteDesktopRequest)(nil),          // 106: dieter.v1.StartRemoteDesktopRequest
+	(*RemoteDesktopRef)(nil),                   // 107: dieter.v1.RemoteDesktopRef
+	(*RemoteDesktopSessionBinding)(nil),        // 108: dieter.v1.RemoteDesktopSessionBinding
+	(*RemoteDesktopSessionState)(nil),          // 109: dieter.v1.RemoteDesktopSessionState
+	(*RemoteDesktopSessionError)(nil),          // 110: dieter.v1.RemoteDesktopSessionError
+	(*RemoteDesktopSignal)(nil),                // 111: dieter.v1.RemoteDesktopSignal
+	(*SaveFileRequest)(nil),                    // 112: dieter.v1.SaveFileRequest
+	(*CreateFileRequest)(nil),                  // 113: dieter.v1.CreateFileRequest
+	(*MoveFileRequest)(nil),                    // 114: dieter.v1.MoveFileRequest
+	(*MoveFileResponse)(nil),                   // 115: dieter.v1.MoveFileResponse
+	(*DeleteFileRequest)(nil),                  // 116: dieter.v1.DeleteFileRequest
+	(*ListSchedulesRequest)(nil),               // 117: dieter.v1.ListSchedulesRequest
+	(*SchedulesResponse)(nil),                  // 118: dieter.v1.SchedulesResponse
+	(*Schedule)(nil),                           // 119: dieter.v1.Schedule
+	(*ScheduleDraft)(nil),                      // 120: dieter.v1.ScheduleDraft
+	(*SaveScheduleRequest)(nil),                // 121: dieter.v1.SaveScheduleRequest
+	(*PreviewScheduleRequest)(nil),             // 122: dieter.v1.PreviewScheduleRequest
+	(*SchedulePreview)(nil),                    // 123: dieter.v1.SchedulePreview
+	(*ScheduleRef)(nil),                        // 124: dieter.v1.ScheduleRef
+	(*SetScheduleEnabledRequest)(nil),          // 125: dieter.v1.SetScheduleEnabledRequest
+	(*ListScheduleRunsRequest)(nil),            // 126: dieter.v1.ListScheduleRunsRequest
+	(*ScheduleRun)(nil),                        // 127: dieter.v1.ScheduleRun
+	(*ScheduleRunsResponse)(nil),               // 128: dieter.v1.ScheduleRunsResponse
+	nil,                                        // 129: dieter.v1.Card.ProviderOptionsEntry
+	nil,                                        // 130: dieter.v1.Settings.AgentParallelLimitsEntry
+	nil,                                        // 131: dieter.v1.Settings.BoardParallelLimitsEntry
+	nil,                                        // 132: dieter.v1.CreateConversationRequest.ProviderOptionsEntry
+	nil,                                        // 133: dieter.v1.SendMessageRequest.ProviderOptionsEntry
+	nil,                                        // 134: dieter.v1.Schedule.ProviderOptionsEntry
+	nil,                                        // 135: dieter.v1.ScheduleDraft.ProviderOptionsEntry
+	(*v1.RTCConfiguration)(nil),                // 136: dieter.gateway.v1.RTCConfiguration
+	(*emptypb.Empty)(nil),                      // 137: google.protobuf.Empty
 }
 var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	2,   // 0: dieter.v1.WatchStateRequest.filter:type_name -> dieter.v1.GetStateRequest
@@ -10024,15 +11198,15 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	5,   // 6: dieter.v1.SyncRequest.after:type_name -> dieter.v1.SyncCursor
 	4,   // 7: dieter.v1.GlobalSnapshot.state:type_name -> dieter.v1.State
 	32,  // 8: dieter.v1.GlobalSnapshot.conversations:type_name -> dieter.v1.ConversationSnapshot
-	107, // 9: dieter.v1.GlobalSnapshot.schedules:type_name -> dieter.v1.Schedule
-	115, // 10: dieter.v1.GlobalSnapshot.schedule_runs:type_name -> dieter.v1.ScheduleRun
+	119, // 9: dieter.v1.GlobalSnapshot.schedules:type_name -> dieter.v1.Schedule
+	127, // 10: dieter.v1.GlobalSnapshot.schedule_runs:type_name -> dieter.v1.ScheduleRun
 	40,  // 11: dieter.v1.GlobalSnapshot.settings:type_name -> dieter.v1.Settings
 	13,  // 12: dieter.v1.GlobalDelta.projects:type_name -> dieter.v1.Project
 	14,  // 13: dieter.v1.GlobalDelta.boards:type_name -> dieter.v1.Board
 	17,  // 14: dieter.v1.GlobalDelta.cards:type_name -> dieter.v1.Card
 	17,  // 15: dieter.v1.GlobalDelta.chats:type_name -> dieter.v1.Card
-	107, // 16: dieter.v1.GlobalDelta.schedules:type_name -> dieter.v1.Schedule
-	115, // 17: dieter.v1.GlobalDelta.schedule_runs:type_name -> dieter.v1.ScheduleRun
+	119, // 16: dieter.v1.GlobalDelta.schedules:type_name -> dieter.v1.Schedule
+	127, // 17: dieter.v1.GlobalDelta.schedule_runs:type_name -> dieter.v1.ScheduleRun
 	40,  // 18: dieter.v1.GlobalDelta.settings:type_name -> dieter.v1.Settings
 	32,  // 19: dieter.v1.GlobalDelta.conversations:type_name -> dieter.v1.ConversationSnapshot
 	5,   // 20: dieter.v1.SyncFrame.cursor:type_name -> dieter.v1.SyncCursor
@@ -10046,7 +11220,7 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	16,  // 28: dieter.v1.Board.lanes:type_name -> dieter.v1.Lane
 	18,  // 29: dieter.v1.Card.origin:type_name -> dieter.v1.CardOrigin
 	23,  // 30: dieter.v1.Card.active_subagents:type_name -> dieter.v1.Subagent
-	117, // 31: dieter.v1.Card.provider_options:type_name -> dieter.v1.Card.ProviderOptionsEntry
+	129, // 31: dieter.v1.Card.provider_options:type_name -> dieter.v1.Card.ProviderOptionsEntry
 	17,  // 32: dieter.v1.CardDetail.card:type_name -> dieter.v1.Card
 	13,  // 33: dieter.v1.CardDetail.project:type_name -> dieter.v1.Project
 	14,  // 34: dieter.v1.CardDetail.board:type_name -> dieter.v1.Board
@@ -10072,8 +11246,8 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	35,  // 54: dieter.v1.Harness.options:type_name -> dieter.v1.ProviderOption
 	36,  // 55: dieter.v1.ProviderOption.choices:type_name -> dieter.v1.ProviderOptionChoice
 	63,  // 56: dieter.v1.EffortConfig.options:type_name -> dieter.v1.EffortOption
-	118, // 57: dieter.v1.Settings.agent_parallel_limits:type_name -> dieter.v1.Settings.AgentParallelLimitsEntry
-	119, // 58: dieter.v1.Settings.board_parallel_limits:type_name -> dieter.v1.Settings.BoardParallelLimitsEntry
+	130, // 57: dieter.v1.Settings.agent_parallel_limits:type_name -> dieter.v1.Settings.AgentParallelLimitsEntry
+	131, // 58: dieter.v1.Settings.board_parallel_limits:type_name -> dieter.v1.Settings.BoardParallelLimitsEntry
 	13,  // 59: dieter.v1.SettingsOptions.projects:type_name -> dieter.v1.Project
 	14,  // 60: dieter.v1.SettingsOptions.boards:type_name -> dieter.v1.Board
 	33,  // 61: dieter.v1.SettingsOptions.agents:type_name -> dieter.v1.HarnessCatalog
@@ -10083,7 +11257,7 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	50,  // 65: dieter.v1.DirectoryListing.locations:type_name -> dieter.v1.DirectoryLocation
 	13,  // 66: dieter.v1.CreateProjectResponse.project:type_name -> dieter.v1.Project
 	14,  // 67: dieter.v1.CreateProjectResponse.board:type_name -> dieter.v1.Board
-	120, // 68: dieter.v1.CreateConversationRequest.provider_options:type_name -> dieter.v1.CreateConversationRequest.ProviderOptionsEntry
+	132, // 68: dieter.v1.CreateConversationRequest.provider_options:type_name -> dieter.v1.CreateConversationRequest.ProviderOptionsEntry
 	28,  // 69: dieter.v1.CreateConversationRequest.attachments:type_name -> dieter.v1.MessagePart
 	13,  // 70: dieter.v1.ChatsResponse.projects:type_name -> dieter.v1.Project
 	17,  // 71: dieter.v1.ChatsResponse.chats:type_name -> dieter.v1.Card
@@ -10097,151 +11271,173 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	24,  // 79: dieter.v1.ConversationUpdate.task_plans:type_name -> dieter.v1.TaskPlan
 	28,  // 80: dieter.v1.ConversationUpdate.draft_attachments:type_name -> dieter.v1.MessagePart
 	28,  // 81: dieter.v1.SendMessageRequest.parts:type_name -> dieter.v1.MessagePart
-	121, // 82: dieter.v1.SendMessageRequest.provider_options:type_name -> dieter.v1.SendMessageRequest.ProviderOptionsEntry
+	133, // 82: dieter.v1.SendMessageRequest.provider_options:type_name -> dieter.v1.SendMessageRequest.ProviderOptionsEntry
 	17,  // 83: dieter.v1.StartCardResponse.card:type_name -> dieter.v1.Card
 	86,  // 84: dieter.v1.FileList.entries:type_name -> dieter.v1.FileEntry
 	90,  // 85: dieter.v1.TerminalsResponse.terminals:type_name -> dieter.v1.Terminal
 	90,  // 86: dieter.v1.TerminalFrame.terminal:type_name -> dieter.v1.Terminal
-	107, // 87: dieter.v1.SchedulesResponse.schedules:type_name -> dieter.v1.Schedule
-	122, // 88: dieter.v1.Schedule.provider_options:type_name -> dieter.v1.Schedule.ProviderOptionsEntry
-	123, // 89: dieter.v1.ScheduleDraft.provider_options:type_name -> dieter.v1.ScheduleDraft.ProviderOptionsEntry
-	108, // 90: dieter.v1.SaveScheduleRequest.schedule:type_name -> dieter.v1.ScheduleDraft
-	115, // 91: dieter.v1.ScheduleRunsResponse.runs:type_name -> dieter.v1.ScheduleRun
-	124, // 92: dieter.v1.DieterService.Health:input_type -> google.protobuf.Empty
-	124, // 93: dieter.v1.DieterService.GetRuntimeStatus:input_type -> google.protobuf.Empty
-	2,   // 94: dieter.v1.DieterService.GetState:input_type -> dieter.v1.GetStateRequest
-	3,   // 95: dieter.v1.DieterService.WatchState:input_type -> dieter.v1.WatchStateRequest
-	6,   // 96: dieter.v1.DieterService.WatchSync:input_type -> dieter.v1.SyncRequest
-	124, // 97: dieter.v1.DieterService.GetHarnesses:input_type -> google.protobuf.Empty
-	124, // 98: dieter.v1.DieterService.GetSettings:input_type -> google.protobuf.Empty
-	124, // 99: dieter.v1.DieterService.GetSettingsOptions:input_type -> google.protobuf.Empty
-	42,  // 100: dieter.v1.DieterService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
-	124, // 101: dieter.v1.DieterService.GetPromptSettings:input_type -> google.protobuf.Empty
-	44,  // 102: dieter.v1.DieterService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
-	45,  // 103: dieter.v1.DieterService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
-	45,  // 104: dieter.v1.DieterService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
-	46,  // 105: dieter.v1.DieterService.PreviewPrompt:input_type -> dieter.v1.PreviewPromptRequest
-	48,  // 106: dieter.v1.DieterService.ListDirectories:input_type -> dieter.v1.ListDirectoriesRequest
-	52,  // 107: dieter.v1.DieterService.CreateProject:input_type -> dieter.v1.CreateProjectRequest
-	54,  // 108: dieter.v1.DieterService.UpdateProject:input_type -> dieter.v1.UpdateProjectRequest
-	55,  // 109: dieter.v1.DieterService.ArchiveProject:input_type -> dieter.v1.ArchiveProjectRequest
-	124, // 110: dieter.v1.DieterService.ListArchivedProjects:input_type -> google.protobuf.Empty
-	56,  // 111: dieter.v1.DieterService.CreateBoard:input_type -> dieter.v1.CreateBoardRequest
-	57,  // 112: dieter.v1.DieterService.RenameBoard:input_type -> dieter.v1.RenameBoardRequest
-	59,  // 113: dieter.v1.DieterService.SetBoardArchivePolicy:input_type -> dieter.v1.SetBoardArchivePolicyRequest
-	58,  // 114: dieter.v1.DieterService.ListArchivedCards:input_type -> dieter.v1.BoardRef
-	60,  // 115: dieter.v1.DieterService.CreateBoardLabel:input_type -> dieter.v1.CreateBoardLabelRequest
-	61,  // 116: dieter.v1.DieterService.UpdateBoardLabel:input_type -> dieter.v1.UpdateBoardLabelRequest
-	62,  // 117: dieter.v1.DieterService.DeleteBoardLabel:input_type -> dieter.v1.DeleteBoardLabelRequest
-	64,  // 118: dieter.v1.DieterService.CreateCard:input_type -> dieter.v1.CreateConversationRequest
-	64,  // 119: dieter.v1.DieterService.CreateChat:input_type -> dieter.v1.CreateConversationRequest
-	65,  // 120: dieter.v1.DieterService.ListChats:input_type -> dieter.v1.ListChatsRequest
-	67,  // 121: dieter.v1.DieterService.GetCard:input_type -> dieter.v1.GetCardRequest
-	68,  // 122: dieter.v1.DieterService.GetConversation:input_type -> dieter.v1.GetConversationRequest
-	70,  // 123: dieter.v1.DieterService.PollConversation:input_type -> dieter.v1.PollConversationRequest
-	69,  // 124: dieter.v1.DieterService.WatchConversation:input_type -> dieter.v1.WatchConversationRequest
-	72,  // 125: dieter.v1.DieterService.GetToolOutput:input_type -> dieter.v1.GetToolOutputRequest
-	74,  // 126: dieter.v1.DieterService.SendMessage:input_type -> dieter.v1.SendMessageRequest
-	76,  // 127: dieter.v1.DieterService.AddComment:input_type -> dieter.v1.AddCommentRequest
-	77,  // 128: dieter.v1.DieterService.MoveCard:input_type -> dieter.v1.MoveCardRequest
-	78,  // 129: dieter.v1.DieterService.StartCard:input_type -> dieter.v1.StartCardRequest
-	80,  // 130: dieter.v1.DieterService.SetCardLabels:input_type -> dieter.v1.SetCardLabelsRequest
-	67,  // 131: dieter.v1.DieterService.CancelCard:input_type -> dieter.v1.GetCardRequest
-	81,  // 132: dieter.v1.DieterService.RenameCard:input_type -> dieter.v1.RenameCardRequest
-	82,  // 133: dieter.v1.DieterService.UpdateCard:input_type -> dieter.v1.UpdateCardRequest
-	83,  // 134: dieter.v1.DieterService.ArchiveCard:input_type -> dieter.v1.ArchiveCardRequest
-	84,  // 135: dieter.v1.DieterService.PinChat:input_type -> dieter.v1.PinChatRequest
-	85,  // 136: dieter.v1.DieterService.ListFiles:input_type -> dieter.v1.ListFilesRequest
-	88,  // 137: dieter.v1.DieterService.ReadFile:input_type -> dieter.v1.ReadFileRequest
-	100, // 138: dieter.v1.DieterService.SaveFile:input_type -> dieter.v1.SaveFileRequest
-	101, // 139: dieter.v1.DieterService.CreateFile:input_type -> dieter.v1.CreateFileRequest
-	102, // 140: dieter.v1.DieterService.MoveFile:input_type -> dieter.v1.MoveFileRequest
-	104, // 141: dieter.v1.DieterService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
-	92,  // 142: dieter.v1.DieterService.ListTerminals:input_type -> dieter.v1.ListTerminalsRequest
-	94,  // 143: dieter.v1.DieterService.CreateTerminal:input_type -> dieter.v1.CreateTerminalRequest
-	95,  // 144: dieter.v1.DieterService.WatchTerminal:input_type -> dieter.v1.WatchTerminalRequest
-	97,  // 145: dieter.v1.DieterService.WriteTerminal:input_type -> dieter.v1.TerminalInputRequest
-	98,  // 146: dieter.v1.DieterService.ResizeTerminal:input_type -> dieter.v1.ResizeTerminalRequest
-	99,  // 147: dieter.v1.DieterService.RenameTerminal:input_type -> dieter.v1.RenameTerminalRequest
-	91,  // 148: dieter.v1.DieterService.CloseTerminal:input_type -> dieter.v1.TerminalRef
-	105, // 149: dieter.v1.DieterService.ListSchedules:input_type -> dieter.v1.ListSchedulesRequest
-	110, // 150: dieter.v1.DieterService.PreviewSchedule:input_type -> dieter.v1.PreviewScheduleRequest
-	109, // 151: dieter.v1.DieterService.CreateSchedule:input_type -> dieter.v1.SaveScheduleRequest
-	109, // 152: dieter.v1.DieterService.UpdateSchedule:input_type -> dieter.v1.SaveScheduleRequest
-	112, // 153: dieter.v1.DieterService.DeleteSchedule:input_type -> dieter.v1.ScheduleRef
-	112, // 154: dieter.v1.DieterService.RunSchedule:input_type -> dieter.v1.ScheduleRef
-	113, // 155: dieter.v1.DieterService.SetScheduleEnabled:input_type -> dieter.v1.SetScheduleEnabledRequest
-	114, // 156: dieter.v1.DieterService.ListScheduleRuns:input_type -> dieter.v1.ListScheduleRunsRequest
-	0,   // 157: dieter.v1.DieterService.Health:output_type -> dieter.v1.HealthResponse
-	1,   // 158: dieter.v1.DieterService.GetRuntimeStatus:output_type -> dieter.v1.RuntimeStatus
-	4,   // 159: dieter.v1.DieterService.GetState:output_type -> dieter.v1.State
-	4,   // 160: dieter.v1.DieterService.WatchState:output_type -> dieter.v1.State
-	10,  // 161: dieter.v1.DieterService.WatchSync:output_type -> dieter.v1.SyncFrame
-	33,  // 162: dieter.v1.DieterService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
-	40,  // 163: dieter.v1.DieterService.GetSettings:output_type -> dieter.v1.Settings
-	41,  // 164: dieter.v1.DieterService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
-	40,  // 165: dieter.v1.DieterService.UpdateSettings:output_type -> dieter.v1.Settings
-	43,  // 166: dieter.v1.DieterService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
-	43,  // 167: dieter.v1.DieterService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
-	13,  // 168: dieter.v1.DieterService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
-	14,  // 169: dieter.v1.DieterService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
-	47,  // 170: dieter.v1.DieterService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
-	51,  // 171: dieter.v1.DieterService.ListDirectories:output_type -> dieter.v1.DirectoryListing
-	53,  // 172: dieter.v1.DieterService.CreateProject:output_type -> dieter.v1.CreateProjectResponse
-	13,  // 173: dieter.v1.DieterService.UpdateProject:output_type -> dieter.v1.Project
-	13,  // 174: dieter.v1.DieterService.ArchiveProject:output_type -> dieter.v1.Project
-	11,  // 175: dieter.v1.DieterService.ListArchivedProjects:output_type -> dieter.v1.ProjectsResponse
-	14,  // 176: dieter.v1.DieterService.CreateBoard:output_type -> dieter.v1.Board
-	14,  // 177: dieter.v1.DieterService.RenameBoard:output_type -> dieter.v1.Board
-	14,  // 178: dieter.v1.DieterService.SetBoardArchivePolicy:output_type -> dieter.v1.Board
-	12,  // 179: dieter.v1.DieterService.ListArchivedCards:output_type -> dieter.v1.CardsResponse
-	14,  // 180: dieter.v1.DieterService.CreateBoardLabel:output_type -> dieter.v1.Board
-	14,  // 181: dieter.v1.DieterService.UpdateBoardLabel:output_type -> dieter.v1.Board
-	14,  // 182: dieter.v1.DieterService.DeleteBoardLabel:output_type -> dieter.v1.Board
-	17,  // 183: dieter.v1.DieterService.CreateCard:output_type -> dieter.v1.Card
-	17,  // 184: dieter.v1.DieterService.CreateChat:output_type -> dieter.v1.Card
-	66,  // 185: dieter.v1.DieterService.ListChats:output_type -> dieter.v1.ChatsResponse
-	19,  // 186: dieter.v1.DieterService.GetCard:output_type -> dieter.v1.CardDetail
-	32,  // 187: dieter.v1.DieterService.GetConversation:output_type -> dieter.v1.ConversationSnapshot
-	71,  // 188: dieter.v1.DieterService.PollConversation:output_type -> dieter.v1.ConversationUpdate
-	71,  // 189: dieter.v1.DieterService.WatchConversation:output_type -> dieter.v1.ConversationUpdate
-	73,  // 190: dieter.v1.DieterService.GetToolOutput:output_type -> dieter.v1.ToolOutput
-	75,  // 191: dieter.v1.DieterService.SendMessage:output_type -> dieter.v1.SendMessageResponse
-	20,  // 192: dieter.v1.DieterService.AddComment:output_type -> dieter.v1.Comment
-	17,  // 193: dieter.v1.DieterService.MoveCard:output_type -> dieter.v1.Card
-	79,  // 194: dieter.v1.DieterService.StartCard:output_type -> dieter.v1.StartCardResponse
-	17,  // 195: dieter.v1.DieterService.SetCardLabels:output_type -> dieter.v1.Card
-	124, // 196: dieter.v1.DieterService.CancelCard:output_type -> google.protobuf.Empty
-	17,  // 197: dieter.v1.DieterService.RenameCard:output_type -> dieter.v1.Card
-	17,  // 198: dieter.v1.DieterService.UpdateCard:output_type -> dieter.v1.Card
-	17,  // 199: dieter.v1.DieterService.ArchiveCard:output_type -> dieter.v1.Card
-	17,  // 200: dieter.v1.DieterService.PinChat:output_type -> dieter.v1.Card
-	87,  // 201: dieter.v1.DieterService.ListFiles:output_type -> dieter.v1.FileList
-	89,  // 202: dieter.v1.DieterService.ReadFile:output_type -> dieter.v1.FileDocument
-	89,  // 203: dieter.v1.DieterService.SaveFile:output_type -> dieter.v1.FileDocument
-	86,  // 204: dieter.v1.DieterService.CreateFile:output_type -> dieter.v1.FileEntry
-	103, // 205: dieter.v1.DieterService.MoveFile:output_type -> dieter.v1.MoveFileResponse
-	124, // 206: dieter.v1.DieterService.DeleteFile:output_type -> google.protobuf.Empty
-	93,  // 207: dieter.v1.DieterService.ListTerminals:output_type -> dieter.v1.TerminalsResponse
-	90,  // 208: dieter.v1.DieterService.CreateTerminal:output_type -> dieter.v1.Terminal
-	96,  // 209: dieter.v1.DieterService.WatchTerminal:output_type -> dieter.v1.TerminalFrame
-	90,  // 210: dieter.v1.DieterService.WriteTerminal:output_type -> dieter.v1.Terminal
-	90,  // 211: dieter.v1.DieterService.ResizeTerminal:output_type -> dieter.v1.Terminal
-	90,  // 212: dieter.v1.DieterService.RenameTerminal:output_type -> dieter.v1.Terminal
-	124, // 213: dieter.v1.DieterService.CloseTerminal:output_type -> google.protobuf.Empty
-	106, // 214: dieter.v1.DieterService.ListSchedules:output_type -> dieter.v1.SchedulesResponse
-	111, // 215: dieter.v1.DieterService.PreviewSchedule:output_type -> dieter.v1.SchedulePreview
-	107, // 216: dieter.v1.DieterService.CreateSchedule:output_type -> dieter.v1.Schedule
-	107, // 217: dieter.v1.DieterService.UpdateSchedule:output_type -> dieter.v1.Schedule
-	124, // 218: dieter.v1.DieterService.DeleteSchedule:output_type -> google.protobuf.Empty
-	115, // 219: dieter.v1.DieterService.RunSchedule:output_type -> dieter.v1.ScheduleRun
-	107, // 220: dieter.v1.DieterService.SetScheduleEnabled:output_type -> dieter.v1.Schedule
-	116, // 221: dieter.v1.DieterService.ListScheduleRuns:output_type -> dieter.v1.ScheduleRunsResponse
-	157, // [157:222] is the sub-list for method output_type
-	92,  // [92:157] is the sub-list for method input_type
-	92,  // [92:92] is the sub-list for extension type_name
-	92,  // [92:92] is the sub-list for extension extendee
-	0,   // [0:92] is the sub-list for field type_name
+	101, // 87: dieter.v1.RemoteDesktopCapabilities.displays:type_name -> dieter.v1.RemoteDesktopDisplay
+	136, // 88: dieter.v1.StartRemoteDesktopRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
+	104, // 89: dieter.v1.StartRemoteDesktopRequest.offer:type_name -> dieter.v1.RemoteDesktopSessionDescription
+	105, // 90: dieter.v1.StartRemoteDesktopRequest.initial_candidates:type_name -> dieter.v1.RemoteDesktopICECandidate
+	108, // 91: dieter.v1.RemoteDesktopSignal.binding:type_name -> dieter.v1.RemoteDesktopSessionBinding
+	104, // 92: dieter.v1.RemoteDesktopSignal.description:type_name -> dieter.v1.RemoteDesktopSessionDescription
+	105, // 93: dieter.v1.RemoteDesktopSignal.candidate:type_name -> dieter.v1.RemoteDesktopICECandidate
+	109, // 94: dieter.v1.RemoteDesktopSignal.state:type_name -> dieter.v1.RemoteDesktopSessionState
+	110, // 95: dieter.v1.RemoteDesktopSignal.error:type_name -> dieter.v1.RemoteDesktopSessionError
+	137, // 96: dieter.v1.RemoteDesktopSignal.lease_heartbeat:type_name -> google.protobuf.Empty
+	119, // 97: dieter.v1.SchedulesResponse.schedules:type_name -> dieter.v1.Schedule
+	134, // 98: dieter.v1.Schedule.provider_options:type_name -> dieter.v1.Schedule.ProviderOptionsEntry
+	135, // 99: dieter.v1.ScheduleDraft.provider_options:type_name -> dieter.v1.ScheduleDraft.ProviderOptionsEntry
+	120, // 100: dieter.v1.SaveScheduleRequest.schedule:type_name -> dieter.v1.ScheduleDraft
+	127, // 101: dieter.v1.ScheduleRunsResponse.runs:type_name -> dieter.v1.ScheduleRun
+	137, // 102: dieter.v1.DieterService.Health:input_type -> google.protobuf.Empty
+	137, // 103: dieter.v1.DieterService.GetRuntimeStatus:input_type -> google.protobuf.Empty
+	2,   // 104: dieter.v1.DieterService.GetState:input_type -> dieter.v1.GetStateRequest
+	3,   // 105: dieter.v1.DieterService.WatchState:input_type -> dieter.v1.WatchStateRequest
+	6,   // 106: dieter.v1.DieterService.WatchSync:input_type -> dieter.v1.SyncRequest
+	137, // 107: dieter.v1.DieterService.GetHarnesses:input_type -> google.protobuf.Empty
+	137, // 108: dieter.v1.DieterService.GetSettings:input_type -> google.protobuf.Empty
+	137, // 109: dieter.v1.DieterService.GetSettingsOptions:input_type -> google.protobuf.Empty
+	42,  // 110: dieter.v1.DieterService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
+	137, // 111: dieter.v1.DieterService.GetPromptSettings:input_type -> google.protobuf.Empty
+	44,  // 112: dieter.v1.DieterService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
+	45,  // 113: dieter.v1.DieterService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
+	45,  // 114: dieter.v1.DieterService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
+	46,  // 115: dieter.v1.DieterService.PreviewPrompt:input_type -> dieter.v1.PreviewPromptRequest
+	48,  // 116: dieter.v1.DieterService.ListDirectories:input_type -> dieter.v1.ListDirectoriesRequest
+	52,  // 117: dieter.v1.DieterService.CreateProject:input_type -> dieter.v1.CreateProjectRequest
+	54,  // 118: dieter.v1.DieterService.UpdateProject:input_type -> dieter.v1.UpdateProjectRequest
+	55,  // 119: dieter.v1.DieterService.ArchiveProject:input_type -> dieter.v1.ArchiveProjectRequest
+	137, // 120: dieter.v1.DieterService.ListArchivedProjects:input_type -> google.protobuf.Empty
+	56,  // 121: dieter.v1.DieterService.CreateBoard:input_type -> dieter.v1.CreateBoardRequest
+	57,  // 122: dieter.v1.DieterService.RenameBoard:input_type -> dieter.v1.RenameBoardRequest
+	59,  // 123: dieter.v1.DieterService.SetBoardArchivePolicy:input_type -> dieter.v1.SetBoardArchivePolicyRequest
+	58,  // 124: dieter.v1.DieterService.ListArchivedCards:input_type -> dieter.v1.BoardRef
+	60,  // 125: dieter.v1.DieterService.CreateBoardLabel:input_type -> dieter.v1.CreateBoardLabelRequest
+	61,  // 126: dieter.v1.DieterService.UpdateBoardLabel:input_type -> dieter.v1.UpdateBoardLabelRequest
+	62,  // 127: dieter.v1.DieterService.DeleteBoardLabel:input_type -> dieter.v1.DeleteBoardLabelRequest
+	64,  // 128: dieter.v1.DieterService.CreateCard:input_type -> dieter.v1.CreateConversationRequest
+	64,  // 129: dieter.v1.DieterService.CreateChat:input_type -> dieter.v1.CreateConversationRequest
+	65,  // 130: dieter.v1.DieterService.ListChats:input_type -> dieter.v1.ListChatsRequest
+	67,  // 131: dieter.v1.DieterService.GetCard:input_type -> dieter.v1.GetCardRequest
+	68,  // 132: dieter.v1.DieterService.GetConversation:input_type -> dieter.v1.GetConversationRequest
+	70,  // 133: dieter.v1.DieterService.PollConversation:input_type -> dieter.v1.PollConversationRequest
+	69,  // 134: dieter.v1.DieterService.WatchConversation:input_type -> dieter.v1.WatchConversationRequest
+	72,  // 135: dieter.v1.DieterService.GetToolOutput:input_type -> dieter.v1.GetToolOutputRequest
+	74,  // 136: dieter.v1.DieterService.SendMessage:input_type -> dieter.v1.SendMessageRequest
+	76,  // 137: dieter.v1.DieterService.AddComment:input_type -> dieter.v1.AddCommentRequest
+	77,  // 138: dieter.v1.DieterService.MoveCard:input_type -> dieter.v1.MoveCardRequest
+	78,  // 139: dieter.v1.DieterService.StartCard:input_type -> dieter.v1.StartCardRequest
+	80,  // 140: dieter.v1.DieterService.SetCardLabels:input_type -> dieter.v1.SetCardLabelsRequest
+	67,  // 141: dieter.v1.DieterService.CancelCard:input_type -> dieter.v1.GetCardRequest
+	81,  // 142: dieter.v1.DieterService.RenameCard:input_type -> dieter.v1.RenameCardRequest
+	82,  // 143: dieter.v1.DieterService.UpdateCard:input_type -> dieter.v1.UpdateCardRequest
+	83,  // 144: dieter.v1.DieterService.ArchiveCard:input_type -> dieter.v1.ArchiveCardRequest
+	84,  // 145: dieter.v1.DieterService.PinChat:input_type -> dieter.v1.PinChatRequest
+	85,  // 146: dieter.v1.DieterService.ListFiles:input_type -> dieter.v1.ListFilesRequest
+	88,  // 147: dieter.v1.DieterService.ReadFile:input_type -> dieter.v1.ReadFileRequest
+	112, // 148: dieter.v1.DieterService.SaveFile:input_type -> dieter.v1.SaveFileRequest
+	113, // 149: dieter.v1.DieterService.CreateFile:input_type -> dieter.v1.CreateFileRequest
+	114, // 150: dieter.v1.DieterService.MoveFile:input_type -> dieter.v1.MoveFileRequest
+	116, // 151: dieter.v1.DieterService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
+	92,  // 152: dieter.v1.DieterService.ListTerminals:input_type -> dieter.v1.ListTerminalsRequest
+	94,  // 153: dieter.v1.DieterService.CreateTerminal:input_type -> dieter.v1.CreateTerminalRequest
+	95,  // 154: dieter.v1.DieterService.WatchTerminal:input_type -> dieter.v1.WatchTerminalRequest
+	97,  // 155: dieter.v1.DieterService.WriteTerminal:input_type -> dieter.v1.TerminalInputRequest
+	98,  // 156: dieter.v1.DieterService.ResizeTerminal:input_type -> dieter.v1.ResizeTerminalRequest
+	99,  // 157: dieter.v1.DieterService.RenameTerminal:input_type -> dieter.v1.RenameTerminalRequest
+	91,  // 158: dieter.v1.DieterService.CloseTerminal:input_type -> dieter.v1.TerminalRef
+	137, // 159: dieter.v1.DieterService.GetRemoteDesktopCapabilities:input_type -> google.protobuf.Empty
+	137, // 160: dieter.v1.DieterService.GetRemoteDesktopSettings:input_type -> google.protobuf.Empty
+	103, // 161: dieter.v1.DieterService.UpdateRemoteDesktopSettings:input_type -> dieter.v1.UpdateRemoteDesktopSettingsRequest
+	106, // 162: dieter.v1.DieterService.StartRemoteDesktop:input_type -> dieter.v1.StartRemoteDesktopRequest
+	111, // 163: dieter.v1.DieterService.SendRemoteDesktopSignal:input_type -> dieter.v1.RemoteDesktopSignal
+	107, // 164: dieter.v1.DieterService.CloseRemoteDesktop:input_type -> dieter.v1.RemoteDesktopRef
+	117, // 165: dieter.v1.DieterService.ListSchedules:input_type -> dieter.v1.ListSchedulesRequest
+	122, // 166: dieter.v1.DieterService.PreviewSchedule:input_type -> dieter.v1.PreviewScheduleRequest
+	121, // 167: dieter.v1.DieterService.CreateSchedule:input_type -> dieter.v1.SaveScheduleRequest
+	121, // 168: dieter.v1.DieterService.UpdateSchedule:input_type -> dieter.v1.SaveScheduleRequest
+	124, // 169: dieter.v1.DieterService.DeleteSchedule:input_type -> dieter.v1.ScheduleRef
+	124, // 170: dieter.v1.DieterService.RunSchedule:input_type -> dieter.v1.ScheduleRef
+	125, // 171: dieter.v1.DieterService.SetScheduleEnabled:input_type -> dieter.v1.SetScheduleEnabledRequest
+	126, // 172: dieter.v1.DieterService.ListScheduleRuns:input_type -> dieter.v1.ListScheduleRunsRequest
+	0,   // 173: dieter.v1.DieterService.Health:output_type -> dieter.v1.HealthResponse
+	1,   // 174: dieter.v1.DieterService.GetRuntimeStatus:output_type -> dieter.v1.RuntimeStatus
+	4,   // 175: dieter.v1.DieterService.GetState:output_type -> dieter.v1.State
+	4,   // 176: dieter.v1.DieterService.WatchState:output_type -> dieter.v1.State
+	10,  // 177: dieter.v1.DieterService.WatchSync:output_type -> dieter.v1.SyncFrame
+	33,  // 178: dieter.v1.DieterService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
+	40,  // 179: dieter.v1.DieterService.GetSettings:output_type -> dieter.v1.Settings
+	41,  // 180: dieter.v1.DieterService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
+	40,  // 181: dieter.v1.DieterService.UpdateSettings:output_type -> dieter.v1.Settings
+	43,  // 182: dieter.v1.DieterService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
+	43,  // 183: dieter.v1.DieterService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
+	13,  // 184: dieter.v1.DieterService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
+	14,  // 185: dieter.v1.DieterService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
+	47,  // 186: dieter.v1.DieterService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
+	51,  // 187: dieter.v1.DieterService.ListDirectories:output_type -> dieter.v1.DirectoryListing
+	53,  // 188: dieter.v1.DieterService.CreateProject:output_type -> dieter.v1.CreateProjectResponse
+	13,  // 189: dieter.v1.DieterService.UpdateProject:output_type -> dieter.v1.Project
+	13,  // 190: dieter.v1.DieterService.ArchiveProject:output_type -> dieter.v1.Project
+	11,  // 191: dieter.v1.DieterService.ListArchivedProjects:output_type -> dieter.v1.ProjectsResponse
+	14,  // 192: dieter.v1.DieterService.CreateBoard:output_type -> dieter.v1.Board
+	14,  // 193: dieter.v1.DieterService.RenameBoard:output_type -> dieter.v1.Board
+	14,  // 194: dieter.v1.DieterService.SetBoardArchivePolicy:output_type -> dieter.v1.Board
+	12,  // 195: dieter.v1.DieterService.ListArchivedCards:output_type -> dieter.v1.CardsResponse
+	14,  // 196: dieter.v1.DieterService.CreateBoardLabel:output_type -> dieter.v1.Board
+	14,  // 197: dieter.v1.DieterService.UpdateBoardLabel:output_type -> dieter.v1.Board
+	14,  // 198: dieter.v1.DieterService.DeleteBoardLabel:output_type -> dieter.v1.Board
+	17,  // 199: dieter.v1.DieterService.CreateCard:output_type -> dieter.v1.Card
+	17,  // 200: dieter.v1.DieterService.CreateChat:output_type -> dieter.v1.Card
+	66,  // 201: dieter.v1.DieterService.ListChats:output_type -> dieter.v1.ChatsResponse
+	19,  // 202: dieter.v1.DieterService.GetCard:output_type -> dieter.v1.CardDetail
+	32,  // 203: dieter.v1.DieterService.GetConversation:output_type -> dieter.v1.ConversationSnapshot
+	71,  // 204: dieter.v1.DieterService.PollConversation:output_type -> dieter.v1.ConversationUpdate
+	71,  // 205: dieter.v1.DieterService.WatchConversation:output_type -> dieter.v1.ConversationUpdate
+	73,  // 206: dieter.v1.DieterService.GetToolOutput:output_type -> dieter.v1.ToolOutput
+	75,  // 207: dieter.v1.DieterService.SendMessage:output_type -> dieter.v1.SendMessageResponse
+	20,  // 208: dieter.v1.DieterService.AddComment:output_type -> dieter.v1.Comment
+	17,  // 209: dieter.v1.DieterService.MoveCard:output_type -> dieter.v1.Card
+	79,  // 210: dieter.v1.DieterService.StartCard:output_type -> dieter.v1.StartCardResponse
+	17,  // 211: dieter.v1.DieterService.SetCardLabels:output_type -> dieter.v1.Card
+	137, // 212: dieter.v1.DieterService.CancelCard:output_type -> google.protobuf.Empty
+	17,  // 213: dieter.v1.DieterService.RenameCard:output_type -> dieter.v1.Card
+	17,  // 214: dieter.v1.DieterService.UpdateCard:output_type -> dieter.v1.Card
+	17,  // 215: dieter.v1.DieterService.ArchiveCard:output_type -> dieter.v1.Card
+	17,  // 216: dieter.v1.DieterService.PinChat:output_type -> dieter.v1.Card
+	87,  // 217: dieter.v1.DieterService.ListFiles:output_type -> dieter.v1.FileList
+	89,  // 218: dieter.v1.DieterService.ReadFile:output_type -> dieter.v1.FileDocument
+	89,  // 219: dieter.v1.DieterService.SaveFile:output_type -> dieter.v1.FileDocument
+	86,  // 220: dieter.v1.DieterService.CreateFile:output_type -> dieter.v1.FileEntry
+	115, // 221: dieter.v1.DieterService.MoveFile:output_type -> dieter.v1.MoveFileResponse
+	137, // 222: dieter.v1.DieterService.DeleteFile:output_type -> google.protobuf.Empty
+	93,  // 223: dieter.v1.DieterService.ListTerminals:output_type -> dieter.v1.TerminalsResponse
+	90,  // 224: dieter.v1.DieterService.CreateTerminal:output_type -> dieter.v1.Terminal
+	96,  // 225: dieter.v1.DieterService.WatchTerminal:output_type -> dieter.v1.TerminalFrame
+	90,  // 226: dieter.v1.DieterService.WriteTerminal:output_type -> dieter.v1.Terminal
+	90,  // 227: dieter.v1.DieterService.ResizeTerminal:output_type -> dieter.v1.Terminal
+	90,  // 228: dieter.v1.DieterService.RenameTerminal:output_type -> dieter.v1.Terminal
+	137, // 229: dieter.v1.DieterService.CloseTerminal:output_type -> google.protobuf.Empty
+	100, // 230: dieter.v1.DieterService.GetRemoteDesktopCapabilities:output_type -> dieter.v1.RemoteDesktopCapabilities
+	102, // 231: dieter.v1.DieterService.GetRemoteDesktopSettings:output_type -> dieter.v1.RemoteDesktopSettings
+	102, // 232: dieter.v1.DieterService.UpdateRemoteDesktopSettings:output_type -> dieter.v1.RemoteDesktopSettings
+	111, // 233: dieter.v1.DieterService.StartRemoteDesktop:output_type -> dieter.v1.RemoteDesktopSignal
+	137, // 234: dieter.v1.DieterService.SendRemoteDesktopSignal:output_type -> google.protobuf.Empty
+	137, // 235: dieter.v1.DieterService.CloseRemoteDesktop:output_type -> google.protobuf.Empty
+	118, // 236: dieter.v1.DieterService.ListSchedules:output_type -> dieter.v1.SchedulesResponse
+	123, // 237: dieter.v1.DieterService.PreviewSchedule:output_type -> dieter.v1.SchedulePreview
+	119, // 238: dieter.v1.DieterService.CreateSchedule:output_type -> dieter.v1.Schedule
+	119, // 239: dieter.v1.DieterService.UpdateSchedule:output_type -> dieter.v1.Schedule
+	137, // 240: dieter.v1.DieterService.DeleteSchedule:output_type -> google.protobuf.Empty
+	127, // 241: dieter.v1.DieterService.RunSchedule:output_type -> dieter.v1.ScheduleRun
+	119, // 242: dieter.v1.DieterService.SetScheduleEnabled:output_type -> dieter.v1.Schedule
+	128, // 243: dieter.v1.DieterService.ListScheduleRuns:output_type -> dieter.v1.ScheduleRunsResponse
+	173, // [173:244] is the sub-list for method output_type
+	102, // [102:173] is the sub-list for method input_type
+	102, // [102:102] is the sub-list for extension type_name
+	102, // [102:102] is the sub-list for extension extendee
+	0,   // [0:102] is the sub-list for field type_name
 }
 
 func init() { file_dieter_v1_dieter_proto_init() }
@@ -10254,13 +11450,21 @@ func file_dieter_v1_dieter_proto_init() {
 	file_dieter_v1_dieter_proto_msgTypes[70].OneofWrappers = []any{}
 	file_dieter_v1_dieter_proto_msgTypes[77].OneofWrappers = []any{}
 	file_dieter_v1_dieter_proto_msgTypes[90].OneofWrappers = []any{}
+	file_dieter_v1_dieter_proto_msgTypes[111].OneofWrappers = []any{
+		(*RemoteDesktopSignal_Binding)(nil),
+		(*RemoteDesktopSignal_Description)(nil),
+		(*RemoteDesktopSignal_Candidate)(nil),
+		(*RemoteDesktopSignal_State)(nil),
+		(*RemoteDesktopSignal_Error)(nil),
+		(*RemoteDesktopSignal_LeaseHeartbeat)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_v1_dieter_proto_rawDesc), len(file_dieter_v1_dieter_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   124,
+			NumMessages:   136,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

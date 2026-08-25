@@ -16,6 +16,7 @@ import (
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/scheduler"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/terminal"
@@ -24,14 +25,15 @@ import (
 )
 
 type Server struct {
-	store     *store.Store
-	app       *app.Service
-	schedules *scheduler.Manager
-	log       *slog.Logger
-	mux       *http.ServeMux
-	filesMu   sync.RWMutex
-	auth      *authManager
-	terminals *terminal.Manager
+	store         *store.Store
+	app           *app.Service
+	schedules     *scheduler.Manager
+	log           *slog.Logger
+	mux           *http.ServeMux
+	filesMu       sync.RWMutex
+	auth          *authManager
+	terminals     *terminal.Manager
+	remoteDesktop *remotedesktop.Manager
 }
 
 func New(data *store.Store, logger *slog.Logger) *Server {
@@ -43,6 +45,14 @@ func NewWithRunner(data *store.Store, logger *slog.Logger, runner harness.Runner
 	return newWithAuth(data, logger, runner, manager)
 }
 
+func NewWithRemoteDesktop(data *store.Store, logger *slog.Logger, runner harness.Runner, remoteDesktop *remotedesktop.Manager) *Server {
+	application := NewWithRunner(data, logger, runner)
+	if remoteDesktop != nil {
+		application.remoteDesktop = remoteDesktop
+	}
+	return application
+}
+
 func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, manager *authManager) *Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -52,6 +62,7 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 	s := &Server{
 		store: data, app: service, schedules: scheduler.New(data, service), log: logger,
 		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(),
+		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
 	}
 	manager.register(s.mux)
 	path, handler := dieterv1connect.NewDieterServiceHandler(&connectAPI{core: &grpcAPI{server: s}})
@@ -129,12 +140,15 @@ func Listen(addr string, data *store.Store, runner harness.Runner, logger *slog.
 // ListenDaemon runs Board's machine-local data plane without public OAuth.
 // Authentication for remote clients is enforced by the gateway or the
 // daemon's direct TLS listener, never by this loopback-only endpoint.
-func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger) error {
+func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop ...*remotedesktop.Manager) error {
 	manager, err := newAuthManager(authConfig{}, data)
 	if err != nil {
 		return err
 	}
 	application := newWithAuth(data, logger, runner, manager)
+	if len(remoteDesktop) > 0 && remoteDesktop[0] != nil {
+		application.remoteDesktop = remoteDesktop[0]
+	}
 	return run(ctx, addr, data, application, logger)
 }
 
@@ -177,6 +191,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 		logger.Warn("some active agent turns could not be suspended for restart", "error", err)
 	}
 	application.terminals.Shutdown(shutdownCtx)
+	application.remoteDesktop.Shutdown(shutdownCtx)
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		_ = httpServer.Close()
 	}

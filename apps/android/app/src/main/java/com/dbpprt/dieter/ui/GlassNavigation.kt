@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -78,6 +79,7 @@ fun GlassNavigationDock(
     onSettings: () -> Unit,
 ) {
     val activeChats = state.chats.count { isActiveRuntime(it.runtime) }
+    val projectSurfacesEnabled = projectScopedNavigationEnabled(state)
     Box(
         Modifier.fillMaxWidth().navigationBarsPadding().height(100.dp).testTag("glass-navigation"),
         contentAlignment = Alignment.BottomCenter,
@@ -109,6 +111,7 @@ fun GlassNavigationDock(
                         item = item,
                         selected = state.destination == item.destination,
                         badge = if (index == 0 && activeChats > 0) activeChats else 0,
+                        enabled = projectSurfacesEnabled || (item.destination != Destination.FILES && item.destination != Destination.SCHEDULES),
                         onClick = { onNavigate(item.destination) },
                         modifier = Modifier.weight(1f),
                     )
@@ -153,13 +156,14 @@ private fun GlassDockItem(
     item: GlassDestination,
     selected: Boolean,
     badge: Int,
+    enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier.fillMaxHeight()
+        modifier.fillMaxHeight().alpha(if (enabled) 1f else 0.38f)
             .semantics { role = Role.Tab }
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.BottomCenter,
     ) {
         if (selected) {

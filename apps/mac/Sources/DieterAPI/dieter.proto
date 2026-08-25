@@ -8,6 +8,7 @@ option java_outer_classname = "DieterProto";
 option java_package = "com.dbpprt.dieter.v1";
 
 import "google/protobuf/empty.proto";
+import "gateway.proto";
 
 service DieterService {
   rpc Health(google.protobuf.Empty) returns (HealthResponse);
@@ -80,6 +81,19 @@ service DieterService {
   rpc ResizeTerminal(ResizeTerminalRequest) returns (Terminal);
   rpc RenameTerminal(RenameTerminalRequest) returns (Terminal);
   rpc CloseTerminal(TerminalRef) returns (google.protobuf.Empty);
+
+  rpc GetRemoteDesktopCapabilities(google.protobuf.Empty)
+      returns (RemoteDesktopCapabilities);
+  rpc GetRemoteDesktopSettings(google.protobuf.Empty)
+      returns (RemoteDesktopSettings);
+  rpc UpdateRemoteDesktopSettings(UpdateRemoteDesktopSettingsRequest)
+      returns (RemoteDesktopSettings);
+  rpc StartRemoteDesktop(StartRemoteDesktopRequest)
+      returns (stream RemoteDesktopSignal);
+  rpc SendRemoteDesktopSignal(RemoteDesktopSignal)
+      returns (google.protobuf.Empty);
+  rpc CloseRemoteDesktop(RemoteDesktopRef)
+      returns (google.protobuf.Empty);
 
   rpc ListSchedules(ListSchedulesRequest) returns (SchedulesResponse);
   rpc PreviewSchedule(PreviewScheduleRequest) returns (SchedulePreview);
@@ -908,6 +922,115 @@ message ResizeTerminalRequest {
 message RenameTerminalRequest {
   string terminal_id = 1;
   string name = 2;
+}
+
+message RemoteDesktopCapabilities {
+  string platform = 1;
+  bool graphical_session_active = 2;
+  bool enabled = 3;
+  bool ready = 4;
+  string unavailable_reason = 5;
+  string helper_version = 6;
+  string capture_permission = 7;
+  string control_permission = 8;
+  repeated RemoteDesktopDisplay displays = 9;
+  repeated string codecs = 10;
+  bool hardware_encoder_available = 11;
+  bool control_supported = 12;
+  bool clipboard_supported = 13;
+  bool audio_supported = 14;
+  bool file_transfer_supported = 15;
+  bool active_session = 16;
+}
+
+message RemoteDesktopDisplay {
+  string id = 1;
+  string name = 2;
+  int32 logical_width = 3;
+  int32 logical_height = 4;
+  int32 physical_width = 5;
+  int32 physical_height = 6;
+  double scale = 7;
+  int32 rotation = 8;
+  bool primary = 9;
+}
+
+message RemoteDesktopSettings {
+  bool enabled = 1;
+  bool control_enabled = 2;
+  string updated_at = 3;
+}
+
+message UpdateRemoteDesktopSettingsRequest {
+  bool enabled = 1;
+  bool control_enabled = 2;
+}
+
+message RemoteDesktopSessionDescription {
+  string type = 1;
+  string sdp = 2;
+}
+
+message RemoteDesktopICECandidate {
+  string candidate = 1;
+  string sdp_mid = 2;
+  int32 sdp_mline_index = 3;
+  string username_fragment = 4;
+}
+
+message StartRemoteDesktopRequest {
+  string client_nonce = 1;
+  dieter.gateway.v1.RTCConfiguration rtc_configuration = 2;
+  RemoteDesktopSessionDescription offer = 3;
+  repeated RemoteDesktopICECandidate initial_candidates = 4;
+  string display_id = 5;
+  bool control = 6;
+  int32 max_width = 7;
+  int32 max_height = 8;
+  int32 max_fps = 9;
+  int32 max_bitrate_kbps = 10;
+}
+
+message RemoteDesktopRef {
+  string session_id = 1;
+}
+
+message RemoteDesktopSessionBinding {
+  string client_nonce = 1;
+  string helper_dtls_fingerprint = 2;
+  string expires_at = 3;
+  bytes offer_sha256 = 4;
+  bytes daemon_signature = 5;
+}
+
+message RemoteDesktopSessionState {
+  string phase = 1;
+  string reason = 2;
+  string route = 3;
+  string codec = 4;
+  int32 width = 5;
+  int32 height = 6;
+  int32 fps = 7;
+  int32 bitrate_kbps = 8;
+}
+
+message RemoteDesktopSessionError {
+  string code = 1;
+  string message = 2;
+  bool recoverable = 3;
+}
+
+message RemoteDesktopSignal {
+  string session_id = 1;
+  uint64 sequence = 2;
+  oneof payload {
+    RemoteDesktopSessionBinding binding = 3;
+    RemoteDesktopSessionDescription description = 4;
+    RemoteDesktopICECandidate candidate = 5;
+    RemoteDesktopSessionState state = 6;
+    RemoteDesktopSessionError error = 7;
+    google.protobuf.Empty lease_heartbeat = 8;
+  }
 }
 
 message SaveFileRequest {

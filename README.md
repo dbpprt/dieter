@@ -150,6 +150,15 @@ replay baseline, so clients can resume after a disconnect without making the
 gateway store terminal state. Typing and resize calls use the relay's priority
 unary path independently of the long-lived output stream.
 
+Screens use the gateway only for bounded WebRTC signaling and short-lived ICE
+configuration bound to the authenticated operator and target daemon. The
+daemon hosts a view-only VP8 peer with Pion; media travels directly over
+ICE/DTLS/SRTP or through a separately configured TURN server, never through
+the Dieter gateway. The Mac verifies an Ed25519 binding between the offer,
+daemon DTLS fingerprint, session, nonce, and lease before applying the answer.
+Screen capture starts only after WebRTC connects and stops when its renewable
+lease expires. The first slice allows one explicitly enabled viewer per daemon.
+
 ## Requirements
 
 - Go 1.26.5 or newer
@@ -256,6 +265,14 @@ The direct listener does not accept the gateway session itself. It requires a
 short-lived token targeted to this daemon and serves the enrolled daemon
 certificate. Do not advertise raw port 4242; that port stays loopback-only.
 
+The first Screens host requires FFmpeg with `libvpx` in the daemon's graphical
+user session. It captures the primary display by default after sharing is
+enabled from the Mac app. `DIETER_REMOTE_DESKTOP_FFMPEG` selects another FFmpeg
+binary and `DIETER_REMOTE_DESKTOP_DISPLAY` selects another capture source;
+`DIETER_REMOTE_DESKTOP_SOURCE=synthetic` is reserved for isolated transport
+diagnostics. Capture is lazy and runs only while an admitted WebRTC session is
+connected.
+
 ## Run the gateway
 
 Register a GitHub OAuth App with:
@@ -291,6 +308,13 @@ The public origin intentionally serves only:
 - authenticated `dieter.v1.DieterService` relay calls.
 
 All other paths, including `/`, return 404.
+
+Remote viewing can use `DIETER_RTC_STUN_URLS` and
+`DIETER_RTC_TURN_URLS` as comma-separated ICE server URLs. When TURN URLs are
+configured, set `DIETER_RTC_TURN_SECRET` to a hex-encoded secret of at least 32
+bytes shared with coturn's REST authentication; the gateway derives ephemeral
+credentials instead of storing static TURN passwords. `DIETER_RTC_TTL` controls
+the signed configuration lifetime and defaults to five minutes.
 
 ## Native clients
 
@@ -389,7 +413,8 @@ git diff --check
 
 `internal/gateway/e2e_test.go` runs a real gateway, enrollment, signed daemon
 link, local Dieter data plane, unary relay, streaming relay, persistent
-terminal reconnect, token exchange, and direct TLS call in one test.
+terminal reconnect, token exchange, direct TLS call, and relayed WebRTC
+admission that receives a peer-to-peer synthetic VP8 frame in one test.
 
 ## License
 

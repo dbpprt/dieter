@@ -8,6 +8,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
@@ -17,6 +18,11 @@ import (
 )
 
 const maxRelayPayload = 16 << 20
+
+const (
+	daemonHeartbeatLease      = 30 * time.Second
+	daemonHeartbeatLeaseCheck = time.Second
+)
 
 type Hub struct {
 	gatewayv1.UnimplementedDaemonLinkServiceServer
@@ -38,6 +44,7 @@ type daemonLink struct {
 	closeOnce  sync.Once
 	mu         sync.RWMutex
 	streams    map[uint64]chan *gatewayv1.DaemonLinkFrame
+	lastSeenAt atomic.Int64
 }
 
 type relayStream struct {
@@ -80,10 +87,12 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 		return status.Error(codes.Unauthenticated, "daemon challenge response is invalid")
 	}
 	routes, _ := json.Marshal(hello.GetDirectCandidates())
-	if err := h.store.MarkDaemonSeen(identity, hello.GetVersion(), routes); err != nil {
+	remoteDesktop, _ := json.Marshal(hello.GetRemoteDesktop())
+	if err := h.store.MarkDaemonSeen(identity, hello.GetVersion(), routes, remoteDesktop); err != nil {
 		return status.Error(codes.Unauthenticated, "daemon is revoked")
 	}
 	link := &daemonLink{id: identity, generation: record.Generation, send: make(chan *gatewayv1.DaemonLinkFrame, 8), done: make(chan struct{}), streams: map[uint64]chan *gatewayv1.DaemonLinkFrame{}}
+	link.markSeen(time.Now())
 	h.register(link)
 	defer h.unregister(link)
 
@@ -116,10 +125,12 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 				recvErr <- errors.New("daemon relay frame exceeds 16 MiB")
 				return
 			}
+			link.markSeen(time.Now())
 			switch frame.GetKind() {
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT:
 				routes, _ := json.Marshal(frame.GetDirectCandidates())
-				if err := h.store.MarkDaemonSeen(identity, frame.GetVersion(), routes); err != nil {
+				remoteDesktop, _ := json.Marshal(frame.GetRemoteDesktop())
+				if err := h.store.MarkDaemonSeen(identity, frame.GetVersion(), routes, remoteDesktop); err != nil {
 					recvErr <- err
 					return
 				}
@@ -131,16 +142,24 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 			}
 		}
 	}()
-	select {
-	case err := <-sendErr:
-		return err
-	case err := <-recvErr:
-		if errors.Is(err, io.EOF) {
-			return nil
+	lease := time.NewTicker(daemonHeartbeatLeaseCheck)
+	defer lease.Stop()
+	for {
+		select {
+		case err := <-sendErr:
+			return err
+		case err := <-recvErr:
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case <-lease.C:
+			if !link.isAlive(time.Now()) {
+				return status.Error(codes.Unavailable, "daemon heartbeat lease expired")
+			}
 		}
-		return err
-	case <-stream.Context().Done():
-		return stream.Context().Err()
 	}
 }
 
@@ -179,7 +198,8 @@ func (h *Hub) Revision() uint64 { return h.revision.Load() }
 func (h *Hub) Online(id string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.links[id] != nil
+	link := h.links[id]
+	return link != nil && link.isAlive(time.Now())
 }
 
 func (h *Hub) CloseDaemon(id string) {
@@ -195,7 +215,7 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 	h.mu.RLock()
 	link := h.links[daemonID]
 	h.mu.RUnlock()
-	if link == nil {
+	if link == nil || !link.isAlive(time.Now()) {
 		return nil, status.Error(14, "daemon is offline")
 	}
 	id := h.nextID.Add(1)
@@ -233,6 +253,15 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		}
 	}()
 	return result, nil
+}
+
+func (l *daemonLink) markSeen(now time.Time) {
+	l.lastSeenAt.Store(now.UnixNano())
+}
+
+func (l *daemonLink) isAlive(now time.Time) bool {
+	lastSeenAt := l.lastSeenAt.Load()
+	return lastSeenAt > 0 && now.Sub(time.Unix(0, lastSeenAt)) < daemonHeartbeatLease
 }
 
 func (s *relayStream) Recv() (*gatewayv1.DaemonLinkFrame, error) {

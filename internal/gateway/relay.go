@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -69,7 +70,7 @@ func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	// Only propagate a deadline when the client actually supplied one.
 	deadlineUnixMillis := relayDeadlineUnixMillis(ctx)
 	assertion, err := r.keys.SignDelegation(r.config.PublicURL.String(), DelegationClaims{
-		Audience: "board-daemon:" + record.ID, Subject: "github:" + base64.RawURLEncoding.EncodeToString([]byte(principal.Login)), ID: randomID("relay_"),
+		Audience: "board-daemon:" + record.ID, Subject: fmt.Sprintf("github:%d", principal.GitHubID), ID: randomID("relay_"),
 		RequestID: requestID, Method: method, PayloadHash: base64.RawURLEncoding.EncodeToString(digest[:]), Generation: record.Generation,
 		IssuedAt: now.Unix(), ExpiresAt: now.Add(30 * time.Second).Unix(),
 	})

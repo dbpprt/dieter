@@ -68,18 +68,19 @@ type EnrollmentRecord struct {
 }
 
 type DaemonRecord struct {
-	ID          string
-	Name        string
-	GitHubID    int64
-	Login       string
-	PublicKey   []byte
-	Certificate []byte
-	Generation  uint64
-	Revoked     bool
-	CreatedAt   time.Time
-	LastSeenAt  time.Time
-	Version     string
-	RoutesJSON  []byte
+	ID                string
+	Name              string
+	GitHubID          int64
+	Login             string
+	PublicKey         []byte
+	Certificate       []byte
+	Generation        uint64
+	Revoked           bool
+	CreatedAt         time.Time
+	LastSeenAt        time.Time
+	Version           string
+	RoutesJSON        []byte
+	RemoteDesktopJSON []byte
 }
 
 func DefaultRoot() string {
@@ -156,16 +157,50 @@ CREATE TABLE IF NOT EXISTS daemons (
   created_at TEXT NOT NULL,
   last_seen_at TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '',
-  routes_json BLOB NOT NULL DEFAULT '[]'
+  routes_json BLOB NOT NULL DEFAULT '[]',
+  remote_desktop_json BLOB NOT NULL DEFAULT '{}'
 );
 `)
 	if err != nil {
 		return fmt.Errorf("initialize gateway database: %w", err)
 	}
+	if err := s.ensureDaemonColumn("remote_desktop_json", `BLOB NOT NULL DEFAULT '{}'`); err != nil {
+		return fmt.Errorf("migrate gateway database: %w", err)
+	}
 	if info, statErr := os.Stat(filepath.Join(s.Root, "gateway.db")); statErr == nil && info.Mode().Perm() != 0o600 {
 		_ = os.Chmod(filepath.Join(s.Root, "gateway.db"), 0o600)
 	}
 	return nil
+}
+
+func (s *Store) ensureDaemonColumn(name, declaration string) error {
+	rows, err := s.DB.Query(`PRAGMA table_info(daemons)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var index int
+		var column, columnType string
+		var notNull, primaryKey int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&index, &column, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return err
+		}
+		if column == name {
+			found = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	// name and declaration are internal constants, never request data.
+	_, err = s.DB.Exec(`ALTER TABLE daemons ADD COLUMN ` + name + ` ` + declaration)
+	return err
 }
 
 func (s *Store) AuthState() (AuthState, error) {
@@ -293,8 +328,8 @@ func (s *Store) Daemon(id string) (DaemonRecord, error) {
 	var generation int64
 	var revoked int
 	var created, lastSeen string
-	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, routes_json FROM daemons WHERE id=?`, id).
-		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &record.RoutesJSON)
+	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, routes_json, remote_desktop_json FROM daemons WHERE id=?`, id).
+		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &record.RoutesJSON, &record.RemoteDesktopJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return record, errors.New("daemon not found")
 	}
@@ -362,8 +397,8 @@ func (s *Store) RevokeDaemon(id string, githubID int64) (uint64, error) {
 	return next, err
 }
 
-func (s *Store) MarkDaemonSeen(id, version string, routes []byte) error {
-	result, err := s.DB.Exec(`UPDATE daemons SET last_seen_at=?, version=?, routes_json=? WHERE id=? AND revoked=0`, time.Now().UTC().Format(time.RFC3339Nano), version, routes, id)
+func (s *Store) MarkDaemonSeen(id, version string, routes, remoteDesktop []byte) error {
+	result, err := s.DB.Exec(`UPDATE daemons SET last_seen_at=?, version=?, routes_json=?, remote_desktop_json=? WHERE id=? AND revoked=0`, time.Now().UTC().Format(time.RFC3339Nano), version, routes, remoteDesktop, id)
 	if err != nil {
 		return err
 	}

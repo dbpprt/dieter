@@ -30,6 +30,7 @@ const (
 	GatewayService_RevokeDaemon_FullMethodName             = "/dieter.gateway.v1.GatewayService/RevokeDaemon"
 	GatewayService_ExchangeDaemonToken_FullMethodName      = "/dieter.gateway.v1.GatewayService/ExchangeDaemonToken"
 	GatewayService_ResolveDaemonRoute_FullMethodName       = "/dieter.gateway.v1.GatewayService/ResolveDaemonRoute"
+	GatewayService_GetRTCConfiguration_FullMethodName      = "/dieter.gateway.v1.GatewayService/GetRTCConfiguration"
 )
 
 // GatewayServiceClient is the client API for GatewayService service.
@@ -50,6 +51,10 @@ type GatewayServiceClient interface {
 	RevokeDaemon(ctx context.Context, in *DaemonRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ExchangeDaemonToken(ctx context.Context, in *ExchangeDaemonTokenRequest, opts ...grpc.CallOption) (*DaemonAccessToken, error)
 	ResolveDaemonRoute(ctx context.Context, in *DaemonRef, opts ...grpc.CallOption) (*DaemonRoute, error)
+	// GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+	// The signed envelope is verified by the daemon before a desktop session is
+	// admitted; the gateway never participates in the WebRTC media path.
+	GetRTCConfiguration(ctx context.Context, in *DaemonRef, opts ...grpc.CallOption) (*RTCConfiguration, error)
 }
 
 type gatewayServiceClient struct {
@@ -169,6 +174,16 @@ func (c *gatewayServiceClient) ResolveDaemonRoute(ctx context.Context, in *Daemo
 	return out, nil
 }
 
+func (c *gatewayServiceClient) GetRTCConfiguration(ctx context.Context, in *DaemonRef, opts ...grpc.CallOption) (*RTCConfiguration, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RTCConfiguration)
+	err := c.cc.Invoke(ctx, GatewayService_GetRTCConfiguration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GatewayServiceServer is the server API for GatewayService service.
 // All implementations must embed UnimplementedGatewayServiceServer
 // for forward compatibility.
@@ -187,6 +202,10 @@ type GatewayServiceServer interface {
 	RevokeDaemon(context.Context, *DaemonRef) (*emptypb.Empty, error)
 	ExchangeDaemonToken(context.Context, *ExchangeDaemonTokenRequest) (*DaemonAccessToken, error)
 	ResolveDaemonRoute(context.Context, *DaemonRef) (*DaemonRoute, error)
+	// GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+	// The signed envelope is verified by the daemon before a desktop session is
+	// admitted; the gateway never participates in the WebRTC media path.
+	GetRTCConfiguration(context.Context, *DaemonRef) (*RTCConfiguration, error)
 	mustEmbedUnimplementedGatewayServiceServer()
 }
 
@@ -226,6 +245,9 @@ func (UnimplementedGatewayServiceServer) ExchangeDaemonToken(context.Context, *E
 }
 func (UnimplementedGatewayServiceServer) ResolveDaemonRoute(context.Context, *DaemonRef) (*DaemonRoute, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveDaemonRoute not implemented")
+}
+func (UnimplementedGatewayServiceServer) GetRTCConfiguration(context.Context, *DaemonRef) (*RTCConfiguration, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRTCConfiguration not implemented")
 }
 func (UnimplementedGatewayServiceServer) mustEmbedUnimplementedGatewayServiceServer() {}
 func (UnimplementedGatewayServiceServer) testEmbeddedByValue()                        {}
@@ -421,6 +443,24 @@ func _GatewayService_ResolveDaemonRoute_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GatewayService_GetRTCConfiguration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DaemonRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GatewayServiceServer).GetRTCConfiguration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GatewayService_GetRTCConfiguration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GatewayServiceServer).GetRTCConfiguration(ctx, req.(*DaemonRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GatewayService_ServiceDesc is the grpc.ServiceDesc for GatewayService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -463,6 +503,10 @@ var GatewayService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveDaemonRoute",
 			Handler:    _GatewayService_ResolveDaemonRoute_Handler,
+		},
+		{
+			MethodName: "GetRTCConfiguration",
+			Handler:    _GatewayService_GetRTCConfiguration_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -5,10 +5,13 @@ import (
 	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha1" // #nosec G505 -- coturn's REST credential protocol requires HMAC-SHA1.
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -20,6 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -240,7 +244,60 @@ func (s *Service) ResolveDaemonRoute(ctx context.Context, request *gatewayv1.Dae
 		return nil, err
 	}
 	daemon := s.protoDaemon(record)
-	return &gatewayv1.DaemonRoute{DaemonId: record.ID, RelayAvailable: daemon.Online, DirectCandidates: daemon.DirectCandidates, Generation: record.Generation, DaemonCaPem: s.keys.DaemonCAPEM}, nil
+	return &gatewayv1.DaemonRoute{DaemonId: record.ID, RelayAvailable: daemon.Online, DirectCandidates: daemon.DirectCandidates, Generation: record.Generation, DaemonCaPem: s.keys.DaemonCAPEM, DaemonCertificatePem: append([]byte(nil), record.Certificate...)}, nil
+}
+
+func (s *Service) GetRTCConfiguration(ctx context.Context, request *gatewayv1.DaemonRef) (*gatewayv1.RTCConfiguration, error) {
+	principal, _ := PrincipalFromContext(ctx)
+	record, err := s.ownedDaemon(request.GetDaemonId(), principal.GitHubID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	expires := now.Add(s.config.RTCTTL)
+	subject := fmt.Sprintf("github:%d", principal.GitHubID)
+	configuration := &gatewayv1.RTCConfiguration{
+		ExpiresAt: expires.Format(time.RFC3339Nano), DaemonId: record.ID,
+		OperatorSubject: subject, ConfigurationId: randomID("rtc_"),
+		DaemonGeneration: record.Generation, IssuedAt: now.Format(time.RFC3339Nano),
+	}
+	if len(s.config.RTCSTUNURLs) > 0 {
+		configuration.IceServers = append(configuration.IceServers, &gatewayv1.RTCIceServer{Urls: append([]string(nil), s.config.RTCSTUNURLs...)})
+	}
+	if len(s.config.RTCTURNURLs) > 0 {
+		username := fmt.Sprintf("%d:dieter:%d:%s", expires.Unix(), principal.GitHubID, record.ID)
+		mac := hmac.New(sha1.New, s.config.RTCTURNSecret) // #nosec G401 -- required by coturn REST authentication.
+		_, _ = mac.Write([]byte(username))
+		configuration.IceServers = append(configuration.IceServers, &gatewayv1.RTCIceServer{
+			Urls: append([]string(nil), s.config.RTCTURNURLs...), Username: username,
+			Credential: base64.StdEncoding.EncodeToString(mac.Sum(nil)),
+		})
+	}
+	digest, err := rtcConfigurationDigest(configuration)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "encode RTC configuration")
+	}
+	envelope, err := s.keys.SignRTCConfiguration(s.config.PublicURL.String(), RTCConfigurationClaims{
+		Audience: "board-daemon:" + record.ID, Subject: subject, ID: configuration.ConfigurationId,
+		ConfigurationHash: base64.RawURLEncoding.EncodeToString(digest), DaemonGeneration: record.Generation,
+		IssuedAt: now.Unix(), ExpiresAt: expires.Unix(),
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, "sign RTC configuration")
+	}
+	configuration.SignedEnvelope = []byte(envelope)
+	return configuration, nil
+}
+
+func rtcConfigurationDigest(configuration *gatewayv1.RTCConfiguration) ([]byte, error) {
+	copy := proto.Clone(configuration).(*gatewayv1.RTCConfiguration)
+	copy.SignedEnvelope = nil
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(copy)
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(raw)
+	return digest[:], nil
 }
 
 func (s *Service) ownedDaemon(id string, githubID int64) (DaemonRecord, error) {
@@ -254,7 +311,9 @@ func (s *Service) ownedDaemon(id string, githubID int64) (DaemonRecord, error) {
 func (s *Service) protoDaemon(record DaemonRecord) *gatewayv1.Daemon {
 	var routes []*gatewayv1.DirectCandidate
 	_ = json.Unmarshal(record.RoutesJSON, &routes)
-	return &gatewayv1.Daemon{Id: record.ID, Name: record.Name, Online: s.hub.Online(record.ID), LastSeenAt: record.LastSeenAt.Format(time.RFC3339Nano), Version: record.Version, Generation: record.Generation, DirectCandidates: routes}
+	remoteDesktop := &gatewayv1.RemoteDesktopPresence{}
+	_ = json.Unmarshal(record.RemoteDesktopJSON, remoteDesktop)
+	return &gatewayv1.Daemon{Id: record.ID, Name: record.Name, Online: s.hub.Online(record.ID), LastSeenAt: record.LastSeenAt.Format(time.RFC3339Nano), Version: record.Version, Generation: record.Generation, DirectCandidates: routes, RemoteDesktop: remoteDesktop}
 }
 
 func (s *Service) credential(record DaemonRecord) *gatewayv1.DaemonCredential {

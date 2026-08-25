@@ -89,6 +89,7 @@ data class EndpointConnection(
     val latencyMs: Long? = null,
     val online: Boolean = true,
     val daemonId: String? = null,
+    val lastSeenAt: String = "",
 )
 
 data class ProjectHost(
@@ -169,6 +170,7 @@ class DieterConnectionManager(
     private var selectedProjectId = ""
     private var appForeground = false
     private var serviceActive = false
+    @Volatile
     private var discoveredEndpoints: List<DieterEndpoint> = emptyList()
 
     private val _state = MutableStateFlow(
@@ -638,6 +640,7 @@ class DieterConnectionManager(
                     launch { monitorGlobalSync(currentGeneration) }
                     launch { drainOutbox(currentGeneration) }
                     launch { watchDaemonPresence(currentGeneration) }
+                    launch { maintainDaemonPresenceLease(currentGeneration) }
                     launch { maintainMachineDirectory(currentGeneration) }
                     launch {
                         val refreshAt = repository.directRefreshAtMillis() ?: return@launch awaitCancellation()
@@ -650,6 +653,7 @@ class DieterConnectionManager(
                 throw cancelled
             } catch (error: Throwable) {
                 if (!shouldRun() || currentGeneration != synchronized(lock) { generation }) return
+                expireStaleDaemonPresence()
                 if (error is StaleSyncStream) {
                     repository.reconnect()
                     retryAttempt = 0
@@ -695,7 +699,7 @@ class DieterConnectionManager(
                 port = origin.port,
                 secure = origin.secure,
                 daemonId = daemon.id,
-                online = daemon.online,
+                online = machinePresenceOnline(daemon.online, daemon.lastSeenAt),
                 lastSeenAt = daemon.lastSeenAt,
                 version = daemon.version,
             )
@@ -848,6 +852,36 @@ class DieterConnectionManager(
         }
     }
 
+    private suspend fun maintainDaemonPresenceLease(currentGeneration: Long) {
+        while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
+            delay(1_000L)
+            expireStaleDaemonPresence()
+        }
+    }
+
+    private fun expireStaleDaemonPresence() {
+        val (expiredIDs, endpoints) = synchronized(lock) {
+            val expired = discoveredEndpoints
+                .filter { it.online && !machinePresenceOnline(true, it.lastSeenAt) }
+                .mapTo(mutableSetOf()) { it.id }
+            if (expired.isEmpty()) return
+            discoveredEndpoints = discoveredEndpoints.map { endpoint ->
+                if (endpoint.id in expired) endpoint.copy(online = false) else endpoint
+            }
+            expired to discoveredEndpoints
+        }
+        _state.update { current ->
+            current.copy(
+                endpointConnections = current.endpointConnections.map { row ->
+                    endpoints.firstOrNull { it.id == row.id }?.let(::endpointRow) ?: row
+                },
+                projectHosts = current.projectHosts.mapValues { (_, host) ->
+                    if (host.endpointId in expiredIDs) host.copy(online = false) else host
+                },
+            )
+        }
+    }
+
     private fun activateProjection(endpoint: DieterEndpoint) {
         if (activeProjectionKey != endpoint.id) {
             activeProjectionKey = endpoint.id
@@ -881,24 +915,28 @@ class DieterConnectionManager(
 
     private fun applyDaemonPresence(daemons: List<com.dbpprt.dieter.gateway.v1.Daemon>) {
         val byID = daemons.associateBy { it.id }
-        discoveredEndpoints = discoveredEndpoints.map { endpoint ->
-            val daemon = endpoint.daemonId?.let(byID::get) ?: return@map endpoint
-            endpoint.copy(
-                label = daemon.name.ifBlank { daemon.id },
-                online = daemon.online,
-                lastSeenAt = daemon.lastSeenAt,
-                version = daemon.version,
-            )
+        val endpoints = synchronized(lock) {
+            discoveredEndpoints = discoveredEndpoints.map { endpoint ->
+                val daemon = endpoint.daemonId?.let(byID::get) ?: return@map endpoint
+                endpoint.copy(
+                    label = daemon.name.ifBlank { daemon.id },
+                    online = machinePresenceOnline(daemon.online, daemon.lastSeenAt),
+                    lastSeenAt = daemon.lastSeenAt,
+                    version = daemon.version,
+                )
+            }
+            discoveredEndpoints
         }
         _state.update { current ->
-            val availability = discoveredEndpoints.associate { it.id to it.online }
+            val availability = endpoints.associate { it.id to it.online }
             current.copy(
                 endpointConnections = current.endpointConnections.map { row ->
-                    val endpoint = discoveredEndpoints.firstOrNull { it.id == row.id } ?: return@map row
+                    val endpoint = endpoints.firstOrNull { it.id == row.id } ?: return@map row
                     when {
                         endpoint.online && endpoint.id == current.endpoint?.id && current.phase in setOf(ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED) -> row.copy(
                             label = endpoint.label,
                             online = endpoint.online,
+                            lastSeenAt = endpoint.lastSeenAt,
                         )
                         else -> endpointRow(endpoint)
                     }
@@ -1544,9 +1582,10 @@ class DieterConnectionManager(
         label = endpoint.label,
         address = endpoint.address,
         phase = if (endpoint.online) EndpointPhase.PENDING else EndpointPhase.FAILED,
-        detail = if (endpoint.online) "Available" else "Offline",
+        detail = if (endpoint.online) "Available" else machinePresenceAgeLabel(endpoint.lastSeenAt)?.let { "Last seen $it" } ?: "Offline",
         online = endpoint.online,
         daemonId = endpoint.daemonId,
+        lastSeenAt = endpoint.lastSeenAt,
     )
 
     private fun loadEndpoints(): List<DieterEndpoint> {

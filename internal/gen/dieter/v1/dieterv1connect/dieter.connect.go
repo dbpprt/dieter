@@ -193,6 +193,24 @@ const (
 	// DieterServiceCloseTerminalProcedure is the fully-qualified name of the DieterService's
 	// CloseTerminal RPC.
 	DieterServiceCloseTerminalProcedure = "/dieter.v1.DieterService/CloseTerminal"
+	// DieterServiceGetRemoteDesktopCapabilitiesProcedure is the fully-qualified name of the
+	// DieterService's GetRemoteDesktopCapabilities RPC.
+	DieterServiceGetRemoteDesktopCapabilitiesProcedure = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
+	// DieterServiceGetRemoteDesktopSettingsProcedure is the fully-qualified name of the DieterService's
+	// GetRemoteDesktopSettings RPC.
+	DieterServiceGetRemoteDesktopSettingsProcedure = "/dieter.v1.DieterService/GetRemoteDesktopSettings"
+	// DieterServiceUpdateRemoteDesktopSettingsProcedure is the fully-qualified name of the
+	// DieterService's UpdateRemoteDesktopSettings RPC.
+	DieterServiceUpdateRemoteDesktopSettingsProcedure = "/dieter.v1.DieterService/UpdateRemoteDesktopSettings"
+	// DieterServiceStartRemoteDesktopProcedure is the fully-qualified name of the DieterService's
+	// StartRemoteDesktop RPC.
+	DieterServiceStartRemoteDesktopProcedure = "/dieter.v1.DieterService/StartRemoteDesktop"
+	// DieterServiceSendRemoteDesktopSignalProcedure is the fully-qualified name of the DieterService's
+	// SendRemoteDesktopSignal RPC.
+	DieterServiceSendRemoteDesktopSignalProcedure = "/dieter.v1.DieterService/SendRemoteDesktopSignal"
+	// DieterServiceCloseRemoteDesktopProcedure is the fully-qualified name of the DieterService's
+	// CloseRemoteDesktop RPC.
+	DieterServiceCloseRemoteDesktopProcedure = "/dieter.v1.DieterService/CloseRemoteDesktop"
 	// DieterServiceListSchedulesProcedure is the fully-qualified name of the DieterService's
 	// ListSchedules RPC.
 	DieterServiceListSchedulesProcedure = "/dieter.v1.DieterService/ListSchedules"
@@ -287,6 +305,12 @@ type DieterServiceClient interface {
 	ResizeTerminal(context.Context, *connect.Request[v1.ResizeTerminalRequest]) (*connect.Response[v1.Terminal], error)
 	RenameTerminal(context.Context, *connect.Request[v1.RenameTerminalRequest]) (*connect.Response[v1.Terminal], error)
 	CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error)
+	GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error)
+	GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error)
+	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
+	StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest]) (*connect.ServerStreamForClient[v1.RemoteDesktopSignal], error)
+	SendRemoteDesktopSignal(context.Context, *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error)
+	CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
 	CreateSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.Schedule], error)
@@ -650,6 +674,42 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("CloseTerminal")),
 			connect.WithClientOptions(opts...),
 		),
+		getRemoteDesktopCapabilities: connect.NewClient[emptypb.Empty, v1.RemoteDesktopCapabilities](
+			httpClient,
+			baseURL+DieterServiceGetRemoteDesktopCapabilitiesProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopCapabilities")),
+			connect.WithClientOptions(opts...),
+		),
+		getRemoteDesktopSettings: connect.NewClient[emptypb.Empty, v1.RemoteDesktopSettings](
+			httpClient,
+			baseURL+DieterServiceGetRemoteDesktopSettingsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		updateRemoteDesktopSettings: connect.NewClient[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings](
+			httpClient,
+			baseURL+DieterServiceUpdateRemoteDesktopSettingsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("UpdateRemoteDesktopSettings")),
+			connect.WithClientOptions(opts...),
+		),
+		startRemoteDesktop: connect.NewClient[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal](
+			httpClient,
+			baseURL+DieterServiceStartRemoteDesktopProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("StartRemoteDesktop")),
+			connect.WithClientOptions(opts...),
+		),
+		sendRemoteDesktopSignal: connect.NewClient[v1.RemoteDesktopSignal, emptypb.Empty](
+			httpClient,
+			baseURL+DieterServiceSendRemoteDesktopSignalProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("SendRemoteDesktopSignal")),
+			connect.WithClientOptions(opts...),
+		),
+		closeRemoteDesktop: connect.NewClient[v1.RemoteDesktopRef, emptypb.Empty](
+			httpClient,
+			baseURL+DieterServiceCloseRemoteDesktopProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("CloseRemoteDesktop")),
+			connect.WithClientOptions(opts...),
+		),
 		listSchedules: connect.NewClient[v1.ListSchedulesRequest, v1.SchedulesResponse](
 			httpClient,
 			baseURL+DieterServiceListSchedulesProcedure,
@@ -703,71 +763,77 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // dieterServiceClient implements DieterServiceClient.
 type dieterServiceClient struct {
-	health                   *connect.Client[emptypb.Empty, v1.HealthResponse]
-	getRuntimeStatus         *connect.Client[emptypb.Empty, v1.RuntimeStatus]
-	getState                 *connect.Client[v1.GetStateRequest, v1.State]
-	watchState               *connect.Client[v1.WatchStateRequest, v1.State]
-	watchSync                *connect.Client[v1.SyncRequest, v1.SyncFrame]
-	getHarnesses             *connect.Client[emptypb.Empty, v1.HarnessCatalog]
-	getSettings              *connect.Client[emptypb.Empty, v1.Settings]
-	getSettingsOptions       *connect.Client[emptypb.Empty, v1.SettingsOptions]
-	updateSettings           *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
-	getPromptSettings        *connect.Client[emptypb.Empty, v1.PromptSettings]
-	updatePromptSettings     *connect.Client[v1.UpdatePromptSettingsRequest, v1.PromptSettings]
-	setProjectPromptTemplate *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
-	setBoardPromptTemplate   *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
-	previewPrompt            *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
-	listDirectories          *connect.Client[v1.ListDirectoriesRequest, v1.DirectoryListing]
-	createProject            *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
-	updateProject            *connect.Client[v1.UpdateProjectRequest, v1.Project]
-	archiveProject           *connect.Client[v1.ArchiveProjectRequest, v1.Project]
-	listArchivedProjects     *connect.Client[emptypb.Empty, v1.ProjectsResponse]
-	createBoard              *connect.Client[v1.CreateBoardRequest, v1.Board]
-	renameBoard              *connect.Client[v1.RenameBoardRequest, v1.Board]
-	setBoardArchivePolicy    *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
-	listArchivedCards        *connect.Client[v1.BoardRef, v1.CardsResponse]
-	createBoardLabel         *connect.Client[v1.CreateBoardLabelRequest, v1.Board]
-	updateBoardLabel         *connect.Client[v1.UpdateBoardLabelRequest, v1.Board]
-	deleteBoardLabel         *connect.Client[v1.DeleteBoardLabelRequest, v1.Board]
-	createCard               *connect.Client[v1.CreateConversationRequest, v1.Card]
-	createChat               *connect.Client[v1.CreateConversationRequest, v1.Card]
-	listChats                *connect.Client[v1.ListChatsRequest, v1.ChatsResponse]
-	getCard                  *connect.Client[v1.GetCardRequest, v1.CardDetail]
-	getConversation          *connect.Client[v1.GetConversationRequest, v1.ConversationSnapshot]
-	pollConversation         *connect.Client[v1.PollConversationRequest, v1.ConversationUpdate]
-	watchConversation        *connect.Client[v1.WatchConversationRequest, v1.ConversationUpdate]
-	getToolOutput            *connect.Client[v1.GetToolOutputRequest, v1.ToolOutput]
-	sendMessage              *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
-	addComment               *connect.Client[v1.AddCommentRequest, v1.Comment]
-	moveCard                 *connect.Client[v1.MoveCardRequest, v1.Card]
-	startCard                *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
-	setCardLabels            *connect.Client[v1.SetCardLabelsRequest, v1.Card]
-	cancelCard               *connect.Client[v1.GetCardRequest, emptypb.Empty]
-	renameCard               *connect.Client[v1.RenameCardRequest, v1.Card]
-	updateCard               *connect.Client[v1.UpdateCardRequest, v1.Card]
-	archiveCard              *connect.Client[v1.ArchiveCardRequest, v1.Card]
-	pinChat                  *connect.Client[v1.PinChatRequest, v1.Card]
-	listFiles                *connect.Client[v1.ListFilesRequest, v1.FileList]
-	readFile                 *connect.Client[v1.ReadFileRequest, v1.FileDocument]
-	saveFile                 *connect.Client[v1.SaveFileRequest, v1.FileDocument]
-	createFile               *connect.Client[v1.CreateFileRequest, v1.FileEntry]
-	moveFile                 *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
-	deleteFile               *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
-	listTerminals            *connect.Client[v1.ListTerminalsRequest, v1.TerminalsResponse]
-	createTerminal           *connect.Client[v1.CreateTerminalRequest, v1.Terminal]
-	watchTerminal            *connect.Client[v1.WatchTerminalRequest, v1.TerminalFrame]
-	writeTerminal            *connect.Client[v1.TerminalInputRequest, v1.Terminal]
-	resizeTerminal           *connect.Client[v1.ResizeTerminalRequest, v1.Terminal]
-	renameTerminal           *connect.Client[v1.RenameTerminalRequest, v1.Terminal]
-	closeTerminal            *connect.Client[v1.TerminalRef, emptypb.Empty]
-	listSchedules            *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
-	previewSchedule          *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
-	createSchedule           *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
-	updateSchedule           *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
-	deleteSchedule           *connect.Client[v1.ScheduleRef, emptypb.Empty]
-	runSchedule              *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
-	setScheduleEnabled       *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
-	listScheduleRuns         *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
+	health                       *connect.Client[emptypb.Empty, v1.HealthResponse]
+	getRuntimeStatus             *connect.Client[emptypb.Empty, v1.RuntimeStatus]
+	getState                     *connect.Client[v1.GetStateRequest, v1.State]
+	watchState                   *connect.Client[v1.WatchStateRequest, v1.State]
+	watchSync                    *connect.Client[v1.SyncRequest, v1.SyncFrame]
+	getHarnesses                 *connect.Client[emptypb.Empty, v1.HarnessCatalog]
+	getSettings                  *connect.Client[emptypb.Empty, v1.Settings]
+	getSettingsOptions           *connect.Client[emptypb.Empty, v1.SettingsOptions]
+	updateSettings               *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
+	getPromptSettings            *connect.Client[emptypb.Empty, v1.PromptSettings]
+	updatePromptSettings         *connect.Client[v1.UpdatePromptSettingsRequest, v1.PromptSettings]
+	setProjectPromptTemplate     *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
+	setBoardPromptTemplate       *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
+	previewPrompt                *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
+	listDirectories              *connect.Client[v1.ListDirectoriesRequest, v1.DirectoryListing]
+	createProject                *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
+	updateProject                *connect.Client[v1.UpdateProjectRequest, v1.Project]
+	archiveProject               *connect.Client[v1.ArchiveProjectRequest, v1.Project]
+	listArchivedProjects         *connect.Client[emptypb.Empty, v1.ProjectsResponse]
+	createBoard                  *connect.Client[v1.CreateBoardRequest, v1.Board]
+	renameBoard                  *connect.Client[v1.RenameBoardRequest, v1.Board]
+	setBoardArchivePolicy        *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
+	listArchivedCards            *connect.Client[v1.BoardRef, v1.CardsResponse]
+	createBoardLabel             *connect.Client[v1.CreateBoardLabelRequest, v1.Board]
+	updateBoardLabel             *connect.Client[v1.UpdateBoardLabelRequest, v1.Board]
+	deleteBoardLabel             *connect.Client[v1.DeleteBoardLabelRequest, v1.Board]
+	createCard                   *connect.Client[v1.CreateConversationRequest, v1.Card]
+	createChat                   *connect.Client[v1.CreateConversationRequest, v1.Card]
+	listChats                    *connect.Client[v1.ListChatsRequest, v1.ChatsResponse]
+	getCard                      *connect.Client[v1.GetCardRequest, v1.CardDetail]
+	getConversation              *connect.Client[v1.GetConversationRequest, v1.ConversationSnapshot]
+	pollConversation             *connect.Client[v1.PollConversationRequest, v1.ConversationUpdate]
+	watchConversation            *connect.Client[v1.WatchConversationRequest, v1.ConversationUpdate]
+	getToolOutput                *connect.Client[v1.GetToolOutputRequest, v1.ToolOutput]
+	sendMessage                  *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
+	addComment                   *connect.Client[v1.AddCommentRequest, v1.Comment]
+	moveCard                     *connect.Client[v1.MoveCardRequest, v1.Card]
+	startCard                    *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
+	setCardLabels                *connect.Client[v1.SetCardLabelsRequest, v1.Card]
+	cancelCard                   *connect.Client[v1.GetCardRequest, emptypb.Empty]
+	renameCard                   *connect.Client[v1.RenameCardRequest, v1.Card]
+	updateCard                   *connect.Client[v1.UpdateCardRequest, v1.Card]
+	archiveCard                  *connect.Client[v1.ArchiveCardRequest, v1.Card]
+	pinChat                      *connect.Client[v1.PinChatRequest, v1.Card]
+	listFiles                    *connect.Client[v1.ListFilesRequest, v1.FileList]
+	readFile                     *connect.Client[v1.ReadFileRequest, v1.FileDocument]
+	saveFile                     *connect.Client[v1.SaveFileRequest, v1.FileDocument]
+	createFile                   *connect.Client[v1.CreateFileRequest, v1.FileEntry]
+	moveFile                     *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
+	deleteFile                   *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
+	listTerminals                *connect.Client[v1.ListTerminalsRequest, v1.TerminalsResponse]
+	createTerminal               *connect.Client[v1.CreateTerminalRequest, v1.Terminal]
+	watchTerminal                *connect.Client[v1.WatchTerminalRequest, v1.TerminalFrame]
+	writeTerminal                *connect.Client[v1.TerminalInputRequest, v1.Terminal]
+	resizeTerminal               *connect.Client[v1.ResizeTerminalRequest, v1.Terminal]
+	renameTerminal               *connect.Client[v1.RenameTerminalRequest, v1.Terminal]
+	closeTerminal                *connect.Client[v1.TerminalRef, emptypb.Empty]
+	getRemoteDesktopCapabilities *connect.Client[emptypb.Empty, v1.RemoteDesktopCapabilities]
+	getRemoteDesktopSettings     *connect.Client[emptypb.Empty, v1.RemoteDesktopSettings]
+	updateRemoteDesktopSettings  *connect.Client[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings]
+	startRemoteDesktop           *connect.Client[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal]
+	sendRemoteDesktopSignal      *connect.Client[v1.RemoteDesktopSignal, emptypb.Empty]
+	closeRemoteDesktop           *connect.Client[v1.RemoteDesktopRef, emptypb.Empty]
+	listSchedules                *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
+	previewSchedule              *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
+	createSchedule               *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
+	updateSchedule               *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
+	deleteSchedule               *connect.Client[v1.ScheduleRef, emptypb.Empty]
+	runSchedule                  *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
+	setScheduleEnabled           *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
+	listScheduleRuns             *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
 }
 
 // Health calls dieter.v1.DieterService.Health.
@@ -1055,6 +1121,36 @@ func (c *dieterServiceClient) CloseTerminal(ctx context.Context, req *connect.Re
 	return c.closeTerminal.CallUnary(ctx, req)
 }
 
+// GetRemoteDesktopCapabilities calls dieter.v1.DieterService.GetRemoteDesktopCapabilities.
+func (c *dieterServiceClient) GetRemoteDesktopCapabilities(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error) {
+	return c.getRemoteDesktopCapabilities.CallUnary(ctx, req)
+}
+
+// GetRemoteDesktopSettings calls dieter.v1.DieterService.GetRemoteDesktopSettings.
+func (c *dieterServiceClient) GetRemoteDesktopSettings(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error) {
+	return c.getRemoteDesktopSettings.CallUnary(ctx, req)
+}
+
+// UpdateRemoteDesktopSettings calls dieter.v1.DieterService.UpdateRemoteDesktopSettings.
+func (c *dieterServiceClient) UpdateRemoteDesktopSettings(ctx context.Context, req *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error) {
+	return c.updateRemoteDesktopSettings.CallUnary(ctx, req)
+}
+
+// StartRemoteDesktop calls dieter.v1.DieterService.StartRemoteDesktop.
+func (c *dieterServiceClient) StartRemoteDesktop(ctx context.Context, req *connect.Request[v1.StartRemoteDesktopRequest]) (*connect.ServerStreamForClient[v1.RemoteDesktopSignal], error) {
+	return c.startRemoteDesktop.CallServerStream(ctx, req)
+}
+
+// SendRemoteDesktopSignal calls dieter.v1.DieterService.SendRemoteDesktopSignal.
+func (c *dieterServiceClient) SendRemoteDesktopSignal(ctx context.Context, req *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error) {
+	return c.sendRemoteDesktopSignal.CallUnary(ctx, req)
+}
+
+// CloseRemoteDesktop calls dieter.v1.DieterService.CloseRemoteDesktop.
+func (c *dieterServiceClient) CloseRemoteDesktop(ctx context.Context, req *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error) {
+	return c.closeRemoteDesktop.CallUnary(ctx, req)
+}
+
 // ListSchedules calls dieter.v1.DieterService.ListSchedules.
 func (c *dieterServiceClient) ListSchedules(ctx context.Context, req *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error) {
 	return c.listSchedules.CallUnary(ctx, req)
@@ -1163,6 +1259,12 @@ type DieterServiceHandler interface {
 	ResizeTerminal(context.Context, *connect.Request[v1.ResizeTerminalRequest]) (*connect.Response[v1.Terminal], error)
 	RenameTerminal(context.Context, *connect.Request[v1.RenameTerminalRequest]) (*connect.Response[v1.Terminal], error)
 	CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error)
+	GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error)
+	GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error)
+	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
+	StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest], *connect.ServerStream[v1.RemoteDesktopSignal]) error
+	SendRemoteDesktopSignal(context.Context, *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error)
+	CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
 	CreateSchedule(context.Context, *connect.Request[v1.SaveScheduleRequest]) (*connect.Response[v1.Schedule], error)
@@ -1522,6 +1624,42 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("CloseTerminal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceGetRemoteDesktopCapabilitiesHandler := connect.NewUnaryHandler(
+		DieterServiceGetRemoteDesktopCapabilitiesProcedure,
+		svc.GetRemoteDesktopCapabilities,
+		connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopCapabilities")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetRemoteDesktopSettingsHandler := connect.NewUnaryHandler(
+		DieterServiceGetRemoteDesktopSettingsProcedure,
+		svc.GetRemoteDesktopSettings,
+		connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceUpdateRemoteDesktopSettingsHandler := connect.NewUnaryHandler(
+		DieterServiceUpdateRemoteDesktopSettingsProcedure,
+		svc.UpdateRemoteDesktopSettings,
+		connect.WithSchema(dieterServiceMethods.ByName("UpdateRemoteDesktopSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceStartRemoteDesktopHandler := connect.NewServerStreamHandler(
+		DieterServiceStartRemoteDesktopProcedure,
+		svc.StartRemoteDesktop,
+		connect.WithSchema(dieterServiceMethods.ByName("StartRemoteDesktop")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceSendRemoteDesktopSignalHandler := connect.NewUnaryHandler(
+		DieterServiceSendRemoteDesktopSignalProcedure,
+		svc.SendRemoteDesktopSignal,
+		connect.WithSchema(dieterServiceMethods.ByName("SendRemoteDesktopSignal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceCloseRemoteDesktopHandler := connect.NewUnaryHandler(
+		DieterServiceCloseRemoteDesktopProcedure,
+		svc.CloseRemoteDesktop,
+		connect.WithSchema(dieterServiceMethods.ByName("CloseRemoteDesktop")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceListSchedulesHandler := connect.NewUnaryHandler(
 		DieterServiceListSchedulesProcedure,
 		svc.ListSchedules,
@@ -1686,6 +1824,18 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceRenameTerminalHandler.ServeHTTP(w, r)
 		case DieterServiceCloseTerminalProcedure:
 			dieterServiceCloseTerminalHandler.ServeHTTP(w, r)
+		case DieterServiceGetRemoteDesktopCapabilitiesProcedure:
+			dieterServiceGetRemoteDesktopCapabilitiesHandler.ServeHTTP(w, r)
+		case DieterServiceGetRemoteDesktopSettingsProcedure:
+			dieterServiceGetRemoteDesktopSettingsHandler.ServeHTTP(w, r)
+		case DieterServiceUpdateRemoteDesktopSettingsProcedure:
+			dieterServiceUpdateRemoteDesktopSettingsHandler.ServeHTTP(w, r)
+		case DieterServiceStartRemoteDesktopProcedure:
+			dieterServiceStartRemoteDesktopHandler.ServeHTTP(w, r)
+		case DieterServiceSendRemoteDesktopSignalProcedure:
+			dieterServiceSendRemoteDesktopSignalHandler.ServeHTTP(w, r)
+		case DieterServiceCloseRemoteDesktopProcedure:
+			dieterServiceCloseRemoteDesktopHandler.ServeHTTP(w, r)
 		case DieterServiceListSchedulesProcedure:
 			dieterServiceListSchedulesHandler.ServeHTTP(w, r)
 		case DieterServicePreviewScheduleProcedure:
@@ -1937,6 +2087,30 @@ func (UnimplementedDieterServiceHandler) RenameTerminal(context.Context, *connec
 
 func (UnimplementedDieterServiceHandler) CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CloseTerminal is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetRemoteDesktopCapabilities is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetRemoteDesktopSettings is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateRemoteDesktopSettings is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest], *connect.ServerStream[v1.RemoteDesktopSignal]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.StartRemoteDesktop is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) SendRemoteDesktopSignal(context.Context, *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SendRemoteDesktopSignal is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CloseRemoteDesktop is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error) {

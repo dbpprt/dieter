@@ -151,6 +151,19 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "GetRTCConfiguration" metadata.
+        public enum GetRTCConfiguration: Sendable {
+            /// Request type for "GetRTCConfiguration".
+            public typealias Input = Dieter_Gateway_V1_DaemonRef
+            /// Response type for "GetRTCConfiguration".
+            public typealias Output = Dieter_Gateway_V1_RTCConfiguration
+            /// Descriptor for "GetRTCConfiguration".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.gateway.v1.GatewayService"),
+                method: "GetRTCConfiguration",
+                type: .unary
+            )
+        }
         /// Descriptors for all methods in the "dieter.gateway.v1.GatewayService" service.
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             GetAccount.descriptor,
@@ -162,7 +175,8 @@ public enum Dieter_Gateway_V1_GatewayService: Sendable {
             RenameDaemon.descriptor,
             RevokeDaemon.descriptor,
             ExchangeDaemonToken.descriptor,
-            ResolveDaemonRoute.descriptor
+            ResolveDaemonRoute.descriptor,
+            GetRTCConfiguration.descriptor
         ]
     }
 }
@@ -376,6 +390,31 @@ extension Dieter_Gateway_V1_GatewayService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_DaemonRoute>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_DaemonRoute>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetRTCConfiguration" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+        /// > The signed envelope is verified by the daemon before a desktop session is
+        /// > admitted; the gateway never participates in the WebRTC media path.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRef` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_RTCConfiguration` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getRTCConfiguration<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_DaemonRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_RTCConfiguration>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RTCConfiguration>) async throws -> Result
         ) async throws -> Result where Result: Sendable
     }
 
@@ -698,6 +737,42 @@ extension Dieter_Gateway_V1_GatewayService {
                 onResponse: handleResponse
             )
         }
+
+        /// Call the "GetRTCConfiguration" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+        /// > The signed envelope is verified by the daemon before a desktop session is
+        /// > admitted; the gateway never participates in the WebRTC media path.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRef` message.
+        ///   - serializer: A serializer for `Dieter_Gateway_V1_DaemonRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_Gateway_V1_RTCConfiguration` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getRTCConfiguration<Result>(
+            request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_Gateway_V1_DaemonRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_Gateway_V1_RTCConfiguration>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RTCConfiguration>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_Gateway_V1_GatewayService.Method.GetRTCConfiguration.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
     }
 }
 
@@ -947,6 +1022,37 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_DaemonRef>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_DaemonRoute>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetRTCConfiguration" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+    /// > The signed envelope is verified by the daemon before a desktop session is
+    /// > admitted; the gateway never participates in the WebRTC media path.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_Gateway_V1_DaemonRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getRTCConfiguration<Result>(
+        request: GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RTCConfiguration>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getRTCConfiguration(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_Gateway_V1_DaemonRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_Gateway_V1_RTCConfiguration>(),
             options: options,
             onResponse: handleResponse
         )
@@ -1238,6 +1344,41 @@ extension Dieter_Gateway_V1_GatewayService.ClientProtocol {
             metadata: metadata
         )
         return try await self.resolveDaemonRoute(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetRTCConfiguration" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > GetRTCConfiguration returns daemon-bound, short-lived ICE configuration.
+    /// > The signed envelope is verified by the daemon before a desktop session is
+    /// > admitted; the gateway never participates in the WebRTC media path.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getRTCConfiguration<Result>(
+        _ message: Dieter_Gateway_V1_DaemonRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_Gateway_V1_RTCConfiguration>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_Gateway_V1_DaemonRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getRTCConfiguration(
             request: request,
             options: options,
             onResponse: handleResponse

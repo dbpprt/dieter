@@ -21,6 +21,11 @@ HTTP offer/answer exchange with non-trickle ICE; production signaling belongs
 in Dieter's authenticated daemon RPC, with trickled candidates and a signed
 DTLS-fingerprint binding.
 
+The promoted product slice now lives in the daemon, gateway, and native macOS
+client: it uses trickled RPC signaling, gateway-signed RTC configuration,
+daemon-signed session binding, Pion hosting, and the Mac Screens workspace.
+This directory remains useful as a small browser-based capture diagnostic.
+
 ## Requirements
 
 - Go 1.26.5 or newer;
@@ -45,7 +50,7 @@ HTTP request or referrer.
 For the real primary macOS display:
 
 ```sh
-go run . -source screen -display 0 -fps 30 -bitrate-kbps 4000
+go run . -source screen -display 'Capture screen 0' -fps 30 -bitrate-kbps 4000
 ```
 
 List the AVFoundation screen indices when needed:

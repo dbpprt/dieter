@@ -69,7 +69,8 @@ func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 	if err != nil {
 		return status.Error(codes.Internal, "daemon trust configuration is invalid")
 	}
-	if _, err := trust.ParseAndVerifyDaemonToken(public, token, s.identity.GatewayURL, s.identity.ID, s.identity.Generation, time.Now().UTC()); err != nil {
+	claims, err := trust.ParseAndVerifyDaemonToken(public, token, s.identity.GatewayURL, s.identity.ID, s.identity.Generation, time.Now().UTC())
+	if err != nil {
 		return status.Error(codes.Unauthenticated, "daemon access token is invalid")
 	}
 	var request rpcraw.Message
@@ -77,7 +78,8 @@ func (s *DirectServer) handle(_ any, stream grpc.ServerStream) error {
 		return err
 	}
 	description := &grpc.StreamDesc{ServerStreams: true, ClientStreams: false}
-	call, err := s.local.NewStream(ctx, description, method, grpc.ForceCodec(rpcraw.Codec{}))
+	localContext := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-dieter-operator-subject", claims.Subject))
+	call, err := s.local.NewStream(localContext, description, method, grpc.ForceCodec(rpcraw.Codec{}))
 	if err != nil {
 		return err
 	}

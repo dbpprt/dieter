@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -20,11 +21,14 @@ import (
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/pion/webrtc/v4"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -44,6 +48,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		GitHubClientID: "test", GitHubSecret: "test", AllowedUserID: 7000188, AllowedLogin: "owner",
 		AuthSecret: []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
 		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
+		RTCSTUNURLs: []string{"stun:stun.example:3478"}, RTCTTL: 5 * time.Minute,
 	}
 	gatewayStore, err := gateway.OpenStore(config.Root)
 	if err != nil {
@@ -86,6 +91,17 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err := boardStore.Ensure(); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := boardStore.UpdateRemoteDesktopSettings(true, false); err != nil {
+		t.Fatal(err)
+	}
+	remoteDesktop := remotedesktop.New(remotedesktop.Options{
+		Identity: remotedesktop.Identity{
+			DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation,
+			PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey,
+		},
+		Source: remotedesktop.SourceOptions{Kind: "synthetic", FPS: 10},
+		Logger: logger,
+	})
 	repositoryPath := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(repositoryPath, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -98,11 +114,16 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	boardHTTP := &http.Server{Handler: server.New(boardStore, logger).Handler()}
+	boardHTTP := &http.Server{Handler: server.NewWithRemoteDesktop(boardStore, logger, nil, remoteDesktop).Handler()}
 	go boardHTTP.Serve(boardListener)
 	defer boardHTTP.Close()
 
-	tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", Log: logger}
+	tunnel := &daemon.GatewayClient{
+		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", Log: logger,
+		RemoteDesktopPresence: func() *gatewayv1.RemoteDesktopPresence {
+			return remoteDesktop.Presence(true, false)
+		},
+	}
 	go func() { _ = tunnel.Run(ctx) }()
 
 	session := "native-test-session"
@@ -259,6 +280,9 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || len(list.GetDaemons()) != 1 || !list.GetDaemons()[0].GetOnline() {
 		t.Fatalf("list daemons=%#v err=%v", list, err)
 	}
+	if desktop := list.GetDaemons()[0].GetRemoteDesktop(); !desktop.GetReady() || desktop.GetPlatform() != "darwin" {
+		t.Fatalf("remote desktop presence=%#v", desktop)
+	}
 	renamed, err := gatewayClient.RenameDaemon(authorized, &gatewayv1.RenameDaemonRequest{DaemonId: identity.ID, Name: "Studio runner"})
 	if err != nil || renamed.GetName() != "Studio runner" {
 		t.Fatalf("rename daemon=%#v err=%v", renamed, err)
@@ -282,8 +306,24 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if token.GetTokenType() != "Bearer" {
 		t.Fatalf("unexpected daemon token type %q", token.GetTokenType())
 	}
+	rtc, err := gatewayClient.GetRTCConfiguration(authorized, &gatewayv1.DaemonRef{DaemonId: identity.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unsigned := proto.Clone(rtc).(*gatewayv1.RTCConfiguration)
+	unsigned.SignedEnvelope = nil
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(unsigned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rtcDigest := sha256.Sum256(raw)
+	rtcClaims, err := gateway.ParseAndVerifyRTCConfiguration(public, string(rtc.GetSignedEnvelope()), publicURL.String(), identity.ID, "github:7000188", rtc.GetConfigurationId(), rtcDigest[:], identity.Generation, time.Now().UTC())
+	if err != nil || rtcClaims.ID != rtc.GetConfigurationId() || len(rtc.GetIceServers()) != 1 {
+		t.Fatalf("verify RTC configuration claims=%#v config=%#v err=%v", rtcClaims, rtc, err)
+	}
+	testRemoteDesktopThroughGateway(t, routed, dieterClient, rtc, identity)
 	route, err := gatewayClient.ResolveDaemonRoute(authorized, &gatewayv1.DaemonRef{DaemonId: identity.ID})
-	if err != nil || string(route.GetDaemonCaPem()) != string(identity.DaemonCAPEM) {
+	if err != nil || string(route.GetDaemonCaPem()) != string(identity.DaemonCAPEM) || string(route.GetDaemonCertificatePem()) != string(identity.CertificatePEM) {
 		t.Fatalf("resolve route=%#v err=%v", route, err)
 	}
 
@@ -516,6 +556,133 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 	if gatewayServer.Hub.Online(machines[0].identity.ID) || !gatewayServer.Hub.Online(machines[1].identity.ID) {
 		t.Fatalf("daemon presence was not independent")
 	}
+}
+
+func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, client dieterv1.DieterServiceClient, rtc *gatewayv1.RTCConfiguration, identity *daemon.Identity) {
+	t.Helper()
+	settings := webrtc.SettingEngine{}
+	settings.SetIncludeLoopbackCandidate(true)
+	viewer, err := webrtc.NewAPI(webrtc.WithSettingEngine(settings)).NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer viewer.Close()
+	if _, err := viewer.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); err != nil {
+		t.Fatal(err)
+	}
+	trackReceived := make(chan struct{}, 1)
+	viewer.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
+		go func() {
+			if _, _, err := track.ReadRTP(); err == nil {
+				trackReceived <- struct{}{}
+			}
+		}()
+	})
+	offer, err := viewer.CreateOffer(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gatheringComplete := webrtc.GatheringCompletePromise(viewer)
+	if err := viewer.SetLocalDescription(offer); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-gatheringComplete:
+	case <-time.After(5 * time.Second):
+		t.Fatal("viewer ICE gathering timed out")
+	}
+	offer = *viewer.LocalDescription()
+	request := &dieterv1.StartRemoteDesktopRequest{
+		ClientNonce: "gateway-e2e-nonce", RtcConfiguration: rtc,
+		Offer:     &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP},
+		DisplayId: "primary", MaxFps: 10, MaxBitrateKbps: 500,
+	}
+	streamContext, cancelStream := context.WithTimeout(routed, 12*time.Second)
+	defer cancelStream()
+	stream, err := client.StartRemoteDesktop(streamContext, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signals := make(chan *dieterv1.RemoteDesktopSignal, 16)
+	signalErrors := make(chan error, 1)
+	go func() {
+		for {
+			signal, receiveErr := stream.Recv()
+			if receiveErr != nil {
+				signalErrors <- receiveErr
+				return
+			}
+			signals <- signal
+		}
+	}()
+
+	var binding *dieterv1.RemoteDesktopSessionBinding
+	var answer string
+	var sessionID string
+	answerApplied := false
+	var pendingCandidates []*dieterv1.RemoteDesktopICECandidate
+	for {
+		select {
+		case <-trackReceived:
+			if !answerApplied || binding == nil || sessionID == "" {
+				t.Fatal("received media before authenticating the daemon answer")
+			}
+			_, closeErr := client.CloseRemoteDesktop(routed, &dieterv1.RemoteDesktopRef{SessionId: sessionID})
+			if closeErr != nil {
+				t.Fatalf("close remote desktop: %v", closeErr)
+			}
+			return
+		case signal := <-signals:
+			if sessionID == "" {
+				sessionID = signal.GetSessionId()
+			}
+			switch payload := signal.GetPayload().(type) {
+			case *dieterv1.RemoteDesktopSignal_Binding:
+				binding = payload.Binding
+			case *dieterv1.RemoteDesktopSignal_Description:
+				answer = payload.Description.GetSdp()
+			case *dieterv1.RemoteDesktopSignal_Candidate:
+				if answerApplied {
+					if err := viewer.AddICECandidate(e2eCandidateInit(payload.Candidate)); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					pendingCandidates = append(pendingCandidates, payload.Candidate)
+				}
+			}
+			if !answerApplied && binding != nil && answer != "" {
+				offerHash := sha256.Sum256([]byte(offer.SDP))
+				message := remotedesktop.SessionBindingMessage(sessionID, request.GetClientNonce(), binding.GetHelperDtlsFingerprint(), binding.GetExpiresAt(), offerHash[:])
+				if !ed25519.Verify(identity.PublicKey, message, binding.GetDaemonSignature()) {
+					t.Fatal("relayed daemon session binding signature did not verify")
+				}
+				if string(binding.GetOfferSha256()) != string(offerHash[:]) {
+					t.Fatal("relayed daemon session binding did not cover the viewer offer")
+				}
+				if err := viewer.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: answer}); err != nil {
+					t.Fatal(err)
+				}
+				answerApplied = true
+				for _, candidate := range pendingCandidates {
+					if err := viewer.AddICECandidate(e2eCandidateInit(candidate)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				pendingCandidates = nil
+			}
+		case receiveErr := <-signalErrors:
+			t.Fatalf("remote desktop signaling ended before media arrived: %v", receiveErr)
+		case <-streamContext.Done():
+			t.Fatal("remote desktop media timed out")
+		}
+	}
+}
+
+func e2eCandidateInit(candidate *dieterv1.RemoteDesktopICECandidate) webrtc.ICECandidateInit {
+	mid := candidate.GetSdpMid()
+	index := uint16(max(0, int(candidate.GetSdpMlineIndex())))
+	username := candidate.GetUsernameFragment()
+	return webrtc.ICECandidateInit{Candidate: candidate.GetCandidate(), SDPMid: &mid, SDPMLineIndex: &index, UsernameFragment: &username}
 }
 
 func sessionDigest(secret []byte, token string) string {

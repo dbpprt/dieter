@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// An in-process smoke driver for the conversation transcript.
 ///
 /// It opens a real conversation that contains reasoning and tool parts, then
-/// toggles the reasoning visibility the way the composer brain chip does and
+/// toggles the reasoning visibility backed by the conversation setting and
 /// records the timeline grouping before and after. The run proves that hiding
 /// reasoning collapses adjacent tool calls into one group and that the toggle
 /// cannot take the app down.
@@ -17,6 +17,8 @@ enum ConversationUISmokeRunner {
     static func run(store: DieterStore) async {
         let output = outputDirectory()
         try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let originalShowReasoning = store.showReasoning
+        defer { store.showReasoning = originalShowReasoning }
 
         var results: [String: String] = [:]
         var waited = 0

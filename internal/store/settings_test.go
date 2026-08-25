@@ -54,3 +54,30 @@ func TestSettingsRoundTripUsesIndependentEmptyMaps(t *testing.T) {
 		t.Fatalf("default settings leaked mutation: %#v", second)
 	}
 }
+
+func TestRemoteDesktopSettingsUseDedicatedUpdatePath(t *testing.T) {
+	data := New(t.TempDir())
+	remote, err := data.UpdateRemoteDesktopSettings(true, true)
+	if err != nil || !remote.RemoteDesktopEnabled || !remote.RemoteDesktopControlEnabled {
+		t.Fatalf("remote settings=%#v err=%v", remote, err)
+	}
+
+	// The existing admission RPC cannot erase settings it did not know about.
+	updated, err := data.UpdateSettings(model.Settings{
+		GlobalParallelLimit: 2, AgentParallelLimits: map[string]int{}, BoardParallelLimits: map[string]int{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.RemoteDesktopEnabled || !updated.RemoteDesktopControlEnabled {
+		t.Fatalf("legacy settings write erased remote desktop: %#v", updated)
+	}
+
+	disabled, err := data.UpdateRemoteDesktopSettings(false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.RemoteDesktopEnabled || disabled.RemoteDesktopControlEnabled {
+		t.Fatalf("disabled remote desktop retained control: %#v", disabled)
+	}
+}

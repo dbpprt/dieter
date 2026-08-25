@@ -16,6 +16,10 @@ let package = Package(
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.5.1"),
+        // Prototype distribution of Google's WebRTC XCFramework. Keep the
+        // release exact; a Dieter-built artifact can replace it behind the same
+        // viewer boundary before broader distribution.
+        .package(url: "https://github.com/stasel/WebRTC.git", exact: "151.0.0"),
     ],
     targets: [
         .target(
@@ -41,6 +45,7 @@ let package = Package(
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
+                .product(name: "WebRTC", package: "WebRTC"),
             ]
         ),
         .testTarget(

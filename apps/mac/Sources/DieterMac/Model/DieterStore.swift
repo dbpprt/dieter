@@ -78,6 +78,7 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case board = "Board"
     case chats = "All chats"
     case terminals = "Terminals"
+	case screens = "Screens"
     case files = "Files"
     case schedules = "Schedules"
     case archive = "Archive"
@@ -89,6 +90,7 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
         case .board: "rectangle.split.3x1"
         case .chats: "bubble.left.and.bubble.right"
         case .terminals: "terminal"
+		case .screens: "rectangle.inset.filled.and.person.filled"
         case .files: "doc.on.doc"
         case .schedules: "calendar.badge.clock"
         case .archive: "archivebox"
@@ -430,7 +432,12 @@ final class DieterStore {
     var composerModel = ""
     var composerEffort = ""
     var composerProviderOptions: [String: String] = [:]
-    var showReasoning = true
+    var showReasoning = ReasoningTracePreferences.load() {
+        didSet {
+            guard showReasoning != oldValue else { return }
+            ReasoningTracePreferences.save(showReasoning)
+        }
+    }
     var commentText = ""
     var query = ""
     var runtimeFilter = ""
@@ -494,6 +501,7 @@ final class DieterStore {
     private var reconnectTask: Task<Void, Never>?
     private var directRefreshTask: Task<Void, Never>?
     private var machineDirectoryTask: Task<Void, Never>?
+    private var machinePresenceLeaseTask: Task<Void, Never>?
     private var syncRestoreTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
     private var conversationTask: Task<Void, Never>?
@@ -700,7 +708,8 @@ final class DieterStore {
         connectionGeneration &+= 1
         let generation = connectionGeneration
         phase = .connecting
-        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel()
+        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); machinePresenceLeaseTask?.cancel()
+        startMachinePresenceLeaseMonitor()
         terminalStreamConnected = false
         rpc?.shutdown()
         rpc = nil
@@ -727,9 +736,12 @@ final class DieterStore {
                     port: origin.port,
                     secure: origin.secure,
                     daemonID: $0.id,
-                    online: $0.online,
+                    online: MachinePresenceText.online(serverOnline: $0.online, lastSeenAt: $0.lastSeenAt),
                     lastSeenAt: $0.lastSeenAt,
-                    version: $0.version
+					version: $0.version,
+					remoteDesktopReady: $0.remoteDesktop.ready,
+					remoteDesktopReason: $0.remoteDesktop.reason,
+					remoteDesktopPlatform: $0.remoteDesktop.platform
                 )
             }
             guard !discovered.isEmpty else {
@@ -903,6 +915,74 @@ final class DieterStore {
         }
     }
 
+	func remoteDesktopConnection(machineID: String) async throws -> RemoteDesktopSignalingConnection {
+		guard let target = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil),
+			  let daemonID = target.daemonID else {
+			throw NSError(domain: "DieterScreens", code: 1, userInfo: [NSLocalizedDescriptionKey: "Select an enrolled Dieter machine."])
+		}
+		guard target.online else {
+			throw NSError(domain: "DieterScreens", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
+		}
+		let origin = gatewayOrigins.first(where: { $0.credentialID == target.credentialID }) ?? target.gatewayEndpoint
+		let gatewayToken = await accessToken(for: origin)
+		let gateway = try DieterRPC(endpoint: origin, accessToken: gatewayToken)
+		let gatewayTask = Task { try? await gateway.run() }
+		defer {
+			gatewayTask.cancel()
+			gateway.shutdown()
+		}
+		let route = try await gateway.route(daemonID: daemonID)
+		let rtcConfiguration = try await gateway.rtcConfiguration(daemonID: daemonID)
+
+		if !route.directCandidates.isEmpty {
+			let token = try await gateway.daemonAccessToken(daemonID: daemonID)
+			guard token.tokenType == "Bearer" else {
+				throw NSError(domain: "DieterScreens", code: 3, userInfo: [NSLocalizedDescriptionKey: "Gateway returned an unsupported daemon token."])
+			}
+			for candidate in route.directCandidates.sorted(by: { $0.priority > $1.priority }) {
+				do {
+					let direct = try DieterRPC(
+						endpoint: target,
+						direct: .init(
+							host: candidate.host, port: Int(candidate.port), daemonID: daemonID,
+							daemonCAPEM: route.daemonCaPem, accessToken: token.accessToken
+						)
+					)
+					let runner = Task { _ = try? await direct.run() }
+					do {
+						_ = try await direct.health(timeout: .seconds(2))
+						return RemoteDesktopSignalingConnection(
+							rpc: direct, connectionTask: runner, rtcConfiguration: rtcConfiguration,
+							daemonCertificatePEM: route.daemonCertificatePem, routeLabel: "Direct"
+						)
+					} catch {
+						runner.cancel()
+						direct.shutdown()
+					}
+				} catch {
+					continue
+				}
+			}
+		}
+
+		guard route.relayAvailable else {
+			throw NSError(domain: "DieterScreens", code: 4, userInfo: [NSLocalizedDescriptionKey: "This Dieter daemon is offline."])
+		}
+		let relay = try DieterRPC(endpoint: target, accessToken: gatewayToken, route: .relay(daemonID: daemonID))
+		let runner = Task { _ = try? await relay.run() }
+		do {
+			_ = try await relay.health(timeout: .seconds(5))
+			return RemoteDesktopSignalingConnection(
+				rpc: relay, connectionTask: runner, rtcConfiguration: rtcConfiguration,
+				daemonCertificatePEM: route.daemonCertificatePem, routeLabel: "Gateway"
+			)
+		} catch {
+			runner.cancel()
+			relay.shutdown()
+			throw error
+		}
+	}
+
     private func startConnectionTask(for client: DieterRPC) -> Task<Void, Never> {
         Task { [weak self] in
             do {
@@ -999,12 +1079,17 @@ final class DieterStore {
 
     func disconnect() {
         connectionGeneration &+= 1
-        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); reconnectTask?.cancel()
+        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); machinePresenceLeaseTask?.cancel(); reconnectTask?.cancel()
         reconnectTask = nil
         terminalStreamConnected = false
         rpc?.shutdown(); rpc = nil
         lastSyncFrameAt = nil
         globalSyncing = false
+        endpoints = endpoints.map { machine in
+            var machine = machine
+            if machine.daemonID != nil { machine.online = false }
+            return machine
+        }
         phase = .disconnected
     }
 
@@ -1194,6 +1279,28 @@ final class DieterStore {
         }
     }
 
+    private func startMachinePresenceLeaseMonitor() {
+        machinePresenceLeaseTask?.cancel()
+        machinePresenceLeaseTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await DieterTaskSleep.seconds(1)
+                guard !Task.isCancelled, let self else { return }
+                var changed = false
+                self.endpoints = self.endpoints.map { machine in
+                    guard machine.daemonID != nil, machine.online, !machine.lastSeenAt.isEmpty,
+                          !MachinePresenceText.isFresh(machine.lastSeenAt) else { return machine }
+                    var expired = machine
+                    expired.online = false
+                    changed = true
+                    return expired
+                }
+                if changed, let active = self.endpoints.first(where: { $0.id == self.endpoint.id }) {
+                    self.endpoint = active
+                }
+            }
+        }
+    }
+
     /// Directory refreshes are independent RPCs and may themselves stall on a
     /// half-open transport. Keep sync liveness on its own task so those calls
     /// can never prevent recovery of the stream which owns the visible board.
@@ -1245,9 +1352,12 @@ final class DieterStore {
                     daemonID: daemon.id
                 )
                 item.name = daemon.name.isEmpty ? daemon.id : daemon.name
-                item.online = daemon.online
+                item.online = MachinePresenceText.online(serverOnline: daemon.online, lastSeenAt: daemon.lastSeenAt)
                 item.lastSeenAt = daemon.lastSeenAt
                 item.version = daemon.version
+				item.remoteDesktopReady = daemon.remoteDesktop.ready
+				item.remoteDesktopReason = daemon.remoteDesktop.reason
+				item.remoteDesktopPlatform = daemon.remoteDesktop.platform
                 return item
             }
             if let refreshedActive = endpoints.first(where: { $0.id == endpoint.id }) {
@@ -1386,6 +1496,12 @@ final class DieterStore {
         section = .terminals
         await loadTerminals()
     }
+
+	func openScreens() {
+		stopTerminalWatch()
+		closeConversation()
+		section = .screens
+	}
 
     func loadTerminals() async {
         guard let rpc else { return }

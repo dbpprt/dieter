@@ -27,6 +27,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/scheduler"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
@@ -347,6 +348,29 @@ add an optional LAN, Tailscale, or public route.
 	defer cancel()
 	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
 	enrolled := identityErr == nil && identity.Enrolled()
+	remoteDesktopOptions := remotedesktop.Options{
+		Logger: logger,
+		Source: remotedesktop.SourceOptions{
+			Kind:       strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_SOURCE")),
+			FFmpegPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_FFMPEG")),
+			Display:    strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_DISPLAY")),
+		},
+	}
+	if enrolled {
+		remoteDesktopOptions.Identity = remotedesktop.Identity{
+			DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation,
+			PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey,
+		}
+	}
+	remoteDesktop := remotedesktop.New(remoteDesktopOptions)
+	remoteDesktopPresence := func() *gatewayv1.RemoteDesktopPresence {
+		settings, settingsErr := c.Store.Settings()
+		if settingsErr != nil {
+			logger.Warn("read remote desktop settings for gateway presence", "error", settingsErr)
+			return remoteDesktop.Presence(false, false)
+		}
+		return remoteDesktop.Presence(settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled)
+	}
 	startedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	gatewayState := dieterdaemon.GatewayNotEnrolled
 	if enrolled {
@@ -390,7 +414,10 @@ add an optional LAN, Tailscale, or public route.
 			serveDaemonDirectRoute(ctx, cancel, logger, direct)
 		}
 		go func() {
-			client := &dieterdaemon.GatewayClient{Identity: identity, LocalTarget: *addr, Version: Version, Routes: routes, Log: logger, OnStatus: statusWriter.Gateway}
+			client := &dieterdaemon.GatewayClient{
+				Identity: identity, LocalTarget: *addr, Version: Version, Routes: routes,
+				Log: logger, OnStatus: statusWriter.Gateway, RemoteDesktopPresence: remoteDesktopPresence,
+			}
 			if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {
 				logger.Error("gateway tunnel stopped", "error", tunnelErr)
 				cancel()
@@ -404,7 +431,7 @@ add an optional LAN, Tailscale, or public route.
 	if err := statusWriter.Update(func(value *dieterdaemon.RuntimeStatus) { value.State = "running" }); err != nil {
 		return err
 	}
-	err = server.ListenDaemon(ctx, *addr, c.Store, c.Runner, logger)
+	err = server.ListenDaemon(ctx, *addr, c.Store, c.Runner, logger, remoteDesktop)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

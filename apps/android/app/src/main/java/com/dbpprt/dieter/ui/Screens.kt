@@ -788,6 +788,7 @@ internal fun ProjectPickerSheet(
             )
             state.projects.forEach { project ->
                 val selected = project.id == state.selectedProjectId
+                val projectOnline = state.projectHosts[project.id]?.online != false
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                         .then(
@@ -798,7 +799,8 @@ internal fun ProjectPickerSheet(
                                 Modifier
                             },
                         )
-                        .clickable { onSelect(project.id) }
+                        .clickable(enabled = projectOnline) { onSelect(project.id) }
+                        .alpha(if (projectOnline) 1f else 0.42f)
                         .padding(horizontal = 12.dp, vertical = 12.dp)
                         .testTag("project-picker-${project.id}"),
                     verticalAlignment = Alignment.CenterVertically,
@@ -811,6 +813,7 @@ internal fun ProjectPickerSheet(
                             buildString {
                                 state.projectHosts[project.id]?.let { append(it.hostname).append("  ·  ") }
                                 append(compactProjectPath(project.path))
+                                if (!projectOnline) append("  ·  Offline")
                             },
                             color = DieterMuted,
                             fontSize = 11.sp,
