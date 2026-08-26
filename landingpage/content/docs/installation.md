@@ -15,7 +15,7 @@ separate packages.
 - Go 1.26.5 or newer *(source builds)*
 - Node.js 22.19 or newer on each daemon host
 - Git working trees for registered projects
-- one configured harness login or API key
+- One configured harness login or API key
 - macOS 15+ or Android 8+ for the official clients
 
 The first agent turn installs the exact JavaScript harness runtime from
@@ -54,7 +54,7 @@ open -a Dieter
 ```
 
 Sign in to the configured gateway. Dieter indexes every enrolled machine and
-shows all of their projects together, there is no machine picker to babysit. The
+shows all of their projects together. There is no machine picker to manage. The
 same workspace is available from Android.
 
 {{< callout type="tip" title="Upgrading" >}}

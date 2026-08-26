@@ -19,7 +19,7 @@ the same `dieter.v1.DieterService` API, so the UI does not care which one won.
          direct TLS │ or relay
    ┌─────────────┴─────────────┐
    │   board.dbpprt.com         │   auth + bounded relay
-   │   sessions + routes only   │   (no code, obviously)
+   │   sessions + routes only   │   (no project code)
    └─────────────┬─────────────┘
        authenticated tunnel
    ┌─────────────┴─────────────┐
@@ -30,8 +30,8 @@ the same `dieter.v1.DieterService` API, so the UI does not care which one won.
 
 Gateway access is binary: the configured GitHub identity is allowed or it is
 not. There are no scopes. The gateway stores sessions, daemon identities,
-presence, and route metadata, **never projects, transcripts, files, or harness
-credentials.** Each daemon proves its Ed25519 key on every tunnel connection,
+presence, and route metadata. **It never stores projects, transcripts, files, or
+harness credentials.** Each daemon proves its Ed25519 key on every tunnel connection,
 and each relayed request carries a short-lived, method- and payload-bound
 assertion.
 

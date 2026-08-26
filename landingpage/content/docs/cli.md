@@ -1,7 +1,7 @@
 ---
 title: "CLI reference"
 linkTitle: "CLI reference"
-description: "The dieter command operates the daemon, projects, boards, cards, chats, and schedules, and is built for agents to drive too."
+description: "The dieter command operates the daemon, projects, boards, cards, chats, and schedules. It is built for agents to drive, too."
 group: "Reference"
 weight: 20
 slug: "cli"

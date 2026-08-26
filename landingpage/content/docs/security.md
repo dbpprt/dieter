@@ -13,9 +13,9 @@ the machine that owns them, and give the gateway nothing worth stealing.**
 ## Binary access, no scopes
 
 Client sessions have binary full access or no access. The configured GitHub
-identity, matched on the immutable numeric `DIETER_GITHUB_ALLOWED_USER_ID`, not
-the mutable login, is allowed or it is not. There are no scopes to over-grant and
-no tokens to scope down.
+identity is allowed or it is not, matched on the immutable numeric
+`DIETER_GITHUB_ALLOWED_USER_ID` rather than the mutable login. There are no scopes
+to over-grant and no tokens to scope down.
 
 ## Cryptographic daemon identity
 
@@ -61,7 +61,7 @@ relay calls. **All other paths, including `/`, return 404.**
   are bounded.
 - A canceled relay RPC cancels only that transport RPC and never implicitly
   stops an agent.
-- Screens media never flows through the gateway, only bounded WebRTC signaling
+- Screens media never flows through the gateway; only bounded WebRTC signaling
   and short-lived ICE configuration do.
 
 ## Screens admission

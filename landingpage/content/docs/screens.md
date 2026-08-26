@@ -1,7 +1,7 @@
 ---
 title: "Screens (remote desktop)"
 linkTitle: "Screens"
-description: "View and control an enrolled machine over peer-to-peer WebRTC with hardware H.264, media never touches the gateway."
+description: "View and control an enrolled machine over peer-to-peer WebRTC with hardware H.264. Media never touches the gateway."
 group: "Guides"
 weight: 14
 slug: "screens"
@@ -63,4 +63,4 @@ and reaps the complete capture process group.
 
 If your peers cannot reach each other directly, configure TURN on the gateway
 with `DIETER_RTC_TURN_URLS` and a shared `DIETER_RTC_TURN_SECRET`. The gateway
-derives ephemeral, time-limited credentials, see **[Run a gateway](/docs/gateway/)**.
+derives ephemeral, time-limited credentials. See **[Run a gateway](/docs/gateway/)**.

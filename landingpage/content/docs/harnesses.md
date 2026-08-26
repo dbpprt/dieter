@@ -8,7 +8,7 @@ slug: "harnesses"
 ---
 
 Dieter uses each harness's normal user configuration. Nothing is proxied or
-re-authenticated, your existing agent credentials are read from their usual
+re-authenticated; your existing agent credentials are read from their usual
 location on the daemon host.
 
 ## Supported harnesses
@@ -47,9 +47,9 @@ DIETER_HARNESS_CONFIG=<path>    # environment
   chats; a single conversation still has at most one active turn.
 - **Parallel-session limits** are enforced at runtime lease acquisition, so
   HTTP, CLI, and scheduled starts share one policy.
-- **Durability**, graceful daemon shutdown parks active harness turns with
-  provider continuation state; startup resumes them without replaying the user
-  prompt.
+- **Durability** is built in. A graceful daemon shutdown parks active harness
+  turns with provider continuation state, and startup resumes them without
+  replaying the user prompt.
 
 {{< callout type="warn" title="Harnesses run unsandboxed as your user" >}}
 Harness workers run locally on the daemon host with the permissions of the user

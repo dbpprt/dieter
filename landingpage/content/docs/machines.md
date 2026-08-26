@@ -75,4 +75,4 @@ does **not** remove projects, conversations, schedules, or harness settings.
 The client prefers a reachable direct route and otherwise uses the relay. Both
 paths expose the same `dieter.v1.DieterService` API. Opening a project's board,
 chats, terminals, files, or schedules moves the active connection to that
-project's owning daemon automatically, there is no machine picker.
+project's owning daemon automatically. There is no machine picker to manage.

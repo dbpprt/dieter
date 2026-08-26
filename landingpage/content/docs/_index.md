@@ -8,15 +8,15 @@ weight: 1
 
 Dieter is pronounced **DEE-ter** (/ˈdiː.tər/).
 
-Dieter runs your local coding agents across every machine you own, the Mac mini
-in your office, a server at home, your laptop, and puts them behind one macOS and
+Dieter runs your local coding agents across every machine you own (the Mac mini
+in your office, a server at home, your laptop) and puts them behind one macOS and
 Android app. Each agent runs on the machine that holds the code, close to its Git
 working tree, credentials, and tools. You keep control from anywhere.
 
 {{< callout type="note" title="The idea" >}}
-**Every machine**, enroll them all and work from one project list.
-**Every agent**, Codex, Claude Code, Pi, and Oh My Pi, each from its own config.
-**From anywhere**, drive it from macOS or Android; the code never leaves home.
+**Every machine.** Enroll them all and work from one project list.
+**Every agent.** Codex, Claude Code, Pi, and Oh My Pi, each from its own config.
+**From anywhere.** Drive it from macOS or Android; the code never leaves home.
 {{< /callout >}}
 
 ## What Dieter is
@@ -53,7 +53,7 @@ route advertised by the daemon.
 
 ## Where to next
 
-- **[Installation](/docs/installation/)**, Homebrew packages, source builds, and requirements.
-- **[Quick start](/docs/quickstart/)**, from `brew install` to running your first agent.
-- **[Architecture](/docs/architecture/)**, how the daemon, gateway, and clients fit together.
-- **[Security model](/docs/security/)**, enrollment, assertions, and what the gateway can and cannot see.
+- **[Installation](/docs/installation/)** covers Homebrew packages, source builds, and requirements.
+- **[Quick start](/docs/quickstart/)** goes from `brew install` to your first running agent.
+- **[Architecture](/docs/architecture/)** explains how the daemon, gateway, and clients fit together.
+- **[Security model](/docs/security/)** covers enrollment, assertions, and what the gateway can and cannot see.
