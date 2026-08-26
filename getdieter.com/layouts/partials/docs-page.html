@@ -1,0 +1,31 @@
+{{- /* Shared documentation shell. Context (.) = current page. */ -}}
+<div class="docshell">
+  <div class="docgrid">
+    <aside class="docsidebar">
+      <button class="docmenu-btn" data-docnav-toggle aria-expanded="false">
+        {{ partial "icon" "board" }} Documentation menu
+      </button>
+      {{ partial "docs-sidebar" . }}
+    </aside>
+
+    <article class="doccontent">
+      <div class="docbread"><a href="/docs/">Docs</a><span>/</span>{{ .Title }}</div>
+      <h1>{{ .Title }}</h1>
+      {{ with .Description }}<p class="doclede">{{ . }}</p>{{ end }}
+      <hr class="docdivider">
+      <div class="prose">
+        {{ .Content }}
+      </div>
+      {{ partial "docs-prevnext" . }}
+    </article>
+
+    <aside class="doctoc" aria-label="On this page">
+      {{ if gt (len .TableOfContents) 80 }}
+      <div class="doctoc__inner">
+        <span class="doctoc__label">On this page</span>
+        {{ .TableOfContents }}
+      </div>
+      {{ end }}
+    </aside>
+  </div>
+</div>

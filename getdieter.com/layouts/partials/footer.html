@@ -1,0 +1,41 @@
+<footer class="footer">
+  <div class="footer__inner">
+    <div class="footer__brand">
+      <a class="brand" href="/" aria-label="Dieter home">
+        <img class="brand__mark" src="/brand/mark-mono-dark.svg" alt="" width="34" height="34" aria-hidden="true">
+        <span class="brand__word">Dieter</span>
+      </a>
+      <p class="footer__tag">Many agents, many machines, one interface.<br>Open source and self-hosted.</p>
+      <p class="footer__mono">Pronounced <strong>DEE-ter</strong> · /ˈdiː.tər/</p>
+    </div>
+
+    <nav class="footer__col" aria-label="Product">
+      <h3>Product</h3>
+      <a href="/#features">Features</a>
+      <a href="/#command-deck">Boards</a>
+      <a href="/#screens">Screens</a>
+      <a href="/#install">Download</a>
+    </nav>
+
+    <nav class="footer__col" aria-label="Documentation">
+      <h3>Docs</h3>
+      <a href="/docs/">Introduction</a>
+      <a href="/docs/installation/">Installation</a>
+      <a href="/docs/architecture/">Architecture</a>
+      <a href="/docs/cli/">CLI reference</a>
+    </nav>
+
+    <nav class="footer__col" aria-label="More">
+      <h3>Project</h3>
+      <a href="{{ .Site.Params.github }}" rel="noopener">GitHub</a>
+      <a href="/docs/security/">Security model</a>
+      <a href="/docs/harnesses/">Harnesses</a>
+      <a href="{{ .Site.Params.github }}/blob/main/LICENSE" rel="noopener">License · MIT</a>
+    </nav>
+  </div>
+
+  <div class="footer__base">
+    <p>© {{ now.Year }} Dieter contributors. Released under the MIT License.</p>
+    <p class="footer__note">Made with &hearts; in Berlin</p>
+  </div>
+</footer>

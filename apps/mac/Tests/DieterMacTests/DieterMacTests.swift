@@ -1535,8 +1535,23 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 @Test func messageDeliveryReceiptsFollowOutboxAndSyncAcknowledgements() {
     #expect(MessageDeliveryState(pending: true, accepted: false, failed: false) == .local)
     #expect(MessageDeliveryState(pending: true, accepted: true, failed: false) == .accepted)
+    #expect(MessageDeliveryState(pending: false, accepted: false, failed: false, queued: true) == .queued)
     #expect(MessageDeliveryState(pending: false, accepted: false, failed: false) == .synced)
     #expect(MessageDeliveryState(pending: true, accepted: false, failed: true) == .failed)
+}
+
+@Test func queuedMessagesStayVisibleWithoutDuplicatingAnOptimisticBubble() {
+    var delivered = Dieter_V1_UiMessage(); delivered.id = "delivered"
+    var optimistic = Dieter_V1_UiMessage(); optimistic.id = "queued-optimistic"
+    var queued = Dieter_V1_QueuedMessage(); queued.id = optimistic.id; queued.text = "Keep me visible"
+
+    let result = ConversationQueuePresentation.deliveredMessages(
+        [delivered, optimistic],
+        whileQueued: [queued]
+    )
+
+    #expect(result.map(\.id) == [delivered.id])
+    #expect(queued.text == "Keep me visible")
 }
 
 @Test @MainActor func macAttachmentSelectionPreservesBytesAndEnforcesTheSharedLimit() throws {

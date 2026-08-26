@@ -22,6 +22,93 @@ class WorkspaceFreshnessPresentationTest {
     }
 
     @Test
+    fun liveRefreshKeepsCachedWorkspaceInteractiveWhileRealOutagesMuteIt() {
+        val refreshing = workspaceSurfaceTreatment(
+            showsSynchronizedWorkspace = true,
+            hasCachedWorkspace = true,
+            phase = ConnectionPhase.SYNCING,
+        )
+        assertEquals(WorkspaceSurfaceTreatment.REFRESHING, refreshing)
+        assertTrue(refreshing.showsNotice)
+        assertFalse(refreshing.blocksInteraction)
+
+        val unavailable = workspaceSurfaceTreatment(
+            showsSynchronizedWorkspace = true,
+            hasCachedWorkspace = true,
+            phase = ConnectionPhase.RECONNECTING,
+        )
+        assertEquals(WorkspaceSurfaceTreatment.UNAVAILABLE, unavailable)
+        assertTrue(unavailable.blocksInteraction)
+
+        assertEquals(
+            WorkspaceSurfaceTreatment.CURRENT,
+            workspaceSurfaceTreatment(true, hasCachedWorkspace = false, ConnectionPhase.SYNCING),
+        )
+        assertEquals(
+            WorkspaceSurfaceTreatment.CURRENT,
+            workspaceSurfaceTreatment(false, hasCachedWorkspace = true, ConnectionPhase.SYNCING),
+        )
+    }
+
+    @Test
+    fun firstSyncReplacesTheEmptyWorkspaceUntilLiveDataArrives() {
+        assertTrue(
+            shouldShowInitialWorkspaceSync(
+                showsSynchronizedWorkspace = true,
+                hasCachedWorkspace = false,
+                loading = true,
+                desiredConnected = true,
+                phase = ConnectionPhase.SYNCING,
+            ),
+        )
+        assertTrue(
+            shouldShowInitialWorkspaceSync(
+                true,
+                hasCachedWorkspace = false,
+                loading = false,
+                desiredConnected = true,
+                phase = ConnectionPhase.UNAVAILABLE,
+            ),
+        )
+        assertFalse(
+            shouldShowInitialWorkspaceSync(
+                true,
+                hasCachedWorkspace = true,
+                loading = true,
+                desiredConnected = true,
+                phase = ConnectionPhase.SYNCING,
+            ),
+        )
+        assertFalse(
+            shouldShowInitialWorkspaceSync(
+                true,
+                hasCachedWorkspace = false,
+                loading = false,
+                desiredConnected = true,
+                phase = ConnectionPhase.CONNECTED,
+            ),
+        )
+
+        val syncing = initialWorkspaceSyncPresentation(ConnectionPhase.SYNCING)
+        assertEquals("Syncing your workspace", syncing.title)
+        assertTrue(syncing.working)
+    }
+
+    @Test
+    fun workspaceNoticeMatchesTheQuietMacPresentation() {
+        val syncing = workspaceStatusPresentation(ConnectionPhase.SYNCING, showingCachedData = true)
+        assertEquals("Refreshing workspace", syncing.title)
+        assertEquals("Your current workspace stays available while changes load.", syncing.detail)
+        assertTrue(syncing.working)
+        assertFalse(syncing.usesOfflineAccent)
+
+        val offline = workspaceStatusPresentation(ConnectionPhase.UNAVAILABLE, showingCachedData = true)
+        assertEquals("Working from cached data", offline.title)
+        assertFalse(offline.working)
+        assertTrue(offline.usesOfflineAccent)
+    }
+
+    @Test
     fun cachedMachinePresenceIsNotPresentedAsLiveDuringReconnect() {
         val project = Project.newBuilder().setId("project-one").build()
         val state = DieterUiState(

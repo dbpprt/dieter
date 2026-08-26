@@ -20,7 +20,8 @@ struct ScreensView: View {
             title: "Screens",
             subtitle: subtitle,
             symbol: "rectangle.inset.filled.and.person.filled",
-            prominent: true
+            prominent: true,
+            annotation: "Experimental"
           )
           Spacer()
           Picker("Machine", selection: $selectedMachineID) {

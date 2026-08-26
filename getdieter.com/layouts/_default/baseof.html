@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en" class="{{ if .IsHome }}is-home{{ else }}is-page{{ end }}">
+<head>
+  {{ partial "head.html" . }}
+</head>
+<body class="{{ block "bodyclass" . }}{{ end }}">
+  <a class="skip-link" href="#main">Skip to content</a>
+  {{ partial "nav.html" . }}
+  <main id="main">
+    {{ block "main" . }}{{ end }}
+  </main>
+  {{ partial "footer.html" . }}
+  {{ $js := resources.Get "js/main.js" | minify | fingerprint }}
+  <script src="{{ $js.RelPermalink }}" integrity="{{ $js.Data.Integrity }}" defer></script>
+  {{ block "scripts" . }}{{ end }}
+</body>
+</html>

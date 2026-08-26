@@ -47,8 +47,9 @@ class WorkspaceFreshnessIndicatorTest {
         }
 
         composeRule.onNodeWithTag("workspace-connection-status").assertIsDisplayed()
-        composeRule.onNodeWithText("Reconnecting · Showing cached data").assertIsDisplayed()
-        composeRule.onNodeWithText("Last connected 2m ago").assertIsDisplayed()
+        composeRule.onNodeWithText("Reconnecting to Dieter").assertIsDisplayed()
+        composeRule.onNodeWithText("Cached data stays visible while the connection recovers.").assertIsDisplayed()
+        composeRule.onNodeWithText("Updated 2m ago").assertIsDisplayed()
 
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val screenshot = File(requireNotNull(context.getExternalFilesDir(null)), "workspace-freshness-indicator.png")
@@ -58,5 +59,22 @@ class WorkspaceFreshnessIndicatorTest {
         }
         screenshot.delete()
         assertTrue(pendingScreenshot.renameTo(screenshot))
+    }
+
+    @Test
+    fun firstSyncIsVisibleInsteadOfAnEmptyBoard() {
+        composeRule.setContent {
+            DieterTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    InitialWorkspaceSyncState(ConnectionPhase.SYNCING)
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("workspace-initial-sync").assertIsDisplayed()
+        composeRule.onNodeWithText("Syncing your workspace").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Projects, boards, and conversations will appear together as soon as they arrive.",
+        ).assertIsDisplayed()
     }
 }

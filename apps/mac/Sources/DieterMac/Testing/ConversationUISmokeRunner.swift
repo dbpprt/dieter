@@ -95,6 +95,7 @@ enum ConversationUISmokeRunner {
             await runHistoryChecks(store: store, window: window, results: &results, output: output)
         }
         await runActivityIndicatorCheck(store: store, window: window, results: &results, output: output)
+        await runQueuedMessageCheck(store: store, window: window, results: &results, output: output)
         await runJumpToLatestCheck(store: store, window: window, results: &results, output: output)
 
         writeReport(results, to: output)
@@ -156,6 +157,54 @@ enum ConversationUISmokeRunner {
             conversationStatus: snapshot.conversation.status,
             cardRuntime: snapshot.detail.card.runtime
         ) ? "passed" : "failed: active fixture was not presented as working"
+    }
+
+    /// Keeps a server-accepted follow-up visible while the active turn is
+    /// running, and captures the separate Stop and Queue composer actions.
+    private static func runQueuedMessageCheck(
+        store: DieterStore,
+        window: NSWindow,
+        results: inout [String: String],
+        output: URL
+    ) async {
+        guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            results["queued-message-visible"] = "failed: renderer fixture unavailable"
+            return
+        }
+        var text = Dieter_V1_MessagePart()
+        text.type = "text"
+        text.text = "Keep this follow-up queued until the current turn finishes."
+        var queued = Dieter_V1_QueuedMessage()
+        queued.id = "message_queued_follow_up"
+        queued.text = text.text
+        queued.parts = [text]
+        var optimistic = Dieter_V1_UiMessage()
+        optimistic.id = queued.id
+        optimistic.role = "user"
+        optimistic.parts = queued.parts
+        snapshot.conversation.messages.append(optimistic)
+        snapshot.conversation.queue = [queued]
+        snapshot.conversation.status = "running"
+        snapshot.detail.card.runtime = "running"
+        store.conversation = snapshot
+        store.selectedDetail = snapshot.detail
+        store.composerText = "Queue one more follow-up"
+        defer { store.composerText = "" }
+
+        try? await DieterTaskSleep.seconds(1)
+        capture(window, to: output.appending(path: "06b-queued-message.png"))
+        let delivered = ConversationQueuePresentation.deliveredMessages(
+            snapshot.conversation.messages,
+            whileQueued: snapshot.conversation.queue
+        )
+        results["queued-message-visible"] = delivered.count == snapshot.conversation.messages.count - 1
+            && !delivered.contains { $0.id == queued.id }
+            && snapshot.conversation.queue.map(\.id) == [queued.id]
+            ? "passed"
+            : "failed: accepted queued content was not retained for presentation"
+        results["queued-composer-active"] = store.composerText.isEmpty
+            ? "failed: active composer did not retain a follow-up draft"
+            : "passed"
     }
 
     /// Proves a long transcript opens with a bounded page instead of

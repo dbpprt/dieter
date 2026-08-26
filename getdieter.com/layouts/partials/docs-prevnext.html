@@ -1,0 +1,25 @@
+{{- /* Prev / next in sidebar order. Context (.) = current page. */ -}}
+{{- $cur := . -}}
+{{- $index := site.GetPage "/docs" -}}
+{{- $ordered := (where site.RegularPages "Section" "docs").ByWeight -}}
+{{- $all := slice $index -}}
+{{- range $ordered }}{{ $all = $all | append . }}{{ end -}}
+{{- $n := len $all -}}
+{{- $prev := false -}}
+{{- $next := false -}}
+{{- range $i, $p := $all -}}
+  {{- if eq $p.RelPermalink $cur.RelPermalink -}}
+    {{- if gt $i 0 }}{{ $prev = index $all (sub $i 1) }}{{ end -}}
+    {{- if lt $i (sub $n 1) }}{{ $next = index $all (add $i 1) }}{{ end -}}
+  {{- end -}}
+{{- end -}}
+{{- if or $prev $next }}
+<nav class="docnext" aria-label="Pagination">
+  {{- with $prev }}
+  <a href="{{ .RelPermalink }}"><span>&larr; Previous</span><b>{{ .LinkTitle }}</b></a>
+  {{- end }}
+  {{- with $next }}
+  <a class="n" href="{{ .RelPermalink }}"><span>Next &rarr;</span><b>{{ .LinkTitle }}</b></a>
+  {{- end }}
+</nav>
+{{- end }}

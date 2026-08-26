@@ -359,14 +359,16 @@ struct AppSidebar: View {
 			SidebarRailDestination(
 				title: "Screens",
 				symbol: "rectangle.inset.filled.and.person.filled",
-				selected: store.section == .screens
+				selected: store.section == .screens,
+				annotation: "Experimental"
 			) { store.openScreens() }
 			.accessibilityIdentifier("sidebar.screens")
 		} else {
 			SidebarDestination(
 				title: "Screens",
 				symbol: "rectangle.inset.filled.and.person.filled",
-				selected: store.section == .screens
+				selected: store.section == .screens,
+				annotation: "Experimental"
 			) { store.openScreens() }
 			.padding(.horizontal, 8)
 			.accessibilityIdentifier("sidebar.screens")
@@ -894,6 +896,7 @@ private struct SidebarDestination: View {
     let selected: Bool
     var badge = 0
     var prominentBadge = false
+    var annotation: String?
     let action: () -> Void
     @State private var hovering = false
 
@@ -906,6 +909,9 @@ private struct SidebarDestination: View {
                     .font(.system(size: 12, weight: selected ? .semibold : .medium))
                     .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
                     .lineLimit(1)
+                if let annotation {
+                    ExperimentalBadge(text: annotation)
+                }
                 Spacer()
                 if badge > 0 {
                     if prominentBadge {
@@ -932,6 +938,7 @@ private struct SidebarRailDestination: View {
     let symbol: String
     let selected: Bool
     var badge = 0
+    var annotation: String?
     let action: () -> Void
     @State private var hovering = false
 
@@ -945,11 +952,18 @@ private struct SidebarRailDestination: View {
                 if badge > 0 {
                     Text(badge > 9 ? "9+" : "\(badge)").font(.system(size: 7, weight: .bold)).foregroundStyle(.white)
                         .padding(.horizontal, 3).frame(height: 12).background(DieterTheme.shellDeep, in: Capsule()).offset(x: 3, y: -2)
+                } else if annotation != nil {
+                    Text("E")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(DieterTheme.amber)
+                        .frame(width: 12, height: 12)
+                        .background(DieterTheme.amber.opacity(0.14), in: Capsule())
+                        .offset(x: 3, y: -2)
                 }
             }
         }
-        .buttonStyle(.plain).help(title).onHover { hovering = $0 }
-        .accessibilityLabel(title)
+        .buttonStyle(.plain).help(annotation.map { "\(title) · \($0)" } ?? title).onHover { hovering = $0 }
+        .accessibilityLabel(annotation.map { "\(title), \($0)" } ?? title)
         .frame(maxWidth: .infinity)
     }
 }

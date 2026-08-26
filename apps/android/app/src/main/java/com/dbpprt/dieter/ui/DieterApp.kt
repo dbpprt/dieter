@@ -7,15 +7,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material.icons.outlined.Wifi
@@ -64,12 +68,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -83,6 +90,7 @@ import com.dbpprt.dieter.settings.NavigationStyle
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterEyes
+import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
@@ -115,6 +123,42 @@ private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
 
 private fun Destination.usesSynchronizedWorkspace(): Boolean =
     this != Destination.TERMINALS
+
+internal enum class WorkspaceSurfaceTreatment {
+    CURRENT,
+    REFRESHING,
+    UNAVAILABLE;
+
+    val showsNotice: Boolean get() = this != CURRENT
+    val blocksInteraction: Boolean get() = this == UNAVAILABLE
+}
+
+internal fun workspaceSurfaceTreatment(
+    showsSynchronizedWorkspace: Boolean,
+    hasCachedWorkspace: Boolean,
+    phase: ConnectionPhase,
+): WorkspaceSurfaceTreatment {
+    if (!showsSynchronizedWorkspace || !hasCachedWorkspace) return WorkspaceSurfaceTreatment.CURRENT
+    return when (phase) {
+        ConnectionPhase.CONNECTED -> WorkspaceSurfaceTreatment.CURRENT
+        ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING -> WorkspaceSurfaceTreatment.REFRESHING
+        ConnectionPhase.RECONNECTING,
+        ConnectionPhase.AUTH_REQUIRED,
+        ConnectionPhase.INCOMPATIBLE,
+        ConnectionPhase.UNAVAILABLE,
+        ConnectionPhase.STOPPED,
+        -> WorkspaceSurfaceTreatment.UNAVAILABLE
+    }
+}
+
+internal fun shouldShowInitialWorkspaceSync(
+    showsSynchronizedWorkspace: Boolean,
+    hasCachedWorkspace: Boolean,
+    loading: Boolean,
+    desiredConnected: Boolean,
+    phase: ConnectionPhase,
+): Boolean = showsSynchronizedWorkspace && !hasCachedWorkspace && desiredConnected &&
+    (loading || phase != ConnectionPhase.CONNECTED)
 
 internal fun projectScopedNavigationEnabled(state: DieterUiState): Boolean =
     state.projects.any { state.presentedProjectHosts[it.id]?.online != false }
@@ -192,8 +236,15 @@ fun DieterApp(container: DieterContainer) {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val tabletLayout = usesTabletLayout(maxWidth.value)
-        val cachedStatusIsInline = state.appSurface == null &&
-            state.hasCachedWorkspace && state.destination.usesSynchronizedWorkspace()
+        val synchronizedWorkspaceVisible = state.appSurface == null && state.destination.usesSynchronizedWorkspace()
+        val workspaceStatusIsInline = state.hasCachedWorkspace && synchronizedWorkspaceVisible ||
+            shouldShowInitialWorkspaceSync(
+                showsSynchronizedWorkspace = synchronizedWorkspaceVisible,
+                hasCachedWorkspace = state.hasCachedWorkspace,
+                loading = state.loading,
+                desiredConnected = state.desiredConnected,
+                phase = state.connectionPhase,
+            )
         if (state.appSurface != null) {
             Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
                 AppSurfaceContent(state, model, container.appUpdateManager, Modifier.fillMaxSize(), padding)
@@ -291,7 +342,7 @@ fun DieterApp(container: DieterContainer) {
                 }
             }
         }
-        if (state.connectionPhase != ConnectionPhase.CONNECTED && !cachedStatusIsInline) {
+        if (state.connectionPhase != ConnectionPhase.CONNECTED && !workspaceStatusIsInline) {
             ConnectionStatusIndicator(
                 phase = state.connectionPhase,
                 lastConnectedAtMillis = state.lastConnectedAtMillis,
@@ -334,7 +385,8 @@ internal fun ConnectionStatusIndicator(
     showingCachedData: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val presentation = connectionStatusPresentation(phase)
+    val presentation = workspaceStatusPresentation(phase, showingCachedData)
+    val accent = if (presentation.usesOfflineAccent) DieterCoral else DieterAmber
     var nowMillis by remember(lastConnectedAtMillis) { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(lastConnectedAtMillis) {
         while (true) {
@@ -342,50 +394,108 @@ internal fun ConnectionStatusIndicator(
             nowMillis = System.currentTimeMillis()
         }
     }
-    val freshness = lastConnectedLabel(lastConnectedAtMillis, nowMillis)
-    val content = buildString {
-        append(presentation.label)
-        if (showingCachedData) append(", showing cached data")
-        append(", ").append(freshness)
-    }
+    val freshness = lastUpdatedLabel(lastConnectedAtMillis, nowMillis)
+    val content = "${presentation.title}. ${presentation.detail} $freshness."
     Surface(
         modifier = modifier.testTag("workspace-connection-status"),
-        shape = RoundedCornerShape(50),
-        color = DieterSurfaceHigh,
+        shape = RoundedCornerShape(16.dp),
+        color = accent.copy(alpha = 0.055f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.16f)),
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 11.dp, vertical = 7.dp)
+                .fillMaxWidth()
+                .heightIn(min = 54.dp)
+                .padding(horizontal = 11.dp, vertical = 8.dp)
                 .semantics { contentDescription = content },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            if (presentation.working) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(14.dp),
-                    color = DieterShell.copy(alpha = 0.82f),
-                    trackColor = DieterOutline.copy(alpha = 0.28f),
-                    strokeWidth = 1.8.dp,
-                )
-            } else {
-                Icon(
-                    Icons.Outlined.WifiOff,
-                    contentDescription = null,
-                    tint = DieterCoral.copy(alpha = 0.8f),
-                    modifier = Modifier.size(14.dp),
-                )
+            Surface(shape = RoundedCornerShape(50), color = accent.copy(alpha = 0.12f), modifier = Modifier.size(28.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (presentation.working) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = accent,
+                            trackColor = accent.copy(alpha = 0.18f),
+                            strokeWidth = 1.8.dp,
+                        )
+                    } else {
+                        Icon(
+                            Icons.Outlined.WifiOff,
+                            contentDescription = null,
+                            tint = accent,
+                            modifier = Modifier.size(13.dp),
+                        )
+                    }
+                }
             }
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 Text(
-                    if (showingCachedData) "${presentation.label} · Showing cached data" else presentation.label,
+                    presentation.title,
                     color = DieterText,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Text(freshness, color = DieterMuted, fontSize = 10.sp)
+                Text(
+                    presentation.detail,
+                    color = DieterMuted,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Surface(shape = RoundedCornerShape(50), color = DieterSurfaceHigh.copy(alpha = 0.72f)) {
+                Text(
+                    freshness,
+                    color = DieterMuted,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                )
             }
         }
     }
+}
+
+internal data class WorkspaceStatusPresentation(
+    val title: String,
+    val detail: String,
+    val working: Boolean,
+    val usesOfflineAccent: Boolean,
+)
+
+internal fun workspaceStatusPresentation(
+    phase: ConnectionPhase,
+    showingCachedData: Boolean,
+): WorkspaceStatusPresentation {
+    val cachedDetail = when (phase) {
+        ConnectionPhase.CONNECTING -> "Your workspace stays available while Dieter connects."
+        ConnectionPhase.SYNCING -> "Your current workspace stays available while changes load."
+        ConnectionPhase.RECONNECTING -> "Cached data stays visible while the connection recovers."
+        else -> "Cached data is read-only until Dieter reconnects."
+    }
+    val uncachedDetail = when (phase) {
+        ConnectionPhase.CONNECTING -> "Contacting Dieter and discovering your machines."
+        ConnectionPhase.SYNCING -> "Projects, boards, and conversations are loading."
+        ConnectionPhase.RECONNECTING -> "Restoring your connection to Dieter."
+        else -> "Open connection settings to continue."
+    }
+    return WorkspaceStatusPresentation(
+        title = when (phase) {
+            ConnectionPhase.CONNECTED -> "Workspace is up to date"
+            ConnectionPhase.CONNECTING -> "Connecting to Dieter"
+            ConnectionPhase.SYNCING -> "Refreshing workspace"
+            ConnectionPhase.RECONNECTING -> "Reconnecting to Dieter"
+            ConnectionPhase.AUTH_REQUIRED -> "Sign in required"
+            ConnectionPhase.INCOMPATIBLE -> "Update required"
+            ConnectionPhase.UNAVAILABLE, ConnectionPhase.STOPPED -> if (showingCachedData) "Working from cached data" else "Dieter is unavailable"
+        },
+        detail = if (showingCachedData) cachedDetail else uncachedDetail,
+        working = phase == ConnectionPhase.CONNECTING || phase == ConnectionPhase.SYNCING || phase == ConnectionPhase.RECONNECTING,
+        usesOfflineAccent = phase == ConnectionPhase.AUTH_REQUIRED || phase == ConnectionPhase.INCOMPATIBLE ||
+            phase == ConnectionPhase.UNAVAILABLE || phase == ConnectionPhase.STOPPED,
+    )
 }
 
 internal data class ConnectionStatusPresentation(
@@ -415,6 +525,20 @@ internal fun lastConnectedLabel(
         elapsedSeconds < 3_600L -> "Last connected ${maxOf(1L, elapsedSeconds / 60L)}m ago"
         elapsedSeconds < 86_400L -> "Last connected ${maxOf(1L, elapsedSeconds / 3_600L)}h ago"
         else -> "Last connected ${maxOf(1L, elapsedSeconds / 86_400L)}d ago"
+    }
+}
+
+internal fun lastUpdatedLabel(
+    lastConnectedAtMillis: Long?,
+    nowMillis: Long = System.currentTimeMillis(),
+): String {
+    if (lastConnectedAtMillis == null || lastConnectedAtMillis <= 0L) return "Waiting for first update"
+    val elapsedSeconds = ((nowMillis - lastConnectedAtMillis).coerceAtLeast(0L) / 1_000L)
+    return when {
+        elapsedSeconds < 60L -> "Updated just now"
+        elapsedSeconds < 3_600L -> "Updated ${maxOf(1L, elapsedSeconds / 60L)}m ago"
+        elapsedSeconds < 86_400L -> "Updated ${maxOf(1L, elapsedSeconds / 3_600L)}h ago"
+        else -> "Updated ${maxOf(1L, elapsedSeconds / 86_400L)}d ago"
     }
 }
 
@@ -573,29 +697,72 @@ private fun DestinationContent(
     model: DieterViewModel,
     expanded: Boolean,
     destination: Destination = state.destination,
-    contentPadding: androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues(),
+    contentPadding: PaddingValues = PaddingValues(),
 ) {
-    val showingCachedData = destination.usesSynchronizedWorkspace() && state.hasCachedWorkspace && !state.connected
+    val showsSynchronizedWorkspace = destination.usesSynchronizedWorkspace()
+    val initialWorkspaceSync = shouldShowInitialWorkspaceSync(
+        showsSynchronizedWorkspace = showsSynchronizedWorkspace,
+        hasCachedWorkspace = state.hasCachedWorkspace,
+        loading = state.loading,
+        desiredConnected = state.desiredConnected,
+        phase = state.connectionPhase,
+    )
+    if (initialWorkspaceSync) {
+        InitialWorkspaceSyncState(
+            phase = state.connectionPhase,
+            modifier = Modifier.fillMaxSize().padding(contentPadding),
+        )
+        return
+    }
+    val treatment = workspaceSurfaceTreatment(
+        showsSynchronizedWorkspace = showsSynchronizedWorkspace,
+        hasCachedWorkspace = state.hasCachedWorkspace,
+        phase = state.connectionPhase,
+    )
+    val layoutDirection = LocalLayoutDirection.current
+    val destinationPadding = if (treatment.showsNotice) {
+        PaddingValues(
+            start = if (layoutDirection == LayoutDirection.Ltr) {
+                contentPadding.calculateLeftPadding(layoutDirection)
+            } else {
+                contentPadding.calculateRightPadding(layoutDirection)
+            },
+            top = 0.dp,
+            end = if (layoutDirection == LayoutDirection.Ltr) {
+                contentPadding.calculateRightPadding(layoutDirection)
+            } else {
+                contentPadding.calculateLeftPadding(layoutDirection)
+            },
+            bottom = contentPadding.calculateBottomPadding(),
+        )
+    } else {
+        contentPadding
+    }
     Column(Modifier.fillMaxSize()) {
-        if (showingCachedData) {
+        if (treatment.showsNotice) {
             ConnectionStatusIndicator(
                 phase = state.connectionPhase,
                 lastConnectedAtMillis = state.lastConnectedAtMillis,
                 showingCachedData = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth().padding(
+                    start = 10.dp,
+                    top = contentPadding.calculateTopPadding() + 6.dp,
+                    end = 10.dp,
+                    bottom = 4.dp,
+                ),
             )
         }
         Box(Modifier.fillMaxSize().weight(1f)) {
-            Box(Modifier.fillMaxSize().alpha(if (showingCachedData) 0.48f else 1f)) {
+            Box(Modifier.fillMaxSize().alpha(if (treatment == WorkspaceSurfaceTreatment.UNAVAILABLE) 0.82f else 1f)) {
                 when (destination) {
-                    Destination.CHATS -> ChatsScreen(state, model, expanded, contentPadding)
-                    Destination.BOARD -> BoardScreen(state, model, expanded, contentPadding)
-                    Destination.TERMINALS -> TerminalsScreen(state, model, expanded, contentPadding)
-                    Destination.FILES -> FilesScreen(state, model, expanded, contentPadding)
-                    Destination.SCHEDULES -> SchedulesScreen(state, model, contentPadding)
+                    Destination.CHATS -> ChatsScreen(state, model, expanded, destinationPadding)
+                    Destination.BOARD -> BoardScreen(state, model, expanded, destinationPadding)
+                    Destination.TERMINALS -> TerminalsScreen(state, model, expanded, destinationPadding)
+                    Destination.FILES -> FilesScreen(state, model, expanded, destinationPadding)
+                    Destination.SCHEDULES -> SchedulesScreen(state, model, destinationPadding)
                 }
             }
-            if (showingCachedData) {
+            if (treatment.blocksInteraction) {
                 Spacer(
                     Modifier
                         .matchParentSize()
@@ -609,6 +776,106 @@ private fun DestinationContent(
             }
         }
     }
+}
+
+@Composable
+internal fun InitialWorkspaceSyncState(
+    phase: ConnectionPhase,
+    modifier: Modifier = Modifier,
+) {
+    val presentation = initialWorkspaceSyncPresentation(phase)
+    val accent = if (presentation.working) DieterAmber else DieterCoral
+    Box(
+        modifier = modifier
+            .testTag("workspace-initial-sync")
+            .semantics { contentDescription = "${presentation.title}. ${presentation.detail}" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = accent.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
+                modifier = Modifier.size(72.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (presentation.working) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(42.dp),
+                            color = accent,
+                            trackColor = accent.copy(alpha = 0.16f),
+                            strokeWidth = 2.dp,
+                        )
+                        Icon(Icons.Outlined.Sync, contentDescription = null, tint = accent, modifier = Modifier.size(17.dp))
+                    } else {
+                        Icon(Icons.Outlined.WifiOff, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp))
+                    }
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                presentation.title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                presentation.detail,
+                color = DieterMuted,
+                fontSize = 13.sp,
+                lineHeight = 19.sp,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+internal data class InitialWorkspaceSyncPresentation(
+    val title: String,
+    val detail: String,
+    val working: Boolean,
+)
+
+internal fun initialWorkspaceSyncPresentation(phase: ConnectionPhase): InitialWorkspaceSyncPresentation = when (phase) {
+    ConnectionPhase.STOPPED -> InitialWorkspaceSyncPresentation(
+        "Preparing your workspace",
+        "Dieter is getting ready to connect.",
+        working = true,
+    )
+    ConnectionPhase.CONNECTING -> InitialWorkspaceSyncPresentation(
+        "Connecting to Dieter",
+        "Discovering your enrolled machines and choosing the fastest route.",
+        working = true,
+    )
+    ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED -> InitialWorkspaceSyncPresentation(
+        "Syncing your workspace",
+        "Projects, boards, and conversations will appear together as soon as they arrive.",
+        working = true,
+    )
+    ConnectionPhase.RECONNECTING -> InitialWorkspaceSyncPresentation(
+        "Reconnecting to Dieter",
+        "Restoring the secure route to your workspace.",
+        working = true,
+    )
+    ConnectionPhase.AUTH_REQUIRED -> InitialWorkspaceSyncPresentation(
+        "Sign in to continue",
+        "Open connection settings and sign in to load your workspace.",
+        working = false,
+    )
+    ConnectionPhase.INCOMPATIBLE -> InitialWorkspaceSyncPresentation(
+        "Update required",
+        "Update Dieter before syncing this workspace.",
+        working = false,
+    )
+    ConnectionPhase.UNAVAILABLE -> InitialWorkspaceSyncPresentation(
+        "Dieter is unavailable",
+        "Check your connection and try again.",
+        working = false,
+    )
 }
 
 @Composable

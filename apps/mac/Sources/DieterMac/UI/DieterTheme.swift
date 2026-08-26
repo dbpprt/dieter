@@ -304,12 +304,18 @@ struct PaneTitleBlock: View {
     var subtitle: String = ""
     var symbol: String? = nil
     var prominent = false
+    var annotation: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(prominent ? DieterFont.paneTitle : DieterFont.title)
-                .lineLimit(1)
+            HStack(spacing: 7) {
+                Text(title)
+                    .font(prominent ? DieterFont.paneTitle : DieterFont.title)
+                    .lineLimit(1)
+                if let annotation {
+                    ExperimentalBadge(text: annotation)
+                }
+            }
             if !subtitle.isEmpty {
                 Text(subtitle)
                     .font(DieterFont.subtitle)
@@ -414,6 +420,23 @@ struct StatusPill: View {
     private var label: String {
         let value = text.isEmpty ? "idle" : text
         return value.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
+struct ExperimentalBadge: View {
+    var text = "Experimental"
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.system(size: 8, weight: .bold))
+            .tracking(0.35)
+            .foregroundStyle(DieterTheme.amber)
+            .padding(.horizontal, 6)
+            .frame(height: 16)
+            .background(DieterTheme.amber.opacity(0.12), in: Capsule())
+            .overlay(Capsule().stroke(DieterTheme.amber.opacity(0.22)))
+            .fixedSize()
+            .accessibilityLabel(text)
     }
 }
 

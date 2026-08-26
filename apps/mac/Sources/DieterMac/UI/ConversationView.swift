@@ -246,10 +246,17 @@ struct ConversationTimeline: View {
 
     private var messages: [Dieter_V1_UiMessage] { store.conversationMessages }
     private var timelineItems: [ConversationTimelineItem] {
-        ConversationTimelineItem.group(messages, showReasoning: store.showReasoning)
+        ConversationTimelineItem.group(
+            ConversationQueuePresentation.deliveredMessages(
+                messages,
+                whileQueued: store.conversation?.conversation.queue ?? []
+            ),
+            showReasoning: store.showReasoning
+        )
     }
     private var plans: [Dieter_V1_TaskPlan] { store.conversation?.conversation.taskPlans ?? [] }
     private var subagents: [Dieter_V1_Subagent] { store.conversation?.conversation.subagents ?? [] }
+    private var queuedMessages: [Dieter_V1_QueuedMessage] { store.conversation?.conversation.queue ?? [] }
     private var timelineRows: [ConversationTimelineRowContent] {
         let plansByMessage = Dictionary(grouping: plans, by: \.messageID)
         let subagentsByMessage = Dictionary(grouping: subagents, by: \.messageID)
@@ -331,6 +338,11 @@ struct ConversationTimeline: View {
                             .id(row.id)
                     }
 
+                    ForEach(queuedMessages, id: \.id) { message in
+                        QueuedMessageView(message: message)
+                            .id("queued:\(message.id)")
+                    }
+
                     ForEach(plans.filter { plan in !plan.messageID.isEmpty && messages.contains(where: { $0.id == plan.messageID }) == false }, id: \.id) {
                         TaskPlanView(plan: $0)
                     }
@@ -346,7 +358,7 @@ struct ConversationTimeline: View {
                 }
                 .padding(.horizontal, 18).padding(.vertical, 17)
             }
-            .textSelection(.disabled)
+            .textSelection(.enabled)
             .background(DieterTheme.background)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 ConversationScrollBehavior.isAtLatest(
@@ -413,6 +425,16 @@ struct ConversationTimeline: View {
             }
             historyLoadInFlight = false
         }
+    }
+}
+
+enum ConversationQueuePresentation {
+    static func deliveredMessages(
+        _ messages: [Dieter_V1_UiMessage],
+        whileQueued queue: [Dieter_V1_QueuedMessage]
+    ) -> [Dieter_V1_UiMessage] {
+        let queuedIDs = Set(queue.lazy.map(\.id).filter { !$0.isEmpty })
+        return messages.filter { !queuedIDs.contains($0.id) }
     }
 }
 
@@ -492,7 +514,8 @@ struct MessageView: View {
         MessageDeliveryState(
             pending: store.isPendingMessage(message.id),
             accepted: store.isAcceptedOutboxItem(message.id),
-            failed: store.isFailedOutboxItem(message.id)
+            failed: store.isFailedOutboxItem(message.id),
+            queued: store.conversation?.conversation.queue.contains { $0.id == message.id } == true
         )
     }
 
@@ -538,14 +561,54 @@ struct MessageView: View {
     }
 }
 
+private struct QueuedMessageView: View {
+    let message: Dieter_V1_QueuedMessage
+
+    private var parts: [Dieter_V1_MessagePart] {
+        if !message.parts.isEmpty { return message.parts }
+        guard !message.text.isEmpty else { return [] }
+        var part = Dieter_V1_MessagePart()
+        part.type = "text"
+        part.text = message.text
+        return [part]
+    }
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 70)
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    MessagePartView(messageID: message.id, part: part, inUserBubble: true)
+                }
+            }
+            .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)
+            .background(DieterTheme.shellDeep.opacity(0.72), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(DieterTheme.amber.opacity(0.45))
+            }
+            .frame(maxWidth: 620, alignment: .trailing)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            MessageDeliveryReceipt(state: .queued)
+                .padding(.trailing, 4)
+                .padding(.bottom, 4)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("conversation.queued-message.\(message.id)")
+    }
+}
+
 enum MessageDeliveryState: Equatable {
     case local
     case accepted
+    case queued
     case synced
     case failed
 
-    init(pending: Bool, accepted: Bool, failed: Bool) {
+    init(pending: Bool, accepted: Bool, failed: Bool, queued: Bool = false) {
         if failed { self = .failed }
+        else if queued { self = .queued }
         else if !pending { self = .synced }
         else if accepted { self = .accepted }
         else { self = .local }
@@ -562,6 +625,8 @@ private struct MessageDeliveryReceipt: View {
                 Image(systemName: "clock")
             case .accepted:
                 Image(systemName: "checkmark")
+            case .queued:
+                Image(systemName: "clock.badge.checkmark")
             case .synced:
                 ZStack {
                     Image(systemName: "checkmark")
@@ -575,7 +640,7 @@ private struct MessageDeliveryReceipt: View {
             }
         }
         .font(.system(size: 9, weight: .bold))
-        .foregroundStyle(state == .failed ? DieterTheme.coral : DieterTheme.tertiary)
+        .foregroundStyle(state == .failed ? DieterTheme.coral : (state == .queued ? DieterTheme.amber : DieterTheme.tertiary))
         .accessibilityLabel(accessibilityLabel)
         .help(accessibilityLabel)
     }
@@ -584,6 +649,7 @@ private struct MessageDeliveryReceipt: View {
         switch state {
         case .local: "Waiting to send"
         case .accepted: "Accepted by daemon"
+        case .queued: "Queued for the next turn"
         case .synced: "Synced"
         case .failed: "Send failed; use the context menu to retry or discard"
         }
@@ -1207,7 +1273,12 @@ private struct ConversationComposer: View {
 
     private var harness: Dieter_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == store.composerProvider } }
     private var model: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == store.composerModel } }
-    private var working: Bool { ["running", "starting"].contains(store.conversation?.conversation.status ?? "") }
+    private var working: Bool {
+        ConversationActivityPresentation.isActive(
+            conversationStatus: store.conversation?.conversation.status ?? "",
+            cardRuntime: (store.selectedCard ?? store.selectedDetail?.card)?.runtime ?? ""
+        )
+    }
     private var hasDraft: Bool {
         !store.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.composerAttachments.isEmpty
     }
@@ -1257,24 +1328,41 @@ private struct ConversationComposer: View {
                     }
                     .frame(maxWidth: .infinity)
 
+                    if working {
+                        Button {
+                            if let card = store.selectedCard ?? store.selectedDetail?.card {
+                                Task { await store.cancel(card) }
+                            }
+                        } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Color.white)
+                                .frame(width: 30, height: 30)
+                                .background(DieterTheme.coral, in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.14)))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Stop agent")
+                        .accessibilityIdentifier("conversation.stop")
+                    }
+
                     Button {
-                        if working, let card = store.selectedCard { Task { await store.cancel(card) } }
-                        else { Task { await store.sendComposer() } }
+                        Task { await store.sendComposer() }
                     } label: {
-                        Image(systemName: working ? "stop.fill" : "arrow.up")
+                        Image(systemName: "arrow.up")
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(working || hasDraft ? Color.white : DieterTheme.tertiary)
+                            .foregroundStyle(hasDraft ? Color.white : DieterTheme.tertiary)
                             .frame(width: 36, height: 36)
                             .background(
-                                working ? DieterTheme.coral : (hasDraft ? DieterTheme.primary : DieterTheme.elevated),
+                                hasDraft ? DieterTheme.primary : DieterTheme.elevated,
                                 in: Circle()
                             )
-                            .overlay(Circle().stroke(Color.white.opacity(working || hasDraft ? 0.14 : 0.055)))
-                            .shadow(color: working ? DieterTheme.coral.opacity(0.2) : DieterTheme.shellDeep.opacity(hasDraft ? 0.3 : 0), radius: 9, y: 3)
+                            .overlay(Circle().stroke(Color.white.opacity(hasDraft ? 0.14 : 0.055)))
+                            .shadow(color: DieterTheme.shellDeep.opacity(hasDraft ? 0.3 : 0), radius: 9, y: 3)
                     }
                     .buttonStyle(.plain)
-                    .disabled(!working && !hasDraft)
-                    .help(working ? "Stop agent" : "Send message")
+                    .disabled(!hasDraft)
+                    .help(working ? "Queue message" : "Send message")
                     .accessibilityIdentifier("conversation.send")
                 }
                 .padding(.leading, 10)

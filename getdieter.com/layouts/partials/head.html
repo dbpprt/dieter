@@ -1,0 +1,52 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{ $title := .Title }}
+{{ $isHome := .IsHome }}
+<title>{{ if $isHome }}{{ .Site.Title }}{{ else }}{{ $title }} · Dieter{{ end }}</title>
+{{ $desc := .Description | default .Site.Params.description }}
+<meta name="description" content="{{ $desc }}">
+<meta name="theme-color" content="#ffffff">
+<meta name="color-scheme" content="light">
+<link rel="canonical" href="{{ .Permalink }}">
+
+<!-- Open Graph / Twitter -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Dieter">
+<meta property="og:title" content="{{ if $isHome }}Dieter — coding agents across all your machines{{ else }}{{ $title }} · Dieter{{ end }}">
+<meta property="og:description" content="{{ $desc }}">
+<meta property="og:url" content="{{ .Permalink }}">
+<meta property="og:image" content="{{ .Site.Params.ogImage | absURL }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ if $isHome }}Dieter — coding agents across all your machines{{ else }}{{ $title }} · Dieter{{ end }}">
+<meta name="twitter:description" content="{{ $desc }}">
+<meta name="twitter:image" content="{{ .Site.Params.ogImage | absURL }}">
+
+<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/images/app-icon-dark-512.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+{{ $main := resources.Get "css/main.css" }}
+{{ $chroma := resources.Get "css/_chroma.css" }}
+{{ $bundle := slice $main $chroma | resources.Concat "css/bundle.css" | minify | fingerprint }}
+<link rel="stylesheet" href="{{ $bundle.RelPermalink }}" integrity="{{ $bundle.Data.Integrity }}">
+
+{{ if $isHome }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Dieter",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Android",
+  "description": {{ $desc | jsonify }},
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "url": "{{ .Site.BaseURL }}"
+}
+</script>
+{{ end }}

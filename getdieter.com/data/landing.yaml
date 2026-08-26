@@ -1,0 +1,13 @@
+harnesses:
+  - name: Codex
+    config: "~/.codex · CODEX_HOME"
+    models: ["GPT-5.6 Sol", "GPT-5.6 Terra", "GPT-5.5", "GPT-5.3 Codex"]
+  - name: Claude Code
+    config: "~/.claude · CLAUDE_CONFIG_DIR"
+    models: ["Sonnet", "Opus", "Haiku", "reasoning: low→max"]
+  - name: Pi
+    config: "~/.pi/agent · PI_AGENT_DIR"
+    models: ["Configured default", "Qwen 3.6 27B", "effort: off→xhigh"]
+  - name: Oh My Pi
+    config: "~/.omp/agent · OMP_PROFILE"
+    models: ["DeepSeek V4 Flash", "Qwen 3.6 27B", "Advisor", "Auto"]

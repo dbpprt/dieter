@@ -130,9 +130,10 @@ conversation, files, schedules, and a real card conversation.
 
 `conversation-ui-smoke.sh` opens a real conversation that carries reasoning and
 tool parts, verifies that hiding reasoning consolidates adjacent tool calls into
-one collapsed group, grows a model answer to verify the explicit jump-to-latest
-control without viewport snapping, and toggles the composer's reasoning switch
-repeatedly to prove the transcript survives it. Captures land under
+one collapsed group, verifies queued follow-ups remain visible beside separate
+Stop and Queue composer actions, grows a model answer to verify the explicit
+jump-to-latest control without viewport snapping, and toggles the composer's
+reasoning switch repeatedly to prove the transcript survives it. Captures land under
 `apps/mac/.build/conversation-ui-smoke`.
 
 `sidebar-ui-smoke.sh` launches the packaged app twice against isolated local

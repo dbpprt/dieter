@@ -129,6 +129,13 @@ enum NativeUISmokeRunner {
         await captureAppearances(window, named: "01-board.png", in: output)
         results["board-initial"] = store.section.rawValue
 
+        store.openScreens()
+        try? await DieterTaskSleep.milliseconds(500)
+        results["01a-experimental-screens"] = store.section == .screens ? "passed" : "failed: screens did not open"
+        await captureAppearances(window, named: "01a-experimental-screens.png", in: output)
+        await store.openBoard(board.id, projectID: project.id)
+        try? await DieterTaskSleep.milliseconds(500)
+
         // Expand the first compressed project inline via its trailing chevron
         // (x≈211 for the 234pt sidebar; the first row sits just below the PROJECTS
         // header). This reveals the same boards/files/schedules rows the quick-nav
@@ -355,7 +362,23 @@ enum NativeUISmokeRunner {
         results["13c-standalone-chat-opens"] = openedChat && store.errorMessage == nil
             ? "passed"
             : "failed: selected=\(store.selectedChatID ?? "none"), loading=\(store.conversationLoading), error=\(store.errorMessage ?? "none")"
+        if openedChat,
+           let chatID = store.selectedChatID,
+           let chat = store.chats.first(where: { $0.id == chatID }) {
+            let renamedTitle = "\(chatTitle) renamed"
+            await store.rename(chat, title: renamedTitle)
+            let renamed = await waitUntil(timeout: 10) {
+                store.chats.contains { $0.id == chatID && $0.title == renamedTitle }
+            }
+            results["13d-standalone-chat-rename"] = renamed
+                ? "passed"
+                : "failed: packaged Mac RenameCard did not synchronize the chat title"
+        } else {
+            results["13d-standalone-chat-rename"] = "failed: created chat was unavailable for rename"
+        }
         store.closeConversation()
+        try? await DieterTaskSleep.milliseconds(500)
+        await captureAppearances(window, named: "13d-standalone-chat-renamed.png", in: output)
 
         store.createProjectPresented = true
         try? await DieterTaskSleep.milliseconds(700)

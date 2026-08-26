@@ -1,0 +1,53 @@
+# Ready-to-use GitHub Pages deploy for getdieter.com.
+# Move this file to .github/workflows/ at the repo root when the domain is live.
+name: Deploy getdieter.com
+
+on:
+  push:
+    branches: [main]
+    paths: ["getdieter.com/**", ".github/workflows/github-pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      HUGO_VERSION: 0.164.0
+      # Set to the site's working directory. Change to "." if you move the
+      # site to the repo root.
+      SITE_DIR: getdieter.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Install Hugo (extended)
+        run: |
+          curl -sSL "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin hugo
+      - uses: actions/configure-pages@v5
+      - name: Build
+        working-directory: ${{ env.SITE_DIR }}
+        run: hugo --minify --gc --baseURL "https://getdieter.com/"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE_DIR }}/public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

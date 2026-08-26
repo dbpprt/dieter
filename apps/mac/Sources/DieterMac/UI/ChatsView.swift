@@ -159,6 +159,8 @@ struct ChatRow: View {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
     @State private var hovering = false
+    @State private var renamePresented = false
+    @State private var renameText = ""
 
     var body: some View {
         Button {
@@ -238,12 +240,43 @@ struct ChatRow: View {
                 Button("Restore") { Task { await store.archive(card, archived: false) } }
             } else {
                 Button(card.pinned ? "Unpin" : "Pin") { Task { await store.pin(card, pinned: !card.pinned) } }
+            }
+            Button("Rename…", systemImage: "pencil") {
+                renameText = card.title
+                renamePresented = true
+            }
+            if !card.archived {
+                Divider()
                 Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
             }
         }
         .accessibilityIdentifier("chat.\(card.id)")
+        .sheet(isPresented: $renamePresented) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Rename chat").font(.title2.weight(.bold))
+                TextField("Title", text: $renameText)
+                    .accessibilityIdentifier("chat.rename.title")
+                    .onSubmit { rename() }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { renamePresented = false }
+                    Button("Rename") { rename() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("chat.rename.confirm")
+                }
+            }
+            .padding(22)
+            .frame(width: 440)
+        }
     }
 
+    private func rename() {
+        let title = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        Task { await store.rename(card, title: title) }
+        renamePresented = false
+    }
 }
 
 enum ChatActivityText {

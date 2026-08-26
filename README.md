@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="assets/brand/assets/social/og-image.png" alt="Dieter — your coding agents, conducted." width="100%">
+  <img src="assets/brand/assets/social/og-image.png" alt="Dieter — coding agents across all your machines" width="100%">
 </p>
 
 <h1 align="center">Dieter</h1>
 
 <p align="center">
-  <strong>Dieter’s on it.</strong><br>
-  <sub>Every project. Every machine. One command deck.</sub>
+  <strong>Many agents, many machines, one interface.</strong><br>
+  <sub>Run your coding agents across every machine you own.</sub>
 </p>
 
 <p align="center">
@@ -24,13 +24,18 @@
 
 Dieter is pronounced **DEE-ter** (/ˈdiː.tər/).
 
-Dieter is a native command deck for local coding agents. It keeps the human at
-the helm while every agent runs on the machine that owns the code—close to its
-Git working tree, credentials, tools, and durable conversation history.
+Dieter runs your local coding agents—Codex, Claude Code, Pi, and Oh My Pi—across
+every machine you own and puts them behind one macOS and Android app. Each agent
+runs on the machine that holds the code, close to its Git working tree,
+credentials, tools, and durable conversation history. You keep control from
+anywhere.
 
-| Human at the helm | Code stays home | Conversations endure |
+Dieter started as my own setup for working with coding agents at scale. It is
+open source and will stay that way—contributions and issues are welcome.
+
+| Every machine | Every agent | From anywhere |
 | --- | --- | --- |
-| Direct the fleet from macOS or Android. | Project data and harness credentials remain on your daemon hosts. | Every card and standalone chat resumes one durable harness session. |
+| Enroll your office Mac mini, a home server, your laptop—and see one project list. | Codex, Claude Code, Pi, and Oh My Pi, each from its own config. | Drive chats, boards, and schedules from macOS or Android. |
 
 The system has three parts:
 
@@ -113,7 +118,7 @@ flowchart LR
     dataA[("Git + DIETER_HOME")]
     dataB[("Git + DIETER_HOME")]
     agents["Codex · Claude Code · Pi · Oh My Pi"]
-    nope["Gateway storage<br/>sessions + routes<br/>no code, obviously"]
+    nope["Gateway storage<br/>sessions + routes<br/>no project code"]
 
     apps --> gateway
     apps -. "direct TLS when reachable" .-> a
@@ -444,3 +449,5 @@ admission that receives a peer-to-peer synthetic VP8 frame in one test.
 
 The complete visual identity, production artwork, portable design tokens, and
 usage guide live in [`assets/brand`](assets/brand/README.md).
+
+<p align="center"><sub>Made with &hearts; in Berlin.</sub></p>

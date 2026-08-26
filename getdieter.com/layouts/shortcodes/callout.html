@@ -1,0 +1,13 @@
+{{- $type := .Get "type" | default "note" -}}
+{{- $title := .Get "title" -}}
+{{- $icon := "check" -}}
+{{- if eq $type "warn" }}{{ $icon = "shield" }}{{ end -}}
+{{- if eq $type "tip" }}{{ $icon = "infinity" }}{{ end -}}
+{{- if eq $type "note" }}{{ $icon = "terminal" }}{{ end -}}
+<div class="callout callout--{{ $type }}">
+  <span class="callout__icon">{{ partial "icon" $icon }}</span>
+  <div class="callout__body">
+    {{- with $title }}<div class="callout__title">{{ . }}</div>{{ end -}}
+    {{ .Inner | markdownify }}
+  </div>
+</div>

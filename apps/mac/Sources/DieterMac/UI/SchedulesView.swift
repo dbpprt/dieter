@@ -3,8 +3,7 @@ import SwiftUI
 
 struct SchedulesView: View {
     @Environment(DieterStore.self) private var store
-    @State private var editorPresented = false
-    @State private var editing: Dieter_V1_Schedule?
+    @State private var editorPresentation: ScheduleEditorPresentation?
 
     var body: some View {
         HSplitView {
@@ -18,7 +17,7 @@ struct SchedulesView: View {
                             prominent: true
                         )
                         Button { Task { await store.loadSchedules() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(DieterIconButtonStyle())
-                        Button { editing = nil; editorPresented = true } label: { Label("New", systemImage: "plus") }
+                        Button { editorPresentation = ScheduleEditorPresentation(schedule: nil) } label: { Label("New", systemImage: "plus") }
                             .buttonStyle(DieterPrimaryButtonStyle()).accessibilityIdentifier("schedules.new")
                     }
                 }
@@ -43,7 +42,7 @@ struct SchedulesView: View {
             }.frame(minWidth: 280, idealWidth: 350, maxWidth: 440, maxHeight: .infinity, alignment: .top).background(DieterTheme.sidebar)
 
             if let schedule = store.selectedSchedule {
-                ScheduleDetail(schedule: schedule, edit: { editing = schedule; editorPresented = true })
+                ScheduleDetail(schedule: schedule, edit: { editorPresentation = ScheduleEditorPresentation(schedule: schedule) })
             } else {
                 VStack(spacing: 0) {
                     FluidPaneChrome {
@@ -55,8 +54,15 @@ struct SchedulesView: View {
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await store.loadSchedules() }
-        .sheet(isPresented: $editorPresented) { ScheduleEditor(schedule: editing).environment(store) }
+        .sheet(item: $editorPresentation) { presentation in
+            ScheduleEditor(schedule: presentation.schedule).environment(store)
+        }
     }
+}
+
+struct ScheduleEditorPresentation: Identifiable {
+    let id = UUID()
+    let schedule: Dieter_V1_Schedule?
 }
 
 struct ScheduleRow: View {
@@ -158,23 +164,7 @@ struct ScheduleEditor: View {
 
     init(schedule: Dieter_V1_Schedule?) {
         self.schedule = schedule
-        var draft = Dieter_V1_ScheduleDraft()
-        draft.projectID = schedule?.projectID ?? ""
-        draft.boardID = schedule?.boardID ?? ""
-        draft.name = schedule?.name ?? ""
-        draft.description_p = schedule?.description_p ?? ""
-        draft.cron = schedule?.cron ?? "0 9 * * 1-5"
-        draft.timezone = schedule?.timezone ?? TimeZone.current.identifier
-        draft.enabled = schedule?.enabled ?? true
-        draft.action = schedule?.action == "run" ? "run" : "draft"
-        draft.titleTemplate = schedule?.titleTemplate ?? "Scheduled work · {{date}}"
-        draft.promptTemplate = schedule?.promptTemplate ?? ""
-        draft.provider = schedule?.provider ?? ""
-        draft.model = schedule?.model ?? ""
-        draft.effort = schedule?.effort ?? ""
-        draft.openCardPolicy = schedule?.openCardPolicy == "always" ? "always" : "skip_if_open"
-        draft.misfirePolicy = "latest"
-        draft.busyPolicy = schedule?.busyPolicy == "skip" ? "skip" : "queue"
+        let draft = ScheduleEditorDraft.make(from: schedule)
         let timing = ScheduleTiming.parse(draft.cron)
         _draft = State(initialValue: draft)
         _cadence = State(initialValue: timing.cadence)
@@ -402,9 +392,8 @@ struct ScheduleEditor: View {
                             }
                         }
 
-                        ScheduleEditorSection(title: "Agent", subtitle: "The selected harness runs only for Running placement", symbol: "cpu") {
+                        ScheduleEditorSection(title: "Agent", subtitle: "Choose the harness saved on every card this schedule creates", symbol: "cpu") {
                             HarnessFields(provider: $draft.provider, model: $draft.model, effort: $draft.effort, providerOptions: $draft.providerOptions)
-                                .disabled(draft.action == "draft")
                         }
 
                         ScheduleEditorSection(title: "Delivery & safety", subtitle: "Control duplicate work and project admission", symbol: "checkmark.shield") {
@@ -479,6 +468,35 @@ struct ScheduleEditor: View {
         let saved = await store.saveSchedule(id: schedule?.id, draft: draft)
         saving = false
         if saved { dismiss() }
+    }
+}
+
+enum ScheduleEditorDraft {
+    static func make(from schedule: Dieter_V1_Schedule?) -> Dieter_V1_ScheduleDraft {
+        var draft = Dieter_V1_ScheduleDraft()
+        draft.projectID = schedule?.projectID ?? ""
+        draft.boardID = schedule?.boardID ?? ""
+        draft.name = schedule?.name ?? ""
+        draft.description_p = schedule?.description_p ?? ""
+        draft.cron = schedule?.cron ?? "0 9 * * 1-5"
+        draft.timezone = schedule?.timezone ?? TimeZone.current.identifier
+        draft.enabled = schedule?.enabled ?? true
+        draft.action = schedule?.action == "run" ? "run" : "draft"
+        draft.titleTemplate = schedule?.titleTemplate ?? "Scheduled work · {{date}}"
+        draft.promptTemplate = schedule?.promptTemplate ?? ""
+        draft.provider = schedule?.provider ?? ""
+        draft.model = schedule?.model ?? ""
+        draft.effort = schedule?.effort ?? ""
+        draft.labelIds = schedule?.labelIds ?? []
+        draft.openCardPolicy = schedule?.openCardPolicy == "always" ? "always" : "skip_if_open"
+        if let misfirePolicy = schedule?.misfirePolicy, !misfirePolicy.isEmpty {
+            draft.misfirePolicy = misfirePolicy
+        } else {
+            draft.misfirePolicy = "latest"
+        }
+        draft.busyPolicy = schedule?.busyPolicy == "skip" ? "skip" : "queue"
+        draft.providerOptions = schedule?.providerOptions ?? [:]
+        return draft
     }
 }
 

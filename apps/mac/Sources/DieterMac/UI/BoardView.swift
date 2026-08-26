@@ -325,7 +325,7 @@ struct BoardHeader: View {
                             }
                         }
                     }
-                    .frame(width: min(320, max(74, CGFloat(board.labels.count) * 94)), alignment: .leading)
+                    .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
                 }
 
                 Menu {
@@ -392,7 +392,7 @@ struct BoardHeader: View {
                                 }
                             }
                         }
-                        .frame(width: min(240, max(74, CGFloat(board.labels.count) * 94)), alignment: .leading)
+                        .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
                     }
 
                     Menu {
