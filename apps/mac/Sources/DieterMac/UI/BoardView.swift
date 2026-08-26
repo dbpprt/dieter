@@ -49,6 +49,14 @@ enum BoardLabelAssignment {
     }
 }
 
+enum BoardCardEditingPolicy {
+    static func canEditDraft(_ card: Dieter_V1_Card) -> Bool {
+        card.lane.caseInsensitiveCompare("todo") == .orderedSame &&
+            card.initialPromptSentAt.isEmpty &&
+            !card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
 enum BoardDropOrdering {
     static func position(before targetCardID: String, movingCardID: String, cards: [Dieter_V1_Card]) -> Int64? {
         let remaining = cards.filter { $0.id != movingCardID }.sorted { $0.position < $1.position }
@@ -619,6 +627,7 @@ struct BoardCardView: View {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
     @State private var renamePresented = false
+    @State private var editPresented = false
     @State private var renameText = ""
     @State private var hovering = false
     @State private var labelDropTargeted = false
@@ -641,6 +650,20 @@ struct BoardCardView: View {
                     StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
                     if !card.model.isEmpty { Text(card.model).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1) }
                     Spacer()
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        let age = BoardCardActivityText.compact(
+                            updatedAt: card.updatedAt,
+                            lastActivityAt: card.lastActivityAt,
+                            relativeTo: context.date
+                        )
+                        if !age.isEmpty {
+                            Text(age)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(DieterTheme.tertiary)
+                                .accessibilityLabel("Last activity \(age)")
+                        }
+                    }
+                    .fixedSize()
                     if card.commentCount > 0 { Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary) }
                     if !card.activeSubagents.isEmpty { Label("\(card.activeSubagents.count)", systemImage: "person.2").font(.system(size: 10)).foregroundStyle(DieterTheme.shell) }
                 }
@@ -712,6 +735,9 @@ struct BoardCardView: View {
                 Divider()
             }
             Button("Open conversation") { Task { await store.openConversation(cardID: card.id) } }
+            if BoardCardEditingPolicy.canEditDraft(card) {
+                Button("Edit card…") { editPresented = true }
+            }
             Button("Rename…") { renameText = card.title; renamePresented = true }
             Menu("Move to") {
                 ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { lane in
@@ -733,6 +759,37 @@ struct BoardCardView: View {
         .sheet(isPresented: $renamePresented) {
             VStack(alignment: .leading, spacing: 14) { Text("Rename card").font(.title2.weight(.bold)); TextField("Title", text: $renameText); HStack { Spacer(); Button("Cancel") { renamePresented = false }; Button("Rename") { Task { await store.rename(card, title: renameText); renamePresented = false } }.buttonStyle(.borderedProminent).disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty) } }.padding(22).frame(width: 440)
         }
+        .sheet(isPresented: $editPresented) {
+            EditCardSheet(card: card).environment(store)
+        }
+    }
+}
+
+enum BoardCardActivityText {
+    static func compact(
+        updatedAt: String,
+        lastActivityAt: String,
+        relativeTo now: Date = Date()
+    ) -> String {
+        guard let activity = latest(updatedAt: updatedAt, lastActivityAt: lastActivityAt) else { return "" }
+        let seconds = max(0, Int(now.timeIntervalSince(activity)))
+        switch seconds {
+        case ..<60: return "now"
+        case ..<3_600: return "\(seconds / 60)min"
+        case ..<86_400: return "\(seconds / 3_600)h"
+        case ..<604_800: return "\(seconds / 86_400)d"
+        default: return "\(seconds / 604_800)w"
+        }
+    }
+
+    private static func latest(updatedAt: String, lastActivityAt: String) -> Date? {
+        [updatedAt, lastActivityAt].compactMap(parse).max()
+    }
+
+    private static func parse(_ value: String) -> Date? {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }
 

@@ -8,7 +8,7 @@ enum DieterAppearance: String, CaseIterable, Identifiable {
 
     static let storageKey = "DieterAppearance"
     static let defaultsSuiteFlag = "--appearance-defaults-suite"
-    static let defaultValue = DieterAppearance.dark
+    static let defaultValue = DieterAppearance.system
 
     var id: String { rawValue }
 
@@ -49,6 +49,7 @@ enum DieterAppearance: String, CaseIterable, Identifiable {
 }
 
 enum DieterPalette: String, CaseIterable, Identifiable {
+    case monochrome
     case electricBlue = "electric-blue"
     case jadeOperator = "jade-operator"
     case copperCircuit = "copper-circuit"
@@ -56,15 +57,15 @@ enum DieterPalette: String, CaseIterable, Identifiable {
     case solarCommand = "solar-command"
     case arcticConsole = "arctic-console"
     case coralSignal = "coral-signal"
-    case acidTerminal = "acid-terminal"
 
     static let storageKey = "DieterPalette"
-    static let defaultValue = DieterPalette.arcticConsole
+    static let defaultValue = DieterPalette.monochrome
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .monochrome: "Monochrome"
         case .electricBlue: "Electric Blue"
         case .jadeOperator: "Jade Operator"
         case .copperCircuit: "Copper Circuit"
@@ -72,12 +73,12 @@ enum DieterPalette: String, CaseIterable, Identifiable {
         case .solarCommand: "Solar Command"
         case .arcticConsole: "Arctic Console"
         case .coralSignal: "Coral Signal"
-        case .acidTerminal: "Acid Terminal"
         }
     }
 
     static func resolve(_ storedValue: String?) -> DieterPalette {
-        storedValue.flatMap(Self.init(rawValue:)) ?? defaultValue
+        if storedValue == "acid-terminal" { return .monochrome }
+        return storedValue.flatMap(Self.init(rawValue:)) ?? defaultValue
     }
 
     static var selected: DieterPalette {
@@ -90,6 +91,8 @@ enum DieterPalette: String, CaseIterable, Identifiable {
 
     fileprivate var spec: PaletteSpec {
         switch self {
+        case .monochrome:
+            PaletteSpec(0x1C1C1E, 0x2C2C2E, 0xE5E5EA, 0x636366, 0xF2F2F7, 0x8E8E93, 0xD1D1D6, 0xF5F5F7, 0x0B0B0C, 0x1C1C1E)
         case .electricBlue:
             PaletteSpec(0x071426, 0x102746, 0x22D3EE, 0x2563EB, 0x73F4E4, 0x2588F5, 0x5EEAD4, 0xFAF9F6, 0x040C18, 0x0B1C33)
         case .jadeOperator:
@@ -104,8 +107,6 @@ enum DieterPalette: String, CaseIterable, Identifiable {
             PaletteSpec(0x0D1B24, 0x193A49, 0x8DD8E8, 0x3D6E85, 0xD7F2F5, 0x62B6CB, 0xBCEAF1, 0xF5FBFD, 0x081116, 0x122834)
         case .coralSignal:
             PaletteSpec(0x28101F, 0x4A1D33, 0xFF8A7A, 0xE44568, 0xFFD0C7, 0xFF6B8A, 0xFFD6CC, 0xFFF5F3, 0x190A13, 0x361527)
-        case .acidTerminal:
-            PaletteSpec(0x11161A, 0x2C3516, 0xC7F241, 0x49A942, 0xE7FF9F, 0x5DD8B2, 0xD9FF75, 0xF8FCEB, 0x0B0E10, 0x1C2318)
         }
     }
 }
@@ -190,7 +191,7 @@ private extension Color {
     }
 }
 
-/// Palette-backed surfaces adapted for both Aqua and Dark Aqua while retaining
+/// Palette-backed surfaces adapted for native Aqua and Dark Aqua while retaining
 /// a consistent contrast hierarchy across every supplied Dieter palette.
 enum DieterTheme {
     private static var colors: PaletteSpec { DieterPalette.selected.spec }

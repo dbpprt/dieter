@@ -12,7 +12,7 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 
-enum class OutboxKind { CREATE_CARD, CREATE_CHAT, SEND_MESSAGE }
+enum class OutboxKind { CREATE_CARD, CREATE_CHAT, SEND_MESSAGE, START_CARD }
 enum class OutboxState { QUEUED, RETRYING, FAILED }
 
 data class AndroidOutboxEntry(

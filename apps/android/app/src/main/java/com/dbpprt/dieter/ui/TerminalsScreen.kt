@@ -184,7 +184,7 @@ fun TerminalsScreen(
             TerminalStatusBar(
                 terminal = selected,
                 project = state.projects.firstOrNull { it.id == selected.projectId },
-                hostname = state.projectHosts[selected.projectId]?.hostname.orEmpty(),
+                hostname = state.presentedProjectHosts[selected.projectId]?.hostname.orEmpty(),
                 connected = state.terminalStreamConnected,
             )
         }

@@ -30,6 +30,81 @@ import kotlin.system.measureTimeMillis
 @RunWith(AndroidJUnit4::class)
 class IsolatedGatewayIntegrationTest {
     @Test
+    fun disconnectedCardStartPersistsAndDrainsThroughTheRealGateway() = runBlocking {
+        val origin = isolatedOrigin()
+        val token = argument("isolatedGatewayToken")
+        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", token.isNotBlank())
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = GrpcDieterRepository(context)
+        val application = context.applicationContext as DieterApplication
+        val manager = application.container.connectionManager
+        var cardId: String? = null
+        try {
+            connect(repository, origin, token)
+            repository.prepareDaemon()
+            val state = repository.state()
+            val board = state.boardsList.first { candidate ->
+                candidate.lanesList.any { it.id.equals("todo", ignoreCase = true) } &&
+                    candidate.lanesList.any { lane -> lane.id.equals("running", true) || lane.name.equals("running", true) }
+            }
+            val harness = repository.harnesses().harnessesList.first()
+            val card = repository.createConversation(
+                CreateConversationRequest.newBuilder()
+                    .setProjectId(board.projectId)
+                    .setBoardId(board.id)
+                    .setLane("todo")
+                    .setTitle("Android durable offline start ${UUID.randomUUID().toString().take(8)}")
+                    .setPrompt("Reply with OFFLINE_START_OK.")
+                    .setProvider(harness.id)
+                    .setModel(harness.defaultModel)
+                    .setDeferStart(true)
+                    .setClientId("android-offline-start-test")
+                    .setCommandId(UUID.randomUUID().toString())
+                    .build(),
+                chat = false,
+            )
+            cardId = card.id
+
+            manager.repository.setAccessToken(origin, token)
+            manager.updateEndpoints(listOf(origin))
+            manager.connect()
+            manager.onAppForegrounded(card.projectId)
+            withTimeout(30_000) {
+                manager.state.first { current ->
+                    current.phase == ConnectionPhase.CONNECTED && current.cards.any { it.id == card.id }
+                }
+            }
+
+            manager.disconnect()
+            withTimeout(5_000) { manager.state.first { it.phase == ConnectionPhase.STOPPED } }
+            val optimistic = manager.enqueueCardStart(card.id)
+            assertEquals("starting", optimistic.runtime)
+            assertTrue(card.id in manager.state.value.pendingCardIds)
+            val durableEntry = DieterSyncStore(context).loadOutbox().single { it.optimisticId == card.id }
+            assertEquals(OutboxKind.START_CARD, durableEntry.kind)
+            assertEquals(card.id, StartCardRequest.parseFrom(durableEntry.request).cardId)
+
+            manager.connect()
+            manager.onAppForegrounded(card.projectId)
+            val synchronized = withTimeout(30_000) {
+                manager.state.first { current ->
+                    current.cards.any { it.id == card.id && it.initialPromptSentAt.isNotBlank() } &&
+                        card.id !in current.pendingCardIds
+                }
+            }
+            assertTrue(synchronized.cards.first { it.id == card.id }.initialPromptSentAt.isNotBlank())
+            assertTrue(DieterSyncStore(context).loadOutbox().none { it.optimisticId == card.id })
+        } finally {
+            cardId?.let { id ->
+                runCatching { repository.cancelCard(id) }
+                runCatching { repository.archiveCard(id, true) }
+            }
+            repository.close()
+        }
+    }
+
+    @Test
     fun startAdmissionRoundTripsAndPreparesVisibleFixture() = runBlocking {
         val origin = isolatedOrigin()
         val token = argument("isolatedGatewayToken")

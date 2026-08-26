@@ -124,6 +124,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -343,7 +344,7 @@ private fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifie
             }
         }
         if (searchOpen) CompactSearchField(query, { query = it }, "Search projects and boards")
-        val showProjectHosts = state.projectHosts.values.map { it.daemonId }.distinct().size > 1
+        val showProjectHosts = state.presentedProjectHosts.values.map { it.daemonId }.distinct().size > 1
         if (state.spacesLoading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = DieterShell)
         SurfaceErrorBanner(state.error, model::clearError)
         if (!state.connected && state.projects.isEmpty()) {
@@ -364,7 +365,7 @@ private fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifie
                     }
                     ProjectSpaceCard(
                         project = project,
-                        host = state.projectHosts[project.id]?.takeIf { showProjectHosts },
+                        host = state.presentedProjectHosts[project.id]?.takeIf { showProjectHosts },
                         boards = state.spaceBoards.filter { it.projectId == project.id },
                         cards = state.spaceCards.filter { it.projectId == project.id },
                         dragged = dragged,
@@ -699,7 +700,7 @@ private fun BoardQuickSwitcher(state: DieterUiState, model: DieterViewModel, onD
                     Text(
                         buildString {
                             append(project.name)
-                            state.projectHosts[project.id]?.let { append("  ·  ").append(it.hostname) }
+                            state.presentedProjectHosts[project.id]?.let { append("  ·  ").append(it.hostname) }
                             append("  ·  ").append(compactProjectPath(project.path))
                         }.uppercase(),
                         color = DieterMuted,
@@ -788,7 +789,7 @@ internal fun ProjectPickerSheet(
             )
             state.projects.forEach { project ->
                 val selected = project.id == state.selectedProjectId
-                val projectOnline = state.projectHosts[project.id]?.online != false
+                val projectOnline = state.presentedProjectHosts[project.id]?.online != false
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                         .then(
@@ -811,7 +812,7 @@ internal fun ProjectPickerSheet(
                         Text(project.name, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                         Text(
                             buildString {
-                                state.projectHosts[project.id]?.let { append(it.hostname).append("  ·  ") }
+                                state.presentedProjectHosts[project.id]?.let { append(it.hostname).append("  ·  ") }
                                 append(compactProjectPath(project.path))
                                 if (!projectOnline) append("  ·  Offline")
                             },
@@ -965,6 +966,7 @@ private fun BoardLanePager(
     var revealedCardId by remember(state.selectedBoardId, state.selectedLane) { mutableStateOf<String?>(null) }
     var movingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
     var editingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
+    var activityNow by remember { mutableStateOf(Instant.now()) }
     val laneIds = lanes.map { it.id }
     val selectedLane by rememberUpdatedState(state.selectedLane)
     val selectedPage = lanes.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
@@ -981,6 +983,12 @@ private fun BoardLanePager(
                 val lane = lanes.getOrNull(page)?.id ?: return@collect
                 if (lane != selectedLane) model.selectLane(lane)
             }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            activityNow = Instant.now()
+        }
     }
 
     HorizontalPager(
@@ -1008,6 +1016,7 @@ private fun BoardLanePager(
                         pending = card.id in state.pendingCardIds,
                         operation = state.cardOperations[card.id],
                         operationError = state.cardOperationErrors[card.id],
+                        activityNow = activityNow,
                         revealed = revealedCardId == card.id,
                         onReveal = { revealedCardId = card.id },
                         onCloseActions = { if (revealedCardId == card.id) revealedCardId = null },
@@ -1120,7 +1129,7 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
                                 ListSectionLabel(
                                     buildString {
                                         append(project.name)
-                                        state.projectHosts[project.id]?.let { append(" · ").append(it.hostname) }
+                                        state.presentedProjectHosts[project.id]?.let { append(" · ").append(it.hostname) }
                                         append(" · ").append(projectChats.size)
                                     },
                                     Modifier.weight(1f),
@@ -1517,7 +1526,7 @@ fun SchedulesScreen(state: DieterUiState, model: DieterViewModel, contentPadding
                 onClick = { model.openSurface(AppSurface.SCHEDULE_EDITOR) },
                 icon = { Icon(Icons.Default.Add, null) },
                 text = { Text("New schedule", fontWeight = FontWeight.SemiBold) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).height(52.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).height(52.dp).testTag("new-schedule"),
                 containerColor = DieterPane,
                 contentColor = DieterAbyss,
                 shape = RoundedCornerShape(50),
@@ -1551,7 +1560,11 @@ private fun ScheduleEmptyState(onCreate: () -> Unit) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(18.dp))
-            Button(onClick = onCreate, shape = RoundedCornerShape(50)) {
+            Button(
+                onClick = onCreate,
+                shape = RoundedCornerShape(50),
+                modifier = Modifier.testTag("new-schedule"),
+            ) {
                 Icon(Icons.Default.Add, null, Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Create the first schedule")
@@ -1717,11 +1730,11 @@ private fun CardDetailScreen(
                 DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
                     if (model.isFailedOutboxItem(card.id)) {
                         DropdownMenuItem(
-                            text = { Text("Retry queued creation") },
+                            text = { Text("Retry queued action") },
                             onClick = { actionsOpen = false; model.retryOutboxItem(card.id) },
                         )
                         DropdownMenuItem(
-                            text = { Text("Discard queued creation") },
+                            text = { Text("Discard queued action") },
                             onClick = { actionsOpen = false; model.discardOutboxItem(card.id) },
                         )
                     }
@@ -2226,18 +2239,30 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
         queuedMessages.size,
         queuedMessages.lastOrNull()?.id,
     ) {
+        // Wait until the updated row sizes are reflected in LazyListState.
+        // If new tool/model content grew below the current viewport, preserve
+        // the reading position and expose the explicit jump affordance.
+        withFrameNanos { }
         val historyItems = if (state.historyHasMore || state.historyLoading) 1 else 0
         val unsentTaskItems = if (hasUnsentDraft) 1 else 0
         val endIndex = historyItems + unsentTaskItems + messages.size +
             (if (showAgentWorking) 1 else 0) + queuedMessages.size
         val explicitOpenScroll = consumedScrollRequest != state.conversationScrollRequest
+        val isAtLatestAfterUpdate = listState.isAtConversationEnd()
         if ((hasUnsentDraft || messages.isNotEmpty() || showAgentWorking || queuedMessages.isNotEmpty()) &&
-            shouldFollowConversationUpdate(explicitOpenScroll, initialScrollComplete, followingLatest)
+            shouldFollowConversationUpdate(
+                explicitOpenScroll = explicitOpenScroll,
+                initialScrollComplete = initialScrollComplete,
+                followingLatest = followingLatest,
+                isAtLatestAfterUpdate = isAtLatestAfterUpdate,
+            )
         ) {
             listState.scrollToItem(endIndex)
             consumedScrollRequest = state.conversationScrollRequest
             initialScrollComplete = true
             followingLatest = true
+        } else if (initialScrollComplete && followingLatest && !isAtLatestAfterUpdate) {
+            followingLatest = false
         }
     }
     Column(modifier) {
@@ -2248,7 +2273,9 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
             Box(Modifier.weight(1f)) {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize().alpha(if (initialScrollComplete) 1f else 0f),
+                    modifier = Modifier.fillMaxSize()
+                        .alpha(if (initialScrollComplete) 1f else 0f)
+                        .testTag("conversation-list"),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -3778,6 +3805,7 @@ private fun SwipeableWorkCard(
     pending: Boolean,
     operation: CardOperation?,
     operationError: String?,
+    activityNow: Instant,
     revealed: Boolean,
     onReveal: () -> Unit,
     onCloseActions: () -> Unit,
@@ -3851,6 +3879,7 @@ private fun SwipeableWorkCard(
             pending = pending,
             operation = operation,
             operationError = operationError,
+            activityNow = activityNow,
             modifier = Modifier
                 .offset { IntOffset(dragOffset.toInt(), 0) }
                 .draggable(
@@ -4013,6 +4042,7 @@ private fun WorkCard(
     pending: Boolean,
     operation: CardOperation?,
     operationError: String?,
+    activityNow: Instant,
     modifier: Modifier = Modifier,
     onStart: (() -> Unit)? = null,
     onClick: () -> Unit,
@@ -4046,9 +4076,7 @@ private fun WorkCard(
                     Spacer(Modifier.width(10.dp))
                     labels.firstOrNull()?.let { label ->
                         LabelPill(label.name, label.color)
-                        Spacer(Modifier.width(7.dp))
                     }
-                    Text(shortTimestamp(card.lastActivityAt.ifBlank { card.updatedAt }), color = DieterMuted, fontSize = 12.sp)
                 }
                 if (card.summary.isNotBlank()) {
                     Text(
@@ -4077,6 +4105,18 @@ private fun WorkCard(
                 Text(card.provider.ifBlank { "agent" }, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 Spacer(Modifier.width(8.dp))
                 Text(card.model, color = DieterMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                val activityAge = boardCardActivityText(card.updatedAt, card.lastActivityAt, activityNow)
+                if (activityAge.isNotEmpty()) {
+                    Text(
+                        activityAge,
+                        color = DieterMuted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.testTag("card-activity-${card.id}")
+                            .semantics { contentDescription = "Last activity $activityAge" },
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
                 if (starting || onStart != null) {
                     Surface(
                         onClick = { onStart?.invoke() },
@@ -4109,6 +4149,25 @@ private fun WorkCard(
                 Icon(Icons.Outlined.CheckCircle, null, Modifier.size(18.dp), tint = if (card.lane.contains("done", true)) DieterEyes else DieterMuted)
             }
         }
+    }
+}
+
+internal fun boardCardActivityText(
+    updatedAt: String,
+    lastActivityAt: String,
+    now: Instant = Instant.now(),
+): String {
+    val activity = listOfNotNull(
+        updatedAt.takeIf { it.isNotBlank() }?.let { runCatching { Instant.parse(it) }.getOrNull() },
+        lastActivityAt.takeIf { it.isNotBlank() }?.let { runCatching { Instant.parse(it) }.getOrNull() },
+    ).maxOrNull() ?: return ""
+    val age = Duration.between(activity, now).coerceAtLeast(Duration.ZERO)
+    return when {
+        age.seconds < 60 -> "now"
+        age.toMinutes() < 60 -> "${age.toMinutes()}min"
+        age.toHours() < 24 -> "${age.toHours()}h"
+        age.toDays() < 7 -> "${age.toDays()}d"
+        else -> "${age.toDays() / 7}w"
     }
 }
 

@@ -14,6 +14,7 @@ private let syncRecentConversationLimit: Int32 = 8
 private let cachedConversationLimit = 24
 private let terminalClientBufferLimit = 2 * 1_024 * 1_024
 private let outboxLogger = Logger(subsystem: "com.dbpprt.dieter.mac", category: "Outbox")
+private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", category: "Connection")
 
 struct TerminalScreenState: Equatable, Sendable {
     var data = Data()
@@ -166,10 +167,21 @@ enum MachineDirectoryReducer {
     }
 }
 
-private struct DataPlaneConnection {
+struct DataPlaneConnection {
     let rpc: DieterRPC
     let task: Task<Void, Never>
     let connection: MachineConnectionStatus
+}
+
+enum DirectCandidateScope: Equatable {
+    case all
+    case loopbackOnly
+
+    func ordered(_ candidates: [Dieter_Gateway_V1_DirectCandidate]) -> [Dieter_Gateway_V1_DirectCandidate] {
+        candidates
+            .filter { self == .all || $0.network.caseInsensitiveCompare("loopback") == .orderedSame }
+            .sorted { $0.priority > $1.priority }
+    }
 }
 
 private enum DieterStoreConnectionError: LocalizedError {
@@ -208,6 +220,34 @@ enum SyncFreshnessPresentation {
             return "Last connected \(max(1, Int(elapsed / 3_600)))h ago"
         default:
             return "Last connected \(max(1, Int(elapsed / 86_400)))d ago"
+        }
+    }
+}
+
+enum WorkspaceFreshnessState: Equatable {
+    case live
+    case syncing
+    case reconnecting
+    case offline
+
+    static func resolve(
+        phase: ConnectionPhase,
+        globalSyncing: Bool,
+        hasCachedWorkspace: Bool
+    ) -> Self {
+        if phase.isConnected { return globalSyncing ? .syncing : .live }
+        if phase == .connecting, hasCachedWorkspace { return .reconnecting }
+        return .offline
+    }
+
+    var isLive: Bool { self == .live }
+
+    var label: String {
+        switch self {
+        case .live: "Online"
+        case .syncing: "Syncing"
+        case .reconnecting: "Reconnecting"
+        case .offline: "Offline"
         }
     }
 }
@@ -451,8 +491,16 @@ final class DieterStore {
     private(set) var globalSyncing = false
     private(set) var lastSyncedAt: Date?
 
+    var workspaceFreshness: WorkspaceFreshnessState {
+        WorkspaceFreshnessState.resolve(
+            phase: phase,
+            globalSyncing: globalSyncing,
+            hasCachedWorkspace: hasLoadedWorkspace
+        )
+    }
+
     var workspaceIsLive: Bool {
-        phase.isConnected && !globalSyncing
+        workspaceFreshness.isLive
     }
 
     var conversationMessages: [Dieter_V1_UiMessage] {
@@ -853,18 +901,21 @@ final class DieterStore {
     private func selectDataPlane(
         gateway: DieterRPC,
         target: DieterEndpoint,
-        gatewayAccessToken: String?
+        gatewayAccessToken: String?,
+        directCandidateScope: DirectCandidateScope = .all,
+        refreshDirectToken: Bool = true
     ) async throws -> DataPlaneConnection {
         guard let daemonID = target.daemonID else {
             throw NSError(domain: "DieterGateway", code: 5, userInfo: [NSLocalizedDescriptionKey: "No routed Dieter machine is available."])
         }
         let route = try await gateway.route(daemonID: daemonID)
-        if !route.directCandidates.isEmpty {
+        let directCandidates = directCandidateScope.ordered(route.directCandidates)
+        if !directCandidates.isEmpty {
             let token = try await gateway.daemonAccessToken(daemonID: daemonID)
             guard token.tokenType == "Bearer" else {
                 throw NSError(domain: "DieterGateway", code: 2, userInfo: [NSLocalizedDescriptionKey: "Gateway returned an unsupported daemon token."])
             }
-            for candidate in route.directCandidates.sorted(by: { $0.priority > $1.priority }) {
+            for candidate in directCandidates {
                 do {
                     let direct = try DieterRPC(
                         endpoint: target,
@@ -880,17 +931,25 @@ final class DieterStore {
                     let started = Date()
                     do {
                         _ = try await direct.health(timeout: .seconds(2))
-                        scheduleDirectRefresh(expiresAt: token.expiresAt, target: target)
+                        if refreshDirectToken {
+                            scheduleDirectRefresh(expiresAt: token.expiresAt, target: target)
+                        }
                         return DataPlaneConnection(
                             rpc: direct,
                             task: directTask,
                             connection: .init(route: .local, latencyMilliseconds: Self.latencyMilliseconds(since: started))
                         )
                     } catch {
+                        connectionLogger.debug(
+                            "Direct candidate \(candidate.id, privacy: .public) for \(daemonID, privacy: .public) failed: \(error.localizedDescription, privacy: .public)"
+                        )
                         directTask.cancel()
                         direct.shutdown()
                     }
                 } catch {
+                    connectionLogger.debug(
+                        "Direct candidate \(candidate.id, privacy: .public) for \(daemonID, privacy: .public) could not start: \(error.localizedDescription, privacy: .public)"
+                    )
                     continue
                 }
             }
@@ -1372,20 +1431,16 @@ final class DieterStore {
         let client: DieterRPC
         let ownsClient: Bool
         var runner: Task<Void, Never>?
+        var selectedConnection: MachineConnectionStatus?
         if machine.id == endpoint.id, let rpc {
             client = rpc
             ownsClient = false
         } else {
-            guard let daemonID = machine.daemonID else {
-                throw NSError(domain: "DieterGateway", code: 5, userInfo: [NSLocalizedDescriptionKey: "Machine endpoint is missing its daemon identity."])
-            }
-            client = try DieterRPC(
-                endpoint: machine,
-                accessToken: await accessToken(for: machine),
-                route: .relay(daemonID: daemonID)
-            )
+            let dataPlane = try await selectDirectoryDataPlane(for: machine)
+            client = dataPlane.rpc
             ownsClient = true
-            runner = Task { try? await client.run() }
+            runner = dataPlane.task
+            selectedConnection = dataPlane.connection
         }
         defer {
             if ownsClient { client.shutdown() }
@@ -1395,7 +1450,9 @@ final class DieterStore {
         let started = Date()
         let root = try await client.state()
         let connection = MachineConnectionStatus(
-            route: machineConnectionStatuses[machine.id]?.route ?? (ownsClient ? .gateway : .local),
+            route: selectedConnection?.route
+                ?? machineConnectionStatuses[machine.id]?.route
+                ?? (ownsClient ? .gateway : .local),
             latencyMilliseconds: Self.latencyMilliseconds(since: started)
         )
         let projects = root.projects.filter { !$0.archived }
@@ -1417,6 +1474,27 @@ final class DieterStore {
             boards: Array(boards.reduce(into: [String: Dieter_V1_Board]()) { $0[$1.id] = $1 }.values),
             cards: Array(cards.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values),
             chats: chatResponse.chats
+        )
+    }
+
+    func selectDirectoryDataPlane(for machine: DieterEndpoint) async throws -> DataPlaneConnection {
+        guard machine.daemonID != nil else {
+            throw NSError(domain: "DieterGateway", code: 5, userInfo: [NSLocalizedDescriptionKey: "Machine endpoint is missing its daemon identity."])
+        }
+        let origin = gatewayOrigins.first(where: { $0.credentialID == machine.credentialID }) ?? machine.gatewayEndpoint
+        let gatewayAccessToken = await accessToken(for: origin)
+        let gateway = try DieterRPC(endpoint: origin, accessToken: gatewayAccessToken)
+        let gatewayTask = Task { try? await gateway.run() }
+        defer {
+            gatewayTask.cancel()
+            gateway.shutdown()
+        }
+        return try await selectDataPlane(
+            gateway: gateway,
+            target: machine,
+            gatewayAccessToken: gatewayAccessToken,
+            directCandidateScope: .loopbackOnly,
+            refreshDirectToken: false
         )
     }
 
@@ -3003,6 +3081,23 @@ final class DieterStore {
         do { _ = try await rpc.renameCard(request); await refreshState(); await refreshChats() } catch { show(error) }
     }
 
+    @discardableResult
+    func update(_ card: Dieter_V1_Card, title: String, initialPrompt: String) async -> Bool {
+        guard await ensureProjectConnection(card.projectID), let rpc else { return false }
+        var request = Dieter_V1_UpdateCardRequest()
+        request.cardID = card.id
+        request.title = title
+        request.initialPrompt = initialPrompt
+        do {
+            _ = try await rpc.updateCard(request)
+            await refreshState()
+            return true
+        } catch {
+            show(error)
+            return false
+        }
+    }
+
     func archive(_ card: Dieter_V1_Card, archived: Bool) async {
         guard await ensureProjectConnection(card.projectID) else { return }
         guard let rpc else { return }
@@ -3317,13 +3412,18 @@ final class DieterStore {
         await refreshState()
     }
 
-    func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft) async {
-        guard let rpc else { return }
+    @discardableResult
+    func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft) async -> Bool {
+        guard let rpc else { return false }
         var request = Dieter_V1_SaveScheduleRequest(); request.scheduleID = id ?? ""; request.schedule = draft
         do {
             let saved = try await (id == nil ? rpc.createSchedule(request) : rpc.updateSchedule(request))
             selectedScheduleID = saved.id; await loadSchedules()
-        } catch { show(error) }
+            return true
+        } catch {
+            show(error)
+            return false
+        }
     }
 
     func toggleSchedule(_ schedule: Dieter_V1_Schedule) async {

@@ -24,6 +24,20 @@ class TimestampFormattingTest {
     }
 
     @Test
+    fun formatsLatestCardModificationOrChatActivityAsRelativeAge() {
+        assertEquals(
+            "10min",
+            boardCardActivityText("2026-08-14T11:50:00Z", "2026-08-14T10:00:00Z", now),
+        )
+        assertEquals(
+            "2h",
+            boardCardActivityText("2026-08-09T12:00:00Z", "2026-08-14T10:00:00Z", now),
+        )
+        assertEquals("5d", boardCardActivityText("2026-08-09T12:00:00Z", "", now))
+        assertEquals("", boardCardActivityText("", "not-a-timestamp", now))
+    }
+
+    @Test
     fun formatsConversationRefreshStatusWhileKeepingCachedDataVisible() {
         val nowMillis = now.toEpochMilli()
         assertEquals("Refreshing…", conversationRefreshLabel(null, syncing = true, nowMillis = nowMillis))

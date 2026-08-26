@@ -2,6 +2,7 @@
 
 package com.dbpprt.dieter.ui
 
+import android.app.TimePickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -327,12 +328,12 @@ private fun NewChatBody(
         SelectorField(
             label = "Project",
             value = state.project?.let { project ->
-                state.projectHosts[project.id]?.hostname
+                state.presentedProjectHosts[project.id]?.hostname
                     ?.takeIf(String::isNotBlank)
                     ?.let { host -> "${project.name} · $host" }
                     ?: project.name
             } ?: "Select a project",
-            options = chatProjectOptions(state.projects, state.projectHosts),
+            options = chatProjectOptions(state.projects, state.presentedProjectHosts),
             onSelect = onProjectChange,
             modifier = Modifier.fillMaxWidth().testTag("chat-project-selector"),
         )
@@ -541,6 +542,7 @@ fun ScheduleEditorScreen(
     var customCron by remember(schedule?.id) { mutableStateOf(schedule?.cron ?: "0 9 * * 1-5") }
     var repeat by remember(schedule?.id) { mutableStateOf(scheduleRepeat(schedule?.cron)) }
     var runAt by remember(schedule?.id) { mutableStateOf(scheduleTime(schedule?.cron)) }
+    var weeklyDay by remember(schedule?.id) { mutableStateOf(scheduleWeekday(schedule?.cron)) }
     var timezone by remember(schedule?.id) { mutableStateOf(schedule?.timezone ?: ZoneId.systemDefault().id) }
     var prompt by remember(schedule?.id) { mutableStateOf(schedule?.promptTemplate.orEmpty()) }
     var titleTemplate by remember(schedule?.id) { mutableStateOf(schedule?.titleTemplate ?: "Scheduled work · {{date}}") }
@@ -554,8 +556,9 @@ fun ScheduleEditorScreen(
     val labelIds = remember(schedule?.id) { mutableStateListOf<String>().also { it += schedule?.labelIdsList.orEmpty() } }
     var openPolicy by remember(schedule?.id) { mutableStateOf(schedule?.openCardPolicy ?: "skip_if_open") }
     var busyPolicy by remember(schedule?.id) { mutableStateOf(schedule?.busyPolicy ?: "queue") }
-    val cron = scheduleCron(repeat, runAt, customCron)
-    val canSave = name.isNotBlank() && cron.isNotBlank() && prompt.isNotBlank() && provider.isNotBlank() && boardId.isNotBlank()
+    val cron = scheduleCron(repeat, runAt, weeklyDay, customCron)
+    val canSave = name.isNotBlank() && cron.isNotBlank() && timezone.isNotBlank() && titleTemplate.isNotBlank() &&
+        prompt.isNotBlank() && provider.isNotBlank() && boardId.isNotBlank()
 
     LaunchedEffect(cron, timezone) {
         delay(350)
@@ -589,8 +592,9 @@ fun ScheduleEditorScreen(
 
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
         CreationHeader(
-            eyebrow = state.board?.name ?: "Board",
+            eyebrow = if (schedule == null) "New automation" else "Edit automation",
             title = if (schedule == null) "New schedule" else "Edit schedule",
+            subtitle = "Runs on the project daemon · $timezone",
             onClose = model::closeSurface,
             trailing = {
                 Button(onClick = ::save, enabled = canSave && !state.working) {
@@ -603,18 +607,23 @@ fun ScheduleEditorScreen(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Schedule name") }, singleLine = true, modifier = Modifier.weight(1f).testTag("schedule-name"))
-                SelectorField(
-                    label = "Destination board",
-                    value = state.boards.firstOrNull { it.id == boardId }?.name ?: "Board",
-                    options = state.boards.map { it.id to it.name },
-                    onSelect = { next -> boardId = next; labelIds.retainAll(state.boards.firstOrNull { it.id == next }?.labelsList.orEmpty().map { it.id }.toSet()) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            OutlinedTextField(description, { description = it }, label = { Text("Description") }, placeholder = { Text("Prepare the morning maintenance card") }, modifier = Modifier.fillMaxWidth())
-            FormSection(Icons.Outlined.Schedule, "Timing", trailing = { Text("$timezone · local", color = DieterMuted, fontSize = 11.sp) }) {
+            OutlinedTextField(
+                name,
+                { name = it },
+                label = { Text("Schedule name") },
+                placeholder = { Text("Morning project check") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().testTag("schedule-name"),
+            )
+            OutlinedTextField(
+                description,
+                { description = it },
+                label = { Text("Description") },
+                placeholder = { Text("What this automation is responsible for") },
+                minLines = 2,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            FormSection(Icons.Outlined.Schedule, "Timing", trailing = { Text(scheduleTimingSummary(repeat, runAt, weeklyDay), color = DieterMuted, fontSize = 11.sp) }) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SelectorField(
                         label = "Repeats",
@@ -623,29 +632,75 @@ fun ScheduleEditorScreen(
                         onSelect = { repeat = it },
                         modifier = Modifier.weight(1f),
                     )
-                    OutlinedTextField(
-                        runAt,
-                        { runAt = it.filter { character -> character.isDigit() || character == ':' }.take(5) },
-                        label = { Text("Run at") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                    )
+                    if (repeat == "Weekly") {
+                        SelectorField(
+                            label = "Day",
+                            value = scheduleWeekdays.firstOrNull { it.first == weeklyDay }?.second ?: "Monday",
+                            options = scheduleWeekdays,
+                            onSelect = { weeklyDay = it },
+                            modifier = Modifier.weight(1f).testTag("schedule-weekday"),
+                        )
+                    }
+                }
+                if (repeat != "Custom") {
+                    ScheduleTimeField(runAt, { runAt = it }, Modifier.fillMaxWidth().testTag("schedule-time-picker"))
                 }
                 if (repeat == "Custom") {
-                    OutlinedTextField(customCron, { customCron = it }, label = { Text("Cron schedule") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("schedule-cron"))
+                    OutlinedTextField(
+                        customCron,
+                        { customCron = it },
+                        label = { Text("Cron expression") },
+                        supportingText = { Text("Five fields: minute, hour, day of month, month, day of week") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("schedule-cron"),
+                    )
                 }
-                OutlinedTextField(timezone, { timezone = it }, label = { Text("Timezone") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                SelectorField(
+                    label = "Timezone",
+                    value = timezone,
+                    options = scheduleTimezoneOptions(timezone).map { it to it },
+                    onSelect = { timezone = it },
+                    modifier = Modifier.fillMaxWidth().testTag("schedule-timezone"),
+                )
                 if (state.schedulePreview.isNotEmpty()) {
                     Text("Next five", color = DieterMuted, fontSize = 11.sp)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        state.schedulePreview.take(5).forEach { timestamp -> NeutralPill(schedulePreviewLabel(timestamp)) }
+                        state.schedulePreview.take(5).forEach { timestamp -> NeutralPill(schedulePreviewLabel(timestamp, timezone)) }
                     }
                 }
             }
-            FormSection(Icons.Outlined.CreditCard, "Card") {
-                OutlinedTextField(titleTemplate, { titleTemplate = it }, label = { Text("Title template") }, modifier = Modifier.fillMaxWidth())
-                Text("Variables: date, scheduled_at, project, board, schedule.", color = DieterMuted, fontSize = 11.sp)
-                OutlinedTextField(prompt, { prompt = it }, label = { Text("Agent task") }, minLines = 3, modifier = Modifier.fillMaxWidth().testTag("schedule-prompt"))
+            FormSection(Icons.Outlined.ViewKanban, "Destination") {
+                SelectorField(
+                    label = "Board",
+                    value = state.boards.firstOrNull { it.id == boardId }?.name ?: "Select a board",
+                    options = state.boards.map { it.id to it.name },
+                    onSelect = { next ->
+                        boardId = next
+                        labelIds.retainAll(state.boards.firstOrNull { it.id == next }?.labelsList.orEmpty().map { it.id }.toSet())
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("schedule-board"),
+                )
+                Text("Place each scheduled card in", color = DieterMuted, fontSize = 12.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = action == "draft",
+                        onClick = { action = "draft" },
+                        label = { Text("Todo") },
+                        modifier = Modifier.weight(1f).testTag("schedule-placement-todo"),
+                    )
+                    FilterChip(
+                        selected = action == "run",
+                        onClick = { action = "run" },
+                        label = { Text("Running") },
+                        modifier = Modifier.weight(1f).testTag("schedule-placement-running"),
+                    )
+                }
+                Text(
+                    if (action == "run") "The daemon creates the card and starts its agent turn when admission allows."
+                    else "The daemon creates a draft in Todo and waits for you to start it.",
+                    color = DieterMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
                 val labels = state.boards.firstOrNull { it.id == boardId }?.labelsList.orEmpty()
                 if (labels.isNotEmpty()) {
                     Text("Labels", color = DieterMuted, fontSize = 12.sp)
@@ -660,11 +715,44 @@ fun ScheduleEditorScreen(
                     }
                 }
             }
-            FormSection(Icons.Outlined.Bolt, "Action") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = action == "draft", onClick = { action = "draft" }, label = { Text("Create draft") })
-                    FilterChip(selected = action == "run", onClick = { action = "run" }, label = { Text("Create & run") })
+            FormSection(Icons.Outlined.CreditCard, "Card") {
+                OutlinedTextField(
+                    titleTemplate,
+                    { titleTemplate = it },
+                    label = { Text("Title template") },
+                    placeholder = { Text("Daily update · {{date}}") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("schedule-title-template"),
+                )
+                ScheduleVariableButtons { variable -> titleTemplate = appendScheduleVariable(titleTemplate, variable) }
+                OutlinedTextField(
+                    prompt,
+                    { prompt = it },
+                    label = { Text("Agent task template") },
+                    placeholder = { Text("Review {{project}} for {{date}} and summarize what needs attention.") },
+                    minLines = 5,
+                    modifier = Modifier.fillMaxWidth().testTag("schedule-prompt"),
+                )
+                ScheduleVariableButtons { variable -> prompt = appendScheduleVariable(prompt, variable) }
+                Column(
+                    Modifier.fillMaxWidth().background(DieterSurfaceHigh, RoundedCornerShape(12.dp)).padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("EXAMPLE OUTPUT", color = DieterMuted, fontSize = 10.sp, letterSpacing = 1.2.sp)
+                    Text(
+                        renderScheduleTemplate(titleTemplate, scheduleTemplateVariables(state, name, boardId, timezone)),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        renderScheduleTemplate(prompt, scheduleTemplateVariables(state, name, boardId, timezone)),
+                        color = DieterMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 5,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
+            }
+            FormSection(Icons.Outlined.Bolt, "Agent") {
                 ModelSelectors(
                     state, provider,
                     { next -> provider = next; selectedModel = state.harnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
@@ -839,18 +927,17 @@ private fun titleFromPrompt(prompt: String): String {
     return if (firstLine.length <= 72) firstLine else firstLine.take(69) + "…"
 }
 
-private fun scheduleRepeat(cron: String?): String = when (cron.orEmpty().trim()) {
+internal fun scheduleRepeat(cron: String?): String = when (cron.orEmpty().trim()) {
     "0 9 * * 1-5" -> "Weekdays"
     "0 9 * * *" -> "Daily"
     "0 9 * * 1" -> "Weekly"
     "" -> "Weekdays"
     else -> {
         val parts = cron.orEmpty().trim().split(Regex("\\s+"))
-        when (parts.getOrNull(4)) {
+        when (val day = parts.getOrNull(4)) {
             "1-5" -> "Weekdays"
             "*" -> "Daily"
-            "1" -> "Weekly"
-            else -> "Custom"
+            else -> if (day?.toIntOrNull()?.let { it in 0..6 } == true) "Weekly" else "Custom"
         }
     }
 }
@@ -862,20 +949,110 @@ private fun scheduleTime(cron: String?): String {
     return "%02d:%02d".format(hour, minute)
 }
 
-private fun scheduleCron(repeat: String, runAt: String, custom: String): String {
+private val scheduleWeekdays = listOf(
+    "1" to "Monday", "2" to "Tuesday", "3" to "Wednesday", "4" to "Thursday",
+    "5" to "Friday", "6" to "Saturday", "0" to "Sunday",
+)
+
+internal fun scheduleWeekday(cron: String?): String {
+    val day = cron.orEmpty().trim().split(Regex("\\s+")).getOrNull(4)
+    return day?.takeIf { candidate -> scheduleWeekdays.any { it.first == candidate } } ?: "1"
+}
+
+internal fun scheduleCron(repeat: String, runAt: String, weeklyDay: String, custom: String): String {
     if (repeat == "Custom") return custom
     val parts = runAt.split(':')
     val hour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 9
     val minute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0
     val days = when (repeat) {
         "Weekdays" -> "1-5"
-        "Weekly" -> "1"
+        "Weekly" -> weeklyDay.takeIf { candidate -> scheduleWeekdays.any { it.first == candidate } } ?: "1"
         else -> "*"
     }
     return "$minute $hour * * $days"
 }
 
-private fun schedulePreviewLabel(timestamp: String): String = runCatching {
+private fun scheduleTimingSummary(repeat: String, runAt: String, weeklyDay: String): String = when (repeat) {
+    "Weekly" -> "${scheduleWeekdays.firstOrNull { it.first == weeklyDay }?.second ?: "Monday"} · $runAt"
+    "Custom" -> "Custom cron"
+    else -> "$repeat · $runAt"
+}
+
+internal fun schedulePreviewLabel(timestamp: String, timezone: String): String = runCatching {
     DateTimeFormatter.ofPattern("MMM d, HH:mm", Locale.getDefault())
-        .format(Instant.parse(timestamp).atZone(ZoneId.systemDefault()))
+        .format(Instant.parse(timestamp).atZone(ZoneId.of(timezone)))
 }.getOrElse { timestamp.replace('T', ' ').substringBefore('+').substringBefore('Z').takeLast(11) }
+
+private fun scheduleTimezoneOptions(selected: String): List<String> {
+    val current = ZoneId.systemDefault().id
+    return (listOf(selected, current, "UTC") + ZoneId.getAvailableZoneIds().sorted())
+        .filter(String::isNotBlank)
+        .distinct()
+}
+
+@Composable
+private fun ScheduleTimeField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val parts = value.split(':')
+    val hour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 9
+    val minute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0
+    Box(modifier) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text("Run at") },
+            trailingIcon = { Icon(Icons.Outlined.Schedule, null) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Box(
+            Modifier.matchParentSize().clickable(onClickLabel = "Choose run time") {
+                TimePickerDialog(
+                    context,
+                    { _, selectedHour, selectedMinute -> onValueChange("%02d:%02d".format(selectedHour, selectedMinute)) },
+                    hour,
+                    minute,
+                    true,
+                ).show()
+            },
+        )
+    }
+}
+
+private val scheduleTemplateVariables = listOf("date", "scheduled_at", "project", "board", "schedule")
+
+@Composable
+private fun ScheduleVariableButtons(onInsert: (String) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        scheduleTemplateVariables.forEach { variable ->
+            AssistChip(onClick = { onInsert(variable) }, label = { Text("{{$variable}}", fontSize = 11.sp) })
+        }
+    }
+}
+
+internal fun appendScheduleVariable(value: String, variable: String): String {
+    val token = "{{$variable}}"
+    if (value.isEmpty()) return token
+    return if (value.last().isWhitespace()) value + token else "$value $token"
+}
+
+internal fun renderScheduleTemplate(template: String, variables: Map<String, String>): String =
+    variables.entries.fold(template) { rendered, (name, value) -> rendered.replace("{{$name}}", value) }
+
+private fun scheduleTemplateVariables(
+    state: DieterUiState,
+    scheduleName: String,
+    boardId: String,
+    timezone: String,
+): Map<String, String> {
+    val instant = state.schedulePreview.firstOrNull()?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.now()
+    val zone = runCatching { ZoneId.of(timezone) }.getOrElse { ZoneId.systemDefault() }
+    val date = DateTimeFormatter.ISO_LOCAL_DATE.format(instant.atZone(zone))
+    return mapOf(
+        "date" to date,
+        "scheduled_at" to instant.toString(),
+        "project" to (state.project?.name ?: "Project"),
+        "board" to (state.boards.firstOrNull { it.id == boardId }?.name ?: "Board"),
+        "schedule" to scheduleName.ifBlank { "Schedule" },
+    )
+}

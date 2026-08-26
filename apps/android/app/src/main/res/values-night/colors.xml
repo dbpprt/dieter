@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Arctic Console dark shades for the custom notification view. -->
+<!-- Native dark Monochrome fallback for the custom notification view. -->
 <resources>
+    <color name="dieter_window_background">#0B0B0C</color>
     <color name="notification_title">#FFFFFFFF</color>
     <color name="notification_secondary">#B3FFFFFF</color>
-    <color name="notification_chip_neutral_bg">#FF193A49</color>
-    <color name="notification_chip_neutral_text">#FFD7F2F5</color>
+    <color name="notification_chip_neutral_bg">#FF2C2C2E</color>
+    <color name="notification_chip_neutral_text">#FFD1D1D6</color>
     <color name="notification_chip_review_bg">#FF3A311C</color>
     <color name="notification_chip_review_text">#FFE2BE6A</color>
-    <color name="notification_chip_subagent_bg">#FF173640</color>
-    <color name="notification_chip_subagent_text">#FFBCEAF1</color>
+    <color name="notification_chip_subagent_bg">#FF3A3A3C</color>
+    <color name="notification_chip_subagent_text">#FFF2F2F7</color>
 </resources>

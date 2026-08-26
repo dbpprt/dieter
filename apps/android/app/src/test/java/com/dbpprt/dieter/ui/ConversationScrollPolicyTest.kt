@@ -12,6 +12,19 @@ class ConversationScrollPolicyTest {
                 explicitOpenScroll = false,
                 initialScrollComplete = true,
                 followingLatest = true,
+                isAtLatestAfterUpdate = true,
+            ),
+        )
+    }
+
+    @Test
+    fun growingToolOrModelContentOffersJumpInsteadOfForcingTheViewport() {
+        assertFalse(
+            shouldFollowConversationUpdate(
+                explicitOpenScroll = false,
+                initialScrollComplete = true,
+                followingLatest = true,
+                isAtLatestAfterUpdate = false,
             ),
         )
     }
@@ -23,6 +36,7 @@ class ConversationScrollPolicyTest {
                 explicitOpenScroll = false,
                 initialScrollComplete = true,
                 followingLatest = false,
+                isAtLatestAfterUpdate = false,
             ),
         )
     }
@@ -34,6 +48,7 @@ class ConversationScrollPolicyTest {
                 explicitOpenScroll = false,
                 initialScrollComplete = false,
                 followingLatest = false,
+                isAtLatestAfterUpdate = false,
             ),
         )
         assertTrue(
@@ -41,6 +56,7 @@ class ConversationScrollPolicyTest {
                 explicitOpenScroll = true,
                 initialScrollComplete = true,
                 followingLatest = false,
+                isAtLatestAfterUpdate = false,
             ),
         )
     }

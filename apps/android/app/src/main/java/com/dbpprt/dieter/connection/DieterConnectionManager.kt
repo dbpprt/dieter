@@ -34,7 +34,6 @@ import com.dbpprt.dieter.v1.Schedule
 import com.dbpprt.dieter.v1.ScheduleRun
 import com.dbpprt.dieter.v1.State
 import com.dbpprt.dieter.v1.StartCardRequest
-import com.dbpprt.dieter.v1.StartCardResponse
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -157,7 +156,7 @@ class DieterConnectionManager(
     private val outbox = syncStore.loadOutbox()
     private val conversationIdResolutions = linkedMapOf<String, String>().apply {
         outbox.forEach { entry ->
-            if (entry.kind != OutboxKind.SEND_MESSAGE && entry.serverId != null) {
+            if (entry.kind in setOf(OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT) && entry.serverId != null) {
                 put(entry.optimisticId, entry.serverId)
             }
         }
@@ -204,6 +203,7 @@ class DieterConnectionManager(
                 refreshedAtMillis = activeProjectionRefreshedAtMillis,
             )
         }
+        if (outbox.isNotEmpty()) refreshOutboxPresentation()
     }
 
     fun onAppForegrounded(projectId: String = selectedProjectId) {
@@ -279,8 +279,8 @@ class DieterConnectionManager(
     suspend fun ensureProjectRoute(projectId: String) {
         if (projectId.isBlank()) return
         val target = _state.value.projectHosts[projectId] ?: return
+        if (projectRouteIsReady(target.endpointId, repository.activeEndpoint.id, _state.value.phase)) return
         if (!target.online) error("${target.hostname} is offline. Start Dieter on that machine to continue.")
-        if (repository.activeEndpoint.id == target.endpointId && _state.value.phase == ConnectionPhase.CONNECTED) return
         selectProject(projectId)
         withTimeout(20_000) {
             state.first { connection ->
@@ -640,7 +640,6 @@ class DieterConnectionManager(
                     launch { monitorGlobalSync(currentGeneration) }
                     launch { drainOutbox(currentGeneration) }
                     launch { watchDaemonPresence(currentGeneration) }
-                    launch { maintainDaemonPresenceLease(currentGeneration) }
                     launch { maintainMachineDirectory(currentGeneration) }
                     launch {
                         val refreshAt = repository.directRefreshAtMillis() ?: return@launch awaitCancellation()
@@ -653,7 +652,6 @@ class DieterConnectionManager(
                 throw cancelled
             } catch (error: Throwable) {
                 if (!shouldRun() || currentGeneration != synchronized(lock) { generation }) return
-                expireStaleDaemonPresence()
                 if (error is StaleSyncStream) {
                     repository.reconnect()
                     retryAttempt = 0
@@ -852,36 +850,6 @@ class DieterConnectionManager(
         }
     }
 
-    private suspend fun maintainDaemonPresenceLease(currentGeneration: Long) {
-        while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
-            delay(1_000L)
-            expireStaleDaemonPresence()
-        }
-    }
-
-    private fun expireStaleDaemonPresence() {
-        val (expiredIDs, endpoints) = synchronized(lock) {
-            val expired = discoveredEndpoints
-                .filter { it.online && !machinePresenceOnline(true, it.lastSeenAt) }
-                .mapTo(mutableSetOf()) { it.id }
-            if (expired.isEmpty()) return
-            discoveredEndpoints = discoveredEndpoints.map { endpoint ->
-                if (endpoint.id in expired) endpoint.copy(online = false) else endpoint
-            }
-            expired to discoveredEndpoints
-        }
-        _state.update { current ->
-            current.copy(
-                endpointConnections = current.endpointConnections.map { row ->
-                    endpoints.firstOrNull { it.id == row.id }?.let(::endpointRow) ?: row
-                },
-                projectHosts = current.projectHosts.mapValues { (_, host) ->
-                    if (host.endpointId in expiredIDs) host.copy(online = false) else host
-                },
-            )
-        }
-    }
-
     private fun activateProjection(endpoint: DieterEndpoint) {
         if (activeProjectionKey != endpoint.id) {
             activeProjectionKey = endpoint.id
@@ -933,16 +901,19 @@ class DieterConnectionManager(
                 endpointConnections = current.endpointConnections.map { row ->
                     val endpoint = endpoints.firstOrNull { it.id == row.id } ?: return@map row
                     when {
-                        endpoint.online && endpoint.id == current.endpoint?.id && current.phase in setOf(ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED) -> row.copy(
+                        projectRouteIsReady(endpoint.id, current.endpoint?.id, current.phase) -> row.copy(
                             label = endpoint.label,
-                            online = endpoint.online,
+                            online = true,
                             lastSeenAt = endpoint.lastSeenAt,
                         )
                         else -> endpointRow(endpoint)
                     }
                 },
                 projectHosts = current.projectHosts.mapValues { (_, host) ->
-                    host.copy(online = availability[host.endpointId] ?: false)
+                    host.copy(
+                        online = availability[host.endpointId] == true ||
+                            projectRouteIsReady(host.endpointId, current.endpoint?.id, current.phase),
+                    )
                 },
             )
         }
@@ -1071,9 +1042,12 @@ class DieterConnectionManager(
             val retainedProjectIds = retainedProjects.mapTo(hashSetOf()) { it.id }
             val boards = (current.boards.filter { it.projectId in retainedProjectIds } + snapshot.state.boardsList)
                 .distinctBy { it.id }
-            val cards = (current.cards.filter { it.projectId in retainedProjectIds } + snapshot.state.cardsList)
-                .distinctBy { it.id }
-                .toMutableList()
+            val cards = overlayPendingCardStarts(
+                (current.cards.filter { it.projectId in retainedProjectIds } + snapshot.state.cardsList)
+                    .distinctBy { it.id },
+                boards,
+                entries,
+            ).toMutableList()
             val chats = (current.chats.filter { it.projectId in retainedProjectIds } + snapshot.state.chatsList)
                 .distinctBy { it.id }
                 .toMutableList()
@@ -1171,6 +1145,7 @@ class DieterConnectionManager(
                                 .build()
                         }
                     }
+                    OutboxKind.START_CARD -> Unit
                 }
             }
             conversations.replaceAll { _, conversation -> overlayOptimisticMessages(conversation, entries) }
@@ -1237,40 +1212,100 @@ class DieterConnectionManager(
 
     private fun reconcileOutbox(snapshot: GlobalSnapshot): Boolean {
         val cardIds = (snapshot.state.cardsList + snapshot.state.chatsList).mapTo(hashSetOf()) { it.id }
-        return reconcileOutbox(cardIds, snapshot.conversationsList)
+        val startedCardIds = snapshot.state.cardsList
+            .filter { it.initialPromptSentAt.isNotBlank() }
+            .mapTo(hashSetOf(), Card::getId)
+        return reconcileOutbox(cardIds, snapshot.conversationsList, startedCardIds)
     }
 
     private fun reconcileOutbox(snapshot: ConversationSnapshot): Boolean {
         val cardId = snapshot.detail.card.id.ifBlank { snapshot.conversation.cardId }
-        return reconcileOutbox(setOf(cardId).filter(String::isNotBlank).toSet(), listOf(snapshot))
+        val startedCardIds = setOf(snapshot.detail.card)
+            .filter { it.id.isNotBlank() && it.initialPromptSentAt.isNotBlank() }
+            .mapTo(hashSetOf(), Card::getId)
+        return reconcileOutbox(
+            setOf(cardId).filter(String::isNotBlank).toSet(),
+            listOf(snapshot),
+            startedCardIds,
+        )
     }
 
     private fun reconcileOutbox(
         cardIds: Set<String>,
         conversations: List<ConversationSnapshot>,
+        startedCardIds: Set<String>,
     ): Boolean {
         val changed = synchronized(outbox) {
-            outbox.removeAll { entry -> outboxEntryIsSynced(entry, cardIds, conversations) }
+            outbox.removeAll { entry -> outboxEntryIsSynced(entry, cardIds, conversations, startedCardIds) }
         }
         if (changed) syncStore.saveOutbox(synchronized(outbox) { outbox.toList() })
         return changed
     }
 
-    suspend fun startCard(cardId: String): StartCardResponse {
-        val projectId = (_state.value.cards + _state.value.chats)
-            .firstOrNull { it.id == cardId }
-            ?.projectId
-            .orEmpty()
-        ensureProjectRoute(projectId)
-        val response = repository.startCard(
-            StartCardRequest.newBuilder()
+    suspend fun enqueueCardStart(cardId: String): Card {
+        val current = _state.value
+        val card = current.cards.firstOrNull { it.id == cardId }
+            ?: error("Card is no longer available")
+        var existing = synchronized(outbox) {
+            outbox.firstOrNull {
+                it.kind == OutboxKind.START_CARD && it.optimisticId == cardId
+            }
+        }
+        if (existing?.state == OutboxState.FAILED) {
+            synchronized(outbox) {
+                val index = outbox.indexOfFirst { it.commandId == existing?.commandId }
+                if (index >= 0) {
+                    outbox[index] = outbox[index].copy(
+                        attempts = 0,
+                        lastError = null,
+                        state = OutboxState.QUEUED,
+                        nextAttemptAtMillis = null,
+                    )
+                    existing = outbox[index]
+                    syncStore.saveOutbox(outbox)
+                }
+            }
+        }
+        if (existing == null) {
+            val request = StartCardRequest.newBuilder()
                 .setCardId(cardId)
                 .setClientId(syncStore.clientId)
                 .setCommandId(UUID.randomUUID().toString().lowercase())
-                .build(),
-        )
-        acceptStartedCard(response.card)
-        return response
+                .build()
+            val endpointId = current.projectHosts[card.projectId]?.endpointId ?: repository.activeEndpoint.id
+            synchronized(outbox) {
+                outbox += AndroidOutboxEntry(
+                    commandId = request.commandId,
+                    clientId = request.clientId,
+                    endpointId = endpointId,
+                    kind = OutboxKind.START_CARD,
+                    request = request.toByteArray(),
+                    optimisticId = cardId,
+                )
+                syncStore.saveOutbox(outbox)
+            }
+        }
+        refreshOutboxPresentation()
+        return _state.value.cards.firstOrNull { it.id == cardId } ?: card
+    }
+
+    private fun refreshOutboxPresentation() {
+        val snapshot = globalSnapshot
+        if (snapshot != null) {
+            applyGlobalSnapshot(snapshot)
+            return
+        }
+        _state.update { current ->
+            val entries = synchronized(outbox) { outbox.toList() }
+            val combined = current.copy(
+                cards = overlayPendingCardStarts(current.cards, current.boards, entries),
+                pendingCardIds = pendingCardIds(entries),
+                pendingMessageIds = pendingMessageIds(entries),
+                acceptedOutboxIds = acceptedOutboxIds(entries),
+                failedOutboxIds = failedOutboxIds(entries),
+            )
+            combined.copy(selectedState = selectedState(combined))
+        }
     }
 
     private fun acceptStartedCard(card: Card) {
@@ -1346,7 +1381,7 @@ class DieterConnectionManager(
             when (entry.kind) {
                 OutboxKind.SEND_MESSAGE -> add(entry.optimisticId)
                 OutboxKind.CREATE_CHAT -> optimisticInitialMessageId(entry)?.let(::add)
-                OutboxKind.CREATE_CARD -> Unit
+                OutboxKind.CREATE_CARD, OutboxKind.START_CARD -> Unit
             }
         }
     }
@@ -1440,6 +1475,16 @@ class DieterConnectionManager(
             val activeEndpoint = repository.activeEndpoint.id
             val entry = synchronized(outbox) { nextOutboxEntry(outbox, activeEndpoint) }
             if (entry == null) {
+                val onlineEndpointIds = discoveredEndpoints.filter(DieterEndpoint::online).mapTo(hashSetOf()) { it.id }
+                val nextEndpoint = synchronized(outbox) {
+                    nextOutboxEndpoint(outbox, activeEndpoint, onlineEndpointIds)
+                }
+                if (nextEndpoint != null) {
+                    preferredEndpointId = nextEndpoint
+                    preferences.edit().putString(KEY_PREFERRED_ENDPOINT, nextEndpoint).apply()
+                    restart()
+                    return
+                }
                 delay(500)
                 continue
             }
@@ -1449,6 +1494,9 @@ class DieterConnectionManager(
                     OutboxKind.CREATE_CHAT -> repository.createConversation(CreateConversationRequest.parseFrom(entry.request), true).id
                     OutboxKind.SEND_MESSAGE -> repository.sendMessage(SendMessageRequest.parseFrom(entry.request)).messageId
                         .ifBlank { entry.optimisticId }
+                    OutboxKind.START_CARD -> repository.startCard(StartCardRequest.parseFrom(entry.request)).card
+                        .also(::acceptStartedCard)
+                        .id
                 }
                 synchronized(outbox) {
                     val index = outbox.indexOfFirst { it.commandId == entry.commandId }
@@ -1460,7 +1508,7 @@ class DieterConnectionManager(
                             nextAttemptAtMillis = null,
                         )
                     }
-                    if (entry.kind != OutboxKind.SEND_MESSAGE) {
+                    if (entry.kind == OutboxKind.CREATE_CARD || entry.kind == OutboxKind.CREATE_CHAT) {
                         conversationIdResolutions[entry.optimisticId] = serverId
                         val retargeted = retargetOutboxDependencies(outbox, entry.optimisticId, serverId)
                         outbox.clear()
@@ -1471,10 +1519,8 @@ class DieterConnectionManager(
                     }
                     syncStore.saveOutbox(outbox)
                 }
-                globalSnapshot?.let {
-                    reconcileOutbox(it)
-                    applyGlobalSnapshot(it)
-                }
+                globalSnapshot?.let(::reconcileOutbox)
+                refreshOutboxPresentation()
             } catch (error: Throwable) {
                 val attempts = entry.attempts + 1
                 val terminal = outboxFailureIsPermanent(error)
@@ -1496,7 +1542,7 @@ class DieterConnectionManager(
                         "endpoint=$activeEndpoint route=${repository.dataRoute()} status=${Status.fromThrowable(error).code} " +
                         "message=${readableRpcError(error)} terminal=$terminal",
                 )
-                globalSnapshot?.let(::applyGlobalSnapshot)
+                refreshOutboxPresentation()
             }
         }
     }
@@ -1515,7 +1561,7 @@ class DieterConnectionManager(
             )
             syncStore.saveOutbox(outbox)
         }
-        globalSnapshot?.let(::applyGlobalSnapshot)
+        refreshOutboxPresentation()
     }
 
     fun outboxFailure(id: String): String? = synchronized(outbox) {
@@ -1538,25 +1584,27 @@ class DieterConnectionManager(
                 removed.serverId?.let(::add)
             }
             val conversations = current.activeConversations.toMutableMap()
-            if (removed.kind == OutboxKind.SEND_MESSAGE) {
-                conversations.replaceAll { _, snapshot ->
-                    snapshot.toBuilder()
-                        .setConversation(
-                            snapshot.conversation.toBuilder()
-                                .clearMessages()
-                                .addAllMessages(snapshot.conversation.messagesList.filterNot { it.id == removed.optimisticId }),
-                        )
-                        .build()
+            when (removed.kind) {
+                OutboxKind.SEND_MESSAGE -> {
+                    conversations.replaceAll { _, snapshot ->
+                        snapshot.toBuilder()
+                            .setConversation(
+                                snapshot.conversation.toBuilder()
+                                    .clearMessages()
+                                    .addAllMessages(snapshot.conversation.messagesList.filterNot { it.id == removed.optimisticId }),
+                            )
+                            .build()
+                    }
                 }
-            } else {
-                ids.forEach(conversations::remove)
+                OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT -> ids.forEach(conversations::remove)
+                OutboxKind.START_CARD -> Unit
             }
             current.copy(
                 activeConversations = conversations,
                 conversationRefreshedAtMillis = current.conversationRefreshedAtMillis.filterKeys(conversations::containsKey),
             )
         }
-        globalSnapshot?.let(::applyGlobalSnapshot)
+        refreshOutboxPresentation()
     }
 
     private fun updateEndpoint(endpoint: DieterEndpoint, phase: EndpointPhase, detail: String, latencyMs: Long?) {
@@ -1709,6 +1757,13 @@ internal fun endpointForProjectSelection(
     currentEndpointId: String?,
     hosts: Map<String, ProjectHost>,
 ): String? = hosts[projectId]?.endpointId?.takeUnless { it == currentEndpointId }
+
+internal fun projectRouteIsReady(
+    targetEndpointId: String,
+    activeEndpointId: String?,
+    phase: ConnectionPhase,
+): Boolean = targetEndpointId == activeEndpointId &&
+    phase in setOf(ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED)
 
 internal fun isLoopbackHost(host: String): Boolean = host.equals("localhost", ignoreCase = true) ||
     host == "127.0.0.1" || host == "::1"

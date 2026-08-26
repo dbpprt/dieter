@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.v1.Project
 import org.junit.Assert.assertFalse
@@ -16,6 +17,7 @@ class ProjectScopedNavigationTest {
             projectHosts = mapOf(project.id to ProjectHost("endpoint", "daemon", "machine", false)),
         )
         val online = offline.copy(
+            connectionPhase = ConnectionPhase.CONNECTED,
             projectHosts = mapOf(project.id to ProjectHost("endpoint", "daemon", "machine", true)),
         )
 

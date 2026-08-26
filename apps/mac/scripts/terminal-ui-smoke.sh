@@ -8,6 +8,7 @@ PORT=${DIETER_TERMINAL_SMOKE_PORT:-14244}
 ADDRESS="127.0.0.1:$PORT"
 ENDPOINT="http://$ADDRESS"
 CAPTURE_DIR="$APP_ROOT/.build/terminal-ui-smoke"
+APPEARANCE_SUITE="io.dieter.terminal-ui-smoke.$$.appearance"
 TOKEN_FILE="$CAPTURE_DIR/session-token"
 GATEWAY_PID=
 APP_PID=
@@ -15,6 +16,7 @@ APP_PID=
 cleanup() {
     if [ -n "$APP_PID" ]; then kill "$APP_PID" 2>/dev/null || true; fi
     if [ -n "$GATEWAY_PID" ]; then kill "$GATEWAY_PID" 2>/dev/null || true; fi
+    defaults delete "$APPEARANCE_SUITE" >/dev/null 2>&1 || true
     rm -f "$TOKEN_FILE" "$CAPTURE_DIR/gateway.env"
 }
 trap cleanup EXIT INT TERM
@@ -63,7 +65,8 @@ run_phase() {
     open -n -W "$APP_BUNDLE" --args --dieter-endpoint "$ENDPOINT" \
         --dieter-access-token-file "$TOKEN_FILE" \
         --terminal-ui-smoke "$PHASE" \
-        --ui-smoke-output "$CAPTURE_DIR" >"$CAPTURE_DIR/app-$PHASE.log" 2>&1 &
+        --ui-smoke-output "$CAPTURE_DIR" \
+        --appearance-defaults-suite "$APPEARANCE_SUITE" >"$CAPTURE_DIR/app-$PHASE.log" 2>&1 &
     APP_PID=$!
 
     COUNT=0

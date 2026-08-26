@@ -13,6 +13,12 @@ import UniformTypeIdentifiers
 @MainActor
 enum ConversationUISmokeRunner {
     private static let syntheticFixtureID = "c_conversation_ui_smoke"
+    private static var jumpToLatestVisible = false
+
+    static func recordJumpToLatestVisibility(_ visible: Bool) {
+        guard ProcessInfo.processInfo.arguments.contains("--conversation-ui-smoke") else { return }
+        jumpToLatestVisible = visible
+    }
 
     static func run(store: DieterStore) async {
         let output = outputDirectory()
@@ -89,8 +95,43 @@ enum ConversationUISmokeRunner {
             await runHistoryChecks(store: store, window: window, results: &results, output: output)
         }
         await runActivityIndicatorCheck(store: store, window: window, results: &results, output: output)
+        await runJumpToLatestCheck(store: store, window: window, results: &results, output: output)
 
         writeReport(results, to: output)
+    }
+
+    /// Grows a model answer after the short fixture has settled at its tail.
+    /// The transcript must keep its viewport and expose the explicit jump
+    /// control instead of snapping to the newly rendered bottom.
+    private static func runJumpToLatestCheck(
+        store: DieterStore,
+        window: NSWindow,
+        results: inout [String: String],
+        output: URL
+    ) async {
+        guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            results["jump-to-latest"] = "failed: renderer fixture unavailable"
+            return
+        }
+        jumpToLatestVisible = false
+        try? await DieterTaskSleep.milliseconds(500)
+
+        var text = Dieter_V1_MessagePart()
+        text.type = "text"
+        text.text = (1...80).map { "Streamed model answer line \($0) stays below the reading position." }.joined(separator: "\n")
+        var answer = Dieter_V1_UiMessage()
+        answer.id = "message_streamed_growth"
+        answer.role = "assistant"
+        answer.parts = [text]
+        snapshot.conversation.messages.append(answer)
+        snapshot.conversation.lastSeq += 1
+        store.conversation = snapshot
+
+        try? await DieterTaskSleep.seconds(1)
+        capture(window, to: output.appending(path: "07-jump-to-latest.png"))
+        results["jump-to-latest"] = jumpToLatestVisible
+            ? "passed"
+            : "failed: model answer growth did not expose the jump control"
     }
 
     /// Leaves a deterministic active conversation at the transcript tail so
@@ -202,6 +243,29 @@ enum ConversationUISmokeRunner {
             : "failed: \(store.composerAttachments.count) attachments after image paste"
         capture(window, to: output.appending(path: "04-pasted-attachment-preview.png"))
 
+        // The packaged window has a fixed smoke size, so the attached image
+        // tile is deterministic. Deliver a real native click and require the
+        // SwiftUI preview sheet to appear.
+        for sheet in NSApp.windows.filter({ $0.isSheet && $0.isVisible }) {
+            sheet.sheetParent?.endSheet(sheet)
+        }
+        store.errorMessage = nil
+        try? await DieterTaskSleep.milliseconds(300)
+        click(window: window, x: 635, distanceFromTop: 680)
+        try? await DieterTaskSleep.milliseconds(700)
+        let sheets = NSApp.windows.filter { $0.isSheet && $0.isVisible }
+        if let sheet = sheets.first(where: {
+            $0.contentLayoutRect.width >= 600 && $0.contentLayoutRect.height >= 450
+        }) {
+            results["attachment-image-preview"] = "passed"
+            capture(sheet, to: output.appending(path: "04b-attachment-image-preview.png"))
+            sheet.sheetParent?.endSheet(sheet)
+            try? await DieterTaskSleep.milliseconds(400)
+        } else {
+            let sizes = sheets.map { "\(Int($0.contentLayoutRect.width))x\(Int($0.contentLayoutRect.height))" }
+            results["attachment-image-preview"] = "failed: clicking the image attachment opened sheets \(sizes)"
+        }
+
         pasteboard.clearContents()
         pasteboard.setString("plain text belongs to the text view", forType: .string)
         let before = store.composerAttachments.count
@@ -239,6 +303,26 @@ enum ConversationUISmokeRunner {
             keyCode: 9
         ) else { return }
         NSApp.postEvent(event, atStart: false)
+    }
+
+    private static func click(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
+        guard let content = window.contentView else { return }
+        let location = NSPoint(x: x, y: content.bounds.height - distanceFromTop)
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        for type in [NSEvent.EventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(
+                with: type,
+                location: location,
+                modifierFlags: [],
+                timestamp: timestamp,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: type == .mouseMoved ? 0 : 1,
+                pressure: type == .leftMouseDown ? 1 : 0
+            ) else { continue }
+            window.sendEvent(event)
+        }
     }
 
     /// Opens recently updated conversations until one contains both reasoning

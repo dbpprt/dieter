@@ -5,12 +5,15 @@ import com.dbpprt.dieter.data.OutboxKind
 import com.dbpprt.dieter.data.OutboxState
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.CardDetail
+import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Conversation
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.CreateConversationRequest
 import com.dbpprt.dieter.v1.MessagePart
+import com.dbpprt.dieter.v1.Lane
 import com.dbpprt.dieter.v1.QueuedMessage
 import com.dbpprt.dieter.v1.SendMessageRequest
+import com.dbpprt.dieter.v1.StartCardRequest
 import com.dbpprt.dieter.v1.UiMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,6 +39,25 @@ class ConversationOutboxPolicyTest {
         val ready = outboxEntry(OutboxKind.CREATE_CHAT, byteArrayOf(), "local_chat", null)
 
         assertEquals(ready, nextOutboxEntry(listOf(delayed, ready), "endpoint", nowMillis = 100))
+    }
+
+    @Test
+    fun `online endpoint with pending work is selected after the current queue drains`() {
+        val current = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "done", "server")
+        val offline = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "offline", null)
+            .copy(endpointId = "offline-endpoint")
+        val online = outboxEntry(OutboxKind.START_CARD, byteArrayOf(), "card", null)
+            .copy(endpointId = "online-endpoint")
+
+        assertEquals(
+            "online-endpoint",
+            nextOutboxEndpoint(
+                listOf(current, offline, online),
+                currentEndpointId = "endpoint",
+                onlineEndpointIds = setOf("online-endpoint"),
+                nowMillis = 100,
+            ),
+        )
     }
 
     @Test
@@ -147,6 +169,49 @@ class ConversationOutboxPolicyTest {
                 listOf(snapshot(cardId = "c_server", messages = listOf(userMessage("msg_server", "First prompt")))),
             ),
         )
+    }
+
+    @Test
+    fun `queued start moves the existing card optimistically and waits for durable marker`() {
+        val request = StartCardRequest.newBuilder()
+            .setCardId("card")
+            .setClientId("client")
+            .setCommandId("start-command")
+            .build()
+        val entry = outboxEntry(OutboxKind.START_CARD, request.toByteArray(), "card", null)
+        val board = Board.newBuilder()
+            .setId("board")
+            .addLanes(Lane.newBuilder().setId("todo").setName("Todo"))
+            .addLanes(Lane.newBuilder().setId("active").setName("Running"))
+            .build()
+        val card = Card.newBuilder().setId("card").setBoardId("board").setLane("todo").build()
+
+        val optimistic = overlayPendingCardStarts(listOf(card), listOf(board), listOf(entry)).single()
+
+        assertEquals("active", optimistic.lane)
+        assertEquals("starting", optimistic.runtime)
+        assertFalse(outboxEntryIsSynced(entry.copy(serverId = "card"), setOf("card"), emptyList()))
+        assertTrue(
+            outboxEntryIsSynced(
+                entry.copy(serverId = "card"),
+                setOf("card"),
+                emptyList(),
+                startedCardIds = setOf("card"),
+            ),
+        )
+    }
+
+    @Test
+    fun `failed start is not overlaid until explicitly retried`() {
+        val entry = outboxEntry(OutboxKind.START_CARD, byteArrayOf(), "card", null)
+            .copy(state = OutboxState.FAILED)
+        val board = Board.newBuilder()
+            .setId("board")
+            .addLanes(Lane.newBuilder().setId("running").setName("Running"))
+            .build()
+        val card = Card.newBuilder().setId("card").setBoardId("board").setLane("todo").build()
+
+        assertEquals(card, overlayPendingCardStarts(listOf(card), listOf(board), listOf(entry)).single())
     }
 
     private fun sendEntry(serverId: String?): AndroidOutboxEntry {

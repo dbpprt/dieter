@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.Dieter" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#E5E5EA</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">@color/dieter_window_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

@@ -34,9 +34,9 @@ NEW_BUNDLE_OUTPUT_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/dieter-mac-bundle-output.XX
 trap 'rm -f "$NEW_BUNDLE_MANIFEST" "$NEW_BUNDLE_OUTPUT_MANIFEST"' EXIT INT TERM
 stat -f '%N %Fm %z %i' \
     "$APP_ROOT/Resources/Info.plist" \
-    "$BRAND_ROOT/assets/Dieter.icns" \
-    "$BRAND_ROOT/assets/png/app-icon-dark-1024.png" \
-    "$BRAND_ROOT/assets/png/favicon-32.png" \
+    "$APP_ROOT/Resources/DieterMonochrome.icns" \
+    "$PALETTE_ICON_ROOT/monochrome.png" \
+    "$APP_ROOT/Resources/DieterMonochromeFavicon.png" \
     "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" \
     "$DIETER_BINARY" \
     "$WEBRTC_BINARY" \
@@ -74,9 +74,9 @@ if [ ! -f "$BUNDLE_MANIFEST" ] || \
     [ "$BUNDLE_OUTPUTS_MATCH" -ne 1 ]; then
     mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Frameworks" "$APP_BUNDLE/Contents/Resources/Fonts" "$APP_BUNDLE/Contents/Resources/PaletteIcons"
     cp "$APP_ROOT/Resources/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
-    cp "$BRAND_ROOT/assets/Dieter.icns" "$APP_BUNDLE/Contents/Resources/Dieter.icns"
-    cp "$BRAND_ROOT/assets/png/app-icon-dark-1024.png" "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png"
-    cp "$BRAND_ROOT/assets/png/favicon-32.png" "$APP_BUNDLE/Contents/Resources/DieterFavicon.png"
+    cp "$APP_ROOT/Resources/DieterMonochrome.icns" "$APP_BUNDLE/Contents/Resources/Dieter.icns"
+    cp "$PALETTE_ICON_ROOT/monochrome.png" "$APP_BUNDLE/Contents/Resources/DieterAppIcon.png"
+    cp "$APP_ROOT/Resources/DieterMonochromeFavicon.png" "$APP_BUNDLE/Contents/Resources/DieterFavicon.png"
     cp "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf"
     cp "$PALETTE_ICON_ROOT"/*.png "$APP_BUNDLE/Contents/Resources/PaletteIcons/"
     cp "$DIETER_BINARY" "$APP_BUNDLE/Contents/MacOS/DieterMac"

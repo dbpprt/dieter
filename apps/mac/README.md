@@ -65,12 +65,13 @@ Xcode, direct SwiftPM commands, and concurrent project sessions from
 invalidating the app script's cache. Keep `apps/mac/.build` between builds to
 retain it, or set `DIETER_SWIFT_SCRATCH_PATH` to put it elsewhere.
 
-General settings include all eight official Dieter palette packs. Selection is
+General settings include eight Dieter designs, with the native Monochrome
+design first and selected by default. Monochrome follows the Mac's light or dark
+appearance without adding a color tint. Selection is
 persisted locally and updates every SwiftUI surface, terminal colors, menu-bar
-surface, and the running Dock app icon. The build packages the canonical
-fallback icon and small-size product mark from
-[`assets/brand`](../../assets/brand/README.md), plus the supplied 1024-pixel
-palette icon variants under `Resources/PaletteIcons` for runtime switching.
+surface, and the running Dock app icon. The bundle's fallback icon and
+small-size product mark match Monochrome, while the 1024-pixel design icon
+variants under `Resources/PaletteIcons` support runtime switching.
 
 Public SwiftProtobuf messages and grpc-swift v2 client stubs are checked in so
 ordinary builds do not compile `protoc` and both Swift generator plugins. The
@@ -129,8 +130,9 @@ conversation, files, schedules, and a real card conversation.
 
 `conversation-ui-smoke.sh` opens a real conversation that carries reasoning and
 tool parts, verifies that hiding reasoning consolidates adjacent tool calls into
-one collapsed group, and toggles the composer's reasoning switch repeatedly to
-prove the transcript survives it. Captures land under
+one collapsed group, grows a model answer to verify the explicit jump-to-latest
+control without viewport snapping, and toggles the composer's reasoning switch
+repeatedly to prove the transcript survives it. Captures land under
 `apps/mac/.build/conversation-ui-smoke`.
 
 `sidebar-ui-smoke.sh` launches the packaged app twice against isolated local

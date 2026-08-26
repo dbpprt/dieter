@@ -24,6 +24,7 @@ internal class ActivityRemoteViewsFactory(
     private var compact = false
     private val palette get() = AppPreferences.selectedPalette(context)
     private val colors get() = palette.tokens
+    private val darkColors get() = palette.widgetUsesDarkColors(context)
 
     override fun onCreate() = Unit
 
@@ -50,7 +51,7 @@ internal class ActivityRemoteViewsFactory(
         return when (val row = rows.getOrNull(position)) {
             is WidgetRow.Section -> RemoteViews(context.packageName, R.layout.widget_row_section).apply {
                 setTextViewText(R.id.widget_section_title, row.title)
-                setTextColor(R.id.widget_section_title, colors.tertiaryInt)
+                setTextColor(R.id.widget_section_title, colors.tertiaryForAppearanceInt(darkColors))
             }
             is WidgetRow.Item -> itemView(row)
             null -> RemoteViews(context.packageName, R.layout.widget_row_section)
@@ -62,14 +63,14 @@ internal class ActivityRemoteViewsFactory(
         val views = RemoteViews(context.packageName, layout)
         views.setTextViewText(R.id.widget_row_title, row.title)
         views.setTextViewText(R.id.widget_row_trailing, row.trailing)
-        views.setTextColor(R.id.widget_row_title, colors.lightInt)
+        views.setTextColor(R.id.widget_row_title, colors.textForAppearanceInt(darkColors))
         views.setImageViewResource(R.id.widget_row_icon, iconRes(row.kind))
         views.setInt(R.id.widget_row_icon, "setColorFilter", iconColor(row.kind))
         views.setInt(R.id.widget_row_icon, "setBackgroundResource", iconBgRes(row.kind))
         views.setTextColor(R.id.widget_row_trailing, trailingColor(row.kind))
         if (!compact) {
             views.setTextViewText(R.id.widget_row_subtitle, row.subtitle)
-            views.setTextColor(R.id.widget_row_subtitle, colors.mutedInt)
+            views.setTextColor(R.id.widget_row_subtitle, colors.mutedForAppearanceInt(darkColors))
             views.setInt(
                 R.id.widget_row_root,
                 "setBackgroundResource",
@@ -92,10 +93,10 @@ internal class ActivityRemoteViewsFactory(
 
     private fun iconColor(kind: WidgetRowKind): Int = when (kind) {
         WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> 0xFFE2BE6A.toInt()
-        WidgetRowKind.RUNNING -> colors.paneEndInt
-        WidgetRowKind.DONE -> colors.eyesInt
+        WidgetRowKind.RUNNING -> colors.liveForAppearanceInt(darkColors)
+        WidgetRowKind.DONE -> colors.eyesForAppearanceInt(darkColors)
         WidgetRowKind.FAILED -> 0xFFF1868E.toInt()
-        WidgetRowKind.CHAT -> colors.mutedInt
+        WidgetRowKind.CHAT -> colors.mutedForAppearanceInt(darkColors)
     }
 
     private fun iconBgRes(kind: WidgetRowKind): Int = when (kind) {
@@ -108,9 +109,9 @@ internal class ActivityRemoteViewsFactory(
 
     private fun trailingColor(kind: WidgetRowKind): Int = when (kind) {
         WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> 0xFFE2BE6A.toInt()
-        WidgetRowKind.RUNNING -> colors.paneEndInt
+        WidgetRowKind.RUNNING -> colors.liveForAppearanceInt(darkColors)
         WidgetRowKind.FAILED -> 0xFFF1868E.toInt()
-        else -> colors.mutedInt
+        else -> colors.mutedForAppearanceInt(darkColors)
     }
 
     override fun getLoadingView(): RemoteViews? = null

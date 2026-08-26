@@ -23,7 +23,11 @@ struct DieterMacApp: App {
                 .environment(store)
                 .id(paletteValue)
                 .preferredColorScheme(appearance.colorScheme)
-                .onAppear { DieterAppIcon.apply(palette) }
+                .onAppear {
+                    let selected = DieterPalette.resolve(paletteValue)
+                    if paletteValue != selected.rawValue { paletteValue = selected.rawValue }
+                    DieterAppIcon.apply(selected)
+                }
                 .onChange(of: paletteValue) { _, value in
                     DieterAppIcon.apply(DieterPalette.resolve(value))
                 }

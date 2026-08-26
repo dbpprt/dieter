@@ -64,12 +64,15 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             val views = android.widget.RemoteViews(context.packageName, R.layout.widget_activity)
             val palette = AppPreferences.selectedPalette(context)
             val colors = palette.tokens
+            val darkColors = palette.widgetUsesDarkColors(context)
 
             views.setInt(R.id.widget_root, "setBackgroundResource", palette.widgetBackground())
             views.setInt(R.id.widget_app_icon, "setBackgroundResource", palette.widgetAppChip())
-            views.setTextColor(R.id.widget_header_title, colors.lightInt)
-            views.setTextColor(R.id.widget_empty_title, colors.lightInt)
-            views.setTextColor(R.id.widget_empty_body, colors.mutedInt)
+            views.setInt(R.id.widget_app_icon, "setColorFilter", android.graphics.Color.WHITE)
+            views.setInt(R.id.widget_refresh, "setColorFilter", colors.mutedForAppearanceInt(darkColors))
+            views.setTextColor(R.id.widget_header_title, colors.textForAppearanceInt(darkColors))
+            views.setTextColor(R.id.widget_empty_title, colors.textForAppearanceInt(darkColors))
+            views.setTextColor(R.id.widget_empty_body, colors.mutedForAppearanceInt(darkColors))
 
             views.setTextViewText(
                 R.id.widget_header_title,
@@ -81,7 +84,7 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_status, "● " + statusLine(hostname(context, state), lastSyncAtMs, now))
             views.setTextColor(
                 R.id.widget_status,
-                if (online) colors.eyesInt else colors.mutedInt,
+                if (online) colors.eyesForAppearanceInt(darkColors) else colors.mutedForAppearanceInt(darkColors),
             )
             views.setTextViewText(
                 R.id.widget_empty_title,

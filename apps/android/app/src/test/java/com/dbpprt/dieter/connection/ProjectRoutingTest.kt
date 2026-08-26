@@ -2,6 +2,7 @@ package com.dbpprt.dieter.connection
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProjectRoutingTest {
@@ -30,6 +31,12 @@ class ProjectRoutingTest {
             "other-gateway#mac",
             endpointForProjectSelection("other-project", "gateway#mac", duplicateDaemon),
         )
+    }
+
+    @Test
+    fun currentSynchronizedRouteStaysUsableWhenAdvisoryPresenceLags() {
+        assertTrue(projectRouteIsReady("gateway#mac", "gateway#mac", ConnectionPhase.SYNCING))
+        assertTrue(projectRouteIsReady("gateway#mac", "gateway#mac", ConnectionPhase.CONNECTED))
     }
 
     @Test

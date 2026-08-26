@@ -93,6 +93,7 @@ private struct ConversationChrome: View {
     let compact: Bool
     let standalone: Bool
     @Binding var tab: String
+    @State private var editCardPresented = false
 
     private var card: Dieter_V1_Card? { store.selectedCard ?? store.selectedDetail?.card }
     private var status: String { store.conversation?.conversation.status ?? card?.runtime ?? "idle" }
@@ -143,6 +144,9 @@ private struct ConversationChrome: View {
                             Divider()
                         }
                         if standalone { Button(card.pinned ? "Unpin chat" : "Pin chat") { Task { await store.pin(card, pinned: !card.pinned) } } }
+                        if !standalone, BoardCardEditingPolicy.canEditDraft(card) {
+                            Button("Edit card…") { editCardPresented = true }
+                        }
                         if ["running", "starting", "waiting_for_user"].contains(status) {
                             Button("Interrupt agent", role: .destructive) { Task { await store.cancel(card) } }
                         }
@@ -162,6 +166,11 @@ private struct ConversationChrome: View {
                 ],
                 selection: $tab
             )
+        }
+        .sheet(isPresented: $editCardPresented) {
+            if let card {
+                EditCardSheet(card: card).environment(store)
+            }
         }
     }
 }
@@ -232,6 +241,8 @@ private struct ConversationTimelineRowContent: Identifiable {
 struct ConversationTimeline: View {
     @Environment(DieterStore.self) private var store
     @State private var historyLoadInFlight = false
+    @State private var initialScrollComplete = false
+    @State private var isAtLatest = true
 
     private var messages: [Dieter_V1_UiMessage] { store.conversationMessages }
     private var timelineItems: [ConversationTimelineItem] {
@@ -271,6 +282,12 @@ struct ConversationTimeline: View {
         return ConversationActivityPresentation.isActive(
             conversationStatus: store.conversation?.conversation.status ?? "",
             cardRuntime: card?.runtime ?? ""
+        )
+    }
+    private var showsJumpToLatest: Bool {
+        ConversationScrollBehavior.showsJumpToLatest(
+            initialScrollComplete: initialScrollComplete,
+            isAtLatest: isAtLatest
         )
     }
 
@@ -331,23 +348,45 @@ struct ConversationTimeline: View {
             }
             .textSelection(.disabled)
             .background(DieterTheme.background)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                ConversationScrollBehavior.isAtLatest(
+                    contentOffsetY: geometry.contentOffset.y,
+                    containerHeight: geometry.containerSize.height,
+                    contentHeight: geometry.contentSize.height
+                )
+            } action: { _, atLatest in
+                isAtLatest = atLatest
+            }
+            .overlay(alignment: .bottom) {
+                if showsJumpToLatest {
+                    Button {
+                        scrollToLatest(proxy)
+                        isAtLatest = true
+                    } label: {
+                        Label("Jump to latest", systemImage: "arrow.down")
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 13)
+                            .frame(height: 34)
+                            .background(DieterTheme.elevated, in: Capsule())
+                            .overlay(Capsule().stroke(DieterTheme.border))
+                            .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 12)
+                    .accessibilityIdentifier("conversation.jump-to-latest")
+                }
+            }
+            .onChange(of: showsJumpToLatest) { _, visible in
+                ConversationUISmokeRunner.recordJumpToLatestVisibility(visible)
+            }
             .task(id: conversationID) {
                 historyLoadInFlight = false
+                initialScrollComplete = false
+                isAtLatest = true
                 await Task.yield()
                 scrollToLatest(proxy)
-            }
-            .onChange(of: store.conversation?.conversation.lastSeq) { _, _ in
-                Task { @MainActor in
-                    await Task.yield()
-                    scrollToLatest(proxy)
-                }
-            }
-            .onChange(of: agentIsWorking) { _, active in
-                guard active else { return }
-                Task { @MainActor in
-                    await Task.yield()
-                    scrollToLatest(proxy)
-                }
+                await Task.yield()
+                initialScrollComplete = true
             }
         }
     }
@@ -401,6 +440,15 @@ private struct ConversationAgentWorkingIndicator: View {
 
 enum ConversationScrollBehavior {
     static let bottomID = "conversation.bottom"
+    private static let latestTolerance: CGFloat = 2
+
+    static func isAtLatest(contentOffsetY: CGFloat, containerHeight: CGFloat, contentHeight: CGFloat) -> Bool {
+        contentOffsetY + containerHeight >= contentHeight - latestTolerance
+    }
+
+    static func showsJumpToLatest(initialScrollComplete: Bool, isAtLatest: Bool) -> Bool {
+        initialScrollComplete && !isAtLatest
+    }
 
     static func anchorItem(containing messageID: String?, in items: [ConversationTimelineItem]) -> String? {
         guard let messageID, !messageID.isEmpty else { return nil }
@@ -721,14 +769,14 @@ struct MessagePartView: View {
             ToolCallView(messageID: messageID, part: part)
         case "image":
             if let image = attachmentImage {
-                Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: 340).clipShape(RoundedRectangle(cornerRadius: 9))
+                previewableAttachmentImage(image)
             } else if let url = URL(string: part.url), !part.url.isEmpty {
                 AsyncImage(url: url) { $0.resizable().scaledToFit() } placeholder: { ProgressView() }
                     .frame(maxHeight: 340).clipShape(RoundedRectangle(cornerRadius: 9))
             }
         case "file", "attachment":
             if part.mediaType.hasPrefix("image/"), let image = attachmentImage {
-                Image(nsImage: image).resizable().scaledToFit().frame(maxHeight: 340).clipShape(RoundedRectangle(cornerRadius: 9))
+                previewableAttachmentImage(image)
             } else {
                 HStack(spacing: 9) {
                     Image(systemName: "doc.fill").foregroundStyle(DieterTheme.shell)
@@ -754,9 +802,37 @@ struct MessagePartView: View {
     }
 
     private var attachmentImage: NSImage? {
-        if !part.data.isEmpty { return NSImage(data: part.data) }
-        guard let marker = part.url.range(of: ";base64,") else { return nil }
-        return Data(base64Encoded: String(part.url[marker.upperBound...])).flatMap(NSImage.init(data:))
+        AttachmentImagePayload.image(from: part)
+    }
+
+    private func previewableAttachmentImage(_ image: NSImage) -> some View {
+        AttachmentImageButton(part: part, image: image, maximumHeight: 340)
+    }
+}
+
+private struct AttachmentImageButton: View {
+    let part: Dieter_V1_MessagePart
+    let image: NSImage
+    let maximumHeight: CGFloat
+    @State private var previewPresented = false
+
+    var body: some View {
+        Button { previewPresented = true } label: {
+            Image(nsImage: image)
+                .resizable().scaledToFit().frame(maxHeight: maximumHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 9, weight: .semibold)).foregroundStyle(.white)
+                        .padding(7).background(Color.black.opacity(0.55), in: Circle()).padding(7)
+                }
+        }
+        .buttonStyle(.plain)
+        .help("Preview \(part.filename.isEmpty ? "image" : part.filename)")
+        .accessibilityLabel("Preview \(part.filename.isEmpty ? "image attachment" : part.filename)")
+        .sheet(isPresented: $previewPresented) {
+            AttachmentImagePreview(part: part, image: image)
+        }
     }
 }
 

@@ -101,6 +101,19 @@ func TestRunNowCreatesOneTemplatedDraftWithOrigin(t *testing.T) {
 	}
 }
 
+func TestAdvertisedTemplateVariablesRenderInTitleAndPrompt(t *testing.T) {
+	variables := map[string]string{
+		"date": "2026-08-25", "scheduled_at": "2026-08-25T07:00:00Z",
+		"project": "Dieter", "board": "Main", "schedule": "Morning",
+	}
+	if title := render("{{schedule}} · {{date}}", variables); title != "Morning · 2026-08-25" {
+		t.Fatalf("title=%q", title)
+	}
+	if prompt := render("Work in {{project}} / {{board}} at {{scheduled_at}}", variables); prompt != "Work in Dieter / Main at 2026-08-25T07:00:00Z" {
+		t.Fatalf("prompt=%q", prompt)
+	}
+}
+
 func TestSchedulePersistsValidatedEffortOnCreatedCard(t *testing.T) {
 	manager, data, project, board := setup(t)
 	schedule, err := manager.Create(store.ScheduleInput{

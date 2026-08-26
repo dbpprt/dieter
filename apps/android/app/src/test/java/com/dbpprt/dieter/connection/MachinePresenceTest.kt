@@ -10,9 +10,8 @@ class MachinePresenceTest {
     private val now = Instant.parse("2026-08-25T12:00:00Z").toEpochMilli()
 
     @Test
-    fun onlinePresenceExpiresAtHeartbeatLease() {
-        assertTrue(machinePresenceOnline(true, "2026-08-25T11:59:31Z", now))
-        assertFalse(machinePresenceOnline(true, "2026-08-25T11:59:30Z", now))
+    fun gatewayPresenceIsAuthoritativeAcrossClockSkew() {
+        assertTrue(machinePresenceOnline(true, "2026-08-25T11:00:00Z", now))
         assertFalse(machinePresenceOnline(false, "2026-08-25T11:59:59Z", now))
         assertTrue(machinePresenceOnline(true, "", now))
     }

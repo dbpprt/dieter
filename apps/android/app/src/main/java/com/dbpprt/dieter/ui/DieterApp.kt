@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -61,11 +62,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -86,6 +89,7 @@ import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterCoral
@@ -109,8 +113,11 @@ private val navigationItems = listOf(
 private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
     this == Destination.FILES || this == Destination.SCHEDULES
 
+private fun Destination.usesSynchronizedWorkspace(): Boolean =
+    this != Destination.TERMINALS
+
 internal fun projectScopedNavigationEnabled(state: DieterUiState): Boolean =
-    state.projects.any { state.projectHosts[it.id]?.online != false }
+    state.projects.any { state.presentedProjectHosts[it.id]?.online != false }
 
 internal const val TABLET_LAYOUT_MIN_WIDTH_DP = 600
 
@@ -185,6 +192,8 @@ fun DieterApp(container: DieterContainer) {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val tabletLayout = usesTabletLayout(maxWidth.value)
+        val cachedStatusIsInline = state.appSurface == null &&
+            state.hasCachedWorkspace && state.destination.usesSynchronizedWorkspace()
         if (state.appSurface != null) {
             Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
                 AppSurfaceContent(state, model, container.appUpdateManager, Modifier.fillMaxSize(), padding)
@@ -282,10 +291,11 @@ fun DieterApp(container: DieterContainer) {
                 }
             }
         }
-        if (state.desiredConnected && state.connectionPhase != ConnectionPhase.CONNECTED) {
+        if (state.connectionPhase != ConnectionPhase.CONNECTED && !cachedStatusIsInline) {
             ConnectionStatusIndicator(
-                syncing = state.connectionPhase == ConnectionPhase.SYNCING,
+                phase = state.connectionPhase,
                 lastConnectedAtMillis = state.lastConnectedAtMillis,
+                showingCachedData = state.hasCachedWorkspace,
                 modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 6.dp, end = 10.dp),
             )
         }
@@ -318,27 +328,39 @@ fun DieterApp(container: DieterContainer) {
 }
 
 @Composable
-private fun ConnectionStatusIndicator(
-    syncing: Boolean,
+internal fun ConnectionStatusIndicator(
+    phase: ConnectionPhase,
     lastConnectedAtMillis: Long?,
+    showingCachedData: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val label = if (syncing) "Syncing" else "Offline"
-    val freshness = lastConnectedLabel(lastConnectedAtMillis)
+    val presentation = connectionStatusPresentation(phase)
+    var nowMillis by remember(lastConnectedAtMillis) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(lastConnectedAtMillis) {
+        while (true) {
+            delay(30_000L)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+    val freshness = lastConnectedLabel(lastConnectedAtMillis, nowMillis)
+    val content = buildString {
+        append(presentation.label)
+        if (showingCachedData) append(", showing cached data")
+        append(", ").append(freshness)
+    }
     Surface(
-        modifier = modifier,
+        modifier = modifier.testTag("workspace-connection-status"),
         shape = RoundedCornerShape(50),
         color = DieterSurfaceHigh,
     ) {
         Row(
             modifier = Modifier
-                .height(32.dp)
-                .padding(horizontal = 10.dp)
-                .semantics { contentDescription = "$label, $freshness" },
+                .padding(horizontal = 11.dp, vertical = 7.dp)
+                .semantics { contentDescription = content },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            if (syncing) {
+            if (presentation.working) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(14.dp),
                     color = DieterShell.copy(alpha = 0.82f),
@@ -353,10 +375,33 @@ private fun ConnectionStatusIndicator(
                     modifier = Modifier.size(14.dp),
                 )
             }
-            Text(label, color = DieterText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-            Text(freshness, color = DieterMuted, fontSize = 10.sp)
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    if (showingCachedData) "${presentation.label} · Showing cached data" else presentation.label,
+                    color = DieterText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(freshness, color = DieterMuted, fontSize = 10.sp)
+            }
         }
     }
+}
+
+internal data class ConnectionStatusPresentation(
+    val label: String,
+    val working: Boolean,
+)
+
+internal fun connectionStatusPresentation(phase: ConnectionPhase): ConnectionStatusPresentation = when (phase) {
+    ConnectionPhase.CONNECTED -> ConnectionStatusPresentation("Online", working = false)
+    ConnectionPhase.CONNECTING -> ConnectionStatusPresentation("Connecting", working = true)
+    ConnectionPhase.SYNCING -> ConnectionStatusPresentation("Syncing", working = true)
+    ConnectionPhase.RECONNECTING -> ConnectionStatusPresentation("Reconnecting", working = true)
+    ConnectionPhase.AUTH_REQUIRED -> ConnectionStatusPresentation("Sign in required", working = false)
+    ConnectionPhase.INCOMPATIBLE -> ConnectionStatusPresentation("Update required", working = false)
+    ConnectionPhase.UNAVAILABLE -> ConnectionStatusPresentation("Unavailable", working = false)
+    ConnectionPhase.STOPPED -> ConnectionStatusPresentation("Offline", working = false)
 }
 
 internal fun lastConnectedLabel(
@@ -377,7 +422,7 @@ internal fun lastConnectedLabel(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel) {
     val connected = state.connected
-    val machines = state.endpointConnections.filter { it.daemonId != null }
+    val machines = state.presentedEndpointConnections.filter { it.daemonId != null }
     val onlineMachineCount = machines.count { it.online }
     ModalBottomSheet(
         onDismissRequest = { if (connected) model.dismissConnectionDialog() },
@@ -443,7 +488,7 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                     )
                 }
             }
-            state.endpointConnections.forEach { endpoint ->
+            state.presentedEndpointConnections.forEach { endpoint ->
                 val endpointConnected = endpoint.phase == EndpointPhase.CONNECTED
                 Surface(
                     color = if (endpointConnected) DieterEyes.copy(alpha = 0.08f) else DieterSurfaceHigh,
@@ -530,12 +575,39 @@ private fun DestinationContent(
     destination: Destination = state.destination,
     contentPadding: androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues(),
 ) {
-    when (destination) {
-        Destination.CHATS -> ChatsScreen(state, model, expanded, contentPadding)
-        Destination.BOARD -> BoardScreen(state, model, expanded, contentPadding)
-        Destination.TERMINALS -> TerminalsScreen(state, model, expanded, contentPadding)
-        Destination.FILES -> FilesScreen(state, model, expanded, contentPadding)
-        Destination.SCHEDULES -> SchedulesScreen(state, model, contentPadding)
+    val showingCachedData = destination.usesSynchronizedWorkspace() && state.hasCachedWorkspace && !state.connected
+    Column(Modifier.fillMaxSize()) {
+        if (showingCachedData) {
+            ConnectionStatusIndicator(
+                phase = state.connectionPhase,
+                lastConnectedAtMillis = state.lastConnectedAtMillis,
+                showingCachedData = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
+        Box(Modifier.fillMaxSize().weight(1f)) {
+            Box(Modifier.fillMaxSize().alpha(if (showingCachedData) 0.48f else 1f)) {
+                when (destination) {
+                    Destination.CHATS -> ChatsScreen(state, model, expanded, contentPadding)
+                    Destination.BOARD -> BoardScreen(state, model, expanded, contentPadding)
+                    Destination.TERMINALS -> TerminalsScreen(state, model, expanded, contentPadding)
+                    Destination.FILES -> FilesScreen(state, model, expanded, contentPadding)
+                    Destination.SCHEDULES -> SchedulesScreen(state, model, contentPadding)
+                }
+            }
+            if (showingCachedData) {
+                Spacer(
+                    Modifier
+                        .matchParentSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
+                        )
+                        .semantics { contentDescription = "Cached workspace is read-only until Dieter reconnects" },
+                )
+            }
+        }
     }
 }
 

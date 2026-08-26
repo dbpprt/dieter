@@ -54,6 +54,30 @@ enum TerminalUISmokeRunner {
             return
         }
 
+        store.createTerminalPresented = true
+        let sheetPresented = await waitUntil(timeout: 10, condition: { window.attachedSheet != nil })
+        let sheetSize = window.attachedSheet?.contentView?.bounds.size
+        if let sheet = window.attachedSheet {
+            let defaults = DieterAppearance.applicationDefaults()
+            let originalAppearance = defaults.string(forKey: DieterAppearance.storageKey)
+            for appearance in [DieterAppearance.dark, DieterAppearance.light] {
+                defaults.set(appearance.rawValue, forKey: DieterAppearance.storageKey)
+                try? await DieterTaskSleep.milliseconds(450)
+                capture(sheet, to: output.appending(path: "00-new-terminal-sheet-\(appearance.rawValue).png"))
+            }
+            if let originalAppearance {
+                defaults.set(originalAppearance, forKey: DieterAppearance.storageKey)
+            } else {
+                defaults.removeObject(forKey: DieterAppearance.storageKey)
+            }
+            try? await DieterTaskSleep.milliseconds(300)
+        }
+        let sheetIsCompact = sheetSize.map { size in
+            size.width >= 480 && size.width <= 560 && size.height >= 400 && size.height <= 520
+        } ?? false
+        store.createTerminalPresented = false
+        _ = await waitUntil(timeout: 10, condition: { window.attachedSheet == nil })
+
         let originalIDs = Set(store.terminals.map(\.id))
         await store.createTerminal(
             projectID: project.id,
@@ -111,6 +135,9 @@ enum TerminalUISmokeRunner {
             "connection": "passed",
             "terminal-id": terminalID,
             "terminal-create": "passed",
+            "new-terminal-sheet": sheetPresented
+                ? (sheetIsCompact ? "passed" : "failed: terminal sheet escaped its compact layout bounds")
+                : "failed: terminal sheet was not presented",
             "initial-output": received ? "passed" : "failed: first marker was not rendered",
             "scrollback-output": filledScrollback ? "passed" : "failed: scrollback marker was not rendered",
             "cursor-tracking": presentation.cursorTracks

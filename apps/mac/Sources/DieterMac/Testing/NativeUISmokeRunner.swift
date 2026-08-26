@@ -1,6 +1,7 @@
 import AppKit
 import DieterAPI
 import Foundation
+import SwiftUI
 
 /// An in-process smoke driver for a native app.
 ///
@@ -163,6 +164,28 @@ enum NativeUISmokeRunner {
             try? await DieterTaskSleep.seconds(1)
             results[step.name] = store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
             await captureAppearances(window, named: "\(step.name).png", in: output)
+
+            if step.section == .schedules {
+                let editorWindow = NSPanel(
+                    contentRect: NSRect(x: 0, y: 0, width: 980, height: 820),
+                    styleMask: [.titled, .closable, .fullSizeContentView],
+                    backing: .buffered,
+                    defer: false
+                )
+                editorWindow.title = "New schedule"
+                editorWindow.contentViewController = NSHostingController(
+                    rootView: ScheduleEditor(schedule: nil).environment(store)
+                )
+                window.beginSheet(editorWindow, completionHandler: { _ in })
+                try? await DieterTaskSleep.seconds(2)
+                await captureAppearances(editorWindow, named: "05b-schedule-editor.png", in: output)
+                let size = editorWindow.contentLayoutRect.size
+                results["05b-schedule-editor"] = size.width >= 900 && size.height >= 740
+                    ? "passed"
+                    : "failed: editor was cramped at \(Int(size.width))×\(Int(size.height))"
+                window.endSheet(editorWindow)
+                try? await DieterTaskSleep.milliseconds(350)
+            }
         }
 
         click(window: window, x: 370, distanceFromTop: 215)
@@ -250,13 +273,38 @@ enum NativeUISmokeRunner {
                 lane: todoLane.id
             )
             let created = await waitUntil(timeout: 10) {
-                store.state.cards.contains { $0.title == title && $0.lane.caseInsensitiveCompare("todo") == .orderedSame }
+                store.state.cards.contains {
+                    $0.title == title &&
+                        $0.lane.caseInsensitiveCompare("todo") == .orderedSame &&
+                        DieterConversationID.isServerBacked($0.id)
+                }
             }
             results["13b-todo-card-stays-on-board"] = created && store.section == .board && store.selectedCardID == nil
                 ? "passed"
                 : "failed: created=\(created), section=\(store.section.rawValue), selected=\(store.selectedCardID ?? "none")"
+            if let draft = store.state.cards.first(where: { $0.title == title }) {
+                let editedTitle = "\(title) edited"
+                let editedTask = "Edit this deferred card before its first agent turn."
+                let updated = await store.update(draft, title: editedTitle, initialPrompt: editedTask)
+                let synchronized: Bool
+                if updated {
+                    synchronized = await waitUntil(timeout: 10) {
+                        store.state.cards.contains {
+                            $0.id == draft.id && $0.title == editedTitle && $0.initialPrompt == editedTask
+                        }
+                    }
+                } else {
+                    synchronized = false
+                }
+                results["13c-todo-card-edit"] = synchronized
+                    ? "passed"
+                    : "failed: packaged Mac UpdateCard did not synchronize both draft fields"
+            } else {
+                results["13c-todo-card-edit"] = "failed: deferred card was unavailable for editing"
+            }
         } else {
             results["13b-todo-card-stays-on-board"] = "failed: fixture board has no Todo lane"
+            results["13c-todo-card-edit"] = "failed: fixture board has no Todo lane"
         }
 
         store.section = .chats

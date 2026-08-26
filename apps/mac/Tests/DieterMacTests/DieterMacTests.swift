@@ -21,6 +21,29 @@ import UniformTypeIdentifiers
     #expect(String(data: message, encoding: .utf8) == "dieter-remote-desktop-v1\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC")
 }
 
+@Test func scheduleTimingTurnsFriendlyChoicesIntoFiveFieldCron() throws {
+    let parsed = ScheduleTiming.parse("45 16 * * 4")
+    #expect(parsed.cadence == .weekly)
+    #expect(parsed.weekday == 4)
+    let components = Calendar.current.dateComponents([.hour, .minute], from: parsed.time)
+    #expect(components.hour == 16)
+    #expect(components.minute == 45)
+    #expect(ScheduleTiming.cron(cadence: .weekly, time: parsed.time, weekday: 4, custom: "") == "45 16 * * 4")
+    #expect(ScheduleTiming.parse("*/10 * * * *").cadence == .custom)
+}
+
+@Test func scheduleTemplatePreviewMatchesDaemonVariableSyntax() {
+    let variables = [
+        "date": "2026-08-25", "scheduled_at": "2026-08-25T07:00:00Z",
+        "project": "Dieter", "board": "Main", "schedule": "Morning",
+    ]
+    #expect(ScheduleTemplateRenderer.render("{{schedule}} · {{date}}", variables: variables) == "Morning · 2026-08-25")
+    #expect(ScheduleTemplateRenderer.render("Work in {{project}} / {{board}} at {{scheduled_at}}", variables: variables) == "Work in Dieter / Main at 2026-08-25T07:00:00Z")
+    #expect(ScheduleTemplateRenderer.appending("{{date}}", to: "Daily") == "Daily {{date}}")
+    #expect(ScheduleActionPresentation.title("draft") == "Todo")
+    #expect(ScheduleActionPresentation.title("run") == "Running")
+}
+
 @Test func remoteDesktopBindingVerifiesAgainstEnrolledEd25519Leaf() throws {
     let offer = "v=0\r\no=test"
     let answer = "v=0\r\na=fingerprint:sha-256 AA:BB\r\n"
@@ -126,6 +149,25 @@ import UniformTypeIdentifiers
     #expect(DieterTransportTarget.make(host: "board.dbpprt.com", port: 443) is ResolvableTargets.DNS)
 }
 
+@Test func backgroundMachineRefreshOnlyProbesLoopbackDirectCandidates() {
+    func candidate(_ id: String, network: String, priority: Int32) -> Dieter_Gateway_V1_DirectCandidate {
+        var candidate = Dieter_Gateway_V1_DirectCandidate()
+        candidate.id = id
+        candidate.network = network
+        candidate.priority = priority
+        return candidate
+    }
+
+    let loopback = candidate("loopback", network: "loopback", priority: 1_000)
+    let uppercaseLoopback = candidate("loopback-uppercase", network: "LOOPBACK", priority: 900)
+    let lan = candidate("lan", network: "lan", priority: 2_000)
+
+    #expect(DirectCandidateScope.loopbackOnly.ordered([lan, uppercaseLoopback, loopback]).map(\.id) == [
+        "loopback", "loopback-uppercase",
+    ])
+    #expect(DirectCandidateScope.all.ordered([loopback, lan]).map(\.id) == ["lan", "loopback"])
+}
+
 @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_LIVE_DIRECT_PORT"] != nil))
 func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
     struct StoredIdentity: Decodable {
@@ -209,6 +251,29 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     } catch let error as RPCError {
         #expect(error.code != .unauthenticated)
     }
+}
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_LIVE_DAEMON_ID"] != nil))
+@MainActor func liveMachineDirectorySelectsTheAuthenticatedLoopbackDaemon() async throws {
+    let daemonID = try #require(ProcessInfo.processInfo.environment["DIETER_LIVE_DAEMON_ID"])
+    let gateway = try #require(DieterEndpoint.parse("https://board.dbpprt.com"))
+    let endpoint = DieterEndpoint(
+        name: "Live machine directory route",
+        host: gateway.host,
+        port: gateway.port,
+        secure: gateway.secure,
+        daemonID: daemonID
+    )
+    let store = DieterStore()
+    let dataPlane = try await store.selectDirectoryDataPlane(for: endpoint)
+    defer {
+        dataPlane.task.cancel()
+        dataPlane.rpc.shutdown()
+    }
+
+    #expect(dataPlane.connection.route == .local)
+    let health = try await dataPlane.rpc.health(timeout: .seconds(2))
+    #expect(health.status == "ok")
 }
 
 @Test func daemonEndpointKeepsHostnamePresenceAndGatewayCredentialIdentity() throws {
@@ -575,6 +640,15 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(ConversationScrollBehavior.anchorItem(containing: nil, in: merged) == nil)
 }
 
+@Test func conversationUpdatesOfferJumpToLatestWithoutForcingTheViewport() {
+    #expect(!ConversationScrollBehavior.showsJumpToLatest(initialScrollComplete: false, isAtLatest: false))
+    #expect(!ConversationScrollBehavior.showsJumpToLatest(initialScrollComplete: true, isAtLatest: true))
+    #expect(ConversationScrollBehavior.showsJumpToLatest(initialScrollComplete: true, isAtLatest: false))
+
+    #expect(ConversationScrollBehavior.isAtLatest(contentOffsetY: 700, containerHeight: 300, contentHeight: 1_000))
+    #expect(!ConversationScrollBehavior.isAtLatest(contentOffsetY: 650, containerHeight: 300, contentHeight: 1_000))
+}
+
 @Test @MainActor func watchDeltaWindowSlidesKeepMessagesAsLocalHistory() {
     let store = DieterStore()
     var snapshot = Dieter_V1_ConversationSnapshot()
@@ -772,6 +846,26 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(ChatActivityText.compact("2026-08-19T10:00:00Z", relativeTo: now) == "2h")
 }
 
+@Test func boardCardActivityTextUsesLatestModificationOrChatActivity() throws {
+    let now = try #require(ISO8601DateFormatter().date(from: "2026-08-19T12:00:00Z"))
+    #expect(BoardCardActivityText.compact(
+        updatedAt: "2026-08-19T11:50:00Z",
+        lastActivityAt: "2026-08-19T10:00:00Z",
+        relativeTo: now
+    ) == "10min")
+    #expect(BoardCardActivityText.compact(
+        updatedAt: "2026-08-14T12:00:00Z",
+        lastActivityAt: "2026-08-19T10:00:00Z",
+        relativeTo: now
+    ) == "2h")
+    #expect(BoardCardActivityText.compact(
+        updatedAt: "2026-08-14T12:00:00Z",
+        lastActivityAt: "",
+        relativeTo: now
+    ) == "5d")
+    #expect(BoardCardActivityText.compact(updatedAt: "", lastActivityAt: "", relativeTo: now).isEmpty)
+}
+
 @Test func assistantMessagePartsCollapseAdjacentToolCallsIntoGroups() {
     var intro = Dieter_V1_MessagePart()
     intro.type = "text"
@@ -965,21 +1059,23 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(defaults.object(forKey: ReasoningTracePreferences.storageKey) != nil)
 }
 
-@Test func appearancePreferenceDefaultsToDarkAndRecognizesEveryStoredMode() {
-    #expect(DieterAppearance.resolve(nil) == .dark)
-    #expect(DieterAppearance.resolve("unknown") == .dark)
+@Test func appearancePreferenceDefaultsToSystemAndRecognizesEveryStoredMode() {
+    #expect(DieterAppearance.resolve(nil) == .system)
+    #expect(DieterAppearance.resolve("unknown") == .system)
     #expect(DieterAppearance.allCases.map(\.rawValue) == ["system", "light", "dark"])
     #expect(DieterAppearance.resolve("system").colorScheme == nil)
     #expect(DieterAppearance.resolve("light").colorScheme == .light)
     #expect(DieterAppearance.resolve("dark").colorScheme == .dark)
 }
 
-@Test func palettePreferenceRecognizesEveryOfficialPackAndDefaultsToArctic() {
-    #expect(DieterPalette.resolve(nil) == .arcticConsole)
-    #expect(DieterPalette.resolve("unknown") == .arcticConsole)
+@Test func palettePreferenceRecognizesEveryDesignAndDefaultsToMonochrome() {
+    #expect(DieterPalette.resolve(nil) == .monochrome)
+    #expect(DieterPalette.resolve("unknown") == .monochrome)
+    #expect(DieterPalette.resolve("acid-terminal") == .monochrome)
     #expect(DieterPalette.allCases.map(\.rawValue) == [
+        "monochrome",
         "electric-blue", "jade-operator", "copper-circuit", "ultraviolet-relay",
-        "solar-command", "arctic-console", "coral-signal", "acid-terminal",
+        "solar-command", "arctic-console", "coral-signal",
     ])
     #expect(Set(DieterPalette.allCases.map(\.title)).count == 8)
     #expect(DieterPalette.allCases.allSatisfy { DieterPalette.resolve($0.rawValue) == $0 })
@@ -1509,6 +1605,41 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(!DieterStore.shouldOpenCreatedConversation(chat: false, lane: "Todo"))
     #expect(DieterStore.shouldOpenCreatedConversation(chat: false, lane: "running"))
     #expect(DieterStore.shouldOpenCreatedConversation(chat: true, lane: "todo"))
+}
+
+@Test func onlyTodoCardsWhoseInitialTaskWasNeverSentCanBeEdited() {
+    var card = Dieter_V1_Card()
+    card.lane = "todo"
+    card.initialPrompt = "Draft task"
+    #expect(BoardCardEditingPolicy.canEditDraft(card))
+
+    card.lane = "Todo"
+    #expect(BoardCardEditingPolicy.canEditDraft(card))
+
+    card.lane = "running"
+    #expect(!BoardCardEditingPolicy.canEditDraft(card))
+
+    card.lane = "todo"
+    card.initialPromptSentAt = "2026-08-25T12:00:00Z"
+    #expect(!BoardCardEditingPolicy.canEditDraft(card))
+
+    card.initialPromptSentAt = ""
+    card.initialPrompt = "   "
+    #expect(!BoardCardEditingPolicy.canEditDraft(card))
+}
+
+@Test func embeddedMacImageAttachmentsProvidePreviewImages() throws {
+    let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+    var dataPart = Dieter_V1_MessagePart()
+    dataPart.type = "image"
+    dataPart.mediaType = "image/png"
+    dataPart.data = png
+    #expect(AttachmentImagePayload.image(from: dataPart) != nil)
+
+    var dataURLPart = Dieter_V1_MessagePart()
+    dataURLPart.type = "image"
+    dataURLPart.url = "data:image/png;base64,\(png.base64EncodedString())"
+    #expect(AttachmentImagePayload.image(from: dataURLPart) != nil)
 }
 
 @Test @MainActor func pasteboardFileURLsAttachTheUnderlyingFiles() throws {

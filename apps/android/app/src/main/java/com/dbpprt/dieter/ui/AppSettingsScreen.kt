@@ -584,7 +584,7 @@ private fun PaletteSetting(selected: DieterPalette, onSelect: (DieterPalette) ->
     Surface(color = DieterSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Palette", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                Text("Design", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
                 Text(
                     "Changes every app surface, terminal, widget, notification accent, and launcher icon.",
                     color = DieterMuted,
@@ -606,7 +606,7 @@ private fun PaletteSetting(selected: DieterPalette, onSelect: (DieterPalette) ->
                         modifier = Modifier.width(158.dp).height(64.dp)
                             .testTag("palette-${palette.slug}")
                             .semantics {
-                                contentDescription = "${palette.displayName} palette${if (active) ", selected" else ""}"
+                                contentDescription = "${palette.displayName} design${if (active) ", selected" else ""}"
                             },
                     ) {
                         Row(

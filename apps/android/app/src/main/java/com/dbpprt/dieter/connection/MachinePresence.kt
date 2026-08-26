@@ -2,18 +2,14 @@ package com.dbpprt.dieter.connection
 
 import java.time.Instant
 
-internal const val MACHINE_OFFLINE_AFTER_MS = 30_000L
-
+/** The gateway already applies the daemon heartbeat lease; its presence bit is authoritative. */
 internal fun machinePresenceOnline(
     serverOnline: Boolean,
+    @Suppress("UNUSED_PARAMETER")
     lastSeenAt: String,
+    @Suppress("UNUSED_PARAMETER")
     nowMs: Long = System.currentTimeMillis(),
-): Boolean {
-    if (!serverOnline) return false
-    val seenAtMs = runCatching { Instant.parse(lastSeenAt).toEpochMilli() }.getOrNull() ?: return true
-    val age = nowMs - seenAtMs
-    return age >= 0 && age < MACHINE_OFFLINE_AFTER_MS
-}
+): Boolean = serverOnline
 
 internal fun machinePresenceAgeLabel(lastSeenAt: String, nowMs: Long = System.currentTimeMillis()): String? {
     val seenAtMs = runCatching { Instant.parse(lastSeenAt).toEpochMilli() }.getOrNull() ?: return null

@@ -387,6 +387,7 @@ private struct SettingsPanel<Content: View>: View {
             }
             content
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(DieterTheme.border))
@@ -452,12 +453,12 @@ struct GeneralSettings: View {
                         }
                     }
                 }
-                SettingsPanel(title: "Palette", subtitle: "Changes every Dieter surface, terminal, accent, and the running app icon.") {
+                SettingsPanel(title: "Design", subtitle: "Changes every Dieter surface, terminal, accent, and the running app icon.") {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: 4), spacing: 9) {
                         ForEach(DieterPalette.allCases) { palette in
                             PaletteOption(
                                 palette: palette,
-                                selected: palette.rawValue == paletteValue
+                                selected: palette == DieterPalette.resolve(paletteValue)
                             ) {
                                 paletteValue = palette.rawValue
                             }
@@ -539,7 +540,7 @@ private struct PaletteOption: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(palette.title) palette")
+        .accessibilityLabel("\(palette.title) design")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityIdentifier("settings.palette.\(palette.rawValue)")
     }

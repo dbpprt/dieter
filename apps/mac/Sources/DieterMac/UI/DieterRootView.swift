@@ -6,6 +6,17 @@ struct DieterRootView: View {
     @Environment(DieterStore.self) private var store
     @State private var navigationCollapsed = false
 
+    private var showsSynchronizedWorkspace: Bool {
+        switch store.section {
+        case .board, .chats, .files, .schedules, .archive: true
+        case .terminals, .screens, .settings: false
+        }
+    }
+
+    private var workspaceSurfaceIsStale: Bool {
+        showsSynchronizedWorkspace && store.hasLoadedWorkspace && !store.workspaceIsLive
+    }
+
     var body: some View {
         @Bindable var store = store
         HStack(spacing: 0) {
@@ -15,21 +26,32 @@ struct DieterRootView: View {
                 .fill(DieterTheme.paneSeparator)
                 .frame(width: 1)
                 .ignoresSafeArea(.container, edges: .top)
-            Group {
-                switch store.section {
-                case .board: BoardView()
-                case .chats: ChatsView()
-                case .terminals: TerminalsView()
-				case .screens: ScreensView()
-                case .files: FilesView()
-                case .schedules: SchedulesView()
-                case .archive: ArchiveView()
-                case .settings: DieterSettingsView()
+            VStack(spacing: 0) {
+                if workspaceSurfaceIsStale {
+                    WorkspaceFreshnessBanner()
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                Group {
+                    switch store.section {
+                    case .board: BoardView()
+                    case .chats: ChatsView()
+                    case .terminals: TerminalsView()
+					case .screens: ScreensView()
+                    case .files: FilesView()
+                    case .schedules: SchedulesView()
+                    case .archive: ArchiveView()
+                    case .settings: DieterSettingsView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .saturation(workspaceSurfaceIsStale ? 0.18 : 1)
+                .opacity(workspaceSurfaceIsStale ? 0.48 : 1)
+                .disabled(workspaceSurfaceIsStale)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .animation(.snappy(duration: 0.24), value: navigationCollapsed)
+        .animation(.easeOut(duration: 0.18), value: workspaceSurfaceIsStale)
         .background(DieterTheme.background)
         .background(WindowTitleBarDoubleClickHandler())
         .foregroundStyle(DieterTheme.text)
@@ -50,6 +72,42 @@ struct DieterRootView: View {
     }
 }
 
+private struct WorkspaceFreshnessBanner: View {
+    @Environment(DieterStore.self) private var store
+
+    private var isWorking: Bool {
+        store.workspaceFreshness == .syncing || store.workspaceFreshness == .reconnecting
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: 8) {
+                if isWorking {
+                    ProgressView().controlSize(.small).accessibilityHidden(true)
+                } else {
+                    Image(systemName: "wifi.slash")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DieterTheme.coral)
+                        .accessibilityHidden(true)
+                }
+                Text("\(store.workspaceFreshness.label) · Showing cached data")
+                    .font(.system(size: 11, weight: .semibold))
+                Spacer(minLength: 12)
+                Text(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: store.lastSyncedAt, now: context.date))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(DieterTheme.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 34)
+            .background(DieterTheme.surface)
+            .overlay(alignment: .bottom) { Rectangle().fill(DieterTheme.border).frame(height: 1) }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(store.workspaceFreshness.label). Showing cached data. \(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: store.lastSyncedAt, now: context.date)).")
+            .accessibilityIdentifier("workspace.cached")
+        }
+    }
+}
+
 /// Compact workspace connection state, docked in the sidebar footer so it never
 /// floats over a pane header. Shows a dot + label when expanded, a dot when
 /// collapsed; the full freshness lives in the tooltip and accessibility label.
@@ -58,15 +116,15 @@ private struct SidebarConnectionStatus: View {
     var compact = false
 
     private var dotColor: Color {
-        if store.workspaceIsLive { return DieterTheme.eyes }
-        if store.phase.isConnected { return DieterTheme.amber }
-        return DieterTheme.coral
+        switch store.workspaceFreshness {
+        case .live: DieterTheme.eyes
+        case .syncing, .reconnecting: DieterTheme.amber
+        case .offline: DieterTheme.coral
+        }
     }
 
     private var label: String {
-        if store.workspaceIsLive { return "Online" }
-        if store.phase.isConnected { return "Syncing" }
-        return "Offline"
+        store.workspaceFreshness.label
     }
 
     var body: some View {
@@ -77,7 +135,7 @@ private struct SidebarConnectionStatus: View {
                         .padding(4)
                 } else {
                     HStack(spacing: 5) {
-                        if store.phase.isConnected, !store.workspaceIsLive {
+                        if store.workspaceFreshness == .syncing || store.workspaceFreshness == .reconnecting {
                             ProgressView().controlSize(.mini).accessibilityHidden(true)
                         } else {
                             Circle().fill(dotColor).frame(width: 6, height: 6).accessibilityHidden(true)
@@ -100,15 +158,11 @@ private struct SidebarConnectionStatus: View {
             lastConnectedAt: store.lastSyncedAt,
             now: now
         )
-        if store.workspaceIsLive { return "Dieter is online, \(freshness)" }
-        if store.phase.isConnected { return "Dieter is syncing, \(freshness)" }
-        return "Dieter is offline, \(freshness)"
+        return "Dieter is \(store.workspaceFreshness.label.lowercased()), \(freshness)"
     }
 
     private var accessibilityIdentifier: String {
-        if store.workspaceIsLive { return "connection.online" }
-        if store.phase.isConnected { return "connection.syncing" }
-        return "connection.offline"
+        "connection.\(store.workspaceFreshness.label.lowercased())"
     }
 }
 
@@ -295,7 +349,7 @@ struct AppSidebar: View {
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                             .frame(width: 28, height: 28)
                             .background(DieterTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
-                        Circle().fill(machine.online ? DieterTheme.eyes : DieterTheme.tertiary)
+                        Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary)
                             .frame(width: 7, height: 7).overlay(Circle().stroke(DieterTheme.sidebar, lineWidth: 2))
                             .offset(x: 2, y: 2)
                     }
@@ -324,7 +378,7 @@ struct AppSidebar: View {
                     }
                     ForEach(store.machines) { machine in
                         HStack(spacing: 8) {
-                            Circle().fill(machine.online ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 6, height: 6)
+                            Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 6, height: 6)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(machine.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
                                 Text(machineDetail(machine))
@@ -359,9 +413,17 @@ struct AppSidebar: View {
     }
 
     private func machineDetail(_ machine: DieterEndpoint) -> String {
+        guard store.workspaceIsLive else {
+            if store.workspaceFreshness == .syncing { return "Waiting for live sync…" }
+            return "Unavailable · \(MachinePresenceText.lastSeen(machine.lastSeenAt))"
+        }
         guard machine.online else { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
         guard let status = store.connectionStatus(for: machine) else { return "Measuring…" }
         return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms"
+    }
+
+    private func machineIsPresentedOnline(_ machine: DieterEndpoint) -> Bool {
+        store.workspaceIsLive && machine.online
     }
 }
 
@@ -384,12 +446,17 @@ private struct SidebarProjectRow: View {
             [.board, .files, .schedules].contains(store.section)
     }
 
+    private var projectMachineOnline: Bool? {
+        guard let machine = store.machine(forProjectID: project.id) else { return nil }
+        return store.workspaceIsLive && machine.online
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
                 Button { popoverPresented = true } label: {
                     HStack(spacing: 8) {
-                        ProjectAvatar(name: project.name, online: store.machine(forProjectID: project.id)?.online)
+                        ProjectAvatar(name: project.name, online: projectMachineOnline)
                         Text(project.name)
                             .font(.system(size: 12, weight: selected ? .semibold : .medium))
                             .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
@@ -407,6 +474,7 @@ private struct SidebarProjectRow: View {
                         Image(systemName: "plus").font(.system(size: 10, weight: .bold))
                     }
                     .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
+                    .disabled(!store.workspaceIsLive)
                     .help("New board in \(project.name)")
                     .transition(.opacity)
                 }
@@ -473,6 +541,10 @@ private struct SidebarProjectDestinations: View {
     let project: Dieter_V1_Project
     var onNavigate: (() -> Void)? = nil
 
+    private var projectIsUnavailable: Bool {
+        !store.workspaceIsLive || store.machine(forProjectID: project.id)?.online == false
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(store.boards(for: project.id), id: \.id) { board in
@@ -491,14 +563,14 @@ private struct SidebarProjectDestinations: View {
             SidebarDestination(title: "Files", symbol: "folder", selected: store.section == .files && store.selectedProjectID == project.id) {
                 onNavigate?(); Task { await store.openProject(project.id, section: .files) }
             }
-            .disabled(store.machine(forProjectID: project.id)?.online == false)
-            .opacity(store.machine(forProjectID: project.id)?.online == false ? 0.42 : 1)
+            .disabled(projectIsUnavailable)
+            .opacity(projectIsUnavailable ? 0.42 : 1)
             .accessibilityIdentifier("sidebar.files.\(project.id)")
             SidebarDestination(title: "Schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
                 onNavigate?(); Task { await store.openProject(project.id, section: .schedules) }
             }
-            .disabled(store.machine(forProjectID: project.id)?.online == false)
-            .opacity(store.machine(forProjectID: project.id)?.online == false ? 0.42 : 1)
+            .disabled(projectIsUnavailable)
+            .opacity(projectIsUnavailable ? 0.42 : 1)
             .accessibilityIdentifier("sidebar.schedules.\(project.id)")
         }
     }
@@ -520,9 +592,14 @@ private struct SidebarProjectRail: View {
             [.board, .files, .schedules].contains(store.section)
     }
 
+    private var projectMachineOnline: Bool? {
+        guard let machine = store.machine(forProjectID: project.id) else { return nil }
+        return store.workspaceIsLive && machine.online
+    }
+
     var body: some View {
         Button { popoverPresented = true } label: {
-            ProjectAvatar(name: project.name, online: store.machine(forProjectID: project.id)?.online, size: 30)
+            ProjectAvatar(name: project.name, online: projectMachineOnline, size: 30)
                 .padding(3)
                 .background(
                     selected ? DieterTheme.selection : (hovering ? DieterTheme.surface.opacity(0.7) : .clear),
@@ -580,14 +657,19 @@ private struct ProjectQuickNav: View {
     let project: Dieter_V1_Project
     let dismiss: () -> Void
 
+    private var projectMachineOnline: Bool? {
+        guard let machine = store.machine(forProjectID: project.id) else { return nil }
+        return store.workspaceIsLive && machine.online
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
-                ProjectAvatar(name: project.name, online: store.machine(forProjectID: project.id)?.online, size: 26)
+                ProjectAvatar(name: project.name, online: projectMachineOnline, size: 26)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(project.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                     if let machine = store.machine(forProjectID: project.id) {
-                        Text("\(machine.name) · \(machine.online ? "Online" : "Offline")")
+                        Text("\(machine.name) · \(projectMachineOnline == true ? "Online" : "Offline")")
                             .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                     }
                 }
@@ -602,6 +684,7 @@ private struct ProjectQuickNav: View {
             Divider().overlay(DieterTheme.border)
 
             SidebarFooterButton(title: "New board…", symbol: "plus") { dismiss(); store.presentNewBoard(projectID: project.id) }
+                .disabled(!store.workspaceIsLive)
         }
         .padding(10)
         .frame(width: 244)

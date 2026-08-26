@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="dieter_abyss">#0D1B24</color>
+    <color name="dieter_abyss">#0B0B0C</color>
+    <color name="dieter_window_background">#F5F5F7</color>
+    <color name="dieter_monochrome_bg">#1C1C1E</color>
     <color name="dieter_electric_blue_bg">#071426</color>
     <color name="dieter_jade_operator_bg">#06211D</color>
     <color name="dieter_copper_circuit_bg">#1A1210</color>
@@ -8,15 +10,14 @@
     <color name="dieter_solar_command_bg">#151A22</color>
     <color name="dieter_arctic_console_bg">#0D1B24</color>
     <color name="dieter_coral_signal_bg">#28101F</color>
-    <color name="dieter_acid_terminal_bg">#11161A</color>
 
     <!-- Light-shade palette for the custom notification view; values-night overrides for dark. -->
     <color name="notification_title">#DE000000</color>
     <color name="notification_secondary">#8A000000</color>
-    <color name="notification_chip_neutral_bg">#FFD7F2F5</color>
-    <color name="notification_chip_neutral_text">#FF193A49</color>
+    <color name="notification_chip_neutral_bg">#FFE5E5EA</color>
+    <color name="notification_chip_neutral_text">#FF3A3A3C</color>
     <color name="notification_chip_review_bg">#FFF5EBD0</color>
     <color name="notification_chip_review_text">#FF7E621A</color>
-    <color name="notification_chip_subagent_bg">#FFBCEAF1</color>
-    <color name="notification_chip_subagent_text">#FF193A49</color>
+    <color name="notification_chip_subagent_bg">#FFD1D1D6</color>
+    <color name="notification_chip_subagent_text">#FF1C1C1E</color>
 </resources>

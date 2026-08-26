@@ -1,11 +1,15 @@
 package com.dbpprt.dieter.settings
 
-/** The eight official Dieter palettes, sourced from the shared design-token packs. */
+/** The eight Dieter designs shared by app surfaces, widgets, notifications, and icons. */
 enum class DieterPalette(
     val slug: String,
     val displayName: String,
     val tokens: DieterPaletteTokens,
 ) {
+    MONOCHROME(
+        "monochrome", "Monochrome",
+        DieterPaletteTokens(0xFF1C1C1E, 0xFF2C2C2E, 0xFFE5E5EA, 0xFF636366, 0xFFF2F2F7, 0xFF8E8E93, 0xFFD1D1D6, 0xFFF5F5F7, 0xFF0B0B0C, 0xFF1C1C1E),
+    ),
     ELECTRIC_BLUE(
         "electric-blue", "Electric Blue",
         DieterPaletteTokens(0xFF071426, 0xFF102746, 0xFF22D3EE, 0xFF2563EB, 0xFF73F4E4, 0xFF2588F5, 0xFF5EEAD4, 0xFFFAF9F6, 0xFF040C18, 0xFF0B1C33),
@@ -33,18 +37,15 @@ enum class DieterPalette(
     CORAL_SIGNAL(
         "coral-signal", "Coral Signal",
         DieterPaletteTokens(0xFF28101F, 0xFF4A1D33, 0xFFFF8A7A, 0xFFE44568, 0xFFFFD0C7, 0xFFFF6B8A, 0xFFFFD6CC, 0xFFFFF5F3, 0xFF190A13, 0xFF361527),
-    ),
-    ACID_TERMINAL(
-        "acid-terminal", "Acid Terminal",
-        DieterPaletteTokens(0xFF11161A, 0xFF2C3516, 0xFFC7F241, 0xFF49A942, 0xFFE7FF9F, 0xFF5DD8B2, 0xFFD9FF75, 0xFFF8FCEB, 0xFF0B0E10, 0xFF1C2318),
     );
 
     companion object {
-        val DEFAULT = ARCTIC_CONSOLE
+        val DEFAULT = MONOCHROME
 
-        fun resolve(value: String?): DieterPalette = entries.firstOrNull {
-            it.slug == value || it.name == value
-        } ?: DEFAULT
+        fun resolve(value: String?): DieterPalette {
+            if (value == "acid-terminal" || value == "ACID_TERMINAL") return MONOCHROME
+            return entries.firstOrNull { it.slug == value || it.name == value } ?: DEFAULT
+        }
     }
 }
 
@@ -75,6 +76,20 @@ data class DieterPaletteTokens(
     val outlineInt: Int get() = blendArgb(darkRaisedInt, lightInt, 0.12f)
     val shellTintDeepInt: Int get() = blendArgb(darkBackgroundInt, shellEndInt, 0.18f)
     val eyesTintInt: Int get() = blendArgb(darkBackgroundInt, eyesInt, 0.16f)
+
+    fun textForAppearanceInt(darkMode: Boolean): Int = if (darkMode) lightInt else darkBrandInt
+    fun mutedForAppearanceInt(darkMode: Boolean): Int = if (darkMode) {
+        mutedInt
+    } else {
+        blendArgb(darkBrandInt, lightInt, 0.34f)
+    }
+    fun tertiaryForAppearanceInt(darkMode: Boolean): Int = if (darkMode) {
+        tertiaryInt
+    } else {
+        blendArgb(darkBrandInt, lightInt, 0.48f)
+    }
+    fun eyesForAppearanceInt(darkMode: Boolean): Int = if (darkMode) eyesInt else shellEndInt
+    fun liveForAppearanceInt(darkMode: Boolean): Int = if (darkMode) paneEndInt else shellEndInt
 }
 
 fun blendArgb(first: Int, second: Int, amount: Float): Int {

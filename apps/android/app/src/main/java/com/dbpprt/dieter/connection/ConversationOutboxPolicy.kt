@@ -3,10 +3,13 @@ package com.dbpprt.dieter.connection
 import com.dbpprt.dieter.data.AndroidOutboxEntry
 import com.dbpprt.dieter.data.OutboxKind
 import com.dbpprt.dieter.data.OutboxState
+import com.dbpprt.dieter.v1.Board
+import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.CreateConversationRequest
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.SendMessageRequest
+import com.dbpprt.dieter.v1.StartCardRequest
 import com.dbpprt.dieter.v1.UiMessage
 import io.grpc.Status
 
@@ -42,6 +45,19 @@ internal fun nextOutboxEntry(
         it.state != OutboxState.FAILED &&
         (it.nextAttemptAtMillis == null || it.nextAttemptAtMillis <= nowMillis)
 }
+
+internal fun nextOutboxEndpoint(
+    entries: List<AndroidOutboxEntry>,
+    currentEndpointId: String,
+    onlineEndpointIds: Set<String>,
+    nowMillis: Long = System.currentTimeMillis(),
+): String? = entries.firstOrNull {
+    it.endpointId != currentEndpointId &&
+        it.endpointId in onlineEndpointIds &&
+        it.serverId == null &&
+        it.state != OutboxState.FAILED &&
+        (it.nextAttemptAtMillis == null || it.nextAttemptAtMillis <= nowMillis)
+}?.endpointId
 
 internal fun outboxBackoffMillis(attempts: Int): Long =
     (750L shl attempts.coerceAtMost(4)).coerceAtMost(15_000L)
@@ -86,6 +102,27 @@ internal fun optimisticInitialMessageId(entry: AndroidOutboxEntry): String? {
     return optimisticChatMessage(request, "${entry.optimisticId}_initial")?.id
 }
 
+internal fun overlayPendingCardStarts(
+    cards: List<Card>,
+    boards: List<Board>,
+    entries: List<AndroidOutboxEntry>,
+): List<Card> {
+    val pendingStarts = entries
+        .filter { it.kind == OutboxKind.START_CARD && it.state != OutboxState.FAILED }
+        .associateBy(AndroidOutboxEntry::optimisticId)
+    if (pendingStarts.isEmpty()) return cards
+    val boardsById = boards.associateBy(Board::getId)
+    return cards.map { card ->
+        if (card.initialPromptSentAt.isNotBlank() || card.id !in pendingStarts) return@map card
+        val runningLane = boardsById[card.boardId]?.lanesList?.firstOrNull {
+            it.id.equals("running", ignoreCase = true)
+        }?.id ?: boardsById[card.boardId]?.lanesList?.firstOrNull {
+            it.name.equals("running", ignoreCase = true)
+        }?.id ?: return@map card
+        card.toBuilder().setLane(runningLane).setRuntime("starting").build()
+    }
+}
+
 /**
  * Keeps durable local sends visible while a foreground or background stream is
  * still catching up with the unary mutation response.
@@ -119,6 +156,7 @@ internal fun overlayOptimisticMessages(
                 optimisticChatMessage(request, "${entry.optimisticId}_initial") ?: return@forEach
             }
             OutboxKind.CREATE_CARD -> return@forEach
+            OutboxKind.START_CARD -> return@forEach
         }
         val alreadyVisible = conversation.messagesList.any { message ->
             message.id == optimistic.id ||
@@ -137,6 +175,7 @@ internal fun outboxEntryIsSynced(
     entry: AndroidOutboxEntry,
     cardIds: Set<String>,
     conversations: List<ConversationSnapshot>,
+    startedCardIds: Set<String> = emptySet(),
 ): Boolean {
     val serverId = entry.serverId ?: return false
     return when (entry.kind) {
@@ -162,6 +201,11 @@ internal fun outboxEntryIsSynced(
                     conversation.messagesList.any { it.id == serverId } ||
                         conversation.queueList.any { it.id == serverId }
                 } == true
+        }
+        OutboxKind.START_CARD -> {
+            val request = runCatching { StartCardRequest.parseFrom(entry.request) }.getOrNull()
+                ?: return false
+            request.cardId in startedCardIds
         }
     }
 }

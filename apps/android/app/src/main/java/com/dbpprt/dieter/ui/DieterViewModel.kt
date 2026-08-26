@@ -66,6 +66,8 @@ import java.time.ZoneId
 private const val CONVERSATION_PAGE_SIZE = 30
 private const val HEDGE_FETCH_TIMEOUT_MS = 3_500L
 private const val FIRST_FRAME_DEADLINE_MS = 4_500L
+private const val POST_SEND_INITIAL_REFRESH_DELAY_MS = 750L
+private const val POST_SEND_REFRESH_INTERVAL_MS = 2_000L
 internal const val CONNECTION_DIALOG_GRACE_MS = 60_000L
 
 internal fun connectionDialogDelayMs(
@@ -167,6 +169,19 @@ data class DieterUiState(
     val cardOperationErrors: Map<String, String> = emptyMap(),
 ) {
     val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
+    val hasCachedWorkspace: Boolean
+        get() = projects.isNotEmpty() || boards.isNotEmpty() || cards.isNotEmpty() || chats.isNotEmpty()
+    val presentedProjectHosts: Map<String, ProjectHost>
+        get() = if (connected) projectHosts else projectHosts.mapValues { (_, host) -> host.copy(online = false) }
+    val presentedEndpointConnections: List<EndpointConnection>
+        get() = if (connected) endpointConnections else endpointConnections.map { endpoint ->
+            if (endpoint.daemonId == null) endpoint else endpoint.copy(
+                phase = EndpointPhase.PENDING,
+                detail = if (connectionPhase == ConnectionPhase.SYNCING) "Synchronizing" else "Unavailable",
+                latencyMs = null,
+                online = false,
+            )
+        }
     val project: Project? get() = projects.firstOrNull { it.id == selectedProjectId }
     val board: Board? get() = boards.firstOrNull { it.id == selectedBoardId } ?: boards.firstOrNull()
     val boardNotificationsEnabled: Boolean get() = selectedBoardId in notificationBoardIds
@@ -204,6 +219,7 @@ class DieterViewModel(
     private var foreground = false
     private var stateJob: Job? = null
     private var conversationJob: Job? = null
+    private var postSendRefreshJob: Job? = null
     private var terminalWatchJob: Job? = null
     private var conversationStreamCardId: String? = null
     private var terminalEndpointId: String? = null
@@ -268,6 +284,7 @@ class DieterViewModel(
         foreground = false
         stateJob?.cancel()
         cancelConversationStream()
+        cancelPostSendRefresh()
         stopTerminalWatch()
         spacesJob?.cancel()
         connectionDialogGraceJob?.cancel()
@@ -752,6 +769,7 @@ class DieterViewModel(
     }
 
     fun openCard(card: Card, destination: Destination = _state.value.destination) {
+        cancelPostSendRefresh()
         rememberConversation()
         stopTerminalWatch()
         val connection = connectionManager.state.value
@@ -977,6 +995,7 @@ class DieterViewModel(
     fun closeDetail() {
         rememberConversation()
         cancelConversationStream()
+        cancelPostSendRefresh()
         _state.update {
             it.copy(
                 selectedCardId = null,
@@ -991,6 +1010,38 @@ class DieterViewModel(
         conversationJob?.cancel()
         conversationJob = null
         conversationStreamCardId = null
+    }
+
+    private fun cancelPostSendRefresh() {
+        postSendRefreshJob?.cancel()
+        postSendRefreshJob = null
+    }
+
+    private fun startPostSendRefresh(cardId: String) {
+        cancelPostSendRefresh()
+        postSendRefreshJob = viewModelScope.launch {
+            delay(POST_SEND_INITIAL_REFRESH_DELAY_MS)
+            while (foreground && _state.value.selectedCardId == cardId) {
+                val projectId = (_state.value.cards + _state.value.chats + _state.value.spaceCards)
+                    .firstOrNull { it.id == cardId }
+                    ?.projectId
+                    .orEmpty()
+                val snapshot = runCatching {
+                    connectionManager.ensureProjectRoute(projectId)
+                    withTimeout(HEDGE_FETCH_TIMEOUT_MS) {
+                        repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
+                    }
+                }.getOrNull()
+                if (!foreground || _state.value.selectedCardId != cardId) return@launch
+                if (snapshot != null) applyLiveConversation(cardId, snapshot)
+
+                val current = _state.value
+                if (snapshot != null && !conversationNeedsPostSendRefresh(current.conversation, current.pendingMessageIds)) {
+                    return@launch
+                }
+                delay(POST_SEND_REFRESH_INTERVAL_MS)
+            }
+        }
     }
 
     private fun rememberConversation(cardId: String? = _state.value.selectedCardId) {
@@ -1059,6 +1110,7 @@ class DieterViewModel(
         }
         connectionManager.enqueueMessage(id, parts, provider, model, effort)
         onSent()
+        startPostSendRefresh(id)
     }
 
     fun addComment(text: String) = action {
@@ -1154,8 +1206,7 @@ class DieterViewModel(
                 )
             },
         ) {
-            val response = connectionManager.startCard(card.id)
-            updateCard(response.card)
+            updateCard(connectionManager.enqueueCardStart(card.id))
         }
     }
 

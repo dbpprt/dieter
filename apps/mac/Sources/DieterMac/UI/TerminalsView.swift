@@ -281,72 +281,175 @@ private struct NewTerminalSheet: View {
     @State private var shell = "zsh"
     @State private var workingDirectory = ""
     @State private var creating = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case name, workingDirectory }
 
     private var availableProjects: [Dieter_V1_Project] { store.projects.filter { !$0.archived } }
     private var selectedProject: Dieter_V1_Project? { availableProjects.first { $0.id == projectID } }
+    private var canCreate: Bool {
+        !creating && !projectID.isEmpty && !workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 13) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(DieterTheme.selection)
-                        .frame(width: 34, height: 34)
+                        .frame(width: 40, height: 40)
                     Image(systemName: "terminal")
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(DieterTheme.shell)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("New terminal").font(.system(size: 16, weight: .semibold))
-                    Text("Runs persistently on \(store.endpoint.name)")
-                        .font(DieterFont.meta).foregroundStyle(DieterTheme.tertiary)
-                }
-                Spacer()
-            }
-            .padding(18)
-
-            Divider().overlay(DieterTheme.border)
-
-            Form {
-                Picker("Project", selection: $projectID) {
-                    ForEach(availableProjects, id: \.id) { project in
-                        Text(project.name).tag(project.id)
-                    }
-                }
-                .onChange(of: projectID) { _, id in
-                    if let project = availableProjects.first(where: { $0.id == id }) {
-                        workingDirectory = project.path
-                    }
-                }
-
-                TextField("Name", text: $name, prompt: Text(selectedProject?.name ?? "Optional"))
-                TextField("Start in", text: $workingDirectory)
-                    .font(.system(size: 11, design: .monospaced))
-
-                Picker("Shell", selection: $shell) {
-                    Text("zsh").tag("zsh")
-                    Text("bash").tag("bash")
-                    Text("fish").tag("fish")
-                }
-                .pickerStyle(.segmented)
-
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "lock.shield")
-                        .foregroundStyle(DieterTheme.eyes)
-                    Text("The working directory is restricted to the registered project. Output is replayed from a bounded daemon buffer after reconnecting.")
-                        .font(.system(size: 10))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("New terminal")
+                        .font(.system(size: 19, weight: .semibold))
+                    Text("Start a persistent shell on \(store.endpoint.name)")
+                        .font(DieterFont.meta)
                         .foregroundStyle(DieterTheme.tertiary)
                 }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .buttonStyle(DieterIconButtonStyle())
+                .help("Close")
             }
-            .formStyle(.grouped)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 22)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
 
             Divider().overlay(DieterTheme.border)
-            HStack {
-                Button("Cancel") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+
+            VStack(alignment: .leading, spacing: 15) {
+                terminalFieldLabel("Project")
+                ZStack {
+                    HStack(spacing: 10) {
+                        Image(systemName: "folder")
+                            .foregroundStyle(DieterTheme.shell)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(selectedProject?.name ?? "Choose a project")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(DieterTheme.text)
+                            if let path = selectedProject?.path {
+                                Text((path as NSString).abbreviatingWithTildeInPath)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(DieterTheme.tertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(DieterTheme.tertiary)
+                    }
+                    .padding(.horizontal, 12)
+                    .allowsHitTesting(false)
+
+                    Menu {
+                        ForEach(availableProjects, id: \.id) { project in
+                            Button {
+                                projectID = project.id
+                                workingDirectory = project.path
+                            } label: {
+                                if project.id == projectID {
+                                    Label(project.name, systemImage: "checkmark")
+                                } else {
+                                    Text(project.name)
+                                }
+                            }
+                        }
+                    } label: {
+                        Color.clear
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Project")
+                    .accessibilityValue(selectedProject?.name ?? "No project selected")
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.strongBorder))
+                .accessibilityIdentifier("new-terminal.project")
+
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        terminalFieldLabel("Name", detail: "Optional")
+                        TextField(selectedProject?.name ?? "Terminal name", text: $name)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                            .focused($focusedField, equals: .name)
+                            .padding(.horizontal, 11)
+                            .frame(height: 38)
+                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(fieldBorder(focusedField == .name))
+                            .accessibilityIdentifier("new-terminal.name")
+                    }
+
+                    VStack(alignment: .leading, spacing: 7) {
+                        terminalFieldLabel("Shell")
+                        Picker("Shell", selection: $shell) {
+                            Text("zsh").tag("zsh")
+                            Text("bash").tag("bash")
+                            Text("fish").tag("fish")
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .frame(height: 38)
+                        .accessibilityIdentifier("new-terminal.shell")
+                    }
+                    .frame(width: 190)
+                }
+
+                VStack(alignment: .leading, spacing: 7) {
+                    terminalFieldLabel("Starting directory")
+                    HStack(spacing: 9) {
+                        Image(systemName: "folder.badge.gearshape")
+                            .font(.system(size: 11))
+                            .foregroundStyle(DieterTheme.tertiary)
+                        TextField("Project directory", text: $workingDirectory)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11, design: .monospaced))
+                            .focused($focusedField, equals: .workingDirectory)
+                    }
+                    .padding(.horizontal, 11)
+                    .frame(height: 38)
+                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(fieldBorder(focusedField == .workingDirectory))
+                    .accessibilityIdentifier("new-terminal.directory")
+                }
+
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(DieterTheme.shell)
+                    Text("The shell stays inside this project. Dieter keeps bounded scrollback available when the app reconnects.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(DieterTheme.shellDeep.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.shellDeep.opacity(0.22)))
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
+
+            Divider().overlay(DieterTheme.border)
+            HStack(spacing: 10) {
                 Spacer()
-                if creating { ProgressView().controlSize(.small) }
-                Button("Open terminal") {
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                Button {
                     creating = true
                     Task {
                         await store.createTerminal(
@@ -357,19 +460,49 @@ private struct NewTerminalSheet: View {
                         )
                         creating = false
                     }
+                } label: {
+                    HStack(spacing: 7) {
+                        if creating {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "terminal")
+                        }
+                        Text("Open terminal")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(DieterPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
-                .disabled(projectID.isEmpty || workingDirectory.isEmpty || creating)
+                .disabled(!canCreate)
+                .accessibilityIdentifier("new-terminal.create")
             }
-            .padding(16)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
         }
-        .frame(width: 520, height: 430)
-        .background(DieterTheme.surface)
+        .frame(width: 520)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(DieterTheme.background)
         .onAppear {
             projectID = store.selectedProjectID.isEmpty ? (availableProjects.first?.id ?? "") : store.selectedProjectID
             workingDirectory = availableProjects.first(where: { $0.id == projectID })?.path ?? ""
         }
+    }
+
+    private func terminalFieldLabel(_ title: String, detail: String? = nil) -> some View {
+        HStack(spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(DieterTheme.subtle)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 10))
+                    .foregroundStyle(DieterTheme.tertiary)
+            }
+        }
+    }
+
+    private func fieldBorder(_ focused: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .stroke(focused ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder, lineWidth: focused ? 1.5 : 1)
     }
 }
 

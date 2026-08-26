@@ -7,11 +7,12 @@ import org.junit.Test
 
 class DieterPaletteTest {
     @Test
-    fun exposesEveryOfficialPaletteInPackOrder() {
+    fun exposesMonochromeFirstAndEveryDesignInPickerOrder() {
         assertEquals(
             listOf(
+                "monochrome",
                 "electric-blue", "jade-operator", "copper-circuit", "ultraviolet-relay",
-                "solar-command", "arctic-console", "coral-signal", "acid-terminal",
+                "solar-command", "arctic-console", "coral-signal",
             ),
             DieterPalette.entries.map { it.slug },
         )
@@ -19,9 +20,11 @@ class DieterPaletteTest {
     }
 
     @Test
-    fun resolvesPersistedValuesAndUsesArcticAsTheMigrationDefault() {
-        assertEquals(DieterPalette.ARCTIC_CONSOLE, DieterPalette.resolve(null))
-        assertEquals(DieterPalette.ARCTIC_CONSOLE, DieterPalette.resolve("unknown"))
+    fun resolvesPersistedValuesMigratesAcidAndUsesMonochromeByDefault() {
+        assertEquals(DieterPalette.MONOCHROME, DieterPalette.resolve(null))
+        assertEquals(DieterPalette.MONOCHROME, DieterPalette.resolve("unknown"))
+        assertEquals(DieterPalette.MONOCHROME, DieterPalette.resolve("acid-terminal"))
+        assertEquals(DieterPalette.MONOCHROME, DieterPalette.resolve("ACID_TERMINAL"))
         DieterPalette.entries.forEach { palette ->
             assertEquals(palette, DieterPalette.resolve(palette.slug))
             assertEquals(palette, DieterPalette.resolve(palette.name))
@@ -37,5 +40,14 @@ class DieterPaletteTest {
             assertNotEquals(palette.tokens.shellStart, palette.tokens.shellEnd)
             assertTrue(palette.tokens.lightInt ushr 24 == 0xff)
         }
+    }
+
+    @Test
+    fun monochromeTokensAdaptTextAndAccentsToNativeAppearance() {
+        val tokens = DieterPalette.MONOCHROME.tokens
+        assertEquals(tokens.lightInt, tokens.textForAppearanceInt(darkMode = true))
+        assertEquals(tokens.darkBrandInt, tokens.textForAppearanceInt(darkMode = false))
+        assertEquals(tokens.eyesInt, tokens.eyesForAppearanceInt(darkMode = true))
+        assertEquals(tokens.shellEndInt, tokens.eyesForAppearanceInt(darkMode = false))
     }
 }

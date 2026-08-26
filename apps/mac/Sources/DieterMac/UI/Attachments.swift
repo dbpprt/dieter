@@ -97,6 +97,7 @@ struct AttachmentPreviewTile: View {
     let part: Dieter_V1_MessagePart
     var remove: (() -> Void)?
     @State private var hovering = false
+    @State private var previewPresented = false
 
     private static let thumbnails = NSCache<NSString, NSImage>()
     private static let tileHeight: CGFloat = 68
@@ -104,6 +105,10 @@ struct AttachmentPreviewTile: View {
     var body: some View {
         Group {
             if let thumbnail { imageTile(thumbnail) } else { fileTile }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onTapGesture {
+            if thumbnail != nil { previewPresented = true }
         }
         .overlay(alignment: .topTrailing) {
             if let remove {
@@ -124,8 +129,18 @@ struct AttachmentPreviewTile: View {
         .scaleEffect(hovering ? 1.02 : 1)
         .animation(.easeOut(duration: 0.14), value: hovering)
         .onHover { hovering = $0 }
+        .help(thumbnail == nil ? "" : "Preview \(part.filename.isEmpty ? "image" : part.filename)")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(part.filename), \(AttachmentSizeText.format(part.data.count))")
+        .accessibilityAddTraits(thumbnail == nil ? [] : .isButton)
+        .accessibilityAction(named: "Preview") {
+            if thumbnail != nil { previewPresented = true }
+        }
+        .sheet(isPresented: $previewPresented) {
+            if let thumbnail {
+                AttachmentImagePreview(part: part, image: thumbnail)
+            }
+        }
     }
 
     private func imageTile(_ image: NSImage) -> some View {
@@ -201,12 +216,56 @@ struct AttachmentPreviewTile: View {
     }
 
     private var thumbnail: NSImage? {
-        guard part.mediaType.hasPrefix("image/"), !part.data.isEmpty else { return nil }
+        guard part.mediaType.hasPrefix("image/") || part.type.caseInsensitiveCompare("image") == .orderedSame else { return nil }
         let key = "\(part.filename):\(part.data.count):\(part.data.hashValue)" as NSString
         if let cached = Self.thumbnails.object(forKey: key) { return cached }
-        guard let image = NSImage(data: part.data) else { return nil }
+        guard let image = AttachmentImagePayload.image(from: part) else { return nil }
         Self.thumbnails.setObject(image, forKey: key)
         return image
+    }
+}
+
+enum AttachmentImagePayload {
+    static func image(from part: Dieter_V1_MessagePart) -> NSImage? {
+        if !part.data.isEmpty { return NSImage(data: part.data) }
+        guard let marker = part.url.range(of: ";base64,") else { return nil }
+        return Data(base64Encoded: String(part.url[marker.upperBound...])).flatMap(NSImage.init(data:))
+    }
+}
+
+struct AttachmentImagePreview: View {
+    @Environment(\.dismiss) private var dismiss
+    let part: Dieter_V1_MessagePart
+    let image: NSImage
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(part.filename.isEmpty ? "Image attachment" : part.filename)
+                        .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                    Text("\(Int(image.size.width)) × \(Int(image.size.height))  ·  \(AttachmentSizeText.format(part.data.count))")
+                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
+                }
+                .buttonStyle(DieterIconButtonStyle()).help("Close preview")
+            }
+            .padding(.horizontal, 18).frame(height: 56)
+            Divider().overlay(DieterTheme.border)
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(20)
+                .background(DieterTheme.surface)
+                .accessibilityLabel(part.filename.isEmpty ? "Image preview" : "Preview of \(part.filename)")
+        }
+        .frame(minWidth: 620, idealWidth: 820, minHeight: 480, idealHeight: 660)
+        .background(DieterTheme.background)
     }
 }
 
