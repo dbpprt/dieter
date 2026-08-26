@@ -18,5 +18,9 @@ PATH="$tool_root:$PATH" protoc \
 
 cp "$repo_root/api/proto/dieter/v1/dieter.proto" "$repo_root/apps/mac/Sources/DieterAPI/dieter.proto"
 cp "$repo_root/api/proto/dieter/gateway/v1/gateway.proto" "$repo_root/apps/mac/Sources/DieterAPI/gateway.proto"
+# The Swift package keeps both protobuf inputs in one target directory, so its
+# package plugin resolves the gateway schema by the local file name.
+sed -i.bak 's#import "dieter/gateway/v1/gateway.proto";#import "gateway.proto";#' "$repo_root/apps/mac/Sources/DieterAPI/dieter.proto"
+rm -f "$repo_root/apps/mac/Sources/DieterAPI/dieter.proto.bak"
 
 gofmt -w "$repo_root/internal/gen/dieter"

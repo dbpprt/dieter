@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,9 +25,34 @@ import (
 type blockingFrameSource struct {
 	started chan struct{}
 	stopped chan struct{}
+	codec   VideoCodec
+}
+
+type inputFrameSource struct {
+	blockingFrameSource
+	inputs   chan *dieterv1.RemoteDesktopInput
+	released chan struct{}
+}
+
+func (s *inputFrameSource) SendInput(_ context.Context, input *dieterv1.RemoteDesktopInput) error {
+	s.inputs <- proto.Clone(input).(*dieterv1.RemoteDesktopInput)
+	return nil
+}
+
+func (s *inputFrameSource) ReleaseInput(context.Context) {
+	select {
+	case s.released <- struct{}{}:
+	default:
+	}
 }
 
 func (s *blockingFrameSource) Description() string { return "blocking test source" }
+func (s *blockingFrameSource) Codec() VideoCodec {
+	if s.codec == "" {
+		return VideoCodecVP8
+	}
+	return s.codec
+}
 
 func (s *blockingFrameSource) Stream(ctx context.Context, _ func(media.Sample) error) error {
 	close(s.started)
@@ -70,8 +96,11 @@ func TestManagerStreamsSyntheticVP8AndSignsBinding(t *testing.T) {
 			switch payload := signal.GetPayload().(type) {
 			case *dieterv1.RemoteDesktopSignal_Binding:
 				binding = payload.Binding
+				if binding.GetControlGranted() || binding.GetInputProtocolVersion() != inputProtocolVersion || len(binding.GetInputEpoch()) != 16 || binding.GetDisplayId() != "primary" {
+					t.Fatalf("binding did not include bounded input authorization: %#v", binding)
+				}
 				offerHash := sha256.Sum256([]byte(request.GetOffer().GetSdp()))
-				message := SessionBindingMessage(signal.GetSessionId(), binding.GetClientNonce(), binding.GetHelperDtlsFingerprint(), binding.GetExpiresAt(), offerHash[:])
+				message := SessionBindingMessage(signal.GetSessionId(), binding.GetClientNonce(), binding.GetHelperDtlsFingerprint(), binding.GetExpiresAt(), offerHash[:], binding.GetControlGranted(), binding.GetDisplayId(), binding.GetInputProtocolVersion(), binding.GetInputEpoch())
 				if !ed25519.Verify(daemonPublic, message, binding.GetDaemonSignature()) {
 					t.Fatal("daemon session binding signature did not verify")
 				}
@@ -111,6 +140,94 @@ func TestManagerStreamsSyntheticVP8AndSignsBinding(t *testing.T) {
 	}
 }
 
+func TestManagerCarriesAuthorizedInputAndReleasesItOnChannelClose(t *testing.T) {
+	manager, request, _ := testManagerAndRequest(t, "github:7")
+	request.Control = true
+	source := &inputFrameSource{
+		blockingFrameSource: blockingFrameSource{started: make(chan struct{}), stopped: make(chan struct{})},
+		inputs:              make(chan *dieterv1.RemoteDesktopInput, 1), released: make(chan struct{}, 1),
+	}
+	manager.options.SourceFactory = func(SourceOptions) (FrameSource, error) { return source, nil }
+	manager.options.CaptureProbe = func(context.Context, SourceOptions) error { return nil }
+	manager.options.ControlProbe = func(context.Context, SourceOptions, bool) error { return nil }
+
+	viewer, stateChannel := testControlViewer(t, request)
+	defer viewer.Close()
+	subscription, err := manager.Start(request, true, true, "github:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer subscription.Close()
+
+	var binding *dieterv1.RemoteDesktopSessionBinding
+	answerApplied := false
+	var pending []*dieterv1.RemoteDesktopICECandidate
+	for binding == nil || !answerApplied {
+		select {
+		case signal := <-subscription.Signals:
+			switch payload := signal.GetPayload().(type) {
+			case *dieterv1.RemoteDesktopSignal_Binding:
+				binding = payload.Binding
+			case *dieterv1.RemoteDesktopSignal_Description:
+				if err := viewer.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: payload.Description.GetSdp()}); err != nil {
+					t.Fatal(err)
+				}
+				answerApplied = true
+				for _, candidate := range pending {
+					if err := viewer.AddICECandidate(candidateInit(candidate)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			case *dieterv1.RemoteDesktopSignal_Candidate:
+				if answerApplied {
+					if err := viewer.AddICECandidate(candidateInit(payload.Candidate)); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					pending = append(pending, payload.Candidate)
+				}
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("timed out negotiating controlled desktop")
+		}
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for stateChannel.ReadyState() != webrtc.DataChannelStateOpen && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if stateChannel.ReadyState() != webrtc.DataChannelStateOpen {
+		t.Fatal("reliable input channel did not open")
+	}
+	input := &dieterv1.RemoteDesktopInput{
+		ProtocolVersion: inputProtocolVersion, InputEpoch: binding.GetInputEpoch(), Sequence: 1,
+		Payload: &dieterv1.RemoteDesktopInput_Key{Key: &dieterv1.RemoteDesktopKey{KeyCode: 55, Down: true, Modifiers: 8}},
+	}
+	raw, err := proto.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stateChannel.Send(raw); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case received := <-source.inputs:
+		if received.GetKey().GetKeyCode() != 55 || !received.GetKey().GetDown() {
+			t.Fatalf("received input=%#v", received)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("authorized input did not reach the helper source")
+	}
+	if err := stateChannel.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-source.released:
+	case <-time.After(time.Second):
+		t.Fatal("closing the input channel did not release held input")
+	}
+	manager.CloseActive("test complete")
+}
+
 func TestManagerRejectsRTCConfigurationFromAnotherOperator(t *testing.T) {
 	manager, request, _ := testManagerAndRequest(t, "github:7")
 	viewer := testViewer(t, request)
@@ -119,13 +236,22 @@ func TestManagerRejectsRTCConfigurationFromAnotherOperator(t *testing.T) {
 		t.Fatal("expected operator-bound RTC configuration to be rejected")
 	}
 	if _, err := manager.Start(request, true, true, "github:7"); err != nil {
-		// A view-only request remains valid even if the future control setting is on.
+		// A viewing-only request remains valid when host control is also enabled.
 		t.Fatal(err)
 	}
 	manager.CloseActive("test complete")
 	request.Control = true
-	if _, err := manager.Start(request, true, true, "github:7"); err != ErrControlDisabled {
-		t.Fatalf("control request error=%v, want %v", err, ErrControlDisabled)
+	controlled, err := manager.Start(request, true, true, "github:7")
+	if err != nil {
+		t.Fatalf("control request failed: %v", err)
+	}
+	manager.CloseControlActive("control disabled")
+	if manager.Capabilities(true, true).GetActiveSession() {
+		t.Fatal("controlled session survived host control disable")
+	}
+	controlled.Close()
+	if _, err := manager.Start(request, true, false, "github:7"); err != ErrControlDisabled {
+		t.Fatalf("disabled control request error=%v, want %v", err, ErrControlDisabled)
 	}
 }
 
@@ -156,6 +282,11 @@ func TestManagerReattachesSameOperatorWithoutReusingGatewayAdmission(t *testing.
 	if _, err := manager.Start(differentOffer, true, false, "github:7"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("different offer reattach error=%v, want %v", err, ErrBusy)
 	}
+	differentControl := proto.Clone(request).(*dieterv1.StartRemoteDesktopRequest)
+	differentControl.Control = true
+	if _, err := manager.Start(differentControl, true, true, "github:7"); !errors.Is(err, ErrBusy) {
+		t.Fatalf("different control grant reattach error=%v, want %v", err, ErrBusy)
+	}
 	if _, err := manager.Start(request, true, false, "github:8"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("other operator reattach error=%v, want %v", err, ErrBusy)
 	}
@@ -165,15 +296,15 @@ func TestManagerReattachesSameOperatorWithoutReusingGatewayAdmission(t *testing.
 func TestManagerCapabilityRequiresRealCaptureProbe(t *testing.T) {
 	t.Setenv("DISPLAY", ":99")
 	manager, _, _ := testManagerAndRequest(t, "github:7")
-	manager.options.Source = SourceOptions{Kind: "screen", FFmpegPath: "/usr/bin/true"}
+	manager.options.Source = SourceOptions{Kind: "screen", HelperPath: "/usr/bin/true", FFmpegPath: "/usr/bin/true"}
 	manager.options.CaptureProbe = func(context.Context, SourceOptions) error {
-		return errors.New("macOS Screen Recording permission is not granted to FFmpeg")
+		return errors.New("macOS Screen Recording permission is not granted to Dieter's capture helper")
 	}
 	capabilities := manager.Capabilities(true, false)
 	if capabilities.GetReady() || capabilities.GetCapturePermission() != "denied" {
 		t.Fatalf("capabilities=%#v", capabilities)
 	}
-	if capabilities.GetUnavailableReason() != "macOS Screen Recording permission is not granted to FFmpeg" {
+	if capabilities.GetUnavailableReason() != "macOS Screen Recording permission is not granted to Dieter's capture helper" {
 		t.Fatalf("unavailable reason=%q", capabilities.GetUnavailableReason())
 	}
 
@@ -182,6 +313,60 @@ func TestManagerCapabilityRequiresRealCaptureProbe(t *testing.T) {
 	capabilities = manager.Capabilities(true, false)
 	if !capabilities.GetReady() || capabilities.GetCapturePermission() != "granted" {
 		t.Fatalf("capabilities after permission=%#v", capabilities)
+	}
+}
+
+func TestManagerReportsControlPermissionWithoutDisablingViewing(t *testing.T) {
+	manager, _, _ := testManagerAndRequest(t, "github:7")
+	manager.options.ControlProbe = func(context.Context, SourceOptions, bool) error {
+		return errors.New("Accessibility permission denied")
+	}
+	capabilities := manager.Capabilities(true, true)
+	if !capabilities.GetReady() || !capabilities.GetControlSupported() || capabilities.GetControlPermission() != "denied" {
+		t.Fatalf("control permission capabilities=%#v", capabilities)
+	}
+}
+
+func TestH264CodecCapabilityUsesWebRTCRealtimeProfile(t *testing.T) {
+	codec := codecCapability(VideoCodecH264)
+	if codec.MimeType != webrtc.MimeTypeH264 || codec.ClockRate != 90_000 {
+		t.Fatalf("codec=%#v", codec)
+	}
+	if !strings.Contains(codec.SDPFmtpLine, "packetization-mode=1") || !strings.Contains(codec.SDPFmtpLine, "profile-level-id=42e01f") {
+		t.Fatalf("H264 fmtp=%q", codec.SDPFmtpLine)
+	}
+}
+
+func TestManagerNegotiatesNativeH264Source(t *testing.T) {
+	manager, request, _ := testManagerAndRequest(t, "github:7")
+	viewer := testViewer(t, request)
+	defer viewer.Close()
+	source := &blockingFrameSource{
+		started: make(chan struct{}), stopped: make(chan struct{}), codec: VideoCodecH264,
+	}
+	manager.options.CaptureProbe = func(context.Context, SourceOptions) error { return nil }
+	manager.options.SourceFactory = func(SourceOptions) (FrameSource, error) { return source, nil }
+
+	subscription, err := manager.Start(request, true, false, "github:7")
+	if err != nil {
+		t.Fatalf("negotiate H264 source: %v", err)
+	}
+	defer subscription.Close()
+	manager.mu.Lock()
+	codec := manager.session.codec
+	manager.mu.Unlock()
+	if codec != VideoCodecH264 {
+		t.Fatalf("session codec=%q, want %q", codec, VideoCodecH264)
+	}
+}
+
+func TestStartRequestRejectsUnsafeCaptureDimensions(t *testing.T) {
+	_, request, _ := testManagerAndRequest(t, "github:7")
+	viewer := testViewer(t, request)
+	defer viewer.Close()
+	request.MaxWidth = 20_000
+	if err := validateStartRequest(request); err == nil || !strings.Contains(err.Error(), "max_width") {
+		t.Fatalf("dimension validation error=%v", err)
 	}
 }
 
@@ -336,4 +521,48 @@ func testViewer(t *testing.T, request *dieterv1.StartRemoteDesktopRequest) *webr
 	}
 	request.Offer = &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: local.SDP}
 	return client
+}
+
+func testControlViewer(t *testing.T, request *dieterv1.StartRemoteDesktopRequest) (*webrtc.PeerConnection, *webrtc.DataChannel) {
+	t.Helper()
+	settings := webrtc.SettingEngine{}
+	settings.SetIncludeLoopbackCandidate(true)
+	client, err := webrtc.NewAPI(webrtc.WithSettingEngine(settings)).NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	ordered := true
+	stateChannel, err := client.CreateDataChannel(stateChannelLabel, &webrtc.DataChannelInit{Ordered: &ordered})
+	if err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	unordered := false
+	zero := uint16(0)
+	if _, err := client.CreateDataChannel(pointerChannelLabel, &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	offer, err := client.CreateOffer(nil)
+	if err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	gatheringComplete := webrtc.GatheringCompletePromise(client)
+	if err := client.SetLocalDescription(offer); err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	select {
+	case <-gatheringComplete:
+	case <-time.After(5 * time.Second):
+		client.Close()
+		t.Fatal("timed out gathering controlled viewer candidates")
+	}
+	request.Offer = &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: client.LocalDescription().SDP}
+	return client, stateChannel
 }

@@ -15,6 +15,7 @@ struct DieterMacApp: App {
 
     init() {
         _store = State(initialValue: DieterStore())
+        NativeUISmokeRunner.prepareWindowIfNeeded()
     }
 
     var body: some Scene {

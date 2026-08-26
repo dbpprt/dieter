@@ -2,6 +2,28 @@ import AppKit
 import DieterAPI
 import SwiftUI
 
+enum WorkspaceSurfaceTreatment: Equatable {
+    case current
+    case refreshing
+    case unavailable
+
+    static func resolve(
+        showsSynchronizedWorkspace: Bool,
+        hasCachedWorkspace: Bool,
+        freshness: WorkspaceFreshnessState
+    ) -> Self {
+        guard showsSynchronizedWorkspace, hasCachedWorkspace else { return .current }
+        switch freshness {
+        case .live: return .current
+        case .syncing: return .refreshing
+        case .reconnecting, .offline: return .unavailable
+        }
+    }
+
+    var showsNotice: Bool { self != .current }
+    var blocksInteraction: Bool { self == .unavailable }
+}
+
 struct DieterRootView: View {
     @Environment(DieterStore.self) private var store
     @State private var navigationCollapsed = false
@@ -13,8 +35,12 @@ struct DieterRootView: View {
         }
     }
 
-    private var workspaceSurfaceIsStale: Bool {
-        showsSynchronizedWorkspace && store.hasLoadedWorkspace && !store.workspaceIsLive
+    private var workspaceSurfaceTreatment: WorkspaceSurfaceTreatment {
+        WorkspaceSurfaceTreatment.resolve(
+            showsSynchronizedWorkspace: showsSynchronizedWorkspace,
+            hasCachedWorkspace: store.hasLoadedWorkspace,
+            freshness: store.workspaceFreshness
+        )
     }
 
     var body: some View {
@@ -27,8 +53,11 @@ struct DieterRootView: View {
                 .frame(width: 1)
                 .ignoresSafeArea(.container, edges: .top)
             VStack(spacing: 0) {
-                if workspaceSurfaceIsStale {
-                    WorkspaceFreshnessBanner()
+                if workspaceSurfaceTreatment.showsNotice {
+                    WorkspaceFreshnessBanner(
+                        freshness: store.workspaceFreshness,
+                        lastSyncedAt: store.lastSyncedAt
+                    )
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Group {
@@ -44,14 +73,14 @@ struct DieterRootView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .saturation(workspaceSurfaceIsStale ? 0.18 : 1)
-                .opacity(workspaceSurfaceIsStale ? 0.48 : 1)
-                .disabled(workspaceSurfaceIsStale)
+                .saturation(workspaceSurfaceTreatment == .unavailable ? 0.72 : 1)
+                .opacity(workspaceSurfaceTreatment == .unavailable ? 0.82 : 1)
+                .disabled(workspaceSurfaceTreatment.blocksInteraction)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .animation(.snappy(duration: 0.24), value: navigationCollapsed)
-        .animation(.easeOut(duration: 0.18), value: workspaceSurfaceIsStale)
+        .animation(.easeOut(duration: 0.18), value: workspaceSurfaceTreatment)
         .background(DieterTheme.background)
         .background(WindowTitleBarDoubleClickHandler())
         .foregroundStyle(DieterTheme.text)
@@ -72,37 +101,81 @@ struct DieterRootView: View {
     }
 }
 
-private struct WorkspaceFreshnessBanner: View {
-    @Environment(DieterStore.self) private var store
+struct WorkspaceFreshnessBanner: View {
+    let freshness: WorkspaceFreshnessState
+    let lastSyncedAt: Date?
 
     private var isWorking: Bool {
-        store.workspaceFreshness == .syncing || store.workspaceFreshness == .reconnecting
+        freshness == .syncing || freshness == .reconnecting
+    }
+
+    private var accent: Color {
+        freshness == .offline ? DieterTheme.coral : DieterTheme.amber
+    }
+
+    private var title: String {
+        switch freshness {
+        case .live: "Workspace is up to date"
+        case .syncing: "Refreshing workspace"
+        case .reconnecting: "Reconnecting to Dieter"
+        case .offline: "Working from cached data"
+        }
+    }
+
+    private var detail: String {
+        switch freshness {
+        case .live: ""
+        case .syncing: "Your current workspace stays available while changes load."
+        case .reconnecting: "Cached data stays visible while the connection recovers."
+        case .offline: "Cached data is read-only until Dieter reconnects."
+        }
     }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            HStack(spacing: 8) {
-                if isWorking {
-                    ProgressView().controlSize(.small).accessibilityHidden(true)
-                } else {
-                    Image(systemName: "wifi.slash")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DieterTheme.coral)
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(accent.opacity(0.12))
+                        .frame(width: 24, height: 24)
+                    if isWorking {
+                        TimelineView(.periodic(from: .now, by: 0.08)) { spinContext in
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(accent)
+                                .rotationEffect(.degrees(
+                                    spinContext.date.timeIntervalSinceReferenceDate
+                                        .truncatingRemainder(dividingBy: 1.2) / 1.2 * 360
+                                ))
+                        }
                         .accessibilityHidden(true)
+                    } else {
+                        Image(systemName: "wifi.slash")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(accent)
+                            .accessibilityHidden(true)
+                    }
                 }
-                Text("\(store.workspaceFreshness.label) · Showing cached data")
+                Text(title)
                     .font(.system(size: 11, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 10.5, weight: .regular))
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .lineLimit(1)
                 Spacer(minLength: 12)
-                Text(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: store.lastSyncedAt, now: context.date))
+                Text(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: context.date))
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(DieterTheme.tertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DieterTheme.background.opacity(0.54), in: Capsule())
             }
-            .padding(.horizontal, 14)
-            .frame(height: 34)
-            .background(DieterTheme.surface)
-            .overlay(alignment: .bottom) { Rectangle().fill(DieterTheme.border).frame(height: 1) }
+            .padding(.horizontal, 12)
+            .frame(height: 40)
+            .background(accent.opacity(0.055))
+            .overlay(alignment: .bottom) { Rectangle().fill(accent.opacity(0.16)).frame(height: 1) }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(store.workspaceFreshness.label). Showing cached data. \(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: store.lastSyncedAt, now: context.date)).")
+            .accessibilityLabel("\(title). \(detail) \(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: context.date)).")
             .accessibilityIdentifier("workspace.cached")
         }
     }

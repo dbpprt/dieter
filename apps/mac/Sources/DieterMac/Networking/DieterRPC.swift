@@ -453,10 +453,10 @@ final class DieterRPC: Sendable {
 		try await service.getRemoteDesktopSettings(request: .init(message: Google_Protobuf_Empty()))
 	}
 
-	func updateRemoteDesktopSettings(enabled: Bool) async throws -> Dieter_V1_RemoteDesktopSettings {
+	func updateRemoteDesktopSettings(enabled: Bool, controlEnabled: Bool = true) async throws -> Dieter_V1_RemoteDesktopSettings {
 		var request = Dieter_V1_UpdateRemoteDesktopSettingsRequest()
 		request.enabled = enabled
-		request.controlEnabled = false
+		request.controlEnabled = enabled && controlEnabled
 		return try await service.updateRemoteDesktopSettings(request: .init(message: request))
 	}
 

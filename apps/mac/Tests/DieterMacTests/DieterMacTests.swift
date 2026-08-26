@@ -16,9 +16,25 @@ import UniformTypeIdentifiers
         nonce: "nonce",
         fingerprint: "sha-256 AA:BB",
         expiresAt: "2026-08-25T08:00:00Z",
-        offerHash: Data([0, 1, 2])
+        offerHash: Data([0, 1, 2]), controlGranted: true, displayID: "primary",
+        inputProtocolVersion: 1, inputEpoch: Data(repeating: 7, count: 16)
     )
-    #expect(String(data: message, encoding: .utf8) == "dieter-remote-desktop-v1\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC")
+    #expect(String(data: message, encoding: .utf8) == "dieter-remote-desktop-v2\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n1\nBwcHBwcHBwcHBwcHBwcHBw")
+}
+
+@Test func remoteDesktopInputGeometryExcludesLetterboxingAndUsesTopLeftCoordinates() throws {
+    let bounds = CGRect(x: 0, y: 0, width: 1_000, height: 1_000)
+    let video = CGSize(width: 1_600, height: 900)
+    #expect(RemoteDesktopInputGeometry.normalized(
+        point: CGPoint(x: 500, y: 100), bounds: bounds, videoSize: video) == nil)
+    let topLeft = try #require(RemoteDesktopInputGeometry.normalized(
+        point: CGPoint(x: 0, y: 781.24), bounds: bounds, videoSize: video))
+    #expect(abs(topLeft.x) < 0.0001)
+    #expect(abs(topLeft.y) < 0.0001)
+    let center = try #require(RemoteDesktopInputGeometry.normalized(
+        point: CGPoint(x: 500, y: 500), bounds: bounds, videoSize: video))
+    #expect(abs(center.x - 0.5) < 0.0001)
+    #expect(abs(center.y - 0.5) < 0.0001)
 }
 
 @Test func scheduleTimingTurnsFriendlyChoicesIntoFiveFieldCron() throws {
@@ -44,7 +60,7 @@ import UniformTypeIdentifiers
     #expect(ScheduleActionPresentation.title("run") == "Running")
 }
 
-@Test func remoteDesktopBindingVerifiesAgainstEnrolledEd25519Leaf() throws {
+@Test func remoteDesktopBindingRejectsLegacySignatureAfterControlBindingUpgrade() throws {
     let offer = "v=0\r\no=test"
     let answer = "v=0\r\na=fingerprint:sha-256 AA:BB\r\n"
     var binding = Dieter_V1_RemoteDesktopSessionBinding()
@@ -52,6 +68,8 @@ import UniformTypeIdentifiers
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2099-08-25T08:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
+    binding.inputProtocolVersion = 1
+    binding.inputEpoch = Data(repeating: 1, count: 16)
     binding.daemonSignature = try #require(Data(base64Encoded: "ctCMwB2SL9Wk9JqpQzgtM+NQxXqUXGGKSSpQ1X2lNX3G3uS8UR7uKe5J8fjZheT1WxX3U5s37saWnSk7dqIADQ=="))
     let certificate = Data(
         """
@@ -69,11 +87,16 @@ import UniformTypeIdentifiers
     )
     let now = try #require(ISO8601DateFormatter().date(from: "2026-08-25T08:00:00Z"))
 
-    try RemoteDesktopSessionTrust.verify(
-        binding: binding, sessionID: "rd_fixture", clientNonce: "nonce_fixture",
-        offerSDP: offer, answerSDP: answer, daemonCertificatePEM: certificate,
-        now: now
-    )
+    do {
+        try RemoteDesktopSessionTrust.verify(
+            binding: binding, sessionID: "rd_fixture", clientNonce: "nonce_fixture",
+            offerSDP: offer, answerSDP: answer, daemonCertificatePEM: certificate,
+            now: now
+        )
+        Issue.record("a v1 signature was accepted for the v2 control-bound payload")
+    } catch RemoteDesktopSessionTrust.Failure.invalidSignature {
+        // Expected: control authorization and the input epoch are now signed.
+    }
 }
 
 @Test func remoteDesktopBindingRejectsExpiryBeforeCertificateVerification() {
@@ -84,6 +107,8 @@ import UniformTypeIdentifiers
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2026-08-25T07:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
+    binding.inputProtocolVersion = 1
+    binding.inputEpoch = Data(repeating: 1, count: 16)
     do {
         try RemoteDesktopSessionTrust.verify(
             binding: binding, sessionID: "rd_one", clientNonce: "nonce",
@@ -1494,17 +1519,17 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(snapshot.settings.globalParallelLimit == 7)
 }
 
-@Test func syncStreamLivenessRestartsAfterThreeMissedHeartbeats() {
+@Test func syncStreamLivenessRebuildsTheConnectionAfterThreeMissedHeartbeats() {
     let lastFrame = Date(timeIntervalSince1970: 1_000)
-    #expect(!SyncStreamLiveness.shouldRestart(
+    #expect(!SyncStreamLiveness.requiresConnectionRecovery(
         lastFrameAt: lastFrame,
         now: lastFrame.addingTimeInterval(SyncStreamLiveness.timeout - 0.01)
     ))
-    #expect(SyncStreamLiveness.shouldRestart(
+    #expect(SyncStreamLiveness.requiresConnectionRecovery(
         lastFrameAt: lastFrame,
         now: lastFrame.addingTimeInterval(SyncStreamLiveness.timeout)
     ))
-    #expect(SyncStreamLiveness.shouldRestart(lastFrameAt: nil, now: lastFrame))
+    #expect(SyncStreamLiveness.requiresConnectionRecovery(lastFrameAt: nil, now: lastFrame))
 }
 
 @Test func messageDeliveryReceiptsFollowOutboxAndSyncAcknowledgements() {

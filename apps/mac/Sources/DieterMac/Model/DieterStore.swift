@@ -187,6 +187,7 @@ enum DirectCandidateScope: Equatable {
 private enum DieterStoreConnectionError: LocalizedError {
     case incompatible(found: String)
     case syncEnded
+    case syncTimedOut
 
     var errorDescription: String? {
         switch self {
@@ -194,6 +195,8 @@ private enum DieterStoreConnectionError: LocalizedError {
             "Dieter API \(found.isEmpty ? "unknown" : found) is incompatible; macOS requires \(dieterExpectedAPIVersion)."
         case .syncEnded:
             "Live updates stopped unexpectedly."
+        case .syncTimedOut:
+            "Live updates stopped responding."
         }
     }
 }
@@ -201,7 +204,7 @@ private enum DieterStoreConnectionError: LocalizedError {
 enum SyncStreamLiveness {
     static let timeout: TimeInterval = 45
 
-    static func shouldRestart(lastFrameAt: Date?, now: Date = Date()) -> Bool {
+    static func requiresConnectionRecovery(lastFrameAt: Date?, now: Date = Date()) -> Bool {
         guard let lastFrameAt else { return true }
         return now.timeIntervalSince(lastFrameAt) >= timeout
     }
@@ -210,16 +213,25 @@ enum SyncStreamLiveness {
 enum SyncFreshnessPresentation {
     static func lastConnectedLabel(lastConnectedAt: Date?, now: Date = Date()) -> String {
         guard let lastConnectedAt else { return "Last connected unknown" }
-        let elapsed = max(0, now.timeIntervalSince(lastConnectedAt))
+        return relativeLabel(prefix: "Last connected", date: lastConnectedAt, now: now)
+    }
+
+    static func lastUpdateLabel(lastUpdatedAt: Date?, now: Date = Date()) -> String {
+        guard let lastUpdatedAt else { return "Not updated yet" }
+        return relativeLabel(prefix: "Updated", date: lastUpdatedAt, now: now)
+    }
+
+    private static func relativeLabel(prefix: String, date: Date, now: Date) -> String {
+        let elapsed = max(0, now.timeIntervalSince(date))
         switch elapsed {
         case ..<60:
-            return "Last connected just now"
+            return "\(prefix) just now"
         case ..<3_600:
-            return "Last connected \(max(1, Int(elapsed / 60)))m ago"
+            return "\(prefix) \(max(1, Int(elapsed / 60)))m ago"
         case ..<86_400:
-            return "Last connected \(max(1, Int(elapsed / 3_600)))h ago"
+            return "\(prefix) \(max(1, Int(elapsed / 3_600)))h ago"
         default:
-            return "Last connected \(max(1, Int(elapsed / 86_400)))d ago"
+            return "\(prefix) \(max(1, Int(elapsed / 86_400)))d ago"
         }
     }
 }
@@ -1363,16 +1375,20 @@ final class DieterStore {
     /// Directory refreshes are independent RPCs and may themselves stall on a
     /// half-open transport. Keep sync liveness on its own task so those calls
     /// can never prevent recovery of the stream which owns the visible board.
+    /// Reopening WatchSync on the same transport is insufficient: a half-open
+    /// HTTP/2 connection can accept the new subscription without delivering a
+    /// frame, leaving the app in "Syncing" forever. Rebuild the data plane after
+    /// three missed heartbeats instead.
     private func startSyncLivenessMonitor() {
         syncLivenessTask?.cancel()
         syncLivenessTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await DieterTaskSleep.seconds(15)
                 guard !Task.isCancelled, let self else { return }
-                guard self.phase.isConnected, self.rpc != nil else { continue }
-                if SyncStreamLiveness.shouldRestart(lastFrameAt: self.lastSyncFrameAt) {
-                    self.startGlobalSync()
-                }
+                guard self.phase.isConnected, let rpc = self.rpc else { continue }
+                guard SyncStreamLiveness.requiresConnectionRecovery(lastFrameAt: self.lastSyncFrameAt) else { continue }
+                self.connectionStopped(DieterStoreConnectionError.syncTimedOut, client: rpc)
+                return
             }
         }
     }
@@ -1381,7 +1397,11 @@ final class DieterStore {
     /// WatchSync subscription returns a fresh bounded snapshot immediately,
     /// while retaining the durable cursor for subsequent deltas.
     func applicationDidBecomeActive() {
-        guard phase.isConnected, rpc != nil else { return }
+        guard phase.isConnected, let rpc else { return }
+        if SyncStreamLiveness.requiresConnectionRecovery(lastFrameAt: lastSyncFrameAt) {
+            connectionStopped(DieterStoreConnectionError.syncTimedOut, client: rpc)
+            return
+        }
         startGlobalSync()
         guard let cardID = selectedCardID ?? selectedChatID,
               DieterConversationID.isServerBacked(cardID) else { return }

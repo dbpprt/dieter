@@ -16,6 +16,31 @@ enum NativeUISmokeRunner {
         let distanceFromTop: CGFloat
     }
 
+    /// MenuBarExtra keeps the process alive when a previous run closed its last
+    /// workspace window, and macOS may restore that no-window state even for a
+    /// fresh isolated launch. Ensure UI smoke modes exercise an actual
+    /// WindowGroup instead of idling until their outer shell timeout expires.
+    static func prepareWindowIfNeeded(arguments: [String] = ProcessInfo.processInfo.arguments) {
+        guard arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) else { return }
+        Task { @MainActor in
+            for attempt in 0..<20 {
+                try? await DieterTaskSleep.milliseconds(250)
+                if NSApp.windows.contains(where: {
+                    $0.contentView != nil && $0.frame.width >= 600 && $0.frame.height >= 400
+                }) {
+                    return
+                }
+                guard attempt.isMultiple(of: 4),
+                      let item = NSApp.mainMenu?.items
+                        .compactMap(\.submenu)
+                        .flatMap(\.items)
+                        .first(where: { $0.title.hasSuffix(" Window") }),
+                      let action = item.action else { continue }
+                _ = NSApp.sendAction(action, to: item.target, from: item)
+            }
+        }
+    }
+
     static func run(store: DieterStore) async {
         let output = outputDirectory()
         try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)

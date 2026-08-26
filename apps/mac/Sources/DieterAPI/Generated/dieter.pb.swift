@@ -2905,7 +2905,214 @@ public nonisolated struct Dieter_V1_RemoteDesktopSessionBinding: Sendable {
 
   public var daemonSignature: Data = Data()
 
+  public var controlGranted: Bool = false
+
+  public var displayID: String = String()
+
+  public var inputProtocolVersion: UInt32 = 0
+
+  public var inputEpoch: Data = Data()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopPointerMove: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var normalizedX: Int32 = 0
+
+  public var normalizedY: Int32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopPointerButton: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var button: Dieter_V1_RemoteDesktopPointerButton.Button = .unspecified
+
+  public var down: Bool = false
+
+  public var clickCount: Int32 = 0
+
+  public var normalizedX: Int32 = 0
+
+  public var normalizedY: Int32 = 0
+
+  public var modifiers: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum Button: SwiftProtobuf.Enum, Swift.CaseIterable {
+    public typealias RawValue = Int
+    case unspecified // = 0
+    case left // = 1
+    case right // = 2
+    case middle // = 3
+    case back // = 4
+    case forward // = 5
+    case UNRECOGNIZED(Int)
+
+    public init() {
+      self = .unspecified
+    }
+
+    public init?(rawValue: Int) {
+      switch rawValue {
+      case 0: self = .unspecified
+      case 1: self = .left
+      case 2: self = .right
+      case 3: self = .middle
+      case 4: self = .back
+      case 5: self = .forward
+      default: self = .UNRECOGNIZED(rawValue)
+      }
+    }
+
+    public var rawValue: Int {
+      switch self {
+      case .unspecified: return 0
+      case .left: return 1
+      case .right: return 2
+      case .middle: return 3
+      case .back: return 4
+      case .forward: return 5
+      case .UNRECOGNIZED(let i): return i
+      }
+    }
+
+    // The compiler won't synthesize support with the UNRECOGNIZED case.
+    public static let allCases: [Dieter_V1_RemoteDesktopPointerButton.Button] = [
+      .unspecified,
+      .left,
+      .right,
+      .middle,
+      .back,
+      .forward,
+    ]
+
+  }
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopScroll: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var deltaX: Int32 = 0
+
+  public var deltaY: Int32 = 0
+
+  public var precise: Bool = false
+
+  public var modifiers: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopKey: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var keyCode: UInt32 = 0
+
+  public var down: Bool = false
+
+  public var `repeat`: Bool = false
+
+  public var modifiers: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopReleaseAll: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopInput: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var protocolVersion: UInt32 = 0
+
+  public var inputEpoch: Data = Data()
+
+  public var sequence: UInt64 = 0
+
+  public var payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload? = nil
+
+  public var pointerMove: Dieter_V1_RemoteDesktopPointerMove {
+    get {
+      if case .pointerMove(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopPointerMove()
+    }
+    set {payload = .pointerMove(newValue)}
+  }
+
+  public var pointerButton: Dieter_V1_RemoteDesktopPointerButton {
+    get {
+      if case .pointerButton(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopPointerButton()
+    }
+    set {payload = .pointerButton(newValue)}
+  }
+
+  public var scroll: Dieter_V1_RemoteDesktopScroll {
+    get {
+      if case .scroll(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopScroll()
+    }
+    set {payload = .scroll(newValue)}
+  }
+
+  public var key: Dieter_V1_RemoteDesktopKey {
+    get {
+      if case .key(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopKey()
+    }
+    set {payload = .key(newValue)}
+  }
+
+  public var releaseAll: Dieter_V1_RemoteDesktopReleaseAll {
+    get {
+      if case .releaseAll(let v)? = payload {return v}
+      return Dieter_V1_RemoteDesktopReleaseAll()
+    }
+    set {payload = .releaseAll(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Payload: Equatable, Sendable {
+    case pointerMove(Dieter_V1_RemoteDesktopPointerMove)
+    case pointerButton(Dieter_V1_RemoteDesktopPointerButton)
+    case scroll(Dieter_V1_RemoteDesktopScroll)
+    case key(Dieter_V1_RemoteDesktopKey)
+    case releaseAll(Dieter_V1_RemoteDesktopReleaseAll)
+
+  }
 
   public init() {}
 }
@@ -9682,7 +9889,7 @@ nonisolated extension Dieter_V1_RemoteDesktopRef: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_RemoteDesktopSessionBinding: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSessionBinding"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_nonce\0\u{3}helper_dtls_fingerprint\0\u{3}expires_at\0\u{3}offer_sha256\0\u{3}daemon_signature\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}client_nonce\0\u{3}helper_dtls_fingerprint\0\u{3}expires_at\0\u{3}offer_sha256\0\u{3}daemon_signature\0\u{3}control_granted\0\u{3}display_id\0\u{3}input_protocol_version\0\u{3}input_epoch\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -9695,6 +9902,10 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionBinding: SwiftProtobuf.Messa
       case 3: try { try decoder.decodeSingularStringField(value: &self.expiresAt) }()
       case 4: try { try decoder.decodeSingularBytesField(value: &self.offerSha256) }()
       case 5: try { try decoder.decodeSingularBytesField(value: &self.daemonSignature) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.controlGranted) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.displayID) }()
+      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.inputProtocolVersion) }()
+      case 9: try { try decoder.decodeSingularBytesField(value: &self.inputEpoch) }()
       default: break
       }
     }
@@ -9716,6 +9927,18 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionBinding: SwiftProtobuf.Messa
     if !self.daemonSignature.isEmpty {
       try visitor.visitSingularBytesField(value: self.daemonSignature, fieldNumber: 5)
     }
+    if self.controlGranted != false {
+      try visitor.visitSingularBoolField(value: self.controlGranted, fieldNumber: 6)
+    }
+    if !self.displayID.isEmpty {
+      try visitor.visitSingularStringField(value: self.displayID, fieldNumber: 7)
+    }
+    if self.inputProtocolVersion != 0 {
+      try visitor.visitSingularUInt32Field(value: self.inputProtocolVersion, fieldNumber: 8)
+    }
+    if !self.inputEpoch.isEmpty {
+      try visitor.visitSingularBytesField(value: self.inputEpoch, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -9725,6 +9948,346 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionBinding: SwiftProtobuf.Messa
     if lhs.expiresAt != rhs.expiresAt {return false}
     if lhs.offerSha256 != rhs.offerSha256 {return false}
     if lhs.daemonSignature != rhs.daemonSignature {return false}
+    if lhs.controlGranted != rhs.controlGranted {return false}
+    if lhs.displayID != rhs.displayID {return false}
+    if lhs.inputProtocolVersion != rhs.inputProtocolVersion {return false}
+    if lhs.inputEpoch != rhs.inputEpoch {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopPointerMove: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopPointerMove"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}normalized_x\0\u{3}normalized_y\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt32Field(value: &self.normalizedX) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.normalizedY) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.normalizedX != 0 {
+      try visitor.visitSingularInt32Field(value: self.normalizedX, fieldNumber: 1)
+    }
+    if self.normalizedY != 0 {
+      try visitor.visitSingularInt32Field(value: self.normalizedY, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopPointerMove, rhs: Dieter_V1_RemoteDesktopPointerMove) -> Bool {
+    if lhs.normalizedX != rhs.normalizedX {return false}
+    if lhs.normalizedY != rhs.normalizedY {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopPointerButton: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopPointerButton"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}button\0\u{1}down\0\u{3}click_count\0\u{3}normalized_x\0\u{3}normalized_y\0\u{1}modifiers\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.button) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.down) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.clickCount) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.normalizedX) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.normalizedY) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.modifiers) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.button != .unspecified {
+      try visitor.visitSingularEnumField(value: self.button, fieldNumber: 1)
+    }
+    if self.down != false {
+      try visitor.visitSingularBoolField(value: self.down, fieldNumber: 2)
+    }
+    if self.clickCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.clickCount, fieldNumber: 3)
+    }
+    if self.normalizedX != 0 {
+      try visitor.visitSingularInt32Field(value: self.normalizedX, fieldNumber: 4)
+    }
+    if self.normalizedY != 0 {
+      try visitor.visitSingularInt32Field(value: self.normalizedY, fieldNumber: 5)
+    }
+    if self.modifiers != 0 {
+      try visitor.visitSingularUInt32Field(value: self.modifiers, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopPointerButton, rhs: Dieter_V1_RemoteDesktopPointerButton) -> Bool {
+    if lhs.button != rhs.button {return false}
+    if lhs.down != rhs.down {return false}
+    if lhs.clickCount != rhs.clickCount {return false}
+    if lhs.normalizedX != rhs.normalizedX {return false}
+    if lhs.normalizedY != rhs.normalizedY {return false}
+    if lhs.modifiers != rhs.modifiers {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopPointerButton.Button: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0BUTTON_UNSPECIFIED\0\u{1}BUTTON_LEFT\0\u{1}BUTTON_RIGHT\0\u{1}BUTTON_MIDDLE\0\u{1}BUTTON_BACK\0\u{1}BUTTON_FORWARD\0")
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopScroll: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopScroll"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}delta_x\0\u{3}delta_y\0\u{1}precise\0\u{1}modifiers\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt32Field(value: &self.deltaX) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.deltaY) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.precise) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.modifiers) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.deltaX != 0 {
+      try visitor.visitSingularInt32Field(value: self.deltaX, fieldNumber: 1)
+    }
+    if self.deltaY != 0 {
+      try visitor.visitSingularInt32Field(value: self.deltaY, fieldNumber: 2)
+    }
+    if self.precise != false {
+      try visitor.visitSingularBoolField(value: self.precise, fieldNumber: 3)
+    }
+    if self.modifiers != 0 {
+      try visitor.visitSingularUInt32Field(value: self.modifiers, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopScroll, rhs: Dieter_V1_RemoteDesktopScroll) -> Bool {
+    if lhs.deltaX != rhs.deltaX {return false}
+    if lhs.deltaY != rhs.deltaY {return false}
+    if lhs.precise != rhs.precise {return false}
+    if lhs.modifiers != rhs.modifiers {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopKey: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopKey"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}key_code\0\u{1}down\0\u{1}repeat\0\u{1}modifiers\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.keyCode) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.down) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.`repeat`) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.modifiers) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.keyCode != 0 {
+      try visitor.visitSingularUInt32Field(value: self.keyCode, fieldNumber: 1)
+    }
+    if self.down != false {
+      try visitor.visitSingularBoolField(value: self.down, fieldNumber: 2)
+    }
+    if self.`repeat` != false {
+      try visitor.visitSingularBoolField(value: self.`repeat`, fieldNumber: 3)
+    }
+    if self.modifiers != 0 {
+      try visitor.visitSingularUInt32Field(value: self.modifiers, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopKey, rhs: Dieter_V1_RemoteDesktopKey) -> Bool {
+    if lhs.keyCode != rhs.keyCode {return false}
+    if lhs.down != rhs.down {return false}
+    if lhs.`repeat` != rhs.`repeat` {return false}
+    if lhs.modifiers != rhs.modifiers {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopReleaseAll: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopReleaseAll"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopReleaseAll, rhs: Dieter_V1_RemoteDesktopReleaseAll) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopInput"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}protocol_version\0\u{3}input_epoch\0\u{1}sequence\0\u{3}pointer_move\0\u{3}pointer_button\0\u{1}scroll\0\u{1}key\0\u{3}release_all\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt32Field(value: &self.protocolVersion) }()
+      case 2: try { try decoder.decodeSingularBytesField(value: &self.inputEpoch) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.sequence) }()
+      case 4: try {
+        var v: Dieter_V1_RemoteDesktopPointerMove?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .pointerMove(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .pointerMove(v)
+        }
+      }()
+      case 5: try {
+        var v: Dieter_V1_RemoteDesktopPointerButton?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .pointerButton(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .pointerButton(v)
+        }
+      }()
+      case 6: try {
+        var v: Dieter_V1_RemoteDesktopScroll?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .scroll(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .scroll(v)
+        }
+      }()
+      case 7: try {
+        var v: Dieter_V1_RemoteDesktopKey?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .key(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .key(v)
+        }
+      }()
+      case 8: try {
+        var v: Dieter_V1_RemoteDesktopReleaseAll?
+        var hadOneofValue = false
+        if let current = self.payload {
+          hadOneofValue = true
+          if case .releaseAll(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.payload = .releaseAll(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.protocolVersion != 0 {
+      try visitor.visitSingularUInt32Field(value: self.protocolVersion, fieldNumber: 1)
+    }
+    if !self.inputEpoch.isEmpty {
+      try visitor.visitSingularBytesField(value: self.inputEpoch, fieldNumber: 2)
+    }
+    if self.sequence != 0 {
+      try visitor.visitSingularUInt64Field(value: self.sequence, fieldNumber: 3)
+    }
+    switch self.payload {
+    case .pointerMove?: try {
+      guard case .pointerMove(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case .pointerButton?: try {
+      guard case .pointerButton(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    }()
+    case .scroll?: try {
+      guard case .scroll(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    }()
+    case .key?: try {
+      guard case .key(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+    }()
+    case .releaseAll?: try {
+      guard case .releaseAll(let v)? = self.payload else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopInput, rhs: Dieter_V1_RemoteDesktopInput) -> Bool {
+    if lhs.protocolVersion != rhs.protocolVersion {return false}
+    if lhs.inputEpoch != rhs.inputEpoch {return false}
+    if lhs.sequence != rhs.sequence {return false}
+    if lhs.payload != rhs.payload {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

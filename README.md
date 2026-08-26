@@ -78,8 +78,9 @@ dieter setup ~/Development/my-project
 
 `dieter setup` registers the Git working tree, enrolls the Mac, guides the
 macOS Screen & System Audio Recording permission, proves the exact
-FFmpeg/libvpx capture path with one discarded frame, enables view-only screen
-sharing only after that probe succeeds, and starts the daemon as a Homebrew
+signed ScreenCaptureKit/VideoToolbox helper with one discarded frame, guides
+and verifies Accessibility event-posting permission without moving or clicking
+the pointer, enables viewing and control only after both probes succeed, and starts the daemon as a Homebrew
 service. Use `--skip-screen-sharing` during fresh setup on hosts that must not
 capture their display. Re-run the standalone check at any time with:
 
@@ -160,12 +161,16 @@ unary path independently of the long-lived output stream.
 
 Screens use the gateway only for bounded WebRTC signaling and short-lived ICE
 configuration bound to the authenticated operator and target daemon. The
-daemon hosts a view-only VP8 peer with Pion; media travels directly over
+daemon hosts an H.264 peer with Pion; media and bounded remote input travel directly over
 ICE/DTLS/SRTP or through a separately configured TURN server, never through
 the Dieter gateway. The Mac verifies an Ed25519 binding between the offer,
-daemon DTLS fingerprint, session, nonce, and lease before applying the answer.
+daemon DTLS fingerprint, session, nonce, lease, control grant, display, and
+input epoch before applying the answer. Pointer motion uses an unordered
+no-retransmit DataChannel while keys, buttons, scrolling, and release-all use a
+reliable channel. The signed native helper owns macOS capture and event-posting
+permissions and releases every held input immediately on disconnect.
 Screen capture starts only after WebRTC connects and stops when its renewable
-lease expires. The first slice allows one explicitly enabled viewer per daemon.
+lease expires. One explicitly enabled viewer/controller is allowed per daemon.
 
 ## Requirements
 
@@ -273,12 +278,17 @@ The direct listener does not accept the gateway session itself. It requires a
 short-lived token targeted to this daemon and serves the enrolled daemon
 certificate. Do not advertise raw port 4242; that port stays loopback-only.
 
-Screens requires FFmpeg with `libvpx` in the daemon's graphical user session;
-the Homebrew formula installs that dependency. It captures the primary display
-by default after guided `dieter setup` verifies macOS Screen Recording access.
+On macOS, Screens uses the packaged `dieter-capture` helper with
+ScreenCaptureKit and VideoToolbox hardware H.264. The helper keeps at most one
+pending frame, scales the stream to the viewer's requested bounds, and accepts
+live keyframe and bitrate feedback from WebRTC. It captures the primary display
+by default after guided `dieter setup` verifies Screen Recording access for the
+exact signed helper installed beside the daemon.
 Run `dieter daemon permissions` to reopen the permission guide after a denial
-or revocation. `DIETER_REMOTE_DESKTOP_FFMPEG` selects another FFmpeg binary and
-`DIETER_REMOTE_DESKTOP_DISPLAY` selects another capture source;
+or revocation. `DIETER_REMOTE_DESKTOP_HELPER` selects another signed native
+helper and `DIETER_REMOTE_DESKTOP_DISPLAY` selects another capture source.
+Non-macOS experimental hosts still use FFmpeg/libvpx and may select it with
+`DIETER_REMOTE_DESKTOP_FFMPEG`;
 `DIETER_REMOTE_DESKTOP_SOURCE=synthetic` is reserved for isolated transport
 diagnostics. Capture is lazy and runs only while an admitted WebRTC session is
 connected. A clean viewer close stops it immediately; an ungraceful signaling

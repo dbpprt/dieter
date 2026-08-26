@@ -40,6 +40,8 @@ func (api *grpcAPI) UpdateRemoteDesktopSettings(_ context.Context, request *diet
 	}
 	if !settings.RemoteDesktopEnabled {
 		api.server.remoteDesktop.CloseActive("remote desktop disabled")
+	} else if !settings.RemoteDesktopControlEnabled {
+		api.server.remoteDesktop.CloseControlActive("remote desktop control disabled")
 	}
 	return protoRemoteDesktopSettings(settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled, settings.UpdatedAt), nil
 }

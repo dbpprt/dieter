@@ -438,6 +438,7 @@ func remoteDesktopSourceOptions(logger *slog.Logger) remotedesktop.SourceOptions
 	return remotedesktop.SourceOptions{
 		Kind:       strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_SOURCE")),
 		FFmpegPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_FFMPEG")),
+		HelperPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_HELPER")),
 		Display:    strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_DISPLAY")),
 		Logger:     logger,
 	}

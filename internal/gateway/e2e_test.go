@@ -91,7 +91,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err := boardStore.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := boardStore.UpdateRemoteDesktopSettings(true, false); err != nil {
+	if _, err := boardStore.UpdateRemoteDesktopSettings(true, true); err != nil {
 		t.Fatal(err)
 	}
 	remoteDesktop := remotedesktop.New(remotedesktop.Options{
@@ -570,6 +570,16 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 	if _, err := viewer.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); err != nil {
 		t.Fatal(err)
 	}
+	ordered := true
+	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v1", &webrtc.DataChannelInit{Ordered: &ordered})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unordered := false
+	zero := uint16(0)
+	if _, err := viewer.CreateDataChannel("dieter-pointer-v1", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
+		t.Fatal(err)
+	}
 	trackReceived := make(chan struct{}, 1)
 	viewer.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		go func() {
@@ -595,7 +605,7 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 	request := &dieterv1.StartRemoteDesktopRequest{
 		ClientNonce: "gateway-e2e-nonce", RtcConfiguration: rtc,
 		Offer:     &dieterv1.RemoteDesktopSessionDescription{Type: "offer", Sdp: offer.SDP},
-		DisplayId: "primary", MaxFps: 10, MaxBitrateKbps: 500,
+		DisplayId: "primary", Control: true, MaxFps: 10, MaxBitrateKbps: 500,
 	}
 	streamContext, cancelStream := context.WithTimeout(routed, 12*time.Second)
 	defer cancelStream()
@@ -626,6 +636,13 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		case <-trackReceived:
 			if !answerApplied || binding == nil || sessionID == "" {
 				t.Fatal("received media before authenticating the daemon answer")
+			}
+			channelDeadline := time.Now().Add(time.Second)
+			for stateChannel.ReadyState() != webrtc.DataChannelStateOpen && time.Now().Before(channelDeadline) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if !binding.GetControlGranted() || stateChannel.ReadyState() != webrtc.DataChannelStateOpen {
+				t.Fatalf("relayed control channel was not authorized and open: binding=%#v state=%v", binding, stateChannel.ReadyState())
 			}
 			// Model an ungraceful viewer disappearance. Canceling the gateway
 			// stream must cancel the relayed local RPC, detach its subscription,
@@ -659,7 +676,7 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 			}
 			if !answerApplied && binding != nil && answer != "" {
 				offerHash := sha256.Sum256([]byte(offer.SDP))
-				message := remotedesktop.SessionBindingMessage(sessionID, request.GetClientNonce(), binding.GetHelperDtlsFingerprint(), binding.GetExpiresAt(), offerHash[:])
+				message := remotedesktop.SessionBindingMessage(sessionID, request.GetClientNonce(), binding.GetHelperDtlsFingerprint(), binding.GetExpiresAt(), offerHash[:], binding.GetControlGranted(), binding.GetDisplayId(), binding.GetInputProtocolVersion(), binding.GetInputEpoch())
 				if !ed25519.Verify(identity.PublicKey, message, binding.GetDaemonSignature()) {
 					t.Fatal("relayed daemon session binding signature did not verify")
 				}

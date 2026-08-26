@@ -1,4 +1,5 @@
 import AppKit
+import DieterAPI
 import SwiftUI
 @preconcurrency import WebRTC
 
@@ -46,7 +47,17 @@ struct ScreensView: View {
           Text("\(controller.routeLabel) signaling")
         }
         Spacer()
-        Label("View only", systemImage: "eye")
+        Label(
+          controller.controlActive ? "Control active" : "View only",
+          systemImage: controller.controlActive ? "cursorarrow.motionlines" : "eye"
+        )
+        if controller.controlActive {
+          Text("·")
+          Text("⌘⇧Esc releases input")
+        } else if !controller.controlUnavailableReason.isEmpty {
+          Text("·")
+          Text(controller.controlUnavailableReason)
+        }
         Text("·")
         Text("Peer-to-peer media")
       }
@@ -93,7 +104,7 @@ struct ScreensView: View {
     case .streaming, .connecting, .reconnecting:
       ZStack {
         Color.black
-        RemoteDesktopVideoSurface(renderer: controller.renderer)
+        RemoteDesktopVideoSurface(controller: controller)
           .padding(18)
         if controller.phase != .streaming {
           VStack(spacing: 10) {
@@ -117,7 +128,7 @@ struct ScreensView: View {
     case .disabled(let reason):
       emptyState(
         title: "Screen sharing is off",
-        detail: reason.isEmpty ? "Enable view-only sharing on this machine to continue." : reason,
+        detail: reason.isEmpty ? "Enable remote desktop on this machine to continue." : reason,
         symbol: "rectangle.slash"
       ) { EmptyView() }
     case .failed(let message):
@@ -131,7 +142,7 @@ struct ScreensView: View {
         let detail =
           machine.online
           ? (machine.remoteDesktopReason.isEmpty
-            ? "Connect for an authenticated, view-only stream from \(machine.name)."
+            ? "Connect for an authenticated remote session with \(machine.name)."
             : machine.remoteDesktopReason)
           : MachinePresenceText.lastSeen(machine.lastSeenAt)
         emptyState(
@@ -171,8 +182,8 @@ struct ScreensView: View {
   }
 
   private var subtitle: String {
-    guard let selectedMachine else { return "View-only remote desktop" }
-    return "\(selectedMachine.name) · authenticated view-only session"
+    guard let selectedMachine else { return "Remote desktop" }
+    return "\(selectedMachine.name) · authenticated remote session"
   }
 
   private var isSessionActive: Bool {
@@ -193,8 +204,162 @@ struct ScreensView: View {
 }
 
 private struct RemoteDesktopVideoSurface: NSViewRepresentable {
-  let renderer: RTCMTLNSVideoView
+  let controller: RemoteDesktopController
 
-  func makeNSView(context: Context) -> RTCMTLNSVideoView { renderer }
-  func updateNSView(_ nsView: RTCMTLNSVideoView, context: Context) {}
+  func makeNSView(context: Context) -> RemoteDesktopInputView {
+    RemoteDesktopInputView(renderer: controller.renderer, controller: controller)
+  }
+  func updateNSView(_ nsView: RemoteDesktopInputView, context: Context) {
+    nsView.controller = controller
+  }
+}
+
+@MainActor
+final class RemoteDesktopInputView: NSView, @preconcurrency RTCVideoViewDelegate {
+  let renderer: RTCMTLNSVideoView
+  weak var controller: RemoteDesktopController?
+  private var videoSize = CGSize(width: 16, height: 9)
+  private var trackingAreaReference: NSTrackingArea?
+
+  init(renderer: RTCMTLNSVideoView, controller: RemoteDesktopController) {
+    self.renderer = renderer
+    self.controller = controller
+    super.init(frame: .zero)
+    wantsLayer = true
+    layer?.backgroundColor = NSColor.black.cgColor
+    renderer.delegate = self
+    addSubview(renderer)
+  }
+
+  required init?(coder: NSCoder) { nil }
+  override var acceptsFirstResponder: Bool { true }
+  override func layout() {
+    super.layout()
+    renderer.frame = bounds
+  }
+
+  override func updateTrackingAreas() {
+    if let trackingAreaReference { removeTrackingArea(trackingAreaReference) }
+    let area = NSTrackingArea(
+      rect: bounds, options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+      owner: self)
+    addTrackingArea(area)
+    trackingAreaReference = area
+    super.updateTrackingAreas()
+  }
+
+  func videoView(_ videoView: any RTCVideoRenderer, didChangeVideoSize size: CGSize) {
+    videoSize = size.width > 0 && size.height > 0 ? size : videoSize
+  }
+
+  override func mouseMoved(with event: NSEvent) { sendMove(event) }
+  override func mouseDragged(with event: NSEvent) { sendMove(event) }
+  override func rightMouseDragged(with event: NSEvent) { sendMove(event) }
+  override func otherMouseDragged(with event: NSEvent) { sendMove(event) }
+
+  override func mouseDown(with event: NSEvent) {
+    window?.makeFirstResponder(self)
+    sendButton(.left, down: true, event: event)
+  }
+  override func mouseUp(with event: NSEvent) { sendButton(.left, down: false, event: event) }
+  override func rightMouseDown(with event: NSEvent) {
+    window?.makeFirstResponder(self)
+    sendButton(.right, down: true, event: event)
+  }
+  override func rightMouseUp(with event: NSEvent) { sendButton(.right, down: false, event: event) }
+  override func otherMouseDown(with event: NSEvent) {
+    window?.makeFirstResponder(self)
+    sendButton(button(event.buttonNumber), down: true, event: event)
+  }
+  override func otherMouseUp(with event: NSEvent) {
+    sendButton(button(event.buttonNumber), down: false, event: event)
+  }
+
+  override func scrollWheel(with event: NSEvent) {
+    controller?.sendScroll(
+      deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY,
+      precise: event.hasPreciseScrollingDeltas, modifiers: event.modifierFlags)
+  }
+
+  override func keyDown(with event: NSEvent) {
+    if event.keyCode == 53 && event.modifierFlags.contains([.command, .shift]) {
+      controller?.releaseAllInput()
+      window?.makeFirstResponder(nil)
+      return
+    }
+    controller?.sendKey(
+      code: event.keyCode, down: true, repeat: event.isARepeat,
+      modifiers: event.modifierFlags)
+  }
+  override func keyUp(with event: NSEvent) {
+    controller?.sendKey(
+      code: event.keyCode, down: false, repeat: false, modifiers: event.modifierFlags)
+  }
+  override func flagsChanged(with event: NSEvent) {
+    let down = modifierIsDown(keyCode: event.keyCode, flags: event.modifierFlags)
+    controller?.sendKey(
+      code: event.keyCode, down: down, repeat: false, modifiers: event.modifierFlags)
+  }
+  override func resignFirstResponder() -> Bool {
+    controller?.releaseAllInput()
+    return super.resignFirstResponder()
+  }
+
+  private func sendMove(_ event: NSEvent) {
+    guard let point = normalizedPoint(event) else { return }
+    controller?.sendPointerMove(x: point.x, y: point.y)
+  }
+
+  private func sendButton(
+    _ button: Dieter_V1_RemoteDesktopPointerButton.Button, down: Bool, event: NSEvent
+  ) {
+    guard let point = normalizedPoint(event) else { return }
+    controller?.sendPointerMove(x: point.x, y: point.y)
+    controller?.sendPointerButton(
+      button, down: down, clickCount: event.clickCount, x: point.x, y: point.y,
+      modifiers: event.modifierFlags)
+  }
+
+  private func normalizedPoint(_ event: NSEvent) -> CGPoint? {
+    let point = convert(event.locationInWindow, from: nil)
+    return RemoteDesktopInputGeometry.normalized(point: point, bounds: bounds, videoSize: videoSize)
+  }
+
+  private func button(_ number: Int) -> Dieter_V1_RemoteDesktopPointerButton.Button {
+    switch number {
+    case 2: .middle
+    case 3: .back
+    case 4: .forward
+    default: .middle
+    }
+  }
+
+  private func modifierIsDown(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Bool {
+    switch keyCode {
+    case 54, 55: flags.contains(.command)
+    case 56, 60: flags.contains(.shift)
+    case 57: flags.contains(.capsLock)
+    case 58, 61: flags.contains(.option)
+    case 59, 62: flags.contains(.control)
+    case 63: flags.contains(.function)
+    default: false
+    }
+  }
+}
+
+enum RemoteDesktopInputGeometry {
+  static func normalized(point: CGPoint, bounds: CGRect, videoSize: CGSize) -> CGPoint? {
+    guard bounds.width > 0, bounds.height > 0, videoSize.width > 0, videoSize.height > 0 else {
+      return nil
+    }
+    let scale = min(bounds.width / videoSize.width, bounds.height / videoSize.height)
+    let size = CGSize(width: videoSize.width * scale, height: videoSize.height * scale)
+    let content = CGRect(
+      x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
+      width: size.width, height: size.height)
+    guard content.contains(point) else { return nil }
+    return CGPoint(
+      x: max(0, min(1, (point.x - content.minX) / content.width)),
+      y: max(0, min(1, 1 - (point.y - content.minY) / content.height)))
+  }
 }

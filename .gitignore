@@ -16,6 +16,7 @@
 /internal/harness/runtime/node_modules/
 /internal/harness/runtime/.npm/
 /apps/android/.kotlin/
+/native/macos-capture/build/
 
 # Dieter state, when DIETER_HOME points at the checkout
 /.dieter/

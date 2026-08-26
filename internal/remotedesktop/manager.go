@@ -13,11 +13,13 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/trust"
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	"google.golang.org/protobuf/proto"
@@ -56,17 +58,19 @@ type Options struct {
 	DetachGrace     time.Duration
 	MonitorInterval time.Duration
 	CaptureProbe    func(context.Context, SourceOptions) error
+	ControlProbe    func(context.Context, SourceOptions, bool) error
 	SourceFactory   func(SourceOptions) (FrameSource, error)
 	Logger          *slog.Logger
 	Now             func() time.Time
 }
 
 type Manager struct {
-	options Options
-	mu      sync.Mutex
-	session *Session
-	probeMu sync.Mutex
-	probe   captureProbeResult
+	options      Options
+	mu           sync.Mutex
+	session      *Session
+	probeMu      sync.Mutex
+	probe        captureProbeResult
+	controlProbe captureProbeResult
 }
 
 type captureProbeResult struct {
@@ -101,6 +105,9 @@ func New(options Options) *Manager {
 	if options.CaptureProbe == nil {
 		options.CaptureProbe = ProbeCapture
 	}
+	if options.ControlProbe == nil {
+		options.ControlProbe = ProbeControl
+	}
 	if options.SourceFactory == nil {
 		options.SourceFactory = NewFrameSource
 	}
@@ -134,6 +141,13 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 	} else if enabled && available {
 		permission, reason = m.captureReadiness(forceProbe)
 	}
+	controlSupported := runtime.GOOS == "darwin" || strings.TrimSpace(m.options.Source.Kind) == "synthetic"
+	controlPermission := "not_requested"
+	if controlEnabled && controlSupported {
+		controlPermission, _ = m.controlReadiness(false)
+	} else if !controlSupported {
+		controlPermission = "unsupported"
+	}
 	ready := enabled && available && permission == "granted" && m.options.Identity.DaemonID != "" && len(m.options.Identity.PrivateKey) == ed25519.PrivateKeySize
 	if !enabled {
 		reason = "Remote desktop is disabled on this machine"
@@ -148,10 +162,11 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 	}
 	return &dieterv1.RemoteDesktopCapabilities{
 		Platform: runtime.GOOS, GraphicalSessionActive: available, Enabled: enabled,
-		Ready: ready, UnavailableReason: reason, HelperVersion: "pion-v1",
-		CapturePermission: permission, ControlPermission: "not_implemented",
+		Ready: ready, UnavailableReason: reason, HelperVersion: remoteDesktopHelperVersion(m.options.Source),
+		CapturePermission: permission, ControlPermission: controlPermission,
 		Displays: []*dieterv1.RemoteDesktopDisplay{{Id: "primary", Name: "Primary display", Primary: true, Scale: 1}},
-		Codecs:   []string{"VP8"}, ControlSupported: false, ClipboardSupported: false,
+		Codecs:   []string{string(preferredVideoCodec(m.options.Source))}, HardwareEncoderAvailable: runtime.GOOS == "darwin" && strings.TrimSpace(m.options.Source.Kind) != "synthetic",
+		ControlSupported: controlSupported, ClipboardSupported: false,
 		AudioSupported: false, FileTransferSupported: false, ActiveSession: active,
 	}
 }
@@ -175,14 +190,28 @@ func (m *Manager) captureReadiness(force bool) (string, string) {
 	return result.permission, result.reason
 }
 
+func (m *Manager) controlReadiness(force bool) (string, string) {
+	m.probeMu.Lock()
+	defer m.probeMu.Unlock()
+	if !force && m.controlProbe.permission != "" {
+		return m.controlProbe.permission, m.controlProbe.reason
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result := captureProbeResult{permission: "granted", checkedAt: m.options.Now().UTC()}
+	if err := m.options.ControlProbe(ctx, m.options.Source, false); err != nil {
+		result.permission = "denied"
+		result.reason = err.Error()
+	}
+	m.controlProbe = result
+	return result.permission, result.reason
+}
+
 func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, controlEnabled bool, operatorSubject string) (*Subscription, error) {
 	if !enabled {
 		return nil, ErrDisabled
 	}
-	// This slice is intentionally view-only. Keep the wire setting so a later
-	// input channel can be added without another compatibility break, but never
-	// admit control until the capability is implemented end to end.
-	if request.GetControl() {
+	if request.GetControl() && !controlEnabled {
 		return nil, ErrControlDisabled
 	}
 	if err := validateStartRequest(request); err != nil {
@@ -192,7 +221,7 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 	m.mu.Lock()
 	if current := m.session; current != nil && current.active() {
 		offerHash := sha256.Sum256([]byte(request.GetOffer().GetSdp()))
-		if current.clientNonce != request.GetClientNonce() || current.operatorSubject != operatorSubject || current.offerHash != offerHash {
+		if current.clientNonce != request.GetClientNonce() || current.operatorSubject != operatorSubject || current.offerHash != offerHash || current.control != request.GetControl() || current.displayID != normalizedDisplayID(request.GetDisplayId()) {
 			m.mu.Unlock()
 			return nil, ErrBusy
 		}
@@ -201,11 +230,20 @@ func (m *Manager) Start(request *dieterv1.StartRemoteDesktopRequest, enabled, co
 		return subscription, err
 	}
 	m.mu.Unlock()
-	// A new session must prove that the exact production capture path still
-	// works. Reattachments above reuse a stream that already passed this gate.
-	capabilities := m.capabilities(enabled, controlEnabled, true)
+	// Capabilities probes the exact production capture path once per daemon
+	// lifetime. Reusing that result here avoids opening and encoding the screen
+	// twice immediately before every session; the real stream still reports any
+	// permission or device change when it starts.
+	capabilities := m.capabilities(enabled, controlEnabled, false)
 	if !capabilities.GetReady() {
 		return nil, errors.New(capabilities.GetUnavailableReason())
+	}
+	controlPermission := capabilities.GetControlPermission()
+	if request.GetControl() {
+		controlPermission, _ = m.controlReadiness(true)
+	}
+	if request.GetControl() && (!capabilities.GetControlSupported() || controlPermission != "granted") {
+		return nil, errors.New("remote desktop control requires macOS Accessibility permission; run `dieter daemon permissions`")
 	}
 	if _, err := m.verifyRTCConfiguration(request.GetRtcConfiguration(), operatorSubject); err != nil {
 		return nil, err
@@ -258,6 +296,15 @@ func (m *Manager) CloseActive(reason string) {
 	session := m.session
 	m.mu.Unlock()
 	if session != nil {
+		session.close(reason)
+	}
+}
+
+func (m *Manager) CloseControlActive(reason string) {
+	m.mu.Lock()
+	session := m.session
+	m.mu.Unlock()
+	if session != nil && session.control {
 		session.close(reason)
 	}
 }
@@ -319,20 +366,29 @@ type Session struct {
 	offerHash       [sha256.Size]byte
 	pc              *webrtc.PeerConnection
 	track           *webrtc.TrackLocalStaticSample
+	source          FrameSource
+	codec           VideoCodec
 	ctx             context.Context
 	cancel          context.CancelFunc
 	startOnce       sync.Once
 	closeOnce       sync.Once
 
-	mu             sync.Mutex
-	closed         bool
-	sequence       uint64
-	history        []*dieterv1.RemoteDesktopSignal
-	subscribers    map[uint64]chan *dieterv1.RemoteDesktopSignal
-	nextSubscriber uint64
-	leaseExpiresAt time.Time
-	detachedAt     time.Time
-	peerDetachedAt time.Time
+	mu                   sync.Mutex
+	closed               bool
+	sequence             uint64
+	history              []*dieterv1.RemoteDesktopSignal
+	subscribers          map[uint64]chan *dieterv1.RemoteDesktopSignal
+	nextSubscriber       uint64
+	leaseExpiresAt       time.Time
+	detachedAt           time.Time
+	peerDetachedAt       time.Time
+	control              bool
+	displayID            string
+	inputEpoch           []byte
+	pointerInputSequence atomic.Uint64
+	stateInputSequence   atomic.Uint64
+	pointerInput         chan *dieterv1.RemoteDesktopInput
+	stateInput           chan *dieterv1.RemoteDesktopInput
 }
 
 func (s *Session) active() bool {
@@ -342,6 +398,31 @@ func (s *Session) active() bool {
 }
 
 func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, operatorSubject string) (*Session, error) {
+	sourceOptions := manager.options.Source
+	if request.GetDisplayId() != "" {
+		sourceOptions.Display = request.GetDisplayId()
+	}
+	if request.GetMaxFps() > 0 {
+		sourceOptions.FPS = int(request.GetMaxFps())
+	}
+	if request.GetMaxBitrateKbps() > 0 {
+		sourceOptions.Bitrate = int(request.GetMaxBitrateKbps())
+	}
+	if request.GetMaxWidth() > 0 {
+		sourceOptions.MaxWidth = int(request.GetMaxWidth())
+	}
+	if request.GetMaxHeight() > 0 {
+		sourceOptions.MaxHeight = int(request.GetMaxHeight())
+	}
+	source, err := manager.options.SourceFactory(sourceOptions)
+	if err != nil {
+		return nil, err
+	}
+	if request.GetControl() {
+		if _, ok := source.(InputSink); !ok {
+			return nil, errors.New("remote desktop capture source does not support control")
+		}
+	}
 	iceServers := make([]webrtc.ICEServer, 0, len(request.GetRtcConfiguration().GetIceServers()))
 	for _, server := range request.GetRtcConfiguration().GetIceServers() {
 		iceServers = append(iceServers, webrtc.ICEServer{URLs: append([]string(nil), server.GetUrls()...), Username: server.GetUsername(), Credential: server.GetCredential()})
@@ -360,12 +441,14 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 		manager: manager, id: randomID(), clientNonce: request.GetClientNonce(), operatorSubject: operatorSubject, pc: pc,
 		ctx: ctx, cancel: cancel, subscribers: make(map[uint64]chan *dieterv1.RemoteDesktopSignal),
 		leaseExpiresAt: now.Add(manager.options.SessionLease), offerHash: offerHash,
+		source: source, codec: source.Codec(), control: request.GetControl(), displayID: normalizedDisplayID(sourceOptions.Display), inputEpoch: randomBytes(16),
+		pointerInput: make(chan *dieterv1.RemoteDesktopInput, 1), stateInput: make(chan *dieterv1.RemoteDesktopInput, 128),
 	}
 	fail := func(cause error) (*Session, error) {
 		session.close(cause.Error())
 		return nil, cause
 	}
-	track, err := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90_000}, "screen", "dieter-remote-desktop")
+	track, err := webrtc.NewTrackLocalStaticSample(codecCapability(source.Codec()), "screen", "dieter-remote-desktop")
 	if err != nil {
 		return fail(err)
 	}
@@ -374,7 +457,9 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	if err != nil {
 		return fail(err)
 	}
-	go drainRTCP(sender)
+	go handleRTCP(sender, source, manager.options.Logger)
+	session.installInputChannels()
+	go session.runInput()
 
 	pc.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate == nil {
@@ -398,6 +483,7 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 			session.emitState("streaming", "")
 			session.startOnce.Do(func() { go session.streamSource(request) })
 		case webrtc.PeerConnectionStateDisconnected:
+			session.releaseInput()
 			session.mu.Lock()
 			if session.peerDetachedAt.IsZero() {
 				session.peerDetachedAt = manager.options.Now().UTC()
@@ -435,11 +521,12 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	}
 	fingerprint := sdpFingerprint(local.SDP)
 	expiresAt := session.leaseExpiresAt.Format(time.RFC3339Nano)
-	bindingMessage := SessionBindingMessage(session.id, session.clientNonce, fingerprint, expiresAt, offerHash[:])
+	bindingMessage := SessionBindingMessage(session.id, session.clientNonce, fingerprint, expiresAt, offerHash[:], session.control, session.displayID, inputProtocolVersion, session.inputEpoch)
 	signature := ed25519.Sign(manager.options.Identity.PrivateKey, bindingMessage)
 	session.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_Binding{Binding: &dieterv1.RemoteDesktopSessionBinding{
 		ClientNonce: session.clientNonce, HelperDtlsFingerprint: fingerprint, ExpiresAt: expiresAt,
-		OfferSha256: offerHash[:], DaemonSignature: signature,
+		OfferSha256: offerHash[:], DaemonSignature: signature, ControlGranted: session.control,
+		DisplayId: session.displayID, InputProtocolVersion: inputProtocolVersion, InputEpoch: session.inputEpoch,
 	}}})
 	session.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_Description{Description: &dieterv1.RemoteDesktopSessionDescription{Type: "answer", Sdp: local.SDP}}})
 	session.emitState("connecting", "")
@@ -451,6 +538,14 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func normalizedDisplayID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "primary"
+	}
+	return value
 }
 
 func validateStartRequest(request *dieterv1.StartRemoteDesktopRequest) error {
@@ -473,6 +568,12 @@ func validateStartRequest(request *dieterv1.StartRemoteDesktopRequest) error {
 	}
 	if bitrate := request.GetMaxBitrateKbps(); bitrate < 0 || bitrate > 100_000 {
 		return errors.New("max_bitrate_kbps must be at most 100000")
+	}
+	if width := request.GetMaxWidth(); width != 0 && (width < 320 || width > 16_384) {
+		return errors.New("max_width must be zero or between 320 and 16384")
+	}
+	if height := request.GetMaxHeight(); height != 0 && (height < 180 || height > 16_384) {
+		return errors.New("max_height must be zero or between 180 and 16384")
 	}
 	return nil
 }
@@ -539,7 +640,7 @@ func (s *Session) emit(signal *dieterv1.RemoteDesktopSignal) {
 }
 
 func (s *Session) emitState(phase, reason string) {
-	s.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_State{State: &dieterv1.RemoteDesktopSessionState{Phase: phase, Reason: reason, Codec: "VP8"}}})
+	s.emit(&dieterv1.RemoteDesktopSignal{Payload: &dieterv1.RemoteDesktopSignal_State{State: &dieterv1.RemoteDesktopSessionState{Phase: phase, Reason: reason, Codec: string(s.codec)}}})
 }
 
 func (s *Session) emitError(code, message string, recoverable bool) {
@@ -591,23 +692,7 @@ func (s *Session) signal(value *dieterv1.RemoteDesktopSignal) error {
 }
 
 func (s *Session) streamSource(request *dieterv1.StartRemoteDesktopRequest) {
-	options := s.manager.options.Source
-	if request.GetDisplayId() != "" {
-		options.Display = request.GetDisplayId()
-	}
-	if request.GetMaxFps() > 0 {
-		options.FPS = int(request.GetMaxFps())
-	}
-	if request.GetMaxBitrateKbps() > 0 {
-		options.Bitrate = int(request.GetMaxBitrateKbps())
-	}
-	source, err := s.manager.options.SourceFactory(options)
-	if err != nil {
-		s.emitError("capture_unavailable", err.Error(), false)
-		s.close(err.Error())
-		return
-	}
-	err = source.Stream(s.ctx, func(sample media.Sample) error { return s.track.WriteSample(sample) })
+	err := s.source.Stream(s.ctx, func(sample media.Sample) error { return s.track.WriteSample(sample) })
 	if err != nil && s.ctx.Err() == nil {
 		s.emitError("capture_failed", err.Error(), false)
 		s.close(err.Error())
@@ -646,6 +731,7 @@ func (s *Session) monitor() {
 
 func (s *Session) close(reason string) {
 	s.closeOnce.Do(func() {
+		s.releaseInput()
 		s.emitState("closed", reason)
 		s.mu.Lock()
 		s.closed = true
@@ -677,26 +763,75 @@ func sdpFingerprint(sdp string) string {
 	return ""
 }
 
-func SessionBindingMessage(sessionID, nonce, fingerprint, expiresAt string, offerHash []byte) []byte {
+func SessionBindingMessage(sessionID, nonce, fingerprint, expiresAt string, offerHash []byte, control bool, displayID string, protocolVersion uint32, inputEpoch []byte) []byte {
 	return []byte(strings.Join([]string{
-		"dieter-remote-desktop-v1", sessionID, nonce, fingerprint, expiresAt,
-		base64.RawURLEncoding.EncodeToString(offerHash),
+		"dieter-remote-desktop-v2", sessionID, nonce, fingerprint, expiresAt,
+		base64.RawURLEncoding.EncodeToString(offerHash), fmt.Sprintf("%t", control), displayID,
+		fmt.Sprintf("%d", protocolVersion), base64.RawURLEncoding.EncodeToString(inputEpoch),
 	}, "\n"))
 }
 
-func drainRTCP(sender *webrtc.RTPSender) {
-	buffer := make([]byte, 1500)
+func handleRTCP(sender *webrtc.RTPSender, source FrameSource, logger *slog.Logger) {
 	for {
-		if _, _, err := sender.Read(buffer); err != nil {
+		packets, _, err := sender.ReadRTCP()
+		if err != nil {
 			return
+		}
+		for _, packet := range packets {
+			switch value := packet.(type) {
+			case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
+				if controlled, ok := source.(ControlledFrameSource); ok {
+					controlled.RequestKeyFrame()
+				}
+				if logger != nil {
+					logger.Debug("remote desktop keyframe requested", "feedback", fmt.Sprintf("%T", packet))
+				}
+			case *rtcp.ReceiverEstimatedMaximumBitrate:
+				bitrate := int(value.Bitrate / 1_000)
+				if controlled, ok := source.(ControlledFrameSource); ok && bitrate >= 100 {
+					controlled.SetBitrateKbps(bitrate)
+				}
+				if logger != nil {
+					logger.Debug("remote desktop receiver bitrate", "bitrate_kbps", bitrate)
+				}
+			}
 		}
 	}
 }
 
+func codecCapability(codec VideoCodec) webrtc.RTPCodecCapability {
+	if codec == VideoCodecH264 {
+		return webrtc.RTPCodecCapability{
+			MimeType: webrtc.MimeTypeH264, ClockRate: 90_000,
+			SDPFmtpLine:  "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+			RTCPFeedback: []webrtc.RTCPFeedback{{Type: "goog-remb"}, {Type: "ccm", Parameter: "fir"}, {Type: "nack"}, {Type: "nack", Parameter: "pli"}},
+		}
+	}
+	return webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90_000}
+}
+
+func preferredVideoCodec(options SourceOptions) VideoCodec {
+	if strings.TrimSpace(options.Kind) == "synthetic" || runtime.GOOS != "darwin" {
+		return VideoCodecVP8
+	}
+	return VideoCodecH264
+}
+
+func remoteDesktopHelperVersion(options SourceOptions) string {
+	if preferredVideoCodec(options) == VideoCodecH264 {
+		return "screencapturekit-videotoolbox-v1"
+	}
+	return "pion-vp8-v1"
+}
+
 func randomID() string {
-	value := make([]byte, 12)
+	return "rd_" + base64.RawURLEncoding.EncodeToString(randomBytes(12))
+}
+
+func randomBytes(size int) []byte {
+	value := make([]byte, size)
 	if _, err := io.ReadFull(rand.Reader, value); err != nil {
 		panic(fmt.Sprintf("read system randomness: %v", err))
 	}
-	return "rd_" + base64.RawURLEncoding.EncodeToString(value)
+	return value
 }

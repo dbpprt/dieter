@@ -386,8 +386,8 @@ func (c *CLI) setup(args []string) error {
 	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start] [--skip-screen-sharing] [PROJECT_PATH...]
 
 Authorize this machine with GitHub, register Git projects, and start the
-Homebrew-managed daemon. On macOS, setup also guides and verifies the Screen
-Recording permission used by view-only remote desktop. With no path, the
+Homebrew-managed daemon. On macOS, setup also guides and verifies Screen
+Recording and Accessibility permissions used by remote desktop. With no path, the
 current Git working tree is used.
 `
 	set := flags("setup")
@@ -516,42 +516,31 @@ func (c *CLI) ensureRemoteDesktopPermissions(checkOnly, noOpen bool) error {
 }
 
 func (c *CLI) runRemoteDesktopPermissionGuide(options remotedesktop.SourceOptions, checkOnly, noOpen bool) error {
-	ffmpegPath := options.FFmpegPath
-	if strings.TrimSpace(ffmpegPath) == "" {
-		ffmpegPath = "ffmpeg"
+	executable, label, err := remotedesktop.CaptureExecutable(options)
+	if err != nil {
+		return fmt.Errorf("screen-sharing capture component is unavailable: %w", err)
 	}
-	if strings.TrimSpace(options.Kind) != "synthetic" {
-		resolved, err := exec.LookPath(ffmpegPath)
-		if err != nil {
-			return fmt.Errorf("FFmpeg is required for screen sharing; install it with `brew install ffmpeg`: %w", err)
-		}
-		ffmpegPath = resolved
-		options.FFmpegPath = resolved
+	if runtime.GOOS == "darwin" && strings.TrimSpace(options.Kind) != "synthetic" {
+		options.HelperPath = executable
+	} else if strings.TrimSpace(options.Kind) != "synthetic" {
+		options.FFmpegPath = executable
 	}
-	fmt.Fprintf(c.Out, "Checking Screen & System Audio Recording with %s...\n", ffmpegPath)
+	fmt.Fprintf(c.Out, "Checking Screen & System Audio Recording with %s (%s)...\n", label, executable)
 	probe := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		return remotedesktop.ProbeCapture(ctx, options)
 	}
 	if err := probe(); err == nil {
-		if !checkOnly {
-			if _, updateErr := c.Store.UpdateRemoteDesktopSettings(true, false); updateErr != nil {
-				return updateErr
-			}
-		}
 		fmt.Fprintln(c.Out, "Screen capture verified with a disposable encoded frame; no image was saved.")
-		if !checkOnly {
-			fmt.Fprintln(c.Out, "View-only remote desktop enabled.")
-		}
-		return nil
+		return c.finishRemoteDesktopPermissionGuide(options, checkOnly, noOpen)
 	} else if checkOnly {
 		return fmt.Errorf("screen capture readiness check failed: %w", err)
 	} else {
 		fmt.Fprintf(c.Out, "Screen capture is not ready: %v\n", err)
 	}
 
-	fmt.Fprintln(c.Out, "Grant FFmpeg access in Privacy & Security → Screen & System Audio Recording.")
+	fmt.Fprintf(c.Out, "Grant %s access in Privacy & Security → Screen & System Audio Recording.\n", label)
 	if !noOpen {
 		if err := exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture").Run(); err != nil {
 			fmt.Fprintf(c.Out, "Could not open System Settings automatically: %v\n", err)
@@ -565,13 +554,52 @@ func (c *CLI) runRemoteDesktopPermissionGuide(options remotedesktop.SourceOption
 		return errors.New("screen capture permission was not confirmed; rerun `dieter daemon permissions`")
 	}
 	if err := probe(); err != nil {
-		return fmt.Errorf("screen capture is still unavailable: %w; grant FFmpeg Screen Recording access and rerun `dieter daemon permissions`", err)
-	}
-	if _, err := c.Store.UpdateRemoteDesktopSettings(true, false); err != nil {
-		return err
+		return fmt.Errorf("screen capture is still unavailable: %w; grant %s Screen Recording access and rerun `dieter daemon permissions`", err, label)
 	}
 	fmt.Fprintln(c.Out, "Screen capture verified with a disposable encoded frame; no image was saved.")
-	fmt.Fprintln(c.Out, "View-only remote desktop enabled.")
+	return c.finishRemoteDesktopPermissionGuide(options, checkOnly, noOpen)
+}
+
+func (c *CLI) finishRemoteDesktopPermissionGuide(options remotedesktop.SourceOptions, checkOnly, noOpen bool) error {
+	fmt.Fprintln(c.Out, "Checking Accessibility event-posting permission with the same signed helper...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err := remotedesktop.ProbeControl(ctx, options, false)
+	cancel()
+	if err != nil && checkOnly {
+		return fmt.Errorf("remote control readiness check failed: %w", err)
+	}
+	if err != nil {
+		fmt.Fprintln(c.Out, "Grant Dieter's capture helper access in Privacy & Security → Accessibility.")
+		if !noOpen {
+			requestContext, requestCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = remotedesktop.ProbeControl(requestContext, options, true)
+			requestCancel()
+			if openErr := exec.Command("open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility").Run(); openErr != nil {
+				fmt.Fprintf(c.Out, "Could not open System Settings automatically: %v\n", openErr)
+			}
+		}
+		fmt.Fprint(c.Out, "After enabling access, press Return to verify again: ")
+		if c.In == nil {
+			return errors.New("Accessibility permission requires interactive confirmation; rerun `dieter daemon permissions`")
+		}
+		if _, readErr := bufio.NewReader(c.In).ReadString('\n'); readErr != nil {
+			return errors.New("Accessibility permission was not confirmed; rerun `dieter daemon permissions`")
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		err = remotedesktop.ProbeControl(ctx, options, false)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("remote control is still unavailable: %w", err)
+		}
+	}
+	fmt.Fprintln(c.Out, "Remote input verified; the permission probe did not click, type, or move the cursor.")
+	if checkOnly {
+		return nil
+	}
+	if _, err := c.Store.UpdateRemoteDesktopSettings(true, true); err != nil {
+		return err
+	}
+	fmt.Fprintln(c.Out, "Screen viewing and remote control enabled.")
 	return nil
 }
 

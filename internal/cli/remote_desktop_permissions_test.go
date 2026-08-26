@@ -24,7 +24,7 @@ func TestRemoteDesktopPermissionGuideEnablesOnlyAfterCaptureProbe(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !settings.RemoteDesktopEnabled || settings.RemoteDesktopControlEnabled {
+	if !settings.RemoteDesktopEnabled || !settings.RemoteDesktopControlEnabled {
 		t.Fatalf("remote desktop settings=%#v", settings)
 	}
 	if !strings.Contains(output.String(), "no image was saved") {

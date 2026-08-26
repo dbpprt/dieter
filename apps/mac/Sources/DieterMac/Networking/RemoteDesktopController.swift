@@ -2,6 +2,7 @@ import AppKit
 import CryptoKit
 import DieterAPI
 import Foundation
+import OSLog
 import Observation
 import Security
 import SwiftProtobuf
@@ -60,6 +61,8 @@ enum RemoteDesktopSessionTrust {
     guard binding.clientNonce == clientNonce,
       binding.offerSha256 == offerHash,
       binding.helperDtlsFingerprint == fingerprint(in: answerSDP),
+      binding.inputProtocolVersion == 1,
+      binding.inputEpoch.count == 16,
       !sessionID.isEmpty
     else { throw Failure.invalidBinding }
     guard let expires = timestamp(binding.expiresAt), expires > now else {
@@ -71,7 +74,9 @@ enum RemoteDesktopSessionTrust {
     let message = bindingMessage(
       sessionID: sessionID, nonce: clientNonce,
       fingerprint: binding.helperDtlsFingerprint, expiresAt: binding.expiresAt,
-      offerHash: offerHash
+      offerHash: offerHash, controlGranted: binding.controlGranted,
+      displayID: binding.displayID, inputProtocolVersion: binding.inputProtocolVersion,
+      inputEpoch: binding.inputEpoch
     )
     var keyError: Unmanaged<CFError>?
     guard let rawKey = SecKeyCopyExternalRepresentation(publicKey, &keyError) as Data?,
@@ -87,7 +92,11 @@ enum RemoteDesktopSessionTrust {
     nonce: String,
     fingerprint: String,
     expiresAt: String,
-    offerHash: Data
+    offerHash: Data,
+    controlGranted: Bool,
+    displayID: String,
+    inputProtocolVersion: UInt32,
+    inputEpoch: Data
   ) -> Data {
     let encodedHash = offerHash.base64EncodedString()
       .replacingOccurrences(of: "+", with: "-")
@@ -95,7 +104,9 @@ enum RemoteDesktopSessionTrust {
       .replacingOccurrences(of: "=", with: "")
     return Data(
       [
-        "dieter-remote-desktop-v1", sessionID, nonce, fingerprint, expiresAt, encodedHash,
+        "dieter-remote-desktop-v2", sessionID, nonce, fingerprint, expiresAt, encodedHash,
+        controlGranted ? "true" : "false", displayID, String(inputProtocolVersion),
+        inputEpoch.base64URLEncodedString(),
       ].joined(separator: "\n").utf8)
   }
 
@@ -128,15 +139,28 @@ enum RemoteDesktopSessionTrust {
   }
 }
 
+extension Data {
+  fileprivate func base64URLEncodedString() -> String {
+    base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+}
+
 @MainActor
 @Observable
 final class RemoteDesktopController {
+  private static let mediaLogger = Logger(
+    subsystem: "com.dbpprt.dieter.mac", category: "remote-desktop-media")
   var phase: RemoteDesktopPhase = .idle
   var capabilities = Dieter_V1_RemoteDesktopCapabilities()
   var settings = Dieter_V1_RemoteDesktopSettings()
   var routeLabel = ""
   var machineName = ""
   var errorMessage: String?
+  var controlActive = false
+  var controlUnavailableReason = ""
 
   let renderer = RTCMTLNSVideoView(frame: .zero)
 
@@ -156,7 +180,16 @@ final class RemoteDesktopController {
   private var sessionID = ""
   private var signalingTask: Task<Void, Never>?
   private var leaseTask: Task<Void, Never>?
+  private var statisticsTask: Task<Void, Never>?
   private var videoTrack: RTCVideoTrack?
+  private var pointerChannel: RTCDataChannel?
+  private var stateChannel: RTCDataChannel?
+  private var pointerChannelDelegate: RemoteDesktopDataChannelDelegate?
+  private var stateChannelDelegate: RemoteDesktopDataChannelDelegate?
+  private var pointerSequence: UInt64 = 0
+  private var stateSequence: UInt64 = 0
+  private var pendingPointer: (Int32, Int32)?
+  private var pointerFlushTask: Task<Void, Never>?
   private var signalingReceiveFailure: String?
 
   init() {
@@ -200,10 +233,15 @@ final class RemoteDesktopController {
   }
 
   func disconnect() {
+    releaseAllInput()
     signalingTask?.cancel()
     leaseTask?.cancel()
+    statisticsTask?.cancel()
+    pointerFlushTask?.cancel()
     signalingTask = nil
     leaseTask = nil
+    statisticsTask = nil
+    pointerFlushTask = nil
     let previousConnection = connection
     let previousSessionID = sessionID
     if !previousSessionID.isEmpty {
@@ -216,6 +254,12 @@ final class RemoteDesktopController {
     }
     videoTrack?.remove(renderer)
     videoTrack = nil
+    pointerChannel?.close()
+    stateChannel?.close()
+    pointerChannel = nil
+    stateChannel = nil
+    pointerChannelDelegate = nil
+    stateChannelDelegate = nil
     peerConnection?.close()
     peerConnection = nil
     connection = nil
@@ -227,6 +271,10 @@ final class RemoteDesktopController {
     pendingRemoteCandidates.removeAll()
     signalingReceiveFailure = nil
     sessionID = ""
+    pointerSequence = 0
+    stateSequence = 0
+    pendingPointer = nil
+    controlActive = false
     routeLabel = ""
     if case .failed = phase {} else { phase = .idle }
   }
@@ -263,14 +311,37 @@ final class RemoteDesktopController {
         userInfo: [NSLocalizedDescriptionKey: "WebRTC could not create a peer connection."])
     }
     peerConnection = peer
+    let pointerConfiguration = RTCDataChannelConfiguration()
+    pointerConfiguration.isOrdered = false
+    pointerConfiguration.maxRetransmits = 0
+    pointerChannel = peer.dataChannel(forLabel: "dieter-pointer-v1", configuration: pointerConfiguration)
+    let stateConfiguration = RTCDataChannelConfiguration()
+    stateConfiguration.isOrdered = true
+    stateChannel = peer.dataChannel(forLabel: "dieter-input-state-v1", configuration: stateConfiguration)
+    let pointerDelegate = RemoteDesktopDataChannelDelegate(owner: self)
+    let stateDelegate = RemoteDesktopDataChannelDelegate(owner: self)
+    pointerChannelDelegate = pointerDelegate
+    stateChannelDelegate = stateDelegate
+    pointerChannel?.delegate = pointerDelegate
+    stateChannel?.delegate = stateDelegate
     let transceiver = RTCRtpTransceiverInit()
     transceiver.direction = .recvOnly
-    guard peer.addTransceiver(of: .video, init: transceiver) != nil else {
+    guard let videoTransceiver = peer.addTransceiver(of: .video, init: transceiver) else {
       throw NSError(
         domain: "DieterScreens", code: 7,
         userInfo: [NSLocalizedDescriptionKey: "WebRTC could not create a receive-only video track."]
       )
     }
+    let h264 = factory.rtpReceiverCapabilities(forKind: kRTCMediaStreamTrackKindVideo).codecs
+      .filter { $0.name.caseInsensitiveCompare("H264") == .orderedSame }
+    guard !h264.isEmpty else {
+      throw NSError(
+        domain: "DieterScreens", code: 12,
+        userInfo: [
+          NSLocalizedDescriptionKey: "This Mac does not provide a compatible H.264 WebRTC decoder."
+        ])
+    }
+    try videoTransceiver.setCodecPreferences(h264, error: ())
     let offer = try await createOffer(peer, constraints: constraints)
     try await setLocalDescription(offer, on: peer)
 
@@ -282,6 +353,12 @@ final class RemoteDesktopController {
       ?? "primary"
     request.maxFps = 30
     request.maxBitrateKbps = 4_000
+    request.maxWidth = 1_920
+    request.maxHeight = 1_080
+    request.control = settings.controlEnabled && capabilities.controlSupported
+      && capabilities.controlPermission == "granted"
+    controlUnavailableReason = settings.controlEnabled && !request.control
+      ? "Accessibility permission is required on the host" : ""
     var description = Dieter_V1_RemoteDesktopSessionDescription()
     description.type = "offer"
     description.sdp = offer.sdp
@@ -388,10 +465,14 @@ final class RemoteDesktopController {
       offerSDP: request.offer.sdp, answerSDP: answerSDP,
       daemonCertificatePEM: connection.daemonCertificatePEM
     )
+    guard binding.controlGranted == request.control, binding.displayID == request.displayID else {
+      throw RemoteDesktopSessionTrust.Failure.invalidBinding
+    }
     guard let peerConnection else { throw CancellationError() }
     try await setRemoteDescription(
       RTCSessionDescription(type: .answer, sdp: answerSDP), on: peerConnection)
     remoteDescriptionApplied = true
+    controlActive = binding.controlGranted
     let candidates = pendingRemoteCandidates
     pendingRemoteCandidates.removeAll()
     for candidate in candidates { try await addIceCandidate(candidate) }
@@ -448,8 +529,12 @@ final class RemoteDesktopController {
 
   fileprivate func connectionStateChanged(_ state: RTCPeerConnectionState) {
     switch state {
-    case .connected: phase = .streaming
-    case .disconnected: phase = .reconnecting
+    case .connected:
+      phase = .streaming
+      startStatistics()
+    case .disconnected:
+      releaseAllInput()
+      phase = .reconnecting
     case .failed:
       fail(
         NSError(
@@ -463,6 +548,132 @@ final class RemoteDesktopController {
   }
 
   private func setReconnecting() { if phase != .idle { phase = .reconnecting } }
+
+  func sendPointerMove(x: CGFloat, y: CGFloat) {
+    guard controlActive else { return }
+    pendingPointer = (normalized(x), normalized(y))
+    guard pointerFlushTask == nil else { return }
+    pointerFlushTask = Task { [weak self] in
+      try? await DieterTaskSleep.seconds(0.008)
+      guard !Task.isCancelled, let self else { return }
+      self.pointerFlushTask = nil
+      guard let point = self.pendingPointer else { return }
+      self.pendingPointer = nil
+      var move = Dieter_V1_RemoteDesktopPointerMove()
+      move.normalizedX = point.0
+      move.normalizedY = point.1
+      self.sendPointer(.pointerMove(move))
+    }
+  }
+
+  func sendPointerButton(
+    _ button: Dieter_V1_RemoteDesktopPointerButton.Button, down: Bool,
+    clickCount: Int, x: CGFloat, y: CGFloat, modifiers: NSEvent.ModifierFlags
+  ) {
+    var value = Dieter_V1_RemoteDesktopPointerButton()
+    value.button = button
+    value.down = down
+    value.clickCount = Int32(max(0, min(3, clickCount)))
+    value.normalizedX = normalized(x)
+    value.normalizedY = normalized(y)
+    value.modifiers = Self.modifiers(modifiers)
+    sendState(.pointerButton(value))
+  }
+
+  func sendScroll(deltaX: CGFloat, deltaY: CGFloat, precise: Bool, modifiers: NSEvent.ModifierFlags) {
+    var value = Dieter_V1_RemoteDesktopScroll()
+    value.deltaX = Int32(clamping: Int(deltaX.rounded()))
+    value.deltaY = Int32(clamping: Int(deltaY.rounded()))
+    value.precise = precise
+    value.modifiers = Self.modifiers(modifiers)
+    sendState(.scroll(value))
+  }
+
+  func sendKey(code: UInt16, down: Bool, repeat isRepeat: Bool, modifiers: NSEvent.ModifierFlags) {
+    var value = Dieter_V1_RemoteDesktopKey()
+    value.keyCode = UInt32(code)
+    value.down = down
+    value.repeat = isRepeat
+    value.modifiers = Self.modifiers(modifiers)
+    sendState(.key(value))
+  }
+
+  func releaseAllInput() {
+    guard controlActive else { return }
+    sendState(.releaseAll(Dieter_V1_RemoteDesktopReleaseAll()))
+  }
+
+  private func sendPointer(_ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload) {
+    guard let channel = pointerChannel, channel.readyState == .open, channel.bufferedAmount < 65_536,
+      let binding else { return }
+    pointerSequence &+= 1
+    send(payload, sequence: pointerSequence, binding: binding, channel: channel)
+  }
+
+  private func sendState(_ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload) {
+    guard controlActive, let channel = stateChannel, channel.readyState == .open,
+      channel.bufferedAmount < 262_144, let binding else { return }
+    stateSequence &+= 1
+    send(payload, sequence: stateSequence, binding: binding, channel: channel)
+  }
+
+  private func send(
+    _ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload, sequence: UInt64,
+    binding: Dieter_V1_RemoteDesktopSessionBinding, channel: RTCDataChannel
+  ) {
+    var input = Dieter_V1_RemoteDesktopInput()
+    input.protocolVersion = binding.inputProtocolVersion
+    input.inputEpoch = binding.inputEpoch
+    input.sequence = sequence
+    input.payload = payload
+    guard let data = try? input.serializedData(), data.count <= 4_096 else { return }
+    _ = channel.sendData(RTCDataBuffer(data: data, isBinary: true))
+  }
+
+  private func normalized(_ value: CGFloat) -> Int32 {
+    Int32((max(0, min(1, value)) * 1_000_000).rounded())
+  }
+
+  private static func modifiers(_ flags: NSEvent.ModifierFlags) -> UInt32 {
+    var value: UInt32 = 0
+    if flags.contains(.shift) { value |= 1 }
+    if flags.contains(.control) { value |= 2 }
+    if flags.contains(.option) { value |= 4 }
+    if flags.contains(.command) { value |= 8 }
+    if flags.contains(.capsLock) { value |= 16 }
+    if flags.contains(.function) { value |= 32 }
+    return value
+  }
+
+  private func startStatistics() {
+    statisticsTask?.cancel()
+    statisticsTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await DieterTaskSleep.seconds(5)
+        guard !Task.isCancelled, let self, let peer = self.peerConnection else { return }
+        let report = await peer.statistics()
+        var inbound: [String: NSObject] = [:]
+        var candidate: [String: NSObject] = [:]
+        for statistic in report.statistics.values {
+          if statistic.type == "inbound-rtp",
+            statistic.values["kind"] as? String == "video"
+          {
+            inbound = statistic.values
+          } else if statistic.type == "candidate-pair",
+            statistic.values["nominated"] as? Bool == true
+          {
+            candidate = statistic.values
+          }
+        }
+        let emitted = (inbound["jitterBufferEmittedCount"] as? NSNumber)?.doubleValue ?? 0
+        let jitter = (inbound["jitterBufferDelay"] as? NSNumber)?.doubleValue ?? 0
+        let jitterMilliseconds = emitted > 0 ? jitter * 1_000 / emitted : 0
+        Self.mediaLogger.info(
+          "receiver framesDecoded=\((inbound["framesDecoded"] as? NSNumber)?.intValue ?? 0) framesDropped=\((inbound["framesDropped"] as? NSNumber)?.intValue ?? 0) packetsLost=\((inbound["packetsLost"] as? NSNumber)?.intValue ?? 0) jitterBufferMs=\(jitterMilliseconds, format: .fixed(precision: 1)) rttMs=\(((candidate["currentRoundTripTime"] as? NSNumber)?.doubleValue ?? 0) * 1_000, format: .fixed(precision: 1))"
+        )
+      }
+    }
+  }
 
   private func fail(_ error: Error) {
     fail(message: DieterRPCFailure.message(for: error))
@@ -559,4 +770,19 @@ private final class RemoteDesktopPeerDelegate: NSObject, RTCPeerConnectionDelega
     guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
     Task { @MainActor [weak owner] in owner?.received(track: track) }
   }
+}
+
+private final class RemoteDesktopDataChannelDelegate: NSObject, RTCDataChannelDelegate,
+  @unchecked Sendable
+{
+  weak var owner: RemoteDesktopController?
+
+  init(owner: RemoteDesktopController) { self.owner = owner }
+
+  func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+    guard dataChannel.readyState == .closed else { return }
+    Task { @MainActor [weak owner] in owner?.releaseAllInput() }
+  }
+
+  func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {}
 }

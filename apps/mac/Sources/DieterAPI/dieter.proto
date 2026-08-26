@@ -1001,6 +1001,61 @@ message RemoteDesktopSessionBinding {
   string expires_at = 3;
   bytes offer_sha256 = 4;
   bytes daemon_signature = 5;
+  bool control_granted = 6;
+  string display_id = 7;
+  uint32 input_protocol_version = 8;
+  bytes input_epoch = 9;
+}
+
+message RemoteDesktopPointerMove {
+  int32 normalized_x = 1;
+  int32 normalized_y = 2;
+}
+
+message RemoteDesktopPointerButton {
+  enum Button {
+    BUTTON_UNSPECIFIED = 0;
+    BUTTON_LEFT = 1;
+    BUTTON_RIGHT = 2;
+    BUTTON_MIDDLE = 3;
+    BUTTON_BACK = 4;
+    BUTTON_FORWARD = 5;
+  }
+  Button button = 1;
+  bool down = 2;
+  int32 click_count = 3;
+  int32 normalized_x = 4;
+  int32 normalized_y = 5;
+  uint32 modifiers = 6;
+}
+
+message RemoteDesktopScroll {
+  int32 delta_x = 1;
+  int32 delta_y = 2;
+  bool precise = 3;
+  uint32 modifiers = 4;
+}
+
+message RemoteDesktopKey {
+  uint32 key_code = 1;
+  bool down = 2;
+  bool repeat = 3;
+  uint32 modifiers = 4;
+}
+
+message RemoteDesktopReleaseAll {}
+
+message RemoteDesktopInput {
+  uint32 protocol_version = 1;
+  bytes input_epoch = 2;
+  uint64 sequence = 3;
+  oneof payload {
+    RemoteDesktopPointerMove pointer_move = 4;
+    RemoteDesktopPointerButton pointer_button = 5;
+    RemoteDesktopScroll scroll = 6;
+    RemoteDesktopKey key = 7;
+    RemoteDesktopReleaseAll release_all = 8;
+  }
 }
 
 message RemoteDesktopSessionState {

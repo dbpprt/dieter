@@ -62,11 +62,6 @@ jobs:
             binary: dieter
             goos: linux
             goarch: arm64
-          - asset: dieter-darwin-arm64
-            target: ./cmd/dieter
-            binary: dieter
-            goos: darwin
-            goarch: arm64
           - asset: dieter-gateway-linux-amd64
             target: ./cmd/dieter-gateway
             binary: dieter-gateway
@@ -109,6 +104,95 @@ jobs:
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  macos-daemon:
+    name: macOS daemon and native capture helper
+    needs: version
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Select Xcode 26.3
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - name: Build daemon package
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          package="stage/dieter-darwin-arm64"
+          mkdir -p "${package}" dist
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath \
+            -ldflags "-s -w -X github.com/dbpprt/dieter/internal/cli.Version=${RELEASE_VERSION}" \
+            -o "${package}/dieter" ./cmd/dieter
+          native/macos-capture/build.sh "${package}/dieter-capture"
+          cp LICENSE "${package}/LICENSE"
+      - name: Require signing configuration
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          for name in CERTIFICATE_BASE64 CERTIFICATE_PASSWORD NOTARY_KEY_BASE64 NOTARY_KEY_ID NOTARY_ISSUER_ID; do
+            if [ -z "${!name}" ]; then
+              echo "${name} is required to publish the macOS daemon and stable capture-helper identity." >&2
+              exit 1
+            fi
+          done
+      - name: Sign and notarize daemon package
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          signing_keychain="${RUNNER_TEMP}/dieter-daemon-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          certificate_path="${RUNNER_TEMP}/developer-id.p12"
+          notary_key_path="${RUNNER_TEMP}/notary-key.p8"
+          submission_path="${RUNNER_TEMP}/Dieter-daemon-notarization.zip"
+          cleanup() { security delete-keychain "${signing_keychain}" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          printf '%s' "${CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
+          printf '%s' "${NOTARY_KEY_BASE64}" | base64 -D > "${notary_key_path}"
+          security create-keychain -p "${keychain_password}" "${signing_keychain}"
+          security set-keychain-settings -lut 21600 "${signing_keychain}"
+          security unlock-keychain -p "${keychain_password}" "${signing_keychain}"
+          security import "${certificate_path}" -k "${signing_keychain}" \
+            -P "${CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "${keychain_password}" "${signing_keychain}"
+          identity="$(security find-identity -v -p codesigning "${signing_keychain}" |
+            awk '/Developer ID Application/ {print $2; exit}')"
+          test -n "${identity}"
+          codesign --force --options runtime --timestamp --identifier com.dbpprt.dieter.daemon \
+            --sign "${identity}" stage/dieter-darwin-arm64/dieter
+          codesign --force --options runtime --timestamp --identifier com.dbpprt.dieter.capture \
+            --sign "${identity}" stage/dieter-darwin-arm64/dieter-capture
+          codesign --verify --strict --verbose=2 stage/dieter-darwin-arm64/dieter
+          codesign --verify --strict --verbose=2 stage/dieter-darwin-arm64/dieter-capture
+          ditto -c -k --sequesterRsrc --keepParent stage/dieter-darwin-arm64 "${submission_path}"
+          xcrun notarytool submit "${submission_path}" --key "${notary_key_path}" \
+            --key-id "${NOTARY_KEY_ID}" --issuer "${NOTARY_ISSUER_ID}" --wait
+      - name: Package daemon
+        run: |
+          set -euo pipefail
+          tar -C stage -czf dist/dieter-darwin-arm64.tar.gz dieter-darwin-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dieter-darwin-arm64
+          path: dist/dieter-darwin-arm64.tar.gz
           if-no-files-found: error
           retention-days: 1
 
@@ -295,7 +379,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: [version, go-binaries, android, macos]
+    needs: [version, go-binaries, macos-daemon, android, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -385,7 +469,14 @@ jobs:
           git clone "https://github.com/${TAP_REPOSITORY}.git" tap
           ruby tap/scripts/update_formula.rb "${VERSION}" "${daemon_sha256}"
           ruby tap/scripts/update_cask.rb "${VERSION}" "${app_sha256}"
-          grep -F 'depends_on "ffmpeg"' tap/Formula/dieter.rb
+          ruby -e '
+            path = "tap/Formula/dieter.rb"
+            formula = File.read(path)
+            formula.sub!(/^  depends_on "ffmpeg"\n/, "")
+            formula.sub!(/^    bin\.install "dieter"$/, "    bin.install \"dieter\", \"dieter-capture\"")
+            File.write(path, formula)
+          '
+          grep -F 'bin.install "dieter", "dieter-capture"' tap/Formula/dieter.rb
           cd tap
           if ! git diff --quiet -- Formula/dieter.rb Casks/dieter-app.rb; then
             git config user.name "github-actions[bot]"
