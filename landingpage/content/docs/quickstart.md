@@ -1,7 +1,7 @@
 ---
 title: "Quick start"
 linkTitle: "Quick start"
-description: "From brew install to your first running agent on a real Git working tree — in a few minutes."
+description: "From brew install to your first running agent on a real Git working tree, in a few minutes."
 group: "Guides"
 weight: 11
 slug: "quickstart"
@@ -30,7 +30,7 @@ open -a Dieter
 ```
 
 Sign in to the same gateway origin. Dieter builds one project directory from
-every enrolled daemon—`orbit` appears tagged with its hostname.
+every enrolled daemon, `orbit` appears tagged with its hostname.
 
 ## 3 · Open a project and create a card
 
@@ -40,7 +40,7 @@ working tree.
 
 {{< callout type="note" title="Comments never wake the agent" >}}
 Human chat messages resume the same harness session and drive a turn. Comments
-are notes for you and your team—they never wake the agent or count as approval.
+are notes for you and your team, they never wake the agent or count as approval.
 {{< /callout >}}
 
 ## 4 · Drive it from the CLI, too
@@ -70,5 +70,5 @@ Managed logs are bounded and stored under `$DIETER_HOME/logs` (default
 
 - **[Enroll more machines](/docs/machines/)** and advertise direct routes over a tailnet or LAN.
 - **[Run your own gateway](/docs/gateway/)** for full control of the control plane.
-- **[Configure harnesses](/docs/harnesses/)** — models, effort, and provider options.
-- **[Screens](/docs/screens/)** — view and control an enrolled machine.
+- **[Configure harnesses](/docs/harnesses/)**, models, effort, and provider options.
+- **[Screens](/docs/screens/)**, view and control an enrolled machine.

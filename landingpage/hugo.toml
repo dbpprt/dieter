@@ -1,6 +1,6 @@
 baseURL = "https://getdieter.com/"
 defaultContentLanguage = "en"
-title = "Dieter — coding agents across all your machines"
+title = "Dieter · coding agents across all your machines"
 
 [languages]
   [languages.en]
@@ -21,7 +21,7 @@ disableKinds = ["taxonomy", "term", "rss"]
   docs = "/docs/:slug/"
 
 [params]
-  description = "Run Codex, Claude Code, Pi, and Oh My Pi across every machine you own — from one open-source app. Chats, boards, and schedules for coding agents at scale."
+  description = "Run Codex, Claude Code, Pi, and Oh My Pi across every machine you own, from one open-source app. Chats, boards, and schedules for coding agents at scale."
   tagline = "Many agents, many machines, one interface."
   subtitle = "Coding agents across all your machines."
   author = "Dieter contributors"

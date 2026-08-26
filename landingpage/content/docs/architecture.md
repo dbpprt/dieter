@@ -30,7 +30,7 @@ the same `dieter.v1.DieterService` API, so the UI does not care which one won.
 
 Gateway access is binary: the configured GitHub identity is allowed or it is
 not. There are no scopes. The gateway stores sessions, daemon identities,
-presence, and route metadata—**never projects, transcripts, files, or harness
+presence, and route metadata, **never projects, transcripts, files, or harness
 credentials.** Each daemon proves its Ed25519 key on every tunnel connection,
 and each relayed request carries a short-lived, method- and payload-bound
 assertion.
@@ -44,7 +44,7 @@ are bounded, and canceling an RPC does not accidentally stop the agent.
 
 {{< callout type="note" title="One API, two transports" >}}
 Because direct TLS and the relay expose the identical `dieter.v1.DieterService`,
-the clients treat them interchangeably—preferring a reachable direct route and
+the clients treat them interchangeably, preferring a reachable direct route and
 otherwise using the relay. Nothing in the UI branches on which won.
 {{< /callout >}}
 

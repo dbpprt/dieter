@@ -1,6 +1,6 @@
 name: Deploy getdieter.com
 
-# Builds the Hugo site in getdieter.com/ and publishes it to GitHub Pages.
+# Builds the Hugo site in landingpage/ and publishes it to GitHub Pages.
 # The base URL is taken from the Pages configuration, so this works unchanged at
 # the project-pages subpath today and at the getdieter.com custom domain later.
 
@@ -8,7 +8,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "getdieter.com/**"
+      - "landingpage/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -44,7 +44,7 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Build
-        working-directory: getdieter.com
+        working-directory: landingpage
         env:
           HUGO_ENVIRONMENT: production
           TZ: Europe/Berlin
@@ -57,7 +57,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: getdieter.com/public
+          path: landingpage/public
 
   deploy:
     needs: build

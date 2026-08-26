@@ -1,14 +1,14 @@
 ---
 title: "Harnesses"
 linkTitle: "Harnesses"
-description: "Dieter runs Codex, Claude Code, Pi, and Oh My Pi through each harness's own configuration — no re-auth, no proxy, no sandbox."
+description: "Dieter runs Codex, Claude Code, Pi, and Oh My Pi through each harness's own configuration, no re-auth, no proxy, no sandbox."
 group: "Reference"
 weight: 21
 slug: "harnesses"
 ---
 
 Dieter uses each harness's normal user configuration. Nothing is proxied or
-re-authenticated—your existing agent credentials are read from their usual
+re-authenticated, your existing agent credentials are read from their usual
 location on the daemon host.
 
 ## Supported harnesses
@@ -47,12 +47,12 @@ DIETER_HARNESS_CONFIG=<path>    # environment
   chats; a single conversation still has at most one active turn.
 - **Parallel-session limits** are enforced at runtime lease acquisition, so
   HTTP, CLI, and scheduled starts share one policy.
-- **Durability** — graceful daemon shutdown parks active harness turns with
+- **Durability**, graceful daemon shutdown parks active harness turns with
   provider continuation state; startup resumes them without replaying the user
   prompt.
 
 {{< callout type="warn" title="Harnesses run unsandboxed as your user" >}}
 Harness workers run locally on the daemon host with the permissions of the user
 running the daemon. This is what keeps agents close to the code, credentials,
-and tools—so treat daemon host access accordingly.
+and tools, so treat daemon host access accordingly.
 {{< /callout >}}

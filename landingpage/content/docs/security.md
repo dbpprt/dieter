@@ -13,8 +13,8 @@ the machine that owns them, and give the gateway nothing worth stealing.**
 ## Binary access, no scopes
 
 Client sessions have binary full access or no access. The configured GitHub
-identity—matched on the immutable numeric `DIETER_GITHUB_ALLOWED_USER_ID`, not
-the mutable login—is allowed or it is not. There are no scopes to over-grant and
+identity, matched on the immutable numeric `DIETER_GITHUB_ALLOWED_USER_ID`, not
+the mutable login, is allowed or it is not. There are no scopes to over-grant and
 no tokens to scope down.
 
 ## Cryptographic daemon identity
@@ -38,7 +38,7 @@ Do not advertise raw port 4242.
 Revoking a daemon closes its relay immediately and invalidates direct access as
 its five-minute bearers expire. Unenrolling from the machine itself signs the
 request with the enrolled identity, revokes the gateway record, closes the
-relay, and removes the local gateway credential—without touching projects,
+relay, and removes the local gateway credential, without touching projects,
 conversations, schedules, or harness settings.
 
 ## What the gateway can and cannot see
@@ -61,7 +61,7 @@ relay calls. **All other paths, including `/`, return 404.**
   are bounded.
 - A canceled relay RPC cancels only that transport RPC and never implicitly
   stops an agent.
-- Screens media never flows through the gateway—only bounded WebRTC signaling
+- Screens media never flows through the gateway, only bounded WebRTC signaling
   and short-lived ICE configuration do.
 
 ## Screens admission

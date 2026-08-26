@@ -10,7 +10,7 @@ your machines, behind one interface. Built with [Hugo](https://gohugo.io)
 ## Develop
 
 ```sh
-cd getdieter.com
+cd landingpage
 hugo server            # http://localhost:1313
 ```
 
@@ -25,7 +25,7 @@ hugo --minify          # outputs to ./public
 ## Structure
 
 ```
-getdieter.com/
+landingpage/
 ├── hugo.toml                 # config, params (brew commands, GitHub, OG)
 ├── content/
 │   ├── _index.md             # home metadata
@@ -67,7 +67,7 @@ unchanged at a subpath or a domain root.
 
 Deployment is automatic. [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)
 builds this directory and publishes it on every push to `main` that touches
-`getdieter.com/**`. The base URL comes from the Pages configuration, so nothing
+`landingpage/**`. The base URL comes from the Pages configuration, so nothing
 here is hard-coded to a host.
 
 - **Now:** served at the project-pages URL, `https://dbpprt.github.io/dieter/`.

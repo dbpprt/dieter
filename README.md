@@ -12,6 +12,12 @@
 <p align="center">
   <a href="https://github.com/dbpprt/dieter/actions/workflows/release.yml"><img src="https://github.com/dbpprt/dieter/actions/workflows/release.yml/badge.svg" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-62B6CB.svg" alt="MIT license"></a>
+  <a href="https://dbpprt.github.io/dieter/"><img src="https://img.shields.io/badge/website-live-1C1C1E.svg" alt="Website"></a>
+</p>
+
+<p align="center">
+  <strong>Website:</strong> <a href="https://dbpprt.github.io/dieter/">dbpprt.github.io/dieter</a>
+  <sub>(getdieter.com once the domain is live)</sub>
 </p>
 
 <p align="center">
@@ -24,14 +30,14 @@
 
 Dieter is pronounced **DEE-ter** (/ˈdiː.tər/).
 
-Dieter runs your local coding agents—Codex, Claude Code, Pi, and Oh My Pi—across
-every machine you own and puts them behind one macOS and Android app. Each agent
-runs on the machine that holds the code, close to its Git working tree,
+Dieter runs your local coding agents (Codex, Claude Code, Pi, and Oh My Pi)
+across every machine you own and puts them behind one macOS and Android app. Each
+agent runs on the machine that holds the code, close to its Git working tree,
 credentials, tools, and durable conversation history. You keep control from
 anywhere.
 
 Dieter started as my own setup for working with coding agents at scale. It is
-open source and will stay that way—contributions and issues are welcome.
+open source and will stay that way. Contributions and issues are welcome.
 
 | Every machine | Every agent | From anywhere |
 | --- | --- | --- |

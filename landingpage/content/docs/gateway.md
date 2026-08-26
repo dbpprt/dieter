@@ -9,7 +9,7 @@ slug: "gateway"
 
 The gateway authenticates one GitHub account and relays to any number of
 enrolled daemons. It stores no code, transcripts, files, or harness
-credentials—only sessions, identities, presence, and routes.
+credentials, only sessions, identities, presence, and routes.
 
 ## Register a GitHub OAuth App
 

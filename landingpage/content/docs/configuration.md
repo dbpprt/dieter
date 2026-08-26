@@ -27,7 +27,7 @@ mutation lock.
 {{< callout type="note" title="Dieter never writes into your repos" >}}
 All Dieter metadata is stored centrally under `DIETER_HOME`. Every project simply
 references an existing Git working tree by canonical path and carries a
-Dieter-generated project ID—nothing is written into the repository itself.
+Dieter-generated project ID, nothing is written into the repository itself.
 {{< /callout >}}
 
 ## Persistence & restarts
@@ -35,7 +35,7 @@ Dieter-generated project ID—nothing is written into the repository itself.
 Graceful daemon shutdown parks active harness turns with provider continuation
 state; startup resumes them without replaying the user prompt. An unverifiable
 orphaned worker is interrupted instead of risking duplicate tool effects. The
-scheduler starts only with `dieter serve`—constructing an HTTP handler in a test
+scheduler starts only with `dieter serve`, constructing an HTTP handler in a test
 never starts background work.
 
 ## Gateway storage
@@ -43,7 +43,7 @@ never starts background work.
 The gateway owns a separate SQLite database under `DIETER_GATEWAY_HOME` (default
 `~/.dieter-gateway`) plus its private signing and daemon-CA keys. It stores
 account sessions, pending OAuth and enrollment records, daemon public
-identities, revocation generations, presence, and route metadata—never
+identities, revocation generations, presence, and route metadata, never
 projects, transcripts, schedules, files, or harness credentials.
 
 ## Gateway environment

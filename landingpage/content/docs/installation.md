@@ -54,7 +54,7 @@ open -a Dieter
 ```
 
 Sign in to the configured gateway. Dieter indexes every enrolled machine and
-shows all of their projects together—there is no machine picker to babysit. The
+shows all of their projects together, there is no machine picker to babysit. The
 same workspace is available from Android.
 
 {{< callout type="tip" title="Upgrading" >}}

@@ -1,0 +1,283 @@
+{{ define "main" }}
+{{ $gh := .Site.Params.github }}
+
+<!-- ============================ HERO ============================ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero__inner">
+      <span class="hero__kicker"><span class="dot"></span>Open source · macOS &amp; Android</span>
+
+      <h1>Many agents, many machines,<span class="line2 grad-text">one interface.</span></h1>
+
+      <p class="hero__sub">
+        Run Codex, Claude Code, Pi, and Oh My Pi across every machine you own. Your
+        office Mac mini, a server at home, your laptop, all from one app.
+      </p>
+
+      <div class="hero__cta">
+        <a class="btn btn--primary btn--lg" href="#install">Get started</a>
+        <a class="btn btn--ghost btn--lg" href="{{ "docs/" | relURL }}">Documentation</a>
+      </div>
+
+      <div class="hero__install">
+        <code><span class="sigil">$</span> brew install dbpprt/tap/dieter</code>
+        <button class="copy-btn" data-copy="brew install dbpprt/tap/dieter" aria-label="Copy install command">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span data-copy-label>Copy</span>
+        </button>
+      </div>
+
+      <p class="hero__meta">Open source · Runs on your machines · MIT</p>
+
+      <!-- Signature install terminal -->
+      <div class="terminal" data-terminal>
+        <div class="terminal__bar">
+          <div class="terminal__dots"><i></i><i></i><i></i></div>
+          <span class="terminal__title">zsh · dieter setup</span>
+          <button class="terminal__replay" aria-label="Replay">
+            {{ partial "icon" "replay" }} replay
+          </button>
+        </div>
+        <div class="terminal__body" aria-label="Animated installation walkthrough"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ PILLARS ============================ -->
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="pillars" data-reveal>
+      <div class="pillar">
+        <h3>{{ partial "icon" "layers" }} Every machine</h3>
+        <p>Enroll your office Mac mini, a home server, your laptop. See one project list.</p>
+      </div>
+      <div class="pillar">
+        <h3>{{ partial "icon" "cpu" }} Every agent</h3>
+        <p>Codex, Claude Code, Pi, and Oh My Pi, each running from its own config.</p>
+      </div>
+      <div class="pillar">
+        <h3>{{ partial "icon" "globe" }} From anywhere</h3>
+        <p>Drive all of it from macOS or Android, wherever you happen to be.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ FEATURES ============================ -->
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <span class="eyebrow">What you get</span>
+      <h2>Built to run a lot of agents at once.</h2>
+      <p>A board of work, spread across your machines, that you can steer and step away from.</p>
+    </div>
+
+    <div class="bento">
+      <article class="card card--wide" id="command-deck" data-reveal>
+        <div class="card__icon">{{ partial "icon" "board" }}</div>
+        <h3>A board for your agents</h3>
+        <p>Every task is a card. Start it, watch an agent work through it, review the result, move it along. Standalone chats too, when you just want to ask.</p>
+        <div class="deckmock" aria-hidden="true">
+          <div class="deckmock__bar"><i></i><i></i><i></i></div>
+          <div class="deckmock__cols">
+            <div class="deckcol">
+              <span class="deckcol__label">Backlog</span>
+              <div class="chip"><span class="status s-wait"></span>Refactor auth flow</div>
+              <div class="chip"><span class="status s-wait"></span>Wire up webhooks</div>
+            </div>
+            <div class="deckcol">
+              <span class="deckcol__label">Running</span>
+              <div class="chip"><span class="status s-run"></span>Add rate limiting</div>
+              <div class="chip"><span class="status s-run"></span>Fix flaky tests</div>
+            </div>
+            <div class="deckcol">
+              <span class="deckcol__label">Review</span>
+              <div class="chip"><span class="status s-done"></span>Upgrade deps</div>
+            </div>
+            <div class="deckcol">
+              <span class="deckcol__label">Done</span>
+              <div class="chip"><span class="status s-done"></span>Ship changelog</div>
+              <div class="chip"><span class="status s-err"></span>Retry queue</div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card card--tall" data-reveal data-reveal-delay="80">
+        <div class="card__icon">{{ partial "icon" "bolt" }}</div>
+        <h3>Run them in parallel</h3>
+        <p>Start many agents at once and let your fastest machines do the heavy lifting while you keep moving.</p>
+      </article>
+
+      <article class="card card--third" data-reveal>
+        <div class="card__icon">{{ partial "icon" "refresh" }}</div>
+        <h3>Pick up anywhere</h3>
+        <p>Conversations are durable. Close the app, switch to your phone, come back later. Nothing is lost.</p>
+      </article>
+
+      <article class="card card--third" data-reveal data-reveal-delay="60">
+        <div class="card__icon">{{ partial "icon" "sliders" }}</div>
+        <h3>Stay in control</h3>
+        <p>See the plan and every step. Queue a follow-up, switch the model, or stop a run.</p>
+      </article>
+
+      <article class="card card--third" data-reveal data-reveal-delay="120">
+        <div class="card__icon">{{ partial "icon" "terminal" }}</div>
+        <h3>Real terminals</h3>
+        <p>A live terminal on any machine that keeps running after you disconnect.</p>
+      </article>
+
+      <article class="card card--half" data-reveal>
+        <div class="card__icon">{{ partial "icon" "monitor" }}</div>
+        <h3>See the screen</h3>
+        <p>When an agent needs a human eye, open the machine&rsquo;s screen and take a look for yourself.</p>
+      </article>
+
+      <article class="card card--half" data-reveal data-reveal-delay="80">
+        <div class="card__icon">{{ partial "icon" "bell" }}</div>
+        <h3>Schedules &amp; alerts</h3>
+        <p>Put recurring work on a cadence, and get a notification the moment an agent finishes or needs a decision.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ HOW IT CONNECTS ============================ -->
+<section class="section section--alt" id="architecture">
+  <div class="wrap">
+    <div class="section-head section-head--center" data-reveal>
+      <span class="eyebrow" style="justify-content:center">How it connects</span>
+      <h2>One app, all your machines.</h2>
+      <p>Sign in once. A small gateway links your devices to the machines running your agents.</p>
+    </div>
+
+    <div class="flow" data-reveal>
+      <div class="flow__tier">
+        <span class="flow__label">You</span>
+        <div class="flow__devices">
+          <span class="flow__pill">{{ partial "icon" "laptop" }} macOS</span>
+          <span class="flow__pill">{{ partial "icon" "phone" }} Android</span>
+        </div>
+      </div>
+
+      <div class="flow__link"><span class="flow__caption">sign in with GitHub</span></div>
+
+      <div class="flow__tier">
+        <span class="flow__gate">{{ partial "icon" "globe" }} Gateway</span>
+        <p class="flow__note">Connects you to your machines. Never stores your code.</p>
+      </div>
+
+      <div class="flow__link"><span class="flow__caption">from anywhere, or direct on your own network</span></div>
+
+      <div class="flow__tier">
+        <span class="flow__label">Your machines</span>
+        <div class="flow__machines">
+          <div class="flow__machine">
+            <div class="flow__machine-top">{{ partial "icon" "server" }} Office Mac mini</div>
+            <div class="flow__agents"><span>Codex</span><span>Claude</span><span>+2</span></div>
+          </div>
+          <div class="flow__machine">
+            <div class="flow__machine-top">{{ partial "icon" "server" }} Home server</div>
+            <div class="flow__agents"><span>Pi</span><span>Codex</span></div>
+          </div>
+          <div class="flow__machine">
+            <div class="flow__machine-top">{{ partial "icon" "laptop" }} Laptop</div>
+            <div class="flow__agents"><span>Claude</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ HARNESSES ============================ -->
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="harness-strip" data-reveal>
+      <p class="harness-strip__lead">Works with the agents you already use.</p>
+      <div class="harness-strip__names">
+        {{ range (index hugo.Data.landing "harnesses") }}<span>{{ .name }}</span>{{ end }}
+      </div>
+      <p class="harness-strip__sub">Each runs from its own config. No re-auth, no proxy.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ OWNERSHIP ============================ -->
+<section class="section" id="security">
+  <div class="wrap">
+    <div class="section-head" data-reveal>
+      <span class="eyebrow">Yours to keep</span>
+      <h2>It runs on your hardware, not someone else&rsquo;s cloud.</h2>
+    </div>
+    <div class="sec-grid">
+      <div class="sec" data-reveal>
+        {{ partial "icon" "home" }}
+        <h3>Your code stays home</h3>
+        <p>Agents run on your machines, next to the code. The gateway only connects you. It never stores projects, chats, or keys.</p>
+      </div>
+      <div class="sec" data-reveal data-reveal-delay="60">
+        {{ partial "icon" "server" }}
+        <h3>Self-hosted</h3>
+        <p>Run your own gateway, tied to a single GitHub account. No seats, no vendor, no lock-in.</p>
+      </div>
+      <div class="sec" data-reveal data-reveal-delay="120">
+        {{ partial "icon" "github" }}
+        <h3>Open source</h3>
+        <p>Free under the MIT license. Read it, fork it, send a pull request.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ INSTALL ============================ -->
+<section class="section section--alt" id="install">
+  <div class="wrap">
+    <div class="section-head section-head--center" data-reveal>
+      <span class="eyebrow" style="justify-content:center">Get started</span>
+      <h2>Two commands on Apple Silicon.</h2>
+      <p>Homebrew installs the daemon and the native app.</p>
+    </div>
+
+    <div class="install-grid">
+      <div class="install-card" data-reveal>
+        <div class="install-card__top">{{ partial "icon" "terminal" }}<h3>Daemon</h3></div>
+        <p>The <code>dieter</code> CLI and local daemon.</p>
+        {{ partial "codeblock" (dict "lines" (slice "brew install dbpprt/tap/dieter" "dieter setup ~/Development/my-project")) }}
+      </div>
+      <div class="install-card" data-reveal data-reveal-delay="90">
+        <div class="install-card__top">{{ partial "icon" "apple" }}<h3>Mac app</h3></div>
+        <p>Install <code>Dieter.app</code>, then sign in.</p>
+        {{ partial "codeblock" (dict "lines" (slice "brew install --cask dbpprt/tap/dieter-app" "open -a Dieter")) }}
+      </div>
+    </div>
+
+    <p style="text-align:center;color:var(--faint);margin-top:22px;font-size:.9rem">
+      Also on Android · build from source with <code style="font-family:var(--font-mono);color:var(--ink)">make build</code> ·
+      <a href="{{ "docs/installation/" | relURL }}" style="color:var(--ink);text-decoration:underline;text-underline-offset:3px">Full guide &rarr;</a>
+    </p>
+  </div>
+</section>
+
+<!-- ============================ CLOSING ============================ -->
+<section class="section section--tight">
+  <div class="wrap">
+    <div class="cta-final" data-reveal>
+      <img src="{{ "brand/mark-mono-dark.svg" | relURL }}" width="52" height="52" alt="" style="margin:0 auto 20px">
+      <span class="eyebrow" style="justify-content:center">Open source</span>
+      <h2 style="margin-top:14px">Built for running agents at scale.</h2>
+      <p>
+        I built Dieter to run my own coding agents across the machines on my desk and
+        around my life. It works for me, so I&rsquo;m sharing it. Free, open source, and
+        staying that way. Contributions welcome.
+      </p>
+      <div class="hero__cta">
+        <a class="btn btn--primary btn--lg" href="#install">Get started</a>
+        <a class="btn btn--ghost btn--lg" href="{{ $gh }}" rel="noopener">{{ partial "icon" "github" }} GitHub</a>
+      </div>
+      <p style="margin-top:26px;font-family:var(--font-mono);font-size:.8rem;color:var(--faint)">Made with &hearts; in Berlin</p>
+    </div>
+  </div>
+</section>
+{{ end }}
