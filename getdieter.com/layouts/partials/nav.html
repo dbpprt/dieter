@@ -1,16 +1,16 @@
-{{ $isDocs := hasPrefix .RelPermalink "/docs" }}
+{{ $isDocs := eq .Section "docs" }}
 <header class="nav" data-nav>
   <div class="nav__inner">
-    <a class="brand" href="/" aria-label="Dieter home">
-      <img class="brand__mark" src="/brand/mark-mono-dark.svg" alt="" width="30" height="30" aria-hidden="true">
+    <a class="brand" href="{{ site.Home.RelPermalink }}" aria-label="Dieter home">
+      <img class="brand__mark" src="{{ "brand/mark-mono-dark.svg" | relURL }}" alt="" width="30" height="30" aria-hidden="true">
       <span class="brand__word">Dieter</span>
     </a>
 
     <nav class="nav__links" aria-label="Primary">
-      <a href="/#features">Features</a>
-      <a href="/#architecture">Architecture</a>
-      <a href="/#security">Security</a>
-      <a href="/docs/"{{ if $isDocs }} aria-current="page"{{ end }}>Docs</a>
+      <a href="{{ site.Home.RelPermalink }}#features">Features</a>
+      <a href="{{ site.Home.RelPermalink }}#architecture">Architecture</a>
+      <a href="{{ site.Home.RelPermalink }}#security">Security</a>
+      <a href="{{ "docs/" | relURL }}"{{ if $isDocs }} aria-current="page"{{ end }}>Docs</a>
     </nav>
 
     <div class="nav__actions">
@@ -18,7 +18,7 @@
         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.24 2.76.12 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.05.78 2.12v3.14c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z"/></svg>
         <span>GitHub</span>
       </a>
-      <a class="btn btn--primary btn--sm" href="{{ if $isDocs }}/docs/installation/{{ else }}/#install{{ end }}">Get Dieter</a>
+      <a class="btn btn--primary btn--sm" href="{{ if $isDocs }}{{ "docs/installation/" | relURL }}{{ else }}{{ site.Home.RelPermalink }}#install{{ end }}">Get Dieter</a>
       <button class="nav__toggle" data-nav-toggle aria-label="Toggle menu" aria-expanded="false">
         <span></span><span></span><span></span>
       </button>

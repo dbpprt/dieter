@@ -9,7 +9,7 @@
     </aside>
 
     <article class="doccontent">
-      <div class="docbread"><a href="/docs/">Docs</a><span>/</span>{{ .Title }}</div>
+      <div class="docbread"><a href="{{ "docs/" | relURL }}">Docs</a><span>/</span>{{ .Title }}</div>
       <h1>{{ .Title }}</h1>
       {{ with .Description }}<p class="doclede">{{ . }}</p>{{ end }}
       <hr class="docdivider">

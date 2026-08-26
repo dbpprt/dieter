@@ -1,0 +1,6 @@
+{{- /* Make root-relative markdown links baseURL-aware so the site works at any
+       mount point (custom domain root or GitHub Pages subpath). */ -}}
+{{- $d := .Destination -}}
+{{- if hasPrefix $d "/" }}{{ $d = (strings.TrimPrefix "/" $d) | relURL }}{{ end -}}
+{{- $ext := or (hasPrefix .Destination "http://") (hasPrefix .Destination "https://") -}}
+<a href="{{ $d }}"{{ with .Title }} title="{{ . }}"{{ end }}{{ if $ext }} rel="noopener"{{ end }}>{{ .Text | safeHTML }}</a>

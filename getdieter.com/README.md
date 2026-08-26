@@ -33,18 +33,19 @@ getdieter.com/
 ├── layouts/
 │   ├── index.html            # landing page (all sections)
 │   ├── 404.html
-│   ├── _default/             # baseof · single · list (docs shell)
+│   ├── robots.txt
+│   ├── _default/             # baseof · single · list · _markup/render-link
 │   ├── partials/             # head · nav · footer · icon · codeblock · docs-*
 │   └── shortcodes/           # callout
 ├── assets/
-│   ├── css/main.css          # the design system (Arctic Console)
-│   ├── css/_chroma.css       # syntax highlighting (themed)
+│   ├── css/main.css          # the design system (light, flat)
+│   ├── css/_chroma.css       # syntax highlighting (github, light)
 │   └── js/main.js            # nav, copy, reveal, TOC spy, install terminal
 ├── data/landing.yaml         # harness cards
 └── static/
     ├── brand/                # logos + favicon (copied from assets/brand)
     ├── fonts/                # Sora variable
-    └── images/gen/           # codex-generated ambient art
+    └── images/               # og-image, app icon
 ```
 
 ## Design system
@@ -59,15 +60,20 @@ Light, flat, and professional — no gradients. Monochrome ink on white:
 - **Signature element** — the animated install terminal in the hero replays the
   real `brew install` → `dieter setup` flow (`assets/js/main.js`).
 
-Ambient art in `static/images/gen/` was generated with the Codex CLI's
-`image_gen` tool and matches the palette.
+Every URL is baseURL-relative (`relURL` / a link render hook), so the site runs
+unchanged at a subpath or a domain root.
 
-## Deploy to GitHub Pages (later)
+## Deploy — GitHub Pages
 
-A ready workflow lives in [`deploy/github-pages.yml`](deploy/github-pages.yml).
-When the domain is live:
+Deployment is automatic. [`.github/workflows/pages.yml`](../.github/workflows/pages.yml)
+builds this directory and publishes it on every push to `main` that touches
+`getdieter.com/**`. The base URL comes from the Pages configuration, so nothing
+here is hard-coded to a host.
 
-1. Move the site to the repo root (or set `deploy/` `working-directory`).
-2. Copy `deploy/github-pages.yml` to `.github/workflows/`.
-3. Add a `static/CNAME` file containing `getdieter.com`.
-4. Point the DNS `A`/`CNAME` records at GitHub Pages and enable Pages → Actions.
+- **Now:** served at the project-pages URL, `https://dbpprt.github.io/dieter/`.
+- **Later (getdieter.com):** buy the domain, add a `getdieter.com` file to
+  `static/`, set it as the custom domain under **Settings → Pages**, and point
+  DNS at GitHub Pages. The workflow picks up the new base URL automatically — no
+  code change.
+
+One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions.**

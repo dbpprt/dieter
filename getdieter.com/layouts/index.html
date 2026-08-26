@@ -16,7 +16,7 @@
 
       <div class="hero__cta">
         <a class="btn btn--primary btn--lg" href="#install">Get started</a>
-        <a class="btn btn--ghost btn--lg" href="/docs/">Documentation</a>
+        <a class="btn btn--ghost btn--lg" href="{{ "docs/" | relURL }}">Documentation</a>
       </div>
 
       <div class="hero__install">
@@ -147,7 +147,7 @@
           <li>{{ partial "icon" "check" }}<span><b>Never stored</b> &mdash; no code, transcripts, or credentials leave home.</span></li>
         </ul>
         <div class="hero__cta" style="justify-content:flex-start;margin-top:26px">
-          <a class="btn btn--ghost" href="/docs/architecture/">How it works</a>
+          <a class="btn btn--ghost" href="{{ "docs/architecture/" | relURL }}">How it works</a>
         </div>
       </div>
 
@@ -301,7 +301,7 @@
 
     <p style="text-align:center;color:var(--faint);margin-top:22px;font-size:.9rem">
       Also on Android · build from source with <code style="font-family:var(--font-mono);color:var(--ink)">make build</code> ·
-      <a href="/docs/installation/" style="color:var(--ink);text-decoration:underline;text-underline-offset:3px">Full guide &rarr;</a>
+      <a href="{{ "docs/installation/" | relURL }}" style="color:var(--ink);text-decoration:underline;text-underline-offset:3px">Full guide &rarr;</a>
     </p>
   </div>
 </section>
@@ -310,7 +310,7 @@
 <section class="section section--tight">
   <div class="wrap">
     <div class="cta-final" data-reveal>
-      <img src="/brand/mark-mono-dark.svg" width="52" height="52" alt="" style="margin:0 auto 20px">
+      <img src="{{ "brand/mark-mono-dark.svg" | relURL }}" width="52" height="52" alt="" style="margin:0 auto 20px">
       <span class="eyebrow" style="justify-content:center">Open source</span>
       <h2 style="margin-top:14px">Built for running agents at scale.</h2>
       <p>

@@ -1,8 +1,8 @@
 <footer class="footer">
   <div class="footer__inner">
     <div class="footer__brand">
-      <a class="brand" href="/" aria-label="Dieter home">
-        <img class="brand__mark" src="/brand/mark-mono-dark.svg" alt="" width="34" height="34" aria-hidden="true">
+      <a class="brand" href="{{ site.Home.RelPermalink }}" aria-label="Dieter home">
+        <img class="brand__mark" src="{{ "brand/mark-mono-dark.svg" | relURL }}" alt="" width="34" height="34" aria-hidden="true">
         <span class="brand__word">Dieter</span>
       </a>
       <p class="footer__tag">Many agents, many machines, one interface.<br>Open source and self-hosted.</p>
@@ -11,25 +11,25 @@
 
     <nav class="footer__col" aria-label="Product">
       <h3>Product</h3>
-      <a href="/#features">Features</a>
-      <a href="/#command-deck">Boards</a>
-      <a href="/#screens">Screens</a>
-      <a href="/#install">Download</a>
+      <a href="{{ site.Home.RelPermalink }}#features">Features</a>
+      <a href="{{ site.Home.RelPermalink }}#command-deck">Boards</a>
+      <a href="{{ site.Home.RelPermalink }}#screens">Screens</a>
+      <a href="{{ site.Home.RelPermalink }}#install">Download</a>
     </nav>
 
     <nav class="footer__col" aria-label="Documentation">
       <h3>Docs</h3>
-      <a href="/docs/">Introduction</a>
-      <a href="/docs/installation/">Installation</a>
-      <a href="/docs/architecture/">Architecture</a>
-      <a href="/docs/cli/">CLI reference</a>
+      <a href="{{ "docs/" | relURL }}">Introduction</a>
+      <a href="{{ "docs/installation/" | relURL }}">Installation</a>
+      <a href="{{ "docs/architecture/" | relURL }}">Architecture</a>
+      <a href="{{ "docs/cli/" | relURL }}">CLI reference</a>
     </nav>
 
     <nav class="footer__col" aria-label="More">
       <h3>Project</h3>
       <a href="{{ .Site.Params.github }}" rel="noopener">GitHub</a>
-      <a href="/docs/security/">Security model</a>
-      <a href="/docs/harnesses/">Harnesses</a>
+      <a href="{{ "docs/security/" | relURL }}">Security model</a>
+      <a href="{{ "docs/harnesses/" | relURL }}">Harnesses</a>
       <a href="{{ .Site.Params.github }}/blob/main/LICENSE" rel="noopener">License · MIT</a>
     </nav>
   </div>
