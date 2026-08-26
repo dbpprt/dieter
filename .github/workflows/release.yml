@@ -133,7 +133,8 @@ jobs:
             -o "${package}/dieter" ./cmd/dieter
           native/macos-capture/build.sh "${package}/dieter-capture"
           cp LICENSE "${package}/LICENSE"
-      - name: Require signing configuration
+      - name: Check signing configuration
+        id: signing
         env:
           CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
@@ -142,13 +143,26 @@ jobs:
           NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
         run: |
           set -euo pipefail
+          configured=0
+          missing=0
           for name in CERTIFICATE_BASE64 CERTIFICATE_PASSWORD NOTARY_KEY_BASE64 NOTARY_KEY_ID NOTARY_ISSUER_ID; do
-            if [ -z "${!name}" ]; then
-              echo "${name} is required to publish the macOS daemon and stable capture-helper identity." >&2
-              exit 1
+            if [ -n "${!name}" ]; then
+              configured=$((configured + 1))
+            else
+              missing=$((missing + 1))
             fi
           done
+          if [ "${configured}" -eq 0 ]; then
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "Developer ID credentials are not configured; publishing the existing ad-hoc-signed daemon and capture helper."
+          elif [ "${missing}" -ne 0 ]; then
+            echo "Developer ID signing is only partially configured." >&2
+            exit 1
+          else
+            echo "enabled=true" >> "${GITHUB_OUTPUT}"
+          fi
       - name: Sign and notarize daemon package
+        if: steps.signing.outputs.enabled == 'true'
         env:
           CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
