@@ -74,6 +74,16 @@ enum DieterOutboxPolicy {
         }
     }
 
+    static func nextIndex(
+        in entries: [DieterOutboxEntry],
+        endpointIDs: [String],
+        now: Date = Date()
+    ) -> Int? {
+        endpointIDs.lazy.compactMap { endpointID in
+            nextIndex(in: entries, endpointID: endpointID, now: now)
+        }.first
+    }
+
     static func nextRetryDelay(
         in entries: [DieterOutboxEntry],
         endpointID: String,
@@ -81,6 +91,22 @@ enum DieterOutboxPolicy {
     ) -> TimeInterval? {
         entries.lazy
             .filter { $0.endpointID == endpointID && $0.serverID == nil && $0.state != .failed }
+            .compactMap(\.nextAttemptAt)
+            .map { max(0, $0.timeIntervalSince(now)) }
+            .min()
+    }
+
+    static func nextRetryDelay(
+        in entries: [DieterOutboxEntry],
+        endpointIDs: Set<String>,
+        now: Date = Date()
+    ) -> TimeInterval? {
+        entries.lazy
+            .filter {
+                endpointIDs.contains($0.endpointID) &&
+                    $0.serverID == nil &&
+                    $0.state != .failed
+            }
             .compactMap(\.nextAttemptAt)
             .map { max(0, $0.timeIntervalSince(now)) }
             .min()

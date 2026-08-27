@@ -48,6 +48,9 @@ func (c *GatewayClient) remoteDesktopPresence() *gatewayv1.RemoteDesktopPresence
 const (
 	gatewayHeartbeatActiveInterval  = 5 * time.Second
 	gatewayHeartbeatIdleMaxInterval = 20 * time.Second
+	gatewayReconnectInitialBackoff  = time.Second
+	gatewayReconnectMaximumBackoff  = 30 * time.Second
+	gatewayReconnectStableAfter     = 30 * time.Second
 )
 
 func nextGatewayHeartbeatInterval(current time.Duration, active bool) time.Duration {
@@ -59,6 +62,17 @@ func nextGatewayHeartbeatInterval(current time.Duration, active bool) time.Durat
 		return gatewayHeartbeatIdleMaxInterval
 	}
 	return next
+}
+
+func gatewayReconnectBackoff(current, connectedFor time.Duration) (time.Duration, time.Duration) {
+	if current <= 0 || connectedFor >= gatewayReconnectStableAfter {
+		current = gatewayReconnectInitialBackoff
+	}
+	next := current * 2
+	if next > gatewayReconnectMaximumBackoff {
+		next = gatewayReconnectMaximumBackoff
+	}
+	return current, next
 }
 
 func (c *GatewayClient) report(state string, err error) {
@@ -79,58 +93,59 @@ func (c *GatewayClient) Run(ctx context.Context) error {
 	if c.Log == nil {
 		c.Log = slog.Default()
 	}
-	backoff := time.Second
+	backoff := gatewayReconnectInitialBackoff
 	for ctx.Err() == nil {
 		c.report(GatewayConnecting, nil)
-		err := c.runOnce(ctx)
+		connectedFor, err := c.runOnce(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
+		delay, nextBackoff := gatewayReconnectBackoff(backoff, connectedFor)
 		c.report(GatewayDisconnected, err)
-		c.Log.Warn("gateway tunnel disconnected", "error", err, "retry", backoff)
-		timer := time.NewTimer(backoff)
+		c.Log.Warn("gateway tunnel disconnected", "error", err, "retry", delay)
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
 			return nil
 		case <-timer.C:
 		}
-		if backoff < 30*time.Second {
-			backoff *= 2
-		}
+		backoff = nextBackoff
 	}
 	return nil
 }
 
-func (c *GatewayClient) runOnce(ctx context.Context) error {
+func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	connection, err := dialGateway(ctx, c.Identity, true)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer connection.Close()
 	stream, err := gatewayv1.NewDaemonLinkServiceClient(connection).Connect(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
-		return err
+		return 0, err
 	}
 	challenge, err := stream.Recv()
 	if err != nil || challenge.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING || challenge.GetDaemonId() != c.Identity.ID || len(challenge.GetPayload()) != 32 {
-		return errors.New("gateway did not provide a valid daemon challenge")
+		return 0, errors.New("gateway did not provide a valid daemon challenge")
 	}
 	proof := linkauth.Sign(c.Identity.PrivateKey, c.Identity.GatewayURL, c.Identity.ID, challenge.GetPayload())
 	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: c.Identity.ID, RequestId: challenge.GetRequestId(), Payload: proof}); err != nil {
-		return err
+		return 0, err
 	}
 	first, err := stream.Recv()
 	if err != nil || first.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK || first.GetDaemonId() != c.Identity.ID || first.GetGeneration() != c.Identity.Generation {
-		return errors.New("gateway rejected the daemon hello")
+		return 0, errors.New("gateway rejected the daemon hello")
 	}
 	c.report(GatewayConnected, nil)
+	connectedAt := time.Now()
+	finish := func(err error) (time.Duration, error) { return time.Since(connectedAt), err }
 	local, err := grpc.NewClient(c.LocalTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.ForceCodec(rpcraw.Codec{}), grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
 	if err != nil {
-		return err
+		return finish(err)
 	}
 	defer local.Close()
 	// Scope every local relayed RPC to this specific tunnel generation. A
@@ -210,11 +225,11 @@ func (c *GatewayClient) runOnce(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return finish(nil)
 		case err := <-sendErr:
-			return err
+			return finish(err)
 		case err := <-recvErr:
-			return err
+			return finish(err)
 		case <-heartbeat.C:
 			enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}, true)
 			heartbeatInterval = nextGatewayHeartbeatInterval(heartbeatInterval, relayActive.Swap(false))

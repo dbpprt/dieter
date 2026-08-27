@@ -2,6 +2,8 @@ package com.dbpprt.dieter.connection
 
 import com.dbpprt.dieter.v1.GlobalDelta
 
+internal const val SYNC_PROJECTION_PERSIST_INTERVAL_MS = 15_000L
+
 internal fun GlobalDelta.changesProjection(): Boolean =
     projectsCount > 0 || removedProjectIdsCount > 0 ||
         boardsCount > 0 || removedBoardIdsCount > 0 ||
@@ -11,3 +13,6 @@ internal fun GlobalDelta.changesProjection(): Boolean =
         scheduleRunsCount > 0 || removedScheduleRunIdsCount > 0 ||
         hasSettings() ||
         conversationsCount > 0 || removedConversationIdsCount > 0
+
+internal fun syncProjectionShouldPersist(lastPersistedAtMillis: Long?, nowMillis: Long): Boolean =
+    lastPersistedAtMillis == null || nowMillis - lastPersistedAtMillis >= SYNC_PROJECTION_PERSIST_INTERVAL_MS

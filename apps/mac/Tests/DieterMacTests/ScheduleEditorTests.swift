@@ -53,3 +53,11 @@ import Testing
     #expect(draft.busyPolicy == schedule.busyPolicy)
     #expect(draft.providerOptions == schedule.providerOptions)
 }
+
+@Test func scheduleEditorPreviewDebounceStopsWhenCancelled() async {
+    let debounce = Task { await ScheduleEditorPreviewDebounce.wait() }
+    await Task.yield()
+    debounce.cancel()
+
+    #expect(await debounce.value == false)
+}

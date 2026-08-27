@@ -18,6 +18,23 @@ func TestGatewayHeartbeatIntervalBacksOffAndResetsOnActivity(t *testing.T) {
 	}
 }
 
+func TestGatewayReconnectBackoffResetsAfterStableSession(t *testing.T) {
+	delay, next := gatewayReconnectBackoff(16*time.Second, gatewayReconnectStableAfter-time.Millisecond)
+	if delay != 16*time.Second || next != gatewayReconnectMaximumBackoff {
+		t.Fatalf("unstable reconnect backoff = (%s, %s)", delay, next)
+	}
+
+	delay, next = gatewayReconnectBackoff(gatewayReconnectMaximumBackoff, gatewayReconnectStableAfter)
+	if delay != gatewayReconnectInitialBackoff || next != 2*gatewayReconnectInitialBackoff {
+		t.Fatalf("stable reconnect backoff = (%s, %s)", delay, next)
+	}
+
+	delay, next = gatewayReconnectBackoff(gatewayReconnectMaximumBackoff, 0)
+	if delay != gatewayReconnectMaximumBackoff || next != gatewayReconnectMaximumBackoff {
+		t.Fatalf("capped reconnect backoff = (%s, %s)", delay, next)
+	}
+}
+
 func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
 	for _, method := range []string{
 		"/dieter.v1.DieterService/StartCard",

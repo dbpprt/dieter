@@ -431,8 +431,7 @@ struct ScheduleEditor: View {
             }
         }
         .task(id: previewKey) {
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
+            guard await ScheduleEditorPreviewDebounce.wait() else { return }
             await previewRuns()
         }
     }
@@ -468,6 +467,17 @@ struct ScheduleEditor: View {
         let saved = await store.saveSchedule(id: schedule?.id, draft: draft)
         saving = false
         if saved { dismiss() }
+    }
+}
+
+enum ScheduleEditorPreviewDebounce {
+    static func wait() async -> Bool {
+        do {
+            try await DieterTaskSleep.milliseconds(300)
+            return !Task.isCancelled
+        } catch {
+            return false
+        }
     }
 }
 

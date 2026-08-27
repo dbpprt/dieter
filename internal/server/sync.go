@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"sort"
+	"sync"
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/proto"
 )
@@ -59,65 +61,151 @@ func syncActivityKey(card *dieterv1.Card) string {
 	return card.GetUpdatedAt()
 }
 
-func (api *grpcAPI) globalSnapshot(limit, recent int) (*dieterv1.GlobalSnapshot, error) {
+type syncProjection struct {
+	snapshot              *dieterv1.GlobalSnapshot
+	conversationRevisions map[string]string
+}
+
+func (api *grpcAPI) globalSnapshot(limit, recent int, previous *syncProjection) (*syncProjection, error) {
 	if limit > 100 {
 		limit = 100
 	}
-	projects, err := api.server.store.ListProjects()
-	if err != nil {
-		return nil, err
-	}
-	state := &dieterv1.State{StorePath: api.server.store.Root}
-	for _, project := range projects {
-		state.Projects = append(state.Projects, protoProject(project))
-		projectState, stateErr := api.server.store.State(project.ID, store.CardFilter{})
-		if stateErr != nil {
-			return nil, stateErr
-		}
-		for _, board := range projectState.Boards {
-			state.Boards = append(state.Boards, protoBoard(board))
-		}
-		for _, card := range projectState.Cards {
-			state.Cards = append(state.Cards, protoCard(card))
-		}
-		for _, chat := range projectState.Chats {
-			state.Chats = append(state.Chats, protoCard(chat))
-		}
-	}
-	snapshot := &dieterv1.GlobalSnapshot{State: state}
-	if limit > 0 {
-		conversationCards := append(append([]*dieterv1.Card(nil), state.Cards...), state.Chats...)
-		if recent > 0 {
-			conversationCards = syncConversationCards(conversationCards, recent)
-		}
-		for _, card := range conversationCards {
-			conversation, conversationErr := api.conversationSnapshot(card.GetId(), limit, nil)
-			if conversationErr != nil {
-				return nil, conversationErr
-			}
-			snapshot.Conversations = append(snapshot.Conversations, conversation)
+
+	// The four independent roots are loaded concurrently. GlobalState itself
+	// scans each workspace directory once, instead of once per project.
+	var state model.State
+	var schedules []model.Schedule
+	var runs []model.ScheduleRun
+	var settings model.Settings
+	errs := make([]error, 4)
+	var roots sync.WaitGroup
+	roots.Add(4)
+	go func() { defer roots.Done(); state, errs[0] = api.server.store.GlobalState() }()
+	go func() { defer roots.Done(); schedules, errs[1] = api.server.store.ListSchedules("") }()
+	go func() { defer roots.Done(); runs, errs[2] = api.server.store.ListScheduleRuns("", 0) }()
+	go func() { defer roots.Done(); settings, errs[3] = api.server.store.Settings() }()
+	roots.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return nil, err
 		}
 	}
-	schedules, err := api.server.store.ListSchedules("")
-	if err != nil {
-		return nil, err
+
+	protoState := protoState(state)
+	snapshot := &dieterv1.GlobalSnapshot{State: protoState, Settings: protoSettings(settings)}
+	runsBySchedule := make(map[string][]model.ScheduleRun, len(schedules))
+	for _, run := range runs {
+		if len(runsBySchedule[run.ScheduleID]) < 20 {
+			runsBySchedule[run.ScheduleID] = append(runsBySchedule[run.ScheduleID], run)
+		}
 	}
 	for _, schedule := range schedules {
 		snapshot.Schedules = append(snapshot.Schedules, protoSchedule(schedule))
-		runs, runsErr := api.server.store.ListScheduleRuns(schedule.ID, 20)
-		if runsErr != nil {
-			return nil, runsErr
-		}
-		for _, run := range runs {
+		for _, run := range runsBySchedule[schedule.ID] {
 			snapshot.ScheduleRuns = append(snapshot.ScheduleRuns, protoScheduleRun(run))
 		}
 	}
-	settings, err := api.server.store.Settings()
-	if err != nil {
-		return nil, err
+
+	projection := &syncProjection{snapshot: snapshot, conversationRevisions: make(map[string]string)}
+	if limit <= 0 {
+		return projection, nil
 	}
-	snapshot.Settings = protoSettings(settings)
-	return snapshot, nil
+
+	conversationCards := append(append([]*dieterv1.Card(nil), protoState.Cards...), protoState.Chats...)
+	if recent > 0 {
+		conversationCards = syncConversationCards(conversationCards, recent)
+	}
+	snapshot.Conversations = make([]*dieterv1.ConversationSnapshot, len(conversationCards))
+	projectsByID := make(map[string]model.Project, len(state.Projects))
+	for _, project := range state.Projects {
+		projectsByID[project.ID] = project
+	}
+	boardsByID := make(map[string]model.Board, len(state.Boards))
+	for _, board := range state.Boards {
+		boardsByID[board.ID] = board
+	}
+	cardsByID := make(map[string]model.Card, len(state.Cards)+len(state.Chats))
+	for _, card := range state.Cards {
+		cardsByID[card.ID] = card
+	}
+	for _, card := range state.Chats {
+		cardsByID[card.ID] = card
+	}
+	previousConversations := make(map[string]*dieterv1.ConversationSnapshot)
+	previousRevisions := make(map[string]string)
+	if previous != nil {
+		previousRevisions = previous.conversationRevisions
+		for _, conversation := range previous.snapshot.GetConversations() {
+			previousConversations[conversation.GetDetail().GetCard().GetId()] = conversation
+		}
+	}
+
+	// Conversation tails are independent and can contain large tool payloads.
+	// Build at most eight in parallel, and reuse unchanged serialized snapshots
+	// by checking their constant-time durable revision first.
+	var conversations sync.WaitGroup
+	var resultMu sync.Mutex
+	var firstErr error
+	revisions := make([]string, len(conversationCards))
+	workers := make(chan struct{}, 8)
+	for index, card := range conversationCards {
+		workers <- struct{}{}
+		conversations.Add(1)
+		go func(index int, card *dieterv1.Card) {
+			defer conversations.Done()
+			defer func() { <-workers }()
+			cardID := card.GetId()
+			revision, err := api.server.store.ConversationRevisionByID(cardID)
+			if err != nil {
+				resultMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				resultMu.Unlock()
+				return
+			}
+			comments, err := api.server.store.ListComments(cardID, 0)
+			if err != nil {
+				resultMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				resultMu.Unlock()
+				return
+			}
+			modelCard := cardsByID[cardID]
+			detail := model.CardDetail{
+				Card: modelCard, Project: projectsByID[modelCard.ProjectID],
+				Board: boardsByID[modelCard.BoardID], Comments: comments,
+			}
+			protoDetail := protoCardDetail(detail)
+			if cached := previousConversations[cardID]; cached != nil &&
+				previousRevisions[cardID] == revision && proto.Equal(cached.GetDetail(), protoDetail) {
+				snapshot.Conversations[index] = cached
+				revisions[index] = revision
+				return
+			}
+			conversation, err := api.conversationAtRevision(cardID, revision)
+			if err != nil {
+				resultMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				resultMu.Unlock()
+				return
+			}
+			snapshot.Conversations[index] = api.conversationSnapshotFrom(detail, conversation, limit, nil)
+			revisions[index] = revision
+		}(index, card)
+	}
+	conversations.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	for index, card := range conversationCards {
+		projection.conversationRevisions[card.GetId()] = revisions[index]
+	}
+	return projection, nil
 }
 
 func globalDelta(previous, current *dieterv1.GlobalSnapshot) *dieterv1.GlobalDelta {
@@ -274,16 +362,16 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest
 	// Delta framing applies to metadata-only clients and to bounded
 	// conversation subscribers; only the legacy full-snapshot mode is exempt.
 	deltaMode := request.GetConversationLimit() == 0 || request.GetRecentConversationLimit() > 0
-	var projection *dieterv1.GlobalSnapshot
+	var projection *syncProjection
 	if deltaMode || reset || sequence == 0 {
 		if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
 			return waitErr
 		}
-		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()))
+		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()), nil)
 		if snapshotErr != nil {
 			return snapshotErr
 		}
-		if err := send(&dieterv1.SyncFrame{Cursor: protoSyncCursor(cursor), Snapshot: snapshot, Reset_: reset}); err != nil {
+		if err := send(&dieterv1.SyncFrame{Cursor: protoSyncCursor(cursor), Snapshot: snapshot.snapshot, Reset_: reset}); err != nil {
 			return err
 		}
 		sequence = cursor.Sequence
@@ -291,7 +379,7 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest
 	}
 	if projection == nil {
 		var projectionErr error
-		projection, projectionErr = api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()))
+		projection, projectionErr = api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()), nil)
 		if projectionErr != nil {
 			return projectionErr
 		}
@@ -306,13 +394,13 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest
 			if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
 				return waitErr
 			}
-			snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()))
+			snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()), nil)
 			if snapshotErr != nil {
 				return snapshotErr
 			}
 			cursor, sequence = current, current.Sequence
 			projection = snapshot
-			return send(&dieterv1.SyncFrame{Cursor: protoSyncCursor(current), Snapshot: snapshot, Reset_: true})
+			return send(&dieterv1.SyncFrame{Cursor: protoSyncCursor(current), Snapshot: snapshot.snapshot, Reset_: true})
 		}
 		if len(events) == 0 {
 			return nil
@@ -320,21 +408,21 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest
 		if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
 			return waitErr
 		}
-		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()))
+		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()), projection)
 		if snapshotErr != nil {
 			return snapshotErr
 		}
 		last := events[len(events)-1]
 		frame := &dieterv1.SyncFrame{
-			Cursor: protoSyncCursor(store.SyncCursor{Epoch: current.Epoch, Sequence: last.Sequence}),
+			Cursor: protoSyncCursor(current),
 			Event:  protoSyncEvent(last),
 		}
 		if deltaMode {
-			if delta := globalDelta(projection, snapshot); !globalDeltaEmpty(delta) {
+			if delta := globalDelta(projection.snapshot, snapshot.snapshot); !globalDeltaEmpty(delta) {
 				frame.Delta = delta
 			}
 		} else {
-			frame.Snapshot = snapshot
+			frame.Snapshot = snapshot.snapshot
 		}
 		for _, event := range events {
 			frame.Events = append(frame.Events, protoSyncEvent(event))
@@ -342,7 +430,10 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest
 		if err := send(frame); err != nil {
 			return err
 		}
-		sequence = last.Sequence
+		// The projection was materialized after every mutation through current.
+		// Advance directly to that high-water mark even when the durable journal
+		// batch contains more than 256 rows, so a burst becomes one delta build.
+		sequence = current.Sequence
 		cursor = current
 		projection = snapshot
 		return nil

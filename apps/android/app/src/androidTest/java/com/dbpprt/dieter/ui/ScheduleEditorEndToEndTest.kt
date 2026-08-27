@@ -29,6 +29,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -50,7 +51,7 @@ class ScheduleEditorEndToEndTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val arguments = InstrumentationRegistry.getArguments()
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
-        require(token.isNotBlank()) { "Pass isolatedGatewayToken for the isolated gateway" }
+        assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243
         val endpoint = DieterEndpoint(
             id = "android_schedule_e2e",

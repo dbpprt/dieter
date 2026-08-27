@@ -3,6 +3,7 @@ package com.dbpprt.dieter.ui
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
+import com.dbpprt.dieter.connection.MachineOutboxSummary
 import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.v1.Project
 import org.junit.Assert.assertEquals
@@ -22,7 +23,7 @@ class WorkspaceFreshnessPresentationTest {
     }
 
     @Test
-    fun liveRefreshKeepsCachedWorkspaceInteractiveWhileRealOutagesMuteIt() {
+    fun liveRefreshAndOfflineOutboxSurfacesStayInteractiveWhileReadOnlySurfacesMute() {
         val refreshing = workspaceSurfaceTreatment(
             showsSynchronizedWorkspace = true,
             hasCachedWorkspace = true,
@@ -39,6 +40,8 @@ class WorkspaceFreshnessPresentationTest {
         )
         assertEquals(WorkspaceSurfaceTreatment.UNAVAILABLE, unavailable)
         assertTrue(unavailable.blocksInteraction)
+        assertFalse(workspaceInteractionBlocked(unavailable, supportsOfflineOutbox = true))
+        assertTrue(workspaceInteractionBlocked(unavailable, supportsOfflineOutbox = false))
 
         assertEquals(
             WorkspaceSurfaceTreatment.CURRENT,
@@ -106,6 +109,13 @@ class WorkspaceFreshnessPresentationTest {
         assertEquals("Working from cached data", offline.title)
         assertFalse(offline.working)
         assertTrue(offline.usesOfflineAccent)
+
+        val queueable = workspaceStatusPresentation(
+            ConnectionPhase.UNAVAILABLE,
+            showingCachedData = true,
+            supportsOfflineOutbox = true,
+        )
+        assertTrue(queueable.detail.contains("messages and new conversations queue"))
     }
 
     @Test
@@ -140,5 +150,24 @@ class WorkspaceFreshnessPresentationTest {
         assertTrue(live.presentedProjectHosts.getValue(project.id).online)
         assertEquals(EndpointPhase.CONNECTED, live.presentedEndpointConnections.single().phase)
         assertTrue(projectScopedNavigationEnabled(live))
+    }
+
+    @Test
+    fun queuedMachineRemainsVisibleWhenGatewayDiscoveryIsUnavailable() {
+        val state = DieterUiState(
+            connectionPhase = ConnectionPhase.RECONNECTING,
+            endpointConnections = listOf(EndpointConnection("gateway", "Gateway", "https://example.test")),
+            projectHosts = mapOf(
+                "project-one" to ProjectHost("gateway#machine-one", "machine-one", "Studio Mac", online = false),
+            ),
+            machineOutboxSummaries = mapOf(
+                "gateway#machine-one" to MachineOutboxSummary(1, 0, retrying = false, failed = false),
+            ),
+        )
+
+        val machine = state.presentedEndpointConnections.single { it.id == "gateway#machine-one" }
+        assertEquals("Studio Mac", machine.label)
+        assertFalse(machine.online)
+        assertEquals(EndpointPhase.PENDING, machine.phase)
     }
 }

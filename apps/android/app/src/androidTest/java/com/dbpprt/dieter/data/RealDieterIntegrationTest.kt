@@ -82,7 +82,8 @@ class RealDieterIntegrationTest {
         try {
             val gateway = repository.activeEndpoint
             val daemons = repository.daemons().daemonsList
-            val daemon = daemons.firstOrNull { it.id == gateway.daemonId } ?: daemons.firstOrNull()
+            val daemon = daemons.firstOrNull { it.id == gateway.daemonId && it.online }
+                ?: daemons.firstOrNull { it.online }
                 ?: error("The authenticated account must have an enrolled Dieter daemon")
             val endpoint = gateway.copy(
                 id = "${gateway.credentialId}#${daemon.id}",
@@ -132,7 +133,8 @@ class RealDieterIntegrationTest {
         try {
             val gateway = repository.activeEndpoint
             val daemons = repository.daemons().daemonsList
-            val daemon = daemons.firstOrNull { it.id == gateway.daemonId } ?: daemons.firstOrNull()
+            val daemon = daemons.firstOrNull { it.id == gateway.daemonId && it.online }
+                ?: daemons.firstOrNull { it.online }
                 ?: error("The authenticated account must have an enrolled Dieter daemon")
             val endpoint = gateway.copy(
                 id = "${gateway.credentialId}#${daemon.id}",
@@ -255,7 +257,8 @@ class RealDieterIntegrationTest {
     private suspend fun connectToEnrolledDaemon(repository: GrpcDieterRepository) {
         val gateway = repository.activeEndpoint
         val daemons = repository.daemons().daemonsList
-        val daemon = daemons.firstOrNull { it.id == gateway.daemonId } ?: daemons.firstOrNull()
+        val daemon = daemons.firstOrNull { it.id == gateway.daemonId && it.online }
+            ?: daemons.firstOrNull { it.online }
             ?: error("The authenticated account must have an enrolled Dieter daemon")
         val endpoint = gateway.copy(
             id = "${gateway.credentialId}#${daemon.id}",

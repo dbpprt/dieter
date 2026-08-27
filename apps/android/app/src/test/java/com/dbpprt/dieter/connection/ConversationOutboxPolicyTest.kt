@@ -24,6 +24,21 @@ import io.grpc.Status
 
 class ConversationOutboxPolicyTest {
     @Test
+    fun pendingEntriesRetargetFromGatewayFallbackToKnownProjectMachine() {
+        val message = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "message", null).copy(
+            endpointId = "gateway",
+            request = SendMessageRequest.newBuilder().setCardId("card-one").build().toByteArray(),
+        )
+        val retargeted = retargetOutboxEndpoints(
+            listOf(message),
+            cardProjects = mapOf("card-one" to "project-one"),
+            projectEndpoints = mapOf("project-one" to "gateway#machine-one"),
+        )
+
+        assertEquals("gateway#machine-one", retargeted.single().endpointId)
+    }
+
+    @Test
     fun `permanent failure does not block later create`() {
         val failed = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "msg_failed", null)
             .copy(state = OutboxState.FAILED)
@@ -58,6 +73,23 @@ class ConversationOutboxPolicyTest {
                 nowMillis = 100,
             ),
         )
+    }
+
+    @Test
+    fun `machine summary groups only undelivered work by owning endpoint`() {
+        val message = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "message", null)
+            .copy(endpointId = "offline", state = OutboxState.RETRYING)
+        val change = outboxEntry(OutboxKind.CREATE_CHAT, byteArrayOf(), "chat", null)
+            .copy(endpointId = "offline")
+        val accepted = outboxEntry(OutboxKind.CREATE_CARD, byteArrayOf(), "card", "server")
+            .copy(endpointId = "offline")
+
+        val summary = machineOutboxSummaries(listOf(message, change, accepted)).getValue("offline")
+
+        assertEquals(1, summary.messageCount)
+        assertEquals(1, summary.changeCount)
+        assertTrue(summary.retrying)
+        assertEquals("2 items queued — delivers when it reconnects.", summary.deliveryLabel)
     }
 
     @Test

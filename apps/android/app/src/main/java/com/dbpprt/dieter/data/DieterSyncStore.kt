@@ -70,6 +70,13 @@ class DieterSyncStore(
         projectionFile(scope, "snapshot.pb").baseFile.lastModified().takeIf { it > 0L }
 
     @Synchronized
+    fun projectionPersistedAtMillis(scope: String): Long? =
+        maxOf(
+            projectionFile(scope, "snapshot.pb").baseFile.lastModified(),
+            projectionFile(scope, "cursor.pb").baseFile.lastModified(),
+        ).takeIf { it > 0L }
+
+    @Synchronized
     fun saveProjection(scope: String, snapshot: GlobalSnapshot?, cursor: SyncCursor?) {
         if (snapshot != null) write(projectionFile(scope, "snapshot.pb"), snapshot.toByteArray())
         if (cursor != null) write(projectionFile(scope, "cursor.pb"), cursor.toByteArray())

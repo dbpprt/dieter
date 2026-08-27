@@ -198,6 +198,23 @@ enum NativeUISmokeRunner {
             await captureAppearances(window, named: "\(step.name).png", in: output)
 
             if step.section == .schedules {
+                let cancellationWindow = NSPanel(
+                    contentRect: NSRect(x: 0, y: 0, width: 980, height: 820),
+                    styleMask: [.titled, .closable, .fullSizeContentView],
+                    backing: .buffered,
+                    defer: false
+                )
+                cancellationWindow.title = "New schedule cancellation"
+                cancellationWindow.contentViewController = NSHostingController(
+                    rootView: ScheduleEditor(schedule: nil).environment(store)
+                )
+                window.beginSheet(cancellationWindow, completionHandler: { _ in })
+                try? await DieterTaskSleep.milliseconds(50)
+                window.endSheet(cancellationWindow)
+                cancellationWindow.contentViewController = nil
+                try? await DieterTaskSleep.milliseconds(350)
+                results["05a-schedule-editor-cancellation"] = "passed"
+
                 let editorWindow = NSPanel(
                     contentRect: NSRect(x: 0, y: 0, width: 980, height: 820),
                     styleMask: [.titled, .closable, .fullSizeContentView],
@@ -420,7 +437,8 @@ enum NativeUISmokeRunner {
                 try? await DieterTaskSleep.seconds(1)
                 await store.openBoard(board.id, projectID: project.id)
                 store.errorMessage = nil
-                if let liveCard = store.state.cards.first(where: { $0.boardID == board.id }) {
+                let liveCard = store.state.cards.first(where: { $0.boardID == board.id })
+                if let liveCard {
                     await store.openConversation(cardID: liveCard.id)
                     _ = await waitUntil(timeout: 5) {
                         store.conversation?.detail.card.id == liveCard.id && !store.conversationLoading
@@ -434,6 +452,20 @@ enum NativeUISmokeRunner {
                     try? await DieterTaskSleep.seconds(1)
                 } else {
                     store.disconnect()
+                }
+                let offlineMessage = "Offline outbox smoke \(UUID().uuidString.lowercased())"
+                if let liveCard, let machine = store.machine(forProjectID: liveCard.projectID) {
+                    store.composerText = offlineMessage
+                    await store.sendComposer()
+                    let queued = await waitUntil(timeout: 5) {
+                        store.outboxSummary(for: machine)?.messageCount == 1
+                    }
+                    results["17a-offline-message-queued"] = queued && store.composerText.isEmpty
+                        ? "passed"
+                        : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), draft=\(store.composerText)"
+                    await captureAppearances(window, named: "17a-offline-message-queued.png", in: output)
+                } else {
+                    results["17a-offline-message-queued"] = "failed: live card or owning machine missing"
                 }
                 await store.openBoard(cachedBoard.id, projectID: project.id)
                 try? await DieterTaskSleep.milliseconds(700)
@@ -450,6 +482,29 @@ enum NativeUISmokeRunner {
                     ? "passed"
                     : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.phase.label), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
                 await captureAppearances(window, named: "17-offline-cached-board-navigation.png", in: output)
+
+                if let trigger = offlineTrigger(), let liveCard {
+                    try? FileManager.default.removeItem(at: trigger)
+                    let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
+                    let delivered = await waitUntil(timeout: 15) {
+                        guard let machine = store.machine(forProjectID: liveCard.projectID) else { return false }
+                        return store.outboxSummary(for: machine) == nil
+                    }
+                    if reconnected && delivered {
+                        await store.openConversation(cardID: liveCard.id)
+                    }
+                    let visible = await waitUntil(timeout: 10) {
+                        store.conversationMessages.contains { message in
+                            message.parts.contains { $0.type == "text" && $0.text == offlineMessage }
+                        }
+                    }
+                    results["17b-reconnected-message-delivered"] = reconnected && delivered && visible
+                        ? "passed"
+                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible)"
+                    await captureAppearances(window, named: "17b-reconnected-message-delivered.png", in: output)
+                } else {
+                    results["17b-reconnected-message-delivered"] = "failed: reconnect trigger or live card missing"
+                }
             } catch {
                 results["17-offline-cached-board-navigation"] = "failed: could not prepare cached board: \(error.localizedDescription)"
             }

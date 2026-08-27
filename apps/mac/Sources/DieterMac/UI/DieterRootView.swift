@@ -452,18 +452,24 @@ struct AppSidebar: View {
                         SidebarConnectionStatus()
                     }
                     ForEach(store.machines) { machine in
-                        HStack(spacing: 8) {
-                            Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 6, height: 6)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(machine.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                                Text(machineDetail(machine))
-                                    .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 8) {
+                                Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 6, height: 6)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(machine.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                                    Text(machineDetail(machine))
+                                        .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                                }
+                                Spacer()
                             }
-                            Spacer()
+                            .padding(.horizontal, 8).frame(height: 32)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
+
+                            if let summary = store.outboxSummary(for: machine) {
+                                machineQueueBanner(machine: machine, summary: summary)
+                            }
                         }
-                        .padding(.horizontal, 8).frame(height: 32)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
                     }
                 }
                 .padding(8)
@@ -492,13 +498,45 @@ struct AppSidebar: View {
             if store.workspaceFreshness == .syncing { return "Waiting for live sync…" }
             return "Unavailable · \(MachinePresenceText.lastSeen(machine.lastSeenAt))"
         }
-        guard machine.online else { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
+        guard machine.online else {
+            let suffix = store.outboxSummary(for: machine).map { summary in
+                summary.failed ? " · attention needed" : (summary.retrying ? " · retrying" : " · queued")
+            } ?? ""
+            return MachinePresenceText.lastSeen(machine.lastSeenAt) + suffix
+        }
         guard let status = store.connectionStatus(for: machine) else { return "Measuring…" }
         return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms"
     }
 
     private func machineIsPresentedOnline(_ machine: DieterEndpoint) -> Bool {
         store.workspaceIsLive && machine.online
+    }
+
+    private func machineQueueBanner(machine: DieterEndpoint, summary: MachineOutboxSummary) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.circle")
+                Text(machine.online ? "Delivering to \(machine.name)" : "\(machine.name) is unreachable")
+                    .fontWeight(.semibold).lineLimit(1)
+            }
+            .font(.system(size: 10))
+            Text(summary.deliveryLabel)
+                .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Retry now") { Task { await store.retryOutbox(for: machine) } }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).retry")
+            }
+        }
+        .foregroundStyle(DieterTheme.amber)
+        .padding(8)
+        .background(DieterTheme.amber.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(DieterTheme.amber.opacity(0.4)))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).queue")
     }
 }
 

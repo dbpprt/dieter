@@ -41,6 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
@@ -54,6 +55,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
@@ -68,7 +71,10 @@ enum class ConnectionPhase { STOPPED, CONNECTING, SYNCING, CONNECTED, RECONNECTI
 
 enum class EndpointPhase { PENDING, TRYING, CONNECTED, FAILED }
 
-internal const val SYNC_STALE_AFTER_MS = 20_000L
+// WatchSync emits every 15 seconds. Rebuild the transport only after three
+// missed frames so ordinary Android scheduling jitter or one slow projection
+// cannot turn a healthy connection into a reconnect loop.
+internal const val SYNC_STALE_AFTER_MS = 45_000L
 
 internal fun syncStreamIsStale(
     lastFrameAtMs: Long,
@@ -124,6 +130,7 @@ data class DieterConnectionState(
     val pendingMessageIds: Set<String> = emptySet(),
     val acceptedOutboxIds: Set<String> = emptySet(),
     val failedOutboxIds: Set<String> = emptySet(),
+    val machineOutboxSummaries: Map<String, MachineOutboxSummary> = emptyMap(),
     val resolvedConversationIds: Map<String, String> = emptyMap(),
     val error: String? = null,
 )
@@ -153,6 +160,10 @@ class DieterConnectionManager(
     private var syncCursor = activeProjectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadCursor).takeIf { globalSnapshot != null }
     private var activeProjectionRefreshedAtMillis = activeProjectionKey.takeIf(String::isNotBlank)
         ?.let(syncStore::projectionRefreshedAtMillis)
+    private var lastProjectionPersistedAtMillis = activeProjectionKey.takeIf(String::isNotBlank)
+        ?.let(syncStore::projectionPersistedAtMillis)
+    private var projectionSnapshotDirty = false
+    private var projectionCursorDirty = false
     private val outbox = syncStore.loadOutbox()
     private val conversationIdResolutions = linkedMapOf<String, String>().apply {
         outbox.forEach { entry ->
@@ -328,6 +339,9 @@ class DieterConnectionManager(
             globalSnapshot = null
             syncCursor = null
             activeProjectionRefreshedAtMillis = null
+            lastProjectionPersistedAtMillis = null
+            projectionSnapshotDirty = false
+            projectionCursorDirty = false
             lastSyncFrameAtMs = 0L
             _state.update {
                 it.copy(
@@ -429,6 +443,9 @@ class DieterConnectionManager(
             globalSnapshot = null
             syncCursor = null
             activeProjectionRefreshedAtMillis = null
+            lastProjectionPersistedAtMillis = null
+            projectionSnapshotDirty = false
+            projectionCursorDirty = false
         }
         _state.update {
             it.copy(
@@ -476,6 +493,9 @@ class DieterConnectionManager(
         globalSnapshot = null
         syncCursor = null
         activeProjectionRefreshedAtMillis = null
+        lastProjectionPersistedAtMillis = null
+        projectionSnapshotDirty = false
+        projectionCursorDirty = false
         repository.replaceEndpoints(listOf(gateway))
         _state.update {
             it.copy(
@@ -633,13 +653,17 @@ class DieterConnectionManager(
                         error = null,
                     )
                 }
-                refreshMachineDirectory()
                 retryAttempt = 0
                 coroutineScope {
                     launch { collectGlobalSync(currentGeneration) }
                     launch { monitorGlobalSync(currentGeneration) }
                     launch { drainOutbox(currentGeneration) }
                     launch { watchDaemonPresence(currentGeneration) }
+                    // Cross-machine discovery must not delay the selected
+                    // daemon's delta stream. The cached directory is usable
+                    // immediately and this refresh fills in newer routes in
+                    // the background.
+                    launch { runCatching { refreshMachineDirectory() } }
                     launch { maintainMachineDirectory(currentGeneration) }
                     launch {
                         val refreshAt = repository.directRefreshAtMillis() ?: return@launch awaitCancellation()
@@ -790,14 +814,20 @@ class DieterConnectionManager(
             if (refreshedConversationIds.isNotEmpty()) {
                 activeProjectionRefreshedAtMillis = receivedAtMillis
             }
+            projectionSnapshotDirty = projectionSnapshotDirty || projectionChanged || refreshedConversationIds.isNotEmpty()
+            projectionCursorDirty = projectionCursorDirty || frame.hasCursor() && !frame.heartbeat
             if (activeProjectionKey.isNotBlank() &&
-                (projectionChanged || refreshedConversationIds.isNotEmpty() || frame.hasCursor() && !frame.heartbeat)
+                (projectionSnapshotDirty || projectionCursorDirty) &&
+                syncProjectionShouldPersist(lastProjectionPersistedAtMillis, receivedAtMillis)
             ) {
                 syncStore.saveProjection(
                     activeProjectionKey,
-                    globalSnapshot.takeIf { projectionChanged || refreshedConversationIds.isNotEmpty() },
-                    frame.cursor.takeIf { frame.hasCursor() },
+                    globalSnapshot.takeIf { projectionSnapshotDirty },
+                    syncCursor.takeIf { projectionCursorDirty },
                 )
+                lastProjectionPersistedAtMillis = receivedAtMillis
+                projectionSnapshotDirty = false
+                projectionCursorDirty = false
             }
             if (projectionChanged || refreshedConversationIds.isNotEmpty()) {
                 globalSnapshot?.let {
@@ -865,6 +895,13 @@ class DieterConnectionManager(
             } else {
                 legacyScope?.let(syncStore::projectionRefreshedAtMillis)
             }
+            lastProjectionPersistedAtMillis = if (currentSnapshot != null) {
+                syncStore.projectionPersistedAtMillis(endpoint.id)
+            } else {
+                legacyScope?.let(syncStore::projectionPersistedAtMillis)
+            }
+            projectionSnapshotDirty = false
+            projectionCursorDirty = false
             _state.update { current ->
                 current.copy(lastConnectedAtMs = activeProjectionRefreshedAtMillis ?: current.lastConnectedAtMs)
             }
@@ -920,27 +957,49 @@ class DieterConnectionManager(
     }
 
     suspend fun refreshMachineDirectory(includeArchivedChats: Boolean = false) {
-        val machines = discoveredEndpoints.filter(DieterEndpoint::online)
+        val activeEndpointId = repository.activeEndpoint.id
+        val machines = discoveredEndpoints.filter { machine ->
+            machine.online && (includeArchivedChats || machine.id != activeEndpointId)
+        }
         if (machines.isEmpty()) return
-        // Directory refresh is intentionally sequential. Each lookup is a
-        // short relay RPC; bounding it to one at a time prevents a large
-        // account from consuming every logical stream on a daemon link.
-        val snapshots = buildList {
-            for (machine in machines) {
-                val snapshot = runCatching {
-                    val root = repository.relayState(machine)
-                    val projects = root.projectsList.filterNot(Project::getArchived)
-                    val projectStates = buildList {
-                        for (project in projects) {
-                            add(repository.relayState(machine, GetStateRequest.newBuilder().setProjectId(project.id).setLimit(500).build()))
+        // Relay calls use independent channels, so fetch machines and their
+        // project partitions concurrently. Keep one shared bound across the
+        // batch to avoid exhausting the gateway's logical-stream allowance.
+        val permits = Semaphore(MAX_MACHINE_DIRECTORY_RPCS)
+        val snapshots = coroutineScope {
+            machines.map { machine ->
+                async {
+                    runCatching {
+                        val root = permits.withPermit { repository.relayState(machine) }
+                        val projects = root.projectsList.filterNot(Project::getArchived)
+                        coroutineScope {
+                            val projectStates = projects.map { project ->
+                                async {
+                                    permits.withPermit {
+                                        repository.relayState(
+                                            machine,
+                                            GetStateRequest.newBuilder().setProjectId(project.id).setLimit(500).build(),
+                                        )
+                                    }
+                                }
+                            }
+                            val chats = async {
+                                permits.withPermit {
+                                    repository.relayChats(machine, includeArchived = includeArchivedChats)
+                                }
+                            }
+                            val states = projectStates.awaitAll()
+                            MachineSnapshot(
+                                machine,
+                                projects,
+                                states.flatMap { it.boardsList },
+                                states.flatMap { it.cardsList },
+                                chats.await().chatsList.filter { includeArchivedChats || !it.archived },
+                            )
                         }
-                    }
-                    val chats = repository.relayChats(machine, includeArchived = includeArchivedChats).chatsList
-                        .filter { includeArchivedChats || !it.archived }
-                    MachineSnapshot(machine, projects, projectStates.flatMap { it.boardsList }, projectStates.flatMap { it.cardsList }, chats)
-                }.getOrNull()
-                if (snapshot != null) add(snapshot)
-            }
+                    }.getOrNull()
+                }
+            }.awaitAll().filterNotNull()
         }
         if (snapshots.isEmpty()) return
         val refreshedEndpointIDs = snapshots.mapTo(hashSetOf()) { it.endpoint.id }
@@ -1182,6 +1241,7 @@ class DieterConnectionManager(
                 pendingMessageIds = pendingMessageIds(entries),
                 acceptedOutboxIds = acceptedOutboxIds(entries),
                 failedOutboxIds = failedOutboxIds(entries),
+                machineOutboxSummaries = machineOutboxSummaries(entries),
                 resolvedConversationIds = resolvedConversationIds,
             )
             combined.copy(selectedState = selectedState(combined, snapshot.state))
@@ -1272,7 +1332,7 @@ class DieterConnectionManager(
                 .setClientId(syncStore.clientId)
                 .setCommandId(UUID.randomUUID().toString().lowercase())
                 .build()
-            val endpointId = current.projectHosts[card.projectId]?.endpointId ?: repository.activeEndpoint.id
+            val endpointId = endpointForProject(card.projectId) ?: repository.activeEndpoint.id
             synchronized(outbox) {
                 outbox += AndroidOutboxEntry(
                     commandId = request.commandId,
@@ -1290,6 +1350,7 @@ class DieterConnectionManager(
     }
 
     private fun refreshOutboxPresentation() {
+        retargetOutboxToKnownHosts()
         val snapshot = globalSnapshot
         if (snapshot != null) {
             applyGlobalSnapshot(snapshot)
@@ -1303,6 +1364,7 @@ class DieterConnectionManager(
                 pendingMessageIds = pendingMessageIds(entries),
                 acceptedOutboxIds = acceptedOutboxIds(entries),
                 failedOutboxIds = failedOutboxIds(entries),
+                machineOutboxSummaries = machineOutboxSummaries(entries),
             )
             combined.copy(selectedState = selectedState(combined))
         }
@@ -1356,6 +1418,7 @@ class DieterConnectionManager(
                 pendingMessageIds = pendingMessageIds(entries),
                 acceptedOutboxIds = acceptedOutboxIds(entries),
                 failedOutboxIds = failedOutboxIds(entries),
+                machineOutboxSummaries = machineOutboxSummaries(entries),
             )
         }
         return accepted
@@ -1401,12 +1464,10 @@ class DieterConnectionManager(
     }
 
     suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean): Card {
-        ensureProjectRoute(request.projectId)
         val commandId = UUID.randomUUID().toString().lowercase()
         val stable = request.toBuilder().setClientId(syncStore.clientId).setCommandId(commandId).build()
         val optimisticId = "local_${UUID.randomUUID().toString().replace("-", "").lowercase()}"
-        val targetEndpoint = _state.value.projectHosts[stable.projectId]?.endpointId
-            ?: repository.activeEndpoint.id
+        val targetEndpoint = endpointForProject(stable.projectId) ?: repository.activeEndpoint.id
         synchronized(outbox) {
             outbox += AndroidOutboxEntry(
                 commandId = commandId,
@@ -1434,11 +1495,6 @@ class DieterConnectionManager(
         model: String,
         effort: String,
     ): String {
-        val projectId = (_state.value.cards + _state.value.chats)
-            .firstOrNull { it.id == cardId }
-            ?.projectId
-            .orEmpty()
-        ensureProjectRoute(projectId)
         val commandId = UUID.randomUUID().toString().lowercase()
         val messageId = "msg_${UUID.randomUUID().toString().replace("-", "").lowercase()}"
         val request = SendMessageRequest.newBuilder()
@@ -1451,9 +1507,8 @@ class DieterConnectionManager(
             .setCommandId(commandId)
             .setMessageId(messageId)
             .build()
-        val targetEndpoint = _state.value.cards.firstOrNull { it.id == cardId }?.projectId
-            ?.let(_state.value.projectHosts::get)
-            ?.endpointId
+        val targetEndpoint = projectForCard(cardId)
+            ?.let(::endpointForProject)
             ?: repository.activeEndpoint.id
         synchronized(outbox) {
             outbox += AndroidOutboxEntry(
@@ -1472,6 +1527,7 @@ class DieterConnectionManager(
 
     private suspend fun drainOutbox(currentGeneration: Long) {
         while (currentCoroutineContext().isActive && currentGeneration == synchronized(lock) { generation }) {
+            retargetOutboxToKnownHosts()
             val activeEndpoint = repository.activeEndpoint.id
             val entry = synchronized(outbox) { nextOutboxEntry(outbox, activeEndpoint) }
             if (entry == null) {
@@ -1547,6 +1603,61 @@ class DieterConnectionManager(
         }
     }
 
+    private fun projectForCard(cardId: String): String? {
+        val current = _state.value
+        return (current.cards + current.chats).firstOrNull { it.id == cardId }?.projectId
+            ?.takeIf(String::isNotBlank)
+            ?: current.activeConversations[cardId]?.detail?.card?.projectId?.takeIf(String::isNotBlank)
+            ?: globalSnapshot?.state?.let { state ->
+                (state.cardsList + state.chatsList).firstOrNull { it.id == cardId }?.projectId
+            }?.takeIf(String::isNotBlank)
+            ?: cachedDirectory?.state?.let { state ->
+                (state.cardsList + state.chatsList).firstOrNull { it.id == cardId }?.projectId
+            }?.takeIf(String::isNotBlank)
+    }
+
+    private fun endpointForProject(projectId: String): String? {
+        if (projectId.isBlank()) return null
+        val current = _state.value.projectHosts[projectId]?.endpointId?.takeIf(String::isNotBlank)
+        val cached = cachedDirectory?.hosts?.get(projectId)?.endpointId?.takeIf(String::isNotBlank)
+        return when {
+            current != null && (current in discoveredEndpoints.map(DieterEndpoint::id) || '#' in current) -> current
+            cached != null && '#' in cached -> cached
+            else -> current ?: cached
+        }
+    }
+
+    private fun retargetOutboxToKnownHosts(): Boolean {
+        val current = _state.value
+        val cardProjects = buildMap {
+            cachedDirectory?.state?.let { state ->
+                (state.cardsList + state.chatsList).forEach { card -> put(card.id, card.projectId) }
+            }
+            globalSnapshot?.state?.let { state ->
+                (state.cardsList + state.chatsList).forEach { card -> put(card.id, card.projectId) }
+            }
+            current.activeConversations.forEach { (cardId, snapshot) ->
+                snapshot.detail.card.projectId.takeIf(String::isNotBlank)?.let { put(cardId, it) }
+            }
+            (current.cards + current.chats).forEach { card -> put(card.id, card.projectId) }
+        }
+        val projectIds = buildSet {
+            addAll(cachedDirectory?.hosts?.keys.orEmpty())
+            addAll(current.projectHosts.keys)
+        }
+        val projectEndpoints = projectIds.mapNotNull { projectId ->
+            endpointForProject(projectId)?.let { projectId to it }
+        }.toMap()
+        return synchronized(outbox) {
+            val retargeted = retargetOutboxEndpoints(outbox, cardProjects, projectEndpoints)
+            if (retargeted == outbox) return@synchronized false
+            outbox.clear()
+            outbox.addAll(retargeted)
+            syncStore.saveOutbox(outbox)
+            true
+        }
+    }
+
     fun retryOutboxItem(id: String) {
         synchronized(outbox) {
             val index = outbox.indexOfFirst {
@@ -1562,6 +1673,28 @@ class DieterConnectionManager(
             syncStore.saveOutbox(outbox)
         }
         refreshOutboxPresentation()
+    }
+
+    fun retryOutboxForEndpoint(endpointId: String) {
+        var changed = false
+        synchronized(outbox) {
+            outbox.indices
+                .filter { outbox[it].endpointId == endpointId && outbox[it].serverId == null }
+                .forEach { index ->
+                    outbox[index] = outbox[index].copy(
+                        attempts = 0,
+                        lastError = null,
+                        state = OutboxState.QUEUED,
+                        nextAttemptAtMillis = null,
+                    )
+                    changed = true
+                }
+            if (changed) syncStore.saveOutbox(outbox)
+        }
+        if (changed) refreshOutboxPresentation()
+        preferredEndpointId = endpointId
+        preferences.edit().putString(KEY_PREFERRED_ENDPOINT, endpointId).apply()
+        if (_state.value.desiredConnected) restart()
     }
 
     fun outboxFailure(id: String): String? = synchronized(outbox) {
@@ -1723,6 +1856,7 @@ class DieterConnectionManager(
         // Read-only migration key from pre gateway-scoped builds.
         private const val KEY_PREFERRED_DAEMON = "preferred_daemon"
         private const val MACHINE_DIRECTORY_REFRESH_MS = 15_000L
+        private const val MAX_MACHINE_DIRECTORY_RPCS = 4
         private const val MAX_RESOLVED_CONVERSATIONS = 256
         private const val MAX_ACTIVE_CONVERSATIONS = 24
         /** Messages per conversation carried by the global sync stream. */

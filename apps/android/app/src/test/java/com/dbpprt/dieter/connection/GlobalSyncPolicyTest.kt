@@ -33,4 +33,11 @@ class GlobalSyncPolicyTest {
                 .changesProjection(),
         )
     }
+
+    @Test
+    fun projectionPersistenceIsThrottledAcrossDeltaBursts() {
+        assertTrue(syncProjectionShouldPersist(null, 1_000L))
+        assertFalse(syncProjectionShouldPersist(1_000L, 15_999L))
+        assertTrue(syncProjectionShouldPersist(1_000L, 16_000L))
+    }
 }

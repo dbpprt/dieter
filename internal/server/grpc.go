@@ -315,10 +315,14 @@ func (api *grpcAPI) GetCard(_ context.Context, request *dieterv1.GetCardRequest)
 }
 
 func (api *grpcAPI) conversation(cardID string) (model.Conversation, error) {
-	revision, err := api.server.store.ConversationRevision(cardID)
+	revision, err := api.server.store.ConversationRevisionByID(cardID)
 	if err != nil {
 		return model.Conversation{}, err
 	}
+	return api.conversationAtRevision(cardID, revision)
+}
+
+func (api *grpcAPI) conversationAtRevision(cardID, revision string) (model.Conversation, error) {
 	api.conversationMu.Lock()
 	cached, ok := api.conversationCache[cardID]
 	if ok && cached.revision == revision {
@@ -330,7 +334,7 @@ func (api *grpcAPI) conversation(cardID string) (model.Conversation, error) {
 	if ok && cached.revision == revision {
 		return cached.value, nil
 	}
-	conversation, err := api.server.store.Conversation(cardID)
+	conversation, err := api.server.store.ConversationByID(cardID)
 	if err != nil {
 		return model.Conversation{}, err
 	}
@@ -354,6 +358,9 @@ func (api *grpcAPI) conversation(cardID string) (model.Conversation, error) {
 }
 
 func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32) (*dieterv1.ConversationSnapshot, error) {
+	if before != nil && *before < 0 {
+		return nil, errors.New("before must be a non-negative integer")
+	}
 	detail, err := api.server.store.CardDetail(cardID)
 	if err != nil {
 		return nil, err
@@ -362,15 +369,16 @@ func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32
 	if err != nil {
 		return nil, err
 	}
+	return api.conversationSnapshotFrom(detail, conversation, limit, before), nil
+}
+
+func (api *grpcAPI) conversationSnapshotFrom(detail model.CardDetail, conversation model.Conversation, limit int, before *int32) *dieterv1.ConversationSnapshot {
 	if limit < 1 {
 		limit = 30
 	}
 	limit = min(limit, 100)
 	end := len(conversation.Messages)
 	if before != nil {
-		if *before < 0 {
-			return nil, errors.New("before must be a non-negative integer")
-		}
 		end = min(int(*before), end)
 	}
 	start := max(0, end-limit)
@@ -401,9 +409,9 @@ func (api *grpcAPI) conversationSnapshot(cardID string, limit int, before *int32
 		},
 	}
 	if before == nil {
-		api.rememberConversationSnapshot(cardID, snapshot)
+		api.rememberConversationSnapshot(detail.Card.ID, snapshot)
 	}
-	return snapshot, nil
+	return snapshot
 }
 
 func (api *grpcAPI) rememberConversationSnapshot(cardID string, snapshot *dieterv1.ConversationSnapshot) {

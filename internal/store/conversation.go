@@ -33,6 +33,21 @@ func (s *Store) Conversation(cardRef string) (model.Conversation, error) {
 	return s.loadConversation(card.ID)
 }
 
+// ConversationByID avoids a full card-directory scan when the caller already
+// holds a canonical card ID from the global projection.
+func (s *Store) ConversationByID(cardID string) (model.Conversation, error) {
+	if !validFileID(cardID) {
+		return model.Conversation{}, fmt.Errorf("card %q: %w", cardID, ErrNotFound)
+	}
+	if _, err := os.Stat(filepath.Join(s.cardDir(), cardID+".md")); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return model.Conversation{}, fmt.Errorf("card %q: %w", cardID, ErrNotFound)
+		}
+		return model.Conversation{}, err
+	}
+	return s.loadConversation(cardID)
+}
+
 // ConversationRevision is a cheap change token for the durable transcript.
 // It lets read-only pollers avoid decoding snapshot.json when neither the
 // snapshot nor its append-only event source has changed.
@@ -41,9 +56,18 @@ func (s *Store) ConversationRevision(cardRef string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return s.ConversationRevisionByID(card.ID)
+}
+
+// ConversationRevisionByID is the constant-time form used by WatchSync's
+// bounded conversation projection.
+func (s *Store) ConversationRevisionByID(cardID string) (string, error) {
+	if !validFileID(cardID) {
+		return "", fmt.Errorf("card %q: %w", cardID, ErrNotFound)
+	}
 	parts := make([]string, 0, 2)
 	for _, name := range []string{"snapshot.json", "events.ndjson"} {
-		info, statErr := os.Stat(filepath.Join(s.conversationPath(card.ID), name))
+		info, statErr := os.Stat(filepath.Join(s.conversationPath(cardID), name))
 		if errors.Is(statErr, os.ErrNotExist) {
 			parts = append(parts, name+":missing")
 			continue

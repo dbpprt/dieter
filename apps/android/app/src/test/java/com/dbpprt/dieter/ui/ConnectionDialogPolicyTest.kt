@@ -33,4 +33,22 @@ class ConnectionDialogPolicyTest {
         )
         assertNull(connectionDialogDelayMs(false, ConnectionPhase.STOPPED, null, 70_001L))
     }
+
+    @Test
+    fun dismissedInterruptionStaysDismissedAcrossFailurePhases() {
+        assertEquals(
+            true,
+            connectionDialogDismissalApplies(10_000L, true, ConnectionPhase.RECONNECTING, 10_000L),
+        )
+        assertEquals(
+            true,
+            connectionDialogDismissalApplies(10_000L, true, ConnectionPhase.UNAVAILABLE, 10_000L),
+        )
+        assertFalse(connectionDialogDismissalApplies(10_000L, true, ConnectionPhase.RECONNECTING, 20_000L))
+        assertFalse(connectionDialogDismissalApplies(10_000L, true, ConnectionPhase.CONNECTED, 10_000L))
+        assertEquals(
+            true,
+            connectionDialogDismissalApplies(10_000L, false, ConnectionPhase.CONNECTED, 10_000L),
+        )
+    }
 }

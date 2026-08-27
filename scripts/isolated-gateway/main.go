@@ -134,21 +134,45 @@ func run(address, home, offlineTrigger string) error {
 	defer boardHTTP.Close()
 
 	tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "isolated-e2e", Log: logger}
-	daemonContext, disconnectDaemon := context.WithCancel(ctx)
-	defer disconnectDaemon()
-	go func() { _ = tunnel.Run(daemonContext) }()
-	if offlineTrigger != "" {
+	if offlineTrigger == "" {
+		go func() { _ = tunnel.Run(ctx) }()
+	} else {
 		go func() {
 			ticker := time.NewTicker(100 * time.Millisecond)
 			defer ticker.Stop()
+			var tunnelContext context.Context
+			var disconnect context.CancelFunc
+			var stopped chan struct{}
+			start := func() {
+				tunnelContext, disconnect = context.WithCancel(ctx)
+				stopped = make(chan struct{})
+				go func() {
+					defer close(stopped)
+					_ = tunnel.Run(tunnelContext)
+				}()
+			}
+			stop := func() {
+				if disconnect == nil {
+					return
+				}
+				disconnect()
+				<-stopped
+				disconnect = nil
+				stopped = nil
+			}
+			start()
+			defer stop()
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if _, err := os.Stat(offlineTrigger); err == nil {
-						disconnectDaemon()
-						return
+					_, err := os.Stat(offlineTrigger)
+					offline := err == nil
+					if offline && disconnect != nil {
+						stop()
+					} else if !offline && disconnect == nil {
+						start()
 					}
 				}
 			}

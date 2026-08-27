@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -124,6 +126,9 @@ private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
 private fun Destination.usesSynchronizedWorkspace(): Boolean =
     this != Destination.TERMINALS
 
+private fun Destination.supportsOfflineOutbox(): Boolean =
+    this == Destination.CHATS || this == Destination.BOARD
+
 internal enum class WorkspaceSurfaceTreatment {
     CURRENT,
     REFRESHING,
@@ -150,6 +155,11 @@ internal fun workspaceSurfaceTreatment(
         -> WorkspaceSurfaceTreatment.UNAVAILABLE
     }
 }
+
+internal fun workspaceInteractionBlocked(
+    treatment: WorkspaceSurfaceTreatment,
+    supportsOfflineOutbox: Boolean,
+): Boolean = treatment.blocksInteraction && !supportsOfflineOutbox
 
 internal fun shouldShowInitialWorkspaceSync(
     showsSynchronizedWorkspace: Boolean,
@@ -383,9 +393,10 @@ internal fun ConnectionStatusIndicator(
     phase: ConnectionPhase,
     lastConnectedAtMillis: Long?,
     showingCachedData: Boolean,
+    supportsOfflineOutbox: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val presentation = workspaceStatusPresentation(phase, showingCachedData)
+    val presentation = workspaceStatusPresentation(phase, showingCachedData, supportsOfflineOutbox)
     val accent = if (presentation.usesOfflineAccent) DieterCoral else DieterAmber
     var nowMillis by remember(lastConnectedAtMillis) { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(lastConnectedAtMillis) {
@@ -468,8 +479,17 @@ internal data class WorkspaceStatusPresentation(
 internal fun workspaceStatusPresentation(
     phase: ConnectionPhase,
     showingCachedData: Boolean,
+    supportsOfflineOutbox: Boolean = false,
 ): WorkspaceStatusPresentation {
-    val cachedDetail = when (phase) {
+    val cachedDetail = if (supportsOfflineOutbox && phase in setOf(
+            ConnectionPhase.RECONNECTING,
+            ConnectionPhase.AUTH_REQUIRED,
+            ConnectionPhase.INCOMPATIBLE,
+            ConnectionPhase.UNAVAILABLE,
+            ConnectionPhase.STOPPED,
+        )) {
+        "Cached conversations stay available; messages and new conversations queue until Dieter reconnects."
+    } else when (phase) {
         ConnectionPhase.CONNECTING -> "Your workspace stays available while Dieter connects."
         ConnectionPhase.SYNCING -> "Your current workspace stays available while changes load."
         ConnectionPhase.RECONNECTING -> "Cached data stays visible while the connection recovers."
@@ -549,11 +569,12 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
     val machines = state.presentedEndpointConnections.filter { it.daemonId != null }
     val onlineMachineCount = machines.count { it.online }
     ModalBottomSheet(
-        onDismissRequest = { if (connected) model.dismissConnectionDialog() },
+        onDismissRequest = model::dismissConnectionDialog,
         containerColor = DieterSurface,
     ) {
         Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
+                .padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -614,6 +635,7 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
             }
             state.presentedEndpointConnections.forEach { endpoint ->
                 val endpointConnected = endpoint.phase == EndpointPhase.CONNECTED
+                val outboxSummary = state.machineOutboxSummaries[endpoint.id]
                 Surface(
                     color = if (endpointConnected) DieterEyes.copy(alpha = 0.08f) else DieterSurfaceHigh,
                     shape = RoundedCornerShape(16.dp),
@@ -652,10 +674,46 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                             )
                         }
                         Text(
-                            endpoint.detail,
+                            endpoint.detail + when {
+                                outboxSummary?.failed == true -> " · attention needed"
+                                outboxSummary?.retrying == true -> " · retrying"
+                                outboxSummary != null -> " · queued"
+                                else -> ""
+                            },
                             color = if (endpointConnected) DieterEyes else DieterMuted,
                             fontSize = 10.sp,
                         )
+                    }
+                }
+                if (outboxSummary != null) {
+                    Surface(
+                        color = DieterAmber.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(1.dp, DieterAmber.copy(alpha = 0.42f)),
+                        modifier = Modifier.fillMaxWidth().testTag("machine-queue-${endpoint.id}"),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Outlined.WifiOff, null, tint = DieterAmber, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (endpoint.online) "Delivering to ${endpoint.label}" else "${endpoint.label} is unreachable",
+                                    color = DieterAmber,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                )
+                                Text(outboxSummary.deliveryLabel, color = DieterMuted, fontSize = 11.sp)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            OutlinedButton(
+                                onClick = { model.retryOutboxForEndpoint(endpoint.id) },
+                                border = BorderStroke(1.dp, DieterAmber.copy(alpha = 0.5f)),
+                                modifier = Modifier.testTag("machine-retry-${endpoint.id}"),
+                            ) { Text("Retry now", color = DieterAmber, fontSize = 11.sp) }
+                        }
                     }
                 }
             }
@@ -719,6 +777,7 @@ private fun DestinationContent(
         hasCachedWorkspace = state.hasCachedWorkspace,
         phase = state.connectionPhase,
     )
+    val blocksInteraction = workspaceInteractionBlocked(treatment, destination.supportsOfflineOutbox())
     val layoutDirection = LocalLayoutDirection.current
     val destinationPadding = if (treatment.showsNotice) {
         PaddingValues(
@@ -744,6 +803,7 @@ private fun DestinationContent(
                 phase = state.connectionPhase,
                 lastConnectedAtMillis = state.lastConnectedAtMillis,
                 showingCachedData = true,
+                supportsOfflineOutbox = destination.supportsOfflineOutbox(),
                 modifier = Modifier.fillMaxWidth().padding(
                     start = 10.dp,
                     top = contentPadding.calculateTopPadding() + 6.dp,
@@ -753,7 +813,7 @@ private fun DestinationContent(
             )
         }
         Box(Modifier.fillMaxSize().weight(1f)) {
-            Box(Modifier.fillMaxSize().alpha(if (treatment == WorkspaceSurfaceTreatment.UNAVAILABLE) 0.82f else 1f)) {
+            Box(Modifier.fillMaxSize().alpha(if (blocksInteraction) 0.82f else 1f)) {
                 when (destination) {
                     Destination.CHATS -> ChatsScreen(state, model, expanded, destinationPadding)
                     Destination.BOARD -> BoardScreen(state, model, expanded, destinationPadding)
@@ -762,7 +822,7 @@ private fun DestinationContent(
                     Destination.SCHEDULES -> SchedulesScreen(state, model, destinationPadding)
                 }
             }
-            if (treatment.blocksInteraction) {
+            if (blocksInteraction) {
                 Spacer(
                     Modifier
                         .matchParentSize()

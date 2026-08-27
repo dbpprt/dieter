@@ -25,6 +25,12 @@ final class DieterRPC: Sendable {
         return options
     }
 
+    private static func boundedUnaryCallOptions() -> CallOptions {
+        var options = CallOptions.defaults
+        options.timeout = .seconds(15)
+        return options
+    }
+
     private static func remoteDesktopControlCallOptions() -> CallOptions {
         var options = CallOptions.defaults
         options.timeout = .seconds(3)
@@ -146,12 +152,18 @@ final class DieterRPC: Sendable {
     }
 
     func daemons() async throws -> Dieter_Gateway_V1_ListDaemonsResponse {
-        try await gatewayService.listDaemons(request: .init(message: Google_Protobuf_Empty()))
+        try await gatewayService.listDaemons(
+            request: .init(message: Google_Protobuf_Empty()),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func route(daemonID: String) async throws -> Dieter_Gateway_V1_DaemonRoute {
         var request = Dieter_Gateway_V1_DaemonRef(); request.daemonID = daemonID
-        return try await gatewayService.resolveDaemonRoute(request: .init(message: request))
+        return try await gatewayService.resolveDaemonRoute(
+            request: .init(message: request),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
 	func rtcConfiguration(daemonID: String) async throws -> Dieter_Gateway_V1_RTCConfiguration {
@@ -161,7 +173,10 @@ final class DieterRPC: Sendable {
 
     func daemonAccessToken(daemonID: String) async throws -> Dieter_Gateway_V1_DaemonAccessToken {
         var request = Dieter_Gateway_V1_ExchangeDaemonTokenRequest(); request.daemonID = daemonID
-        return try await gatewayService.exchangeDaemonToken(request: .init(message: request))
+        return try await gatewayService.exchangeDaemonToken(
+            request: .init(message: request),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func revokeDaemon(daemonID: String) async throws {
@@ -180,7 +195,10 @@ final class DieterRPC: Sendable {
     }
 
     func runtimeStatus() async throws -> Dieter_V1_RuntimeStatus {
-        try await service.getRuntimeStatus(request: .init(message: Google_Protobuf_Empty()))
+        try await service.getRuntimeStatus(
+            request: .init(message: Google_Protobuf_Empty()),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func promptSettings() async throws -> Dieter_V1_PromptSettings {
@@ -204,7 +222,10 @@ final class DieterRPC: Sendable {
     }
 
     func state(_ request: Dieter_V1_GetStateRequest = .init()) async throws -> Dieter_V1_State {
-        try await service.getState(request: .init(message: request))
+        try await service.getState(
+            request: .init(message: request),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func watchState(
@@ -232,15 +253,24 @@ final class DieterRPC: Sendable {
     }
 
     func harnesses() async throws -> Dieter_V1_HarnessCatalog {
-        try await service.getHarnesses(request: .init(message: Google_Protobuf_Empty()))
+        try await service.getHarnesses(
+            request: .init(message: Google_Protobuf_Empty()),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func settings() async throws -> Dieter_V1_Settings {
-        try await service.getSettings(request: .init(message: Google_Protobuf_Empty()))
+        try await service.getSettings(
+            request: .init(message: Google_Protobuf_Empty()),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func settingsOptions() async throws -> Dieter_V1_SettingsOptions {
-        try await service.getSettingsOptions(request: .init(message: Google_Protobuf_Empty()))
+        try await service.getSettingsOptions(
+            request: .init(message: Google_Protobuf_Empty()),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func updateSettings(_ request: Dieter_V1_UpdateSettingsRequest) async throws -> Dieter_V1_Settings {
@@ -306,7 +336,10 @@ final class DieterRPC: Sendable {
 
     func chats(includeArchived: Bool = false) async throws -> Dieter_V1_ChatsResponse {
         var request = Dieter_V1_ListChatsRequest(); request.includeArchived = includeArchived
-        return try await service.listChats(request: .init(message: request))
+        return try await service.listChats(
+            request: .init(message: request),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func card(id: String) async throws -> Dieter_V1_CardDetail {

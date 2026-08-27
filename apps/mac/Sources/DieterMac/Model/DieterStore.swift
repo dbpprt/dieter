@@ -268,7 +268,11 @@ enum SyncCursorPersistencePolicy {
     static let interval: TimeInterval = 15
 
     static func shouldPersist(projectionChanged: Bool, lastPersistedAt: Date?, now: Date) -> Bool {
-        projectionChanged || lastPersistedAt.map { now.timeIntervalSince($0) >= interval } ?? true
+        // The in-memory snapshot and cursor advance together. Persisting an
+        // older pair is safe because WatchSync will replay the later delta, so
+        // high-frequency conversation frames do not need a multi-megabyte
+        // atomic disk write each time.
+        lastPersistedAt.map { now.timeIntervalSince($0) >= interval } ?? true
     }
 }
 
@@ -280,6 +284,40 @@ enum MachineConnectionRoute: String, Sendable {
 struct MachineConnectionStatus: Equatable, Sendable {
     let route: MachineConnectionRoute
     let latencyMilliseconds: Int
+}
+
+struct MachineOutboxSummary: Equatable, Sendable {
+    let messageCount: Int
+    let changeCount: Int
+    let retrying: Bool
+    let failed: Bool
+
+    var itemCount: Int { messageCount + changeCount }
+
+    var deliveryLabel: String {
+        let noun: String
+        if changeCount == 0 {
+            noun = messageCount == 1 ? "message" : "messages"
+        } else if messageCount == 0 {
+            noun = changeCount == 1 ? "change" : "changes"
+        } else {
+            noun = itemCount == 1 ? "item" : "items"
+        }
+        let suffix = failed ? "needs attention." : "delivers when it reconnects."
+        return "\(itemCount) \(noun) queued — \(suffix)"
+    }
+
+    static func summaries(for entries: [DieterOutboxEntry]) -> [String: MachineOutboxSummary] {
+        Dictionary(grouping: entries.filter { $0.serverID == nil }, by: \.endpointID)
+            .mapValues { pending in
+                MachineOutboxSummary(
+                    messageCount: pending.count { $0.kind == .sendMessage },
+                    changeCount: pending.count { $0.kind != .sendMessage },
+                    retrying: pending.contains { $0.state == .retrying },
+                    failed: pending.contains { $0.state == .failed }
+                )
+            }
+    }
 }
 
 struct DieterFailedOutboxItem: Identifiable, Sendable {
@@ -500,6 +538,7 @@ final class DieterStore {
     private(set) var pendingMessageIDs: Set<String> = []
     private(set) var acceptedOutboxIDs: Set<String> = []
     private(set) var failedOutboxIDs: Set<String> = []
+    private(set) var machineOutboxSummaries: [String: MachineOutboxSummary] = [:]
     private(set) var globalSyncing = false
     private(set) var lastSyncedAt: Date?
 
@@ -709,6 +748,10 @@ final class DieterStore {
         machineConnectionStatuses[machine.id]
     }
 
+    func outboxSummary(for machine: DieterEndpoint) -> MachineOutboxSummary? {
+        machineOutboxSummaries[machine.id]
+    }
+
     var selectedBoard: Dieter_V1_Board? {
         board(id: selectedBoardID)
     }
@@ -876,8 +919,10 @@ final class DieterStore {
             startGlobalSync()
             startSyncLivenessMonitor()
             startOutboxWorker()
-            await refreshMachineDirectory()
-            startMachineDirectoryRefresh()
+            // The selected machine is live as soon as WatchSync starts.
+            // Refreshing auxiliary machines must not hold this connect attempt
+            // (and its reconnect task) open on an unrelated half-open RPC.
+            startMachineDirectoryRefresh(refreshImmediately: true)
             if section == .terminals { await loadTerminals() }
         } catch {
             gatewayTask?.cancel()
@@ -1338,9 +1383,13 @@ final class DieterStore {
         return true
     }
 
-    private func startMachineDirectoryRefresh() {
+    private func startMachineDirectoryRefresh(refreshImmediately: Bool = false) {
         machineDirectoryTask?.cancel()
         machineDirectoryTask = Task { [weak self] in
+            if refreshImmediately {
+                guard !Task.isCancelled, let self else { return }
+                await self.refreshMachineDirectory()
+            }
             while !Task.isCancelled {
                 try? await DieterTaskSleep.seconds(15)
                 guard !Task.isCancelled, let self else { return }
@@ -1441,6 +1490,9 @@ final class DieterStore {
             }
             if let refreshedActive = endpoints.first(where: { $0.id == endpoint.id }) {
                 endpoint = refreshedActive
+            }
+            if endpoints.contains(where: { $0.online && machineOutboxSummaries[$0.id] != nil }) {
+                startOutboxWorker()
             }
         } catch {
             // Keep the last known directory during a transient gateway loss.
@@ -2083,6 +2135,7 @@ final class DieterStore {
         pendingMessageIDs = Set(syncDiskState.outbox.filter { $0.kind == .sendMessage }.map(\.optimisticID))
         acceptedOutboxIDs = Set(syncDiskState.outbox.filter { $0.serverID != nil }.flatMap { [$0.optimisticID, $0.serverID!] })
         failedOutboxIDs = Set(syncDiskState.outbox.filter { $0.state == .failed }.map { $0.serverID ?? $0.optimisticID })
+        machineOutboxSummaries = MachineOutboxSummary.summaries(for: syncDiskState.outbox)
         for entry in syncDiskState.outbox {
             switch entry.kind {
             case .createCard, .createChat:
@@ -2145,30 +2198,50 @@ final class DieterStore {
             guard let self else { return }
             defer { self.outboxTask = nil }
             while !Task.isCancelled {
-                guard let rpc = self.rpc, self.phase.isConnected else { return }
+                guard self.rpc != nil, self.phase.isConnected else { return }
+                let reachableEndpointIDs = [self.endpoint.id] + self.endpoints
+                    .filter { $0.online && $0.id != self.endpoint.id }
+                    .map(\.id)
                 guard let index = DieterOutboxPolicy.nextIndex(
                     in: self.syncDiskState.outbox,
-                    endpointID: self.endpoint.id
+                    endpointIDs: reachableEndpointIDs
                 ) else {
                     guard let delay = DieterOutboxPolicy.nextRetryDelay(
                         in: self.syncDiskState.outbox,
-                        endpointID: self.endpoint.id
+                        endpointIDs: Set(reachableEndpointIDs)
                     ) else { return }
                     try? await DieterTaskSleep.seconds(min(0.5, max(0.05, delay)))
                     continue
                 }
                 var entry = self.syncDiskState.outbox[index]
                 do {
+                    let deliveryRPC: DieterRPC
+                    var borrowedPlane: DataPlaneConnection?
+                    if entry.endpointID == self.endpoint.id, let rpc = self.rpc {
+                        deliveryRPC = rpc
+                    } else {
+                        guard let machine = self.endpoints.first(where: { $0.id == entry.endpointID }), machine.online else {
+                            return
+                        }
+                        let plane = try await self.selectDirectoryDataPlane(for: machine)
+                        self.machineConnectionStatuses[machine.id] = plane.connection
+                        borrowedPlane = plane
+                        deliveryRPC = plane.rpc
+                    }
+                    defer {
+                        borrowedPlane?.task.cancel()
+                        borrowedPlane?.rpc.shutdown()
+                    }
                     switch entry.kind {
                     case .createCard:
                         let request = try Dieter_V1_CreateConversationRequest(serializedBytes: entry.request)
-                        entry.serverID = try await rpc.createCard(request).id
+                        entry.serverID = try await deliveryRPC.createCard(request).id
                     case .createChat:
                         let request = try Dieter_V1_CreateConversationRequest(serializedBytes: entry.request)
-                        entry.serverID = try await rpc.createChat(request).id
+                        entry.serverID = try await deliveryRPC.createChat(request).id
                     case .sendMessage:
                         let request = try Dieter_V1_SendMessageRequest(serializedBytes: entry.request)
-                        let response = try await rpc.sendMessage(request)
+                        let response = try await deliveryRPC.sendMessage(request)
                         entry.serverID = response.messageID.isEmpty ? entry.optimisticID : response.messageID
                     }
                     entry.lastError = nil
@@ -2227,9 +2300,9 @@ final class DieterStore {
                     }
                     self.rebuildOutboxOverlays()
                     try? await self.syncPersistence.save(self.syncDiskState)
-                    let route = self.machineConnectionStatuses[self.endpoint.id]?.route.rawValue ?? "Unknown"
+                    let route = self.machineConnectionStatuses[entry.endpointID]?.route.rawValue ?? "Unknown"
                     outboxLogger.error(
-                        "operation=\(entry.kind.rawValue, privacy: .public) card=\(entry.serverID ?? entry.optimisticID, privacy: .public) endpoint=\(self.endpoint.id, privacy: .public) route=\(route, privacy: .public) status=\((error as? RPCError)?.code.description ?? "non-rpc", privacy: .public) message=\(DieterRPCFailure.message(for: error), privacy: .public) terminal=\(entry.state == .failed, privacy: .public)"
+                        "operation=\(entry.kind.rawValue, privacy: .public) card=\(entry.serverID ?? entry.optimisticID, privacy: .public) endpoint=\(entry.endpointID, privacy: .public) route=\(route, privacy: .public) status=\((error as? RPCError)?.code.description ?? "non-rpc", privacy: .public) message=\(DieterRPCFailure.message(for: error), privacy: .public) terminal=\(entry.state == .failed, privacy: .public)"
                     )
                 }
             }
@@ -2246,6 +2319,30 @@ final class DieterStore {
         syncDiskState.outbox[index].nextAttemptAt = nil
         setOptimisticConversationStatus(syncDiskState.outbox[index], status: "pending")
         await persistAndDrainOutbox()
+    }
+
+    func retryOutbox(for machine: DieterEndpoint) async {
+        var changed = false
+        for index in syncDiskState.outbox.indices where
+            syncDiskState.outbox[index].endpointID == machine.id &&
+            syncDiskState.outbox[index].serverID == nil
+        {
+            syncDiskState.outbox[index].state = .queued
+            syncDiskState.outbox[index].attempts = 0
+            syncDiskState.outbox[index].lastError = nil
+            syncDiskState.outbox[index].nextAttemptAt = nil
+            setOptimisticConversationStatus(syncDiskState.outbox[index], status: "pending")
+            changed = true
+        }
+        if changed {
+            rebuildOutboxOverlays()
+            try? await syncPersistence.save(syncDiskState)
+        }
+        await refreshDaemonPresence()
+        startOutboxWorker()
+        if endpoint.id == machine.id, !phase.isConnected {
+            scheduleReconnect(to: machine)
+        }
     }
 
     func discardOutboxItem(_ id: String) async {
@@ -2743,8 +2840,8 @@ final class DieterStore {
     func sendComposer() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!text.isEmpty || !composerAttachments.isEmpty), let id = selectedCardID ?? selectedChatID else { return }
-        if let projectID = selectedCard?.projectID, !projectID.isEmpty,
-           !(await ensureProjectConnection(projectID)) { return }
+        let projectID = (selectedCard ?? selectedDetail?.card)?.projectID ?? ""
+        let targetEndpointID = projectEndpointIDs[projectID] ?? endpoint.id
         composerText = ""
         let attachments = composerAttachments; composerAttachments = []
         var parts = attachments
@@ -2761,7 +2858,7 @@ final class DieterStore {
             syncDiskState.outbox.append(DieterOutboxEntry(
                 commandID: request.commandID,
                 clientID: syncClientID,
-                endpointID: endpoint.id,
+                endpointID: targetEndpointID,
                 kind: .sendMessage,
                 request: try request.serializedData(),
                 optimisticID: request.messageID,
@@ -2986,7 +3083,6 @@ final class DieterStore {
         labelIDs: [String] = []
     ) async {
         let destinationProjectID = projectID ?? selectedProjectID
-        guard await ensureProjectConnection(destinationProjectID) else { return }
         var request = Dieter_V1_CreateConversationRequest()
         request.projectID = destinationProjectID; request.boardID = chat ? "" : selectedBoardID
         request.lane = lane ?? selectedBoard?.lanes.first?.id ?? "backlog"; request.title = title; request.prompt = prompt

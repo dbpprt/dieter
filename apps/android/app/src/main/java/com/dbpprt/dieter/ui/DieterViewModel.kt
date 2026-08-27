@@ -8,6 +8,7 @@ import com.dbpprt.dieter.connection.DieterConnectionState
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
+import com.dbpprt.dieter.connection.MachineOutboxSummary
 import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.connection.isServerConversationId
 import com.dbpprt.dieter.connection.resolveConversationId
@@ -69,6 +70,7 @@ private const val FIRST_FRAME_DEADLINE_MS = 4_500L
 private const val POST_SEND_INITIAL_REFRESH_DELAY_MS = 750L
 private const val POST_SEND_REFRESH_INTERVAL_MS = 2_000L
 internal const val CONNECTION_DIALOG_GRACE_MS = 60_000L
+private const val CONNECTION_DIALOG_NO_INTERRUPTION_KEY = Long.MIN_VALUE
 
 internal fun connectionDialogDelayMs(
     desiredConnected: Boolean,
@@ -80,6 +82,15 @@ internal fun connectionDialogDelayMs(
     val elapsed = (nowMs - (interruptedAtMs ?: nowMs)).coerceAtLeast(0L)
     return (CONNECTION_DIALOG_GRACE_MS - elapsed).coerceAtLeast(0L)
 }
+
+internal fun connectionDialogDismissalApplies(
+    dismissedInterruptionKey: Long?,
+    desiredConnected: Boolean,
+    phase: ConnectionPhase,
+    interruptedAtMs: Long?,
+): Boolean = (!desiredConnected || phase != ConnectionPhase.CONNECTED) &&
+    dismissedInterruptionKey != null &&
+    dismissedInterruptionKey == (interruptedAtMs ?: CONNECTION_DIALOG_NO_INTERRUPTION_KEY)
 
 enum class Destination { CHATS, BOARD, TERMINALS, FILES, SCHEDULES }
 
@@ -165,6 +176,7 @@ data class DieterUiState(
     val pendingMessageIds: Set<String> = emptySet(),
     val acceptedOutboxIds: Set<String> = emptySet(),
     val failedOutboxIds: Set<String> = emptySet(),
+    val machineOutboxSummaries: Map<String, MachineOutboxSummary> = emptyMap(),
     val cardOperations: Map<String, CardOperation> = emptyMap(),
     val cardOperationErrors: Map<String, String> = emptyMap(),
 ) {
@@ -174,13 +186,32 @@ data class DieterUiState(
     val presentedProjectHosts: Map<String, ProjectHost>
         get() = if (connected) projectHosts else projectHosts.mapValues { (_, host) -> host.copy(online = false) }
     val presentedEndpointConnections: List<EndpointConnection>
-        get() = if (connected) endpointConnections else endpointConnections.map { endpoint ->
-            if (endpoint.daemonId == null) endpoint else endpoint.copy(
-                phase = EndpointPhase.PENDING,
-                detail = if (connectionPhase == ConnectionPhase.SYNCING) "Synchronizing" else "Unavailable",
-                latencyMs = null,
-                online = false,
-            )
+        get() {
+            val presented = if (connected) endpointConnections else endpointConnections.map { endpoint ->
+                if (endpoint.daemonId == null) endpoint else endpoint.copy(
+                    phase = EndpointPhase.PENDING,
+                    detail = if (connectionPhase == ConnectionPhase.SYNCING) "Synchronizing" else "Unavailable",
+                    latencyMs = null,
+                    online = false,
+                )
+            }
+            val existingIds = presented.mapTo(hashSetOf(), EndpointConnection::id)
+            val hostsByEndpoint = projectHosts.values.associateBy(ProjectHost::endpointId)
+            val queuedMachines = machineOutboxSummaries.keys
+                .filterNot(existingIds::contains)
+                .map { endpointId ->
+                    val host = hostsByEndpoint[endpointId]
+                    EndpointConnection(
+                        id = endpointId,
+                        label = host?.hostname ?: "Dieter machine",
+                        address = host?.daemonId ?: "Known machine route",
+                        phase = EndpointPhase.PENDING,
+                        detail = "Unavailable",
+                        online = false,
+                        daemonId = host?.daemonId,
+                    )
+                }
+            return presented + queuedMachines
         }
     val project: Project? get() = projects.firstOrNull { it.id == selectedProjectId }
     val board: Board? get() = boards.firstOrNull { it.id == selectedBoardId } ?: boards.firstOrNull()
@@ -231,6 +262,7 @@ class DieterViewModel(
     private var spacesJob: Job? = null
     private var connectionDialogGraceJob: Job? = null
     private var connectionDialogManuallyRequested = false
+    private var connectionDialogDismissedInterruptionKey: Long? = null
     private var lastRemoteState: State? = null
     private val conversationCache = ConversationUiCache()
 
@@ -299,6 +331,7 @@ class DieterViewModel(
 
     fun connect() {
         connectionDialogManuallyRequested = false
+        connectionDialogDismissedInterruptionKey = null
         connectionManager.connect()
         if (_state.value.backgroundSyncEnabled) connectionManager.requestBatteryOptimizationExemption()
     }
@@ -310,6 +343,7 @@ class DieterViewModel(
         connectionDialogGraceJob?.cancel()
         connectionDialogGraceJob = null
         connectionDialogManuallyRequested = false
+        connectionDialogDismissedInterruptionKey = null
         connectionManager.disconnect()
         _state.update {
             it.copy(
@@ -397,6 +431,7 @@ class DieterViewModel(
 
     fun openAppSettingsFromConnection() {
         connectionDialogManuallyRequested = false
+        rememberConnectionDialogDismissal()
         _state.update {
             it.copy(
                 appSurface = AppSurface.APP_SETTINGS,
@@ -407,9 +442,19 @@ class DieterViewModel(
     }
 
     fun dismissConnectionDialog() {
-        if (_state.value.connected) {
-            connectionDialogManuallyRequested = false
-            _state.update { it.copy(connectionDialogVisible = false) }
+        connectionDialogManuallyRequested = false
+        rememberConnectionDialogDismissal()
+        _state.update { it.copy(connectionDialogVisible = false) }
+    }
+
+    private fun rememberConnectionDialogDismissal() {
+        val connection = connectionManager.state.value
+        connectionDialogDismissedInterruptionKey = if (
+            connection.desiredConnected && connection.phase == ConnectionPhase.CONNECTED
+        ) {
+            null
+        } else {
+            connection.connectionInterruptedAtMs ?: CONNECTION_DIALOG_NO_INTERRUPTION_KEY
         }
     }
 
@@ -445,7 +490,12 @@ class DieterViewModel(
                 connectionPhase = connection.phase,
                 lastConnectedAtMillis = connection.lastConnectedAtMs,
                 connectionDialogVisible = when {
-                    !connection.desiredConnected -> true
+                    !connection.desiredConnected && !connectionDialogDismissalApplies(
+                        connectionDialogDismissedInterruptionKey,
+                        connection.desiredConnected,
+                        connection.phase,
+                        connection.connectionInterruptedAtMs,
+                    ) -> true
                     connection.phase == ConnectionPhase.CONNECTED && !connectionDialogManuallyRequested -> false
                     else -> current.connectionDialogVisible
                 },
@@ -478,6 +528,7 @@ class DieterViewModel(
                 pendingMessageIds = connection.pendingMessageIds,
                 acceptedOutboxIds = connection.acceptedOutboxIds,
                 failedOutboxIds = connection.failedOutboxIds,
+                machineOutboxSummaries = connection.machineOutboxSummaries,
             )
         }
         val resolvedSelectedCardId = _state.value.selectedCardId
@@ -500,14 +551,21 @@ class DieterViewModel(
         connectionDialogGraceJob?.cancel()
         connectionDialogGraceJob = null
         when {
-            !connection.desiredConnected -> {
-                connectionDialogManuallyRequested = false
-                _state.update { it.copy(connectionDialogVisible = true) }
-            }
-            connection.phase == ConnectionPhase.CONNECTED -> {
+            connection.desiredConnected && connection.phase == ConnectionPhase.CONNECTED -> {
+                connectionDialogDismissedInterruptionKey = null
                 if (!connectionDialogManuallyRequested) {
                     _state.update { it.copy(connectionDialogVisible = false) }
                 }
+            }
+            connectionDialogDismissalApplies(
+                connectionDialogDismissedInterruptionKey,
+                connection.desiredConnected,
+                connection.phase,
+                connection.connectionInterruptedAtMs,
+            ) -> _state.update { it.copy(connectionDialogVisible = false) }
+            !connection.desiredConnected -> {
+                connectionDialogManuallyRequested = false
+                _state.update { it.copy(connectionDialogVisible = true) }
             }
             !foreground || connection.phase == ConnectionPhase.STOPPED || _state.value.connectionDialogVisible -> Unit
             else -> {
@@ -738,6 +796,11 @@ class DieterViewModel(
 
     fun retryOutboxItem(id: String) {
         connectionManager.retryOutboxItem(id)
+        _state.update { it.copy(error = null) }
+    }
+
+    fun retryOutboxForEndpoint(endpointId: String) {
+        connectionManager.retryOutboxForEndpoint(endpointId)
         _state.update { it.copy(error = null) }
     }
 
@@ -1072,7 +1135,7 @@ class DieterViewModel(
         labelIds: List<String>,
         deferStart: Boolean,
         attachments: List<MessagePart> = emptyList(),
-    ) = action {
+    ) = action(ensureProjectRoute = false) {
         val current = _state.value
         check(current.project != null) { "Select a project before creating a conversation." }
         val request = CreateConversationRequest.newBuilder()
@@ -1102,7 +1165,7 @@ class DieterViewModel(
         model: String,
         effort: String,
         onSent: () -> Unit = {},
-    ) = action {
+    ) = action(ensureProjectRoute = false) {
         val id = _state.value.selectedCardId ?: return@action
         val parts = buildList {
             if (text.isNotBlank()) add(textPart(text))
@@ -1713,12 +1776,12 @@ class DieterViewModel(
 
     fun clearError() = _state.update { it.copy(error = null) }
 
-    private fun action(block: suspend () -> Unit) {
+    private fun action(ensureProjectRoute: Boolean = true, block: suspend () -> Unit) {
         viewModelScope.launch {
             mutationMutex.withLock {
                 _state.update { it.copy(working = true, error = null) }
                 try {
-                    connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
+                    if (ensureProjectRoute) connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
                     block()
                 } catch (cancelled: CancellationException) {
                     throw cancelled

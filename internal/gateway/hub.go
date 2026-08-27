@@ -25,7 +25,10 @@ const (
 )
 
 const (
-	daemonHeartbeatLease      = 30 * time.Second
+	// The daemon idles at a 20-second heartbeat. Require three missed
+	// heartbeats before expiring the route so brief scheduler or network stalls
+	// do not disconnect every native client at once.
+	daemonHeartbeatLease      = 60 * time.Second
 	daemonHeartbeatLeaseCheck = time.Second
 )
 

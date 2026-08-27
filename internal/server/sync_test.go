@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
@@ -352,5 +354,149 @@ func TestSyncConversationCardsBoundsSelection(t *testing.T) {
 	}
 	if len(ids) != 2 || ids[0] != "c_idle_recent" || ids[1] != "c_running_old" {
 		t.Fatalf("bounded selection=%v", ids)
+	}
+}
+
+func TestGlobalSyncCoalescesJournalBurstToHighwater(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	data := store.New(t.TempDir())
+	if _, err := data.CreateProject(store.CreateProjectInput{Name: "Burst", Path: testRepository(t)}); err != nil {
+		t.Fatal(err)
+	}
+	application := NewWithRunner(data, nil, &fakeRunner{})
+	api := &grpcAPI{server: application}
+	initial := make(chan *dieterv1.SyncFrame, 1)
+	releaseInitial := make(chan struct{})
+	frames := make(chan *dieterv1.SyncFrame, 2)
+	done := make(chan error, 1)
+	go func() {
+		done <- api.watchSync(ctx, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 10_000}, func(frame *dieterv1.SyncFrame) error {
+			if frame.GetSnapshot() != nil {
+				initial <- frame
+				select {
+				case <-releaseInitial:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			frames <- frame
+			return nil
+		})
+	}()
+	bootstrap := <-initial
+	for index := 0; index < 300; index++ {
+		if err := data.SaveCommandResult("burst-test", fmt.Sprintf("command-%03d", index), store.CommandResult{Kind: "test"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	highwater, _, err := data.SyncEvents(bootstrap.GetCursor().GetSequence(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(releaseInitial)
+	select {
+	case frame := <-frames:
+		if frame.GetCursor().GetSequence() != highwater.Sequence {
+			t.Fatalf("burst cursor=%d want highwater=%d", frame.GetCursor().GetSequence(), highwater.Sequence)
+		}
+		if len(frame.GetEvents()) != 256 {
+			t.Fatalf("coalesced diagnostic events=%d want bounded 256", len(frame.GetEvents()))
+		}
+		if frame.GetSnapshot() != nil || frame.GetDelta() != nil {
+			t.Fatalf("projection-neutral burst carried projection data: %#v", frame)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for coalesced sync frame")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("WatchSync did not stop")
+	}
+}
+
+func TestBoundedGlobalSyncReusesUnchangedConversationProjection(t *testing.T) {
+	data := store.New(t.TempDir())
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Reuse", Path: testRepository(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Cached tail"}); err != nil {
+		t.Fatal(err)
+	}
+	application := NewWithRunner(data, nil, &fakeRunner{})
+	api := &grpcAPI{server: application}
+	first, err := api.globalSnapshot(30, 8, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.snapshot.GetConversations()) != 1 {
+		t.Fatalf("initial conversations=%d", len(first.snapshot.GetConversations()))
+	}
+	if err := data.SaveCommandResult("reuse-test", "projection-neutral", store.CommandResult{Kind: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := api.globalSnapshot(30, 8, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.snapshot.GetConversations()[0] != first.snapshot.GetConversations()[0] {
+		t.Fatal("unchanged conversation snapshot was rebuilt")
+	}
+	if delta := globalDelta(first.snapshot, second.snapshot); !globalDeltaEmpty(delta) {
+		t.Fatalf("projection-neutral refresh produced delta: %#v", delta)
+	}
+}
+
+func TestOnePassGlobalStateMatchesPerProjectProjection(t *testing.T) {
+	data := store.New(t.TempDir())
+	for _, name := range []string{"Alpha", "Beta"} {
+		project, err := data.CreateProject(store.CreateProjectInput{Name: name, Path: testRepository(t)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: name + " card"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: name + " chat"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	expected := &dieterv1.State{StorePath: data.Root}
+	projects, err := data.ListProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, project := range projects {
+		expected.Projects = append(expected.Projects, protoProject(project))
+		projectState, err := data.State(project.ID, store.CardFilter{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, board := range projectState.Boards {
+			expected.Boards = append(expected.Boards, protoBoard(board))
+		}
+		for _, card := range projectState.Cards {
+			expected.Cards = append(expected.Cards, protoCard(card))
+		}
+		for _, chat := range projectState.Chats {
+			expected.Chats = append(expected.Chats, protoCard(chat))
+		}
+	}
+	application := NewWithRunner(data, nil, &fakeRunner{})
+	actual, err := (&grpcAPI{server: application}).globalSnapshot(0, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(expected, actual.snapshot.GetState()) {
+		t.Fatalf("one-pass state differs\nexpected=%v\nactual=%v", expected, actual.snapshot.GetState())
 	}
 }

@@ -1279,3 +1279,76 @@ func (s *Store) State(projectRef string, filter CardFilter) (model.State, error)
 	state.Chats, err = s.ListCards(CardFilter{Project: project.ID, Scope: model.ConversationScopeChat, Query: filter.Query, Runtime: filter.Runtime, Limit: filter.Limit})
 	return state, err
 }
+
+// GlobalState materializes the active workspace projection in one pass over
+// each domain directory. WatchSync previously called State once per project;
+// every call rescanned every project, board, card, and comment, making one
+// daemon-wide delta quadratic in the number of projects.
+func (s *Store) GlobalState() (model.State, error) {
+	projects, err := s.listProjects()
+	if err != nil {
+		return model.State{}, err
+	}
+	boards, err := s.listBoards()
+	if err != nil {
+		return model.State{}, err
+	}
+	cards, err := s.listCards()
+	if err != nil {
+		return model.State{}, err
+	}
+
+	result := model.State{
+		StorePath: s.Root,
+		Projects:  []model.Project{},
+		Boards:    []model.Board{},
+		Cards:     []model.Card{},
+		Chats:     []model.Card{},
+	}
+	boardsByProject := make(map[string][]model.Board, len(projects))
+	for _, board := range boards {
+		boardsByProject[board.ProjectID] = append(boardsByProject[board.ProjectID], board)
+	}
+	cardsByProject := make(map[string][]model.Card, len(projects))
+	chatsByProject := make(map[string][]model.Card, len(projects))
+	for _, card := range cards {
+		if card.Archived {
+			continue
+		}
+		if card.Scope == model.ConversationScopeChat {
+			chatsByProject[card.ProjectID] = append(chatsByProject[card.ProjectID], card)
+		} else {
+			cardsByProject[card.ProjectID] = append(cardsByProject[card.ProjectID], card)
+		}
+	}
+	sortCards := func(items []model.Card) {
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].Lane != items[j].Lane {
+				return items[i].Lane < items[j].Lane
+			}
+			return items[i].Position < items[j].Position
+		})
+	}
+	for projectID := range cardsByProject {
+		sortCards(cardsByProject[projectID])
+	}
+	for projectID := range chatsByProject {
+		sortCards(chatsByProject[projectID])
+	}
+	for _, project := range projects {
+		if project.Archived {
+			continue
+		}
+		projectBoards := boardsByProject[project.ID]
+		projectCards := cardsByProject[project.ID]
+		projectChats := chatsByProject[project.ID]
+		project.BoardCount = len(projectBoards)
+		project.CardCount = len(projectCards)
+		project.ChatCount = len(projectChats)
+		result.Projects = append(result.Projects, project)
+		result.Boards = append(result.Boards, projectBoards...)
+		result.Cards = append(result.Cards, projectCards...)
+		result.Chats = append(result.Chats, projectChats...)
+	}
+	return result, nil
+}

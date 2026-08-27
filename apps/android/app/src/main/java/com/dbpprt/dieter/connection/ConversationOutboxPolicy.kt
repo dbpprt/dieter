@@ -35,6 +35,56 @@ internal fun readableRpcError(error: Throwable): String {
     return if (message.isBlank()) "gRPC ${status.code}" else "gRPC ${status.code}: $message"
 }
 
+data class MachineOutboxSummary(
+    val messageCount: Int,
+    val changeCount: Int,
+    val retrying: Boolean,
+    val failed: Boolean,
+) {
+    val itemCount: Int get() = messageCount + changeCount
+
+    val deliveryLabel: String
+        get() {
+            val noun = when {
+                changeCount == 0 -> if (messageCount == 1) "message" else "messages"
+                messageCount == 0 -> if (changeCount == 1) "change" else "changes"
+                else -> if (itemCount == 1) "item" else "items"
+            }
+            val suffix = if (failed) "needs attention." else "delivers when it reconnects."
+            return "$itemCount $noun queued — $suffix"
+        }
+}
+
+internal fun machineOutboxSummaries(entries: List<AndroidOutboxEntry>): Map<String, MachineOutboxSummary> =
+    entries.filter { it.serverId == null }
+        .groupBy(AndroidOutboxEntry::endpointId)
+        .mapValues { (_, pending) ->
+            MachineOutboxSummary(
+                messageCount = pending.count { it.kind == OutboxKind.SEND_MESSAGE },
+                changeCount = pending.count { it.kind != OutboxKind.SEND_MESSAGE },
+                retrying = pending.any { it.state == OutboxState.RETRYING },
+                failed = pending.any { it.state == OutboxState.FAILED },
+            )
+        }
+
+internal fun retargetOutboxEndpoints(
+    entries: List<AndroidOutboxEntry>,
+    cardProjects: Map<String, String>,
+    projectEndpoints: Map<String, String>,
+): List<AndroidOutboxEntry> = entries.map { entry ->
+    if (entry.serverId != null) return@map entry
+    val projectId = when (entry.kind) {
+        OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT ->
+            runCatching { CreateConversationRequest.parseFrom(entry.request).projectId }.getOrNull()
+        OutboxKind.SEND_MESSAGE ->
+            runCatching { SendMessageRequest.parseFrom(entry.request).cardId }.getOrNull()?.let(cardProjects::get)
+        OutboxKind.START_CARD ->
+            runCatching { StartCardRequest.parseFrom(entry.request).cardId }.getOrNull()?.let(cardProjects::get)
+    }
+    val endpointId = projectId?.let(projectEndpoints::get).orEmpty()
+    if (endpointId.isBlank() || endpointId == entry.endpointId) entry else entry.copy(endpointId = endpointId)
+}
+
 internal fun nextOutboxEntry(
     entries: List<AndroidOutboxEntry>,
     endpointId: String,

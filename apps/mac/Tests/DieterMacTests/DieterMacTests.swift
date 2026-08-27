@@ -501,7 +501,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     ) == "Last refreshed 5m ago")
 }
 
-@Test func cursorOnlySyncPersistenceIsThrottledWithoutDelayingProjectionChanges() {
+@Test func syncProjectionPersistenceIsThrottledForCursorAndDeltaFrames() {
     let initial = Date(timeIntervalSince1970: 1_000)
     #expect(SyncCursorPersistencePolicy.shouldPersist(
         projectionChanged: false,
@@ -518,10 +518,15 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         lastPersistedAt: initial,
         now: initial.addingTimeInterval(15)
     ))
-    #expect(SyncCursorPersistencePolicy.shouldPersist(
+    #expect(!SyncCursorPersistencePolicy.shouldPersist(
         projectionChanged: true,
         lastPersistedAt: initial,
         now: initial.addingTimeInterval(1)
+    ))
+    #expect(SyncCursorPersistencePolicy.shouldPersist(
+        projectionChanged: true,
+        lastPersistedAt: initial,
+        now: initial.addingTimeInterval(15)
     ))
 }
 
@@ -1385,6 +1390,47 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     )
 
     #expect(DieterOutboxPolicy.nextIndex(in: [delayed, ready], endpointID: endpointID, now: Date(timeIntervalSince1970: 100)) == 1)
+}
+
+@Test func machineOutboxSummaryGroupsOnlyUndeliveredWorkByOwningMachine() {
+    let message = DieterOutboxEntry(
+        commandID: "message", clientID: "mac", endpointID: "gateway#offline", kind: .sendMessage,
+        request: Data(), optimisticID: "msg_one", attempts: 1, state: .retrying,
+        createdAt: Date(timeIntervalSince1970: 1)
+    )
+    let change = DieterOutboxEntry(
+        commandID: "change", clientID: "mac", endpointID: "gateway#offline", kind: .createChat,
+        request: Data(), optimisticID: "local_chat", attempts: 0,
+        createdAt: Date(timeIntervalSince1970: 2)
+    )
+    let accepted = DieterOutboxEntry(
+        commandID: "accepted", clientID: "mac", endpointID: "gateway#offline", kind: .createCard,
+        request: Data(), optimisticID: "local_card", serverID: "c_server", attempts: 0,
+        createdAt: Date(timeIntervalSince1970: 3)
+    )
+
+    let summary = MachineOutboxSummary.summaries(for: [message, change, accepted])["gateway#offline"]
+
+    #expect(summary?.messageCount == 1)
+    #expect(summary?.changeCount == 1)
+    #expect(summary?.retrying == true)
+    #expect(summary?.deliveryLabel == "2 items queued — delivers when it reconnects.")
+}
+
+@Test func reachableMachineOutboxSelectionPrefersEndpointOrder() {
+    let first = DieterOutboxEntry(
+        commandID: "first", clientID: "mac", endpointID: "gateway#one", kind: .sendMessage,
+        request: Data(), optimisticID: "msg_one", attempts: 0, createdAt: Date()
+    )
+    let second = DieterOutboxEntry(
+        commandID: "second", clientID: "mac", endpointID: "gateway#two", kind: .sendMessage,
+        request: Data(), optimisticID: "msg_two", attempts: 0, createdAt: Date()
+    )
+
+    #expect(DieterOutboxPolicy.nextIndex(
+        in: [first, second],
+        endpointIDs: ["gateway#two", "gateway#one"]
+    ) == 1)
 }
 
 @Test func createSuccessRetargetsDependentQueuedMessages() throws {
