@@ -2,9 +2,12 @@
 
 package com.dbpprt.dieter.ui
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material.icons.outlined.Wifi
@@ -43,6 +47,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -59,8 +64,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -77,6 +84,7 @@ import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.dieterEndpointFromAddress
 import com.dbpprt.dieter.settings.NavigationStyle
 import com.dbpprt.dieter.settings.DieterPalette
+import com.dbpprt.dieter.settings.NotificationDisplayStyle
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.update.AppUpdateState
 import com.dbpprt.dieter.ui.theme.DieterDivider
@@ -92,8 +100,9 @@ import com.dbpprt.dieter.ui.theme.DieterEyesTint
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 
 private const val CONNECTIONS_TAB = 0
-private const val DISPLAY_TAB = 1
-private const val UPDATES_TAB = 2
+private const val NOTIFICATIONS_TAB = 1
+private const val DISPLAY_TAB = 2
+private const val UPDATES_TAB = 3
 
 private data class ConnectionDraft(val id: String, val label: String, val address: String)
 
@@ -138,7 +147,8 @@ fun AppSettingsScreen(
             containerColor = MaterialTheme.colorScheme.background,
             contentColor = DieterShell,
         ) {
-            SettingsTab("Connections", selectedTab == CONNECTIONS_TAB) { selectedTab = CONNECTIONS_TAB }
+            SettingsTab("Connect", selectedTab == CONNECTIONS_TAB) { selectedTab = CONNECTIONS_TAB }
+            SettingsTab("Alerts", selectedTab == NOTIFICATIONS_TAB) { selectedTab = NOTIFICATIONS_TAB }
             SettingsTab("Display", selectedTab == DISPLAY_TAB) { selectedTab = DISPLAY_TAB }
             SettingsTab("Updates", selectedTab == UPDATES_TAB) { selectedTab = UPDATES_TAB }
         }
@@ -159,7 +169,9 @@ fun AppSettingsScreen(
                     },
                     onCleanSync = { cleanSyncConfirmation = true },
                 )
+                NOTIFICATIONS_TAB -> NotificationSettings(state, model)
                 DISPLAY_TAB -> DisplaySettings(state, model)
+                UPDATES_TAB -> UpdateSettings(updateManager)
                 else -> UpdateSettings(updateManager)
             }
         }
@@ -540,6 +552,379 @@ private fun ConnectionTextField(
         ),
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+@Composable
+private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
+    val settings = state.notificationSettings
+    val activityControlsEnabled = settings.activityNotificationsEnabled
+    val boards = (state.spaceBoards + state.boards).distinctBy { it.id }.sortedWith(
+        compareBy(
+            { board -> state.projects.firstOrNull { it.id == board.projectId }?.name.orEmpty().lowercase() },
+            { board -> state.projectHosts[board.projectId]?.hostname.orEmpty().lowercase() },
+            { board -> board.name.lowercase() },
+        ),
+    )
+    val visibleBoardIds = boards.mapTo(mutableSetOf()) { it.id }
+    val selectedVisibleBoards = state.notificationBoardIds.count(visibleBoardIds::contains)
+    val context = LocalContext.current
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().testTag("settings-notifications-content"),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            SettingsSectionHeader(
+                title = "Notification settings",
+                subtitle = "Choose exactly which activity reaches the shade and how much context Dieter includes.",
+            )
+        }
+        item {
+            NotificationMasterCard(
+                enabled = settings.activityNotificationsEnabled,
+                onToggle = { enabled ->
+                    model.setNotificationSettings(settings.copy(activityNotificationsEnabled = enabled))
+                },
+            )
+        }
+        item {
+            NotificationSettingsGroup(
+                title = "Standalone chats",
+                subtitle = "Control live progress separately from terminal outcomes.",
+            ) {
+                NotificationToggleRow(
+                    title = "While a chat is running",
+                    subtitle = "Keep a silent, dismissible progress notification for each active chat.",
+                    checked = settings.runningChatsEnabled,
+                    enabled = activityControlsEnabled,
+                    testTag = "notifications-running-chats-toggle",
+                    onToggle = { enabled ->
+                        model.setNotificationSettings(settings.copy(runningChatsEnabled = enabled))
+                    },
+                )
+                HorizontalDivider(color = DieterDivider)
+                NotificationToggleRow(
+                    title = "When a chat finishes",
+                    subtitle = "Notify after a successful standalone chat completes.",
+                    checked = settings.successfulChatsEnabled,
+                    enabled = activityControlsEnabled,
+                    testTag = "notifications-successful-chats-toggle",
+                    onToggle = { enabled ->
+                        model.setNotificationSettings(settings.copy(successfulChatsEnabled = enabled))
+                    },
+                )
+                HorizontalDivider(color = DieterDivider)
+                NotificationToggleRow(
+                    title = "When a chat needs attention",
+                    subtitle = "Notify for failures, stopped chats, and chats waiting for you.",
+                    checked = settings.attentionChatsEnabled,
+                    enabled = activityControlsEnabled,
+                    testTag = "notifications-attention-chats-toggle",
+                    onToggle = { enabled ->
+                        model.setNotificationSettings(settings.copy(attentionChatsEnabled = enabled))
+                    },
+                )
+            }
+        }
+        item {
+            NotificationSettingsGroup(
+                title = "Board cards",
+                subtitle = "Review alerts only fire for the boards selected below.",
+            ) {
+                NotificationToggleRow(
+                    title = "When a card is ready for review",
+                    subtitle = "Includes Mark done and Open actions from the notification.",
+                    checked = settings.reviewCardsEnabled,
+                    enabled = activityControlsEnabled,
+                    testTag = "notifications-review-toggle",
+                    onToggle = { enabled ->
+                        model.setNotificationSettings(settings.copy(reviewCardsEnabled = enabled))
+                    },
+                )
+                HorizontalDivider(color = DieterDivider)
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Board scope", color = DieterText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text(
+                            "$selectedVisibleBoards of ${boards.size} synced boards",
+                            color = DieterMuted,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    TextButton(
+                        onClick = { model.setNotificationBoardIds(state.notificationBoardIds + visibleBoardIds) },
+                        enabled = activityControlsEnabled && settings.reviewCardsEnabled && boards.isNotEmpty(),
+                        modifier = Modifier.testTag("notifications-all-boards"),
+                    ) { Text("All") }
+                    TextButton(
+                        onClick = { model.setNotificationBoardIds(emptySet()) },
+                        enabled = activityControlsEnabled && settings.reviewCardsEnabled && state.notificationBoardIds.isNotEmpty(),
+                        modifier = Modifier.testTag("notifications-no-boards"),
+                    ) { Text("None") }
+                }
+                if (boards.isEmpty()) {
+                    Text(
+                        "Boards will appear here after a workspace sync.",
+                        color = DieterMuted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    )
+                } else {
+                    boards.forEach { board ->
+                        HorizontalDivider(color = DieterDivider)
+                        val projectName = state.projects.firstOrNull { it.id == board.projectId }?.name
+                            ?.takeIf(String::isNotBlank) ?: "Workspace"
+                        val hostname = state.projectHosts[board.projectId]?.hostname?.takeIf(String::isNotBlank)
+                        NotificationBoardRow(
+                            boardName = board.name.ifBlank { "Untitled board" },
+                            projectName = listOfNotNull(projectName, hostname).distinct().joinToString(" · "),
+                            checked = board.id in state.notificationBoardIds,
+                            enabled = activityControlsEnabled && settings.reviewCardsEnabled,
+                            testTag = "notifications-board-${board.id}",
+                            onToggle = { enabled -> model.setNotificationBoardEnabled(board.id, enabled) },
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            NotificationSettingsGroup(
+                title = "Presentation",
+                subtitle = "This also changes the persistent connection notification required for background sync.",
+            ) {
+                NotificationStyleSelector(
+                    selected = settings.displayStyle,
+                    onSelect = { style ->
+                        model.setNotificationSettings(settings.copy(displayStyle = style))
+                    },
+                )
+                HorizontalDivider(color = DieterDivider)
+                NotificationToggleRow(
+                    title = "Include the agent result",
+                    subtitle = "Show the closing assistant message in expanded completion notifications.",
+                    checked = settings.resultPreviewsEnabled,
+                    enabled = activityControlsEnabled && settings.displayStyle == NotificationDisplayStyle.DETAILED,
+                    testTag = "notifications-result-previews-toggle",
+                    onToggle = { enabled ->
+                        model.setNotificationSettings(settings.copy(resultPreviewsEnabled = enabled))
+                    },
+                )
+                HorizontalDivider(color = DieterDivider)
+                NotificationToggleRow(
+                    title = "Live work in connection status",
+                    subtitle = "Show active cards, model activity, and subagents in the ongoing status.",
+                    checked = settings.liveStatusActivityEnabled,
+                    testTag = "notifications-live-status-toggle",
+                    onToggle = { enabled ->
+                        model.setNotificationSettings(settings.copy(liveStatusActivityEnabled = enabled))
+                    },
+                )
+            }
+        }
+        item {
+            Surface(
+                color = DieterSurface,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Android channel controls", color = DieterText, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text(
+                        "Sound, vibration, lock-screen visibility, and system-level permission stay under Android's control. The connection status remains while background sync is enabled.",
+                        color = DieterMuted,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                            )
+                        },
+                        modifier = Modifier.testTag("notifications-system-settings"),
+                    ) {
+                        Text("Open Android notification settings")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationMasterCard(enabled: Boolean, onToggle: (Boolean) -> Unit) {
+    Surface(
+        color = if (enabled) DieterEyesTint else DieterSurface,
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, if (enabled) DieterShell else DieterOutline),
+        modifier = Modifier.fillMaxWidth().clickable { onToggle(!enabled) },
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Surface(color = DieterSurfaceHigh, shape = RoundedCornerShape(14.dp)) {
+                Icon(
+                    Icons.Outlined.Notifications,
+                    contentDescription = null,
+                    tint = DieterShell,
+                    modifier = Modifier.padding(10.dp).size(24.dp),
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("Activity notifications", color = DieterText, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text(
+                    if (enabled) "Configured alerts are active." else "Optional chat and board alerts are paused.",
+                    color = DieterMuted,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+                modifier = Modifier.testTag("notifications-master-toggle"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NotificationSettingsGroup(
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit,
+) {
+    Surface(color = DieterSurface, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Column(
+                Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(title, color = DieterText, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                Text(subtitle, color = DieterMuted, fontSize = 13.sp, lineHeight = 18.sp)
+            }
+            HorizontalDivider(color = DieterDivider)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun NotificationToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    testTag: String,
+    enabled: Boolean = true,
+    onToggle: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(enabled = enabled) { onToggle(!checked) }
+            .alpha(if (enabled) 1f else 0.5f)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = DieterText, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+            Text(subtitle, color = DieterMuted, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onToggle,
+            enabled = enabled,
+            modifier = Modifier.testTag(testTag),
+        )
+    }
+}
+
+@Composable
+private fun NotificationBoardRow(
+    boardName: String,
+    projectName: String,
+    checked: Boolean,
+    enabled: Boolean,
+    testTag: String,
+    onToggle: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable(enabled = enabled) { onToggle(!checked) }
+            .alpha(if (enabled) 1f else 0.5f)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(boardName, color = DieterText, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+            Text(projectName, color = DieterMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onToggle,
+            enabled = enabled,
+            modifier = Modifier.testTag(testTag),
+        )
+    }
+}
+
+@Composable
+private fun NotificationStyleSelector(
+    selected: NotificationDisplayStyle,
+    onSelect: (NotificationDisplayStyle) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        NotificationStyleOption(
+            title = "Detailed",
+            subtitle = "Previews and live context",
+            selected = selected == NotificationDisplayStyle.DETAILED,
+            modifier = Modifier.weight(1f).testTag("notifications-style-detailed"),
+            onClick = { onSelect(NotificationDisplayStyle.DETAILED) },
+        )
+        NotificationStyleOption(
+            title = "Compact",
+            subtitle = "Short standard rows",
+            selected = selected == NotificationDisplayStyle.COMPACT,
+            modifier = Modifier.weight(1f).testTag("notifications-style-compact"),
+            onClick = { onSelect(NotificationDisplayStyle.COMPACT) },
+        )
+    }
+}
+
+@Composable
+private fun NotificationStyleOption(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        color = if (selected) DieterEyesTint else DieterSurfaceHigh,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, if (selected) DieterShell else DieterOutline),
+        modifier = modifier,
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = DieterText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(subtitle, color = DieterMuted, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+    }
 }
 
 @Composable

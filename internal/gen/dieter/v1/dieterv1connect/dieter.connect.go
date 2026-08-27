@@ -39,6 +39,12 @@ const (
 	// DieterServiceGetRuntimeStatusProcedure is the fully-qualified name of the DieterService's
 	// GetRuntimeStatus RPC.
 	DieterServiceGetRuntimeStatusProcedure = "/dieter.v1.DieterService/GetRuntimeStatus"
+	// DieterServiceGetMachineInformationProcedure is the fully-qualified name of the DieterService's
+	// GetMachineInformation RPC.
+	DieterServiceGetMachineInformationProcedure = "/dieter.v1.DieterService/GetMachineInformation"
+	// DieterServicePerformMachineOperationProcedure is the fully-qualified name of the DieterService's
+	// PerformMachineOperation RPC.
+	DieterServicePerformMachineOperationProcedure = "/dieter.v1.DieterService/PerformMachineOperation"
 	// DieterServiceGetStateProcedure is the fully-qualified name of the DieterService's GetState RPC.
 	DieterServiceGetStateProcedure = "/dieter.v1.DieterService/GetState"
 	// DieterServiceWatchStateProcedure is the fully-qualified name of the DieterService's WatchState
@@ -241,6 +247,10 @@ const (
 type DieterServiceClient interface {
 	Health(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HealthResponse], error)
 	GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error)
+	// Machine telemetry stays on the daemon and follows the same authenticated
+	// direct-or-relay data path as every other Dieter operation.
+	GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error)
+	PerformMachineOperation(context.Context, *connect.Request[v1.MachineOperationRequest]) (*connect.Response[v1.MachineOperationResponse], error)
 	GetState(context.Context, *connect.Request[v1.GetStateRequest]) (*connect.Response[v1.State], error)
 	WatchState(context.Context, *connect.Request[v1.WatchStateRequest]) (*connect.ServerStreamForClient[v1.State], error)
 	// WatchSync is the daemon-wide durable change stream used by native
@@ -342,6 +352,18 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceGetRuntimeStatusProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("GetRuntimeStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		getMachineInformation: connect.NewClient[emptypb.Empty, v1.MachineInformation](
+			httpClient,
+			baseURL+DieterServiceGetMachineInformationProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetMachineInformation")),
+			connect.WithClientOptions(opts...),
+		),
+		performMachineOperation: connect.NewClient[v1.MachineOperationRequest, v1.MachineOperationResponse](
+			httpClient,
+			baseURL+DieterServicePerformMachineOperationProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("PerformMachineOperation")),
 			connect.WithClientOptions(opts...),
 		),
 		getState: connect.NewClient[v1.GetStateRequest, v1.State](
@@ -765,6 +787,8 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 type dieterServiceClient struct {
 	health                       *connect.Client[emptypb.Empty, v1.HealthResponse]
 	getRuntimeStatus             *connect.Client[emptypb.Empty, v1.RuntimeStatus]
+	getMachineInformation        *connect.Client[emptypb.Empty, v1.MachineInformation]
+	performMachineOperation      *connect.Client[v1.MachineOperationRequest, v1.MachineOperationResponse]
 	getState                     *connect.Client[v1.GetStateRequest, v1.State]
 	watchState                   *connect.Client[v1.WatchStateRequest, v1.State]
 	watchSync                    *connect.Client[v1.SyncRequest, v1.SyncFrame]
@@ -844,6 +868,16 @@ func (c *dieterServiceClient) Health(ctx context.Context, req *connect.Request[e
 // GetRuntimeStatus calls dieter.v1.DieterService.GetRuntimeStatus.
 func (c *dieterServiceClient) GetRuntimeStatus(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error) {
 	return c.getRuntimeStatus.CallUnary(ctx, req)
+}
+
+// GetMachineInformation calls dieter.v1.DieterService.GetMachineInformation.
+func (c *dieterServiceClient) GetMachineInformation(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error) {
+	return c.getMachineInformation.CallUnary(ctx, req)
+}
+
+// PerformMachineOperation calls dieter.v1.DieterService.PerformMachineOperation.
+func (c *dieterServiceClient) PerformMachineOperation(ctx context.Context, req *connect.Request[v1.MachineOperationRequest]) (*connect.Response[v1.MachineOperationResponse], error) {
+	return c.performMachineOperation.CallUnary(ctx, req)
 }
 
 // GetState calls dieter.v1.DieterService.GetState.
@@ -1195,6 +1229,10 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, req *connect
 type DieterServiceHandler interface {
 	Health(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HealthResponse], error)
 	GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error)
+	// Machine telemetry stays on the daemon and follows the same authenticated
+	// direct-or-relay data path as every other Dieter operation.
+	GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error)
+	PerformMachineOperation(context.Context, *connect.Request[v1.MachineOperationRequest]) (*connect.Response[v1.MachineOperationResponse], error)
 	GetState(context.Context, *connect.Request[v1.GetStateRequest]) (*connect.Response[v1.State], error)
 	WatchState(context.Context, *connect.Request[v1.WatchStateRequest], *connect.ServerStream[v1.State]) error
 	// WatchSync is the daemon-wide durable change stream used by native
@@ -1292,6 +1330,18 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceGetRuntimeStatusProcedure,
 		svc.GetRuntimeStatus,
 		connect.WithSchema(dieterServiceMethods.ByName("GetRuntimeStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetMachineInformationHandler := connect.NewUnaryHandler(
+		DieterServiceGetMachineInformationProcedure,
+		svc.GetMachineInformation,
+		connect.WithSchema(dieterServiceMethods.ByName("GetMachineInformation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServicePerformMachineOperationHandler := connect.NewUnaryHandler(
+		DieterServicePerformMachineOperationProcedure,
+		svc.PerformMachineOperation,
+		connect.WithSchema(dieterServiceMethods.ByName("PerformMachineOperation")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceGetStateHandler := connect.NewUnaryHandler(
@@ -1714,6 +1764,10 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceHealthHandler.ServeHTTP(w, r)
 		case DieterServiceGetRuntimeStatusProcedure:
 			dieterServiceGetRuntimeStatusHandler.ServeHTTP(w, r)
+		case DieterServiceGetMachineInformationProcedure:
+			dieterServiceGetMachineInformationHandler.ServeHTTP(w, r)
+		case DieterServicePerformMachineOperationProcedure:
+			dieterServicePerformMachineOperationHandler.ServeHTTP(w, r)
 		case DieterServiceGetStateProcedure:
 			dieterServiceGetStateHandler.ServeHTTP(w, r)
 		case DieterServiceWatchStateProcedure:
@@ -1867,6 +1921,14 @@ func (UnimplementedDieterServiceHandler) Health(context.Context, *connect.Reques
 
 func (UnimplementedDieterServiceHandler) GetRuntimeStatus(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RuntimeStatus], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetRuntimeStatus is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetMachineInformation is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) PerformMachineOperation(context.Context, *connect.Request[v1.MachineOperationRequest]) (*connect.Response[v1.MachineOperationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.PerformMachineOperation is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) GetState(context.Context, *connect.Request[v1.GetStateRequest]) (*connect.Response[v1.State], error) {

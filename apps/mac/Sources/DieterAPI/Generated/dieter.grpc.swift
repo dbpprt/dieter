@@ -47,6 +47,32 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "GetMachineInformation" metadata.
+        public enum GetMachineInformation: Sendable {
+            /// Request type for "GetMachineInformation".
+            public typealias Input = SwiftProtobuf.Google_Protobuf_Empty
+            /// Response type for "GetMachineInformation".
+            public typealias Output = Dieter_V1_MachineInformation
+            /// Descriptor for "GetMachineInformation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetMachineInformation",
+                type: .unary
+            )
+        }
+        /// Namespace for "PerformMachineOperation" metadata.
+        public enum PerformMachineOperation: Sendable {
+            /// Request type for "PerformMachineOperation".
+            public typealias Input = Dieter_V1_MachineOperationRequest
+            /// Response type for "PerformMachineOperation".
+            public typealias Output = Dieter_V1_MachineOperationResponse
+            /// Descriptor for "PerformMachineOperation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "PerformMachineOperation",
+                type: .unary
+            )
+        }
         /// Namespace for "GetState" metadata.
         public enum GetState: Sendable {
             /// Request type for "GetState".
@@ -948,6 +974,8 @@ public enum Dieter_V1_DieterService: Sendable {
         public static let descriptors: [GRPCCore.MethodDescriptor] = [
             Health.descriptor,
             GetRuntimeStatus.descriptor,
+            GetMachineInformation.descriptor,
+            PerformMachineOperation.descriptor,
             GetState.descriptor,
             WatchState.descriptor,
             WatchSync.descriptor,
@@ -1072,6 +1100,49 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RuntimeStatus>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RuntimeStatus>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetMachineInformation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Machine telemetry stays on the daemon and follows the same authenticated
+        /// > direct-or-relay data path as every other Dieter operation.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_MachineInformation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getMachineInformation<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_MachineInformation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_MachineInformation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "PerformMachineOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_MachineOperationRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MachineOperationRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_MachineOperationResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func performMachineOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MachineOperationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MachineOperationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_MachineOperationResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_MachineOperationResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "GetState" method.
@@ -2473,6 +2544,71 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.GetRuntimeStatus.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetMachineInformation" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Machine telemetry stays on the daemon and follows the same authenticated
+        /// > direct-or-relay data path as every other Dieter operation.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+        ///   - serializer: A serializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_MachineInformation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getMachineInformation<Result>(
+            request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+            serializer: some GRPCCore.MessageSerializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_MachineInformation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_MachineInformation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetMachineInformation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "PerformMachineOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_MachineOperationRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MachineOperationRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_MachineOperationResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func performMachineOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MachineOperationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MachineOperationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_MachineOperationResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_MachineOperationResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.PerformMachineOperation.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -4613,6 +4749,61 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "GetMachineInformation" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Machine telemetry stays on the daemon and follows the same authenticated
+    /// > direct-or-relay data path as every other Dieter operation.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `SwiftProtobuf.Google_Protobuf_Empty` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getMachineInformation<Result>(
+        request: GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_MachineInformation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getMachineInformation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_MachineInformation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PerformMachineOperation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_MachineOperationRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func performMachineOperation<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_MachineOperationRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_MachineOperationResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.performMachineOperation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_MachineOperationRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_MachineOperationResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "GetState" method.
     ///
     /// - Parameters:
@@ -6402,6 +6593,69 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getRuntimeStatus(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetMachineInformation" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Machine telemetry stays on the daemon and follows the same authenticated
+    /// > direct-or-relay data path as every other Dieter operation.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getMachineInformation<Result>(
+        _ message: SwiftProtobuf.Google_Protobuf_Empty,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_MachineInformation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<SwiftProtobuf.Google_Protobuf_Empty>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getMachineInformation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PerformMachineOperation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func performMachineOperation<Result>(
+        _ message: Dieter_V1_MachineOperationRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_MachineOperationResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_MachineOperationRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.performMachineOperation(
             request: request,
             options: options,
             onResponse: handleResponse

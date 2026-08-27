@@ -25,6 +25,44 @@ fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobu
   typealias Version = _2
 }
 
+public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case restart // = 1
+  case shutdown // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .restart
+    case 2: self = .shutdown
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .restart: return 1
+    case .shutdown: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_V1_MachineOperationAction] = [
+    .unspecified,
+    .restart,
+    .shutdown,
+  ]
+
+}
+
 public nonisolated struct Dieter_V1_HealthResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -53,6 +91,207 @@ public nonisolated struct Dieter_V1_RuntimeStatus: Sendable {
   public var sandboxed: Bool = false
 
   public var nodeRequired: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_MachineInformation: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var hostname: String {
+    get {_storage._hostname}
+    set {_uniqueStorage()._hostname = newValue}
+  }
+
+  public var osName: String {
+    get {_storage._osName}
+    set {_uniqueStorage()._osName = newValue}
+  }
+
+  public var osVersion: String {
+    get {_storage._osVersion}
+    set {_uniqueStorage()._osVersion = newValue}
+  }
+
+  public var architecture: String {
+    get {_storage._architecture}
+    set {_uniqueStorage()._architecture = newValue}
+  }
+
+  public var hardwareModel: String {
+    get {_storage._hardwareModel}
+    set {_uniqueStorage()._hardwareModel = newValue}
+  }
+
+  public var processor: String {
+    get {_storage._processor}
+    set {_uniqueStorage()._processor = newValue}
+  }
+
+  public var uptimeSeconds: UInt64 {
+    get {_storage._uptimeSeconds}
+    set {_uniqueStorage()._uptimeSeconds = newValue}
+  }
+
+  public var collectedAt: String {
+    get {_storage._collectedAt}
+    set {_uniqueStorage()._collectedAt = newValue}
+  }
+
+  public var cpuUsagePercent: Double {
+    get {_storage._cpuUsagePercent}
+    set {_uniqueStorage()._cpuUsagePercent = newValue}
+  }
+
+  public var logicalCpuCount: UInt32 {
+    get {_storage._logicalCpuCount}
+    set {_uniqueStorage()._logicalCpuCount = newValue}
+  }
+
+  public var load1: Double {
+    get {_storage._load1}
+    set {_uniqueStorage()._load1 = newValue}
+  }
+
+  public var load5: Double {
+    get {_storage._load5}
+    set {_uniqueStorage()._load5 = newValue}
+  }
+
+  public var load15: Double {
+    get {_storage._load15}
+    set {_uniqueStorage()._load15 = newValue}
+  }
+
+  public var memoryTotalBytes: UInt64 {
+    get {_storage._memoryTotalBytes}
+    set {_uniqueStorage()._memoryTotalBytes = newValue}
+  }
+
+  public var memoryUsedBytes: UInt64 {
+    get {_storage._memoryUsedBytes}
+    set {_uniqueStorage()._memoryUsedBytes = newValue}
+  }
+
+  public var memoryCachedBytes: UInt64 {
+    get {_storage._memoryCachedBytes}
+    set {_uniqueStorage()._memoryCachedBytes = newValue}
+  }
+
+  public var swapUsedBytes: UInt64 {
+    get {_storage._swapUsedBytes}
+    set {_uniqueStorage()._swapUsedBytes = newValue}
+  }
+
+  public var diskTotalBytes: UInt64 {
+    get {_storage._diskTotalBytes}
+    set {_uniqueStorage()._diskTotalBytes = newValue}
+  }
+
+  public var diskFreeBytes: UInt64 {
+    get {_storage._diskFreeBytes}
+    set {_uniqueStorage()._diskFreeBytes = newValue}
+  }
+
+  public var networkReceiveBytesPerSecond: Double {
+    get {_storage._networkReceiveBytesPerSecond}
+    set {_uniqueStorage()._networkReceiveBytesPerSecond = newValue}
+  }
+
+  public var networkSendBytesPerSecond: Double {
+    get {_storage._networkSendBytesPerSecond}
+    set {_uniqueStorage()._networkSendBytesPerSecond = newValue}
+  }
+
+  public var temperatureCelsius: Double {
+    get {_storage._temperatureCelsius}
+    set {_uniqueStorage()._temperatureCelsius = newValue}
+  }
+
+  public var processes: [Dieter_V1_MachineProcess] {
+    get {_storage._processes}
+    set {_uniqueStorage()._processes = newValue}
+  }
+
+  public var activeAgentCount: UInt32 {
+    get {_storage._activeAgentCount}
+    set {_uniqueStorage()._activeAgentCount = newValue}
+  }
+
+  public var supportsRestart: Bool {
+    get {_storage._supportsRestart}
+    set {_uniqueStorage()._supportsRestart = newValue}
+  }
+
+  public var supportsShutdown: Bool {
+    get {_storage._supportsShutdown}
+    set {_uniqueStorage()._supportsShutdown = newValue}
+  }
+
+  public var cpuCoreUsagePercent: [Double] {
+    get {_storage._cpuCoreUsagePercent}
+    set {_uniqueStorage()._cpuCoreUsagePercent = newValue}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct Dieter_V1_MachineProcess: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var pid: Int64 = 0
+
+  public var kind: String = String()
+
+  public var name: String = String()
+
+  public var detail: String = String()
+
+  public var cpuUsagePercent: Double = 0
+
+  public var memoryBytes: UInt64 = 0
+
+  public var startedAt: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_MachineOperationRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var action: Dieter_V1_MachineOperationAction = .unspecified
+
+  /// Destructive host actions require an exact action-specific confirmation
+  /// phrase even after the client presents its own confirmation UI.
+  public var confirmation: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_MachineOperationResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var accepted: Bool = false
+
+  public var message: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -3720,6 +3959,10 @@ public nonisolated struct Dieter_V1_ScheduleRunsResponse: Sendable {
 
 fileprivate nonisolated let _protobuf_package = "dieter.v1"
 
+nonisolated extension Dieter_V1_MachineOperationAction: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MACHINE_OPERATION_ACTION_UNSPECIFIED\0\u{1}MACHINE_OPERATION_ACTION_RESTART\0\u{1}MACHINE_OPERATION_ACTION_SHUTDOWN\0")
+}
+
 nonisolated extension Dieter_V1_HealthResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".HealthResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}status\0\u{1}version\0\u{3}store_path\0")
@@ -3800,6 +4043,384 @@ nonisolated extension Dieter_V1_RuntimeStatus: SwiftProtobuf.Message, SwiftProto
     if lhs.mode != rhs.mode {return false}
     if lhs.sandboxed != rhs.sandboxed {return false}
     if lhs.nodeRequired != rhs.nodeRequired {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MachineInformation"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}hostname\0\u{3}os_name\0\u{3}os_version\0\u{1}architecture\0\u{3}hardware_model\0\u{1}processor\0\u{3}uptime_seconds\0\u{3}collected_at\0\u{3}cpu_usage_percent\0\u{3}logical_cpu_count\0\u{3}load_1\0\u{3}load_5\0\u{3}load_15\0\u{3}memory_total_bytes\0\u{3}memory_used_bytes\0\u{3}memory_cached_bytes\0\u{3}swap_used_bytes\0\u{3}disk_total_bytes\0\u{3}disk_free_bytes\0\u{3}network_receive_bytes_per_second\0\u{3}network_send_bytes_per_second\0\u{3}temperature_celsius\0\u{1}processes\0\u{3}active_agent_count\0\u{3}supports_restart\0\u{3}supports_shutdown\0\u{3}cpu_core_usage_percent\0")
+
+  fileprivate class _StorageClass {
+    var _hostname: String = String()
+    var _osName: String = String()
+    var _osVersion: String = String()
+    var _architecture: String = String()
+    var _hardwareModel: String = String()
+    var _processor: String = String()
+    var _uptimeSeconds: UInt64 = 0
+    var _collectedAt: String = String()
+    var _cpuUsagePercent: Double = 0
+    var _logicalCpuCount: UInt32 = 0
+    var _load1: Double = 0
+    var _load5: Double = 0
+    var _load15: Double = 0
+    var _memoryTotalBytes: UInt64 = 0
+    var _memoryUsedBytes: UInt64 = 0
+    var _memoryCachedBytes: UInt64 = 0
+    var _swapUsedBytes: UInt64 = 0
+    var _diskTotalBytes: UInt64 = 0
+    var _diskFreeBytes: UInt64 = 0
+    var _networkReceiveBytesPerSecond: Double = 0
+    var _networkSendBytesPerSecond: Double = 0
+    var _temperatureCelsius: Double = 0
+    var _processes: [Dieter_V1_MachineProcess] = []
+    var _activeAgentCount: UInt32 = 0
+    var _supportsRestart: Bool = false
+    var _supportsShutdown: Bool = false
+    var _cpuCoreUsagePercent: [Double] = []
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _hostname = source._hostname
+      _osName = source._osName
+      _osVersion = source._osVersion
+      _architecture = source._architecture
+      _hardwareModel = source._hardwareModel
+      _processor = source._processor
+      _uptimeSeconds = source._uptimeSeconds
+      _collectedAt = source._collectedAt
+      _cpuUsagePercent = source._cpuUsagePercent
+      _logicalCpuCount = source._logicalCpuCount
+      _load1 = source._load1
+      _load5 = source._load5
+      _load15 = source._load15
+      _memoryTotalBytes = source._memoryTotalBytes
+      _memoryUsedBytes = source._memoryUsedBytes
+      _memoryCachedBytes = source._memoryCachedBytes
+      _swapUsedBytes = source._swapUsedBytes
+      _diskTotalBytes = source._diskTotalBytes
+      _diskFreeBytes = source._diskFreeBytes
+      _networkReceiveBytesPerSecond = source._networkReceiveBytesPerSecond
+      _networkSendBytesPerSecond = source._networkSendBytesPerSecond
+      _temperatureCelsius = source._temperatureCelsius
+      _processes = source._processes
+      _activeAgentCount = source._activeAgentCount
+      _supportsRestart = source._supportsRestart
+      _supportsShutdown = source._supportsShutdown
+      _cpuCoreUsagePercent = source._cpuCoreUsagePercent
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._hostname) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._osName) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._osVersion) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._architecture) }()
+        case 5: try { try decoder.decodeSingularStringField(value: &_storage._hardwareModel) }()
+        case 6: try { try decoder.decodeSingularStringField(value: &_storage._processor) }()
+        case 7: try { try decoder.decodeSingularUInt64Field(value: &_storage._uptimeSeconds) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._collectedAt) }()
+        case 9: try { try decoder.decodeSingularDoubleField(value: &_storage._cpuUsagePercent) }()
+        case 10: try { try decoder.decodeSingularUInt32Field(value: &_storage._logicalCpuCount) }()
+        case 11: try { try decoder.decodeSingularDoubleField(value: &_storage._load1) }()
+        case 12: try { try decoder.decodeSingularDoubleField(value: &_storage._load5) }()
+        case 13: try { try decoder.decodeSingularDoubleField(value: &_storage._load15) }()
+        case 14: try { try decoder.decodeSingularUInt64Field(value: &_storage._memoryTotalBytes) }()
+        case 15: try { try decoder.decodeSingularUInt64Field(value: &_storage._memoryUsedBytes) }()
+        case 16: try { try decoder.decodeSingularUInt64Field(value: &_storage._memoryCachedBytes) }()
+        case 17: try { try decoder.decodeSingularUInt64Field(value: &_storage._swapUsedBytes) }()
+        case 18: try { try decoder.decodeSingularUInt64Field(value: &_storage._diskTotalBytes) }()
+        case 19: try { try decoder.decodeSingularUInt64Field(value: &_storage._diskFreeBytes) }()
+        case 20: try { try decoder.decodeSingularDoubleField(value: &_storage._networkReceiveBytesPerSecond) }()
+        case 21: try { try decoder.decodeSingularDoubleField(value: &_storage._networkSendBytesPerSecond) }()
+        case 22: try { try decoder.decodeSingularDoubleField(value: &_storage._temperatureCelsius) }()
+        case 23: try { try decoder.decodeRepeatedMessageField(value: &_storage._processes) }()
+        case 24: try { try decoder.decodeSingularUInt32Field(value: &_storage._activeAgentCount) }()
+        case 25: try { try decoder.decodeSingularBoolField(value: &_storage._supportsRestart) }()
+        case 26: try { try decoder.decodeSingularBoolField(value: &_storage._supportsShutdown) }()
+        case 27: try { try decoder.decodeRepeatedDoubleField(value: &_storage._cpuCoreUsagePercent) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      if !_storage._hostname.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._hostname, fieldNumber: 1)
+      }
+      if !_storage._osName.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._osName, fieldNumber: 2)
+      }
+      if !_storage._osVersion.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._osVersion, fieldNumber: 3)
+      }
+      if !_storage._architecture.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._architecture, fieldNumber: 4)
+      }
+      if !_storage._hardwareModel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._hardwareModel, fieldNumber: 5)
+      }
+      if !_storage._processor.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._processor, fieldNumber: 6)
+      }
+      if _storage._uptimeSeconds != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._uptimeSeconds, fieldNumber: 7)
+      }
+      if !_storage._collectedAt.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._collectedAt, fieldNumber: 8)
+      }
+      if _storage._cpuUsagePercent.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._cpuUsagePercent, fieldNumber: 9)
+      }
+      if _storage._logicalCpuCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._logicalCpuCount, fieldNumber: 10)
+      }
+      if _storage._load1.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._load1, fieldNumber: 11)
+      }
+      if _storage._load5.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._load5, fieldNumber: 12)
+      }
+      if _storage._load15.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._load15, fieldNumber: 13)
+      }
+      if _storage._memoryTotalBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._memoryTotalBytes, fieldNumber: 14)
+      }
+      if _storage._memoryUsedBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._memoryUsedBytes, fieldNumber: 15)
+      }
+      if _storage._memoryCachedBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._memoryCachedBytes, fieldNumber: 16)
+      }
+      if _storage._swapUsedBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._swapUsedBytes, fieldNumber: 17)
+      }
+      if _storage._diskTotalBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._diskTotalBytes, fieldNumber: 18)
+      }
+      if _storage._diskFreeBytes != 0 {
+        try visitor.visitSingularUInt64Field(value: _storage._diskFreeBytes, fieldNumber: 19)
+      }
+      if _storage._networkReceiveBytesPerSecond.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._networkReceiveBytesPerSecond, fieldNumber: 20)
+      }
+      if _storage._networkSendBytesPerSecond.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._networkSendBytesPerSecond, fieldNumber: 21)
+      }
+      if _storage._temperatureCelsius.bitPattern != 0 {
+        try visitor.visitSingularDoubleField(value: _storage._temperatureCelsius, fieldNumber: 22)
+      }
+      if !_storage._processes.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._processes, fieldNumber: 23)
+      }
+      if _storage._activeAgentCount != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._activeAgentCount, fieldNumber: 24)
+      }
+      if _storage._supportsRestart != false {
+        try visitor.visitSingularBoolField(value: _storage._supportsRestart, fieldNumber: 25)
+      }
+      if _storage._supportsShutdown != false {
+        try visitor.visitSingularBoolField(value: _storage._supportsShutdown, fieldNumber: 26)
+      }
+      if !_storage._cpuCoreUsagePercent.isEmpty {
+        try visitor.visitPackedDoubleField(value: _storage._cpuCoreUsagePercent, fieldNumber: 27)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MachineInformation, rhs: Dieter_V1_MachineInformation) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._hostname != rhs_storage._hostname {return false}
+        if _storage._osName != rhs_storage._osName {return false}
+        if _storage._osVersion != rhs_storage._osVersion {return false}
+        if _storage._architecture != rhs_storage._architecture {return false}
+        if _storage._hardwareModel != rhs_storage._hardwareModel {return false}
+        if _storage._processor != rhs_storage._processor {return false}
+        if _storage._uptimeSeconds != rhs_storage._uptimeSeconds {return false}
+        if _storage._collectedAt != rhs_storage._collectedAt {return false}
+        if _storage._cpuUsagePercent != rhs_storage._cpuUsagePercent {return false}
+        if _storage._logicalCpuCount != rhs_storage._logicalCpuCount {return false}
+        if _storage._load1 != rhs_storage._load1 {return false}
+        if _storage._load5 != rhs_storage._load5 {return false}
+        if _storage._load15 != rhs_storage._load15 {return false}
+        if _storage._memoryTotalBytes != rhs_storage._memoryTotalBytes {return false}
+        if _storage._memoryUsedBytes != rhs_storage._memoryUsedBytes {return false}
+        if _storage._memoryCachedBytes != rhs_storage._memoryCachedBytes {return false}
+        if _storage._swapUsedBytes != rhs_storage._swapUsedBytes {return false}
+        if _storage._diskTotalBytes != rhs_storage._diskTotalBytes {return false}
+        if _storage._diskFreeBytes != rhs_storage._diskFreeBytes {return false}
+        if _storage._networkReceiveBytesPerSecond != rhs_storage._networkReceiveBytesPerSecond {return false}
+        if _storage._networkSendBytesPerSecond != rhs_storage._networkSendBytesPerSecond {return false}
+        if _storage._temperatureCelsius != rhs_storage._temperatureCelsius {return false}
+        if _storage._processes != rhs_storage._processes {return false}
+        if _storage._activeAgentCount != rhs_storage._activeAgentCount {return false}
+        if _storage._supportsRestart != rhs_storage._supportsRestart {return false}
+        if _storage._supportsShutdown != rhs_storage._supportsShutdown {return false}
+        if _storage._cpuCoreUsagePercent != rhs_storage._cpuCoreUsagePercent {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_MachineProcess: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MachineProcess"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}pid\0\u{1}kind\0\u{1}name\0\u{1}detail\0\u{3}cpu_usage_percent\0\u{3}memory_bytes\0\u{3}started_at\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularInt64Field(value: &self.pid) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.kind) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.detail) }()
+      case 5: try { try decoder.decodeSingularDoubleField(value: &self.cpuUsagePercent) }()
+      case 6: try { try decoder.decodeSingularUInt64Field(value: &self.memoryBytes) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.startedAt) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.pid != 0 {
+      try visitor.visitSingularInt64Field(value: self.pid, fieldNumber: 1)
+    }
+    if !self.kind.isEmpty {
+      try visitor.visitSingularStringField(value: self.kind, fieldNumber: 2)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 3)
+    }
+    if !self.detail.isEmpty {
+      try visitor.visitSingularStringField(value: self.detail, fieldNumber: 4)
+    }
+    if self.cpuUsagePercent.bitPattern != 0 {
+      try visitor.visitSingularDoubleField(value: self.cpuUsagePercent, fieldNumber: 5)
+    }
+    if self.memoryBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.memoryBytes, fieldNumber: 6)
+    }
+    if !self.startedAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.startedAt, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MachineProcess, rhs: Dieter_V1_MachineProcess) -> Bool {
+    if lhs.pid != rhs.pid {return false}
+    if lhs.kind != rhs.kind {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.detail != rhs.detail {return false}
+    if lhs.cpuUsagePercent != rhs.cpuUsagePercent {return false}
+    if lhs.memoryBytes != rhs.memoryBytes {return false}
+    if lhs.startedAt != rhs.startedAt {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_MachineOperationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MachineOperationRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}action\0\u{1}confirmation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.action) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.confirmation) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.action != .unspecified {
+      try visitor.visitSingularEnumField(value: self.action, fieldNumber: 1)
+    }
+    if !self.confirmation.isEmpty {
+      try visitor.visitSingularStringField(value: self.confirmation, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MachineOperationRequest, rhs: Dieter_V1_MachineOperationRequest) -> Bool {
+    if lhs.action != rhs.action {return false}
+    if lhs.confirmation != rhs.confirmation {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_MachineOperationResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MachineOperationResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}accepted\0\u{1}message\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.accepted) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.accepted != false {
+      try visitor.visitSingularBoolField(value: self.accepted, fieldNumber: 1)
+    }
+    if !self.message.isEmpty {
+      try visitor.visitSingularStringField(value: self.message, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MachineOperationResponse, rhs: Dieter_V1_MachineOperationResponse) -> Bool {
+    if lhs.accepted != rhs.accepted {return false}
+    if lhs.message != rhs.message {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -4,7 +4,9 @@ import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.Conversation
 import com.dbpprt.dieter.v1.ConversationSnapshot
 import com.dbpprt.dieter.v1.Subagent
+import com.dbpprt.dieter.settings.DieterNotificationSettings
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -114,6 +116,59 @@ class NotificationTransitionTrackerTest {
 
         assertTrue(disabled.isEmpty())
         assertTrue(enabledLater.isEmpty())
+    }
+
+    @Test
+    fun successfulAndAttentionOutcomesAreFilteredIndependently() {
+        val tracker = NotificationTransitionTracker()
+        val successful = chat("successful", "running")
+        val failed = chat("failed", "running")
+        tracker.update(emptyList(), listOf(successful, failed), emptyMap())
+
+        val events = tracker.update(
+            emptyList(),
+            listOf(chat("successful", "idle"), chat("failed", "failed")),
+            emptyMap(),
+            notificationSettings = DieterNotificationSettings(
+                successfulChatsEnabled = false,
+                attentionChatsEnabled = true,
+            ),
+        )
+
+        assertEquals(listOf("failed"), events.map { it.card.id })
+    }
+
+    @Test
+    fun masterSwitchSuppressesAllOptionalTransitionsWithoutReplayingLater() {
+        val tracker = NotificationTransitionTracker()
+        tracker.update(
+            listOf(boardCard("card", "board", "running")),
+            listOf(chat("chat", "running")),
+            emptyMap(),
+        )
+
+        val disabled = tracker.update(
+            listOf(boardCard("card", "board", "review")),
+            listOf(chat("chat", "idle")),
+            emptyMap(),
+            notificationBoardIds = setOf("board"),
+            notificationSettings = DieterNotificationSettings(activityNotificationsEnabled = false),
+        )
+        val enabledLater = tracker.update(
+            listOf(boardCard("card", "board", "review")),
+            listOf(chat("chat", "idle")),
+            emptyMap(),
+            notificationBoardIds = setOf("board"),
+        )
+
+        assertTrue(disabled.isEmpty())
+        assertTrue(enabledLater.isEmpty())
+        assertFalse(
+            chatResultNotificationEnabled(
+                chat("failed", "failed"),
+                DieterNotificationSettings(activityNotificationsEnabled = false),
+            ),
+        )
     }
 
     private fun chat(id: String, runtime: String): Card = Card.newBuilder()

@@ -49,4 +49,30 @@ class AppPreferencesTest {
             preferences.setBoardNotificationsEnabled(enabledBoardId, false)
         }
     }
+
+    @Test
+    fun detailedNotificationSettingsPersistTogether() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = AppPreferences(context)
+        val original = preferences.notificationSettings.value
+        val expected = DieterNotificationSettings(
+            activityNotificationsEnabled = false,
+            runningChatsEnabled = false,
+            successfulChatsEnabled = true,
+            attentionChatsEnabled = false,
+            reviewCardsEnabled = false,
+            displayStyle = NotificationDisplayStyle.COMPACT,
+            resultPreviewsEnabled = false,
+            liveStatusActivityEnabled = false,
+        )
+
+        try {
+            preferences.setNotificationSettings(expected)
+
+            assertEquals(expected, preferences.notificationSettings.value)
+            assertEquals(expected, AppPreferences(context).notificationSettings.value)
+        } finally {
+            preferences.setNotificationSettings(original)
+        }
+    }
 }

@@ -80,6 +80,7 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case chats = "All chats"
     case terminals = "Terminals"
 	case screens = "Screens"
+	case machines = "Machines"
     case files = "Files"
     case schedules = "Schedules"
     case archive = "Archive"
@@ -92,6 +93,7 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
         case .chats: "bubble.left.and.bubble.right"
         case .terminals: "terminal"
 		case .screens: "rectangle.inset.filled.and.person.filled"
+		case .machines: "desktopcomputer"
         case .files: "doc.on.doc"
         case .schedules: "calendar.badge.clock"
         case .archive: "archivebox"
@@ -482,7 +484,13 @@ struct OptimisticWorkspaceProjection {
 @MainActor
 @Observable
 final class DieterStore {
-    var section: AppSection = .board
+    var section: AppSection = .board {
+        didSet {
+            if oldValue == .machines && section != .machines {
+                stopMachineTelemetry()
+            }
+        }
+    }
     var phase: ConnectionPhase = .disconnected
     var endpoint: DieterEndpoint
     var endpoints: [DieterEndpoint]
@@ -499,6 +507,12 @@ final class DieterStore {
     var projectDirectory: [String: Dieter_V1_Project] = [:]
     var projectEndpointIDs: [String: String] = [:]
     var machineConnectionStatuses: [String: MachineConnectionStatus] = [:]
+    var selectedMachineID: String?
+    var machineInformation: [String: Dieter_V1_MachineInformation] = [:]
+    var machineCPUHistory: [String: [Double]] = [:]
+    var machineInformationLoading = false
+    var machineInformationError: String?
+    var machineOperationMessage: String?
     var archivedProjects: [Dieter_V1_Project] = []
     var archivedCards: [Dieter_V1_Card] = []
 
@@ -601,6 +615,7 @@ final class DieterStore {
     private var directRefreshTask: Task<Void, Never>?
     private var machineDirectoryTask: Task<Void, Never>?
     private var machinePresenceLeaseTask: Task<Void, Never>?
+    private var machineTelemetryTask: Task<Void, Never>?
     private var syncRestoreTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
     private var conversationTask: Task<Void, Never>?
@@ -811,7 +826,7 @@ final class DieterStore {
         connectionGeneration &+= 1
         let generation = connectionGeneration
         phase = .connecting
-        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); machinePresenceLeaseTask?.cancel()
+        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); machinePresenceLeaseTask?.cancel(); machineTelemetryTask?.cancel()
         startMachinePresenceLeaseMonitor()
         terminalStreamConnected = false
         rpc?.shutdown()
@@ -1195,7 +1210,7 @@ final class DieterStore {
 
     func disconnect() {
         connectionGeneration &+= 1
-        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); machinePresenceLeaseTask?.cancel(); reconnectTask?.cancel()
+        stateTask?.cancel(); conversationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); machinePresenceLeaseTask?.cancel(); machineTelemetryTask?.cancel(); reconnectTask?.cancel()
         reconnectTask = nil
         terminalStreamConnected = false
         rpc?.shutdown(); rpc = nil
@@ -1652,6 +1667,123 @@ final class DieterStore {
 		closeConversation()
 		section = .screens
 	}
+
+    func openMachine(_ machine: DieterEndpoint) async {
+        stopTerminalWatch()
+        closeConversation()
+        selectedMachineID = machine.id
+        machineInformationError = nil
+        section = .machines
+        await refreshMachineInformation(machineID: machine.id)
+        startMachineTelemetry(machineID: machine.id)
+    }
+
+    func refreshSelectedMachineInformation() async {
+        guard let selectedMachineID else { return }
+        await refreshMachineInformation(machineID: selectedMachineID)
+    }
+
+    private func startMachineTelemetry(machineID: String) {
+        machineTelemetryTask?.cancel()
+        machineTelemetryTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await DieterTaskSleep.seconds(2)
+                guard let self, !Task.isCancelled, self.section == .machines, self.selectedMachineID == machineID else { return }
+                await self.refreshMachineInformation(machineID: machineID)
+            }
+        }
+    }
+
+    private func stopMachineTelemetry() {
+        machineTelemetryTask?.cancel()
+        machineTelemetryTask = nil
+        machineInformationLoading = false
+    }
+
+    private func refreshMachineInformation(machineID: String) async {
+        guard let machine = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil) else {
+            machineInformationError = "This machine is no longer enrolled."
+            return
+        }
+        guard machine.online else {
+            machineInformationError = "\(machine.name) is offline."
+            return
+        }
+        machineInformationLoading = machineInformation[machineID] == nil
+        defer { machineInformationLoading = false }
+
+        var borrowedPlane: DataPlaneConnection?
+        do {
+            let client: DieterRPC
+            if machine.id == endpoint.id, let rpc {
+                client = rpc
+            } else {
+                let plane = try await selectDirectoryDataPlane(for: machine)
+                borrowedPlane = plane
+                client = plane.rpc
+                machineConnectionStatuses[machine.id] = plane.connection
+            }
+            defer {
+                borrowedPlane?.task.cancel()
+                borrowedPlane?.rpc.shutdown()
+            }
+            let information = try await client.machineInformation()
+            guard selectedMachineID == machineID else { return }
+            machineInformation[machineID] = information
+            var history = machineCPUHistory[machineID, default: []]
+            history.append(information.cpuUsagePercent)
+            if history.count > 12 { history.removeFirst(history.count - 12) }
+            machineCPUHistory[machineID] = history
+            machineInformationError = nil
+        } catch is CancellationError {
+        } catch {
+            guard selectedMachineID == machineID else { return }
+            machineInformationError = error.localizedDescription
+        }
+    }
+
+    func performMachineOperation(
+        _ action: Dieter_V1_MachineOperationAction,
+        confirmation: String
+    ) async {
+        guard let machineID = selectedMachineID,
+              let machine = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil) else { return }
+        guard machine.online else {
+            show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
+            return
+        }
+        var borrowedPlane: DataPlaneConnection?
+        do {
+            let client: DieterRPC
+            if machine.id == endpoint.id, let rpc {
+                client = rpc
+            } else {
+                let plane = try await selectDirectoryDataPlane(for: machine)
+                borrowedPlane = plane
+                client = plane.rpc
+            }
+            defer {
+                borrowedPlane?.task.cancel()
+                borrowedPlane?.rpc.shutdown()
+            }
+            let response = try await client.performMachineOperation(action, confirmation: confirmation)
+            machineOperationMessage = response.message
+        } catch {
+            show(error)
+        }
+    }
+
+    func openTerminals(on machine: DieterEndpoint) async {
+        guard machine.online else {
+            show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
+            return
+        }
+        if machine.id != endpoint.id {
+            await connect(to: machine)
+            guard phase.isConnected, endpoint.id == machine.id else { return }
+        }
+        await openTerminals()
+    }
 
     func loadTerminals() async {
         guard let rpc else { return }

@@ -13,6 +13,10 @@ import "dieter/gateway/v1/gateway.proto";
 service DieterService {
   rpc Health(google.protobuf.Empty) returns (HealthResponse);
   rpc GetRuntimeStatus(google.protobuf.Empty) returns (RuntimeStatus);
+  // Machine telemetry stays on the daemon and follows the same authenticated
+  // direct-or-relay data path as every other Dieter operation.
+  rpc GetMachineInformation(google.protobuf.Empty) returns (MachineInformation);
+  rpc PerformMachineOperation(MachineOperationRequest) returns (MachineOperationResponse);
   rpc GetState(GetStateRequest) returns (State);
   rpc WatchState(WatchStateRequest) returns (stream State);
   // WatchSync is the daemon-wide durable change stream used by native
@@ -116,6 +120,68 @@ message RuntimeStatus {
   string mode = 2;
   bool sandboxed = 3;
   bool node_required = 4;
+}
+
+message MachineInformation {
+  string hostname = 1;
+  string os_name = 2;
+  string os_version = 3;
+  string architecture = 4;
+  string hardware_model = 5;
+  string processor = 6;
+  uint64 uptime_seconds = 7;
+  string collected_at = 8;
+
+  double cpu_usage_percent = 9;
+  uint32 logical_cpu_count = 10;
+  double load_1 = 11;
+  double load_5 = 12;
+  double load_15 = 13;
+
+  uint64 memory_total_bytes = 14;
+  uint64 memory_used_bytes = 15;
+  uint64 memory_cached_bytes = 16;
+  uint64 swap_used_bytes = 17;
+
+  uint64 disk_total_bytes = 18;
+  uint64 disk_free_bytes = 19;
+  double network_receive_bytes_per_second = 20;
+  double network_send_bytes_per_second = 21;
+  double temperature_celsius = 22;
+
+  repeated MachineProcess processes = 23;
+  uint32 active_agent_count = 24;
+  bool supports_restart = 25;
+  bool supports_shutdown = 26;
+  repeated double cpu_core_usage_percent = 27;
+}
+
+message MachineProcess {
+  int64 pid = 1;
+  string kind = 2;
+  string name = 3;
+  string detail = 4;
+  double cpu_usage_percent = 5;
+  uint64 memory_bytes = 6;
+  string started_at = 7;
+}
+
+enum MachineOperationAction {
+  MACHINE_OPERATION_ACTION_UNSPECIFIED = 0;
+  MACHINE_OPERATION_ACTION_RESTART = 1;
+  MACHINE_OPERATION_ACTION_SHUTDOWN = 2;
+}
+
+message MachineOperationRequest {
+  MachineOperationAction action = 1;
+  // Destructive host actions require an exact action-specific confirmation
+  // phrase even after the client presents its own confirmation UI.
+  string confirmation = 2;
+}
+
+message MachineOperationResponse {
+  bool accepted = 1;
+  string message = 2;
 }
 
 message GetStateRequest {

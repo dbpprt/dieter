@@ -111,6 +111,7 @@ reproducibly packaged artifact.
 ```sh
 swift test --disable-keychain --package-path apps/mac
 apps/mac/scripts/ui-smoke.sh
+apps/mac/scripts/machine-ui-smoke.sh
 apps/mac/scripts/conversation-ui-smoke.sh
 apps/mac/scripts/sidebar-ui-smoke.sh
 apps/mac/scripts/terminal-ui-smoke.sh
@@ -122,6 +123,12 @@ then delivers native mouse events to its own window to click a board, global
 Chats, a standalone conversation, project Files, and project Schedules. The app captures its own SwiftUI content after each click
 under `apps/mac/.build/ui-smoke`, so the flow does not need Accessibility or
 Screen Recording permission.
+
+`machine-ui-smoke.sh` is the focused authenticated machine path. It packages
+the Mac app, routes it through an isolated local gateway, opens the live machine
+dashboard, validates host telemetry and operation availability without invoking
+a power action, and captures the rendered result under
+`apps/mac/.build/machine-ui-smoke`.
 
 `accessibility-smoke.sh` is the independent system-level path. Once the
 invoking terminal has Accessibility and Screen Recording access, it drives the

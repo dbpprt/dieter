@@ -47,6 +47,10 @@ struct DieterMacApp: App {
                         ConversationUISmokeRunner.progress("task fired, connecting", in: ConversationUISmokeRunner.outputDirectory())
                     }
                     await store.connect()
+                    if arguments.contains("--machine-ui-smoke") {
+                        await MachineUISmokeRunner.run(store: store)
+                        return
+                    }
                     if arguments.contains("--terminal-ui-smoke") {
                         await TerminalUISmokeRunner.run(store: store)
                         return

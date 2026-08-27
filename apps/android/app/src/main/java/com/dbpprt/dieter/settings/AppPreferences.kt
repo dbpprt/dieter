@@ -22,6 +22,8 @@ class AppPreferences(context: Context) {
     val showReasoningTraces: StateFlow<Boolean> = _showReasoningTraces.asStateFlow()
     private val _notificationBoardIds = MutableStateFlow(readNotificationBoardIds())
     val notificationBoardIds: StateFlow<Set<String>> = _notificationBoardIds.asStateFlow()
+    private val _notificationSettings = MutableStateFlow(readNotificationSettings())
+    val notificationSettings: StateFlow<DieterNotificationSettings> = _notificationSettings.asStateFlow()
     private val _projectOrder = MutableStateFlow(readProjectOrder())
     val projectOrder: StateFlow<List<String>> = _projectOrder.asStateFlow()
 
@@ -55,6 +57,26 @@ class AppPreferences(context: Context) {
         _notificationBoardIds.value = updated
     }
 
+    fun setNotificationBoardIds(boardIds: Set<String>) {
+        val updated = boardIds.filterTo(mutableSetOf(), String::isNotBlank).toSet()
+        preferences.edit().putStringSet(KEY_NOTIFICATION_BOARD_IDS, updated).apply()
+        _notificationBoardIds.value = updated
+    }
+
+    fun setNotificationSettings(settings: DieterNotificationSettings) {
+        preferences.edit()
+            .putBoolean(KEY_ACTIVITY_NOTIFICATIONS_ENABLED, settings.activityNotificationsEnabled)
+            .putBoolean(KEY_RUNNING_CHATS_ENABLED, settings.runningChatsEnabled)
+            .putBoolean(KEY_SUCCESSFUL_CHATS_ENABLED, settings.successfulChatsEnabled)
+            .putBoolean(KEY_ATTENTION_CHATS_ENABLED, settings.attentionChatsEnabled)
+            .putBoolean(KEY_REVIEW_CARDS_ENABLED, settings.reviewCardsEnabled)
+            .putString(KEY_NOTIFICATION_DISPLAY_STYLE, settings.displayStyle.name)
+            .putBoolean(KEY_RESULT_PREVIEWS_ENABLED, settings.resultPreviewsEnabled)
+            .putBoolean(KEY_LIVE_STATUS_ACTIVITY_ENABLED, settings.liveStatusActivityEnabled)
+            .apply()
+        _notificationSettings.value = settings
+    }
+
     fun setProjectOrder(projectIds: List<String>) {
         val updated = projectIds.filter(String::isNotBlank).distinct()
         val encoded = JSONArray().apply { updated.forEach { put(it) } }.toString()
@@ -74,6 +96,22 @@ class AppPreferences(context: Context) {
     private fun readNotificationBoardIds(): Set<String> =
         preferences.getStringSet(KEY_NOTIFICATION_BOARD_IDS, emptySet()).orEmpty().toSet()
 
+    private fun readNotificationSettings(): DieterNotificationSettings = DieterNotificationSettings(
+        activityNotificationsEnabled = preferences.getBoolean(KEY_ACTIVITY_NOTIFICATIONS_ENABLED, true),
+        runningChatsEnabled = preferences.getBoolean(KEY_RUNNING_CHATS_ENABLED, true),
+        successfulChatsEnabled = preferences.getBoolean(KEY_SUCCESSFUL_CHATS_ENABLED, true),
+        attentionChatsEnabled = preferences.getBoolean(KEY_ATTENTION_CHATS_ENABLED, true),
+        reviewCardsEnabled = preferences.getBoolean(KEY_REVIEW_CARDS_ENABLED, true),
+        displayStyle = runCatching {
+            NotificationDisplayStyle.valueOf(
+                preferences.getString(KEY_NOTIFICATION_DISPLAY_STYLE, NotificationDisplayStyle.DETAILED.name)
+                    ?: NotificationDisplayStyle.DETAILED.name,
+            )
+        }.getOrDefault(NotificationDisplayStyle.DETAILED),
+        resultPreviewsEnabled = preferences.getBoolean(KEY_RESULT_PREVIEWS_ENABLED, true),
+        liveStatusActivityEnabled = preferences.getBoolean(KEY_LIVE_STATUS_ACTIVITY_ENABLED, true),
+    )
+
     private fun readProjectOrder(): List<String> = runCatching {
         val encoded = preferences.getString(KEY_PROJECT_ORDER, null) ?: return@runCatching emptyList()
         val array = JSONArray(encoded)
@@ -90,6 +128,14 @@ class AppPreferences(context: Context) {
         private const val KEY_PALETTE = "palette"
         private const val KEY_SHOW_REASONING_TRACES = "show_reasoning_traces"
         private const val KEY_NOTIFICATION_BOARD_IDS = "notification_board_ids"
+        private const val KEY_ACTIVITY_NOTIFICATIONS_ENABLED = "activity_notifications_enabled"
+        private const val KEY_RUNNING_CHATS_ENABLED = "running_chats_enabled"
+        private const val KEY_SUCCESSFUL_CHATS_ENABLED = "successful_chats_enabled"
+        private const val KEY_ATTENTION_CHATS_ENABLED = "attention_chats_enabled"
+        private const val KEY_REVIEW_CARDS_ENABLED = "review_cards_enabled"
+        private const val KEY_NOTIFICATION_DISPLAY_STYLE = "notification_display_style"
+        private const val KEY_RESULT_PREVIEWS_ENABLED = "result_previews_enabled"
+        private const val KEY_LIVE_STATUS_ACTIVITY_ENABLED = "live_status_activity_enabled"
         private const val KEY_PROJECT_ORDER = "project_order"
 
         fun selectedPalette(context: Context): DieterPalette = DieterPalette.resolve(

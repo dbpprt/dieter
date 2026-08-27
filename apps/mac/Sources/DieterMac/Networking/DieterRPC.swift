@@ -201,6 +201,26 @@ final class DieterRPC: Sendable {
         )
     }
 
+    func machineInformation() async throws -> Dieter_V1_MachineInformation {
+        try await service.getMachineInformation(
+            request: .init(message: Google_Protobuf_Empty()),
+            options: Self.boundedUnaryCallOptions()
+        )
+    }
+
+    func performMachineOperation(
+        _ action: Dieter_V1_MachineOperationAction,
+        confirmation: String
+    ) async throws -> Dieter_V1_MachineOperationResponse {
+        var request = Dieter_V1_MachineOperationRequest()
+        request.action = action
+        request.confirmation = confirmation
+        return try await service.performMachineOperation(
+            request: .init(message: request),
+            options: Self.boundedUnaryCallOptions()
+        )
+    }
+
     func promptSettings() async throws -> Dieter_V1_PromptSettings {
         try await service.getPromptSettings(request: .init(message: Google_Protobuf_Empty()))
     }

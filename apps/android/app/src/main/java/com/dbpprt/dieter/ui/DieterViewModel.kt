@@ -18,6 +18,7 @@ import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.DieterPalette
+import com.dbpprt.dieter.settings.DieterNotificationSettings
 import com.dbpprt.dieter.settings.NavigationStyle
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Card
@@ -113,6 +114,7 @@ data class DieterUiState(
     val palette: DieterPalette = DieterPalette.DEFAULT,
     val showReasoningTraces: Boolean = false,
     val notificationBoardIds: Set<String> = emptySet(),
+    val notificationSettings: DieterNotificationSettings = DieterNotificationSettings(),
     val endpointConnections: List<EndpointConnection> = DIETER_ENDPOINTS.map {
         EndpointConnection(it.id, it.label, it.address)
     },
@@ -288,6 +290,11 @@ class DieterViewModel(
             }
         }
         viewModelScope.launch {
+            appPreferences.notificationSettings.collectLatest { settings ->
+                _state.update { it.copy(notificationSettings = settings) }
+            }
+        }
+        viewModelScope.launch {
             appPreferences.projectOrder.collectLatest { projectOrder ->
                 _state.update {
                     it.copy(
@@ -374,6 +381,18 @@ class DieterViewModel(
 
     fun setSelectedBoardNotificationsEnabled(enabled: Boolean) {
         appPreferences.setBoardNotificationsEnabled(_state.value.selectedBoardId, enabled)
+    }
+
+    fun setNotificationBoardEnabled(boardId: String, enabled: Boolean) {
+        appPreferences.setBoardNotificationsEnabled(boardId, enabled)
+    }
+
+    fun setNotificationBoardIds(boardIds: Set<String>) {
+        appPreferences.setNotificationBoardIds(boardIds)
+    }
+
+    fun setNotificationSettings(settings: DieterNotificationSettings) {
+        appPreferences.setNotificationSettings(settings)
     }
 
     fun updateConnectionTargets(endpoints: List<DieterEndpoint>, activeGatewayId: String) {

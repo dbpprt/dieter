@@ -47,6 +47,14 @@ func (api *connectAPI) GetRuntimeStatus(context.Context, *connect.Request[emptyp
 	return connect.NewResponse(&dieterv1.RuntimeStatus{Ready: true, Mode: "local-host", Sandboxed: false, NodeRequired: true}), nil
 }
 
+func (api *connectAPI) GetMachineInformation(ctx context.Context, request *connect.Request[emptypb.Empty]) (*connect.Response[dieterv1.MachineInformation], error) {
+	return connectUnary(ctx, request, api.core.GetMachineInformation)
+}
+
+func (api *connectAPI) PerformMachineOperation(ctx context.Context, request *connect.Request[dieterv1.MachineOperationRequest]) (*connect.Response[dieterv1.MachineOperationResponse], error) {
+	return connectUnary(ctx, request, api.core.PerformMachineOperation)
+}
+
 func (api *connectAPI) GetState(ctx context.Context, request *connect.Request[dieterv1.GetStateRequest]) (*connect.Response[dieterv1.State], error) {
 	return connectUnary(ctx, request, api.core.GetState)
 }

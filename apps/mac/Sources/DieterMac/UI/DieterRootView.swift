@@ -31,7 +31,7 @@ struct DieterRootView: View {
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
         case .board, .chats, .files, .schedules, .archive: true
-        case .terminals, .screens, .settings: false
+        case .terminals, .screens, .machines, .settings: false
         }
     }
 
@@ -66,6 +66,7 @@ struct DieterRootView: View {
                     case .chats: ChatsView()
                     case .terminals: TerminalsView()
 					case .screens: ScreensView()
+                    case .machines: MachinesView()
                     case .files: FilesView()
                     case .schedules: SchedulesView()
                     case .archive: ArchiveView()
@@ -419,15 +420,22 @@ struct AppSidebar: View {
             VStack(spacing: 6) {
                 SidebarConnectionStatus(compact: true)
                 ForEach(store.machines) { machine in
-                    ZStack(alignment: .bottomTrailing) {
-                        Text(machine.name.prefix(1).uppercased())
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                            .frame(width: 28, height: 28)
-                            .background(DieterTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
-                        Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary)
-                            .frame(width: 7, height: 7).overlay(Circle().stroke(DieterTheme.sidebar, lineWidth: 2))
-                            .offset(x: 2, y: 2)
+                    Button { Task { await store.openMachine(machine) } } label: {
+                        ZStack(alignment: .bottomTrailing) {
+                            Text(machine.name.prefix(1).uppercased())
+                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .frame(width: 28, height: 28)
+                                .background(
+                                    store.section == .machines && store.selectedMachineID == machine.id
+                                        ? DieterTheme.selection : DieterTheme.surface.opacity(0.7),
+                                    in: RoundedRectangle(cornerRadius: 8)
+                                )
+                            Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary)
+                                .frame(width: 7, height: 7).overlay(Circle().stroke(DieterTheme.sidebar, lineWidth: 2))
+                                .offset(x: 2, y: 2)
+                        }
                     }
+                    .buttonStyle(.plain)
                     .help("\(machine.name) · \(machineDetail(machine))")
                     .accessibilityLabel("\(machine.name), \(machineDetail(machine))")
                     .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
@@ -453,16 +461,24 @@ struct AppSidebar: View {
                     }
                     ForEach(store.machines) { machine in
                         VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 8) {
-                                Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 6, height: 6)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(machine.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                                    Text(machineDetail(machine))
-                                        .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                            Button { Task { await store.openMachine(machine) } } label: {
+                                HStack(spacing: 8) {
+                                    Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 6, height: 6)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(machine.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                                        Text(machineDetail(machine))
+                                            .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                                    }
+                                    Spacer()
                                 }
-                                Spacer()
+                                .padding(.horizontal, 8).frame(height: 32)
+                                .background(
+                                    store.section == .machines && store.selectedMachineID == machine.id
+                                        ? DieterTheme.selection : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                )
                             }
-                            .padding(.horizontal, 8).frame(height: 32)
+                            .buttonStyle(.plain)
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
 

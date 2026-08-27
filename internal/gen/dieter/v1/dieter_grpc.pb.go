@@ -22,6 +22,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	DieterService_Health_FullMethodName                       = "/dieter.v1.DieterService/Health"
 	DieterService_GetRuntimeStatus_FullMethodName             = "/dieter.v1.DieterService/GetRuntimeStatus"
+	DieterService_GetMachineInformation_FullMethodName        = "/dieter.v1.DieterService/GetMachineInformation"
+	DieterService_PerformMachineOperation_FullMethodName      = "/dieter.v1.DieterService/PerformMachineOperation"
 	DieterService_GetState_FullMethodName                     = "/dieter.v1.DieterService/GetState"
 	DieterService_WatchState_FullMethodName                   = "/dieter.v1.DieterService/WatchState"
 	DieterService_WatchSync_FullMethodName                    = "/dieter.v1.DieterService/WatchSync"
@@ -99,6 +101,10 @@ const (
 type DieterServiceClient interface {
 	Health(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HealthResponse, error)
 	GetRuntimeStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RuntimeStatus, error)
+	// Machine telemetry stays on the daemon and follows the same authenticated
+	// direct-or-relay data path as every other Dieter operation.
+	GetMachineInformation(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MachineInformation, error)
+	PerformMachineOperation(ctx context.Context, in *MachineOperationRequest, opts ...grpc.CallOption) (*MachineOperationResponse, error)
 	GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*State, error)
 	WatchState(ctx context.Context, in *WatchStateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[State], error)
 	// WatchSync is the daemon-wide durable change stream used by native
@@ -201,6 +207,26 @@ func (c *dieterServiceClient) GetRuntimeStatus(ctx context.Context, in *emptypb.
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RuntimeStatus)
 	err := c.cc.Invoke(ctx, DieterService_GetRuntimeStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetMachineInformation(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MachineInformation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MachineInformation)
+	err := c.cc.Invoke(ctx, DieterService_GetMachineInformation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) PerformMachineOperation(ctx context.Context, in *MachineOperationRequest, opts ...grpc.CallOption) (*MachineOperationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MachineOperationResponse)
+	err := c.cc.Invoke(ctx, DieterService_PerformMachineOperation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -948,6 +974,10 @@ func (c *dieterServiceClient) ListScheduleRuns(ctx context.Context, in *ListSche
 type DieterServiceServer interface {
 	Health(context.Context, *emptypb.Empty) (*HealthResponse, error)
 	GetRuntimeStatus(context.Context, *emptypb.Empty) (*RuntimeStatus, error)
+	// Machine telemetry stays on the daemon and follows the same authenticated
+	// direct-or-relay data path as every other Dieter operation.
+	GetMachineInformation(context.Context, *emptypb.Empty) (*MachineInformation, error)
+	PerformMachineOperation(context.Context, *MachineOperationRequest) (*MachineOperationResponse, error)
 	GetState(context.Context, *GetStateRequest) (*State, error)
 	WatchState(*WatchStateRequest, grpc.ServerStreamingServer[State]) error
 	// WatchSync is the daemon-wide durable change stream used by native
@@ -1041,6 +1071,12 @@ func (UnimplementedDieterServiceServer) Health(context.Context, *emptypb.Empty) 
 }
 func (UnimplementedDieterServiceServer) GetRuntimeStatus(context.Context, *emptypb.Empty) (*RuntimeStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRuntimeStatus not implemented")
+}
+func (UnimplementedDieterServiceServer) GetMachineInformation(context.Context, *emptypb.Empty) (*MachineInformation, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMachineInformation not implemented")
+}
+func (UnimplementedDieterServiceServer) PerformMachineOperation(context.Context, *MachineOperationRequest) (*MachineOperationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PerformMachineOperation not implemented")
 }
 func (UnimplementedDieterServiceServer) GetState(context.Context, *GetStateRequest) (*State, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetState not implemented")
@@ -1302,6 +1338,42 @@ func _DieterService_GetRuntimeStatus_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).GetRuntimeStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetMachineInformation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetMachineInformation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetMachineInformation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetMachineInformation(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_PerformMachineOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MachineOperationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).PerformMachineOperation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_PerformMachineOperation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).PerformMachineOperation(ctx, req.(*MachineOperationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2527,6 +2599,14 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRuntimeStatus",
 			Handler:    _DieterService_GetRuntimeStatus_Handler,
+		},
+		{
+			MethodName: "GetMachineInformation",
+			Handler:    _DieterService_GetMachineInformation_Handler,
+		},
+		{
+			MethodName: "PerformMachineOperation",
+			Handler:    _DieterService_PerformMachineOperation_Handler,
 		},
 		{
 			MethodName: "GetState",

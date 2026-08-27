@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.connection
 
+import com.dbpprt.dieter.settings.DieterNotificationSettings
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.ConversationSnapshot
 
@@ -40,6 +41,7 @@ class NotificationTransitionTracker {
         chats: List<Card>,
         conversations: Map<String, ConversationSnapshot>,
         notificationBoardIds: Set<String> = emptySet(),
+        notificationSettings: DieterNotificationSettings = DieterNotificationSettings(),
     ): List<DieterNotificationEvent> {
         val current = (cards + chats).associateBy(Card::getId)
         val events = if (!initialized) {
@@ -48,7 +50,11 @@ class NotificationTransitionTracker {
             buildList {
                 chats.forEach { chat ->
                     val previous = previousCards[chat.id] ?: return@forEach
-                    if (isActiveRuntime(previous.runtime) && !isActiveRuntime(chat.runtime)) {
+                    if (
+                        isActiveRuntime(previous.runtime) &&
+                        !isActiveRuntime(chat.runtime) &&
+                        chatResultNotificationEnabled(chat, notificationSettings)
+                    ) {
                         val snapshot = conversations[chat.id] ?: previousConversations[chat.id]
                         val subagents = (previousConversations[chat.id] ?: conversations[chat.id])
                             ?.conversation?.subagentsList.orEmpty()
@@ -65,6 +71,8 @@ class NotificationTransitionTracker {
                 cards.forEach { card ->
                     val previous = previousCards[card.id] ?: return@forEach
                     if (
+                        notificationSettings.activityNotificationsEnabled &&
+                        notificationSettings.reviewCardsEnabled &&
                         card.boardId in notificationBoardIds &&
                         !previous.lane.equals("review", true) &&
                         card.lane.equals("review", true)
@@ -84,3 +92,17 @@ class NotificationTransitionTracker {
         private val TERMINAL_SUBAGENT_STATES = setOf("completed", "failed", "aborted", "cancelled")
     }
 }
+
+internal fun chatResultNotificationEnabled(
+    card: Card,
+    settings: DieterNotificationSettings,
+): Boolean {
+    if (!settings.activityNotificationsEnabled) return false
+    return if (card.runtime.lowercase() in ATTENTION_CHAT_RUNTIMES) {
+        settings.attentionChatsEnabled
+    } else {
+        settings.successfulChatsEnabled
+    }
+}
+
+private val ATTENTION_CHAT_RUNTIMES = setOf("failed", "interrupted", "cancelled", "waiting_for_user")

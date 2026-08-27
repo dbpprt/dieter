@@ -10,6 +10,14 @@ import SwiftTerm
 import UniformTypeIdentifiers
 @testable import DieterMac
 
+@Test func machineInformationPresentationFormatsTelemetryCompactly() {
+    #expect(MachineInformationPresentation.bytes(11_200_000_000).contains("GB"))
+    #expect(MachineInformationPresentation.rate(1_250_000).hasSuffix("/s"))
+    #expect(MachineInformationPresentation.uptime(14 * 86_400 + 6 * 3_600) == "14d 6h")
+    #expect(MachineInformationPresentation.uptime(2 * 3_600 + 41 * 60) == "2h 41m")
+    #expect(MachineInformationPresentation.percentage(37.6) == "38%")
+}
+
 @Test func remoteDesktopBindingMessageMatchesDaemonWireFormat() {
     let message = RemoteDesktopSessionTrust.bindingMessage(
         sessionID: "rd_one",

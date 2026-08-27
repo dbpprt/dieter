@@ -15,6 +15,7 @@ import (
 	"github.com/dbpprt/dieter/internal/attachments"
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/scheduler"
@@ -34,6 +35,9 @@ type Server struct {
 	auth          *authManager
 	terminals     *terminal.Manager
 	remoteDesktop *remotedesktop.Manager
+	machine       *machine.Collector
+	machineAction func(context.Context, machine.Operation) error
+	machineDelay  time.Duration
 }
 
 func New(data *store.Store, logger *slog.Logger) *Server {
@@ -63,6 +67,8 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 		store: data, app: service, schedules: scheduler.New(data, service), log: logger,
 		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(),
 		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
+		machine:       machine.NewCollector(data.Root), machineAction: machine.ExecuteOperation,
+		machineDelay: 750 * time.Millisecond,
 	}
 	manager.register(s.mux)
 	path, handler := dieterv1connect.NewDieterServiceHandler(&connectAPI{core: &grpcAPI{server: s}})
