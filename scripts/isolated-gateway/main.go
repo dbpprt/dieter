@@ -18,8 +18,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -113,10 +115,28 @@ func run(address, home, offlineTrigger string) error {
 		return err
 	}
 	repository := filepath.Join(home, "repo")
-	if err = os.MkdirAll(filepath.Join(repository, ".git"), 0o755); err != nil {
+	for _, command := range [][]string{
+		{"git", "init", "-b", "main", repository},
+		{"git", "-C", repository, "config", "user.name", "Dieter Isolated E2E"},
+		{"git", "-C", repository, "config", "user.email", "dieter@localhost"},
+	} {
+		process := exec.CommandContext(ctx, command[0], command[1:]...)
+		if output, commandErr := process.CombinedOutput(); commandErr != nil {
+			return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+		}
+	}
+	if err = os.WriteFile(filepath.Join(repository, "README.md"), []byte("# Isolated E2E\n"), 0o644); err != nil {
 		return err
 	}
-	project, err := data.CreateProject(boardstore.CreateProjectInput{Name: "Isolated E2E", Path: repository})
+	for _, command := range [][]string{{"git", "-C", repository, "add", "README.md"}, {"git", "-C", repository, "commit", "-m", "initial"}} {
+		process := exec.CommandContext(ctx, command[0], command[1:]...)
+		if output, commandErr := process.CombinedOutput(); commandErr != nil {
+			return fmt.Errorf("%s: %s: %w", strings.Join(command, " "), output, commandErr)
+		}
+	}
+	project, err := data.CreateProject(boardstore.CreateProjectInput{
+		Name: "Isolated E2E", Path: repository, DefaultWorkspaceMode: model.WorkspaceModeWorktree, BaseBranch: "main",
+	})
 	if err != nil {
 		return err
 	}

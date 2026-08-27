@@ -69,6 +69,43 @@ enum BoardDropOrdering {
     }
 }
 
+enum BoardCardSortDirection {
+    case descending
+    case ascending
+
+    var toggled: Self { self == .descending ? .ascending : .descending }
+    var title: String { self == .descending ? "Newest first" : "Oldest first" }
+    var systemImage: String { self == .descending ? "arrow.down" : "arrow.up" }
+}
+
+enum BoardCardOrdering {
+    static func sorted(
+        _ cards: [Dieter_V1_Card],
+        direction: BoardCardSortDirection = .descending
+    ) -> [Dieter_V1_Card] {
+        cards.sorted { left, right in
+            let leftDate = createdAt(left.createdAt)
+            let rightDate = createdAt(right.createdAt)
+            switch (leftDate, rightDate) {
+            case let (leftDate?, rightDate?) where leftDate != rightDate:
+                return direction == .descending ? leftDate > rightDate : leftDate < rightDate
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return direction == .descending ? left.id > right.id : left.id < right.id
+            }
+        }
+    }
+
+    private static func createdAt(_ value: String) -> Date? {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+}
+
 enum ConversationPaneSizing {
     static let minimumWidth: CGFloat = 320
     static let defaultWidth: CGFloat = 460
@@ -478,6 +515,7 @@ private struct BoardLabelDragPreview: View {
 struct KanbanView: View {
     @Environment(DieterStore.self) private var store
     let board: Dieter_V1_Board
+    @State private var laneSortDirections: [String: BoardCardSortDirection] = [:]
 
     private var lanes: [Dieter_V1_Lane] {
         if !board.lanes.isEmpty { return board.lanes }
@@ -492,7 +530,16 @@ struct KanbanView: View {
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: KanbanLaneSizing.spacing) {
                     ForEach(lanes, id: \.id) { lane in
-                        LaneColumn(lane: lane, cards: store.displayedCards.filter { $0.lane == lane.id }.sorted { $0.position < $1.position })
+                        let direction = laneSortDirections[lane.id] ?? .descending
+                        LaneColumn(
+                            lane: lane,
+                            cards: BoardCardOrdering.sorted(
+                                store.displayedCards.filter { $0.lane == lane.id },
+                                direction: direction
+                            ),
+                            sortDirection: direction,
+                            onToggleSort: { laneSortDirections[lane.id] = direction.toggled }
+                        )
                             .frame(width: laneWidth)
                     }
                 }
@@ -508,6 +555,8 @@ struct LaneColumn: View {
     @Environment(DieterStore.self) private var store
     let lane: Dieter_V1_Lane
     let cards: [Dieter_V1_Card]
+    let sortDirection: BoardCardSortDirection
+    let onToggleSort: () -> Void
     @State private var isDropTargeted = false
 
     private var laneTint: Color {
@@ -526,6 +575,18 @@ struct LaneColumn: View {
                 Text(lane.name).font(.system(size: 12, weight: .semibold))
                 Text("\(cards.count)").font(.system(size: 12)).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
+                Button(action: onToggleSort) {
+                    Image(systemName: sortDirection.systemImage)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .frame(width: 20, height: 20)
+                        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 5))
+                }
+                .buttonStyle(.plain)
+                .help("\(sortDirection.title). Click to sort \(sortDirection.toggled.title.lowercased()).")
+                .accessibilityLabel("\(lane.name) lane sorted \(sortDirection.title.lowercased())")
+                .accessibilityHint("Sort \(sortDirection.toggled.title.lowercased())")
+                .accessibilityIdentifier("lane-sort.\(lane.id)")
                 Button { store.createConversationPresented = true } label: { Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary) }.buttonStyle(.plain)
             }.padding(.horizontal, 6).padding(.top, 2)
             ScrollView {

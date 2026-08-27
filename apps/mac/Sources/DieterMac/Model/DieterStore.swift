@@ -489,6 +489,7 @@ final class DieterStore {
             }
         }
     }
+    var settingsSection = DieterSettingsSection.general
     var phase: ConnectionPhase = .disconnected
     var endpoint: DieterEndpoint
     var endpoints: [DieterEndpoint]
@@ -1963,10 +1964,11 @@ final class DieterStore {
         newChatProjectID = projectID ?? selectedProjectID
     }
 
-    func openSettings() {
+    func openSettings(section: DieterSettingsSection = .general) {
         stopTerminalWatch()
         closeConversation()
-        section = .settings
+        settingsSection = section
+        self.section = .settings
     }
 
     func presentNewBoard(projectID: String) {

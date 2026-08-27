@@ -268,6 +268,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "UpdateProjectWorkspaceSettings" metadata.
+        public enum UpdateProjectWorkspaceSettings: Sendable {
+            /// Request type for "UpdateProjectWorkspaceSettings".
+            public typealias Input = Dieter_V1_UpdateProjectWorkspaceSettingsRequest
+            /// Response type for "UpdateProjectWorkspaceSettings".
+            public typealias Output = Dieter_V1_Project
+            /// Descriptor for "UpdateProjectWorkspaceSettings".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "UpdateProjectWorkspaceSettings",
+                type: .unary
+            )
+        }
         /// Namespace for "ArchiveProject" metadata.
         public enum ArchiveProject: Sendable {
             /// Request type for "ArchiveProject".
@@ -616,6 +629,175 @@ public enum Dieter_V1_DieterService: Sendable {
             public static let descriptor = GRPCCore.MethodDescriptor(
                 service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
                 method: "PinChat",
+                type: .unary
+            )
+        }
+        /// Namespace for "UpdateConversationWorkspace" metadata.
+        public enum UpdateConversationWorkspace: Sendable {
+            /// Request type for "UpdateConversationWorkspace".
+            public typealias Input = Dieter_V1_UpdateConversationWorkspaceRequest
+            /// Response type for "UpdateConversationWorkspace".
+            public typealias Output = Dieter_V1_Card
+            /// Descriptor for "UpdateConversationWorkspace".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "UpdateConversationWorkspace",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetWorkspace" metadata.
+        public enum GetWorkspace: Sendable {
+            /// Request type for "GetWorkspace".
+            public typealias Input = Dieter_V1_ConversationRef
+            /// Response type for "GetWorkspace".
+            public typealias Output = Dieter_V1_Workspace
+            /// Descriptor for "GetWorkspace".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetWorkspace",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListProjectWorkspaces" metadata.
+        public enum ListProjectWorkspaces: Sendable {
+            /// Request type for "ListProjectWorkspaces".
+            public typealias Input = Dieter_V1_ProjectRef
+            /// Response type for "ListProjectWorkspaces".
+            public typealias Output = Dieter_V1_WorkspacesResponse
+            /// Descriptor for "ListProjectWorkspaces".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListProjectWorkspaces",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetChangeset" metadata.
+        public enum GetChangeset: Sendable {
+            /// Request type for "GetChangeset".
+            public typealias Input = Dieter_V1_GetChangesetRequest
+            /// Response type for "GetChangeset".
+            public typealias Output = Dieter_V1_Changeset
+            /// Descriptor for "GetChangeset".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetChangeset",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetFileDiff" metadata.
+        public enum GetFileDiff: Sendable {
+            /// Request type for "GetFileDiff".
+            public typealias Input = Dieter_V1_GetDiffRequest
+            /// Response type for "GetFileDiff".
+            public typealias Output = Dieter_V1_FileDiff
+            /// Descriptor for "GetFileDiff".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetFileDiff",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetCommitDiff" metadata.
+        public enum GetCommitDiff: Sendable {
+            /// Request type for "GetCommitDiff".
+            public typealias Input = Dieter_V1_GetDiffRequest
+            /// Response type for "GetCommitDiff".
+            public typealias Output = Dieter_V1_FileDiff
+            /// Descriptor for "GetCommitDiff".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetCommitDiff",
+                type: .unary
+            )
+        }
+        /// Namespace for "AddChangeComment" metadata.
+        public enum AddChangeComment: Sendable {
+            /// Request type for "AddChangeComment".
+            public typealias Input = Dieter_V1_AddChangeCommentRequest
+            /// Response type for "AddChangeComment".
+            public typealias Output = Dieter_V1_ChangeComment
+            /// Descriptor for "AddChangeComment".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "AddChangeComment",
+                type: .unary
+            )
+        }
+        /// Namespace for "ListChangeComments" metadata.
+        public enum ListChangeComments: Sendable {
+            /// Request type for "ListChangeComments".
+            public typealias Input = Dieter_V1_ListChangeCommentsRequest
+            /// Response type for "ListChangeComments".
+            public typealias Output = Dieter_V1_ChangeCommentsResponse
+            /// Descriptor for "ListChangeComments".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListChangeComments",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetSCMCapabilities" metadata.
+        public enum GetSCMCapabilities: Sendable {
+            /// Request type for "GetSCMCapabilities".
+            public typealias Input = Dieter_V1_ConversationRef
+            /// Response type for "GetSCMCapabilities".
+            public typealias Output = Dieter_V1_SCMCapabilities
+            /// Descriptor for "GetSCMCapabilities".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetSCMCapabilities",
+                type: .unary
+            )
+        }
+        /// Namespace for "StartGitOperation" metadata.
+        public enum StartGitOperation: Sendable {
+            /// Request type for "StartGitOperation".
+            public typealias Input = Dieter_V1_StartGitOperationRequest
+            /// Response type for "StartGitOperation".
+            public typealias Output = Dieter_V1_GitOperation
+            /// Descriptor for "StartGitOperation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "StartGitOperation",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetGitOperation" metadata.
+        public enum GetGitOperation: Sendable {
+            /// Request type for "GetGitOperation".
+            public typealias Input = Dieter_V1_GitOperationRef
+            /// Response type for "GetGitOperation".
+            public typealias Output = Dieter_V1_GitOperation
+            /// Descriptor for "GetGitOperation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetGitOperation",
+                type: .unary
+            )
+        }
+        /// Namespace for "WatchGitOperation" metadata.
+        public enum WatchGitOperation: Sendable {
+            /// Request type for "WatchGitOperation".
+            public typealias Input = Dieter_V1_WatchGitOperationRequest
+            /// Response type for "WatchGitOperation".
+            public typealias Output = Dieter_V1_GitOperationFrame
+            /// Descriptor for "WatchGitOperation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "WatchGitOperation",
+                type: .serverStreaming
+            )
+        }
+        /// Namespace for "CancelGitOperation" metadata.
+        public enum CancelGitOperation: Sendable {
+            /// Request type for "CancelGitOperation".
+            public typealias Input = Dieter_V1_GitOperationRef
+            /// Response type for "CancelGitOperation".
+            public typealias Output = Dieter_V1_GitOperation
+            /// Descriptor for "CancelGitOperation".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "CancelGitOperation",
                 type: .unary
             )
         }
@@ -991,6 +1173,7 @@ public enum Dieter_V1_DieterService: Sendable {
             ListDirectories.descriptor,
             CreateProject.descriptor,
             UpdateProject.descriptor,
+            UpdateProjectWorkspaceSettings.descriptor,
             ArchiveProject.descriptor,
             ListArchivedProjects.descriptor,
             CreateBoard.descriptor,
@@ -1018,6 +1201,19 @@ public enum Dieter_V1_DieterService: Sendable {
             UpdateCard.descriptor,
             ArchiveCard.descriptor,
             PinChat.descriptor,
+            UpdateConversationWorkspace.descriptor,
+            GetWorkspace.descriptor,
+            ListProjectWorkspaces.descriptor,
+            GetChangeset.descriptor,
+            GetFileDiff.descriptor,
+            GetCommitDiff.descriptor,
+            AddChangeComment.descriptor,
+            ListChangeComments.descriptor,
+            GetSCMCapabilities.descriptor,
+            StartGitOperation.descriptor,
+            GetGitOperation.descriptor,
+            WatchGitOperation.descriptor,
+            CancelGitOperation.descriptor,
             ListFiles.descriptor,
             ReadFile.descriptor,
             SaveFile.descriptor,
@@ -1431,6 +1627,25 @@ extension Dieter_V1_DieterService {
         func updateProject<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectRequest>,
             serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateProjectRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Project>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UpdateProjectWorkspaceSettings" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateProjectWorkspaceSettingsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateProjectWorkspaceSettingsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateProjectWorkspaceSettings<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Project>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result
@@ -1953,6 +2168,257 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UpdateConversationWorkspace" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Cards and standalone chats share this conversation workspace surface.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateConversationWorkspaceRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateConversationWorkspaceRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateConversationWorkspace<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateConversationWorkspaceRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateConversationWorkspaceRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetWorkspace" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Workspace` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getWorkspace<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Workspace>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Workspace>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListProjectWorkspaces" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ProjectRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ProjectRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_WorkspacesResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listProjectWorkspaces<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ProjectRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_WorkspacesResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_WorkspacesResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetChangeset" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GetChangesetRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_GetChangesetRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Changeset` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getChangeset<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GetChangesetRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GetChangesetRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Changeset>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Changeset>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetFileDiff" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GetDiffRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_GetDiffRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileDiff` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getFileDiff<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GetDiffRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GetDiffRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileDiff>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileDiff>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetCommitDiff" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GetDiffRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_GetDiffRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileDiff` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getCommitDiff<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GetDiffRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GetDiffRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileDiff>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileDiff>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "AddChangeComment" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_AddChangeCommentRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_AddChangeCommentRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangeComment` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func addChangeComment<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_AddChangeCommentRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_AddChangeCommentRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangeComment>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChangeComment>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListChangeComments" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListChangeCommentsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListChangeCommentsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangeCommentsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listChangeComments<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListChangeCommentsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListChangeCommentsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangeCommentsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChangeCommentsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetSCMCapabilities" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_SCMCapabilities` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getSCMCapabilities<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_SCMCapabilities>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_SCMCapabilities>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "StartGitOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_StartGitOperationRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_StartGitOperationRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_GitOperation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func startGitOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_StartGitOperationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_StartGitOperationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetGitOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GitOperationRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_GitOperationRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_GitOperation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getGitOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GitOperationRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GitOperationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchGitOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_WatchGitOperationRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_WatchGitOperationRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_GitOperationFrame` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchGitOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_WatchGitOperationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchGitOperationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperationFrame>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_GitOperationFrame>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CancelGitOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GitOperationRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_GitOperationRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_GitOperation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func cancelGitOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GitOperationRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GitOperationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "ListFiles" method.
@@ -3068,6 +3534,36 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "UpdateProjectWorkspaceSettings" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateProjectWorkspaceSettingsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateProjectWorkspaceSettingsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Project` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateProjectWorkspaceSettings<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Project>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.UpdateProjectWorkspaceSettings.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "ArchiveProject" method.
         ///
         /// - Parameters:
@@ -3875,6 +4371,398 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.PinChat.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "UpdateConversationWorkspace" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Cards and standalone chats share this conversation workspace surface.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateConversationWorkspaceRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateConversationWorkspaceRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateConversationWorkspace<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateConversationWorkspaceRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateConversationWorkspaceRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.UpdateConversationWorkspace.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetWorkspace" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Workspace` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getWorkspace<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Workspace>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Workspace>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetWorkspace.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListProjectWorkspaces" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ProjectRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ProjectRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_WorkspacesResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listProjectWorkspaces<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ProjectRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_WorkspacesResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_WorkspacesResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListProjectWorkspaces.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetChangeset" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GetChangesetRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_GetChangesetRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Changeset` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getChangeset<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GetChangesetRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GetChangesetRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Changeset>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Changeset>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetChangeset.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetFileDiff" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GetDiffRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_GetDiffRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileDiff` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getFileDiff<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GetDiffRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GetDiffRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileDiff>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileDiff>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetFileDiff.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetCommitDiff" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GetDiffRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_GetDiffRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_FileDiff` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getCommitDiff<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GetDiffRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GetDiffRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_FileDiff>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileDiff>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetCommitDiff.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "AddChangeComment" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_AddChangeCommentRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_AddChangeCommentRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangeComment` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func addChangeComment<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_AddChangeCommentRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_AddChangeCommentRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangeComment>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChangeComment>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.AddChangeComment.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ListChangeComments" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListChangeCommentsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListChangeCommentsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangeCommentsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listChangeComments<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListChangeCommentsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListChangeCommentsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangeCommentsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChangeCommentsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListChangeComments.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetSCMCapabilities" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ConversationRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ConversationRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_SCMCapabilities` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getSCMCapabilities<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ConversationRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ConversationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_SCMCapabilities>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_SCMCapabilities>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetSCMCapabilities.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "StartGitOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_StartGitOperationRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_StartGitOperationRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_GitOperation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func startGitOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_StartGitOperationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_StartGitOperationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.StartGitOperation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetGitOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GitOperationRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_GitOperationRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_GitOperation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getGitOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GitOperationRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GitOperationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetGitOperation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WatchGitOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_WatchGitOperationRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_WatchGitOperationRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_GitOperationFrame` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchGitOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_WatchGitOperationRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchGitOperationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperationFrame>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_GitOperationFrame>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.WatchGitOperation.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CancelGitOperation" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_GitOperationRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_GitOperationRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_GitOperation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func cancelGitOperation<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_GitOperationRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_GitOperationRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_GitOperation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.CancelGitOperation.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -5181,6 +6069,31 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "UpdateProjectWorkspaceSettings" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_UpdateProjectWorkspaceSettingsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateProjectWorkspaceSettings<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateProjectWorkspaceSettings(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Project>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ArchiveProject" method.
     ///
     /// - Parameters:
@@ -5855,6 +6768,333 @@ extension Dieter_V1_DieterService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_PinChatRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Card>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateConversationWorkspace" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Cards and standalone chats share this conversation workspace surface.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_UpdateConversationWorkspaceRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateConversationWorkspace<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_UpdateConversationWorkspaceRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateConversationWorkspace(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateConversationWorkspaceRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Card>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetWorkspace" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ConversationRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getWorkspace<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ConversationRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Workspace>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getWorkspace(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ConversationRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Workspace>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListProjectWorkspaces" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ProjectRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listProjectWorkspaces<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ProjectRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_WorkspacesResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listProjectWorkspaces(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ProjectRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_WorkspacesResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetChangeset" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_GetChangesetRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getChangeset<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_GetChangesetRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Changeset>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getChangeset(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_GetChangesetRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Changeset>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetFileDiff" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_GetDiffRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getFileDiff<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_GetDiffRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileDiff>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getFileDiff(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_GetDiffRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_FileDiff>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetCommitDiff" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_GetDiffRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getCommitDiff<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_GetDiffRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileDiff>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getCommitDiff(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_GetDiffRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_FileDiff>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AddChangeComment" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_AddChangeCommentRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func addChangeComment<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_AddChangeCommentRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChangeComment>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.addChangeComment(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_AddChangeCommentRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ChangeComment>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListChangeComments" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ListChangeCommentsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listChangeComments<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ListChangeCommentsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChangeCommentsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listChangeComments(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ListChangeCommentsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ChangeCommentsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetSCMCapabilities" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ConversationRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getSCMCapabilities<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ConversationRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_SCMCapabilities>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getSCMCapabilities(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ConversationRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_SCMCapabilities>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartGitOperation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_StartGitOperationRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startGitOperation<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_StartGitOperationRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.startGitOperation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_StartGitOperationRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_GitOperation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetGitOperation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_GitOperationRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getGitOperation<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_GitOperationRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getGitOperation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_GitOperationRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_GitOperation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchGitOperation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_WatchGitOperationRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchGitOperation<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_WatchGitOperationRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_GitOperationFrame>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchGitOperation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_WatchGitOperationRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_GitOperationFrame>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CancelGitOperation" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_GitOperationRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func cancelGitOperation<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_GitOperationRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.cancelGitOperation(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_GitOperationRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_GitOperation>(),
             options: options,
             onResponse: handleResponse
         )
@@ -7099,6 +8339,35 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "UpdateProjectWorkspaceSettings" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateProjectWorkspaceSettings<Result>(
+        _ message: Dieter_V1_UpdateProjectWorkspaceSettingsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Project>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateProjectWorkspaceSettingsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateProjectWorkspaceSettings(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ArchiveProject" method.
     ///
     /// - Parameters:
@@ -7880,6 +9149,385 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.pinChat(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateConversationWorkspace" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Cards and standalone chats share this conversation workspace surface.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateConversationWorkspace<Result>(
+        _ message: Dieter_V1_UpdateConversationWorkspaceRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateConversationWorkspaceRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateConversationWorkspace(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetWorkspace" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getWorkspace<Result>(
+        _ message: Dieter_V1_ConversationRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Workspace>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ConversationRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getWorkspace(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListProjectWorkspaces" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listProjectWorkspaces<Result>(
+        _ message: Dieter_V1_ProjectRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_WorkspacesResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ProjectRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listProjectWorkspaces(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetChangeset" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getChangeset<Result>(
+        _ message: Dieter_V1_GetChangesetRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Changeset>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_GetChangesetRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getChangeset(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetFileDiff" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getFileDiff<Result>(
+        _ message: Dieter_V1_GetDiffRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileDiff>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_GetDiffRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getFileDiff(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetCommitDiff" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getCommitDiff<Result>(
+        _ message: Dieter_V1_GetDiffRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_FileDiff>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_GetDiffRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getCommitDiff(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "AddChangeComment" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func addChangeComment<Result>(
+        _ message: Dieter_V1_AddChangeCommentRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChangeComment>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_AddChangeCommentRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.addChangeComment(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListChangeComments" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listChangeComments<Result>(
+        _ message: Dieter_V1_ListChangeCommentsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ChangeCommentsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ListChangeCommentsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listChangeComments(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetSCMCapabilities" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getSCMCapabilities<Result>(
+        _ message: Dieter_V1_ConversationRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_SCMCapabilities>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ConversationRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getSCMCapabilities(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartGitOperation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startGitOperation<Result>(
+        _ message: Dieter_V1_StartGitOperationRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_StartGitOperationRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.startGitOperation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetGitOperation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getGitOperation<Result>(
+        _ message: Dieter_V1_GitOperationRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_GitOperationRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getGitOperation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchGitOperation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchGitOperation<Result>(
+        _ message: Dieter_V1_WatchGitOperationRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_GitOperationFrame>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_WatchGitOperationRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchGitOperation(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CancelGitOperation" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func cancelGitOperation<Result>(
+        _ message: Dieter_V1_GitOperationRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_GitOperation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_GitOperationRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.cancelGitOperation(
             request: request,
             options: options,
             onResponse: handleResponse

@@ -19,11 +19,13 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
 	"github.com/dbpprt/dieter/internal/store"
+	"github.com/dbpprt/dieter/internal/workspace"
 )
 
 type Service struct {
-	Store  *store.Store
-	Runner harness.Runner
+	Store      *store.Store
+	Runner     harness.Runner
+	Workspaces *workspace.Manager
 
 	mu           sync.Mutex
 	active       map[string]*activeTurn
@@ -49,7 +51,7 @@ func New(data *store.Store, runner harness.Runner) *Service {
 	if runner == nil {
 		runner = harness.NewSubprocessRunner(data.Root)
 	}
-	return &Service{Store: data, Runner: runner, active: map[string]*activeTurn{}}
+	return &Service{Store: data, Runner: runner, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}}
 }
 
 // ReconcileOrphanedTurns resumes turns that were cleanly suspended by a
@@ -169,11 +171,19 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done}
 	s.mu.Unlock()
 	updates := make(chan TurnUpdate, 1024)
+	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
+	if err != nil {
+		cancel()
+		_ = s.Store.ReleaseRuntimeLease(lease)
+		s.clearActive(detail.Card.ID, turnID)
+		close(done)
+		return err
+	}
 	request := harness.Request{
 		Harness: adapter.ID, Adapter: adapter.Runtime, Model: configuredModel.RuntimeID(), ConfiguredModel: configuredModel.ID,
 		ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, ResponseMessageID: responseMessageID,
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
-		ProjectPath: detail.Project.Path, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID), Continue: true,
+		ProjectPath: workspaceValue.Path, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID), Continue: true,
 	}
 	go s.runTurn(ctx, detail, turnID, request, updates, done)
 	go drainTurnUpdates(updates)
@@ -263,8 +273,10 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 }
 
 type ProjectInput struct {
-	Path, Name, Summary, Prompt string
-	Create                      bool
+	Path, Name, Summary, Prompt                  string
+	DefaultWorkspaceMode, BaseRemote, BaseBranch string
+	ValidationCommands                           []model.ValidationCommand
+	Create                                       bool
 }
 
 func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (model.Project, error) {
@@ -290,11 +302,16 @@ func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (mode
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
 		return model.Project{}, errors.New("project path must be an existing Git working tree")
 	}
-	return s.Store.CreateProject(store.CreateProjectInput{Name: input.Name, Path: abs, Summary: input.Summary, Prompt: input.Prompt})
+	return s.Store.CreateProject(store.CreateProjectInput{
+		Name: input.Name, Path: abs, Summary: input.Summary, Prompt: input.Prompt,
+		DefaultWorkspaceMode: input.DefaultWorkspaceMode, BaseRemote: input.BaseRemote,
+		BaseBranch: input.BaseBranch, ValidationCommands: input.ValidationCommands,
+	})
 }
 
 type CardInput struct {
 	Project, Board, Lane, Title, Prompt, Provider, Model, Effort string
+	WorkspaceMode, WorkspaceBranch, WorkspaceBaseBranch          string
 	LabelIDs                                                     []string
 	ProviderOptions                                              map[string]string
 	DeferStart                                                   bool
@@ -344,7 +361,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 			return model.Card{}, err
 		}
 	}
-	createInput := store.CreateCardInput{Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin}
+	createInput := store.CreateCardInput{Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch}
 	var card model.Card
 	if scope == model.ConversationScopeChat {
 		card, err = s.Store.CreateChat(createInput)
@@ -510,6 +527,14 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	s.mu.Lock()
 	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done}
 	s.mu.Unlock()
+	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
+	if err != nil {
+		cancel()
+		_ = s.Store.ReleaseRuntimeLease(lease)
+		s.clearActive(detail.Card.ID, turnID)
+		close(done)
+		return nil, err
+	}
 
 	if strings.TrimSpace(messageID) == "" {
 		messageID = newRuntimeID("msg_")
@@ -563,7 +588,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		Harness: provider, Adapter: adapter.Runtime, Model: configuredModel.RuntimeID(), ConfiguredModel: modelName, ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, Prompt: content, ResponseMessageID: responseMessageID,
 		Attachments:  messagePartsAttachments(parts),
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
-		ProjectPath: detail.Project.Path,
+		ProjectPath: workspaceValue.Path,
 		RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID),
 	}
 	go s.runTurn(ctx, detail, turnID, request, updates, done)
@@ -656,6 +681,11 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	defer close(updates)
 	defer close(done)
 	defer s.clearActive(detail.Card.ID, turnID)
+	defer func() {
+		refreshCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_, _ = s.Workspaces.Refresh(refreshCtx, detail.Card.ID, false)
+	}()
 	streamFailed := false
 	err := s.Runner.Run(ctx, request, func(output harness.Output) error {
 		switch output.Type {

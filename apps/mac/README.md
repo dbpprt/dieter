@@ -115,6 +115,7 @@ apps/mac/scripts/machine-ui-smoke.sh
 apps/mac/scripts/conversation-ui-smoke.sh
 apps/mac/scripts/sidebar-ui-smoke.sh
 apps/mac/scripts/terminal-ui-smoke.sh
+apps/mac/scripts/island-ui-smoke.sh
 apps/mac/scripts/accessibility-smoke.sh
 ```
 
@@ -159,3 +160,9 @@ also fills the terminal scrollback and verifies that SwiftTerm's visible caret
 tracks the emulator cursor while the live viewport follows new output. The report
 and screenshots land under `apps/mac/.build/terminal-ui-smoke`. Override the
 alternate port with `DIETER_TERMINAL_SMOKE_PORT`.
+
+`island-ui-smoke.sh` packages and launches the real app with isolated local
+preferences, captures the compact and expanded Dieter Island plus its Settings
+page, and verifies that disabling and re-enabling the saved preference removes
+and restores the native panel. Captures land under
+`apps/mac/.build/island-ui-smoke`.

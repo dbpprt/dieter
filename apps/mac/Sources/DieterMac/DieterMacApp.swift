@@ -4,17 +4,22 @@ import SwiftUI
 @main
 struct DieterMacApp: App {
     @State private var store: DieterStore
+    private let islandController: DieterIslandController
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
     private var appearanceValue = DieterAppearance.defaultValue.rawValue
     @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
     private var paletteValue = DieterPalette.defaultValue.rawValue
+    @AppStorage(DieterIslandPreferences.enabledKey, store: DieterAppearance.applicationDefaults())
+    private var islandEnabled = DieterIslandPreferences.defaultEnabled
 
     private var appearance: DieterAppearance { DieterAppearance.resolve(appearanceValue) }
     private var palette: DieterPalette { DieterPalette.resolve(paletteValue) }
 
     init() {
-        _store = State(initialValue: DieterStore())
+        let store = DieterStore()
+        _store = State(initialValue: store)
+        islandController = DieterIslandController(store: store)
         NativeUISmokeRunner.prepareWindowIfNeeded()
     }
 
@@ -28,9 +33,13 @@ struct DieterMacApp: App {
                     let selected = DieterPalette.resolve(paletteValue)
                     if paletteValue != selected.rawValue { paletteValue = selected.rawValue }
                     DieterAppIcon.apply(selected)
+                    islandController.start(enabled: islandEnabled)
                 }
                 .onChange(of: paletteValue) { _, value in
                     DieterAppIcon.apply(DieterPalette.resolve(value))
+                }
+                .onChange(of: islandEnabled) { _, enabled in
+                    islandController.setEnabled(enabled)
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active { store.applicationDidBecomeActive() }
@@ -38,6 +47,10 @@ struct DieterMacApp: App {
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
                     let arguments = ProcessInfo.processInfo.arguments
+                    if arguments.contains("--island-ui-smoke") {
+                        await IslandUISmokeRunner.run(store: store, controller: islandController)
+                        return
+                    }
                     if arguments.contains("--sidebar-ui-smoke") {
                         await SidebarNavigationUISmokeRunner.run(store: store)
                         return

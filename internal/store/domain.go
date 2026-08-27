@@ -14,7 +14,8 @@ import (
 )
 
 type CreateProjectInput struct {
-	ID, Name, Path, Summary, Prompt string
+	ID, Name, Path, Summary, Prompt, DefaultWorkspaceMode, BaseRemote, BaseBranch string
+	ValidationCommands                                                            []model.ValidationCommand
 }
 
 func validFileID(id string) bool {
@@ -55,8 +56,27 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 		}
 	}
 	now := timestamp()
-	project := model.Project{ID: input.ID, Name: name, Path: path, Summary: strings.TrimSpace(input.Summary), Prompt: strings.TrimSpace(input.Prompt), CreatedAt: now, UpdatedAt: now}
+	workspaceMode, err := normalizeWorkspaceMode(input.DefaultWorkspaceMode)
+	if err != nil {
+		return model.Project{}, err
+	}
+	validation, err := normalizeValidationCommands(input.ValidationCommands)
+	if err != nil {
+		return model.Project{}, err
+	}
+	project := model.Project{
+		ID: input.ID, Name: name, Path: path, Summary: strings.TrimSpace(input.Summary), Prompt: strings.TrimSpace(input.Prompt),
+		DefaultWorkspaceMode: workspaceMode, BaseRemote: strings.TrimSpace(input.BaseRemote), BaseBranch: strings.TrimSpace(input.BaseBranch),
+		ValidationCommands: validation, CreatedAt: now, UpdatedAt: now,
+	}
 	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
+}
+
+func hydrateProject(item model.Project) model.Project {
+	if item.DefaultWorkspaceMode == "" {
+		item.DefaultWorkspaceMode = model.WorkspaceModeMain
+	}
+	return item
 }
 
 func (s *Store) listProjects() ([]model.Project, error) {
@@ -72,7 +92,7 @@ func (s *Store) listProjects() ([]model.Project, error) {
 			return nil, readErr
 		}
 		item.Prompt = body
-		result = append(result, item)
+		result = append(result, hydrateProject(item))
 	}
 	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
 	return result, nil
@@ -261,6 +281,73 @@ func (s *Store) UpdateProjectPromptTemplate(ref, template string) (model.Project
 	}
 	project.PromptTemplate, project.UpdatedAt = template, timestamp()
 	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
+}
+
+func (s *Store) UpdateProjectWorkspaceSettings(ref, mode, baseRemote, baseBranch string, validation []model.ValidationCommand) (model.Project, error) {
+	mode, err := normalizeWorkspaceMode(mode)
+	if err != nil {
+		return model.Project{}, err
+	}
+	validation, err = normalizeValidationCommands(validation)
+	if err != nil {
+		return model.Project{}, err
+	}
+	release, err := s.beginWrite()
+	if err != nil {
+		return model.Project{}, err
+	}
+	defer release()
+	project, err := s.ResolveProject(ref)
+	if err != nil {
+		return model.Project{}, err
+	}
+	project.DefaultWorkspaceMode = mode
+	project.BaseRemote = strings.TrimSpace(baseRemote)
+	project.BaseBranch = strings.TrimSpace(baseBranch)
+	project.ValidationCommands = append([]model.ValidationCommand(nil), validation...)
+	project.UpdatedAt = timestamp()
+	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
+}
+
+func normalizeValidationCommands(values []model.ValidationCommand) ([]model.ValidationCommand, error) {
+	result := make([]model.ValidationCommand, 0, len(values))
+	for index, value := range values {
+		value.Name = strings.TrimSpace(value.Name)
+		value.Executable = strings.TrimSpace(value.Executable)
+		value.WorkingDirectory = strings.TrimSpace(value.WorkingDirectory)
+		if value.Executable == "" || strings.ContainsRune(value.Executable, '\x00') {
+			return nil, fmt.Errorf("validation command %d requires a valid executable", index+1)
+		}
+		if value.TimeoutSeconds < 0 || value.TimeoutSeconds > 3600 {
+			return nil, fmt.Errorf("validation command %d timeout must be between 0 and 3600 seconds", index+1)
+		}
+		if value.WorkingDirectory != "" {
+			clean := filepath.Clean(value.WorkingDirectory)
+			if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+				return nil, fmt.Errorf("validation command %d working directory must stay inside the workspace", index+1)
+			}
+			value.WorkingDirectory = clean
+		}
+		value.Arguments = append([]string(nil), value.Arguments...)
+		for _, argument := range value.Arguments {
+			if strings.ContainsRune(argument, '\x00') {
+				return nil, fmt.Errorf("validation command %d has an invalid argument", index+1)
+			}
+		}
+		environment := make(map[string]string, len(value.Environment))
+		for key, item := range value.Environment {
+			if key == "" || strings.ContainsAny(key, "=\x00") || strings.ContainsRune(item, '\x00') {
+				return nil, fmt.Errorf("validation command %d has an invalid environment entry", index+1)
+			}
+			environment[key] = item
+		}
+		if len(environment) == 0 {
+			environment = nil
+		}
+		value.Environment = environment
+		result = append(result, value)
+	}
+	return result, nil
 }
 
 type CreateBoardInput struct{ Project, Name, Workflow, Description, DoneArchivePolicy string }
@@ -473,6 +560,7 @@ func (s *Store) ResolveBoard(projectRef, ref string) (model.Board, error) {
 
 type CreateCardInput struct {
 	Project, Board, ID, Lane, Title, Prompt, Provider, Model, Effort string
+	WorkspaceMode, WorkspaceBranch, WorkspaceBaseBranch              string
 	LabelIDs                                                         []string
 	ProviderOptions                                                  map[string]string
 	Origin                                                           *model.CardOrigin
@@ -563,8 +651,16 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, fmt.Errorf("card already exists")
 	}
 	existing, _ := s.ListCards(CardFilter{Board: board.ID, Lane: canonicalLane(board, lane)})
+	workspaceMode := strings.TrimSpace(input.WorkspaceMode)
+	if workspaceMode == "" {
+		workspaceMode = project.DefaultWorkspaceMode
+	}
+	workspaceMode, err = normalizeWorkspaceMode(workspaceMode)
+	if err != nil {
+		return model.Card{}, err
+	}
 	now := timestamp()
-	item := model.Card{ID: input.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin}
+	item := model.Card{ID: input.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch)}
 	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
 }
 
@@ -592,8 +688,16 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, errors.New("chat already exists")
 	}
 	existing, _ := s.ListCards(CardFilter{Project: project.ID, Scope: model.ConversationScopeChat})
+	workspaceMode := strings.TrimSpace(input.WorkspaceMode)
+	if workspaceMode == "" {
+		workspaceMode = project.DefaultWorkspaceMode
+	}
+	workspaceMode, err = normalizeWorkspaceMode(workspaceMode)
+	if err != nil {
+		return model.Card{}, err
+	}
 	now := timestamp()
-	item := model.Card{ID: input.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now}
+	item := model.Card{ID: input.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch)}
 	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
 }
 
@@ -615,6 +719,28 @@ func (s *Store) listCards() ([]model.Card, error) {
 				item.Scope = model.ConversationScopeChat
 			} else {
 				item.Scope = model.ConversationScopeBoard
+			}
+		}
+		if item.WorkspaceMode == "" {
+			item.WorkspaceMode = model.WorkspaceModeMain
+		}
+		var workspace model.Workspace
+		if readJSON(filepath.Join(s.workspaceDir(), item.ID+".json"), &workspace) == nil {
+			item.Workspace = &model.WorkspaceSummary{
+				Mode: workspace.Mode, State: workspace.State, Branch: workspace.Branch, BaseBranch: workspace.BaseBranch,
+				Revision: workspace.Revision, HeadSHA: workspace.HeadSHA, BaseSHA: workspace.CurrentBaseSHA,
+				CurrentOperationID: workspace.CurrentOperationID, Dirty: workspace.Dirty, Conflicted: workspace.State == model.WorkspaceStateConflicted,
+				Ahead: workspace.Ahead, Behind: workspace.Behind, ChangedFiles: workspace.ChangedFiles,
+				Additions: workspace.Additions, Deletions: workspace.Deletions, SizeBytes: workspace.SizeBytes, LastRefreshedAt: workspace.UpdatedAt,
+			}
+		}
+		var pullRequest model.PullRequest
+		if readJSON(filepath.Join(s.pullRequestDir(), item.ID+".json"), &pullRequest) == nil {
+			item.PullRequest = &model.PullRequestSummary{
+				Provider: pullRequest.Provider, Number: pullRequest.Number, URL: pullRequest.URL, State: pullRequest.State,
+				ReviewDecision: pullRequest.ReviewDecision, ChecksState: pullRequest.ChecksState,
+				Mergeable: pullRequest.Mergeable, Draft: pullRequest.Draft, HeadSHA: pullRequest.HeadSHA,
+				BaseSHA: pullRequest.BaseSHA, UpdatedAt: pullRequest.LastSyncedAt,
 			}
 		}
 		comments, _ := s.ListComments(item.ID, 0)
@@ -1055,6 +1181,30 @@ func (s *Store) PinChat(ref string, pinned bool) (model.Card, error) {
 		item.LastActivityAt = item.UpdatedAt
 	}
 	item.Pinned, item.UpdatedAt = pinned, timestamp()
+	return item, s.writeCard(item)
+}
+
+func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch string, allowStarted bool) (model.Card, error) {
+	mode, err := normalizeWorkspaceMode(mode)
+	if err != nil {
+		return model.Card{}, err
+	}
+	release, err := s.beginWrite()
+	if err != nil {
+		return model.Card{}, err
+	}
+	defer release()
+	item, err := s.ResolveCard(ref)
+	if err != nil {
+		return model.Card{}, err
+	}
+	if !allowStarted && item.InitialPromptSentAt != "" {
+		return model.Card{}, errors.New("workspace mode is locked after the first agent turn")
+	}
+	item.WorkspaceMode = mode
+	item.WorkspaceBranch = strings.TrimSpace(branch)
+	item.WorkspaceBaseBranch = strings.TrimSpace(baseBranch)
+	item.UpdatedAt = timestamp()
 	return item, s.writeCard(item)
 }
 

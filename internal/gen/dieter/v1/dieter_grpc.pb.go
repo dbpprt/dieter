@@ -20,79 +20,93 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DieterService_Health_FullMethodName                       = "/dieter.v1.DieterService/Health"
-	DieterService_GetRuntimeStatus_FullMethodName             = "/dieter.v1.DieterService/GetRuntimeStatus"
-	DieterService_GetMachineInformation_FullMethodName        = "/dieter.v1.DieterService/GetMachineInformation"
-	DieterService_PerformMachineOperation_FullMethodName      = "/dieter.v1.DieterService/PerformMachineOperation"
-	DieterService_GetState_FullMethodName                     = "/dieter.v1.DieterService/GetState"
-	DieterService_WatchState_FullMethodName                   = "/dieter.v1.DieterService/WatchState"
-	DieterService_WatchSync_FullMethodName                    = "/dieter.v1.DieterService/WatchSync"
-	DieterService_GetHarnesses_FullMethodName                 = "/dieter.v1.DieterService/GetHarnesses"
-	DieterService_GetSettings_FullMethodName                  = "/dieter.v1.DieterService/GetSettings"
-	DieterService_GetSettingsOptions_FullMethodName           = "/dieter.v1.DieterService/GetSettingsOptions"
-	DieterService_UpdateSettings_FullMethodName               = "/dieter.v1.DieterService/UpdateSettings"
-	DieterService_GetPromptSettings_FullMethodName            = "/dieter.v1.DieterService/GetPromptSettings"
-	DieterService_UpdatePromptSettings_FullMethodName         = "/dieter.v1.DieterService/UpdatePromptSettings"
-	DieterService_SetProjectPromptTemplate_FullMethodName     = "/dieter.v1.DieterService/SetProjectPromptTemplate"
-	DieterService_SetBoardPromptTemplate_FullMethodName       = "/dieter.v1.DieterService/SetBoardPromptTemplate"
-	DieterService_PreviewPrompt_FullMethodName                = "/dieter.v1.DieterService/PreviewPrompt"
-	DieterService_ListDirectories_FullMethodName              = "/dieter.v1.DieterService/ListDirectories"
-	DieterService_CreateProject_FullMethodName                = "/dieter.v1.DieterService/CreateProject"
-	DieterService_UpdateProject_FullMethodName                = "/dieter.v1.DieterService/UpdateProject"
-	DieterService_ArchiveProject_FullMethodName               = "/dieter.v1.DieterService/ArchiveProject"
-	DieterService_ListArchivedProjects_FullMethodName         = "/dieter.v1.DieterService/ListArchivedProjects"
-	DieterService_CreateBoard_FullMethodName                  = "/dieter.v1.DieterService/CreateBoard"
-	DieterService_RenameBoard_FullMethodName                  = "/dieter.v1.DieterService/RenameBoard"
-	DieterService_SetBoardArchivePolicy_FullMethodName        = "/dieter.v1.DieterService/SetBoardArchivePolicy"
-	DieterService_ListArchivedCards_FullMethodName            = "/dieter.v1.DieterService/ListArchivedCards"
-	DieterService_CreateBoardLabel_FullMethodName             = "/dieter.v1.DieterService/CreateBoardLabel"
-	DieterService_UpdateBoardLabel_FullMethodName             = "/dieter.v1.DieterService/UpdateBoardLabel"
-	DieterService_DeleteBoardLabel_FullMethodName             = "/dieter.v1.DieterService/DeleteBoardLabel"
-	DieterService_CreateCard_FullMethodName                   = "/dieter.v1.DieterService/CreateCard"
-	DieterService_CreateChat_FullMethodName                   = "/dieter.v1.DieterService/CreateChat"
-	DieterService_ListChats_FullMethodName                    = "/dieter.v1.DieterService/ListChats"
-	DieterService_GetCard_FullMethodName                      = "/dieter.v1.DieterService/GetCard"
-	DieterService_GetConversation_FullMethodName              = "/dieter.v1.DieterService/GetConversation"
-	DieterService_PollConversation_FullMethodName             = "/dieter.v1.DieterService/PollConversation"
-	DieterService_WatchConversation_FullMethodName            = "/dieter.v1.DieterService/WatchConversation"
-	DieterService_GetToolOutput_FullMethodName                = "/dieter.v1.DieterService/GetToolOutput"
-	DieterService_SendMessage_FullMethodName                  = "/dieter.v1.DieterService/SendMessage"
-	DieterService_AddComment_FullMethodName                   = "/dieter.v1.DieterService/AddComment"
-	DieterService_MoveCard_FullMethodName                     = "/dieter.v1.DieterService/MoveCard"
-	DieterService_StartCard_FullMethodName                    = "/dieter.v1.DieterService/StartCard"
-	DieterService_SetCardLabels_FullMethodName                = "/dieter.v1.DieterService/SetCardLabels"
-	DieterService_CancelCard_FullMethodName                   = "/dieter.v1.DieterService/CancelCard"
-	DieterService_RenameCard_FullMethodName                   = "/dieter.v1.DieterService/RenameCard"
-	DieterService_UpdateCard_FullMethodName                   = "/dieter.v1.DieterService/UpdateCard"
-	DieterService_ArchiveCard_FullMethodName                  = "/dieter.v1.DieterService/ArchiveCard"
-	DieterService_PinChat_FullMethodName                      = "/dieter.v1.DieterService/PinChat"
-	DieterService_ListFiles_FullMethodName                    = "/dieter.v1.DieterService/ListFiles"
-	DieterService_ReadFile_FullMethodName                     = "/dieter.v1.DieterService/ReadFile"
-	DieterService_SaveFile_FullMethodName                     = "/dieter.v1.DieterService/SaveFile"
-	DieterService_CreateFile_FullMethodName                   = "/dieter.v1.DieterService/CreateFile"
-	DieterService_MoveFile_FullMethodName                     = "/dieter.v1.DieterService/MoveFile"
-	DieterService_DeleteFile_FullMethodName                   = "/dieter.v1.DieterService/DeleteFile"
-	DieterService_ListTerminals_FullMethodName                = "/dieter.v1.DieterService/ListTerminals"
-	DieterService_CreateTerminal_FullMethodName               = "/dieter.v1.DieterService/CreateTerminal"
-	DieterService_WatchTerminal_FullMethodName                = "/dieter.v1.DieterService/WatchTerminal"
-	DieterService_WriteTerminal_FullMethodName                = "/dieter.v1.DieterService/WriteTerminal"
-	DieterService_ResizeTerminal_FullMethodName               = "/dieter.v1.DieterService/ResizeTerminal"
-	DieterService_RenameTerminal_FullMethodName               = "/dieter.v1.DieterService/RenameTerminal"
-	DieterService_CloseTerminal_FullMethodName                = "/dieter.v1.DieterService/CloseTerminal"
-	DieterService_GetRemoteDesktopCapabilities_FullMethodName = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
-	DieterService_GetRemoteDesktopSettings_FullMethodName     = "/dieter.v1.DieterService/GetRemoteDesktopSettings"
-	DieterService_UpdateRemoteDesktopSettings_FullMethodName  = "/dieter.v1.DieterService/UpdateRemoteDesktopSettings"
-	DieterService_StartRemoteDesktop_FullMethodName           = "/dieter.v1.DieterService/StartRemoteDesktop"
-	DieterService_SendRemoteDesktopSignal_FullMethodName      = "/dieter.v1.DieterService/SendRemoteDesktopSignal"
-	DieterService_CloseRemoteDesktop_FullMethodName           = "/dieter.v1.DieterService/CloseRemoteDesktop"
-	DieterService_ListSchedules_FullMethodName                = "/dieter.v1.DieterService/ListSchedules"
-	DieterService_PreviewSchedule_FullMethodName              = "/dieter.v1.DieterService/PreviewSchedule"
-	DieterService_CreateSchedule_FullMethodName               = "/dieter.v1.DieterService/CreateSchedule"
-	DieterService_UpdateSchedule_FullMethodName               = "/dieter.v1.DieterService/UpdateSchedule"
-	DieterService_DeleteSchedule_FullMethodName               = "/dieter.v1.DieterService/DeleteSchedule"
-	DieterService_RunSchedule_FullMethodName                  = "/dieter.v1.DieterService/RunSchedule"
-	DieterService_SetScheduleEnabled_FullMethodName           = "/dieter.v1.DieterService/SetScheduleEnabled"
-	DieterService_ListScheduleRuns_FullMethodName             = "/dieter.v1.DieterService/ListScheduleRuns"
+	DieterService_Health_FullMethodName                         = "/dieter.v1.DieterService/Health"
+	DieterService_GetRuntimeStatus_FullMethodName               = "/dieter.v1.DieterService/GetRuntimeStatus"
+	DieterService_GetMachineInformation_FullMethodName          = "/dieter.v1.DieterService/GetMachineInformation"
+	DieterService_PerformMachineOperation_FullMethodName        = "/dieter.v1.DieterService/PerformMachineOperation"
+	DieterService_GetState_FullMethodName                       = "/dieter.v1.DieterService/GetState"
+	DieterService_WatchState_FullMethodName                     = "/dieter.v1.DieterService/WatchState"
+	DieterService_WatchSync_FullMethodName                      = "/dieter.v1.DieterService/WatchSync"
+	DieterService_GetHarnesses_FullMethodName                   = "/dieter.v1.DieterService/GetHarnesses"
+	DieterService_GetSettings_FullMethodName                    = "/dieter.v1.DieterService/GetSettings"
+	DieterService_GetSettingsOptions_FullMethodName             = "/dieter.v1.DieterService/GetSettingsOptions"
+	DieterService_UpdateSettings_FullMethodName                 = "/dieter.v1.DieterService/UpdateSettings"
+	DieterService_GetPromptSettings_FullMethodName              = "/dieter.v1.DieterService/GetPromptSettings"
+	DieterService_UpdatePromptSettings_FullMethodName           = "/dieter.v1.DieterService/UpdatePromptSettings"
+	DieterService_SetProjectPromptTemplate_FullMethodName       = "/dieter.v1.DieterService/SetProjectPromptTemplate"
+	DieterService_SetBoardPromptTemplate_FullMethodName         = "/dieter.v1.DieterService/SetBoardPromptTemplate"
+	DieterService_PreviewPrompt_FullMethodName                  = "/dieter.v1.DieterService/PreviewPrompt"
+	DieterService_ListDirectories_FullMethodName                = "/dieter.v1.DieterService/ListDirectories"
+	DieterService_CreateProject_FullMethodName                  = "/dieter.v1.DieterService/CreateProject"
+	DieterService_UpdateProject_FullMethodName                  = "/dieter.v1.DieterService/UpdateProject"
+	DieterService_UpdateProjectWorkspaceSettings_FullMethodName = "/dieter.v1.DieterService/UpdateProjectWorkspaceSettings"
+	DieterService_ArchiveProject_FullMethodName                 = "/dieter.v1.DieterService/ArchiveProject"
+	DieterService_ListArchivedProjects_FullMethodName           = "/dieter.v1.DieterService/ListArchivedProjects"
+	DieterService_CreateBoard_FullMethodName                    = "/dieter.v1.DieterService/CreateBoard"
+	DieterService_RenameBoard_FullMethodName                    = "/dieter.v1.DieterService/RenameBoard"
+	DieterService_SetBoardArchivePolicy_FullMethodName          = "/dieter.v1.DieterService/SetBoardArchivePolicy"
+	DieterService_ListArchivedCards_FullMethodName              = "/dieter.v1.DieterService/ListArchivedCards"
+	DieterService_CreateBoardLabel_FullMethodName               = "/dieter.v1.DieterService/CreateBoardLabel"
+	DieterService_UpdateBoardLabel_FullMethodName               = "/dieter.v1.DieterService/UpdateBoardLabel"
+	DieterService_DeleteBoardLabel_FullMethodName               = "/dieter.v1.DieterService/DeleteBoardLabel"
+	DieterService_CreateCard_FullMethodName                     = "/dieter.v1.DieterService/CreateCard"
+	DieterService_CreateChat_FullMethodName                     = "/dieter.v1.DieterService/CreateChat"
+	DieterService_ListChats_FullMethodName                      = "/dieter.v1.DieterService/ListChats"
+	DieterService_GetCard_FullMethodName                        = "/dieter.v1.DieterService/GetCard"
+	DieterService_GetConversation_FullMethodName                = "/dieter.v1.DieterService/GetConversation"
+	DieterService_PollConversation_FullMethodName               = "/dieter.v1.DieterService/PollConversation"
+	DieterService_WatchConversation_FullMethodName              = "/dieter.v1.DieterService/WatchConversation"
+	DieterService_GetToolOutput_FullMethodName                  = "/dieter.v1.DieterService/GetToolOutput"
+	DieterService_SendMessage_FullMethodName                    = "/dieter.v1.DieterService/SendMessage"
+	DieterService_AddComment_FullMethodName                     = "/dieter.v1.DieterService/AddComment"
+	DieterService_MoveCard_FullMethodName                       = "/dieter.v1.DieterService/MoveCard"
+	DieterService_StartCard_FullMethodName                      = "/dieter.v1.DieterService/StartCard"
+	DieterService_SetCardLabels_FullMethodName                  = "/dieter.v1.DieterService/SetCardLabels"
+	DieterService_CancelCard_FullMethodName                     = "/dieter.v1.DieterService/CancelCard"
+	DieterService_RenameCard_FullMethodName                     = "/dieter.v1.DieterService/RenameCard"
+	DieterService_UpdateCard_FullMethodName                     = "/dieter.v1.DieterService/UpdateCard"
+	DieterService_ArchiveCard_FullMethodName                    = "/dieter.v1.DieterService/ArchiveCard"
+	DieterService_PinChat_FullMethodName                        = "/dieter.v1.DieterService/PinChat"
+	DieterService_UpdateConversationWorkspace_FullMethodName    = "/dieter.v1.DieterService/UpdateConversationWorkspace"
+	DieterService_GetWorkspace_FullMethodName                   = "/dieter.v1.DieterService/GetWorkspace"
+	DieterService_ListProjectWorkspaces_FullMethodName          = "/dieter.v1.DieterService/ListProjectWorkspaces"
+	DieterService_GetChangeset_FullMethodName                   = "/dieter.v1.DieterService/GetChangeset"
+	DieterService_GetFileDiff_FullMethodName                    = "/dieter.v1.DieterService/GetFileDiff"
+	DieterService_GetCommitDiff_FullMethodName                  = "/dieter.v1.DieterService/GetCommitDiff"
+	DieterService_AddChangeComment_FullMethodName               = "/dieter.v1.DieterService/AddChangeComment"
+	DieterService_ListChangeComments_FullMethodName             = "/dieter.v1.DieterService/ListChangeComments"
+	DieterService_GetSCMCapabilities_FullMethodName             = "/dieter.v1.DieterService/GetSCMCapabilities"
+	DieterService_StartGitOperation_FullMethodName              = "/dieter.v1.DieterService/StartGitOperation"
+	DieterService_GetGitOperation_FullMethodName                = "/dieter.v1.DieterService/GetGitOperation"
+	DieterService_WatchGitOperation_FullMethodName              = "/dieter.v1.DieterService/WatchGitOperation"
+	DieterService_CancelGitOperation_FullMethodName             = "/dieter.v1.DieterService/CancelGitOperation"
+	DieterService_ListFiles_FullMethodName                      = "/dieter.v1.DieterService/ListFiles"
+	DieterService_ReadFile_FullMethodName                       = "/dieter.v1.DieterService/ReadFile"
+	DieterService_SaveFile_FullMethodName                       = "/dieter.v1.DieterService/SaveFile"
+	DieterService_CreateFile_FullMethodName                     = "/dieter.v1.DieterService/CreateFile"
+	DieterService_MoveFile_FullMethodName                       = "/dieter.v1.DieterService/MoveFile"
+	DieterService_DeleteFile_FullMethodName                     = "/dieter.v1.DieterService/DeleteFile"
+	DieterService_ListTerminals_FullMethodName                  = "/dieter.v1.DieterService/ListTerminals"
+	DieterService_CreateTerminal_FullMethodName                 = "/dieter.v1.DieterService/CreateTerminal"
+	DieterService_WatchTerminal_FullMethodName                  = "/dieter.v1.DieterService/WatchTerminal"
+	DieterService_WriteTerminal_FullMethodName                  = "/dieter.v1.DieterService/WriteTerminal"
+	DieterService_ResizeTerminal_FullMethodName                 = "/dieter.v1.DieterService/ResizeTerminal"
+	DieterService_RenameTerminal_FullMethodName                 = "/dieter.v1.DieterService/RenameTerminal"
+	DieterService_CloseTerminal_FullMethodName                  = "/dieter.v1.DieterService/CloseTerminal"
+	DieterService_GetRemoteDesktopCapabilities_FullMethodName   = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
+	DieterService_GetRemoteDesktopSettings_FullMethodName       = "/dieter.v1.DieterService/GetRemoteDesktopSettings"
+	DieterService_UpdateRemoteDesktopSettings_FullMethodName    = "/dieter.v1.DieterService/UpdateRemoteDesktopSettings"
+	DieterService_StartRemoteDesktop_FullMethodName             = "/dieter.v1.DieterService/StartRemoteDesktop"
+	DieterService_SendRemoteDesktopSignal_FullMethodName        = "/dieter.v1.DieterService/SendRemoteDesktopSignal"
+	DieterService_CloseRemoteDesktop_FullMethodName             = "/dieter.v1.DieterService/CloseRemoteDesktop"
+	DieterService_ListSchedules_FullMethodName                  = "/dieter.v1.DieterService/ListSchedules"
+	DieterService_PreviewSchedule_FullMethodName                = "/dieter.v1.DieterService/PreviewSchedule"
+	DieterService_CreateSchedule_FullMethodName                 = "/dieter.v1.DieterService/CreateSchedule"
+	DieterService_UpdateSchedule_FullMethodName                 = "/dieter.v1.DieterService/UpdateSchedule"
+	DieterService_DeleteSchedule_FullMethodName                 = "/dieter.v1.DieterService/DeleteSchedule"
+	DieterService_RunSchedule_FullMethodName                    = "/dieter.v1.DieterService/RunSchedule"
+	DieterService_SetScheduleEnabled_FullMethodName             = "/dieter.v1.DieterService/SetScheduleEnabled"
+	DieterService_ListScheduleRuns_FullMethodName               = "/dieter.v1.DieterService/ListScheduleRuns"
 )
 
 // DieterServiceClient is the client API for DieterService service.
@@ -123,6 +137,7 @@ type DieterServiceClient interface {
 	ListDirectories(ctx context.Context, in *ListDirectoriesRequest, opts ...grpc.CallOption) (*DirectoryListing, error)
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
 	UpdateProject(ctx context.Context, in *UpdateProjectRequest, opts ...grpc.CallOption) (*Project, error)
+	UpdateProjectWorkspaceSettings(ctx context.Context, in *UpdateProjectWorkspaceSettingsRequest, opts ...grpc.CallOption) (*Project, error)
 	ArchiveProject(ctx context.Context, in *ArchiveProjectRequest, opts ...grpc.CallOption) (*Project, error)
 	ListArchivedProjects(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ProjectsResponse, error)
 	CreateBoard(ctx context.Context, in *CreateBoardRequest, opts ...grpc.CallOption) (*Board, error)
@@ -153,6 +168,20 @@ type DieterServiceClient interface {
 	UpdateCard(ctx context.Context, in *UpdateCardRequest, opts ...grpc.CallOption) (*Card, error)
 	ArchiveCard(ctx context.Context, in *ArchiveCardRequest, opts ...grpc.CallOption) (*Card, error)
 	PinChat(ctx context.Context, in *PinChatRequest, opts ...grpc.CallOption) (*Card, error)
+	// Cards and standalone chats share this conversation workspace surface.
+	UpdateConversationWorkspace(ctx context.Context, in *UpdateConversationWorkspaceRequest, opts ...grpc.CallOption) (*Card, error)
+	GetWorkspace(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*Workspace, error)
+	ListProjectWorkspaces(ctx context.Context, in *ProjectRef, opts ...grpc.CallOption) (*WorkspacesResponse, error)
+	GetChangeset(ctx context.Context, in *GetChangesetRequest, opts ...grpc.CallOption) (*Changeset, error)
+	GetFileDiff(ctx context.Context, in *GetDiffRequest, opts ...grpc.CallOption) (*FileDiff, error)
+	GetCommitDiff(ctx context.Context, in *GetDiffRequest, opts ...grpc.CallOption) (*FileDiff, error)
+	AddChangeComment(ctx context.Context, in *AddChangeCommentRequest, opts ...grpc.CallOption) (*ChangeComment, error)
+	ListChangeComments(ctx context.Context, in *ListChangeCommentsRequest, opts ...grpc.CallOption) (*ChangeCommentsResponse, error)
+	GetSCMCapabilities(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*SCMCapabilities, error)
+	StartGitOperation(ctx context.Context, in *StartGitOperationRequest, opts ...grpc.CallOption) (*GitOperation, error)
+	GetGitOperation(ctx context.Context, in *GitOperationRef, opts ...grpc.CallOption) (*GitOperation, error)
+	WatchGitOperation(ctx context.Context, in *WatchGitOperationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GitOperationFrame], error)
+	CancelGitOperation(ctx context.Context, in *GitOperationRef, opts ...grpc.CallOption) (*GitOperation, error)
 	ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*FileList, error)
 	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*FileDocument, error)
 	SaveFile(ctx context.Context, in *SaveFileRequest, opts ...grpc.CallOption) (*FileDocument, error)
@@ -395,6 +424,16 @@ func (c *dieterServiceClient) UpdateProject(ctx context.Context, in *UpdateProje
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Project)
 	err := c.cc.Invoke(ctx, DieterService_UpdateProject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) UpdateProjectWorkspaceSettings(ctx context.Context, in *UpdateProjectWorkspaceSettingsRequest, opts ...grpc.CallOption) (*Project, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Project)
+	err := c.cc.Invoke(ctx, DieterService_UpdateProjectWorkspaceSettings_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -680,6 +719,145 @@ func (c *dieterServiceClient) PinChat(ctx context.Context, in *PinChatRequest, o
 	return out, nil
 }
 
+func (c *dieterServiceClient) UpdateConversationWorkspace(ctx context.Context, in *UpdateConversationWorkspaceRequest, opts ...grpc.CallOption) (*Card, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Card)
+	err := c.cc.Invoke(ctx, DieterService_UpdateConversationWorkspace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetWorkspace(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*Workspace, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Workspace)
+	err := c.cc.Invoke(ctx, DieterService_GetWorkspace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ListProjectWorkspaces(ctx context.Context, in *ProjectRef, opts ...grpc.CallOption) (*WorkspacesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WorkspacesResponse)
+	err := c.cc.Invoke(ctx, DieterService_ListProjectWorkspaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetChangeset(ctx context.Context, in *GetChangesetRequest, opts ...grpc.CallOption) (*Changeset, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Changeset)
+	err := c.cc.Invoke(ctx, DieterService_GetChangeset_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetFileDiff(ctx context.Context, in *GetDiffRequest, opts ...grpc.CallOption) (*FileDiff, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileDiff)
+	err := c.cc.Invoke(ctx, DieterService_GetFileDiff_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetCommitDiff(ctx context.Context, in *GetDiffRequest, opts ...grpc.CallOption) (*FileDiff, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileDiff)
+	err := c.cc.Invoke(ctx, DieterService_GetCommitDiff_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) AddChangeComment(ctx context.Context, in *AddChangeCommentRequest, opts ...grpc.CallOption) (*ChangeComment, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChangeComment)
+	err := c.cc.Invoke(ctx, DieterService_AddChangeComment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ListChangeComments(ctx context.Context, in *ListChangeCommentsRequest, opts ...grpc.CallOption) (*ChangeCommentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChangeCommentsResponse)
+	err := c.cc.Invoke(ctx, DieterService_ListChangeComments_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetSCMCapabilities(ctx context.Context, in *ConversationRef, opts ...grpc.CallOption) (*SCMCapabilities, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SCMCapabilities)
+	err := c.cc.Invoke(ctx, DieterService_GetSCMCapabilities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) StartGitOperation(ctx context.Context, in *StartGitOperationRequest, opts ...grpc.CallOption) (*GitOperation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitOperation)
+	err := c.cc.Invoke(ctx, DieterService_StartGitOperation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetGitOperation(ctx context.Context, in *GitOperationRef, opts ...grpc.CallOption) (*GitOperation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitOperation)
+	err := c.cc.Invoke(ctx, DieterService_GetGitOperation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) WatchGitOperation(ctx context.Context, in *WatchGitOperationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GitOperationFrame], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchGitOperation_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchGitOperationRequest, GitOperationFrame]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DieterService_WatchGitOperationClient = grpc.ServerStreamingClient[GitOperationFrame]
+
+func (c *dieterServiceClient) CancelGitOperation(ctx context.Context, in *GitOperationRef, opts ...grpc.CallOption) (*GitOperation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GitOperation)
+	err := c.cc.Invoke(ctx, DieterService_CancelGitOperation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dieterServiceClient) ListFiles(ctx context.Context, in *ListFilesRequest, opts ...grpc.CallOption) (*FileList, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FileList)
@@ -762,7 +940,7 @@ func (c *dieterServiceClient) CreateTerminal(ctx context.Context, in *CreateTerm
 
 func (c *dieterServiceClient) WatchTerminal(ctx context.Context, in *WatchTerminalRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchTerminal_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchTerminal_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -851,7 +1029,7 @@ func (c *dieterServiceClient) UpdateRemoteDesktopSettings(ctx context.Context, i
 
 func (c *dieterServiceClient) StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -996,6 +1174,7 @@ type DieterServiceServer interface {
 	ListDirectories(context.Context, *ListDirectoriesRequest) (*DirectoryListing, error)
 	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
 	UpdateProject(context.Context, *UpdateProjectRequest) (*Project, error)
+	UpdateProjectWorkspaceSettings(context.Context, *UpdateProjectWorkspaceSettingsRequest) (*Project, error)
 	ArchiveProject(context.Context, *ArchiveProjectRequest) (*Project, error)
 	ListArchivedProjects(context.Context, *emptypb.Empty) (*ProjectsResponse, error)
 	CreateBoard(context.Context, *CreateBoardRequest) (*Board, error)
@@ -1026,6 +1205,20 @@ type DieterServiceServer interface {
 	UpdateCard(context.Context, *UpdateCardRequest) (*Card, error)
 	ArchiveCard(context.Context, *ArchiveCardRequest) (*Card, error)
 	PinChat(context.Context, *PinChatRequest) (*Card, error)
+	// Cards and standalone chats share this conversation workspace surface.
+	UpdateConversationWorkspace(context.Context, *UpdateConversationWorkspaceRequest) (*Card, error)
+	GetWorkspace(context.Context, *ConversationRef) (*Workspace, error)
+	ListProjectWorkspaces(context.Context, *ProjectRef) (*WorkspacesResponse, error)
+	GetChangeset(context.Context, *GetChangesetRequest) (*Changeset, error)
+	GetFileDiff(context.Context, *GetDiffRequest) (*FileDiff, error)
+	GetCommitDiff(context.Context, *GetDiffRequest) (*FileDiff, error)
+	AddChangeComment(context.Context, *AddChangeCommentRequest) (*ChangeComment, error)
+	ListChangeComments(context.Context, *ListChangeCommentsRequest) (*ChangeCommentsResponse, error)
+	GetSCMCapabilities(context.Context, *ConversationRef) (*SCMCapabilities, error)
+	StartGitOperation(context.Context, *StartGitOperationRequest) (*GitOperation, error)
+	GetGitOperation(context.Context, *GitOperationRef) (*GitOperation, error)
+	WatchGitOperation(*WatchGitOperationRequest, grpc.ServerStreamingServer[GitOperationFrame]) error
+	CancelGitOperation(context.Context, *GitOperationRef) (*GitOperation, error)
 	ListFiles(context.Context, *ListFilesRequest) (*FileList, error)
 	ReadFile(context.Context, *ReadFileRequest) (*FileDocument, error)
 	SaveFile(context.Context, *SaveFileRequest) (*FileDocument, error)
@@ -1123,6 +1316,9 @@ func (UnimplementedDieterServiceServer) CreateProject(context.Context, *CreatePr
 func (UnimplementedDieterServiceServer) UpdateProject(context.Context, *UpdateProjectRequest) (*Project, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateProject not implemented")
 }
+func (UnimplementedDieterServiceServer) UpdateProjectWorkspaceSettings(context.Context, *UpdateProjectWorkspaceSettingsRequest) (*Project, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateProjectWorkspaceSettings not implemented")
+}
 func (UnimplementedDieterServiceServer) ArchiveProject(context.Context, *ArchiveProjectRequest) (*Project, error) {
 	return nil, status.Error(codes.Unimplemented, "method ArchiveProject not implemented")
 }
@@ -1203,6 +1399,45 @@ func (UnimplementedDieterServiceServer) ArchiveCard(context.Context, *ArchiveCar
 }
 func (UnimplementedDieterServiceServer) PinChat(context.Context, *PinChatRequest) (*Card, error) {
 	return nil, status.Error(codes.Unimplemented, "method PinChat not implemented")
+}
+func (UnimplementedDieterServiceServer) UpdateConversationWorkspace(context.Context, *UpdateConversationWorkspaceRequest) (*Card, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateConversationWorkspace not implemented")
+}
+func (UnimplementedDieterServiceServer) GetWorkspace(context.Context, *ConversationRef) (*Workspace, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetWorkspace not implemented")
+}
+func (UnimplementedDieterServiceServer) ListProjectWorkspaces(context.Context, *ProjectRef) (*WorkspacesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListProjectWorkspaces not implemented")
+}
+func (UnimplementedDieterServiceServer) GetChangeset(context.Context, *GetChangesetRequest) (*Changeset, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetChangeset not implemented")
+}
+func (UnimplementedDieterServiceServer) GetFileDiff(context.Context, *GetDiffRequest) (*FileDiff, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetFileDiff not implemented")
+}
+func (UnimplementedDieterServiceServer) GetCommitDiff(context.Context, *GetDiffRequest) (*FileDiff, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCommitDiff not implemented")
+}
+func (UnimplementedDieterServiceServer) AddChangeComment(context.Context, *AddChangeCommentRequest) (*ChangeComment, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddChangeComment not implemented")
+}
+func (UnimplementedDieterServiceServer) ListChangeComments(context.Context, *ListChangeCommentsRequest) (*ChangeCommentsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListChangeComments not implemented")
+}
+func (UnimplementedDieterServiceServer) GetSCMCapabilities(context.Context, *ConversationRef) (*SCMCapabilities, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSCMCapabilities not implemented")
+}
+func (UnimplementedDieterServiceServer) StartGitOperation(context.Context, *StartGitOperationRequest) (*GitOperation, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartGitOperation not implemented")
+}
+func (UnimplementedDieterServiceServer) GetGitOperation(context.Context, *GitOperationRef) (*GitOperation, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetGitOperation not implemented")
+}
+func (UnimplementedDieterServiceServer) WatchGitOperation(*WatchGitOperationRequest, grpc.ServerStreamingServer[GitOperationFrame]) error {
+	return status.Error(codes.Unimplemented, "method WatchGitOperation not implemented")
+}
+func (UnimplementedDieterServiceServer) CancelGitOperation(context.Context, *GitOperationRef) (*GitOperation, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelGitOperation not implemented")
 }
 func (UnimplementedDieterServiceServer) ListFiles(context.Context, *ListFilesRequest) (*FileList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListFiles not implemented")
@@ -1630,6 +1865,24 @@ func _DieterService_UpdateProject_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).UpdateProject(ctx, req.(*UpdateProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_UpdateProjectWorkspaceSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateProjectWorkspaceSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).UpdateProjectWorkspaceSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_UpdateProjectWorkspaceSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).UpdateProjectWorkspaceSettings(ctx, req.(*UpdateProjectWorkspaceSettingsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2109,6 +2362,233 @@ func _DieterService_PinChat_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).PinChat(ctx, req.(*PinChatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_UpdateConversationWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateConversationWorkspaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).UpdateConversationWorkspace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_UpdateConversationWorkspace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).UpdateConversationWorkspace(ctx, req.(*UpdateConversationWorkspaceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConversationRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetWorkspace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetWorkspace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetWorkspace(ctx, req.(*ConversationRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ListProjectWorkspaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProjectRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListProjectWorkspaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListProjectWorkspaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListProjectWorkspaces(ctx, req.(*ProjectRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetChangeset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetChangesetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetChangeset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetChangeset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetChangeset(ctx, req.(*GetChangesetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetFileDiff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDiffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetFileDiff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetFileDiff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetFileDiff(ctx, req.(*GetDiffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetCommitDiff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDiffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetCommitDiff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetCommitDiff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetCommitDiff(ctx, req.(*GetDiffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_AddChangeComment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddChangeCommentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).AddChangeComment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_AddChangeComment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).AddChangeComment(ctx, req.(*AddChangeCommentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ListChangeComments_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListChangeCommentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListChangeComments(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListChangeComments_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListChangeComments(ctx, req.(*ListChangeCommentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetSCMCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConversationRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetSCMCapabilities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetSCMCapabilities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetSCMCapabilities(ctx, req.(*ConversationRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_StartGitOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartGitOperationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).StartGitOperation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_StartGitOperation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).StartGitOperation(ctx, req.(*StartGitOperationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetGitOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitOperationRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetGitOperation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetGitOperation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetGitOperation(ctx, req.(*GitOperationRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_WatchGitOperation_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchGitOperationRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DieterServiceServer).WatchGitOperation(m, &grpc.GenericServerStream[WatchGitOperationRequest, GitOperationFrame]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DieterService_WatchGitOperationServer = grpc.ServerStreamingServer[GitOperationFrame]
+
+func _DieterService_CancelGitOperation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GitOperationRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).CancelGitOperation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_CancelGitOperation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).CancelGitOperation(ctx, req.(*GitOperationRef))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2661,6 +3141,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DieterService_UpdateProject_Handler,
 		},
 		{
+			MethodName: "UpdateProjectWorkspaceSettings",
+			Handler:    _DieterService_UpdateProjectWorkspaceSettings_Handler,
+		},
+		{
 			MethodName: "ArchiveProject",
 			Handler:    _DieterService_ArchiveProject_Handler,
 		},
@@ -2763,6 +3247,54 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PinChat",
 			Handler:    _DieterService_PinChat_Handler,
+		},
+		{
+			MethodName: "UpdateConversationWorkspace",
+			Handler:    _DieterService_UpdateConversationWorkspace_Handler,
+		},
+		{
+			MethodName: "GetWorkspace",
+			Handler:    _DieterService_GetWorkspace_Handler,
+		},
+		{
+			MethodName: "ListProjectWorkspaces",
+			Handler:    _DieterService_ListProjectWorkspaces_Handler,
+		},
+		{
+			MethodName: "GetChangeset",
+			Handler:    _DieterService_GetChangeset_Handler,
+		},
+		{
+			MethodName: "GetFileDiff",
+			Handler:    _DieterService_GetFileDiff_Handler,
+		},
+		{
+			MethodName: "GetCommitDiff",
+			Handler:    _DieterService_GetCommitDiff_Handler,
+		},
+		{
+			MethodName: "AddChangeComment",
+			Handler:    _DieterService_AddChangeComment_Handler,
+		},
+		{
+			MethodName: "ListChangeComments",
+			Handler:    _DieterService_ListChangeComments_Handler,
+		},
+		{
+			MethodName: "GetSCMCapabilities",
+			Handler:    _DieterService_GetSCMCapabilities_Handler,
+		},
+		{
+			MethodName: "StartGitOperation",
+			Handler:    _DieterService_StartGitOperation_Handler,
+		},
+		{
+			MethodName: "GetGitOperation",
+			Handler:    _DieterService_GetGitOperation_Handler,
+		},
+		{
+			MethodName: "CancelGitOperation",
+			Handler:    _DieterService_CancelGitOperation_Handler,
 		},
 		{
 			MethodName: "ListFiles",
@@ -2879,6 +3411,11 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchConversation",
 			Handler:       _DieterService_WatchConversation_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchGitOperation",
+			Handler:       _DieterService_WatchGitOperation_Handler,
 			ServerStreams: true,
 		},
 		{

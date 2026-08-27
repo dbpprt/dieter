@@ -17,7 +17,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/dbpprt/dieter/internal/app"
+	"github.com/dbpprt/dieter/internal/changeset"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/gitops"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/model"
 	dieterprompt "github.com/dbpprt/dieter/internal/prompt"
@@ -183,6 +185,8 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInp
 		Title: request.GetTitle(), Prompt: request.GetPrompt(), Provider: request.GetProvider(),
 		Model: request.GetModel(), Effort: request.GetEffort(), ProviderOptions: cloneProtoStringMap(request.GetProviderOptions()),
 		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), Attachments: attachments,
+		WorkspaceMode: request.GetWorkspaceMode(), WorkspaceBranch: request.GetWorkspaceBranch(),
+		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(),
 	}, nil
 }
 
@@ -828,10 +832,10 @@ func (api *grpcAPI) PinChat(_ context.Context, request *dieterv1.PinChatRequest)
 	return protoCard(value), nil
 }
 
-func (api *grpcAPI) ListFiles(_ context.Context, request *dieterv1.ListFilesRequest) (*dieterv1.FileList, error) {
+func (api *grpcAPI) ListFiles(ctx context.Context, request *dieterv1.ListFilesRequest) (*dieterv1.FileList, error) {
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
-	project, err := api.server.store.ResolveProject(request.GetProjectId())
+	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -882,10 +886,10 @@ func (api *grpcAPI) ListFiles(_ context.Context, request *dieterv1.ListFilesRequ
 	return result, nil
 }
 
-func (api *grpcAPI) ReadFile(_ context.Context, request *dieterv1.ReadFileRequest) (*dieterv1.FileDocument, error) {
+func (api *grpcAPI) ReadFile(ctx context.Context, request *dieterv1.ReadFileRequest) (*dieterv1.FileDocument, error) {
 	api.server.filesMu.RLock()
 	defer api.server.filesMu.RUnlock()
-	project, err := api.server.store.ResolveProject(request.GetProjectId())
+	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -1042,6 +1046,12 @@ func grpcFailure(err error) error {
 		return status.Error(codes.ResourceExhausted, err.Error())
 	}
 	if errors.Is(err, store.ErrCardActive) {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if errors.Is(err, changeset.ErrStaleRevision) {
+		return status.Error(codes.Aborted, err.Error())
+	}
+	if errors.Is(err, gitops.ErrWorkspaceBusy) {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	if errors.Is(err, terminal.ErrNotFound) {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -18,6 +19,30 @@ import (
 
 const maxProjectFileSize = 5 << 20
 const projectTimeFormat = "2006-01-02T15:04:05.999999999Z07:00"
+
+func (s *Server) scopedProject(ctx context.Context, projectID, cardID string) (model.Project, error) {
+	cardID = strings.TrimSpace(cardID)
+	if cardID == "" {
+		return s.store.ResolveProject(strings.TrimSpace(projectID))
+	}
+	card, err := s.store.ResolveCard(cardID)
+	if err != nil {
+		return model.Project{}, err
+	}
+	if projectID != "" && strings.TrimSpace(projectID) != card.ProjectID {
+		return model.Project{}, errors.New("card does not belong to the requested project")
+	}
+	value, err := s.workspaces.Ensure(ctx, card.ID)
+	if err != nil {
+		return model.Project{}, err
+	}
+	project, err := s.store.ResolveProject(card.ProjectID)
+	if err != nil {
+		return model.Project{}, err
+	}
+	project.Path = value.Path
+	return project, nil
+}
 
 type projectFileEntry struct {
 	Name       string

@@ -88,6 +88,9 @@ const (
 	// DieterServiceUpdateProjectProcedure is the fully-qualified name of the DieterService's
 	// UpdateProject RPC.
 	DieterServiceUpdateProjectProcedure = "/dieter.v1.DieterService/UpdateProject"
+	// DieterServiceUpdateProjectWorkspaceSettingsProcedure is the fully-qualified name of the
+	// DieterService's UpdateProjectWorkspaceSettings RPC.
+	DieterServiceUpdateProjectWorkspaceSettingsProcedure = "/dieter.v1.DieterService/UpdateProjectWorkspaceSettings"
 	// DieterServiceArchiveProjectProcedure is the fully-qualified name of the DieterService's
 	// ArchiveProject RPC.
 	DieterServiceArchiveProjectProcedure = "/dieter.v1.DieterService/ArchiveProject"
@@ -164,6 +167,45 @@ const (
 	DieterServiceArchiveCardProcedure = "/dieter.v1.DieterService/ArchiveCard"
 	// DieterServicePinChatProcedure is the fully-qualified name of the DieterService's PinChat RPC.
 	DieterServicePinChatProcedure = "/dieter.v1.DieterService/PinChat"
+	// DieterServiceUpdateConversationWorkspaceProcedure is the fully-qualified name of the
+	// DieterService's UpdateConversationWorkspace RPC.
+	DieterServiceUpdateConversationWorkspaceProcedure = "/dieter.v1.DieterService/UpdateConversationWorkspace"
+	// DieterServiceGetWorkspaceProcedure is the fully-qualified name of the DieterService's
+	// GetWorkspace RPC.
+	DieterServiceGetWorkspaceProcedure = "/dieter.v1.DieterService/GetWorkspace"
+	// DieterServiceListProjectWorkspacesProcedure is the fully-qualified name of the DieterService's
+	// ListProjectWorkspaces RPC.
+	DieterServiceListProjectWorkspacesProcedure = "/dieter.v1.DieterService/ListProjectWorkspaces"
+	// DieterServiceGetChangesetProcedure is the fully-qualified name of the DieterService's
+	// GetChangeset RPC.
+	DieterServiceGetChangesetProcedure = "/dieter.v1.DieterService/GetChangeset"
+	// DieterServiceGetFileDiffProcedure is the fully-qualified name of the DieterService's GetFileDiff
+	// RPC.
+	DieterServiceGetFileDiffProcedure = "/dieter.v1.DieterService/GetFileDiff"
+	// DieterServiceGetCommitDiffProcedure is the fully-qualified name of the DieterService's
+	// GetCommitDiff RPC.
+	DieterServiceGetCommitDiffProcedure = "/dieter.v1.DieterService/GetCommitDiff"
+	// DieterServiceAddChangeCommentProcedure is the fully-qualified name of the DieterService's
+	// AddChangeComment RPC.
+	DieterServiceAddChangeCommentProcedure = "/dieter.v1.DieterService/AddChangeComment"
+	// DieterServiceListChangeCommentsProcedure is the fully-qualified name of the DieterService's
+	// ListChangeComments RPC.
+	DieterServiceListChangeCommentsProcedure = "/dieter.v1.DieterService/ListChangeComments"
+	// DieterServiceGetSCMCapabilitiesProcedure is the fully-qualified name of the DieterService's
+	// GetSCMCapabilities RPC.
+	DieterServiceGetSCMCapabilitiesProcedure = "/dieter.v1.DieterService/GetSCMCapabilities"
+	// DieterServiceStartGitOperationProcedure is the fully-qualified name of the DieterService's
+	// StartGitOperation RPC.
+	DieterServiceStartGitOperationProcedure = "/dieter.v1.DieterService/StartGitOperation"
+	// DieterServiceGetGitOperationProcedure is the fully-qualified name of the DieterService's
+	// GetGitOperation RPC.
+	DieterServiceGetGitOperationProcedure = "/dieter.v1.DieterService/GetGitOperation"
+	// DieterServiceWatchGitOperationProcedure is the fully-qualified name of the DieterService's
+	// WatchGitOperation RPC.
+	DieterServiceWatchGitOperationProcedure = "/dieter.v1.DieterService/WatchGitOperation"
+	// DieterServiceCancelGitOperationProcedure is the fully-qualified name of the DieterService's
+	// CancelGitOperation RPC.
+	DieterServiceCancelGitOperationProcedure = "/dieter.v1.DieterService/CancelGitOperation"
 	// DieterServiceListFilesProcedure is the fully-qualified name of the DieterService's ListFiles RPC.
 	DieterServiceListFilesProcedure = "/dieter.v1.DieterService/ListFiles"
 	// DieterServiceReadFileProcedure is the fully-qualified name of the DieterService's ReadFile RPC.
@@ -269,6 +311,7 @@ type DieterServiceClient interface {
 	ListDirectories(context.Context, *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error)
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
 	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error)
+	UpdateProjectWorkspaceSettings(context.Context, *connect.Request[v1.UpdateProjectWorkspaceSettingsRequest]) (*connect.Response[v1.Project], error)
 	ArchiveProject(context.Context, *connect.Request[v1.ArchiveProjectRequest]) (*connect.Response[v1.Project], error)
 	ListArchivedProjects(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ProjectsResponse], error)
 	CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error)
@@ -299,6 +342,20 @@ type DieterServiceClient interface {
 	UpdateCard(context.Context, *connect.Request[v1.UpdateCardRequest]) (*connect.Response[v1.Card], error)
 	ArchiveCard(context.Context, *connect.Request[v1.ArchiveCardRequest]) (*connect.Response[v1.Card], error)
 	PinChat(context.Context, *connect.Request[v1.PinChatRequest]) (*connect.Response[v1.Card], error)
+	// Cards and standalone chats share this conversation workspace surface.
+	UpdateConversationWorkspace(context.Context, *connect.Request[v1.UpdateConversationWorkspaceRequest]) (*connect.Response[v1.Card], error)
+	GetWorkspace(context.Context, *connect.Request[v1.ConversationRef]) (*connect.Response[v1.Workspace], error)
+	ListProjectWorkspaces(context.Context, *connect.Request[v1.ProjectRef]) (*connect.Response[v1.WorkspacesResponse], error)
+	GetChangeset(context.Context, *connect.Request[v1.GetChangesetRequest]) (*connect.Response[v1.Changeset], error)
+	GetFileDiff(context.Context, *connect.Request[v1.GetDiffRequest]) (*connect.Response[v1.FileDiff], error)
+	GetCommitDiff(context.Context, *connect.Request[v1.GetDiffRequest]) (*connect.Response[v1.FileDiff], error)
+	AddChangeComment(context.Context, *connect.Request[v1.AddChangeCommentRequest]) (*connect.Response[v1.ChangeComment], error)
+	ListChangeComments(context.Context, *connect.Request[v1.ListChangeCommentsRequest]) (*connect.Response[v1.ChangeCommentsResponse], error)
+	GetSCMCapabilities(context.Context, *connect.Request[v1.ConversationRef]) (*connect.Response[v1.SCMCapabilities], error)
+	StartGitOperation(context.Context, *connect.Request[v1.StartGitOperationRequest]) (*connect.Response[v1.GitOperation], error)
+	GetGitOperation(context.Context, *connect.Request[v1.GitOperationRef]) (*connect.Response[v1.GitOperation], error)
+	WatchGitOperation(context.Context, *connect.Request[v1.WatchGitOperationRequest]) (*connect.ServerStreamForClient[v1.GitOperationFrame], error)
+	CancelGitOperation(context.Context, *connect.Request[v1.GitOperationRef]) (*connect.Response[v1.GitOperation], error)
 	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.FileList], error)
 	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.FileDocument], error)
 	SaveFile(context.Context, *connect.Request[v1.SaveFileRequest]) (*connect.Response[v1.FileDocument], error)
@@ -454,6 +511,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceUpdateProjectProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("UpdateProject")),
+			connect.WithClientOptions(opts...),
+		),
+		updateProjectWorkspaceSettings: connect.NewClient[v1.UpdateProjectWorkspaceSettingsRequest, v1.Project](
+			httpClient,
+			baseURL+DieterServiceUpdateProjectWorkspaceSettingsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("UpdateProjectWorkspaceSettings")),
 			connect.WithClientOptions(opts...),
 		),
 		archiveProject: connect.NewClient[v1.ArchiveProjectRequest, v1.Project](
@@ -616,6 +679,84 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServicePinChatProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("PinChat")),
+			connect.WithClientOptions(opts...),
+		),
+		updateConversationWorkspace: connect.NewClient[v1.UpdateConversationWorkspaceRequest, v1.Card](
+			httpClient,
+			baseURL+DieterServiceUpdateConversationWorkspaceProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("UpdateConversationWorkspace")),
+			connect.WithClientOptions(opts...),
+		),
+		getWorkspace: connect.NewClient[v1.ConversationRef, v1.Workspace](
+			httpClient,
+			baseURL+DieterServiceGetWorkspaceProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetWorkspace")),
+			connect.WithClientOptions(opts...),
+		),
+		listProjectWorkspaces: connect.NewClient[v1.ProjectRef, v1.WorkspacesResponse](
+			httpClient,
+			baseURL+DieterServiceListProjectWorkspacesProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListProjectWorkspaces")),
+			connect.WithClientOptions(opts...),
+		),
+		getChangeset: connect.NewClient[v1.GetChangesetRequest, v1.Changeset](
+			httpClient,
+			baseURL+DieterServiceGetChangesetProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetChangeset")),
+			connect.WithClientOptions(opts...),
+		),
+		getFileDiff: connect.NewClient[v1.GetDiffRequest, v1.FileDiff](
+			httpClient,
+			baseURL+DieterServiceGetFileDiffProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetFileDiff")),
+			connect.WithClientOptions(opts...),
+		),
+		getCommitDiff: connect.NewClient[v1.GetDiffRequest, v1.FileDiff](
+			httpClient,
+			baseURL+DieterServiceGetCommitDiffProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetCommitDiff")),
+			connect.WithClientOptions(opts...),
+		),
+		addChangeComment: connect.NewClient[v1.AddChangeCommentRequest, v1.ChangeComment](
+			httpClient,
+			baseURL+DieterServiceAddChangeCommentProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("AddChangeComment")),
+			connect.WithClientOptions(opts...),
+		),
+		listChangeComments: connect.NewClient[v1.ListChangeCommentsRequest, v1.ChangeCommentsResponse](
+			httpClient,
+			baseURL+DieterServiceListChangeCommentsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListChangeComments")),
+			connect.WithClientOptions(opts...),
+		),
+		getSCMCapabilities: connect.NewClient[v1.ConversationRef, v1.SCMCapabilities](
+			httpClient,
+			baseURL+DieterServiceGetSCMCapabilitiesProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetSCMCapabilities")),
+			connect.WithClientOptions(opts...),
+		),
+		startGitOperation: connect.NewClient[v1.StartGitOperationRequest, v1.GitOperation](
+			httpClient,
+			baseURL+DieterServiceStartGitOperationProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("StartGitOperation")),
+			connect.WithClientOptions(opts...),
+		),
+		getGitOperation: connect.NewClient[v1.GitOperationRef, v1.GitOperation](
+			httpClient,
+			baseURL+DieterServiceGetGitOperationProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetGitOperation")),
+			connect.WithClientOptions(opts...),
+		),
+		watchGitOperation: connect.NewClient[v1.WatchGitOperationRequest, v1.GitOperationFrame](
+			httpClient,
+			baseURL+DieterServiceWatchGitOperationProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("WatchGitOperation")),
+			connect.WithClientOptions(opts...),
+		),
+		cancelGitOperation: connect.NewClient[v1.GitOperationRef, v1.GitOperation](
+			httpClient,
+			baseURL+DieterServiceCancelGitOperationProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("CancelGitOperation")),
 			connect.WithClientOptions(opts...),
 		),
 		listFiles: connect.NewClient[v1.ListFilesRequest, v1.FileList](
@@ -785,79 +926,93 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // dieterServiceClient implements DieterServiceClient.
 type dieterServiceClient struct {
-	health                       *connect.Client[emptypb.Empty, v1.HealthResponse]
-	getRuntimeStatus             *connect.Client[emptypb.Empty, v1.RuntimeStatus]
-	getMachineInformation        *connect.Client[emptypb.Empty, v1.MachineInformation]
-	performMachineOperation      *connect.Client[v1.MachineOperationRequest, v1.MachineOperationResponse]
-	getState                     *connect.Client[v1.GetStateRequest, v1.State]
-	watchState                   *connect.Client[v1.WatchStateRequest, v1.State]
-	watchSync                    *connect.Client[v1.SyncRequest, v1.SyncFrame]
-	getHarnesses                 *connect.Client[emptypb.Empty, v1.HarnessCatalog]
-	getSettings                  *connect.Client[emptypb.Empty, v1.Settings]
-	getSettingsOptions           *connect.Client[emptypb.Empty, v1.SettingsOptions]
-	updateSettings               *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
-	getPromptSettings            *connect.Client[emptypb.Empty, v1.PromptSettings]
-	updatePromptSettings         *connect.Client[v1.UpdatePromptSettingsRequest, v1.PromptSettings]
-	setProjectPromptTemplate     *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
-	setBoardPromptTemplate       *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
-	previewPrompt                *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
-	listDirectories              *connect.Client[v1.ListDirectoriesRequest, v1.DirectoryListing]
-	createProject                *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
-	updateProject                *connect.Client[v1.UpdateProjectRequest, v1.Project]
-	archiveProject               *connect.Client[v1.ArchiveProjectRequest, v1.Project]
-	listArchivedProjects         *connect.Client[emptypb.Empty, v1.ProjectsResponse]
-	createBoard                  *connect.Client[v1.CreateBoardRequest, v1.Board]
-	renameBoard                  *connect.Client[v1.RenameBoardRequest, v1.Board]
-	setBoardArchivePolicy        *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
-	listArchivedCards            *connect.Client[v1.BoardRef, v1.CardsResponse]
-	createBoardLabel             *connect.Client[v1.CreateBoardLabelRequest, v1.Board]
-	updateBoardLabel             *connect.Client[v1.UpdateBoardLabelRequest, v1.Board]
-	deleteBoardLabel             *connect.Client[v1.DeleteBoardLabelRequest, v1.Board]
-	createCard                   *connect.Client[v1.CreateConversationRequest, v1.Card]
-	createChat                   *connect.Client[v1.CreateConversationRequest, v1.Card]
-	listChats                    *connect.Client[v1.ListChatsRequest, v1.ChatsResponse]
-	getCard                      *connect.Client[v1.GetCardRequest, v1.CardDetail]
-	getConversation              *connect.Client[v1.GetConversationRequest, v1.ConversationSnapshot]
-	pollConversation             *connect.Client[v1.PollConversationRequest, v1.ConversationUpdate]
-	watchConversation            *connect.Client[v1.WatchConversationRequest, v1.ConversationUpdate]
-	getToolOutput                *connect.Client[v1.GetToolOutputRequest, v1.ToolOutput]
-	sendMessage                  *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
-	addComment                   *connect.Client[v1.AddCommentRequest, v1.Comment]
-	moveCard                     *connect.Client[v1.MoveCardRequest, v1.Card]
-	startCard                    *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
-	setCardLabels                *connect.Client[v1.SetCardLabelsRequest, v1.Card]
-	cancelCard                   *connect.Client[v1.GetCardRequest, emptypb.Empty]
-	renameCard                   *connect.Client[v1.RenameCardRequest, v1.Card]
-	updateCard                   *connect.Client[v1.UpdateCardRequest, v1.Card]
-	archiveCard                  *connect.Client[v1.ArchiveCardRequest, v1.Card]
-	pinChat                      *connect.Client[v1.PinChatRequest, v1.Card]
-	listFiles                    *connect.Client[v1.ListFilesRequest, v1.FileList]
-	readFile                     *connect.Client[v1.ReadFileRequest, v1.FileDocument]
-	saveFile                     *connect.Client[v1.SaveFileRequest, v1.FileDocument]
-	createFile                   *connect.Client[v1.CreateFileRequest, v1.FileEntry]
-	moveFile                     *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
-	deleteFile                   *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
-	listTerminals                *connect.Client[v1.ListTerminalsRequest, v1.TerminalsResponse]
-	createTerminal               *connect.Client[v1.CreateTerminalRequest, v1.Terminal]
-	watchTerminal                *connect.Client[v1.WatchTerminalRequest, v1.TerminalFrame]
-	writeTerminal                *connect.Client[v1.TerminalInputRequest, v1.Terminal]
-	resizeTerminal               *connect.Client[v1.ResizeTerminalRequest, v1.Terminal]
-	renameTerminal               *connect.Client[v1.RenameTerminalRequest, v1.Terminal]
-	closeTerminal                *connect.Client[v1.TerminalRef, emptypb.Empty]
-	getRemoteDesktopCapabilities *connect.Client[emptypb.Empty, v1.RemoteDesktopCapabilities]
-	getRemoteDesktopSettings     *connect.Client[emptypb.Empty, v1.RemoteDesktopSettings]
-	updateRemoteDesktopSettings  *connect.Client[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings]
-	startRemoteDesktop           *connect.Client[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal]
-	sendRemoteDesktopSignal      *connect.Client[v1.RemoteDesktopSignal, emptypb.Empty]
-	closeRemoteDesktop           *connect.Client[v1.RemoteDesktopRef, emptypb.Empty]
-	listSchedules                *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
-	previewSchedule              *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
-	createSchedule               *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
-	updateSchedule               *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
-	deleteSchedule               *connect.Client[v1.ScheduleRef, emptypb.Empty]
-	runSchedule                  *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
-	setScheduleEnabled           *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
-	listScheduleRuns             *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
+	health                         *connect.Client[emptypb.Empty, v1.HealthResponse]
+	getRuntimeStatus               *connect.Client[emptypb.Empty, v1.RuntimeStatus]
+	getMachineInformation          *connect.Client[emptypb.Empty, v1.MachineInformation]
+	performMachineOperation        *connect.Client[v1.MachineOperationRequest, v1.MachineOperationResponse]
+	getState                       *connect.Client[v1.GetStateRequest, v1.State]
+	watchState                     *connect.Client[v1.WatchStateRequest, v1.State]
+	watchSync                      *connect.Client[v1.SyncRequest, v1.SyncFrame]
+	getHarnesses                   *connect.Client[emptypb.Empty, v1.HarnessCatalog]
+	getSettings                    *connect.Client[emptypb.Empty, v1.Settings]
+	getSettingsOptions             *connect.Client[emptypb.Empty, v1.SettingsOptions]
+	updateSettings                 *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
+	getPromptSettings              *connect.Client[emptypb.Empty, v1.PromptSettings]
+	updatePromptSettings           *connect.Client[v1.UpdatePromptSettingsRequest, v1.PromptSettings]
+	setProjectPromptTemplate       *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
+	setBoardPromptTemplate         *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
+	previewPrompt                  *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
+	listDirectories                *connect.Client[v1.ListDirectoriesRequest, v1.DirectoryListing]
+	createProject                  *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
+	updateProject                  *connect.Client[v1.UpdateProjectRequest, v1.Project]
+	updateProjectWorkspaceSettings *connect.Client[v1.UpdateProjectWorkspaceSettingsRequest, v1.Project]
+	archiveProject                 *connect.Client[v1.ArchiveProjectRequest, v1.Project]
+	listArchivedProjects           *connect.Client[emptypb.Empty, v1.ProjectsResponse]
+	createBoard                    *connect.Client[v1.CreateBoardRequest, v1.Board]
+	renameBoard                    *connect.Client[v1.RenameBoardRequest, v1.Board]
+	setBoardArchivePolicy          *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
+	listArchivedCards              *connect.Client[v1.BoardRef, v1.CardsResponse]
+	createBoardLabel               *connect.Client[v1.CreateBoardLabelRequest, v1.Board]
+	updateBoardLabel               *connect.Client[v1.UpdateBoardLabelRequest, v1.Board]
+	deleteBoardLabel               *connect.Client[v1.DeleteBoardLabelRequest, v1.Board]
+	createCard                     *connect.Client[v1.CreateConversationRequest, v1.Card]
+	createChat                     *connect.Client[v1.CreateConversationRequest, v1.Card]
+	listChats                      *connect.Client[v1.ListChatsRequest, v1.ChatsResponse]
+	getCard                        *connect.Client[v1.GetCardRequest, v1.CardDetail]
+	getConversation                *connect.Client[v1.GetConversationRequest, v1.ConversationSnapshot]
+	pollConversation               *connect.Client[v1.PollConversationRequest, v1.ConversationUpdate]
+	watchConversation              *connect.Client[v1.WatchConversationRequest, v1.ConversationUpdate]
+	getToolOutput                  *connect.Client[v1.GetToolOutputRequest, v1.ToolOutput]
+	sendMessage                    *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
+	addComment                     *connect.Client[v1.AddCommentRequest, v1.Comment]
+	moveCard                       *connect.Client[v1.MoveCardRequest, v1.Card]
+	startCard                      *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
+	setCardLabels                  *connect.Client[v1.SetCardLabelsRequest, v1.Card]
+	cancelCard                     *connect.Client[v1.GetCardRequest, emptypb.Empty]
+	renameCard                     *connect.Client[v1.RenameCardRequest, v1.Card]
+	updateCard                     *connect.Client[v1.UpdateCardRequest, v1.Card]
+	archiveCard                    *connect.Client[v1.ArchiveCardRequest, v1.Card]
+	pinChat                        *connect.Client[v1.PinChatRequest, v1.Card]
+	updateConversationWorkspace    *connect.Client[v1.UpdateConversationWorkspaceRequest, v1.Card]
+	getWorkspace                   *connect.Client[v1.ConversationRef, v1.Workspace]
+	listProjectWorkspaces          *connect.Client[v1.ProjectRef, v1.WorkspacesResponse]
+	getChangeset                   *connect.Client[v1.GetChangesetRequest, v1.Changeset]
+	getFileDiff                    *connect.Client[v1.GetDiffRequest, v1.FileDiff]
+	getCommitDiff                  *connect.Client[v1.GetDiffRequest, v1.FileDiff]
+	addChangeComment               *connect.Client[v1.AddChangeCommentRequest, v1.ChangeComment]
+	listChangeComments             *connect.Client[v1.ListChangeCommentsRequest, v1.ChangeCommentsResponse]
+	getSCMCapabilities             *connect.Client[v1.ConversationRef, v1.SCMCapabilities]
+	startGitOperation              *connect.Client[v1.StartGitOperationRequest, v1.GitOperation]
+	getGitOperation                *connect.Client[v1.GitOperationRef, v1.GitOperation]
+	watchGitOperation              *connect.Client[v1.WatchGitOperationRequest, v1.GitOperationFrame]
+	cancelGitOperation             *connect.Client[v1.GitOperationRef, v1.GitOperation]
+	listFiles                      *connect.Client[v1.ListFilesRequest, v1.FileList]
+	readFile                       *connect.Client[v1.ReadFileRequest, v1.FileDocument]
+	saveFile                       *connect.Client[v1.SaveFileRequest, v1.FileDocument]
+	createFile                     *connect.Client[v1.CreateFileRequest, v1.FileEntry]
+	moveFile                       *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
+	deleteFile                     *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
+	listTerminals                  *connect.Client[v1.ListTerminalsRequest, v1.TerminalsResponse]
+	createTerminal                 *connect.Client[v1.CreateTerminalRequest, v1.Terminal]
+	watchTerminal                  *connect.Client[v1.WatchTerminalRequest, v1.TerminalFrame]
+	writeTerminal                  *connect.Client[v1.TerminalInputRequest, v1.Terminal]
+	resizeTerminal                 *connect.Client[v1.ResizeTerminalRequest, v1.Terminal]
+	renameTerminal                 *connect.Client[v1.RenameTerminalRequest, v1.Terminal]
+	closeTerminal                  *connect.Client[v1.TerminalRef, emptypb.Empty]
+	getRemoteDesktopCapabilities   *connect.Client[emptypb.Empty, v1.RemoteDesktopCapabilities]
+	getRemoteDesktopSettings       *connect.Client[emptypb.Empty, v1.RemoteDesktopSettings]
+	updateRemoteDesktopSettings    *connect.Client[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings]
+	startRemoteDesktop             *connect.Client[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal]
+	sendRemoteDesktopSignal        *connect.Client[v1.RemoteDesktopSignal, emptypb.Empty]
+	closeRemoteDesktop             *connect.Client[v1.RemoteDesktopRef, emptypb.Empty]
+	listSchedules                  *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
+	previewSchedule                *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
+	createSchedule                 *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
+	updateSchedule                 *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
+	deleteSchedule                 *connect.Client[v1.ScheduleRef, emptypb.Empty]
+	runSchedule                    *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
+	setScheduleEnabled             *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
+	listScheduleRuns               *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
 }
 
 // Health calls dieter.v1.DieterService.Health.
@@ -953,6 +1108,11 @@ func (c *dieterServiceClient) CreateProject(ctx context.Context, req *connect.Re
 // UpdateProject calls dieter.v1.DieterService.UpdateProject.
 func (c *dieterServiceClient) UpdateProject(ctx context.Context, req *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error) {
 	return c.updateProject.CallUnary(ctx, req)
+}
+
+// UpdateProjectWorkspaceSettings calls dieter.v1.DieterService.UpdateProjectWorkspaceSettings.
+func (c *dieterServiceClient) UpdateProjectWorkspaceSettings(ctx context.Context, req *connect.Request[v1.UpdateProjectWorkspaceSettingsRequest]) (*connect.Response[v1.Project], error) {
+	return c.updateProjectWorkspaceSettings.CallUnary(ctx, req)
 }
 
 // ArchiveProject calls dieter.v1.DieterService.ArchiveProject.
@@ -1088,6 +1248,71 @@ func (c *dieterServiceClient) ArchiveCard(ctx context.Context, req *connect.Requ
 // PinChat calls dieter.v1.DieterService.PinChat.
 func (c *dieterServiceClient) PinChat(ctx context.Context, req *connect.Request[v1.PinChatRequest]) (*connect.Response[v1.Card], error) {
 	return c.pinChat.CallUnary(ctx, req)
+}
+
+// UpdateConversationWorkspace calls dieter.v1.DieterService.UpdateConversationWorkspace.
+func (c *dieterServiceClient) UpdateConversationWorkspace(ctx context.Context, req *connect.Request[v1.UpdateConversationWorkspaceRequest]) (*connect.Response[v1.Card], error) {
+	return c.updateConversationWorkspace.CallUnary(ctx, req)
+}
+
+// GetWorkspace calls dieter.v1.DieterService.GetWorkspace.
+func (c *dieterServiceClient) GetWorkspace(ctx context.Context, req *connect.Request[v1.ConversationRef]) (*connect.Response[v1.Workspace], error) {
+	return c.getWorkspace.CallUnary(ctx, req)
+}
+
+// ListProjectWorkspaces calls dieter.v1.DieterService.ListProjectWorkspaces.
+func (c *dieterServiceClient) ListProjectWorkspaces(ctx context.Context, req *connect.Request[v1.ProjectRef]) (*connect.Response[v1.WorkspacesResponse], error) {
+	return c.listProjectWorkspaces.CallUnary(ctx, req)
+}
+
+// GetChangeset calls dieter.v1.DieterService.GetChangeset.
+func (c *dieterServiceClient) GetChangeset(ctx context.Context, req *connect.Request[v1.GetChangesetRequest]) (*connect.Response[v1.Changeset], error) {
+	return c.getChangeset.CallUnary(ctx, req)
+}
+
+// GetFileDiff calls dieter.v1.DieterService.GetFileDiff.
+func (c *dieterServiceClient) GetFileDiff(ctx context.Context, req *connect.Request[v1.GetDiffRequest]) (*connect.Response[v1.FileDiff], error) {
+	return c.getFileDiff.CallUnary(ctx, req)
+}
+
+// GetCommitDiff calls dieter.v1.DieterService.GetCommitDiff.
+func (c *dieterServiceClient) GetCommitDiff(ctx context.Context, req *connect.Request[v1.GetDiffRequest]) (*connect.Response[v1.FileDiff], error) {
+	return c.getCommitDiff.CallUnary(ctx, req)
+}
+
+// AddChangeComment calls dieter.v1.DieterService.AddChangeComment.
+func (c *dieterServiceClient) AddChangeComment(ctx context.Context, req *connect.Request[v1.AddChangeCommentRequest]) (*connect.Response[v1.ChangeComment], error) {
+	return c.addChangeComment.CallUnary(ctx, req)
+}
+
+// ListChangeComments calls dieter.v1.DieterService.ListChangeComments.
+func (c *dieterServiceClient) ListChangeComments(ctx context.Context, req *connect.Request[v1.ListChangeCommentsRequest]) (*connect.Response[v1.ChangeCommentsResponse], error) {
+	return c.listChangeComments.CallUnary(ctx, req)
+}
+
+// GetSCMCapabilities calls dieter.v1.DieterService.GetSCMCapabilities.
+func (c *dieterServiceClient) GetSCMCapabilities(ctx context.Context, req *connect.Request[v1.ConversationRef]) (*connect.Response[v1.SCMCapabilities], error) {
+	return c.getSCMCapabilities.CallUnary(ctx, req)
+}
+
+// StartGitOperation calls dieter.v1.DieterService.StartGitOperation.
+func (c *dieterServiceClient) StartGitOperation(ctx context.Context, req *connect.Request[v1.StartGitOperationRequest]) (*connect.Response[v1.GitOperation], error) {
+	return c.startGitOperation.CallUnary(ctx, req)
+}
+
+// GetGitOperation calls dieter.v1.DieterService.GetGitOperation.
+func (c *dieterServiceClient) GetGitOperation(ctx context.Context, req *connect.Request[v1.GitOperationRef]) (*connect.Response[v1.GitOperation], error) {
+	return c.getGitOperation.CallUnary(ctx, req)
+}
+
+// WatchGitOperation calls dieter.v1.DieterService.WatchGitOperation.
+func (c *dieterServiceClient) WatchGitOperation(ctx context.Context, req *connect.Request[v1.WatchGitOperationRequest]) (*connect.ServerStreamForClient[v1.GitOperationFrame], error) {
+	return c.watchGitOperation.CallServerStream(ctx, req)
+}
+
+// CancelGitOperation calls dieter.v1.DieterService.CancelGitOperation.
+func (c *dieterServiceClient) CancelGitOperation(ctx context.Context, req *connect.Request[v1.GitOperationRef]) (*connect.Response[v1.GitOperation], error) {
+	return c.cancelGitOperation.CallUnary(ctx, req)
 }
 
 // ListFiles calls dieter.v1.DieterService.ListFiles.
@@ -1251,6 +1476,7 @@ type DieterServiceHandler interface {
 	ListDirectories(context.Context, *connect.Request[v1.ListDirectoriesRequest]) (*connect.Response[v1.DirectoryListing], error)
 	CreateProject(context.Context, *connect.Request[v1.CreateProjectRequest]) (*connect.Response[v1.CreateProjectResponse], error)
 	UpdateProject(context.Context, *connect.Request[v1.UpdateProjectRequest]) (*connect.Response[v1.Project], error)
+	UpdateProjectWorkspaceSettings(context.Context, *connect.Request[v1.UpdateProjectWorkspaceSettingsRequest]) (*connect.Response[v1.Project], error)
 	ArchiveProject(context.Context, *connect.Request[v1.ArchiveProjectRequest]) (*connect.Response[v1.Project], error)
 	ListArchivedProjects(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.ProjectsResponse], error)
 	CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error)
@@ -1281,6 +1507,20 @@ type DieterServiceHandler interface {
 	UpdateCard(context.Context, *connect.Request[v1.UpdateCardRequest]) (*connect.Response[v1.Card], error)
 	ArchiveCard(context.Context, *connect.Request[v1.ArchiveCardRequest]) (*connect.Response[v1.Card], error)
 	PinChat(context.Context, *connect.Request[v1.PinChatRequest]) (*connect.Response[v1.Card], error)
+	// Cards and standalone chats share this conversation workspace surface.
+	UpdateConversationWorkspace(context.Context, *connect.Request[v1.UpdateConversationWorkspaceRequest]) (*connect.Response[v1.Card], error)
+	GetWorkspace(context.Context, *connect.Request[v1.ConversationRef]) (*connect.Response[v1.Workspace], error)
+	ListProjectWorkspaces(context.Context, *connect.Request[v1.ProjectRef]) (*connect.Response[v1.WorkspacesResponse], error)
+	GetChangeset(context.Context, *connect.Request[v1.GetChangesetRequest]) (*connect.Response[v1.Changeset], error)
+	GetFileDiff(context.Context, *connect.Request[v1.GetDiffRequest]) (*connect.Response[v1.FileDiff], error)
+	GetCommitDiff(context.Context, *connect.Request[v1.GetDiffRequest]) (*connect.Response[v1.FileDiff], error)
+	AddChangeComment(context.Context, *connect.Request[v1.AddChangeCommentRequest]) (*connect.Response[v1.ChangeComment], error)
+	ListChangeComments(context.Context, *connect.Request[v1.ListChangeCommentsRequest]) (*connect.Response[v1.ChangeCommentsResponse], error)
+	GetSCMCapabilities(context.Context, *connect.Request[v1.ConversationRef]) (*connect.Response[v1.SCMCapabilities], error)
+	StartGitOperation(context.Context, *connect.Request[v1.StartGitOperationRequest]) (*connect.Response[v1.GitOperation], error)
+	GetGitOperation(context.Context, *connect.Request[v1.GitOperationRef]) (*connect.Response[v1.GitOperation], error)
+	WatchGitOperation(context.Context, *connect.Request[v1.WatchGitOperationRequest], *connect.ServerStream[v1.GitOperationFrame]) error
+	CancelGitOperation(context.Context, *connect.Request[v1.GitOperationRef]) (*connect.Response[v1.GitOperation], error)
 	ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.FileList], error)
 	ReadFile(context.Context, *connect.Request[v1.ReadFileRequest]) (*connect.Response[v1.FileDocument], error)
 	SaveFile(context.Context, *connect.Request[v1.SaveFileRequest]) (*connect.Response[v1.FileDocument], error)
@@ -1432,6 +1672,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceUpdateProjectProcedure,
 		svc.UpdateProject,
 		connect.WithSchema(dieterServiceMethods.ByName("UpdateProject")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceUpdateProjectWorkspaceSettingsHandler := connect.NewUnaryHandler(
+		DieterServiceUpdateProjectWorkspaceSettingsProcedure,
+		svc.UpdateProjectWorkspaceSettings,
+		connect.WithSchema(dieterServiceMethods.ByName("UpdateProjectWorkspaceSettings")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceArchiveProjectHandler := connect.NewUnaryHandler(
@@ -1594,6 +1840,84 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServicePinChatProcedure,
 		svc.PinChat,
 		connect.WithSchema(dieterServiceMethods.ByName("PinChat")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceUpdateConversationWorkspaceHandler := connect.NewUnaryHandler(
+		DieterServiceUpdateConversationWorkspaceProcedure,
+		svc.UpdateConversationWorkspace,
+		connect.WithSchema(dieterServiceMethods.ByName("UpdateConversationWorkspace")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetWorkspaceHandler := connect.NewUnaryHandler(
+		DieterServiceGetWorkspaceProcedure,
+		svc.GetWorkspace,
+		connect.WithSchema(dieterServiceMethods.ByName("GetWorkspace")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceListProjectWorkspacesHandler := connect.NewUnaryHandler(
+		DieterServiceListProjectWorkspacesProcedure,
+		svc.ListProjectWorkspaces,
+		connect.WithSchema(dieterServiceMethods.ByName("ListProjectWorkspaces")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetChangesetHandler := connect.NewUnaryHandler(
+		DieterServiceGetChangesetProcedure,
+		svc.GetChangeset,
+		connect.WithSchema(dieterServiceMethods.ByName("GetChangeset")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetFileDiffHandler := connect.NewUnaryHandler(
+		DieterServiceGetFileDiffProcedure,
+		svc.GetFileDiff,
+		connect.WithSchema(dieterServiceMethods.ByName("GetFileDiff")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetCommitDiffHandler := connect.NewUnaryHandler(
+		DieterServiceGetCommitDiffProcedure,
+		svc.GetCommitDiff,
+		connect.WithSchema(dieterServiceMethods.ByName("GetCommitDiff")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceAddChangeCommentHandler := connect.NewUnaryHandler(
+		DieterServiceAddChangeCommentProcedure,
+		svc.AddChangeComment,
+		connect.WithSchema(dieterServiceMethods.ByName("AddChangeComment")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceListChangeCommentsHandler := connect.NewUnaryHandler(
+		DieterServiceListChangeCommentsProcedure,
+		svc.ListChangeComments,
+		connect.WithSchema(dieterServiceMethods.ByName("ListChangeComments")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetSCMCapabilitiesHandler := connect.NewUnaryHandler(
+		DieterServiceGetSCMCapabilitiesProcedure,
+		svc.GetSCMCapabilities,
+		connect.WithSchema(dieterServiceMethods.ByName("GetSCMCapabilities")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceStartGitOperationHandler := connect.NewUnaryHandler(
+		DieterServiceStartGitOperationProcedure,
+		svc.StartGitOperation,
+		connect.WithSchema(dieterServiceMethods.ByName("StartGitOperation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetGitOperationHandler := connect.NewUnaryHandler(
+		DieterServiceGetGitOperationProcedure,
+		svc.GetGitOperation,
+		connect.WithSchema(dieterServiceMethods.ByName("GetGitOperation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceWatchGitOperationHandler := connect.NewServerStreamHandler(
+		DieterServiceWatchGitOperationProcedure,
+		svc.WatchGitOperation,
+		connect.WithSchema(dieterServiceMethods.ByName("WatchGitOperation")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceCancelGitOperationHandler := connect.NewUnaryHandler(
+		DieterServiceCancelGitOperationProcedure,
+		svc.CancelGitOperation,
+		connect.WithSchema(dieterServiceMethods.ByName("CancelGitOperation")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceListFilesHandler := connect.NewUnaryHandler(
@@ -1798,6 +2122,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceCreateProjectHandler.ServeHTTP(w, r)
 		case DieterServiceUpdateProjectProcedure:
 			dieterServiceUpdateProjectHandler.ServeHTTP(w, r)
+		case DieterServiceUpdateProjectWorkspaceSettingsProcedure:
+			dieterServiceUpdateProjectWorkspaceSettingsHandler.ServeHTTP(w, r)
 		case DieterServiceArchiveProjectProcedure:
 			dieterServiceArchiveProjectHandler.ServeHTTP(w, r)
 		case DieterServiceListArchivedProjectsProcedure:
@@ -1852,6 +2178,32 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceArchiveCardHandler.ServeHTTP(w, r)
 		case DieterServicePinChatProcedure:
 			dieterServicePinChatHandler.ServeHTTP(w, r)
+		case DieterServiceUpdateConversationWorkspaceProcedure:
+			dieterServiceUpdateConversationWorkspaceHandler.ServeHTTP(w, r)
+		case DieterServiceGetWorkspaceProcedure:
+			dieterServiceGetWorkspaceHandler.ServeHTTP(w, r)
+		case DieterServiceListProjectWorkspacesProcedure:
+			dieterServiceListProjectWorkspacesHandler.ServeHTTP(w, r)
+		case DieterServiceGetChangesetProcedure:
+			dieterServiceGetChangesetHandler.ServeHTTP(w, r)
+		case DieterServiceGetFileDiffProcedure:
+			dieterServiceGetFileDiffHandler.ServeHTTP(w, r)
+		case DieterServiceGetCommitDiffProcedure:
+			dieterServiceGetCommitDiffHandler.ServeHTTP(w, r)
+		case DieterServiceAddChangeCommentProcedure:
+			dieterServiceAddChangeCommentHandler.ServeHTTP(w, r)
+		case DieterServiceListChangeCommentsProcedure:
+			dieterServiceListChangeCommentsHandler.ServeHTTP(w, r)
+		case DieterServiceGetSCMCapabilitiesProcedure:
+			dieterServiceGetSCMCapabilitiesHandler.ServeHTTP(w, r)
+		case DieterServiceStartGitOperationProcedure:
+			dieterServiceStartGitOperationHandler.ServeHTTP(w, r)
+		case DieterServiceGetGitOperationProcedure:
+			dieterServiceGetGitOperationHandler.ServeHTTP(w, r)
+		case DieterServiceWatchGitOperationProcedure:
+			dieterServiceWatchGitOperationHandler.ServeHTTP(w, r)
+		case DieterServiceCancelGitOperationProcedure:
+			dieterServiceCancelGitOperationHandler.ServeHTTP(w, r)
 		case DieterServiceListFilesProcedure:
 			dieterServiceListFilesHandler.ServeHTTP(w, r)
 		case DieterServiceReadFileProcedure:
@@ -1991,6 +2343,10 @@ func (UnimplementedDieterServiceHandler) UpdateProject(context.Context, *connect
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateProject is not implemented"))
 }
 
+func (UnimplementedDieterServiceHandler) UpdateProjectWorkspaceSettings(context.Context, *connect.Request[v1.UpdateProjectWorkspaceSettingsRequest]) (*connect.Response[v1.Project], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateProjectWorkspaceSettings is not implemented"))
+}
+
 func (UnimplementedDieterServiceHandler) ArchiveProject(context.Context, *connect.Request[v1.ArchiveProjectRequest]) (*connect.Response[v1.Project], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ArchiveProject is not implemented"))
 }
@@ -2097,6 +2453,58 @@ func (UnimplementedDieterServiceHandler) ArchiveCard(context.Context, *connect.R
 
 func (UnimplementedDieterServiceHandler) PinChat(context.Context, *connect.Request[v1.PinChatRequest]) (*connect.Response[v1.Card], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.PinChat is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) UpdateConversationWorkspace(context.Context, *connect.Request[v1.UpdateConversationWorkspaceRequest]) (*connect.Response[v1.Card], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateConversationWorkspace is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetWorkspace(context.Context, *connect.Request[v1.ConversationRef]) (*connect.Response[v1.Workspace], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetWorkspace is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListProjectWorkspaces(context.Context, *connect.Request[v1.ProjectRef]) (*connect.Response[v1.WorkspacesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListProjectWorkspaces is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetChangeset(context.Context, *connect.Request[v1.GetChangesetRequest]) (*connect.Response[v1.Changeset], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetChangeset is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetFileDiff(context.Context, *connect.Request[v1.GetDiffRequest]) (*connect.Response[v1.FileDiff], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetFileDiff is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetCommitDiff(context.Context, *connect.Request[v1.GetDiffRequest]) (*connect.Response[v1.FileDiff], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetCommitDiff is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) AddChangeComment(context.Context, *connect.Request[v1.AddChangeCommentRequest]) (*connect.Response[v1.ChangeComment], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.AddChangeComment is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListChangeComments(context.Context, *connect.Request[v1.ListChangeCommentsRequest]) (*connect.Response[v1.ChangeCommentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListChangeComments is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetSCMCapabilities(context.Context, *connect.Request[v1.ConversationRef]) (*connect.Response[v1.SCMCapabilities], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetSCMCapabilities is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) StartGitOperation(context.Context, *connect.Request[v1.StartGitOperationRequest]) (*connect.Response[v1.GitOperation], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.StartGitOperation is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetGitOperation(context.Context, *connect.Request[v1.GitOperationRef]) (*connect.Response[v1.GitOperation], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetGitOperation is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) WatchGitOperation(context.Context, *connect.Request[v1.WatchGitOperationRequest], *connect.ServerStream[v1.GitOperationFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchGitOperation is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) CancelGitOperation(context.Context, *connect.Request[v1.GitOperationRef]) (*connect.Response[v1.GitOperation], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CancelGitOperation is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) ListFiles(context.Context, *connect.Request[v1.ListFilesRequest]) (*connect.Response[v1.FileList], error) {

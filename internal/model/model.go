@@ -6,6 +6,27 @@ const (
 	ConversationScopeBoard = "board"
 	ConversationScopeChat  = "chat"
 
+	WorkspaceModeMain     = "main"
+	WorkspaceModeBranch   = "branch"
+	WorkspaceModeWorktree = "worktree"
+
+	WorkspaceStateReserved         = "reserved"
+	WorkspaceStateProvisioning     = "provisioning"
+	WorkspaceStateReady            = "ready"
+	WorkspaceStateConflicted       = "conflicted"
+	WorkspaceStateCleanupPending   = "cleanup_pending"
+	WorkspaceStateOrphaned         = "orphaned"
+	WorkspaceStateRecoveryRequired = "recovery_required"
+	WorkspaceStateFailed           = "failed"
+
+	GitOperationQueued               = "queued"
+	GitOperationRunning              = "running"
+	GitOperationWaitingForResolution = "waiting_for_resolution"
+	GitOperationSucceeded            = "succeeded"
+	GitOperationFailed               = "failed"
+	GitOperationCanceled             = "canceled"
+	GitOperationInterrupted          = "interrupted"
+
 	WorkflowDirect = "direct"
 	WorkflowReview = "review"
 
@@ -36,18 +57,31 @@ func WorkflowLanes(workflow string) []Lane {
 }
 
 type Project struct {
-	ID             string `json:"id" yaml:"id"`
-	Name           string `json:"name" yaml:"name"`
-	Path           string `json:"path" yaml:"path"`
-	Summary        string `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Prompt         string `json:"prompt" yaml:"-"`
-	PromptTemplate string `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	Archived       bool   `json:"archived,omitempty" yaml:"archived,omitempty"`
-	CreatedAt      string `json:"createdAt" yaml:"created_at"`
-	UpdatedAt      string `json:"updatedAt" yaml:"updated_at"`
-	BoardCount     int    `json:"boardCount,omitempty" yaml:"-"`
-	CardCount      int    `json:"cardCount,omitempty" yaml:"-"`
-	ChatCount      int    `json:"chatCount,omitempty" yaml:"-"`
+	ID                   string              `json:"id" yaml:"id"`
+	Name                 string              `json:"name" yaml:"name"`
+	Path                 string              `json:"path" yaml:"path"`
+	Summary              string              `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Prompt               string              `json:"prompt" yaml:"-"`
+	PromptTemplate       string              `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	Archived             bool                `json:"archived,omitempty" yaml:"archived,omitempty"`
+	CreatedAt            string              `json:"createdAt" yaml:"created_at"`
+	UpdatedAt            string              `json:"updatedAt" yaml:"updated_at"`
+	BoardCount           int                 `json:"boardCount,omitempty" yaml:"-"`
+	CardCount            int                 `json:"cardCount,omitempty" yaml:"-"`
+	ChatCount            int                 `json:"chatCount,omitempty" yaml:"-"`
+	DefaultWorkspaceMode string              `json:"defaultWorkspaceMode,omitempty" yaml:"default_workspace_mode,omitempty"`
+	BaseRemote           string              `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	BaseBranch           string              `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
+	ValidationCommands   []ValidationCommand `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
+}
+
+type ValidationCommand struct {
+	Name             string            `json:"name" yaml:"name"`
+	Executable       string            `json:"executable" yaml:"executable"`
+	Arguments        []string          `json:"arguments,omitempty" yaml:"arguments,omitempty"`
+	WorkingDirectory string            `json:"workingDirectory,omitempty" yaml:"working_directory,omitempty"`
+	Environment      map[string]string `json:"environment,omitempty" yaml:"environment,omitempty"`
+	TimeoutSeconds   int               `json:"timeoutSeconds,omitempty" yaml:"timeout_seconds,omitempty"`
 }
 
 type Board struct {
@@ -72,32 +106,248 @@ type Label struct {
 }
 
 type Card struct {
-	ID                  string            `json:"id" yaml:"id"`
-	Scope               string            `json:"scope" yaml:"scope,omitempty"`
-	ProjectID           string            `json:"projectId" yaml:"project_id"`
-	BoardID             string            `json:"boardId" yaml:"board_id"`
-	Lane                string            `json:"lane" yaml:"lane"`
-	Position            int64             `json:"position" yaml:"position"`
-	Title               string            `json:"title" yaml:"title"`
-	InitialPrompt       string            `json:"initialPrompt" yaml:"-"`
-	InitialPromptSentAt string            `json:"initialPromptSentAt,omitempty" yaml:"initial_prompt_sent_at,omitempty"`
-	PhaseChangedAt      string            `json:"phaseChangedAt" yaml:"phase_changed_at"`
-	Provider            string            `json:"provider,omitempty" yaml:"provider_cache,omitempty"`
-	Model               string            `json:"model,omitempty" yaml:"model_cache,omitempty"`
-	Effort              string            `json:"effort,omitempty" yaml:"effort_cache,omitempty"`
-	ProviderOptions     map[string]string `json:"providerOptions,omitempty" yaml:"provider_options_cache,omitempty"`
-	Runtime             string            `json:"runtime" yaml:"runtime_cache,omitempty"`
-	Summary             string            `json:"summary,omitempty" yaml:"summary_cache,omitempty"`
-	RuntimeUpdatedAt    string            `json:"runtimeUpdatedAt,omitempty" yaml:"runtime_updated_at,omitempty"`
-	LastActivityAt      string            `json:"lastActivityAt,omitempty" yaml:"last_activity_at,omitempty"`
-	Archived            bool              `json:"archived,omitempty" yaml:"archived,omitempty"`
-	DoneArchiveExempt   bool              `json:"doneArchiveExempt,omitempty" yaml:"done_archive_exempt,omitempty"`
-	Pinned              bool              `json:"pinned,omitempty" yaml:"pinned,omitempty"`
-	CreatedAt           string            `json:"createdAt" yaml:"created_at"`
-	UpdatedAt           string            `json:"updatedAt" yaml:"updated_at"`
-	LabelIDs            []string          `json:"labelIds,omitempty" yaml:"labels,omitempty"`
-	Origin              *CardOrigin       `json:"origin,omitempty" yaml:"origin,omitempty"`
-	CommentCount        int               `json:"commentCount" yaml:"-"`
+	ID                  string              `json:"id" yaml:"id"`
+	Scope               string              `json:"scope" yaml:"scope,omitempty"`
+	ProjectID           string              `json:"projectId" yaml:"project_id"`
+	BoardID             string              `json:"boardId" yaml:"board_id"`
+	Lane                string              `json:"lane" yaml:"lane"`
+	Position            int64               `json:"position" yaml:"position"`
+	Title               string              `json:"title" yaml:"title"`
+	InitialPrompt       string              `json:"initialPrompt" yaml:"-"`
+	InitialPromptSentAt string              `json:"initialPromptSentAt,omitempty" yaml:"initial_prompt_sent_at,omitempty"`
+	PhaseChangedAt      string              `json:"phaseChangedAt" yaml:"phase_changed_at"`
+	Provider            string              `json:"provider,omitempty" yaml:"provider_cache,omitempty"`
+	Model               string              `json:"model,omitempty" yaml:"model_cache,omitempty"`
+	Effort              string              `json:"effort,omitempty" yaml:"effort_cache,omitempty"`
+	ProviderOptions     map[string]string   `json:"providerOptions,omitempty" yaml:"provider_options_cache,omitempty"`
+	Runtime             string              `json:"runtime" yaml:"runtime_cache,omitempty"`
+	Summary             string              `json:"summary,omitempty" yaml:"summary_cache,omitempty"`
+	RuntimeUpdatedAt    string              `json:"runtimeUpdatedAt,omitempty" yaml:"runtime_updated_at,omitempty"`
+	LastActivityAt      string              `json:"lastActivityAt,omitempty" yaml:"last_activity_at,omitempty"`
+	Archived            bool                `json:"archived,omitempty" yaml:"archived,omitempty"`
+	DoneArchiveExempt   bool                `json:"doneArchiveExempt,omitempty" yaml:"done_archive_exempt,omitempty"`
+	Pinned              bool                `json:"pinned,omitempty" yaml:"pinned,omitempty"`
+	CreatedAt           string              `json:"createdAt" yaml:"created_at"`
+	UpdatedAt           string              `json:"updatedAt" yaml:"updated_at"`
+	LabelIDs            []string            `json:"labelIds,omitempty" yaml:"labels,omitempty"`
+	Origin              *CardOrigin         `json:"origin,omitempty" yaml:"origin,omitempty"`
+	CommentCount        int                 `json:"commentCount" yaml:"-"`
+	WorkspaceMode       string              `json:"workspaceMode,omitempty" yaml:"workspace_mode,omitempty"`
+	WorkspaceBranch     string              `json:"workspaceBranch,omitempty" yaml:"workspace_branch,omitempty"`
+	WorkspaceBaseBranch string              `json:"workspaceBaseBranch,omitempty" yaml:"workspace_base_branch,omitempty"`
+	Workspace           *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
+	PullRequest         *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
+}
+
+// Workspace is the durable execution location for either a board card or a
+// standalone chat. Both scopes use the card ID as their conversation and
+// workspace identity, so lifecycle and Git behavior cannot drift apart.
+type Workspace struct {
+	CardID              string   `json:"cardId"`
+	ProjectID           string   `json:"projectId"`
+	Mode                string   `json:"mode"`
+	Path                string   `json:"path"`
+	BaseRemote          string   `json:"baseRemote,omitempty"`
+	BaseBranch          string   `json:"baseBranch,omitempty"`
+	BaseSHA             string   `json:"baseSha,omitempty"`
+	CurrentBaseSHA      string   `json:"currentBaseSha,omitempty"`
+	Branch              string   `json:"branch,omitempty"`
+	HeadSHA             string   `json:"headSha,omitempty"`
+	UpstreamRef         string   `json:"upstreamRef,omitempty"`
+	ManagedBranch       bool     `json:"managedBranch,omitempty"`
+	LegacyUnmanaged     bool     `json:"legacyUnmanaged,omitempty"`
+	State               string   `json:"state"`
+	Revision            string   `json:"revision,omitempty"`
+	CurrentOperationID  string   `json:"currentOperationId,omitempty"`
+	IntegratedHeadSHA   string   `json:"integratedHeadSha,omitempty"`
+	IntegratedResultSHA string   `json:"integratedResultSha,omitempty"`
+	IntegrationStrategy string   `json:"integrationStrategy,omitempty"`
+	IntegratedAt        string   `json:"integratedAt,omitempty"`
+	PreviousCardIDs     []string `json:"previousCardIds,omitempty"`
+	ChangedFiles        int      `json:"changedFiles,omitempty"`
+	Additions           int      `json:"additions,omitempty"`
+	Deletions           int      `json:"deletions,omitempty"`
+	Ahead               int      `json:"ahead,omitempty"`
+	Behind              int      `json:"behind,omitempty"`
+	Dirty               bool     `json:"dirty,omitempty"`
+	SizeBytes           int64    `json:"sizeBytes,omitempty"`
+	CreatedAt           string   `json:"createdAt"`
+	UpdatedAt           string   `json:"updatedAt"`
+	LastActivityAt      string   `json:"lastActivityAt,omitempty"`
+}
+
+type WorkspaceSummary struct {
+	Mode               string `json:"mode"`
+	State              string `json:"state"`
+	Branch             string `json:"branch,omitempty"`
+	BaseBranch         string `json:"baseBranch,omitempty"`
+	Revision           string `json:"revision,omitempty"`
+	HeadSHA            string `json:"headSha,omitempty"`
+	BaseSHA            string `json:"baseSha,omitempty"`
+	CurrentOperationID string `json:"currentOperationId,omitempty"`
+	Dirty              bool   `json:"dirty,omitempty"`
+	Conflicted         bool   `json:"conflicted,omitempty"`
+	Ahead              int    `json:"ahead,omitempty"`
+	Behind             int    `json:"behind,omitempty"`
+	ChangedFiles       int    `json:"changedFiles,omitempty"`
+	Additions          int    `json:"additions,omitempty"`
+	Deletions          int    `json:"deletions,omitempty"`
+	SizeBytes          int64  `json:"sizeBytes,omitempty"`
+	LastRefreshedAt    string `json:"lastRefreshedAt,omitempty"`
+}
+
+type ChangedFile struct {
+	Path         string `json:"path"`
+	PreviousPath string `json:"previousPath,omitempty"`
+	Status       string `json:"status"`
+	Additions    int    `json:"additions,omitempty"`
+	Deletions    int    `json:"deletions,omitempty"`
+	Binary       bool   `json:"binary,omitempty"`
+	Submodule    bool   `json:"submodule,omitempty"`
+	Conflicted   bool   `json:"conflicted,omitempty"`
+	HunkCount    int    `json:"hunkCount,omitempty"`
+}
+
+type WorkspaceCommit struct {
+	SHA        string `json:"sha"`
+	ParentSHA  string `json:"parentSha,omitempty"`
+	Subject    string `json:"subject"`
+	Author     string `json:"author,omitempty"`
+	AuthoredAt string `json:"authoredAt,omitempty"`
+	Additions  int    `json:"additions,omitempty"`
+	Deletions  int    `json:"deletions,omitempty"`
+	Files      int    `json:"files,omitempty"`
+}
+
+type Changeset struct {
+	CardID         string            `json:"cardId"`
+	Revision       string            `json:"revision"`
+	BaseBranch     string            `json:"baseBranch,omitempty"`
+	BaseSHA        string            `json:"baseSha,omitempty"`
+	CurrentBaseSHA string            `json:"currentBaseSha,omitempty"`
+	MergeBaseSHA   string            `json:"mergeBaseSha,omitempty"`
+	HeadSHA        string            `json:"headSha,omitempty"`
+	Ahead          int               `json:"ahead,omitempty"`
+	Behind         int               `json:"behind,omitempty"`
+	Additions      int               `json:"additions,omitempty"`
+	Deletions      int               `json:"deletions,omitempty"`
+	Dirty          bool              `json:"dirty,omitempty"`
+	Volatile       bool              `json:"volatile,omitempty"`
+	Files          []ChangedFile     `json:"files,omitempty"`
+	Commits        []WorkspaceCommit `json:"commits,omitempty"`
+	CreatedAt      string            `json:"createdAt"`
+}
+
+type FileDiff struct {
+	CardID       string `json:"cardId"`
+	Revision     string `json:"revision"`
+	Path         string `json:"path"`
+	PreviousPath string `json:"previousPath,omitempty"`
+	CommitSHA    string `json:"commitSha,omitempty"`
+	Patch        string `json:"patch,omitempty"`
+	Binary       bool   `json:"binary,omitempty"`
+	Truncated    bool   `json:"truncated,omitempty"`
+	NextOffset   int    `json:"nextOffset,omitempty"`
+	TotalBytes   int    `json:"totalBytes,omitempty"`
+}
+
+type ValidationResult struct {
+	Name       string `json:"name"`
+	ExitCode   int    `json:"exitCode"`
+	Output     string `json:"output,omitempty"`
+	Truncated  bool   `json:"truncated,omitempty"`
+	DurationMS int64  `json:"durationMs,omitempty"`
+}
+
+type GitConflict struct {
+	Path      string `json:"path"`
+	HunkCount int    `json:"hunkCount,omitempty"`
+}
+
+type GitOperation struct {
+	ID                string             `json:"id"`
+	CardID            string             `json:"cardId"`
+	ProjectID         string             `json:"projectId"`
+	Kind              string             `json:"kind"`
+	Status            string             `json:"status"`
+	ExpectedRevision  string             `json:"expectedRevision,omitempty"`
+	ExpectedBaseSHA   string             `json:"expectedBaseSha,omitempty"`
+	ExpectedHeadSHA   string             `json:"expectedHeadSha,omitempty"`
+	Parameters        map[string]string  `json:"parameters,omitempty"`
+	CompletedSteps    []string           `json:"completedSteps,omitempty"`
+	Conflicts         []GitConflict      `json:"conflicts,omitempty"`
+	ValidationResults []ValidationResult `json:"validationResults,omitempty"`
+	Result            string             `json:"result,omitempty"`
+	Error             string             `json:"error,omitempty"`
+	Sequence          uint64             `json:"sequence,omitempty"`
+	CreatedAt         string             `json:"createdAt"`
+	StartedAt         string             `json:"startedAt,omitempty"`
+	FinishedAt        string             `json:"finishedAt,omitempty"`
+	UpdatedAt         string             `json:"updatedAt"`
+}
+
+type PullRequestSummary struct {
+	Provider       string `json:"provider,omitempty"`
+	Number         int    `json:"number"`
+	URL            string `json:"url,omitempty"`
+	State          string `json:"state,omitempty"`
+	ReviewDecision string `json:"reviewDecision,omitempty"`
+	ChecksState    string `json:"checksState,omitempty"`
+	Mergeable      bool   `json:"mergeable,omitempty"`
+	Draft          bool   `json:"draft,omitempty"`
+	HeadSHA        string `json:"headSha,omitempty"`
+	BaseSHA        string `json:"baseSha,omitempty"`
+	UpdatedAt      string `json:"updatedAt,omitempty"`
+}
+
+type PullRequest struct {
+	CardID         string `json:"cardId"`
+	Provider       string `json:"provider"`
+	Host           string `json:"host,omitempty"`
+	Owner          string `json:"owner,omitempty"`
+	Repository     string `json:"repository,omitempty"`
+	Number         int    `json:"number"`
+	URL            string `json:"url,omitempty"`
+	HeadRef        string `json:"headRef,omitempty"`
+	HeadSHA        string `json:"headSha,omitempty"`
+	BaseRef        string `json:"baseRef,omitempty"`
+	BaseSHA        string `json:"baseSha,omitempty"`
+	State          string `json:"state,omitempty"`
+	Draft          bool   `json:"draft,omitempty"`
+	Mergeable      bool   `json:"mergeable,omitempty"`
+	ReviewDecision string `json:"reviewDecision,omitempty"`
+	ChecksState    string `json:"checksState,omitempty"`
+	Additions      int    `json:"additions,omitempty"`
+	Deletions      int    `json:"deletions,omitempty"`
+	ChangedFiles   int    `json:"changedFiles,omitempty"`
+	LastSyncedAt   string `json:"lastSyncedAt,omitempty"`
+}
+
+type SCMCapabilities struct {
+	Provider             string `json:"provider,omitempty"`
+	Host                 string `json:"host,omitempty"`
+	Owner                string `json:"owner,omitempty"`
+	Repository           string `json:"repository,omitempty"`
+	Remote               string `json:"remote,omitempty"`
+	RemoteAvailable      bool   `json:"remoteAvailable,omitempty"`
+	PushAvailable        bool   `json:"pushAvailable,omitempty"`
+	ProviderAPIAvailable bool   `json:"providerApiAvailable,omitempty"`
+	Authenticated        bool   `json:"authenticated,omitempty"`
+	UnavailableReason    string `json:"unavailableReason,omitempty"`
+}
+
+type ChangeComment struct {
+	ID                string `json:"id"`
+	CardID            string `json:"cardId"`
+	ChangesetRevision string `json:"changesetRevision"`
+	Path              string `json:"path"`
+	Side              string `json:"side,omitempty"`
+	Line              int    `json:"line,omitempty"`
+	HunkContext       string `json:"hunkContext,omitempty"`
+	Body              string `json:"body"`
+	Author            Author `json:"author"`
+	CreatedAt         string `json:"createdAt"`
+	ResolvedAt        string `json:"resolvedAt,omitempty"`
 }
 
 // CardOrigin links cards produced by automations back to the durable

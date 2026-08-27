@@ -339,7 +339,14 @@ struct ConversationTimeline: View {
                     }
 
                     ForEach(queuedMessages, id: \.id) { message in
-                        QueuedMessageView(message: message)
+                        QueuedMessageView(
+                            message: message,
+                            canInterrupt: ConversationQueuePresentation.canInterrupt(
+                                messageID: message.id,
+                                queue: queuedMessages,
+                                agentIsWorking: agentIsWorking
+                            )
+                        )
                             .id("queued:\(message.id)")
                     }
 
@@ -435,6 +442,14 @@ enum ConversationQueuePresentation {
     ) -> [Dieter_V1_UiMessage] {
         let queuedIDs = Set(queue.lazy.map(\.id).filter { !$0.isEmpty })
         return messages.filter { !queuedIDs.contains($0.id) }
+    }
+
+    static func canInterrupt(
+        messageID: String,
+        queue: [Dieter_V1_QueuedMessage],
+        agentIsWorking: Bool
+    ) -> Bool {
+        agentIsWorking && !messageID.isEmpty && queue.first?.id == messageID
     }
 }
 
@@ -562,7 +577,10 @@ struct MessageView: View {
 }
 
 private struct QueuedMessageView: View {
+    @Environment(DieterStore.self) private var store
     let message: Dieter_V1_QueuedMessage
+    let canInterrupt: Bool
+    @State private var interrupting = false
 
     private var parts: [Dieter_V1_MessagePart] {
         if !message.parts.isEmpty { return message.parts }
@@ -579,6 +597,41 @@ private struct QueuedMessageView: View {
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                     MessagePartView(messageID: message.id, part: part, inUserBubble: true)
+                }
+                if canInterrupt {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button {
+                            interrupting = true
+                            Task { @MainActor in
+                                if let card = store.selectedCard ?? store.selectedDetail?.card {
+                                    await store.cancel(card)
+                                }
+                                interrupting = false
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                if interrupting {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "stop.fill")
+                                        .font(.system(size: 8, weight: .bold))
+                                }
+                                Text(interrupting ? "Interrupting…" : "Interrupt")
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundStyle(DieterTheme.coral)
+                            .padding(.horizontal, 9)
+                            .frame(height: 25)
+                            .background(DieterTheme.coral.opacity(0.1), in: Capsule())
+                            .overlay(Capsule().stroke(DieterTheme.coral.opacity(0.24)))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(interrupting)
+                        .help("Interrupt the current turn and send this message now")
+                        .accessibilityLabel("Interrupt current turn and send this message now")
+                        .accessibilityIdentifier("conversation.queued-message.interrupt.\(message.id)")
+                    }
                 }
             }
             .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)

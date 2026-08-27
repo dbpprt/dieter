@@ -36,6 +36,7 @@ service DieterService {
   rpc ListDirectories(ListDirectoriesRequest) returns (DirectoryListing);
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
   rpc UpdateProject(UpdateProjectRequest) returns (Project);
+  rpc UpdateProjectWorkspaceSettings(UpdateProjectWorkspaceSettingsRequest) returns (Project);
   rpc ArchiveProject(ArchiveProjectRequest) returns (Project);
   rpc ListArchivedProjects(google.protobuf.Empty) returns (ProjectsResponse);
   rpc CreateBoard(CreateBoardRequest) returns (Board);
@@ -67,6 +68,21 @@ service DieterService {
   rpc UpdateCard(UpdateCardRequest) returns (Card);
   rpc ArchiveCard(ArchiveCardRequest) returns (Card);
   rpc PinChat(PinChatRequest) returns (Card);
+
+  // Cards and standalone chats share this conversation workspace surface.
+  rpc UpdateConversationWorkspace(UpdateConversationWorkspaceRequest) returns (Card);
+  rpc GetWorkspace(ConversationRef) returns (Workspace);
+  rpc ListProjectWorkspaces(ProjectRef) returns (WorkspacesResponse);
+  rpc GetChangeset(GetChangesetRequest) returns (Changeset);
+  rpc GetFileDiff(GetDiffRequest) returns (FileDiff);
+  rpc GetCommitDiff(GetDiffRequest) returns (FileDiff);
+  rpc AddChangeComment(AddChangeCommentRequest) returns (ChangeComment);
+  rpc ListChangeComments(ListChangeCommentsRequest) returns (ChangeCommentsResponse);
+  rpc GetSCMCapabilities(ConversationRef) returns (SCMCapabilities);
+  rpc StartGitOperation(StartGitOperationRequest) returns (GitOperation);
+  rpc GetGitOperation(GitOperationRef) returns (GitOperation);
+  rpc WatchGitOperation(WatchGitOperationRequest) returns (stream GitOperationFrame);
+  rpc CancelGitOperation(GitOperationRef) returns (GitOperation);
 
   rpc ListFiles(ListFilesRequest) returns (FileList);
   rpc ReadFile(ReadFileRequest) returns (FileDocument);
@@ -296,6 +312,10 @@ message Project {
   int32 card_count = 10;
   int32 chat_count = 11;
   string prompt_template = 12;
+  string default_workspace_mode = 13;
+  string base_remote = 14;
+  string base_branch = 15;
+  repeated ValidationCommand validation_commands = 16;
 }
 
 message Board {
@@ -352,6 +372,11 @@ message Card {
   CardOrigin origin = 25;
   repeated Subagent active_subagents = 26;
   map<string, string> provider_options = 27;
+  string workspace_mode = 28;
+  string workspace_branch = 29;
+  string workspace_base_branch = 30;
+  WorkspaceSummary workspace = 31;
+  PullRequestSummary pull_request = 32;
 }
 
 message CardOrigin {
@@ -655,6 +680,10 @@ message CreateProjectRequest {
   string prompt = 5;
   string board_name = 6;
   string workflow = 7;
+  string default_workspace_mode = 8;
+  string base_remote = 9;
+  string base_branch = 10;
+  repeated ValidationCommand validation_commands = 11;
 }
 
 message CreateProjectResponse {
@@ -667,6 +696,23 @@ message UpdateProjectRequest {
   optional string name = 2;
   optional string summary = 3;
   optional string prompt = 4;
+}
+
+message ValidationCommand {
+  string name = 1;
+  string executable = 2;
+  repeated string arguments = 3;
+  string working_directory = 4;
+  map<string, string> environment = 5;
+  int32 timeout_seconds = 6;
+}
+
+message UpdateProjectWorkspaceSettingsRequest {
+  string project_id = 1;
+  string default_workspace_mode = 2;
+  string base_remote = 3;
+  string base_branch = 4;
+  repeated ValidationCommand validation_commands = 5;
 }
 
 message ArchiveProjectRequest {
@@ -736,6 +782,9 @@ message CreateConversationRequest {
   string client_id = 12;
   string command_id = 13;
   repeated MessagePart attachments = 14;
+  string workspace_mode = 15;
+  string workspace_branch = 16;
+  string workspace_base_branch = 17;
 }
 
 message ListChatsRequest {
@@ -883,10 +932,265 @@ message PinChatRequest {
   bool pinned = 2;
 }
 
+message ProjectRef {
+  string project_id = 1;
+}
+
+message ConversationRef {
+  string card_id = 1;
+}
+
+message UpdateConversationWorkspaceRequest {
+  string card_id = 1;
+  string mode = 2;
+  string branch = 3;
+  string base_branch = 4;
+}
+
+message WorkspaceSummary {
+  string mode = 1;
+  string state = 2;
+  string branch = 3;
+  string base_branch = 4;
+  string head_sha = 5;
+  string base_sha = 6;
+  string revision = 7;
+  int32 changed_files = 8;
+  int32 additions = 9;
+  int32 deletions = 10;
+  int32 ahead = 11;
+  int32 behind = 12;
+  string current_operation_id = 13;
+}
+
+message Workspace {
+  string card_id = 1;
+  string project_id = 2;
+  string mode = 3;
+  string path = 4;
+  string base_remote = 5;
+  string base_branch = 6;
+  string base_sha = 7;
+  string current_base_sha = 8;
+  string branch = 9;
+  string head_sha = 10;
+  string upstream_ref = 11;
+  bool managed_branch = 12;
+  bool legacy_unmanaged = 13;
+  string state = 14;
+  string revision = 15;
+  string current_operation_id = 16;
+  repeated string previous_card_ids = 17;
+  int32 changed_files = 18;
+  int32 additions = 19;
+  int32 deletions = 20;
+  int32 ahead = 21;
+  int32 behind = 22;
+  int64 size_bytes = 23;
+  string created_at = 24;
+  string updated_at = 25;
+  string integrated_head_sha = 26;
+  string integrated_result_sha = 27;
+  string integration_strategy = 28;
+  string integrated_at = 29;
+}
+
+message WorkspacesResponse {
+  repeated Workspace workspaces = 1;
+}
+
+message ChangedFile {
+  string path = 1;
+  string old_path = 2;
+  string status = 3;
+  int32 additions = 4;
+  int32 deletions = 5;
+  bool binary = 6;
+  bool untracked = 7;
+  bool conflicted = 8;
+}
+
+message WorkspaceCommit {
+  string sha = 1;
+  string short_sha = 2;
+  string subject = 3;
+  string author_name = 4;
+  string author_email = 5;
+  string authored_at = 6;
+  int32 additions = 7;
+  int32 deletions = 8;
+  int32 changed_files = 9;
+}
+
+message Changeset {
+  string card_id = 1;
+  string revision = 2;
+  string comparison_sha = 3;
+  string head_sha = 4;
+  string base_sha = 5;
+  repeated ChangedFile files = 6;
+  repeated WorkspaceCommit commits = 7;
+  int32 additions = 8;
+  int32 deletions = 9;
+  bool volatile = 10;
+  string generated_at = 11;
+}
+
+message GetChangesetRequest {
+  string card_id = 1;
+}
+
+message GetDiffRequest {
+  string card_id = 1;
+  string path = 2;
+  string commit_sha = 3;
+  string expected_revision = 4;
+  int64 offset = 5;
+  int32 limit = 6;
+}
+
+message FileDiff {
+  string card_id = 1;
+  string path = 2;
+  string commit_sha = 3;
+  string revision = 4;
+  string patch = 5;
+  bool binary = 6;
+  bool truncated = 7;
+  int64 next_offset = 8;
+  int64 total_bytes = 9;
+}
+
+message ChangeComment {
+  string id = 1;
+  string card_id = 2;
+  string path = 3;
+  string side = 4;
+  int32 line = 5;
+  string body = 6;
+  string author = 7;
+  string revision = 8;
+  string commit_sha = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message AddChangeCommentRequest {
+  string card_id = 1;
+  string path = 2;
+  string side = 3;
+  int32 line = 4;
+  string body = 5;
+  string author = 6;
+  string revision = 7;
+  string commit_sha = 8;
+}
+
+message ListChangeCommentsRequest {
+  string card_id = 1;
+  string revision = 2;
+}
+
+message ChangeCommentsResponse {
+  repeated ChangeComment comments = 1;
+}
+
+message SCMCapabilities {
+  string provider = 1;
+  string remote = 2;
+  string host = 3;
+  string owner = 4;
+  string repository = 5;
+  bool remote_available = 6;
+  bool push_available = 7;
+  bool provider_api_available = 8;
+  bool authenticated = 9;
+  string unavailable_reason = 10;
+}
+
+message PullRequestSummary {
+  string provider = 1;
+  int32 number = 2;
+  string url = 3;
+  string state = 4;
+  bool draft = 5;
+  bool mergeable = 6;
+  string review_decision = 7;
+  string checks_state = 8;
+  string head_sha = 9;
+  string base_sha = 10;
+  string last_synced_at = 11;
+}
+
+message GitConflict {
+  string path = 1;
+  int32 hunk_count = 2;
+}
+
+message ValidationResult {
+  string name = 1;
+  int32 exit_code = 2;
+  string output = 3;
+  bool truncated = 4;
+  int64 duration_ms = 5;
+}
+
+message GitOperation {
+  string id = 1;
+  string card_id = 2;
+  string project_id = 3;
+  string kind = 4;
+  string status = 5;
+  string expected_revision = 6;
+  string expected_base_sha = 7;
+  string expected_head_sha = 8;
+  map<string, string> parameters = 9;
+  repeated string completed_steps = 10;
+  repeated ValidationResult validation_results = 11;
+  repeated GitConflict conflicts = 12;
+  string result = 13;
+  string error = 14;
+  uint64 sequence = 15;
+  string created_at = 16;
+  string started_at = 17;
+  string finished_at = 18;
+  string updated_at = 19;
+}
+
+message StartGitOperationRequest {
+  string card_id = 1;
+  string kind = 2;
+  string expected_revision = 3;
+  map<string, string> parameters = 4;
+}
+
+message GitOperationRef {
+  string operation_id = 1;
+}
+
+message WatchGitOperationRequest {
+  string operation_id = 1;
+  uint64 after_sequence = 2;
+  int32 heartbeat_ms = 3;
+}
+
+message GitOperationLogEntry {
+  uint64 sequence = 1;
+  string created_at = 2;
+  string message = 3;
+}
+
+message GitOperationFrame {
+  GitOperation operation = 1;
+  repeated GitOperationLogEntry logs = 2;
+  bool heartbeat = 3;
+}
+
 message ListFilesRequest {
   string project_id = 1;
   string path = 2;
   bool show_hidden = 3;
+  string card_id = 4;
 }
 
 message FileEntry {
@@ -907,6 +1211,7 @@ message FileList {
 message ReadFileRequest {
   string project_id = 1;
   string path = 2;
+  string card_id = 3;
 }
 
 message FileDocument {
@@ -935,6 +1240,7 @@ message Terminal {
   string created_at = 11;
   string updated_at = 12;
   optional int32 exit_code = 13;
+  string card_id = 14;
 }
 
 message TerminalRef {
@@ -943,6 +1249,7 @@ message TerminalRef {
 
 message ListTerminalsRequest {
   string project_id = 1;
+  string card_id = 2;
 }
 
 message TerminalsResponse {
@@ -956,6 +1263,7 @@ message CreateTerminalRequest {
   string working_directory = 4;
   int32 columns = 5;
   int32 rows = 6;
+  string card_id = 7;
 }
 
 message WatchTerminalRequest {
@@ -1159,6 +1467,7 @@ message SaveFileRequest {
   string path = 2;
   string content = 3;
   string revision = 4;
+  string card_id = 5;
 }
 
 message CreateFileRequest {
@@ -1166,12 +1475,14 @@ message CreateFileRequest {
   string path = 2;
   string kind = 3;
   string content = 4;
+  string card_id = 5;
 }
 
 message MoveFileRequest {
   string project_id = 1;
   string source = 2;
   string destination = 3;
+  string card_id = 4;
 }
 
 message MoveFileResponse {
@@ -1183,6 +1494,7 @@ message DeleteFileRequest {
   string project_id = 1;
   string path = 2;
   bool recursive = 3;
+  string card_id = 4;
 }
 
 message ListSchedulesRequest {

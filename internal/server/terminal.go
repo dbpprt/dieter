@@ -25,22 +25,25 @@ const (
 	maximumHeartbeat      = 30 * time.Second
 )
 
-func (api *grpcAPI) ListTerminals(_ context.Context, request *dieterv1.ListTerminalsRequest) (*dieterv1.TerminalsResponse, error) {
+func (api *grpcAPI) ListTerminals(ctx context.Context, request *dieterv1.ListTerminalsRequest) (*dieterv1.TerminalsResponse, error) {
 	projectID := strings.TrimSpace(request.GetProjectId())
-	if projectID != "" {
-		if _, err := api.server.store.ResolveProject(projectID); err != nil {
+	cardID := strings.TrimSpace(request.GetCardId())
+	if projectID != "" || cardID != "" {
+		project, err := api.server.scopedProject(ctx, projectID, cardID)
+		if err != nil {
 			return nil, grpcFailure(err)
 		}
+		projectID = project.ID
 	}
 	result := &dieterv1.TerminalsResponse{}
-	for _, value := range api.server.terminals.List(projectID) {
+	for _, value := range api.server.terminals.ListScoped(projectID, cardID) {
 		result.Terminals = append(result.Terminals, protoTerminal(value))
 	}
 	return result, nil
 }
 
-func (api *grpcAPI) CreateTerminal(_ context.Context, request *dieterv1.CreateTerminalRequest) (*dieterv1.Terminal, error) {
-	project, err := api.server.store.ResolveProject(strings.TrimSpace(request.GetProjectId()))
+func (api *grpcAPI) CreateTerminal(ctx context.Context, request *dieterv1.CreateTerminalRequest) (*dieterv1.Terminal, error) {
+	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -49,7 +52,7 @@ func (api *grpcAPI) CreateTerminal(_ context.Context, request *dieterv1.CreateTe
 		return nil, grpcFailure(err)
 	}
 	value, err := api.server.terminals.Create(terminal.CreateInput{
-		ProjectID: project.ID, Name: request.GetName(), Shell: request.GetShell(),
+		ProjectID: project.ID, CardID: request.GetCardId(), Name: request.GetName(), Shell: request.GetShell(),
 		WorkingDirectory: workingDirectory, Columns: int(request.GetColumns()), Rows: int(request.GetRows()),
 	})
 	if err != nil {
@@ -179,7 +182,7 @@ func (api *connectAPI) CloseTerminal(ctx context.Context, request *connect.Reque
 
 func protoTerminal(value terminal.Session) *dieterv1.Terminal {
 	result := &dieterv1.Terminal{
-		Id: value.ID, ProjectId: value.ProjectID, Name: value.Name, Shell: value.Shell,
+		Id: value.ID, ProjectId: value.ProjectID, CardId: value.CardID, Name: value.Name, Shell: value.Shell,
 		WorkingDirectory: value.WorkingDirectory, Status: value.Status, Pid: value.PID,
 		Columns: int32(value.Columns), Rows: int32(value.Rows), Sequence: value.Sequence,
 		CreatedAt: value.CreatedAt.Format(terminalTimeFormat), UpdatedAt: value.UpdatedAt.Format(terminalTimeFormat),

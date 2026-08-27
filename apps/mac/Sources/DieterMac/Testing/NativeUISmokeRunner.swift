@@ -129,6 +129,21 @@ enum NativeUISmokeRunner {
         await captureAppearances(window, named: "01-board.png", in: output)
         results["board-initial"] = store.section.rawValue
 
+        // The packaged-app smoke has a fixed 1,380pt content width. Drive the
+        // first lane's rendered sort button through Dieter's own NSWindow and
+        // capture immediately, before any appearance change can rebuild it.
+        click(window: window, x: 478, distanceFromTop: 164)
+        try? await DieterTaskSleep.milliseconds(500)
+        capture(window, to: output.appending(path: "01-board-oldest-first.png"))
+        results["board-lane-sort-toggle"] = "dispatched for visual verification"
+        if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
+            writeReport(results, to: output)
+            NSApp.terminate(nil)
+            return
+        }
+        click(window: window, x: 478, distanceFromTop: 164) // restore newest-first
+        try? await DieterTaskSleep.milliseconds(350)
+
         store.openScreens()
         try? await DieterTaskSleep.milliseconds(500)
         results["01a-experimental-screens"] = store.section == .screens ? "passed" : "failed: screens did not open"

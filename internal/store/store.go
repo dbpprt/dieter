@@ -50,6 +50,7 @@ func New(root string) *Store {
 func (s *Store) Ensure() error {
 	for _, dir := range []string{
 		s.projectDir(), s.boardDir(), s.cardDir(), s.commentDir(), s.conversationDir(), s.runtimeDir(), s.scheduleDir(), s.scheduleRunDir(), s.authDir(), s.syncDir(),
+		s.workspaceDir(), s.gitOperationDir(), s.pullRequestDir(), s.changeCommentDir(), s.recoveryDir(),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
@@ -119,19 +120,28 @@ func (s *Store) beginWrite() (func(), error) {
 	return release, nil
 }
 
-func (s *Store) projectDir() string      { return filepath.Join(s.Root, "projects") }
-func (s *Store) boardDir() string        { return filepath.Join(s.Root, "boards") }
-func (s *Store) cardDir() string         { return filepath.Join(s.Root, "cards") }
-func (s *Store) commentDir() string      { return filepath.Join(s.Root, "comments") }
-func (s *Store) conversationDir() string { return filepath.Join(s.Root, "conversations") }
-func (s *Store) runtimeDir() string      { return filepath.Join(s.Root, "runtime") }
-func (s *Store) scheduleDir() string     { return filepath.Join(s.Root, "schedules") }
-func (s *Store) scheduleRunDir() string  { return filepath.Join(s.Root, "schedule-runs") }
-func (s *Store) authDir() string         { return filepath.Join(s.Root, "auth") }
+func (s *Store) projectDir() string       { return filepath.Join(s.Root, "projects") }
+func (s *Store) boardDir() string         { return filepath.Join(s.Root, "boards") }
+func (s *Store) cardDir() string          { return filepath.Join(s.Root, "cards") }
+func (s *Store) commentDir() string       { return filepath.Join(s.Root, "comments") }
+func (s *Store) conversationDir() string  { return filepath.Join(s.Root, "conversations") }
+func (s *Store) runtimeDir() string       { return filepath.Join(s.Root, "runtime") }
+func (s *Store) scheduleDir() string      { return filepath.Join(s.Root, "schedules") }
+func (s *Store) scheduleRunDir() string   { return filepath.Join(s.Root, "schedule-runs") }
+func (s *Store) authDir() string          { return filepath.Join(s.Root, "auth") }
+func (s *Store) workspaceDir() string     { return filepath.Join(s.Root, "workspaces") }
+func (s *Store) gitOperationDir() string  { return filepath.Join(s.Root, "git-operations") }
+func (s *Store) pullRequestDir() string   { return filepath.Join(s.Root, "pull-requests") }
+func (s *Store) changeCommentDir() string { return filepath.Join(s.Root, "change-comments") }
+func (s *Store) recoveryDir() string      { return filepath.Join(s.Root, "recovery") }
 
 func (s *Store) settingsPath() string { return filepath.Join(s.Root, "settings.yaml") }
 
 func (s *Store) RuntimeDir() string { return s.runtimeDir() }
+
+func (s *Store) WorktreeRoot() string { return filepath.Join(s.Root, "worktrees") }
+
+func (s *Store) RecoveryDir() string { return s.recoveryDir() }
 
 func timestamp() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 

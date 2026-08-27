@@ -6,6 +6,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case connection = "Connection"
     case prompts = "Prompts"
     case notifications = "Notifications"
+    case island = "Island"
     case agents = "Agents"
 
     var id: String { rawValue }
@@ -16,6 +17,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .connection: "network"
         case .prompts: "text.quote"
         case .notifications: "bell"
+        case .island: "capsule.tophalf.filled"
         case .agents: "person.2"
         }
     }
@@ -26,6 +28,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .connection: "Machines, gateways, and authentication"
         case .prompts: "Global and scoped agent instructions"
         case .notifications: "macOS alerts for agent activity"
+        case .island: "Live activity around the notch"
         case .agents: "Parallel limits and harness capabilities"
         }
     }
@@ -48,6 +51,7 @@ struct DieterSettingsView: View {
                 VStack(spacing: 3) {
                     ForEach(DieterSettingsSection.allCases) { section in
                         Button {
+                            store.settingsSection = section
                             selection = section
                         } label: {
                             SettingsNavigationRow(section: section, selected: section == selection)
@@ -90,6 +94,7 @@ struct DieterSettingsView: View {
                     case .connection: ConnectionSettings()
                     case .prompts: PromptSettingsEditor()
                     case .notifications: NotificationSettings()
+                    case .island: IslandSettings()
                     case .agents: AgentSettings()
                     }
                 }
@@ -99,6 +104,8 @@ struct DieterSettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(DieterTheme.background)
+        .onAppear { selection = store.settingsSection }
+        .onChange(of: store.settingsSection) { _, section in selection = section }
     }
 }
 
@@ -781,6 +788,71 @@ struct NotificationSettings: View {
                 SettingsPanel(title: "Delivery") {
                     Text("Notifications come from state transitions on the synchronized Dieter stream. Clicking one opens the same durable conversation.")
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                }
+            }
+        }
+    }
+}
+
+struct IslandSettings: View {
+    @AppStorage(DieterIslandPreferences.enabledKey, store: DieterAppearance.applicationDefaults())
+    private var enabled = DieterIslandPreferences.defaultEnabled
+
+    var body: some View {
+        SettingsPage {
+            VStack(spacing: 14) {
+                SettingsPanel(
+                    title: "Dieter Island",
+                    subtitle: "See active turns and reviews without leaving the app you are working in."
+                ) {
+                    Toggle("Show live activity around the notch", isOn: $enabled)
+                        .font(.system(size: 12, weight: .semibold))
+                        .toggleStyle(.switch)
+                        .accessibilityIdentifier("settings.island.enabled")
+                    Text("Hover the Island to expand a compact activity list. Choose a conversation to jump back into the same durable Dieter session.")
+                        .font(.caption)
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    DieterIslandSettingsPreview()
+                        .opacity(enabled ? 1 : 0.42)
+                        .animation(.easeOut(duration: 0.18), value: enabled)
+                }
+                SettingsPanel(title: "Display behavior") {
+                    HStack(alignment: .top, spacing: 11) {
+                        Image(systemName: "macbook")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(DieterTheme.primary)
+                            .frame(width: 25)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Notch-aware on MacBook")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Dieter aligns to the built-in camera housing. On a display without a notch, it becomes a floating pill at the top right.")
+                                .font(.caption)
+                                .foregroundStyle(DieterTheme.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Divider().overlay(DieterTheme.border)
+                    HStack(alignment: .top, spacing: 11) {
+                        Image(systemName: "rectangle.on.rectangle")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(DieterTheme.eyes)
+                            .frame(width: 25)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Available across Spaces")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("The Island follows macOS Spaces and remains available beside full-screen apps without taking keyboard focus.")
+                                .font(.caption)
+                                .foregroundStyle(DieterTheme.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                SettingsPanel(title: "Activity source") {
+                    Text("The Island uses the same bounded synchronized card stream as Dieter's board and menu bar. It does not start another connection or duplicate notifications.")
+                        .font(.caption)
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

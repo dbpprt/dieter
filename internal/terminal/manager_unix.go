@@ -114,7 +114,7 @@ func (b *unixBackend) Create(input CreateInput) (Session, error) {
 	}
 	now := time.Now().UTC()
 	value := Session{
-		ID: randomID(), ProjectID: input.ProjectID, Name: name,
+		ID: randomID(), ProjectID: input.ProjectID, CardID: input.CardID, Name: name,
 		Shell: filepath.Base(shell), WorkingDirectory: workingDirectory,
 		Status: StatusRunning, PID: int64(command.Process.Pid), Columns: columns, Rows: rows,
 		CreatedAt: now, UpdatedAt: now,

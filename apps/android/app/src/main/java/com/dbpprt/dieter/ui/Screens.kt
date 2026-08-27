@@ -60,6 +60,7 @@ import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -966,6 +967,7 @@ private fun BoardLanePager(
     var revealedCardId by remember(state.selectedBoardId, state.selectedLane) { mutableStateOf<String?>(null) }
     var movingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
     var editingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
+    val laneSortDirections = remember(state.selectedBoardId) { mutableStateMapOf<String, CardCreationSortDirection>() }
     var activityNow by remember { mutableStateOf(Instant.now()) }
     val laneIds = lanes.map { it.id }
     val selectedLane by rememberUpdatedState(state.selectedLane)
@@ -997,45 +999,62 @@ private fun BoardLanePager(
         key = { lanes[it].id },
     ) { page ->
         val lane = lanes[page]
-        val visible = newestCardsFirst(boardCards.filter { card -> card.lane == lane.id })
-        if (state.loading && visible.isEmpty()) {
-            LoadingState()
-        } else if (visible.isEmpty()) {
-            EmptyList("Nothing in this lane", "Create a local-agent card to get work moving.", Icons.Outlined.ViewKanban)
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize().testTag("board-card-list-${lane.id}"),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(visible, key = { it.id }) { card ->
-                    SwipeableWorkCard(
-                        card = card,
-                        board = state.board,
-                        selected = card.id == state.selectedCardId,
-                        pending = card.id in state.pendingCardIds,
-                        operation = state.cardOperations[card.id],
-                        operationError = state.cardOperationErrors[card.id],
-                        activityNow = activityNow,
-                        revealed = revealedCardId == card.id,
-                        onReveal = { revealedCardId = card.id },
-                        onCloseActions = { if (revealedCardId == card.id) revealedCardId = null },
-                        onMove = {
-                            revealedCardId = null
-                            movingCard = card
-                        },
-                        onEdit = {
-                            revealedCardId = null
-                            editingCard = card
-                        },
-                        onArchive = {
-                            revealedCardId = null
-                            model.archiveBoardCard(card.id)
-                        },
-                        onStart = { model.startBoardCard(card.id) },
-                        labelDragState = labelDragState,
-                        onClick = { model.openCard(card, Destination.BOARD) },
-                    )
+        val sortDirection = laneSortDirections[lane.id] ?: CardCreationSortDirection.DESCENDING
+        val visible = cardsByCreationTime(
+            boardCards.filter { card -> card.lane == lane.id },
+            direction = sortDirection,
+        )
+        Column(Modifier.fillMaxSize()) {
+            LaneSortButton(
+                laneName = lane.name,
+                direction = sortDirection,
+                onToggle = { laneSortDirections[lane.id] = sortDirection.toggled() },
+                modifier = Modifier.align(Alignment.End),
+            )
+            if (state.loading && visible.isEmpty()) {
+                LoadingState(Modifier.weight(1f))
+            } else if (visible.isEmpty()) {
+                EmptyList(
+                    "Nothing in this lane",
+                    "Create a local-agent card to get work moving.",
+                    Icons.Outlined.ViewKanban,
+                    Modifier.weight(1f),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f).testTag("board-card-list-${lane.id}"),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(visible, key = { it.id }) { card ->
+                        SwipeableWorkCard(
+                            card = card,
+                            board = state.board,
+                            selected = card.id == state.selectedCardId,
+                            pending = card.id in state.pendingCardIds,
+                            operation = state.cardOperations[card.id],
+                            operationError = state.cardOperationErrors[card.id],
+                            activityNow = activityNow,
+                            revealed = revealedCardId == card.id,
+                            onReveal = { revealedCardId = card.id },
+                            onCloseActions = { if (revealedCardId == card.id) revealedCardId = null },
+                            onMove = {
+                                revealedCardId = null
+                                movingCard = card
+                            },
+                            onEdit = {
+                                revealedCardId = null
+                                editingCard = card
+                            },
+                            onArchive = {
+                                revealedCardId = null
+                                model.archiveBoardCard(card.id)
+                            },
+                            onStart = { model.startBoardCard(card.id) },
+                            labelDragState = labelDragState,
+                            onClick = { model.openCard(card, Destination.BOARD) },
+                        )
+                    }
                 }
             }
         }
@@ -1062,6 +1081,36 @@ private fun BoardLanePager(
                 model.editBoardCard(card.id, title, task)
             },
         )
+    }
+}
+
+@Composable
+private fun LaneSortButton(
+    laneName: String,
+    direction: CardCreationSortDirection,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val descending = direction == CardCreationSortDirection.DESCENDING
+    val currentLabel = if (descending) "newest first" else "oldest first"
+    val nextLabel = if (descending) "oldest first" else "newest first"
+    TextButton(
+        onClick = onToggle,
+        modifier = modifier
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .testTag("lane-sort-${laneName.lowercase().replace(' ', '-')}")
+            .semantics {
+                contentDescription = "$laneName lane sorted $currentLabel; sort $nextLabel"
+            },
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+    ) {
+        Icon(
+            if (descending) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward,
+            contentDescription = null,
+            modifier = Modifier.size(17.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(if (descending) "Newest first" else "Oldest first", fontSize = 12.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -2325,7 +2374,7 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
                     items(queuedMessages, key = { "queued-${it.id}" }) { queued ->
                         QueuedMessageBlock(
                             queued = queued,
-                            showInterrupt = queued.id == queuedMessages.lastOrNull()?.id && activeTurn,
+                            showInterrupt = queued.id == queuedMessages.firstOrNull()?.id && activeTurn,
                             working = state.working,
                             onInterrupt = model::cancelSelected,
                         )
@@ -2449,32 +2498,52 @@ internal fun QueuedMessageBlock(
             border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
             modifier = Modifier.widthIn(max = 340.dp).testTag("queued-message-${queued.id}"),
         ) {
-            Column(Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) {
-                parts.forEach { part ->
-                    when {
-                        part.type == "text" && part.text.isNotBlank() -> SelectionContainer {
-                            MessageMarkdown(part.text, compact = true)
+            Column {
+                Column(Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) {
+                    parts.forEach { part ->
+                        when {
+                            part.type == "text" && part.text.isNotBlank() -> SelectionContainer {
+                                MessageMarkdown(part.text, compact = true)
+                            }
+                            part.type == "file" -> AttachmentPart(part)
+                            part.text.isNotBlank() -> MessageMarkdown(part.text, compact = true)
                         }
-                        part.type == "file" -> AttachmentPart(part)
-                        part.text.isNotBlank() -> MessageMarkdown(part.text, compact = true)
                     }
                 }
-            }
-        }
-        if (showInterrupt) {
-            TextButton(
-                onClick = onInterrupt,
-                enabled = !working,
-                modifier = Modifier.testTag("interrupt-queued-message"),
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) {
-                if (working) {
-                    CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Outlined.Cancel, null, Modifier.size(17.dp))
+                if (showInterrupt) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 7.dp, end = 7.dp, bottom = 5.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(
+                            onClick = onInterrupt,
+                            enabled = !working,
+                            modifier = Modifier
+                                .heightIn(min = 30.dp)
+                                .testTag("interrupt-queued-message")
+                                .semantics {
+                                    contentDescription = "Interrupt current turn and send this message now"
+                                },
+                            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error,
+                                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                            ),
+                        ) {
+                            if (working) {
+                                CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Outlined.Cancel, null, Modifier.size(14.dp))
+                            }
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                if (working) "Interrupting…" else "Interrupt",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.width(6.dp))
-                Text(if (working) "Interrupting…" else "Interrupt")
             }
         }
     }

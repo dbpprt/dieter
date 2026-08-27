@@ -21,6 +21,7 @@ var (
 type Session struct {
 	ID               string
 	ProjectID        string
+	CardID           string
 	Name             string
 	Shell            string
 	WorkingDirectory string
@@ -44,6 +45,7 @@ type Frame struct {
 
 type CreateInput struct {
 	ProjectID        string
+	CardID           string
 	Name             string
 	Shell            string
 	WorkingDirectory string
@@ -72,7 +74,20 @@ type Manager struct {
 
 func New() *Manager { return &Manager{backend: newBackend()} }
 
-func (m *Manager) List(projectID string) []Session           { return m.backend.List(projectID) }
+func (m *Manager) List(projectID string) []Session { return m.backend.List(projectID) }
+func (m *Manager) ListScoped(projectID, cardID string) []Session {
+	values := m.backend.List(projectID)
+	if cardID == "" {
+		return values
+	}
+	result := values[:0]
+	for _, value := range values {
+		if value.CardID == cardID {
+			result = append(result, value)
+		}
+	}
+	return result
+}
 func (m *Manager) Get(id string) (Session, error)            { return m.backend.Get(id) }
 func (m *Manager) Create(input CreateInput) (Session, error) { return m.backend.Create(input) }
 func (m *Manager) Frames(id string, after uint64) ([]Frame, <-chan struct{}, error) {

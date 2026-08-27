@@ -108,6 +108,8 @@ func (c *CLI) Run(args []string) error {
 		return c.board(args[1:])
 	case "card", "cards":
 		return c.card(args[1:])
+	case "workspace", "workspaces", "git":
+		return c.workspace(args[1:])
 	case "schedule", "schedules":
 		return c.schedule(args[1:])
 	case "settings":
@@ -137,6 +139,7 @@ Commands:
   project     Create, open, list, and update Git projects
   board       Create and list fixed workflow boards
   card        Create, find, chat, comment, and move conversation cards
+  workspace   Inspect and operate card/chat workspaces and changesets
   schedule    Create, inspect, run, pause, and update project schedules
   settings    Inspect and update global parallel-session limits
   storage     Print the central Markdown store path
@@ -613,6 +616,7 @@ Actions:
   list             List project overlays; pass --removed to show hidden ones
   show PROJECT     Show project metadata and prompt
   update PROJECT   Update Dieter's project prompt, name, or summary
+  workspace PROJECT Configure workspace defaults, Git base, and validation
   remove PROJECT   Hide a project, its boards, and its chats from Dieter
   restore PROJECT  Restore a removed project
 `)
@@ -629,6 +633,8 @@ Actions:
 		return c.projectShow(args[1:])
 	case "update":
 		return c.projectUpdate(args[1:])
+	case "workspace":
+		return c.projectWorkspace(args[1:])
 	case "remove", "archive":
 		return c.projectArchive(args[1:], true)
 	case "restore", "unarchive":
@@ -649,6 +655,10 @@ func (c *CLI) projectRegister(args []string, create bool) error {
 	prompt := set.String("prompt", "", "prompt")
 	promptFile := set.String("prompt-file", "", "prompt file")
 	format := set.String("format", "json", "json or table")
+	workspaceMode := set.String("workspace", model.WorkspaceModeMain, "main, branch, or worktree")
+	baseRemote := set.String("base-remote", "", "base remote")
+	baseBranch := set.String("base-branch", "", "base branch")
+	validationFile := set.String("validation-file", "", "validation command JSON file")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -660,7 +670,14 @@ func (c *CLI) projectRegister(args []string, create bool) error {
 	if err != nil {
 		return err
 	}
-	project, err := c.service().RegisterProject(context.Background(), app.ProjectInput{Path: set.Arg(0), Name: *name, Summary: *summary, Prompt: value, Create: create})
+	validation, err := readValidationCommands(*validationFile)
+	if err != nil {
+		return err
+	}
+	project, err := c.service().RegisterProject(context.Background(), app.ProjectInput{
+		Path: set.Arg(0), Name: *name, Summary: *summary, Prompt: value, Create: create,
+		DefaultWorkspaceMode: *workspaceMode, BaseRemote: *baseRemote, BaseBranch: *baseBranch, ValidationCommands: validation,
+	})
 	if err != nil {
 		return err
 	}
@@ -669,6 +686,47 @@ func (c *CLI) projectRegister(args []string, create bool) error {
 		return nil
 	}
 	return jsonOut(c.Out, project)
+}
+
+func (c *CLI) projectWorkspace(args []string) error {
+	const usage = "Usage: dieter project workspace [--mode main|branch|worktree] [--base-remote REMOTE] [--base-branch BRANCH] [--validation-file FILE] PROJECT\n"
+	set := flags("project workspace")
+	mode := set.String("mode", "", "default workspace mode")
+	remote := set.String("base-remote", "", "base remote")
+	branch := set.String("base-branch", "", "base branch")
+	validationFile := set.String("validation-file", "", "validation command JSON file")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 {
+		return errors.New("PROJECT is required")
+	}
+	current, err := c.Store.ResolveProject(set.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *mode == "" {
+		*mode = current.DefaultWorkspaceMode
+	}
+	if *remote == "" {
+		*remote = current.BaseRemote
+	}
+	if *branch == "" {
+		*branch = current.BaseBranch
+	}
+	validation := current.ValidationCommands
+	if *validationFile != "" {
+		validation, err = readValidationCommands(*validationFile)
+		if err != nil {
+			return err
+		}
+	}
+	updated, err := c.Store.UpdateProjectWorkspaceSettings(current.ID, *mode, *remote, *branch, validation)
+	if err != nil {
+		return err
+	}
+	return jsonOut(c.Out, updated)
 }
 
 func (c *CLI) projectList(args []string) error {
@@ -930,6 +988,7 @@ Actions:
   rename       Rename the card
   archive      Archive the card
   unarchive    Restore the card
+  workspace    Select main, branch, or worktree before the first turn
 `)
 		return nil
 	}
@@ -960,6 +1019,8 @@ Actions:
 		return c.cardArchive(args[1:], false)
 	case "unarchive":
 		return c.cardArchive(args[1:], true)
+	case "workspace":
+		return c.cardWorkspace(args[1:])
 	default:
 		return fmt.Errorf("unknown card action %q", args[0])
 	}
@@ -1009,6 +1070,9 @@ Options:
   --model MODEL          Model for the first turn
   --effort EFFORT        Reasoning or thinking effort for the first turn
   --labels LABELS        Comma-separated board label IDs or names
+  --workspace MODE       main, branch, or worktree (defaults to project setting)
+  --branch BRANCH        Existing or new workspace branch
+  --base-branch BRANCH   Override the project base branch
   --format json|id       Output format
 `
 	set := flags("card create")
@@ -1025,6 +1089,9 @@ Options:
 	effort := set.String("effort", "", "reasoning or thinking effort")
 	labels := set.String("labels", "", "labels")
 	format := set.String("format", "json", "format")
+	workspaceMode := set.String("workspace", "", "workspace mode")
+	workspaceBranch := set.String("branch", "", "workspace branch")
+	workspaceBaseBranch := set.String("base-branch", "", "workspace base branch")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -1037,7 +1104,11 @@ Options:
 	if err != nil {
 		return err
 	}
-	item, err := c.service().CreateCard(context.Background(), app.CardInput{Project: *project, Board: *board, Lane: *lane, Title: *title, Prompt: value, Provider: *provider, Model: *modelName, Effort: *effort, LabelIDs: splitCSV(*labels), Attachments: parts})
+	item, err := c.service().CreateCard(context.Background(), app.CardInput{
+		Project: *project, Board: *board, Lane: *lane, Title: *title, Prompt: value,
+		Provider: *provider, Model: *modelName, Effort: *effort, LabelIDs: splitCSV(*labels), Attachments: parts,
+		WorkspaceMode: *workspaceMode, WorkspaceBranch: *workspaceBranch, WorkspaceBaseBranch: *workspaceBaseBranch,
+	})
 	if err != nil {
 		return err
 	}
@@ -1046,6 +1117,26 @@ Options:
 		return nil
 	}
 	return jsonOut(c.Out, item)
+}
+
+func (c *CLI) cardWorkspace(args []string) error {
+	const usage = "Usage: dieter card workspace --mode main|branch|worktree [--branch BRANCH] [--base-branch BRANCH] CARD\n"
+	set := flags("card workspace")
+	mode := set.String("mode", "", "workspace mode")
+	branch := set.String("branch", "", "workspace branch")
+	baseBranch := set.String("base-branch", "", "base branch")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 {
+		return errors.New("CARD is required")
+	}
+	value, err := c.Store.UpdateCardWorkspaceSelection(set.Arg(0), *mode, *branch, *baseBranch, false)
+	if err != nil {
+		return err
+	}
+	return jsonOut(c.Out, value)
 }
 
 func (c *CLI) cardList(args []string) error {

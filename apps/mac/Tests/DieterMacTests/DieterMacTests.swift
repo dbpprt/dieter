@@ -1068,6 +1068,40 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(KanbanLaneSizing.contentWidth(availableWidth: 680, laneCount: 4) == 1_111)
 }
 
+@Test func boardCardsDefaultToNewestFirstAndCanSortOldestFirst() {
+    func card(_ id: String, _ createdAt: String) -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = id
+        card.createdAt = createdAt
+        return card
+    }
+    let cards = [
+        card("oldest", "2026-08-16T18:00:00Z"),
+        card("newest", "2026-08-16T20:00:00Z"),
+        card("middle", "2026-08-16T19:00:00Z"),
+    ]
+
+    #expect(BoardCardOrdering.sorted(cards).map(\.id) == ["newest", "middle", "oldest"])
+    #expect(BoardCardOrdering.sorted(cards, direction: .ascending).map(\.id) == ["oldest", "middle", "newest"])
+}
+
+@Test func boardCardCreationOrderingKeepsMissingDatesLastAndBreaksTiesDeterministically() {
+    func card(_ id: String, _ createdAt: String) -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = id
+        card.createdAt = createdAt
+        return card
+    }
+    let cards = [
+        card("a", "not-a-timestamp"),
+        card("b", "2026-08-16T20:00:00Z"),
+        card("c", "2026-08-16T20:00:00Z"),
+    ]
+
+    #expect(BoardCardOrdering.sorted(cards).map(\.id) == ["c", "b", "a"])
+    #expect(BoardCardOrdering.sorted(cards, direction: .ascending).map(\.id) == ["b", "c", "a"])
+}
+
 @Test func boardCreationOptionsMatchTheServerContract() {
     #expect(BoardWorkflow.allCases.map(\.rawValue) == ["review", "direct"])
     #expect(DoneArchivePolicy.allCases.map(\.rawValue) == [
@@ -1078,7 +1112,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 @Test func settingsAreFirstClassNestedNavigationDestinations() {
     #expect(AppSection.allCases.contains(.settings))
     #expect(DieterSettingsSection.allCases.map(\.rawValue) == [
-        "General", "Connection", "Prompts", "Notifications", "Agents",
+        "General", "Connection", "Prompts", "Notifications", "Island", "Agents",
     ])
 }
 
@@ -1610,6 +1644,16 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 
     #expect(result.map(\.id) == [delivered.id])
     #expect(queued.text == "Keep me visible")
+}
+
+@Test func onlyTheNextQueuedMessageCanInterruptAnActiveTurn() {
+    var first = Dieter_V1_QueuedMessage(); first.id = "first"
+    var second = Dieter_V1_QueuedMessage(); second.id = "second"
+    let queue = [first, second]
+
+    #expect(ConversationQueuePresentation.canInterrupt(messageID: first.id, queue: queue, agentIsWorking: true))
+    #expect(!ConversationQueuePresentation.canInterrupt(messageID: second.id, queue: queue, agentIsWorking: true))
+    #expect(!ConversationQueuePresentation.canInterrupt(messageID: first.id, queue: queue, agentIsWorking: false))
 }
 
 @Test @MainActor func macAttachmentSelectionPreservesBytesAndEnforcesTheSharedLimit() throws {

@@ -1,0 +1,66 @@
+import DieterAPI
+import Foundation
+import Testing
+@testable import DieterMac
+
+@Test func islandPreferenceDefaultsOnAndPersistsItsToggle() {
+    let suite = "DieterIslandTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    #expect(DieterIslandPreferences.isEnabled(in: defaults))
+    DieterIslandPreferences.setEnabled(false, in: defaults)
+    #expect(!DieterIslandPreferences.isEnabled(in: defaults))
+    DieterIslandPreferences.setEnabled(true, in: defaults)
+    #expect(DieterIslandPreferences.isEnabled(in: defaults))
+}
+
+@Test func islandActivityCountsRunningReviewAndOnlyTodaysCompletedCards() {
+    let now = Date(timeIntervalSince1970: 1_787_853_600) // 2026-08-27 18:00:00 UTC
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+    func card(_ id: String, runtime: String, lane: String, updatedAt: String) -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = id; card.title = id; card.runtime = runtime; card.lane = lane; card.runtimeUpdatedAt = updatedAt
+        return card
+    }
+    let activity = DieterIslandActivity.resolve(cards: [
+        card("running", runtime: "running", lane: "running", updatedAt: "2026-08-27T11:58:00Z"),
+        card("review", runtime: "waiting_for_user", lane: "review", updatedAt: "2026-08-27T11:00:00Z"),
+        card("done-today", runtime: "completed", lane: "done", updatedAt: "2026-08-27T09:00:00Z"),
+        card("done-yesterday", runtime: "completed", lane: "done", updatedAt: "2026-08-26T09:00:00Z"),
+    ], now: now, calendar: calendar)
+
+    #expect(activity.runningCount == 1)
+    #expect(activity.reviewCount == 1)
+    #expect(activity.doneTodayCount == 1)
+    #expect(activity.items.map(\.cardID) == ["running", "review", "done-today"])
+}
+
+@Test func islandGeometryUsesTheNotchAndFallsBackToATopRightPill() {
+    let screen = CGRect(x: 0, y: 0, width: 1_512, height: 982)
+    let visible = CGRect(x: 0, y: 0, width: 1_512, height: 945)
+    let notched = DieterIslandDisplayGeometry.resolve(
+        screenFrame: screen,
+        visibleFrame: visible,
+        safeAreaTop: 32,
+        auxiliaryLeftWidth: 656,
+        auxiliaryRightWidth: 656
+    )
+    #expect(notched.hasPhysicalNotch)
+    #expect(notched.notchWidth == 204)
+    #expect(notched.windowFrame(expanded: false).midX == screen.midX)
+    #expect(notched.windowFrame(expanded: false).maxY == screen.maxY)
+
+    let external = DieterIslandDisplayGeometry.resolve(
+        screenFrame: screen,
+        visibleFrame: visible,
+        safeAreaTop: 0,
+        auxiliaryLeftWidth: nil,
+        auxiliaryRightWidth: nil
+    )
+    #expect(!external.hasPhysicalNotch)
+    #expect(external.windowFrame(expanded: false).maxX == visible.maxX - 12)
+    #expect(external.windowFrame(expanded: false).maxY == visible.maxY - 8)
+}

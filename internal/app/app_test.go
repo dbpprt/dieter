@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -233,6 +234,81 @@ func appSetup(t *testing.T) (*Service, *fakeRunner, model.Project, model.Board) 
 	}
 	fake := &fakeRunner{}
 	return New(data, fake), fake, project, board
+}
+
+func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
+	repository := filepath.Join(t.TempDir(), "repository")
+	command := exec.Command("git", "init", "-b", "main", repository)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", output, err)
+	}
+	for _, args := range [][]string{{"config", "user.name", "Dieter Test"}, {"config", "user.email", "dieter@example.test"}} {
+		command = exec.Command("git", args...)
+		command.Dir = repository
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s: %v", args, output, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "README.md"}, {"commit", "-m", "base"}} {
+		command = exec.Command("git", args...)
+		command.Dir = repository
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s: %v", args, output, err)
+		}
+	}
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Workspace", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeRunner{}
+	service := New(data, runner)
+	card, err := service.CreateChat(context.Background(), CardInput{
+		Project: project.ID, Title: "Worktree turn", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		stored, resolveErr := data.ResolveCard(card.ID)
+		return resolveErr == nil && runner.count() == 1 && stored.Runtime == "idle" && !hasActiveTurn(service, project.ID)
+	})
+	request := runner.request(0)
+	value, err := data.Workspace(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.ProjectPath != value.Path || request.ProjectPath == repository {
+		t.Fatalf("turn path=%q workspace=%q repository=%q", request.ProjectPath, value.Path, repository)
+	}
+}
+
+func TestWorkspaceProvisioningFailureDoesNotConsumeInitialTurn(t *testing.T) {
+	service, _, project, _ := appSetup(t)
+	card, err := service.CreateChat(context.Background(), CardInput{
+		Project: project.ID, Title: "Invalid branch workspace", Prompt: "work",
+		WorkspaceMode: model.WorkspaceModeBranch, DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SendCard(context.Background(), card.ID, "", "", "", ""); err == nil {
+		t.Fatal("expected workspace provisioning failure")
+	}
+	stored, err := service.Store.ResolveCard(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := service.Store.Conversation(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.InitialPromptSentAt != "" || conversation.ActiveTurn != nil || len(conversation.Messages) != 0 {
+		t.Fatalf("failed provisioning consumed the initial turn: card=%#v conversation=%#v", stored, conversation)
+	}
 }
 
 func waitFor(t *testing.T, condition func() bool) {

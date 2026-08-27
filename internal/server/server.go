@@ -7,13 +7,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/dbpprt/dieter/internal/app"
 	"github.com/dbpprt/dieter/internal/attachments"
+	"github.com/dbpprt/dieter/internal/changeset"
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
+	"github.com/dbpprt/dieter/internal/gitops"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
@@ -21,6 +25,7 @@ import (
 	"github.com/dbpprt/dieter/internal/scheduler"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/terminal"
+	"github.com/dbpprt/dieter/internal/workspace"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -28,6 +33,9 @@ import (
 type Server struct {
 	store         *store.Store
 	app           *app.Service
+	workspaces    *workspace.Manager
+	changesets    *changeset.Service
+	gitOperations *gitops.Manager
 	schedules     *scheduler.Manager
 	log           *slog.Logger
 	mux           *http.ServeMux
@@ -64,11 +72,42 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 	manager.log = logger
 	service := app.New(data, runner)
 	s := &Server{
-		store: data, app: service, schedules: scheduler.New(data, service), log: logger,
+		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
 		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(),
 		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
 		machine:       machine.NewCollector(data.Root), machineAction: machine.ExecuteOperation,
 		machineDelay: 750 * time.Millisecond,
+	}
+	s.changesets = changeset.New(s.workspaces)
+	if err := data.InterruptRunningGitOperations(); err != nil {
+		logger.Warn("could not reconcile interrupted Git operations", "error", err)
+	}
+	s.gitOperations = gitops.New(data, s.workspaces, logger)
+	s.gitOperations.Changesets = s.changesets
+	s.gitOperations.Busy = func(cardID string) bool {
+		workspacePath := ""
+		if value, err := data.Workspace(cardID); err == nil {
+			workspacePath = value.Path
+			if resolved, resolveErr := filepath.EvalSymlinks(workspacePath); resolveErr == nil {
+				workspacePath = resolved
+			}
+		}
+		for _, session := range s.terminals.List("") {
+			insideWorkspace := false
+			if workspacePath != "" {
+				workingDirectory := session.WorkingDirectory
+				if resolved, resolveErr := filepath.EvalSymlinks(workingDirectory); resolveErr == nil {
+					workingDirectory = resolved
+				}
+				if relative, err := filepath.Rel(workspacePath, workingDirectory); err == nil {
+					insideWorkspace = relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+				}
+			}
+			if session.Status == terminal.StatusRunning && (session.CardID == cardID || insideWorkspace) {
+				return true
+			}
+		}
+		return false
 	}
 	manager.register(s.mux)
 	path, handler := dieterv1connect.NewDieterServiceHandler(&connectAPI{core: &grpcAPI{server: s}})

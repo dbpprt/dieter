@@ -35,12 +35,38 @@ func protoState(value model.State) *dieterv1.State {
 }
 
 func protoProject(value model.Project) *dieterv1.Project {
-	return &dieterv1.Project{
+	result := &dieterv1.Project{
 		Id: value.ID, Name: value.Name, Path: value.Path, Summary: value.Summary,
 		Prompt: value.Prompt, Archived: value.Archived, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, BoardCount: int32(value.BoardCount),
 		CardCount: int32(value.CardCount), ChatCount: int32(value.ChatCount), PromptTemplate: value.PromptTemplate,
+		DefaultWorkspaceMode: value.DefaultWorkspaceMode, BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch,
 	}
+	for _, command := range value.ValidationCommands {
+		result.ValidationCommands = append(result.ValidationCommands, protoValidationCommand(command))
+	}
+	return result
+}
+
+func protoValidationCommand(value model.ValidationCommand) *dieterv1.ValidationCommand {
+	return &dieterv1.ValidationCommand{
+		Name: value.Name, Executable: value.Executable, Arguments: append([]string(nil), value.Arguments...),
+		WorkingDirectory: value.WorkingDirectory, Environment: cloneProtoStringMap(value.Environment), TimeoutSeconds: int32(value.TimeoutSeconds),
+	}
+}
+
+func modelValidationCommands(values []*dieterv1.ValidationCommand) []model.ValidationCommand {
+	result := make([]model.ValidationCommand, 0, len(values))
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		result = append(result, model.ValidationCommand{
+			Name: value.GetName(), Executable: value.GetExecutable(), Arguments: append([]string(nil), value.GetArguments()...),
+			WorkingDirectory: value.GetWorkingDirectory(), Environment: cloneProtoStringMap(value.GetEnvironment()), TimeoutSeconds: int(value.GetTimeoutSeconds()),
+		})
+	}
+	return result
 }
 
 func protoBoard(value model.Board) *dieterv1.Board {
@@ -72,12 +98,121 @@ func protoCard(value model.Card) *dieterv1.Card {
 		Archived: value.Archived, DoneArchiveExempt: value.DoneArchiveExempt,
 		Pinned: value.Pinned, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		LabelIds: append([]string(nil), value.LabelIDs...), CommentCount: int32(value.CommentCount),
+		WorkspaceMode: value.WorkspaceMode, WorkspaceBranch: value.WorkspaceBranch, WorkspaceBaseBranch: value.WorkspaceBaseBranch,
+	}
+	if value.Workspace != nil {
+		result.Workspace = protoWorkspaceSummary(*value.Workspace)
+	}
+	if value.PullRequest != nil {
+		result.PullRequest = protoPullRequestSummary(*value.PullRequest)
 	}
 	if value.Origin != nil {
 		result.Origin = &dieterv1.CardOrigin{
 			Kind: value.Origin.Kind, ScheduleId: value.Origin.ScheduleID,
 			ScheduleRunId: value.Origin.ScheduleRunID, ScheduledFor: value.Origin.ScheduledFor,
 		}
+	}
+	return result
+}
+
+func protoWorkspaceSummary(value model.WorkspaceSummary) *dieterv1.WorkspaceSummary {
+	return &dieterv1.WorkspaceSummary{
+		Mode: value.Mode, State: value.State, Branch: value.Branch, BaseBranch: value.BaseBranch,
+		HeadSha: value.HeadSHA, BaseSha: value.BaseSHA, Revision: value.Revision,
+		ChangedFiles: int32(value.ChangedFiles), Additions: int32(value.Additions), Deletions: int32(value.Deletions),
+		Ahead: int32(value.Ahead), Behind: int32(value.Behind), CurrentOperationId: value.CurrentOperationID,
+	}
+}
+
+func protoPullRequestSummary(value model.PullRequestSummary) *dieterv1.PullRequestSummary {
+	return &dieterv1.PullRequestSummary{
+		Provider: value.Provider, Number: int32(value.Number), Url: value.URL, State: value.State,
+		Draft: value.Draft, Mergeable: value.Mergeable, ReviewDecision: value.ReviewDecision,
+		ChecksState: value.ChecksState, HeadSha: value.HeadSHA, BaseSha: value.BaseSHA, LastSyncedAt: value.UpdatedAt,
+	}
+}
+
+func protoWorkspace(value model.Workspace) *dieterv1.Workspace {
+	return &dieterv1.Workspace{
+		CardId: value.CardID, ProjectId: value.ProjectID, Mode: value.Mode, Path: value.Path,
+		BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch, BaseSha: value.BaseSHA,
+		CurrentBaseSha: value.CurrentBaseSHA, Branch: value.Branch, HeadSha: value.HeadSHA,
+		UpstreamRef: value.UpstreamRef, ManagedBranch: value.ManagedBranch, LegacyUnmanaged: value.LegacyUnmanaged,
+		State: value.State, Revision: value.Revision, CurrentOperationId: value.CurrentOperationID,
+		PreviousCardIds: append([]string(nil), value.PreviousCardIDs...), ChangedFiles: int32(value.ChangedFiles),
+		Additions: int32(value.Additions), Deletions: int32(value.Deletions), Ahead: int32(value.Ahead),
+		Behind: int32(value.Behind), SizeBytes: value.SizeBytes, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
+		IntegratedHeadSha: value.IntegratedHeadSHA, IntegratedResultSha: value.IntegratedResultSHA,
+		IntegrationStrategy: value.IntegrationStrategy, IntegratedAt: value.IntegratedAt,
+	}
+}
+
+func protoChangeset(value model.Changeset) *dieterv1.Changeset {
+	result := &dieterv1.Changeset{
+		CardId: value.CardID, Revision: value.Revision, ComparisonSha: value.MergeBaseSHA,
+		HeadSha: value.HeadSHA, BaseSha: value.CurrentBaseSHA, Additions: int32(value.Additions),
+		Deletions: int32(value.Deletions), Volatile: value.Volatile, GeneratedAt: value.CreatedAt,
+	}
+	for _, file := range value.Files {
+		result.Files = append(result.Files, &dieterv1.ChangedFile{
+			Path: file.Path, OldPath: file.PreviousPath, Status: file.Status, Additions: int32(file.Additions),
+			Deletions: int32(file.Deletions), Binary: file.Binary, Untracked: file.Status == "untracked", Conflicted: file.Conflicted,
+		})
+	}
+	for _, commit := range value.Commits {
+		result.Commits = append(result.Commits, &dieterv1.WorkspaceCommit{
+			Sha: commit.SHA, ShortSha: shortProtoSHA(commit.SHA), Subject: commit.Subject, AuthorName: commit.Author,
+			AuthoredAt: commit.AuthoredAt, Additions: int32(commit.Additions), Deletions: int32(commit.Deletions), ChangedFiles: int32(commit.Files),
+		})
+	}
+	return result
+}
+
+func shortProtoSHA(value string) string {
+	if len(value) > 12 {
+		return value[:12]
+	}
+	return value
+}
+
+func protoFileDiff(value model.FileDiff) *dieterv1.FileDiff {
+	return &dieterv1.FileDiff{
+		CardId: value.CardID, Path: value.Path, CommitSha: value.CommitSHA, Revision: value.Revision, Patch: value.Patch,
+		Binary: value.Binary, Truncated: value.Truncated, NextOffset: int64(value.NextOffset), TotalBytes: int64(value.TotalBytes),
+	}
+}
+
+func protoChangeComment(value model.ChangeComment) *dieterv1.ChangeComment {
+	return &dieterv1.ChangeComment{
+		Id: value.ID, CardId: value.CardID, Path: value.Path, Side: value.Side, Line: int32(value.Line),
+		Body: value.Body, Author: value.Author.Name, Revision: value.ChangesetRevision, CreatedAt: value.CreatedAt,
+	}
+}
+
+func protoSCMCapabilities(value model.SCMCapabilities) *dieterv1.SCMCapabilities {
+	return &dieterv1.SCMCapabilities{
+		Provider: value.Provider, Remote: value.Remote, Host: value.Host, Owner: value.Owner, Repository: value.Repository,
+		RemoteAvailable: value.RemoteAvailable, PushAvailable: value.PushAvailable,
+		ProviderApiAvailable: value.ProviderAPIAvailable, Authenticated: value.Authenticated, UnavailableReason: value.UnavailableReason,
+	}
+}
+
+func protoGitOperation(value model.GitOperation) *dieterv1.GitOperation {
+	result := &dieterv1.GitOperation{
+		Id: value.ID, CardId: value.CardID, ProjectId: value.ProjectID, Kind: value.Kind, Status: value.Status,
+		ExpectedRevision: value.ExpectedRevision, ExpectedBaseSha: value.ExpectedBaseSHA, ExpectedHeadSha: value.ExpectedHeadSHA,
+		Parameters: cloneProtoStringMap(value.Parameters), CompletedSteps: append([]string(nil), value.CompletedSteps...),
+		Result: value.Result, Error: value.Error, Sequence: value.Sequence, CreatedAt: value.CreatedAt,
+		StartedAt: value.StartedAt, FinishedAt: value.FinishedAt, UpdatedAt: value.UpdatedAt,
+	}
+	for _, conflict := range value.Conflicts {
+		result.Conflicts = append(result.Conflicts, &dieterv1.GitConflict{Path: conflict.Path, HunkCount: int32(conflict.HunkCount)})
+	}
+	for _, validation := range value.ValidationResults {
+		result.ValidationResults = append(result.ValidationResults, &dieterv1.ValidationResult{
+			Name: validation.Name, ExitCode: int32(validation.ExitCode), Output: validation.Output,
+			Truncated: validation.Truncated, DurationMs: validation.DurationMS,
+		})
 	}
 	return result
 }

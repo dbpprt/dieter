@@ -229,7 +229,11 @@ func (api *connectAPI) ListDirectories(_ context.Context, request *connect.Reque
 
 func (api *connectAPI) CreateProject(ctx context.Context, request *connect.Request[dieterv1.CreateProjectRequest]) (*connect.Response[dieterv1.CreateProjectResponse], error) {
 	input := request.Msg
-	project, err := api.core.server.app.RegisterProject(ctx, app.ProjectInput{Path: input.GetPath(), Name: input.GetName(), Summary: input.GetSummary(), Prompt: input.GetPrompt(), Create: input.GetMode() == "create"})
+	project, err := api.core.server.app.RegisterProject(ctx, app.ProjectInput{
+		Path: input.GetPath(), Name: input.GetName(), Summary: input.GetSummary(), Prompt: input.GetPrompt(), Create: input.GetMode() == "create",
+		DefaultWorkspaceMode: input.GetDefaultWorkspaceMode(), BaseRemote: input.GetBaseRemote(), BaseBranch: input.GetBaseBranch(),
+		ValidationCommands: modelValidationCommands(input.GetValidationCommands()),
+	})
 	if err != nil {
 		return nil, connectFailure(err)
 	}
@@ -246,6 +250,17 @@ func (api *connectAPI) CreateProject(ctx context.Context, request *connect.Reque
 
 func (api *connectAPI) UpdateProject(_ context.Context, request *connect.Request[dieterv1.UpdateProjectRequest]) (*connect.Response[dieterv1.Project], error) {
 	value, err := api.core.server.store.UpdateProject(request.Msg.GetProjectId(), request.Msg.Name, request.Msg.Summary, request.Msg.Prompt)
+	if err != nil {
+		return nil, connectFailure(err)
+	}
+	return connect.NewResponse(protoProject(value)), nil
+}
+
+func (api *connectAPI) UpdateProjectWorkspaceSettings(_ context.Context, request *connect.Request[dieterv1.UpdateProjectWorkspaceSettingsRequest]) (*connect.Response[dieterv1.Project], error) {
+	value, err := api.core.server.store.UpdateProjectWorkspaceSettings(
+		request.Msg.GetProjectId(), request.Msg.GetDefaultWorkspaceMode(), request.Msg.GetBaseRemote(), request.Msg.GetBaseBranch(),
+		modelValidationCommands(request.Msg.GetValidationCommands()),
+	)
 	if err != nil {
 		return nil, connectFailure(err)
 	}
@@ -422,10 +437,10 @@ func (api *connectAPI) ReadFile(ctx context.Context, request *connect.Request[di
 	return connectUnary(ctx, request, api.core.ReadFile)
 }
 
-func (api *connectAPI) SaveFile(_ context.Context, request *connect.Request[dieterv1.SaveFileRequest]) (*connect.Response[dieterv1.FileDocument], error) {
+func (api *connectAPI) SaveFile(ctx context.Context, request *connect.Request[dieterv1.SaveFileRequest]) (*connect.Response[dieterv1.FileDocument], error) {
 	api.core.server.filesMu.Lock()
 	defer api.core.server.filesMu.Unlock()
-	project, err := api.core.server.store.ResolveProject(request.Msg.GetProjectId())
+	project, err := api.core.server.scopedProject(ctx, request.Msg.GetProjectId(), request.Msg.GetCardId())
 	if err != nil {
 		return nil, connectFailure(err)
 	}
@@ -464,10 +479,10 @@ func (api *connectAPI) SaveFile(_ context.Context, request *connect.Request[diet
 	return connect.NewResponse(&dieterv1.FileDocument{Path: relative, Name: path.Base(relative), Size: int64(len(content)), ModifiedAt: info.ModTime().UTC().Format(projectTimeFormat), Revision: projectFileRevision(content), Content: request.Msg.GetContent()}), nil
 }
 
-func (api *connectAPI) CreateFile(_ context.Context, request *connect.Request[dieterv1.CreateFileRequest]) (*connect.Response[dieterv1.FileEntry], error) {
+func (api *connectAPI) CreateFile(ctx context.Context, request *connect.Request[dieterv1.CreateFileRequest]) (*connect.Response[dieterv1.FileEntry], error) {
 	api.core.server.filesMu.Lock()
 	defer api.core.server.filesMu.Unlock()
-	project, err := api.core.server.store.ResolveProject(request.Msg.GetProjectId())
+	project, err := api.core.server.scopedProject(ctx, request.Msg.GetProjectId(), request.Msg.GetCardId())
 	if err != nil {
 		return nil, connectFailure(err)
 	}
@@ -498,10 +513,10 @@ func (api *connectAPI) CreateFile(_ context.Context, request *connect.Request[di
 	return connect.NewResponse(&dieterv1.FileEntry{Name: path.Base(relative), Path: relative, Kind: kind, Size: int64(len(content))}), nil
 }
 
-func (api *connectAPI) MoveFile(_ context.Context, request *connect.Request[dieterv1.MoveFileRequest]) (*connect.Response[dieterv1.MoveFileResponse], error) {
+func (api *connectAPI) MoveFile(ctx context.Context, request *connect.Request[dieterv1.MoveFileRequest]) (*connect.Response[dieterv1.MoveFileResponse], error) {
 	api.core.server.filesMu.Lock()
 	defer api.core.server.filesMu.Unlock()
-	project, err := api.core.server.store.ResolveProject(request.Msg.GetProjectId())
+	project, err := api.core.server.scopedProject(ctx, request.Msg.GetProjectId(), request.Msg.GetCardId())
 	if err != nil {
 		return nil, connectFailure(err)
 	}
@@ -534,10 +549,10 @@ func (api *connectAPI) MoveFile(_ context.Context, request *connect.Request[diet
 	return connect.NewResponse(&dieterv1.MoveFileResponse{Source: sourceRelative, Destination: destinationRelative}), nil
 }
 
-func (api *connectAPI) DeleteFile(_ context.Context, request *connect.Request[dieterv1.DeleteFileRequest]) (*connect.Response[emptypb.Empty], error) {
+func (api *connectAPI) DeleteFile(ctx context.Context, request *connect.Request[dieterv1.DeleteFileRequest]) (*connect.Response[emptypb.Empty], error) {
 	api.core.server.filesMu.Lock()
 	defer api.core.server.filesMu.Unlock()
-	project, err := api.core.server.store.ResolveProject(request.Msg.GetProjectId())
+	project, err := api.core.server.scopedProject(ctx, request.Msg.GetProjectId(), request.Msg.GetCardId())
 	if err != nil {
 		return nil, connectFailure(err)
 	}

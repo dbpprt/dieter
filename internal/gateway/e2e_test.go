@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -103,10 +104,22 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		Logger: logger, DetachGrace: 100 * time.Millisecond, MonitorInterval: 10 * time.Millisecond,
 	})
 	repositoryPath := filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(filepath.Join(repositoryPath, ".git"), 0o755); err != nil {
+	for _, args := range [][]string{{"init", "-b", "main", repositoryPath}, {"-C", repositoryPath, "config", "user.name", "Dieter Test"}, {"-C", repositoryPath, "config", "user.email", "dieter@example.test"}} {
+		if output, commandErr := exec.Command("git", args...).CombinedOutput(); commandErr != nil {
+			t.Fatalf("git %v: %s: %v", args, output, commandErr)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repositoryPath, "README.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	project, err := boardStore.CreateProject(store.CreateProjectInput{Name: "Relay", Path: repositoryPath})
+	for _, args := range [][]string{{"-C", repositoryPath, "add", "README.md"}, {"-C", repositoryPath, "commit", "-m", "base"}} {
+		if output, commandErr := exec.Command("git", args...).CombinedOutput(); commandErr != nil {
+			t.Fatalf("git %v: %s: %v", args, output, commandErr)
+		}
+	}
+	project, err := boardStore.CreateProject(store.CreateProjectInput{
+		Name: "Relay", Path: repositoryPath, DefaultWorkspaceMode: "worktree", BaseBranch: "main",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,6 +230,48 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil || repeated.GetId() != created.GetId() {
 		t.Fatalf("relayed idempotent command first=%q repeated=%#v err=%v", created.GetId(), repeated, err)
 	}
+	conversationWorkspace, err := dieterClient.GetWorkspace(routed, &dieterv1.ConversationRef{CardId: created.GetId()})
+	if err != nil || conversationWorkspace.GetMode() != "worktree" || conversationWorkspace.GetPath() == repositoryPath || conversationWorkspace.GetRevision() == "" {
+		t.Fatalf("relayed workspace=%#v err=%v", conversationWorkspace, err)
+	}
+	document, err := dieterClient.ReadFile(routed, &dieterv1.ReadFileRequest{CardId: created.GetId(), Path: "README.md"})
+	if err != nil {
+		t.Fatalf("read relayed workspace file: %v", err)
+	}
+	if _, err := dieterClient.SaveFile(routed, &dieterv1.SaveFileRequest{
+		CardId: created.GetId(), Path: "README.md", Revision: document.GetRevision(), Content: "relayed workspace\n",
+	}); err != nil {
+		t.Fatalf("save relayed workspace file: %v", err)
+	}
+	changes, err := dieterClient.GetChangeset(routed, &dieterv1.GetChangesetRequest{CardId: created.GetId()})
+	if err != nil || len(changes.GetFiles()) != 1 {
+		t.Fatalf("relayed changeset=%#v err=%v", changes, err)
+	}
+	gitOperation, err := dieterClient.StartGitOperation(routed, &dieterv1.StartGitOperationRequest{
+		CardId: created.GetId(), Kind: "commit", ExpectedRevision: changes.GetRevision(),
+		Parameters: map[string]string{"subject": "relayed workspace", "validate": "false"},
+	})
+	if err != nil {
+		t.Fatalf("start relayed Git operation: %v", err)
+	}
+	gitWatch, err := dieterClient.WatchGitOperation(routed, &dieterv1.WatchGitOperationRequest{OperationId: gitOperation.GetId(), HeartbeatMs: 1_000})
+	if err != nil {
+		t.Fatalf("watch relayed Git operation: %v", err)
+	}
+	gitStatus := ""
+	for {
+		frame, receiveErr := gitWatch.Recv()
+		if receiveErr == io.EOF {
+			break
+		}
+		if receiveErr != nil {
+			t.Fatalf("receive relayed Git operation: %v", receiveErr)
+		}
+		gitStatus = frame.GetOperation().GetStatus()
+	}
+	if gitStatus != "succeeded" {
+		t.Fatalf("relayed Git operation ended as %q", gitStatus)
+	}
 	for {
 		frame, receiveErr := syncStream.Recv()
 		if receiveErr != nil {
@@ -231,6 +286,19 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		}
 		if found {
 			break
+		}
+	}
+	currentCursor, _, err := boardStore.SyncEvents(0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for syncSequence < currentCursor.Sequence {
+		frame, receiveErr := syncStream.Recv()
+		if receiveErr != nil {
+			t.Fatalf("drain relayed workspace events: %v", receiveErr)
+		}
+		if frame.GetCursor().GetSequence() > syncSequence {
+			syncSequence = frame.GetCursor().GetSequence()
 		}
 	}
 	if err := boardStore.SaveCommandResult("gateway-e2e-client", "projection-neutral", store.CommandResult{Kind: "test"}); err != nil {

@@ -31,6 +31,32 @@ func (s *Store) AcquireRuntimeLease(projectID, cardID string) (RuntimeLease, err
 	return s.AcquireRuntimeLeaseFor(projectID, "", cardID, "")
 }
 
+func (s *Store) CardHasRuntimeLease(cardID string) (bool, error) {
+	leases, err := activeRuntimeLeases(filepath.Join(s.runtimeDir(), "leases"))
+	if err != nil {
+		return false, err
+	}
+	for _, lease := range leases {
+		if lease.CardID == cardID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *Store) ProjectHasRuntimeLease(projectID, exceptCardID string) (bool, error) {
+	leases, err := activeRuntimeLeases(filepath.Join(s.runtimeDir(), "leases"))
+	if err != nil {
+		return false, err
+	}
+	for _, lease := range leases {
+		if lease.ProjectID == projectID && lease.CardID != exceptCardID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string) (RuntimeLease, error) {
 	release, err := s.beginWrite()
 	if err != nil {
