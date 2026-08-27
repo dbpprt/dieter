@@ -80,7 +80,6 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case chats = "All chats"
     case terminals = "Terminals"
 	case screens = "Screens"
-	case machines = "Machines"
     case files = "Files"
     case schedules = "Schedules"
     case archive = "Archive"
@@ -93,7 +92,6 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
         case .chats: "bubble.left.and.bubble.right"
         case .terminals: "terminal"
 		case .screens: "rectangle.inset.filled.and.person.filled"
-		case .machines: "desktopcomputer"
         case .files: "doc.on.doc"
         case .schedules: "calendar.badge.clock"
         case .archive: "archivebox"
@@ -486,8 +484,8 @@ struct OptimisticWorkspaceProjection {
 final class DieterStore {
     var section: AppSection = .board {
         didSet {
-            if oldValue == .machines && section != .machines {
-                stopMachineTelemetry()
+            if oldValue != section, selectedMachineID != nil {
+                dismissMachinePopover()
             }
         }
     }
@@ -1669,13 +1667,20 @@ final class DieterStore {
 	}
 
     func openMachine(_ machine: DieterEndpoint) async {
-        stopTerminalWatch()
-        closeConversation()
+        if selectedMachineID == machine.id {
+            dismissMachinePopover()
+            return
+        }
         selectedMachineID = machine.id
         machineInformationError = nil
-        section = .machines
         await refreshMachineInformation(machineID: machine.id)
         startMachineTelemetry(machineID: machine.id)
+    }
+
+    func dismissMachinePopover() {
+        stopMachineTelemetry()
+        selectedMachineID = nil
+        machineInformationError = nil
     }
 
     func refreshSelectedMachineInformation() async {
@@ -1688,7 +1693,7 @@ final class DieterStore {
         machineTelemetryTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await DieterTaskSleep.seconds(2)
-                guard let self, !Task.isCancelled, self.section == .machines, self.selectedMachineID == machineID else { return }
+                guard let self, !Task.isCancelled, self.selectedMachineID == machineID else { return }
                 await self.refreshMachineInformation(machineID: machineID)
             }
         }

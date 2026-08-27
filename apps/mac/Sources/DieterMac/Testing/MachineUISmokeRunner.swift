@@ -19,9 +19,10 @@ enum MachineUISmokeRunner {
             return
         }
 
+        let sectionBeforeOpening = store.section
         await store.openMachine(machine)
         guard await waitUntil(timeout: 15, condition: {
-            store.section == .machines && store.machineInformation[machine.id] != nil
+            store.selectedMachineID == machine.id && store.machineInformation[machine.id] != nil
         }), let information = store.machineInformation[machine.id] else {
             writeReport([
                 "connection": "passed",
@@ -42,6 +43,8 @@ enum MachineUISmokeRunner {
 
         var results: [String: String] = [
             "connection": "passed",
+            "presentation": store.section == sectionBeforeOpening && store.selectedMachineID == machine.id
+                ? "passed" : "failed: machine information replaced the current page",
             "machine-rpc": information.hostname.isEmpty || information.osName.isEmpty
                 ? "failed: host identity was incomplete" : "passed",
             "telemetry": information.logicalCpuCount == 0 || information.cpuCoreUsagePercent.isEmpty
@@ -55,7 +58,7 @@ enum MachineUISmokeRunner {
                 ? "failed: no authenticated route measurement" : "passed",
         ]
         results["render"] = capture(window: window, to: output.appendingPathComponent("machine-information.png"))
-            ? "passed" : "failed: could not capture machine dashboard"
+            ? "passed" : "failed: could not capture machine popup"
         writeReport(results, to: output)
     }
 

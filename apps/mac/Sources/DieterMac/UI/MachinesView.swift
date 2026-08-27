@@ -45,7 +45,7 @@ private enum MachinePowerAction: String, Identifiable {
     }
 }
 
-struct MachinesView: View {
+struct MachinePopover: View {
     @Environment(DieterStore.self) private var store
     @State private var pendingPowerAction: MachinePowerAction?
 
@@ -59,23 +59,27 @@ struct MachinesView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider().overlay(DieterTheme.border)
-            Group {
-                if let machine {
-                    machineBody(machine)
-                } else {
-                    ContentUnavailableView(
-                        "No machines enrolled",
-                        systemImage: "desktopcomputer",
-                        description: Text("Enroll a Dieter daemon to see machine information here.")
-                    )
-                }
+        Group {
+            if let machine {
+                machineBody(machine)
+            } else {
+                ContentUnavailableView(
+                    "Machine unavailable",
+                    systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+                    description: Text("This machine is no longer enrolled.")
+                )
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(DieterTheme.background)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(DieterTheme.border, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.34), radius: 28, y: 14)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityIdentifier("machine.popover")
+        .onExitCommand { store.dismissMachinePopover() }
         .confirmationDialog(
             pendingPowerAction?.title ?? "Machine operation",
             isPresented: Binding(
@@ -107,43 +111,6 @@ struct MachinesView: View {
         } message: {
             Text(store.machineOperationMessage ?? "")
         }
-    }
-
-    private var header: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Machines").font(DieterFont.paneTitle)
-                Text("Live host telemetry and controls")
-                    .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
-            }
-            Spacer()
-            Button {
-                Task { await store.refreshSelectedMachineInformation() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(machine?.online != true || store.machineInformationLoading)
-            .help("Refresh machine information")
-            .accessibilityIdentifier("machine.refresh")
-
-            Menu {
-                Button("Restart…", systemImage: "arrow.clockwise.circle") { pendingPowerAction = .restart }
-                    .disabled(information?.supportsRestart != true || machine?.online != true)
-                    .accessibilityIdentifier("machine.restart")
-                Button("Shut Down…", systemImage: "power") { pendingPowerAction = .shutdown }
-                    .disabled(information?.supportsShutdown != true || machine?.online != true)
-                    .accessibilityIdentifier("machine.shutdown")
-            } label: {
-                Image(systemName: "ellipsis.circle")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help("Machine operations")
-        }
-        .padding(.horizontal, 18)
-        .frame(height: 54)
     }
 
     private func machineBody(_ machine: DieterEndpoint) -> some View {
@@ -206,6 +173,38 @@ struct MachinesView: View {
                     .lineLimit(2)
             }
             Spacer()
+            Button {
+                Task { await store.refreshSelectedMachineInformation() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.plain)
+            .disabled(!machine.online || store.machineInformationLoading)
+            .help("Refresh machine information")
+            .accessibilityIdentifier("machine.refresh")
+
+            Menu {
+                Button("Restart…", systemImage: "arrow.clockwise.circle") { pendingPowerAction = .restart }
+                    .disabled(information?.supportsRestart != true || !machine.online)
+                    .accessibilityIdentifier("machine.restart")
+                Button("Shut Down…", systemImage: "power") { pendingPowerAction = .shutdown }
+                    .disabled(information?.supportsShutdown != true || !machine.online)
+                    .accessibilityIdentifier("machine.shutdown")
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Machine operations")
+
+            Button {
+                store.dismissMachinePopover()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .help("Close machine information")
+            .accessibilityIdentifier("machine.close")
         }
     }
 

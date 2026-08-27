@@ -31,7 +31,7 @@ struct DieterRootView: View {
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
         case .board, .chats, .files, .schedules, .archive: true
-        case .terminals, .screens, .machines, .settings: false
+        case .terminals, .screens, .settings: false
         }
     }
 
@@ -66,7 +66,6 @@ struct DieterRootView: View {
                     case .chats: ChatsView()
                     case .terminals: TerminalsView()
 					case .screens: ScreensView()
-                    case .machines: MachinesView()
                     case .files: FilesView()
                     case .schedules: SchedulesView()
                     case .archive: ArchiveView()
@@ -85,6 +84,31 @@ struct DieterRootView: View {
         .background(DieterTheme.background)
         .background(WindowTitleBarDoubleClickHandler())
         .foregroundStyle(DieterTheme.text)
+        .overlay {
+            if store.selectedMachineID != nil {
+                GeometryReader { geometry in
+                    let sidebarWidth = navigationCollapsed
+                        ? DieterMetrics.sidebarCollapsedWidth
+                        : DieterMetrics.sidebarExpandedWidth
+                    let popupWidth = min(820, max(560, geometry.size.width - sidebarWidth - 32))
+                    let processCount = store.selectedMachineID
+                        .flatMap { store.machineInformation[$0]?.processes.count } ?? 1
+                    let desiredPopupHeight = 420 + CGFloat(min(max(processCount, 1), 4) * 54)
+                    let popupHeight = min(max(460, desiredPopupHeight), geometry.size.height - 32)
+                    let popupTop = max(16, geometry.size.height - popupHeight - 28)
+
+                    ZStack(alignment: .topLeading) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { store.dismissMachinePopover() }
+                            .accessibilityHidden(true)
+                        MachinePopover()
+                            .frame(width: popupWidth, height: popupHeight)
+                            .offset(x: sidebarWidth + 14, y: popupTop)
+                    }
+                }
+            }
+        }
         .overlay {
             if !store.phase.isConnected && (!store.hasLoadedWorkspace || store.phase.needsConnectionOverlay) { ConnectionOverlay() }
         }
@@ -426,7 +450,7 @@ struct AppSidebar: View {
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
                                 .frame(width: 28, height: 28)
                                 .background(
-                                    store.section == .machines && store.selectedMachineID == machine.id
+                                    store.selectedMachineID == machine.id
                                         ? DieterTheme.selection : DieterTheme.surface.opacity(0.7),
                                     in: RoundedRectangle(cornerRadius: 8)
                                 )
@@ -473,7 +497,7 @@ struct AppSidebar: View {
                                 }
                                 .padding(.horizontal, 8).frame(height: 32)
                                 .background(
-                                    store.section == .machines && store.selectedMachineID == machine.id
+                                    store.selectedMachineID == machine.id
                                         ? DieterTheme.selection : Color.clear,
                                     in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 )

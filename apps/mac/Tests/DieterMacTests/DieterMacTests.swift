@@ -1082,6 +1082,10 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     ])
 }
 
+@Test func machineInformationUsesAPopupInsteadOfANavigationDestination() {
+    #expect(!AppSection.allCases.map(\.rawValue).contains("Machines"))
+}
+
 @Test func reasoningTracePreferenceDefaultsOffAndPersistsBothStates() throws {
     let suite = "dieter-reasoning-trace-tests-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
