@@ -231,7 +231,7 @@ struct DieterIslandView: View {
                     .foregroundStyle(.white.opacity(0.58))
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, presentation.hasPhysicalNotch ? 17 : 26)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
         .accessibilityLabel(collapsedAccessibilityLabel)
@@ -269,7 +269,10 @@ struct DieterIslandView: View {
                 .accessibilityLabel("Collapse Dieter Island")
             }
             .font(.system(size: 10.5, weight: .medium))
-            .padding(.horizontal, 18)
+            // The expanded shape's vertical sides begin 15 points in from the
+            // window frame. Keep another 15 points between that visible edge
+            // and the content instead of measuring padding from the clear area.
+            .padding(.horizontal, 30)
             .frame(height: 45)
 
             Rectangle().fill(.white.opacity(0.08)).frame(height: 1)
@@ -286,6 +289,7 @@ struct DieterIslandView: View {
                         .font(.system(size: 10.5))
                         .foregroundStyle(.white.opacity(0.42))
                 }
+                .padding(.horizontal, 30)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 1) {
@@ -295,7 +299,9 @@ struct DieterIslandView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 10)
+                // Rows add their own 9-point inset, aligning their icons and
+                // trailing chevrons with the header and footer at 30 points.
+                .padding(.horizontal, 21)
                 .padding(.vertical, 8)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
@@ -328,7 +334,7 @@ struct DieterIslandView: View {
                         .foregroundStyle(DieterTheme.primary)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 30)
             .frame(height: 51)
         }
     }
