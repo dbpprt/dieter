@@ -3445,53 +3445,51 @@ final class DieterStore {
         return try await client.listDirectories(request)
     }
 
-    func createProject(path: String, name: String, summary: String, prompt: String, boardName: String, workflow: String, machineID: String? = nil) async {
+    func createProject(_ draft: ProjectSetupDraft, machineID: String? = nil) async throws -> Dieter_V1_CreateProjectResponse {
         let target: DieterEndpoint
         if let machineID {
             guard let selected = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil) else {
-                show(NSError(domain: "DieterMachine", code: 1, userInfo: [NSLocalizedDescriptionKey: "The project host is no longer enrolled."]))
-                return
+                throw NSError(domain: "DieterMachine", code: 1, userInfo: [NSLocalizedDescriptionKey: "The project host is no longer enrolled."])
             }
             target = selected
         } else {
             target = endpoint
         }
         guard target.online else {
-            show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."]))
-            return
+            throw NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
         }
-        var request = Dieter_V1_CreateProjectRequest()
-        request.mode = "open"; request.path = path; request.name = name; request.summary = summary
-        request.prompt = prompt; request.boardName = boardName; request.workflow = workflow
-        do {
-            let response: Dieter_V1_CreateProjectResponse
-            if target.id == endpoint.id, let rpc {
-                response = try await rpc.createProject(request)
-            } else {
-                guard let daemonID = target.daemonID else {
-                    throw NSError(domain: "DieterMachine", code: 3, userInfo: [NSLocalizedDescriptionKey: "The project host has no daemon identity."])
-                }
-                let client = try DieterRPC(
-                    endpoint: target,
-                    accessToken: await accessToken(for: target),
-                    route: .relay(daemonID: daemonID)
-                )
-                let connection = Task { try? await client.run() }
-                do {
-                    response = try await client.createProject(request)
-                    connection.cancel()
-                    client.shutdown()
-                } catch {
-                    connection.cancel()
-                    client.shutdown()
-                    throw error
-                }
+        let request = draft.request()
+        let response: Dieter_V1_CreateProjectResponse
+        if target.id == endpoint.id, let rpc {
+            response = try await rpc.createProject(request)
+        } else {
+            guard let daemonID = target.daemonID else {
+                throw NSError(domain: "DieterMachine", code: 3, userInfo: [NSLocalizedDescriptionKey: "The project host has no daemon identity."])
             }
-            createProjectPresented = false
-            if target.id != endpoint.id { await connect(to: target) }
-            selectedProjectID = response.project.id; selectedBoardID = response.board.id; section = .board
-            await refreshState(); await refreshNavigation(); await refreshMachineDirectory()
-        } catch { show(error) }
+            let client = try DieterRPC(
+                endpoint: target,
+                accessToken: await accessToken(for: target),
+                route: .relay(daemonID: daemonID)
+            )
+            let connection = Task { try? await client.run() }
+            defer {
+                connection.cancel()
+                client.shutdown()
+            }
+            response = try await client.createProject(request)
+        }
+
+        projectDirectory[response.project.id] = response.project
+        projectEndpointIDs[response.project.id] = target.id
+        navigationBoards[response.project.id] = [response.board]
+        if target.id != endpoint.id { await connect(to: target) }
+        selectedProjectID = response.project.id
+        selectedBoardID = response.board.id
+        section = .board
+        await refreshState()
+        await refreshNavigation()
+        await refreshMachineDirectory()
+        return response
     }
 
     func setProjectArchived(id: String, archived: Bool) async {

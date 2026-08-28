@@ -397,6 +397,20 @@ func TestBoardNamingConnectEndToEnd(t *testing.T) {
 	}
 }
 
+func TestConnectRejectsUnknownProjectMode(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	data := store.New(t.TempDir())
+	client, _ := newConnectTestClient(t, data, &fakeRunner{})
+
+	_, err := client.CreateProject(ctx, connect.NewRequest(&dieterv1.CreateProjectRequest{
+		Mode: "clone", Path: testRepository(t), BoardName: "Main", Workflow: model.WorkflowReview,
+	}))
+	if err == nil || !strings.Contains(err.Error(), "project mode must be open or create") {
+		t.Fatalf("unknown project mode error=%v", err)
+	}
+}
+
 func TestConnectCancellationInterruptsActiveTurn(t *testing.T) {
 	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

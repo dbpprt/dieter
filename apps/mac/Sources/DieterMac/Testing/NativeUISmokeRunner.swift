@@ -417,7 +417,7 @@ enum NativeUISmokeRunner {
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
             await captureAppearances(sheet, named: "14-new-project.png", in: output)
             results["14-new-project"] = "passed"
-            click(window: sheet, x: 605, distanceFromTop: 239)
+            click(window: sheet, x: 605, distanceFromTop: 281)
             try? await DieterTaskSleep.seconds(1.5)
             if let browser = NSApp.windows.first(where: {
                 $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
@@ -432,6 +432,42 @@ enum NativeUISmokeRunner {
         }
         store.createProjectPresented = false
         try? await DieterTaskSleep.milliseconds(350)
+
+        let projectParent = URL(fileURLWithPath: project.path).deletingLastPathComponent()
+        let projectMachineID = store.machine(forProjectID: project.id)?.id ?? store.endpoint.id
+        var newProjectDraft = ProjectSetupDraft()
+        newProjectDraft.mode = .newRepository
+        newProjectDraft.path = projectParent.appendingPathComponent("mac-created-\(UUID().uuidString.lowercased())").path
+        newProjectDraft.name = "Mac-created Git project"
+        newProjectDraft.boardName = "Main"
+        newProjectDraft.workflow = "review"
+        do {
+            let created = try await store.createProject(newProjectDraft, machineID: projectMachineID)
+            let listing = try await store.listProjectDirectories(path: created.project.path, machineID: projectMachineID)
+            results["15b-create-git-project"] = listing.gitRepository && created.board.projectID == created.project.id
+                ? "passed"
+                : "failed: created path was not a Git working tree or board ownership was wrong"
+        } catch {
+            results["15b-create-git-project"] = "failed: \(DieterRPCFailure.message(for: error))"
+        }
+
+        var linkedWorktreeDraft = ProjectSetupDraft()
+        linkedWorktreeDraft.mode = .existing
+        linkedWorktreeDraft.path = projectParent.appendingPathComponent("linked-worktree").path
+        linkedWorktreeDraft.name = "Linked worktree"
+        linkedWorktreeDraft.boardName = "Main"
+        linkedWorktreeDraft.workflow = "review"
+        do {
+            let created = try await store.createProject(linkedWorktreeDraft, machineID: projectMachineID)
+            let listing = try await store.listProjectDirectories(path: created.project.path, machineID: projectMachineID)
+            results["15c-open-linked-worktree"] = listing.gitRepository && created.project.path != project.path
+                ? "passed"
+                : "failed: linked worktree was not registered as a distinct Git project"
+        } catch {
+            results["15c-open-linked-worktree"] = "failed: \(DieterRPCFailure.message(for: error))"
+        }
+
+        await store.openBoard(board.id, projectID: project.id)
 
         store.section = .board
         try? await DieterTaskSleep.milliseconds(700)

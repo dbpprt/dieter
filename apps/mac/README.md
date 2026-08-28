@@ -85,6 +85,12 @@ boards, Files, and Schedules live beneath each project. Creating a chat calls
 `CreateChat` with an empty board ID; it never creates or appears as a board
 card.
 
+Project setup is routed to the selected daemon host. The native form can open
+an existing Git working tree, including a linked worktree whose `.git` is a
+file, or create a directory and initialize a new Git repository there. Its
+directory browser reads the daemon's filesystem through `ListDirectories`; it
+never substitutes a local macOS file panel for a remote project path.
+
 Terminals are listed across every enrolled machine and owned by the daemon for
 their project, not by a Mac window or RPC. Closing or disconnecting the app cancels only its output
 observer; the PTY and commands keep running until the shell exits, the user
@@ -119,11 +125,13 @@ apps/mac/scripts/island-ui-smoke.sh
 apps/mac/scripts/accessibility-smoke.sh
 ```
 
-The UI smoke test starts `dieter serve` when needed, packages and opens the app,
+The UI smoke test starts an isolated gateway and enrolled daemon, packages and opens the app,
 then delivers native mouse events to its own window to click a board, global
 Chats, a standalone conversation, project Files, and project Schedules. The app captures its own SwiftUI content after each click
 under `apps/mac/.build/ui-smoke`, so the flow does not need Accessibility or
-Screen Recording permission.
+Screen Recording permission. It also creates a new Git repository through the
+Mac client and registers a linked worktree fixture through the same routed RPC
+path.
 
 `machine-ui-smoke.sh` is the focused authenticated machine path. It packages
 the Mac app, routes it through an isolated local gateway, opens the live machine

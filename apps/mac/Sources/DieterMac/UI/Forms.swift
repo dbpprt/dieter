@@ -515,13 +515,11 @@ struct NewProjectSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var machineID = ""
-    @State private var path = ""
-    @State private var name = ""
-    @State private var summary = ""
-    @State private var prompt = ""
-    @State private var boardName = "Main"
-    @State private var workflow = BoardWorkflow.review.rawValue
+    @State private var draft = ProjectSetupDraft()
     @State private var browserPresented = false
+    @State private var submitting = false
+    @State private var errorMessage = ""
+    @State private var suggestedName = ""
 
     private var availableMachines: [DieterEndpoint] {
         store.machines.isEmpty ? [store.endpoint] : store.machines
@@ -542,12 +540,21 @@ struct NewProjectSheet: View {
                 }
                 Spacer()
                 Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 12, weight: .bold)) }
-                    .buttonStyle(DieterIconButtonStyle()).help("Close")
+                    .buttonStyle(DieterIconButtonStyle()).help("Close").disabled(submitting)
             }
             .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 15)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
+                    Picker("Project type", selection: $draft.mode) {
+                        ForEach(ProjectSetupMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityIdentifier("new-project.mode")
+
                     projectLabel("Project host")
                     Menu {
                         ForEach(availableMachines) { machine in
@@ -577,44 +584,50 @@ struct NewProjectSheet: View {
                     Text("The repository path and every agent process belong to this host. This placement choice does not filter the combined workspace.")
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
 
-                    projectLabel("Git working tree")
+                    projectLabel(draft.mode.pathLabel)
                     HStack {
-                        projectTextField("/path/on/\(selectedMachine?.name ?? "machine")/repository", text: $path)
+                        projectTextField("/path/on/\(selectedMachine?.name ?? "machine")/repository", text: $draft.path)
+                            .accessibilityIdentifier("new-project.path")
                         Button { browserPresented = true } label: {
                             Label("Browse…", systemImage: "folder")
                         }
                         .buttonStyle(DieterSecondaryButtonStyle())
                         .accessibilityIdentifier("new-project.browse")
-                        .disabled(machineID.isEmpty || selectedMachine?.online != true)
+                        .disabled(submitting || machineID.isEmpty || selectedMachine?.online != true)
                     }
-                    Text("The path is resolved and validated by the project host; no local macOS file panel is used.")
+                    Text(pathHelp)
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
 
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 7) {
                             projectLabel("Project name")
-                            projectTextField("Directory name by default", text: $name)
+                            projectTextField("Directory name by default", text: $draft.name)
+                                .accessibilityIdentifier("new-project.name")
+                            Text("Optional; the directory name is used by default.")
+                                .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                         }
                         VStack(alignment: .leading, spacing: 7) {
                             projectLabel("Summary")
-                            projectTextField("What is this repository?", text: $summary)
+                            projectTextField("What is this repository?", text: $draft.summary)
+                                .accessibilityIdentifier("new-project.summary")
                         }
                     }
 
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 7) {
                             projectLabel("First board")
-                            projectTextField("Main", text: $boardName)
+                            projectTextField("Main", text: $draft.boardName)
+                                .accessibilityIdentifier("new-project.board-name")
                         }
                         VStack(alignment: .leading, spacing: 7) {
                             projectLabel("Workflow")
                             Menu {
                                 ForEach(BoardWorkflow.allCases) { option in
-                                    Button(option.title) { workflow = option.rawValue }
+                                    Button(option.title) { draft.workflow = option.rawValue }
                                 }
                             } label: {
                                 HStack {
-                                    Text(BoardWorkflow(rawValue: workflow)?.title ?? "With review")
+                                    Text(BoardWorkflow(rawValue: draft.workflow)?.title ?? "With review")
                                     Spacer()
                                     Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
                                 }
@@ -624,65 +637,117 @@ struct NewProjectSheet: View {
                                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
                             }
                             .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                            .accessibilityIdentifier("new-project.workflow")
                         }
                     }
-                    Text(BoardWorkflow(rawValue: workflow)?.laneDescription ?? "")
+                    Text(BoardWorkflow(rawValue: draft.workflow)?.laneDescription ?? "")
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
 
                     projectLabel("Project instructions")
-                    TextField("How should agents work in this project?", text: $prompt, axis: .vertical)
+                    TextField("How should agents work in this project?", text: $draft.prompt, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13)).lineSpacing(3).lineLimit(1...5)
                         .padding(.horizontal, 12).padding(.vertical, 13)
                         .frame(height: 105)
                         .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
                         .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
+                        .accessibilityIdentifier("new-project.instructions")
                     Text("Stored centrally and included in every new card conversation for this project.")
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+
+                    if !errorMessage.isEmpty {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                            Text(errorMessage).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.caption).foregroundStyle(DieterTheme.coral)
+                        .padding(11)
+                        .background(DieterTheme.coral.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                        .accessibilityIdentifier("new-project.error")
+                    }
                 }
                 .padding(.horizontal, 24).padding(.bottom, 18)
+                .disabled(submitting)
             }
 
             Divider().overlay(DieterTheme.border)
             HStack(spacing: 10) {
                 Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
-                Button {
-                    Task {
-                        await store.createProject(
-                            path: path,
-                            name: name,
-                            summary: summary,
-                            prompt: prompt,
-                            boardName: boardName,
-                            workflow: workflow,
-                            machineID: machineID
-                        )
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .disabled(submitting)
+                Button { submit() } label: {
+                    if submitting {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small)
+                            Text(draft.mode == .existing ? "Adding…" : "Creating…")
+                        }
+                    } else {
+                        Label(draft.mode.submitTitle, systemImage: "plus")
                     }
-                } label: {
-                    Label("Add to \(selectedMachine?.name ?? "machine")", systemImage: "plus")
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
-                .disabled(path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || boardName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedMachine?.online != true)
+                .disabled(submitting || !draft.canSubmit || selectedMachine?.online != true)
+                .accessibilityIdentifier("new-project.submit")
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
-        .frame(width: 680, height: 720)
+        .frame(width: 680, height: 750)
         .background(DieterTheme.background)
         .task {
             if machineID.isEmpty {
                 machineID = availableMachines.first(where: { $0.id == store.endpoint.id })?.id ?? availableMachines.first(where: \.online)?.id ?? ""
             }
         }
-        .onChange(of: machineID) { _, _ in path = "" }
-        .onChange(of: path) { oldValue, newValue in
-            if name.isEmpty || name == URL(fileURLWithPath: oldValue).lastPathComponent {
-                name = URL(fileURLWithPath: newValue).lastPathComponent
-            }
+        .onChange(of: machineID) { _, _ in
+            draft.path = ""
+            suggestedName = ""
+            errorMessage = ""
+        }
+        .onChange(of: draft.mode) { _, _ in
+            draft.path = ""
+            suggestedName = ""
+            errorMessage = ""
+        }
+        .onChange(of: draft.path) { _, newValue in
+            let update = RemoteProjectPath.updatingSuggestedName(
+                currentName: draft.name,
+                previousSuggestion: suggestedName,
+                path: newValue
+            )
+            draft.name = update.name
+            suggestedName = update.suggestion
+            errorMessage = ""
         }
         .sheet(isPresented: $browserPresented) {
-            RemoteDirectoryBrowserSheet(machineID: machineID, selection: $path)
+            RemoteDirectoryBrowserSheet(machineID: machineID, mode: draft.mode, selection: $draft.path)
                 .environment(store)
+        }
+    }
+
+    private var pathHelp: String {
+        switch draft.mode {
+        case .existing:
+            "Choose a repository root or linked Git worktree on the selected host. The host validates the .git directory or file."
+        case .newRepository:
+            "Enter a new directory path or browse for its parent. The selected host creates the folder and runs git init."
+        }
+    }
+
+    private func submit() {
+        guard !submitting, draft.canSubmit else { return }
+        submitting = true
+        errorMessage = ""
+        Task {
+            do {
+                _ = try await store.createProject(draft, machineID: machineID)
+                submitting = false
+                dismiss()
+            } catch {
+                submitting = false
+                errorMessage = DieterRPCFailure.message(for: error)
+            }
         }
     }
 
@@ -703,16 +768,34 @@ private struct RemoteDirectoryBrowserSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let machineID: String
+    let mode: ProjectSetupMode
     @Binding var selection: String
     @State private var listing: Dieter_V1_DirectoryListing?
     @State private var pathField = ""
     @State private var loading = false
     @State private var showHidden = false
     @State private var errorMessage = ""
+    @State private var newFolderName = ""
+    @State private var activeLoadID = UUID()
 
     private var machine: DieterEndpoint? { store.machines.first { $0.id == machineID } ?? (store.endpoint.id == machineID ? store.endpoint : nil) }
     private var entries: [Dieter_V1_DirectoryEntry] {
         (listing?.entries ?? []).filter { showHidden || !$0.hidden }
+    }
+    private var separator: String { listing?.separator.isEmpty == false ? listing!.separator : "/" }
+    private var newProjectPath: String {
+        RemoteProjectPath.joining(listing?.path ?? "", newFolderName.trimmingCharacters(in: .whitespacesAndNewlines), separator: separator)
+    }
+    private var newFolderExists: Bool {
+        listing?.entries.contains { $0.name.localizedCaseInsensitiveCompare(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame } == true
+    }
+    private var canUseSelection: Bool {
+        switch mode {
+        case .existing:
+            listing?.gitRepository == true
+        case .newRepository:
+            listing != nil && RemoteProjectPath.validDirectoryName(newFolderName) && !newFolderExists
+        }
     }
 
     var body: some View {
@@ -722,7 +805,8 @@ private struct RemoteDirectoryBrowserSheet: View {
                     .font(.system(size: 18, weight: .semibold)).foregroundStyle(DieterTheme.shell)
                     .frame(width: 36, height: 36).background(DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Choose a Git repository").font(.system(size: 17, weight: .bold))
+                    Text(mode == .existing ? "Choose a Git working tree" : "Choose where to create the project")
+                        .font(.system(size: 17, weight: .bold))
                     Text("Browsing \(machine?.name ?? "remote machine") · rendered locally")
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
                 }
@@ -813,39 +897,84 @@ private struct RemoteDirectoryBrowserSheet: View {
             .frame(maxHeight: .infinity)
 
             Divider().overlay(DieterTheme.border)
-            HStack {
-                if listing?.gitRepository == true {
-                    Label("\(listing?.name ?? "Folder") is a Git working tree", systemImage: "checkmark.circle.fill")
-                        .font(.caption).foregroundStyle(DieterTheme.eyes)
-                } else {
-                    Text("Open a folder containing a .git working tree to select it.").font(.caption).foregroundStyle(DieterTheme.tertiary)
+            VStack(alignment: .leading, spacing: 9) {
+                if mode == .newRepository {
+                    HStack(spacing: 9) {
+                        Text("New folder").font(.caption.weight(.semibold)).foregroundStyle(DieterTheme.subtle)
+                        TextField("project", text: $newFolderName)
+                            .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
+                            .padding(.horizontal, 10).frame(height: 30)
+                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
+                            .overlay(RoundedRectangle(cornerRadius: 7).stroke(DieterTheme.strongBorder))
+                            .accessibilityIdentifier("new-project.browser-folder-name")
+                        Text(newProjectPath)
+                            .font(.caption2.monospaced()).foregroundStyle(DieterTheme.tertiary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    if newFolderExists {
+                        Label("A folder with this name already exists. Choose it in Existing Git repo or use another name.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption).foregroundStyle(DieterTheme.coral)
+                    }
                 }
-                Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
-                Button("Use this repository") {
-                    selection = listing?.path ?? ""
-                    dismiss()
+
+                HStack {
+                    if mode == .existing {
+                        if listing?.gitRepository == true {
+                            Label("\(listing?.name ?? "Folder") is a Git working tree", systemImage: "checkmark.circle.fill")
+                                .font(.caption).foregroundStyle(DieterTheme.eyes)
+                        } else {
+                            Text("Open a folder containing a .git directory or linked-worktree .git file to select it.")
+                                .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                        }
+                    } else if !newFolderExists, RemoteProjectPath.validDirectoryName(newFolderName) {
+                        Label("The project will be created at \(newProjectPath)", systemImage: "folder.badge.plus")
+                            .font(.caption).foregroundStyle(DieterTheme.eyes)
+                    } else {
+                        Text("Choose a parent directory and enter a new folder name.")
+                            .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                    }
+                    Spacer()
+                    Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
+                    Button(mode == .existing ? "Use this working tree" : "Use this path") {
+                        selection = mode == .existing ? (listing?.path ?? "") : newProjectPath
+                        dismiss()
+                    }
+                    .buttonStyle(DieterPrimaryButtonStyle()).disabled(!canUseSelection)
+                    .accessibilityIdentifier("new-project.browser-use")
                 }
-                .buttonStyle(DieterPrimaryButtonStyle()).disabled(listing?.gitRepository != true)
             }
             .padding(14)
         }
         .frame(width: 720, height: 560)
         .background(DieterTheme.background)
-        .task { await load(selection) }
+        .task { await prepareInitialLocation() }
+    }
+
+    private func prepareInitialLocation() async {
+        guard mode == .newRepository else {
+            await load(selection)
+            return
+        }
+        let components = RemoteProjectPath.parentAndName(selection)
+        newFolderName = components.name
+        await load(components.parent)
     }
 
     private func load(_ path: String) async {
+        let loadID = UUID()
+        activeLoadID = loadID
         loading = true
         errorMessage = ""
         do {
             let value = try await store.listProjectDirectories(path: path, machineID: machineID)
+            guard activeLoadID == loadID else { return }
             listing = value
             pathField = value.path
         } catch {
+            guard activeLoadID == loadID else { return }
             errorMessage = error.localizedDescription
         }
-        loading = false
+        if activeLoadID == loadID { loading = false }
     }
 
     private func locationSymbol(_ kind: String) -> String {
@@ -974,6 +1103,15 @@ struct ProjectContextSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if let project = store.selectedProject {
+                    Section("Git working tree") {
+                        LabeledContent("Host", value: store.machine(forProjectID: project.id)?.name ?? store.endpoint.name)
+                        Text(project.path)
+                            .font(.body.monospaced())
+                            .textSelection(.enabled)
+                            .accessibilityLabel("Git working tree path")
+                    }
+                }
                 Section("Project") { TextField("Name", text: $name); TextField("Short summary", text: $summary) }
                 Section("Persistent context") { TextEditor(text: $prompt).font(.body.monospaced()).frame(height: 260); Text("This context is owned by Dieter and supplied to new work without writing into the repository.").font(.caption).foregroundStyle(.secondary) }
             }.formStyle(.grouped).navigationTitle("Project context")

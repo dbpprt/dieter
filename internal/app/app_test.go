@@ -333,6 +333,24 @@ func hasActiveTurn(service *Service, projectID string) bool {
 	return false
 }
 
+func TestRegisterProjectCreatesNewGitWorkingTree(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "new-project")
+	service := New(store.New(t.TempDir()), &fakeRunner{})
+	project, err := service.RegisterProject(context.Background(), ProjectInput{
+		Path: target, Name: "New project", Create: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Path != target || project.Name != "New project" {
+		t.Fatalf("created project=%#v", project)
+	}
+	info, err := os.Stat(filepath.Join(target, ".git"))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("git working tree was not initialized: info=%#v err=%v", info, err)
+	}
+}
+
 func TestCreateRunningCardStartsHarnessWithBoardInstructions(t *testing.T) {
 	service, fake, project, board := appSetup(t)
 	card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneRunning, Title: "Implement", Prompt: "Ship it", Provider: "codex", Model: "gpt-5.5"})

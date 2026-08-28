@@ -18,6 +18,60 @@ import UniformTypeIdentifiers
     #expect(MachineInformationPresentation.percentage(37.6) == "38%")
 }
 
+@Test func projectSetupBuildsExistingAndNewGitRequests() {
+    var draft = ProjectSetupDraft()
+    draft.mode = .existing
+    draft.path = "  /srv/repo  "
+    draft.name = "  Atlas  "
+    draft.summary = "  Main service  "
+    draft.prompt = "  Preserve local changes.  "
+    draft.boardName = "  Delivery  "
+    draft.workflow = "direct"
+
+    let existing = draft.request()
+    #expect(existing.mode == "open")
+    #expect(existing.path == "/srv/repo")
+    #expect(existing.name == "Atlas")
+    #expect(existing.summary == "Main service")
+    #expect(existing.prompt == "Preserve local changes.")
+    #expect(existing.boardName == "Delivery")
+    #expect(existing.workflow == "direct")
+
+    draft.mode = .newRepository
+    #expect(draft.request().mode == "create")
+}
+
+@Test func remoteProjectPathsSupportDaemonSeparatorsAndSafeFolderNames() {
+    #expect(RemoteProjectPath.lastComponent("/srv/worktrees/feature/") == "feature")
+    #expect(RemoteProjectPath.lastComponent("C:\\src\\feature") == "feature")
+    #expect(RemoteProjectPath.joining("/srv/projects", "atlas", separator: "/") == "/srv/projects/atlas")
+    #expect(RemoteProjectPath.joining("C:\\src\\", "atlas", separator: "\\") == "C:\\src\\atlas")
+    #expect(RemoteProjectPath.parentAndName("/srv/projects/atlas") == ("/srv/projects", "atlas"))
+    #expect(RemoteProjectPath.validDirectoryName("atlas"))
+    #expect(!RemoteProjectPath.validDirectoryName(".."))
+    #expect(!RemoteProjectPath.validDirectoryName("feature/one"))
+    #expect(!RemoteProjectPath.validDirectoryName("feature\\one"))
+}
+
+@Test func projectNameSuggestionNeverOverwritesACustomName() {
+    let initial = RemoteProjectPath.updatingSuggestedName(
+        currentName: "", previousSuggestion: "", path: "/srv/atlas"
+    )
+    #expect(initial.name == "atlas")
+    #expect(initial.suggestion == "atlas")
+
+    let automatic = RemoteProjectPath.updatingSuggestedName(
+        currentName: initial.name, previousSuggestion: initial.suggestion, path: "/srv/orion"
+    )
+    #expect(automatic.name == "orion")
+
+    let custom = RemoteProjectPath.updatingSuggestedName(
+        currentName: "Customer API", previousSuggestion: automatic.suggestion, path: "/srv/gateway"
+    )
+    #expect(custom.name == "Customer API")
+    #expect(custom.suggestion == "gateway")
+}
+
 @Test func remoteDesktopBindingMessageMatchesDaemonWireFormat() {
     let message = RemoteDesktopSessionTrust.bindingMessage(
         sessionID: "rd_one",

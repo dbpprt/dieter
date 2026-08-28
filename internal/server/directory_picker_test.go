@@ -43,3 +43,23 @@ func TestDirectoryBrowserRejectsMissingDirectory(t *testing.T) {
 		t.Fatal("expected missing directory error")
 	}
 }
+
+func TestDirectoryBrowserRecognizesLinkedGitWorktree(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	worktree := filepath.Join(home, "linked-worktree")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: ../repo/.git/worktrees/linked-worktree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	listing, err := listProjectDirectories(worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !listing.GitRepository {
+		t.Fatalf("linked worktree was not recognized: %#v", listing)
+	}
+}

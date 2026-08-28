@@ -229,8 +229,15 @@ func (api *connectAPI) ListDirectories(_ context.Context, request *connect.Reque
 
 func (api *connectAPI) CreateProject(ctx context.Context, request *connect.Request[dieterv1.CreateProjectRequest]) (*connect.Response[dieterv1.CreateProjectResponse], error) {
 	input := request.Msg
+	mode := strings.TrimSpace(input.GetMode())
+	if mode == "" {
+		mode = "open"
+	}
+	if mode != "open" && mode != "create" {
+		return nil, connectFailure(errors.New("project mode must be open or create"))
+	}
 	project, err := api.core.server.app.RegisterProject(ctx, app.ProjectInput{
-		Path: input.GetPath(), Name: input.GetName(), Summary: input.GetSummary(), Prompt: input.GetPrompt(), Create: input.GetMode() == "create",
+		Path: input.GetPath(), Name: input.GetName(), Summary: input.GetSummary(), Prompt: input.GetPrompt(), Create: mode == "create",
 		DefaultWorkspaceMode: input.GetDefaultWorkspaceMode(), BaseRemote: input.GetBaseRemote(), BaseBranch: input.GetBaseBranch(),
 		ValidationCommands: modelValidationCommands(input.GetValidationCommands()),
 	})

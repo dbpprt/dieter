@@ -40,6 +40,24 @@ func TestDefaultRootUsesHome(t *testing.T) {
 	}
 }
 
+func TestCreateProjectAcceptsLinkedGitWorktree(t *testing.T) {
+	worktree := filepath.Join(t.TempDir(), "linked-worktree")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: ../repo/.git/worktrees/linked-worktree\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data := New(t.TempDir())
+	project, err := data.CreateProject(CreateProjectInput{Path: worktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Path != worktree || project.Name != "linked-worktree" {
+		t.Fatalf("linked worktree project=%#v", project)
+	}
+}
+
 func TestUpdateProjectRelocatesCanonicalWorkingTree(t *testing.T) {
 	s, project, _ := setup(t, model.WorkflowDirect)
 	relocated := gitProject(t)
