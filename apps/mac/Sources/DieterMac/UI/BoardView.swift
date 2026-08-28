@@ -709,6 +709,7 @@ struct BoardCardView: View {
                 }
                 HStack(spacing: 7) {
                     StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
+                    if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
                     if !card.model.isEmpty { Text(card.model).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1) }
                     Spacer()
                     TimelineView(.periodic(from: .now, by: 30)) { context in

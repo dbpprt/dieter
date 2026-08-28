@@ -18,10 +18,13 @@ struct TerminalsView: View {
                 HStack(spacing: 12) {
                     PaneTitleBlock(
                         title: "Terminals",
-                        subtitle: "\(store.terminals.count) persistent \(store.terminals.count == 1 ? "session" : "sessions") · \(store.endpoint.name)",
+                        subtitle: "\(store.terminals.count) persistent \(store.terminals.count == 1 ? "session" : "sessions") · \(store.terminalScopeCardID == nil ? store.endpoint.name : "Conversation workspace")",
                         prominent: true
                     )
                     Spacer()
+                    if store.terminalScopeCardID != nil {
+                        Button("All terminals") { Task { await store.showAllTerminals() } }.controlSize(.small)
+                    }
                     Button {
                         store.createTerminalPresented = true
                     } label: {

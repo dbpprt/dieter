@@ -309,6 +309,10 @@ final class DieterRPC: Sendable {
         try await service.updateProject(request: .init(message: request))
     }
 
+    func updateProjectWorkspaceSettings(_ request: Dieter_V1_UpdateProjectWorkspaceSettingsRequest) async throws -> Dieter_V1_Project {
+        try await service.updateProjectWorkspaceSettings(request: .init(message: request))
+    }
+
     func archiveProject(_ request: Dieter_V1_ArchiveProjectRequest) async throws -> Dieter_V1_Project {
         try await service.archiveProject(request: .init(message: request))
     }
@@ -429,6 +433,76 @@ final class DieterRPC: Sendable {
         try await service.pinChat(request: .init(message: request))
     }
 
+    func updateConversationWorkspace(_ request: Dieter_V1_UpdateConversationWorkspaceRequest) async throws -> Dieter_V1_Card {
+        try await service.updateConversationWorkspace(request: .init(message: request))
+    }
+
+    func workspace(cardID: String) async throws -> Dieter_V1_Workspace {
+        var request = Dieter_V1_ConversationRef(); request.cardID = cardID
+        return try await service.getWorkspace(request: .init(message: request))
+    }
+
+    func projectWorkspaces(projectID: String) async throws -> Dieter_V1_WorkspacesResponse {
+        var request = Dieter_V1_ProjectRef(); request.projectID = projectID
+        return try await service.listProjectWorkspaces(request: .init(message: request))
+    }
+
+    func changeset(cardID: String) async throws -> Dieter_V1_Changeset {
+        var request = Dieter_V1_GetChangesetRequest(); request.cardID = cardID
+        return try await service.getChangeset(request: .init(message: request))
+    }
+
+    func fileDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff {
+        try await service.getFileDiff(request: .init(message: request))
+    }
+
+    func commitDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff {
+        try await service.getCommitDiff(request: .init(message: request))
+    }
+
+    func addChangeComment(_ request: Dieter_V1_AddChangeCommentRequest) async throws -> Dieter_V1_ChangeComment {
+        try await service.addChangeComment(request: .init(message: request))
+    }
+
+    func changeComments(cardID: String, revision: String = "") async throws -> Dieter_V1_ChangeCommentsResponse {
+        var request = Dieter_V1_ListChangeCommentsRequest(); request.cardID = cardID; request.revision = revision
+        return try await service.listChangeComments(request: .init(message: request))
+    }
+
+    func scmCapabilities(cardID: String) async throws -> Dieter_V1_SCMCapabilities {
+        var request = Dieter_V1_ConversationRef(); request.cardID = cardID
+        return try await service.getSCMCapabilities(request: .init(message: request))
+    }
+
+    func startGitOperation(_ request: Dieter_V1_StartGitOperationRequest) async throws -> Dieter_V1_GitOperation {
+        try await service.startGitOperation(request: .init(message: request))
+    }
+
+    func gitOperation(id: String) async throws -> Dieter_V1_GitOperation {
+        var request = Dieter_V1_GitOperationRef(); request.operationID = id
+        return try await service.getGitOperation(request: .init(message: request))
+    }
+
+    func cancelGitOperation(id: String) async throws -> Dieter_V1_GitOperation {
+        var request = Dieter_V1_GitOperationRef(); request.operationID = id
+        return try await service.cancelGitOperation(request: .init(message: request))
+    }
+
+    func watchGitOperation(
+        id: String,
+        after sequence: UInt64,
+        receive: @Sendable @escaping (Dieter_V1_GitOperationFrame) async -> Void
+    ) async throws {
+        var request = Dieter_V1_WatchGitOperationRequest()
+        request.operationID = id; request.afterSequence = sequence; request.heartbeatMs = 1_000
+        try await service.watchGitOperation(request: .init(message: request)) { response in
+            for try await frame in response.messages {
+                try Task.checkCancellation()
+                await receive(frame)
+            }
+        }
+    }
+
     func listFiles(_ request: Dieter_V1_ListFilesRequest) async throws -> Dieter_V1_FileList {
         try await service.listFiles(request: .init(message: request))
     }
@@ -453,8 +527,8 @@ final class DieterRPC: Sendable {
         _ = try await service.deleteFile(request: .init(message: request)) as Google_Protobuf_Empty
     }
 
-    func terminals(projectID: String = "") async throws -> Dieter_V1_TerminalsResponse {
-        var request = Dieter_V1_ListTerminalsRequest(); request.projectID = projectID
+    func terminals(projectID: String = "", cardID: String = "") async throws -> Dieter_V1_TerminalsResponse {
+        var request = Dieter_V1_ListTerminalsRequest(); request.projectID = projectID; request.cardID = cardID
         return try await service.listTerminals(request: .init(message: request))
     }
 

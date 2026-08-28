@@ -18,6 +18,8 @@ struct NewConversationSheet: View {
     @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
     @State private var submitting = false
+    @State private var workspaceDraft = ConversationWorkspaceDraft()
+    @State private var workspaceAdvanced = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case title, prompt }
@@ -145,6 +147,41 @@ struct NewConversationSheet: View {
                         }
                     }
 
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack(alignment: .bottom, spacing: 11) {
+                            newCardMenu(
+                                title: "Workspace",
+                                value: workspaceDraft.mode.title,
+                                symbol: workspaceDraft.mode == .worktree ? "square.stack.3d.up" : "arrow.triangle.branch"
+                            ) {
+                                ForEach(ConversationWorkspaceMode.allCases) { mode in
+                                    Button(mode.title) { workspaceDraft.mode = mode }
+                                }
+                            }
+                            Button(workspaceAdvanced ? "Hide details" : "Branch details…") {
+                                workspaceAdvanced.toggle()
+                            }
+                            .buttonStyle(DieterSecondaryButtonStyle())
+                        }
+                        Text(workspaceDraft.mode.detail)
+                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                        if workspaceAdvanced {
+                            HStack(spacing: 11) {
+                                TextField("Generated branch name", text: $workspaceDraft.branch)
+                                    .textFieldStyle(.plain).padding(.horizontal, 11).frame(height: 36)
+                                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+                                    .accessibilityIdentifier("new-card.workspace-branch")
+                                TextField("Project base branch", text: $workspaceDraft.baseBranch)
+                                    .textFieldStyle(.plain).padding(.horizontal, 11).frame(height: 36)
+                                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+                                    .accessibilityIdentifier("new-card.workspace-base-branch")
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("new-card.workspace")
+
                     if !(harness?.options ?? []).isEmpty {
                         HStack(spacing: 7) {
                             ProviderOptionChips(options: harness?.options ?? [], values: $providerOptions)
@@ -182,7 +219,7 @@ struct NewConversationSheet: View {
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
-        .frame(width: 700, height: 760)
+        .frame(width: 700, height: 820)
         .background(DieterTheme.background)
         .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             do { attachments = try store.attachmentParts(try result.get(), appendingTo: attachments) }
@@ -269,7 +306,8 @@ struct NewConversationSheet: View {
             providerOptions: providerOptions,
             deferred: deferred,
             lane: lane,
-            labelIDs: Array(selectedLabelIDs).sorted()
+            labelIDs: Array(selectedLabelIDs).sorted(),
+            workspace: workspaceDraft
         )
         submitting = false
     }
@@ -281,6 +319,7 @@ struct EditCardSheet: View {
     let card: Dieter_V1_Card
     @State private var title: String
     @State private var task: String
+    @State private var workspaceDraft: ConversationWorkspaceDraft
     @State private var saving = false
     @FocusState private var focusedField: Field?
 
@@ -290,6 +329,11 @@ struct EditCardSheet: View {
         self.card = card
         _title = State(initialValue: card.title)
         _task = State(initialValue: card.initialPrompt)
+        _workspaceDraft = State(initialValue: .init(
+            mode: ConversationWorkspaceMode(rawValue: card.workspaceMode) ?? .main,
+            branch: card.workspaceBranch,
+            baseBranch: card.workspaceBaseBranch
+        ))
     }
 
     private var canSave: Bool {
@@ -348,6 +392,24 @@ struct EditCardSheet: View {
                         lineWidth: focusedField == .task ? 2 : 1
                     ))
                     .accessibilityIdentifier("edit-card.task")
+
+                Divider().overlay(DieterTheme.border)
+                Text("Agent workspace")
+                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+                if card.workspace.revision.isEmpty {
+                    Picker("Workspace", selection: $workspaceDraft.mode) {
+                        ForEach(ConversationWorkspaceMode.allCases.filter { $0 != .projectDefault }) { mode in Text(mode.title).tag(mode) }
+                    }
+                    .pickerStyle(.menu)
+                    HStack {
+                        TextField("Optional branch", text: $workspaceDraft.branch)
+                        TextField("Optional base branch", text: $workspaceDraft.baseBranch)
+                    }
+                    Text(workspaceDraft.mode.detail).font(.caption).foregroundStyle(DieterTheme.tertiary)
+                } else {
+                    Text("\(ConversationWorkspaceMode.projectMode(card.workspace.mode).title) · \(card.workspace.branch)")
+                    Text("The workspace is already provisioned, so its checkout and branch are locked.").font(.caption).foregroundStyle(DieterTheme.tertiary)
+                }
             }
             .padding(.horizontal, 24)
 
@@ -372,7 +434,7 @@ struct EditCardSheet: View {
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
-        .frame(width: 620, height: 560)
+        .frame(width: 620, height: 700)
         .background(DieterTheme.background)
         .interactiveDismissDisabled(saving)
         .task {
@@ -389,8 +451,9 @@ struct EditCardSheet: View {
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             initialPrompt: task.trimmingCharacters(in: .whitespacesAndNewlines)
         )
+        let workspaceUpdated = updated ? (card.workspace.revision.isEmpty ? await store.updateConversationWorkspace(workspaceDraft) : true) : false
         saving = false
-        if updated { dismiss() }
+        if updated && workspaceUpdated { dismiss() }
     }
 }
 
@@ -520,6 +583,7 @@ struct NewProjectSheet: View {
     @State private var submitting = false
     @State private var errorMessage = ""
     @State private var suggestedName = ""
+    @State private var workspaceSettingsExpanded = false
 
     private var availableMachines: [DieterEndpoint] {
         store.machines.isEmpty ? [store.endpoint] : store.machines
@@ -643,6 +707,39 @@ struct NewProjectSheet: View {
                     Text(BoardWorkflow(rawValue: draft.workflow)?.laneDescription ?? "")
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
 
+                    DisclosureGroup(isExpanded: $workspaceSettingsExpanded) {
+                        VStack(alignment: .leading, spacing: 11) {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 7) {
+                                    projectLabel("Default workspace")
+                                    Picker("Default workspace", selection: $draft.defaultWorkspaceMode) {
+                                        Text("Worktree").tag("worktree")
+                                        Text("Branch").tag("branch")
+                                        Text("Main checkout").tag("main")
+                                    }
+                                    .pickerStyle(.segmented).labelsHidden()
+                                }
+                            }
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 7) {
+                                    projectLabel("Base remote")
+                                    projectTextField("origin", text: $draft.baseRemote)
+                                }
+                                VStack(alignment: .leading, spacing: 7) {
+                                    projectLabel("Base branch")
+                                    projectTextField("main", text: $draft.baseBranch)
+                                }
+                            }
+                            Text("Worktree is recommended for concurrent agents. Git operations run on the selected project host.")
+                                .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                        }
+                        .padding(.top, 10)
+                    } label: {
+                        Label("Agent workspaces", systemImage: "square.stack.3d.up")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .accessibilityIdentifier("new-project.workspace-settings")
+
                     projectLabel("Project instructions")
                     TextField("How should agents work in this project?", text: $draft.prompt, axis: .vertical)
                         .textFieldStyle(.plain)
@@ -693,7 +790,7 @@ struct NewProjectSheet: View {
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
-        .frame(width: 680, height: 750)
+        .frame(width: 680, height: 820)
         .background(DieterTheme.background)
         .task {
             if machineID.isEmpty {
@@ -1099,6 +1196,12 @@ struct ProjectContextSheet: View {
     @State private var name = ""
     @State private var summary = ""
     @State private var prompt = ""
+    @State private var workspaceMode = "worktree"
+    @State private var baseRemote = "origin"
+    @State private var baseBranch = "main"
+    @State private var validationCommands: [ValidationCommandDraft] = []
+    @State private var workspacesPresented = false
+    @State private var saving = false
 
     var body: some View {
         NavigationStack {
@@ -1114,9 +1217,163 @@ struct ProjectContextSheet: View {
                 }
                 Section("Project") { TextField("Name", text: $name); TextField("Short summary", text: $summary) }
                 Section("Persistent context") { TextEditor(text: $prompt).font(.body.monospaced()).frame(height: 260); Text("This context is owned by Dieter and supplied to new work without writing into the repository.").font(.caption).foregroundStyle(.secondary) }
+                Section("Agent workspaces") {
+                    Picker("Default mode", selection: $workspaceMode) {
+                        Text("Worktree").tag("worktree")
+                        Text("Branch").tag("branch")
+                        Text("Main checkout").tag("main")
+                    }
+                    .pickerStyle(.segmented)
+                    TextField("Base remote", text: $baseRemote)
+                    TextField("Base branch", text: $baseBranch)
+                    Text(workspaceMode == "worktree"
+                        ? "Each conversation gets an isolated branch and Git worktree."
+                        : workspaceMode == "branch" ? "Each conversation gets a branch in the registered checkout." : "Conversations share the registered checkout and cannot safely run concurrently.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Manage existing workspaces…") { workspacesPresented = true }
+                }
+                Section("Workspace validation") {
+                    ForEach($validationCommands) { $command in
+                        DisclosureGroup(command.name.isEmpty ? (command.executable.isEmpty ? "New command" : command.executable) : command.name) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextField("Name", text: $command.name)
+                                TextField("Executable", text: $command.executable)
+                                TextField("Arguments — one per line", text: $command.arguments, axis: .vertical).lineLimit(2...6)
+                                TextField("Working directory (relative)", text: $command.workingDirectory)
+                                TextField("Environment — KEY=VALUE per line", text: $command.environment, axis: .vertical).lineLimit(2...5)
+                                TextField("Timeout in seconds", value: $command.timeoutSeconds, format: .number)
+                                Button("Remove command", role: .destructive) { validationCommands.removeAll { $0.id == command.id } }
+                            }
+                            .padding(.top, 8)
+                        }
+                    }
+                    Button("Add validation command", systemImage: "plus") { validationCommands.append(.init()) }
+                    Text("Validation runs directly inside the conversation workspace before merge when requested. Arguments are passed literally, one line per argument.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }.formStyle(.grouped).navigationTitle("Project context")
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await store.updateProject(name: name, summary: summary, prompt: prompt) } } } }
-        }.frame(width: 650, height: 600).onAppear { name = store.selectedProject?.name ?? ""; summary = store.selectedProject?.summary ?? ""; prompt = store.selectedProject?.prompt ?? "" }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.disabled(saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || baseBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || validationCommands.contains(where: { $0.executable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })) }
+                }
+        }
+        .frame(width: 700, height: 790)
+        .onAppear {
+            guard let project = store.selectedProject else { return }
+            name = project.name; summary = project.summary; prompt = project.prompt
+            workspaceMode = project.defaultWorkspaceMode.isEmpty ? "worktree" : project.defaultWorkspaceMode
+            baseRemote = project.baseRemote.isEmpty ? "origin" : project.baseRemote
+            baseBranch = project.baseBranch.isEmpty ? "main" : project.baseBranch
+            validationCommands = project.validationCommands.map(ValidationCommandDraft.init)
+        }
+        .sheet(isPresented: $workspacesPresented) { ProjectWorkspacesSheet().environment(store) }
+    }
+
+    private func save() {
+        saving = true
+        Task {
+            let workspaceSaved = await store.updateProjectWorkspaceSettings(
+                mode: workspaceMode,
+                remote: baseRemote,
+                branch: baseBranch,
+                validationCommands: validationCommands.map(\.value)
+            )
+            if workspaceSaved { await store.updateProject(name: name, summary: summary, prompt: prompt) }
+            saving = false
+        }
+    }
+}
+
+private struct ProjectWorkspacesSheet: View {
+    @Environment(DieterStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var candidate: Dieter_V1_Workspace?
+    @State private var candidateKind: GitOperationKind = .cleanup
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Project workspaces").font(.title2.weight(.bold))
+                    Text("Conversation-owned checkouts, branches, and recovery state").font(.caption).foregroundStyle(DieterTheme.tertiary)
+                }
+                Spacer()
+                Button { Task { await store.loadProjectWorkspaces() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(DieterIconButtonStyle())
+                Button("Done") { dismiss() }
+            }
+            .padding(18).background(DieterTheme.sidebar)
+            if store.projectWorkspaces.isEmpty {
+                ContentUnavailableView("No provisioned workspaces", systemImage: "point.3.connected.trianglepath.dotted", description: Text("A workspace appears when a conversation first uses Git, Files, or a scoped terminal."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(store.projectWorkspaces, id: \.cardID) { workspace in
+                    HStack(spacing: 12) {
+                        Image(systemName: workspace.state == "conflicted" ? "exclamationmark.triangle.fill" : "point.3.connected.trianglepath.dotted")
+                            .foregroundStyle(workspace.state == "conflicted" ? DieterTheme.coral : DieterTheme.shell)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(cardTitle(workspace.cardID)).font(.system(size: 12, weight: .semibold))
+                            Text("\(workspace.branch.isEmpty ? ConversationWorkspaceMode.projectMode(workspace.mode).title : workspace.branch) · \(workspace.state.replacingOccurrences(of: "_", with: " "))")
+                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
+                            Text(workspace.path).font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary).lineLimit(1).truncationMode(.middle)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text("\(workspace.changedFiles) files · +\(workspace.additions) −\(workspace.deletions)")
+                            Text(ByteCountFormatter.string(fromByteCount: workspace.sizeBytes, countStyle: .file))
+                        }
+                        .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                        if store.gitOperation?.cardID == workspace.cardID,
+                           GitOperationStatus.active(store.gitOperation?.status ?? "") {
+                            ProgressView().controlSize(.mini).help(store.gitOperation?.status ?? "Working")
+                        }
+                        Menu {
+                            Button("Open conversation") { open(workspace.cardID) }
+                            Button("Reveal in Finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
+                            Divider()
+                            Button("Clean up…") { candidate = workspace; candidateKind = .cleanup }
+                                .disabled(workspace.changedFiles > 0)
+                            Button("Discard…", role: .destructive) { candidate = workspace; candidateKind = .discard }
+                        } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .disabled(store.gitOperation.map { GitOperationStatus.active($0.status) } ?? false)
+                    }
+                    .padding(.vertical, 5)
+                }
+                .listStyle(.inset)
+            }
+        }
+        .frame(width: 760, height: 560)
+        .task { await store.loadProjectWorkspaces() }
+        .confirmationDialog(
+            candidateKind.title,
+            isPresented: Binding(get: { candidate != nil }, set: { if !$0 { candidate = nil } })
+        ) {
+            if let candidate {
+                Button(candidateKind.title, role: candidateKind.destructive ? .destructive : nil) {
+                    let cardID = candidate.cardID
+                    let kind = candidateKind
+                    self.candidate = nil
+                    Task {
+                        if await store.startGitOperation(kind, cardID: cardID) { await store.loadProjectWorkspaces() }
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { candidate = nil }
+        } message: {
+            Text(candidateKind == .discard ? "Dieter records recovery artifacts, then removes the checkout and managed branch." : "Only clean, integrated workspaces can be cleaned up.")
+        }
+    }
+
+    private func cardTitle(_ id: String) -> String {
+        store.state.cards.first(where: { $0.id == id })?.title
+            ?? store.chats.first(where: { $0.id == id })?.title
+            ?? String(id.prefix(12))
+    }
+
+    private func open(_ id: String) {
+        let chat = store.chats.contains(where: { $0.id == id })
+        dismiss()
+        Task { await store.openConversation(cardID: id, chat: chat) }
     }
 }
 

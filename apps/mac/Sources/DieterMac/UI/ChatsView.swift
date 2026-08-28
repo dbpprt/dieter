@@ -207,6 +207,7 @@ struct ChatRow: View {
                     HStack(spacing: 6) {
                         if ["running", "starting"].contains(card.runtime) { Text("Running").foregroundStyle(DieterTheme.primary) }
                         else if !card.summary.isEmpty { Text(card.summary).lineLimit(1) }
+                        if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
                         if !card.activeSubagents.isEmpty {
                             Text("· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")").foregroundStyle(DieterTheme.subtle)
                         }
@@ -306,6 +307,7 @@ private struct StandaloneChatStartView: View {
     @State private var attachments: [Dieter_V1_MessagePart] = []
     @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
+    @State private var workspaceDraft = ConversationWorkspaceDraft()
 
     private let suggestions = [
         ("Explore the codebase", "Explore this codebase and explain its architecture, important entry points, and current risks."),
@@ -379,6 +381,16 @@ private struct StandaloneChatStartView: View {
                             }
                         }
                     } label: { DieterChipLabel(title: harness?.name ?? "Agent", symbol: "cpu") }.menuStyle(.borderlessButton).fixedSize()
+
+                    Menu {
+                        ForEach(ConversationWorkspaceMode.allCases) { mode in
+                            Button(mode.title) { workspaceDraft.mode = mode }
+                        }
+                    } label: {
+                        DieterChipLabel(title: workspaceDraft.mode.shortTitle, symbol: "square.stack.3d.up")
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .help(workspaceDraft.mode.detail)
 
                     Menu {
                         ForEach(harness?.models ?? [], id: \.id) { item in Button(item.name) { model = item.id; effort = item.defaultEffort } }
@@ -480,7 +492,7 @@ private struct StandaloneChatStartView: View {
         let firstLine = text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
             ?? attachments.first?.filename ?? "New chat"
         let title = firstLine.count > 72 ? String(firstLine.prefix(69)) + "…" : firstLine
-        await store.createConversation(title: title, prompt: text, attachments: attachments, chat: true, provider: provider, model: model, effort: effort, providerOptions: providerOptions, deferred: false, projectID: projectID)
+        await store.createConversation(title: title, prompt: text, attachments: attachments, chat: true, provider: provider, model: model, effort: effort, providerOptions: providerOptions, deferred: false, projectID: projectID, workspace: workspaceDraft)
         submitting = false
     }
 }

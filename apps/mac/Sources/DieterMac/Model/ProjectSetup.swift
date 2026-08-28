@@ -37,10 +37,15 @@ struct ProjectSetupDraft: Equatable, Sendable {
     var prompt = ""
     var boardName = "Main"
     var workflow = "review"
+    var defaultWorkspaceMode = "worktree"
+    var baseRemote = "origin"
+    var baseBranch = "main"
+    var validationCommands: [Dieter_V1_ValidationCommand] = []
 
     var canSubmit: Bool {
         !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            !boardName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            !boardName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !baseBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func request() -> Dieter_V1_CreateProjectRequest {
@@ -52,6 +57,10 @@ struct ProjectSetupDraft: Equatable, Sendable {
         request.prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         request.boardName = boardName.trimmingCharacters(in: .whitespacesAndNewlines)
         request.workflow = workflow
+        request.defaultWorkspaceMode = defaultWorkspaceMode
+        request.baseRemote = baseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.baseBranch = baseBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.validationCommands = validationCommands
         return request
     }
 }

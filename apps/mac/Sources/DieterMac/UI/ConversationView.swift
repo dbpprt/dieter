@@ -62,6 +62,8 @@ struct ConversationView: View {
                     SubagentsView()
                 } else if tab == "Comments" {
                     CommentsView()
+                } else if tab == "Changes" {
+                    WorkspaceChangesView()
                 } else {
                     ConversationTimeline()
                 }
@@ -94,6 +96,7 @@ private struct ConversationChrome: View {
     let standalone: Bool
     @Binding var tab: String
     @State private var editCardPresented = false
+    @State private var workspaceSettingsPresented = false
 
     private var card: Dieter_V1_Card? { store.selectedCard ?? store.selectedDetail?.card }
     private var status: String { store.conversation?.conversation.status ?? card?.runtime ?? "idle" }
@@ -135,6 +138,11 @@ private struct ConversationChrome: View {
                     .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer(minLength: 10)
+                if let card, !card.workspaceMode.isEmpty {
+                    Button { tab = "Changes" } label: { WorkspaceSummaryBadge(card: card) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open workspace changes")
+                }
                 StatusPill(text: status, color: runtimeColor(status))
                 if let card {
                     Menu {
@@ -147,6 +155,11 @@ private struct ConversationChrome: View {
                         if !standalone, BoardCardEditingPolicy.canEditDraft(card) {
                             Button("Edit card…") { editCardPresented = true }
                         }
+                        if card.initialPromptSentAt.isEmpty && card.workspace.revision.isEmpty {
+                            Button("Workspace settings…", systemImage: "slider.horizontal.3") { workspaceSettingsPresented = true }
+                        }
+                        Button("Open workspace in Files", systemImage: "folder") { Task { await store.openWorkspaceFiles(card: card) } }
+                        Button("New terminal in workspace", systemImage: "terminal") { Task { await store.openWorkspaceTerminal(card: card) } }
                         if ["running", "starting", "waiting_for_user"].contains(status) {
                             Button("Interrupt agent", role: .destructive) { Task { await store.cancel(card) } }
                         }
@@ -159,8 +172,9 @@ private struct ConversationChrome: View {
             }
         } secondary: {
             ConversationTabBar(
-                items: standalone ? [("Conversation", 0), ("Subagents", subagentCount)] : [
+                items: standalone ? [("Conversation", 0), ("Changes", Int(card?.workspace.changedFiles ?? 0)), ("Subagents", subagentCount)] : [
                     ("Conversation", 0),
+                    ("Changes", Int(card?.workspace.changedFiles ?? 0)),
                     ("Comments", Int(store.selectedDetail?.card.commentCount ?? 0)),
                     ("Subagents", subagentCount),
                 ],
@@ -171,6 +185,9 @@ private struct ConversationChrome: View {
             if let card {
                 EditCardSheet(card: card).environment(store)
             }
+        }
+        .sheet(isPresented: $workspaceSettingsPresented) {
+            if let card { ConversationWorkspaceSettingsSheet(card: card).environment(store) }
         }
     }
 }

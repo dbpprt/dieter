@@ -35,18 +35,29 @@ struct FilesView: View {
                         .accessibilityIdentifier("files.forward")
                         PaneTitleBlock(
                             title: "Files",
-                            subtitle: "\(store.files.count) item\(store.files.count == 1 ? "" : "s") · \(store.selectedProject?.name ?? "Project")",
+                            subtitle: "\(store.files.count) item\(store.files.count == 1 ? "" : "s") · \(store.fileScopeCardID == nil ? (store.selectedProject?.name ?? "Project") : "Conversation workspace")",
                             symbol: "folder",
                             prominent: true
                         )
-                        Menu { Button("New file…") { newDirectory = false; createPresented = true }; Button("New folder…") { newDirectory = true; createPresented = true }; Divider(); Toggle("Show hidden", isOn: $store.showHiddenFiles) } label: { Image(systemName: "ellipsis.circle") }
+                        Menu {
+                            Button("New file…") { newDirectory = false; createPresented = true }
+                            Button("New folder…") { newDirectory = true; createPresented = true }
+                            if store.fileScopeCardID != nil {
+                                Divider()
+                                Button("Return to project root") {
+                                    store.fileScopeCardID = nil; store.filePath = ""; store.fileNavigation.reset(); store.fileDocument = nil
+                                    Task { await store.loadFiles() }
+                                }
+                            }
+                            Divider(); Toggle("Show hidden", isOn: $store.showHiddenFiles)
+                        } label: { Image(systemName: "ellipsis.circle") }
                             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().buttonStyle(DieterIconButtonStyle())
                         Button { Task { await store.loadFiles() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(DieterIconButtonStyle()).disabled(store.fileNavigationLoading)
                     }
                 } secondary: {
                     HStack(spacing: 8) {
-                        Image(systemName: store.filePath.isEmpty ? "folder" : "folder.fill").font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
-                        Text(store.filePath.isEmpty ? store.selectedProject?.path ?? "Project root" : store.filePath)
+                        Image(systemName: store.fileScopeCardID == nil ? (store.filePath.isEmpty ? "folder" : "folder.fill") : "point.3.connected.trianglepath.dotted").font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
+                        Text(store.filePath.isEmpty ? (store.fileScopeCardID == nil ? store.selectedProject?.path ?? "Project root" : "Workspace root · \(store.fileScopeCardID?.prefix(8) ?? "")") : store.filePath)
                             .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary).lineLimit(1).truncationMode(.middle)
                         Spacer()
                         if store.showHiddenFiles { Text("Hidden files").font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.shell) }
