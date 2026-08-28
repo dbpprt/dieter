@@ -1679,7 +1679,7 @@ final class DieterStore {
         await loadTerminals()
     }
 
-    func openWorkspaceFiles(card: Dieter_V1_Card) async {
+    func openWorkspaceFiles(card: Dieter_V1_Card, opening path: String? = nil) async {
         guard await ensureProjectConnection(card.projectID) else { return }
         selectedProjectID = card.projectID
         fileScopeCardID = card.id
@@ -1689,6 +1689,7 @@ final class DieterStore {
         closeConversation()
         section = .files
         await loadFiles()
+        if let path, !path.isEmpty { await openFile(path: path) }
     }
 
     func openWorkspaceTerminal(card: Dieter_V1_Card) async {
@@ -3522,12 +3523,24 @@ final class DieterStore {
             conversationSCMCapabilities = capabilities
             acceptWorkspaceSummary(workspace)
             conversationChangeComments = try await rpc.changeComments(cardID: cardID, revision: changes.revision).comments
-            if selectedChangePath.isEmpty, let first = changes.files.first {
-                selectedChangePath = first.path
-                selectedCommitSHA = ""
-                await loadConversationDiff(path: first.path)
-            } else if !selectedChangePath.isEmpty {
-                await loadConversationDiff(path: selectedChangePath, commitSHA: selectedCommitSHA)
+
+            let selection = WorkspaceReviewSelectionResolver.resolve(
+                currentPath: selectedChangePath,
+                currentCommitSHA: selectedCommitSHA,
+                filePaths: changes.files.map(\.path),
+                commitSHAs: changes.commits.map(\.sha)
+            )
+            if selection.path != selectedChangePath || selection.commitSHA != selectedCommitSHA {
+                conversationDiff = nil
+            }
+            selectedChangePath = selection.path
+            selectedCommitSHA = selection.commitSHA
+            if !selection.commitSHA.isEmpty {
+                await loadConversationDiff(path: "", commitSHA: selection.commitSHA)
+            } else if !selection.path.isEmpty {
+                await loadConversationDiff(path: selection.path)
+            } else {
+                conversationDiff = nil
             }
             let operationID = workspace.currentOperationID.isEmpty
                 ? ((selectedCard ?? selectedDetail?.card)?.workspace.currentOperationID ?? "")

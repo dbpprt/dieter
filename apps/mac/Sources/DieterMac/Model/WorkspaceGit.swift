@@ -217,6 +217,74 @@ enum UnifiedDiffParser {
     }
 }
 
+enum WorkspaceReviewLayout {
+    static let compactBreakpoint: CGFloat = 680
+
+    static func isCompact(width: CGFloat) -> Bool {
+        width < compactBreakpoint
+    }
+}
+
+enum WorkspaceChangePresentation {
+    static func badge(status: String, conflicted: Bool = false, untracked: Bool = false) -> String {
+        if conflicted { return "!" }
+        if untracked { return "U" }
+        return switch status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "a", "add", "added": "A"
+        case "d", "delete", "deleted": "D"
+        case "r", "rename", "renamed": "R"
+        case "c", "copy", "copied": "C"
+        case "u", "unmerged", "conflicted": "!"
+        default: "M"
+        }
+    }
+
+    static func title(status: String, conflicted: Bool = false, untracked: Bool = false) -> String {
+        if conflicted { return "Conflicted" }
+        if untracked { return "Untracked" }
+        return switch badge(status: status) {
+        case "A": "Added"
+        case "D": "Deleted"
+        case "R": "Renamed"
+        case "C": "Copied"
+        default: "Modified"
+        }
+    }
+
+    static func filename(_ path: String) -> String {
+        (path as NSString).lastPathComponent
+    }
+
+    static func directory(_ path: String) -> String {
+        let value = (path as NSString).deletingLastPathComponent
+        return value == "." ? "" : value
+    }
+}
+
+struct WorkspaceReviewSelection: Equatable, Sendable {
+    var path: String
+    var commitSHA: String
+}
+
+enum WorkspaceReviewSelectionResolver {
+    static func resolve(
+        currentPath: String,
+        currentCommitSHA: String,
+        filePaths: [String],
+        commitSHAs: [String]
+    ) -> WorkspaceReviewSelection {
+        if !currentCommitSHA.isEmpty, commitSHAs.contains(currentCommitSHA) {
+            return .init(path: "", commitSHA: currentCommitSHA)
+        }
+        if !currentPath.isEmpty, filePaths.contains(currentPath) {
+            return .init(path: currentPath, commitSHA: "")
+        }
+        if let path = filePaths.first { return .init(path: path, commitSHA: "") }
+        if let commitSHA = commitSHAs.first { return .init(path: "", commitSHA: commitSHA) }
+        return .init(path: "", commitSHA: "")
+    }
+}
+
 extension Dieter_V1_WorkspaceSummary {
     var hasMaterialChanges: Bool { changedFiles > 0 || additions > 0 || deletions > 0 }
 }

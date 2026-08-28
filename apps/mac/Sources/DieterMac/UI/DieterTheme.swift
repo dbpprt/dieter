@@ -485,12 +485,14 @@ struct DieterIconButtonStyle: ButtonStyle {
 }
 
 struct DieterPrimaryButtonStyle: ButtonStyle {
+    var tint: Color = DieterTheme.shellDeep
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 13).frame(height: 30)
-            .background(DieterTheme.shellDeep, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+            .background(tint, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
             .opacity(configuration.isPressed ? 0.78 : 1)
     }
 }

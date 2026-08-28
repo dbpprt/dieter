@@ -90,3 +90,41 @@ import Testing
     #expect(request.baseBranch == "develop")
     #expect(request.validationCommands.first?.arguments == ["test"])
 }
+
+@Test func workspaceReviewUsesDedicatedCompactNavigation() {
+    #expect(WorkspaceReviewLayout.isCompact(width: 520))
+    #expect(!WorkspaceReviewLayout.isCompact(width: 900))
+    #expect(WorkspaceReviewLayout.compactBreakpoint == 680)
+}
+
+@Test func changedFilesHaveCompactStablePresentation() {
+    #expect(WorkspaceChangePresentation.badge(status: "modified") == "M")
+    #expect(WorkspaceChangePresentation.badge(status: "added") == "A")
+    #expect(WorkspaceChangePresentation.badge(status: "modified", conflicted: true) == "!")
+    #expect(WorkspaceChangePresentation.badge(status: "modified", untracked: true) == "U")
+    #expect(WorkspaceChangePresentation.title(status: "renamed") == "Renamed")
+    #expect(WorkspaceChangePresentation.filename("Sources/App/Workspace.swift") == "Workspace.swift")
+    #expect(WorkspaceChangePresentation.directory("Sources/App/Workspace.swift") == "Sources/App")
+    #expect(WorkspaceChangePresentation.directory("README.md").isEmpty)
+}
+
+@Test func workspaceReviewSelectionSurvivesRefreshAndFallsBackSafely() {
+    #expect(WorkspaceReviewSelectionResolver.resolve(
+        currentPath: "Sources/App.swift",
+        currentCommitSHA: "",
+        filePaths: ["README.md", "Sources/App.swift"],
+        commitSHAs: ["abc"]
+    ) == .init(path: "Sources/App.swift", commitSHA: ""))
+    #expect(WorkspaceReviewSelectionResolver.resolve(
+        currentPath: "Removed.swift",
+        currentCommitSHA: "",
+        filePaths: [],
+        commitSHAs: ["abc"]
+    ) == .init(path: "", commitSHA: "abc"))
+    #expect(WorkspaceReviewSelectionResolver.resolve(
+        currentPath: "Removed.swift",
+        currentCommitSHA: "old",
+        filePaths: [],
+        commitSHAs: []
+    ) == .init(path: "", commitSHA: ""))
+}
