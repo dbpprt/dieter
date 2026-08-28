@@ -138,6 +138,19 @@ enum GitOperationStatus {
     }
 }
 
+enum GitOperationReconciliation {
+    static func operationID(
+        workspaceOperationID: String,
+        observedOperationID: String?,
+        observedStatus: String?
+    ) -> String? {
+        if !workspaceOperationID.isEmpty { return workspaceOperationID }
+        guard let observedOperationID, !observedOperationID.isEmpty,
+              let observedStatus, GitOperationStatus.active(observedStatus) else { return nil }
+        return observedOperationID
+    }
+}
+
 struct WorkspaceActionAvailability: Equatable {
     let agentActive: Bool
     let operationActive: Bool

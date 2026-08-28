@@ -3542,10 +3542,12 @@ final class DieterStore {
             } else {
                 conversationDiff = nil
             }
-            let operationID = workspace.currentOperationID.isEmpty
-                ? ((selectedCard ?? selectedDetail?.card)?.workspace.currentOperationID ?? "")
-                : workspace.currentOperationID
-            if !operationID.isEmpty, gitOperation?.id != operationID {
+            let observed = gitOperation?.cardID == cardID ? gitOperation : nil
+            if let operationID = GitOperationReconciliation.operationID(
+                workspaceOperationID: workspace.currentOperationID,
+                observedOperationID: observed?.id,
+                observedStatus: observed?.status
+            ) {
                 await resumeGitOperation(id: operationID)
             }
         } catch {
@@ -3680,9 +3682,16 @@ final class DieterStore {
         guard let rpc else { return }
         do {
             let operation = try await rpc.gitOperation(id: id)
+            guard operation.cardID == (selectedCardID ?? selectedChatID) else { return }
+            let changedOperation = gitOperation?.id != id
             gitOperation = operation
-            gitOperationLogs = []
-            if GitOperationStatus.active(operation.status) { observeGitOperation(id: id, after: 0) }
+            if changedOperation {
+                gitOperationLogs = []
+                if GitOperationStatus.active(operation.status) { observeGitOperation(id: id, after: 0) }
+            } else if GitOperationStatus.terminal(operation.status) {
+                gitOperationTask?.cancel()
+                gitOperationTask = nil
+            }
         } catch { workspaceError = DieterRPCFailure.message(for: error) }
     }
 
@@ -3711,7 +3720,11 @@ final class DieterStore {
                 await self.refreshState()
             } catch {
                 guard !Self.isExpectedCancellation(error) else { return }
-                self.workspaceError = DieterRPCFailure.message(for: error)
+                if DieterRPCFailure.isTransient(error) {
+                    self.connectionStopped(error, client: rpc)
+                } else {
+                    self.workspaceError = DieterRPCFailure.message(for: error)
+                }
             }
         }
     }

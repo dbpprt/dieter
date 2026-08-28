@@ -50,6 +50,24 @@ import Testing
     #expect(availability.allows(.abortConflict))
 }
 
+@Test func activeGitOperationIsReconciledAfterWorkspaceClearsItsOperationID() {
+    #expect(GitOperationReconciliation.operationID(
+        workspaceOperationID: "",
+        observedOperationID: "gitop_stale",
+        observedStatus: "running"
+    ) == "gitop_stale")
+    #expect(GitOperationReconciliation.operationID(
+        workspaceOperationID: "",
+        observedOperationID: "gitop_finished",
+        observedStatus: "succeeded"
+    ) == nil)
+    #expect(GitOperationReconciliation.operationID(
+        workspaceOperationID: "gitop_current",
+        observedOperationID: nil,
+        observedStatus: nil
+    ) == "gitop_current")
+}
+
 @Test func validationCommandDraftRoundTripsLiteralArgumentsAndEnvironment() {
     var draft = ValidationCommandDraft()
     draft.name = "Unit tests"

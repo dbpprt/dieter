@@ -97,7 +97,9 @@ struct WorkspaceChangesView: View {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard !Task.isCancelled, (store.selectedCardID ?? store.selectedChatID) == id else { return }
                 let runtime = (store.selectedCard ?? store.selectedDetail?.card)?.runtime.lowercased() ?? ""
-                if ["starting", "running", "working", "streaming", "waiting", "waiting_for_user", "cancelling"].contains(runtime) {
+                let gitOperationActive = store.gitOperation?.cardID == id
+                    && GitOperationStatus.active(store.gitOperation?.status ?? "")
+                if gitOperationActive || ["starting", "running", "working", "streaming", "waiting", "waiting_for_user", "cancelling"].contains(runtime) {
                     await store.loadWorkspaceSurface()
                 }
             }
