@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Many agents, many machines, one interface.</strong><br>
-  <sub>Run your coding agents across every machine you own.</sub>
+  Run coding agents wherever the code lives, and control them from macOS or Android.
 </p>
 
 <p align="center">
@@ -16,242 +16,147 @@
 </p>
 
 <p align="center">
-  <strong>Website:</strong> <a href="https://dbpprt.github.io/dieter/">dbpprt.github.io/dieter</a>
-  <sub>(getdieter.com once the domain is live)</sub>
-</p>
-
-<p align="center">
   <a href="#quick-start">Quick start</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#native-clients">Native clients</a> ·
-  <a href="#harness-configuration">Harnesses</a> ·
-  <a href="#verify">Build &amp; verify</a>
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#self-hosting">Self-hosting</a> ·
+  <a href="#development">Development</a>
 </p>
 
-Dieter is pronounced **DEE-ter** (/ˈdiː.tər/).
+Dieter (pronounced **DEE-ter**) is an open-source control plane for local coding
+agents. It runs [Codex](https://github.com/openai/codex),
+[Claude Code](https://github.com/anthropics/claude-code),
+[Pi](https://github.com/badlogic/pi-mono), and
+[Oh My Pi](https://github.com/can1357/oh-my-pi) on the machines that hold your
+Git working trees, credentials, and tools—then brings them together in one
+native workspace.
 
-Dieter runs your local coding agents (Codex, Claude Code, Pi, and Oh My Pi)
-across every machine you own and puts them behind one macOS and Android app. Each
-agent runs on the machine that holds the code, close to its Git working tree,
-credentials, tools, and durable conversation history. You keep control from
-anywhere.
+- **Work across machines.** Enroll a laptop, workstation, or home server and
+  see their projects in one place.
+- **Keep execution local.** Agents run beside the code without sending project
+  data or harness credentials through the gateway.
+- **Resume real work.** Chats, boards, queues, terminals, files, schedules, and
+  conversation history survive client disconnects and daemon restarts.
+- **Use native clients.** The macOS and Android apps automatically route each
+  project to the machine that owns it.
+- **Bring your existing agent setup.** Dieter uses each harness's normal local
+  configuration and supports per-card model and effort settings.
 
-Dieter started as my own setup for working with coding agents at scale. It is
-open source and will stay that way. Contributions and issues are welcome.
-
-| Every machine | Every agent | From anywhere |
-| --- | --- | --- |
-| Enroll your office Mac mini, a home server, your laptop—and see one project list. | Codex, Claude Code, Pi, and Oh My Pi, each from its own config. | Drive chats, boards, and schedules from macOS or Android. |
-
-The system has three parts:
-
-- `dieter daemon start` owns projects, durable conversations, persistent PTY
-  terminals, schedules, files, and local AI SDK Harness workers;
-- `dieter-gateway` authenticates one GitHub account and connects any number of
-  enrolled daemons; and
-- the native macOS and Android clients aggregate every daemon and use the same
-  `dieter.v1.DieterService` API either through the gateway relay or over a
-  verified direct TLS route.
-
-There is no web UI and no cloud agent runtime. The public gateway is a
-machine-to-machine control and relay service; Dieter data and harness
-credentials never leave their daemon host.
-
-The native clients build their own project directory by querying every online
-daemon through the authenticated relay. Each project is shown with its owning
-hostname, and opening its board, chats, terminals, files, or schedules automatically moves
-the active connection to that daemon. The gateway never sees or stores that
-directory.
-
-Codex, Claude Code, Pi, and Oh My Pi run through pinned
-[Vercel AI SDK Harnesses](https://ai-sdk.dev/docs/ai-sdk-harnesses/overview)
-without a sandbox. Every dieter card and standalone chat is exactly one durable
-conversation in a real Git working tree.
+There is no web UI or cloud agent runtime. Dieter began as a personal system
+for running coding agents at scale and remains MIT-licensed. Issues and pull
+requests are welcome.
 
 > [!WARNING]
-> Harnesses have the permissions of the user running the daemon. Never expose
-> the raw loopback data plane. Native clients use the gateway or an
-> authenticated TLS route advertised by the daemon.
+> Harness workers have the permissions of the user running the daemon. Keep the
+> raw daemon data plane loopback-only; use the authenticated gateway or a
+> verified direct TLS route for remote access.
 
 ## Quick start
 
-On Apple Silicon macOS, Homebrew installs the daemon and the native app as two
-separate packages.
-
-### Install the daemon
-
-The formula includes the `dieter` CLI and local daemon:
+On Apple Silicon macOS, install the daemon and register a Git working tree:
 
 ```sh
 brew install dbpprt/tap/dieter
 dieter setup ~/Development/my-project
 ```
 
-`dieter setup` registers the Git working tree, enrolls the Mac, guides the
-macOS Screen & System Audio Recording permission, proves the exact
-signed ScreenCaptureKit/VideoToolbox helper with one discarded frame, guides
-and verifies Accessibility event-posting permission without moving or clicking
-the pointer, enables viewing and control only after both probes succeed, and starts the daemon as a Homebrew
-service. Use `--skip-screen-sharing` during fresh setup on hosts that must not
-capture their display. Re-run the standalone check at any time with:
+`dieter setup` enrolls the machine, registers the project, verifies optional
+screen-sharing permissions, and starts the daemon as a Homebrew service. Add
+`--skip-screen-sharing` on hosts that should never capture their display.
 
-```sh
-dieter daemon permissions --check
-```
-
-### Install the Mac app
-
-The cask installs `Dieter.app`:
+Install the native Mac app separately:
 
 ```sh
 brew install --cask dbpprt/tap/dieter-app
 open -a Dieter
 ```
 
-Sign in to the configured gateway. Dieter indexes every enrolled machine and
-shows all of their projects together—there is no machine picker to babysit. The
-same workspace is available from Android. For source builds, gateway
-hosting, additional machines, and private-network routes, continue below.
+Sign in to the configured gateway. Projects from every enrolled machine appear
+in one workspace; Dieter selects the correct daemon automatically. See the
+[macOS](apps/mac/README.md) and [Android](apps/android/README.md) guides for
+source builds and platform-specific details.
 
-## Architecture
+Useful daemon commands:
+
+```sh
+dieter daemon status
+dieter daemon logs --follow
+dieter daemon permissions --check
+brew services restart dieter
+```
+
+## How it works
+
+Every Dieter card and standalone chat maps to one durable AI SDK Harness
+conversation in a real Git working tree.
 
 ```mermaid
 flowchart LR
-    apps["macOS + Android<br/>all projects, one list"]
-    gateway["board.dbpprt.com<br/>auth + bounded relay"]
-    a["dieter daemon<br/>work Mac"]
-    b["dieter daemon<br/>home Linux box"]
-    dataA[("Git + DIETER_HOME")]
-    dataB[("Git + DIETER_HOME")]
-    agents["Codex · Claude Code · Pi · Oh My Pi"]
-    nope["Gateway storage<br/>sessions + routes<br/>no project code"]
+    clients["macOS + Android"]
+    gateway["Gateway<br/>auth + bounded relay"]
+    work["Dieter daemon<br/>workstation"]
+    home["Dieter daemon<br/>home server"]
+    workData[("Git + Dieter data")]
+    homeData[("Git + Dieter data")]
 
-    apps --> gateway
-    apps -. "direct TLS when reachable" .-> a
-    apps -. "direct TLS when reachable" .-> b
-    gateway --> a
-    gateway --> b
-    gateway -.-> nope
-    a --> dataA
-    b --> dataB
-    a --> agents
-    b --> agents
-
-    classDef app fill:#0D1B24,stroke:#8DD8E8,stroke-width:2px,color:#F5FBFD;
-    classDef route fill:#122834,stroke:#62B6CB,stroke-width:2px,color:#F5FBFD;
-    classDef daemon fill:#193A49,stroke:#BCEAF1,stroke-width:2px,color:#F5FBFD;
-    classDef data fill:#122834,stroke:#3D6E85,color:#F5FBFD;
-
-    class apps app;
-    class gateway route;
-    class a,b daemon;
-    class dataA,dataB,agents,nope data;
+    clients --> gateway
+    clients -. "direct TLS when reachable" .-> work
+    clients -. "direct TLS when reachable" .-> home
+    gateway --> work
+    gateway --> home
+    work --> workData
+    home --> homeData
 ```
 
-The client tries direct TLS, then falls back to the gateway. Both paths expose
-the same `dieter.v1.DieterService` API, so the UI does not care which one won.
+The system has three components:
 
-Gateway access is binary: the configured GitHub identity is allowed or it is
-not. There are no scopes. The gateway stores sessions, daemon identities,
-presence, and route metadata—never projects, transcripts, files, or harness
-credentials. Each daemon proves its Ed25519 key on every tunnel connection, and
-each relayed request carries a short-lived, method- and payload-bound assertion.
+1. **Daemon and CLI** — own projects, conversations, terminals, schedules,
+   files, and local harness workers on each machine.
+2. **Gateway** — authenticates one allowed GitHub identity and connects enrolled
+   daemons through a bounded relay.
+3. **Native clients** — combine projects from all online daemons and prefer a
+   verified direct TLS route when one is reachable.
 
-Direct routes use a verified daemon certificate and a five-minute bearer.
-Revoking a daemon closes its relay immediately and invalidates direct access as
-those bearers expire. Relay messages are capped at 16 MiB, buffers and streams
-are bounded, and canceling an RPC does not accidentally stop the agent.
+Both network paths expose the same `dieter.v1.DieterService` API. The gateway
+stores account sessions, daemon identities, presence, and route metadata. It
+never stores project code, transcripts, schedules, files, or harness
+credentials. Daemons prove possession of their Ed25519 identity on each tunnel
+connection.
 
-Terminal PTYs follow the same transport rule but have a daemon-owned lifecycle:
-canceling an output stream or closing the Mac app removes only that observer.
-The shell continues until it exits, is explicitly closed, or the daemon shuts
-down. Output carries monotonically increasing sequence numbers and a bounded
-replay baseline, so clients can resume after a disconnect without making the
-gateway store terminal state. Typing and resize calls use the relay's priority
-unary path independently of the long-lived output stream.
+All domain data lives under `DIETER_HOME` on the daemon host (by default
+`~/.dieter`). Writes are atomic and cross-process locked. Graceful shutdowns
+preserve provider continuation state so work can resume without replaying the
+user prompt.
 
-Screens use the gateway only for bounded WebRTC signaling and short-lived ICE
-configuration bound to the authenticated operator and target daemon. The
-daemon hosts an H.264 peer with Pion; media and bounded remote input travel directly over
-ICE/DTLS/SRTP or through a separately configured TURN server, never through
-the Dieter gateway. The Mac verifies an Ed25519 binding between the offer,
-daemon DTLS fingerprint, session, nonce, lease, control grant, display, and
-input epoch before applying the answer. Pointer motion uses an unordered
-no-retransmit DataChannel while keys, buttons, scrolling, and release-all use a
-reliable channel. The signed native helper owns macOS capture and event-posting
-permissions and releases every held input immediately on disconnect.
-Screen capture starts only after WebRTC connects and stops when its renewable
-lease expires. One explicitly enabled viewer/controller is allowed per daemon.
+## Self-hosting
 
-## Requirements
+### Requirements
 
 - Go 1.26.5 or newer
-- Node.js 22.19 or newer on each daemon host
+- Node.js 22.19 or newer on daemon hosts
 - Git working trees for registered projects
-- one configured harness login or API key
+- a configured Codex, Claude Code, Pi, or Oh My Pi installation
 - macOS 15+ or Android 8+ for the official clients
 
-The first agent turn installs the exact JavaScript harness runtime from
-`internal/harness/runtime/package-lock.json` under `DIETER_HOME`.
-
-## Build
+Build the CLI/daemon and gateway:
 
 ```sh
 make build
 ```
 
-This produces separate `bin/dieter` and `bin/dieter-gateway` executables. A normal
-daemon machine installs only `dieter`; the public host installs only
+The binaries are written to `bin/dieter` and `bin/dieter-gateway`. A normal
+agent machine needs only `dieter`; the public host needs only
 `dieter-gateway`.
 
-## Run a daemon
+### Daemon
 
-### Homebrew installation (Apple Silicon)
-
-Install the daemon and complete GitHub authorization, project registration,
-and launch-at-login setup:
-
-```sh
-brew install dbpprt/tap/dieter
-dieter setup ~/Development/my-project
-```
-
-The setup command opens the configured gateway's GitHub authorization page,
-registers each explicit Git working tree by canonical path, starts the user
-Homebrew service, and waits for both the local API and gateway tunnel. It never
-stores a GitHub token on the daemon host. When upgrading from the old manual
-LaunchAgent, setup unloads it and preserves its plist with a `.disabled`
-suffix before starting the Homebrew-managed service.
-
-Inspect or operate the service later with:
-
-```sh
-dieter daemon status
-dieter daemon logs --follow
-brew services restart dieter
-brew upgrade dieter
-```
-
-Managed logs are bounded and stored under
-`$DIETER_HOME/logs` (default `~/.dieter/logs`). Homebrew uninstall removes
-the service and binary but intentionally preserves `DIETER_HOME`.
-
-### Manual installation
-
-Dieter state defaults to `~/.dieter`. Register projects and use the direct-storage
-CLI exactly as before:
+For a manual installation, register a project and start the local daemon:
 
 ```sh
 dieter project open ~/Development/my-project
 dieter daemon start
 ```
 
-The raw local data plane listens on `127.0.0.1:4242`. An enrolled daemon also
-creates a separate authenticated TLS listener on an ephemeral loopback port;
-native clients discover it automatically through the gateway. `dieter serve`
-remains an alias for `dieter daemon start` for service-manager compatibility.
-
-Enroll the machine once:
+To reach it through your gateway, enroll the machine once:
 
 ```sh
 dieter daemon enroll \
@@ -259,24 +164,9 @@ dieter daemon enroll \
   --name "Studio Mac"
 ```
 
-The command opens GitHub, displays a verification code, stores the resulting
-device identity under `DIETER_HOME/daemon`, and never stores a GitHub token. On
-the next `dieter daemon start`, the daemon maintains its outbound tunnel and
-reconnects with exponential backoff after network or gateway restarts.
-
-Unenroll a machine from that machine itself with:
-
-```sh
-dieter daemon unenroll
-```
-
-The command signs the request with the enrolled machine identity, revokes the
-gateway record, closes its relay, and removes the local gateway credential. It
-does not remove projects, conversations, schedules, or harness settings.
-
-No flags are needed for same-device access. To advertise an additional direct
-route, expose a dedicated TLS port only on a trusted LAN or tailnet and name
-the address clients can actually reach:
+The raw data plane remains on `127.0.0.1:4242`. To add a trusted LAN or
+tailnet route, expose a separate authenticated TLS listener—never raw port
+4242:
 
 ```sh
 dieter daemon start \
@@ -285,175 +175,77 @@ dieter daemon start \
   --direct-network tailscale
 ```
 
-The direct listener does not accept the gateway session itself. It requires a
-short-lived token targeted to this daemon and serves the enrolled daemon
-certificate. Do not advertise raw port 4242; that port stays loopback-only.
+### Gateway
 
-On macOS, Screens uses the packaged `dieter-capture` helper with
-ScreenCaptureKit and VideoToolbox hardware H.264. The helper keeps at most one
-pending frame, scales the stream to the viewer's requested bounds, and accepts
-live keyframe and bitrate feedback from WebRTC. It captures the primary display
-by default after guided `dieter setup` verifies Screen Recording access for the
-exact signed helper installed beside the daemon.
-Run `dieter daemon permissions` to reopen the permission guide after a denial
-or revocation. `DIETER_REMOTE_DESKTOP_HELPER` selects another signed native
-helper and `DIETER_REMOTE_DESKTOP_DISPLAY` selects another capture source.
-Non-macOS experimental hosts still use FFmpeg/libvpx and may select it with
-`DIETER_REMOTE_DESKTOP_FFMPEG`;
-`DIETER_REMOTE_DESKTOP_SOURCE=synthetic` is reserved for isolated transport
-diagnostics. Capture is lazy and runs only while an admitted WebRTC session is
-connected. A clean viewer close stops it immediately; an ungraceful signaling
-or WebRTC disconnect gets a five-second reconnect grace, after which the daemon
-cancels and reaps the complete capture process group.
-
-## Run the gateway
-
-Register a GitHub OAuth App with:
-
-- homepage: `https://dieter.example.com`
-- callback: `https://dieter.example.com/auth/github/callback`
-- Device Flow disabled
-
-Copy [`.env.example`](.env.example) to
-`$DIETER_GATEWAY_HOME/.env` (default `~/.dieter-gateway/.env`), fill its values,
-and set mode 0600. `DIETER_GITHUB_ALLOWED_USER_ID` must be the immutable numeric
-GitHub ID; the login is display-only.
-
-Behind a same-host HTTPS reverse proxy:
+Create a GitHub OAuth App, copy [`.env.example`](.env.example) to
+`$DIETER_GATEWAY_HOME/.env`, and set the allowed account to its immutable
+numeric GitHub ID. Then run:
 
 ```sh
-DIETER_GATEWAY_HOME=/var/lib/dieter-gateway dieter-gateway
+DIETER_GATEWAY_HOME=/var/lib/dieter-gateway bin/dieter-gateway
 ```
 
-Keep `DIETER_GATEWAY_ADDR` on loopback, enable `DIETER_GATEWAY_PROXY_MODE=1`, and
-proxy HTTP/2 to it. Proxy mode requires an HTTPS `DIETER_PUBLIC_URL` and refuses
-non-loopback listeners. The external hop is TLS and every daemon link still
-uses its cryptographic challenge, so a forwarded daemon ID is never trusted.
+The gateway can sit behind a same-host HTTPS reverse proxy or terminate TLS
+itself. Proxy mode requires a loopback listener and an HTTPS
+`DIETER_PUBLIC_URL`; direct TLS requires `DIETER_GATEWAY_TLS_CERT` and
+`DIETER_GATEWAY_TLS_KEY`. All unspecified public routes, including `/`, return
+404 by design.
 
-If the gateway terminates TLS itself, disable proxy mode and set
-`DIETER_GATEWAY_TLS_CERT` and `DIETER_GATEWAY_TLS_KEY`. It enforces TLS 1.3.
+### Harnesses
 
-The public origin intentionally serves only:
-
-- `/healthz`;
-- the minimal GitHub OAuth start, callback, exchange, and completion routes;
-- `dieter.gateway.v1.GatewayService` and `DaemonLinkService`; and
-- authenticated `dieter.v1.DieterService` relay calls.
-
-All other paths, including `/`, return 404.
-
-Remote viewing can use `DIETER_RTC_STUN_URLS` and
-`DIETER_RTC_TURN_URLS` as comma-separated ICE server URLs. When TURN URLs are
-configured, set `DIETER_RTC_TURN_SECRET` to a hex-encoded secret of at least 32
-bytes shared with coturn's REST authentication; the gateway derives ephemeral
-credentials instead of storing static TURN passwords. `DIETER_RTC_TTL` controls
-the signed configuration lifetime and defaults to five minutes.
-
-## Native clients
-
-The macOS app stores the gateway session unencrypted in a user-only local file
-under `~/Library/Application Support/com.dbpprt.dieter.mac` and never accesses
-Keychain. Android encrypts it with a device-bound Android Keystore key. Both
-clients:
-
-1. sign in to one gateway origin with OAuth + native PKCE;
-2. build one project directory from every enrolled daemon;
-3. route each project action to its owning machine automatically;
-4. prefer reachable direct routes and otherwise use the relay; and
-5. retain no GitHub token or harness credential.
-
-See [apps/mac/README.md](apps/mac/README.md) and
-[apps/android/README.md](apps/android/README.md) for platform builds.
-
-## Harness configuration
-
-Dieter uses each harness's normal user configuration:
-
-| Harness | Configuration |
+| Harness | Default configuration |
 | --- | --- |
 | Codex | `~/.codex` or `CODEX_HOME` |
 | Claude Code | `~/.claude` or `CLAUDE_CONFIG_DIR` |
 | Pi | `~/.pi/agent` or `PI_AGENT_DIR` |
 | Oh My Pi | `~/.omp/agent`, with `OMP_PROFILE` when set |
 
-The model, effort, context, capability, and typed provider-option registry is
-[`config/harnesses.yaml`](config/harnesses.yaml). Override the entire registry
-with `$DIETER_HOME/harnesses.yaml`, `DIETER_HARNESS_CONFIG`, or
-`--harness-config`.
+Supported models and provider options live in
+[`config/harnesses.yaml`](config/harnesses.yaml). Override the registry with
+`$DIETER_HOME/harnesses.yaml`, `DIETER_HARNESS_CONFIG`, or `--harness-config`.
 
-## Persistence and restarts
+## Development
 
-Each daemon owns all domain data under `DIETER_HOME`: projects, boards, cards,
-transcripts, queues, schedules, labels, runtime sessions, and worker recovery
-records. It uses atomic writes and a cross-process mutation lock. Graceful
-daemon shutdown parks active harness turns with provider continuation state;
-startup resumes them without replaying the user prompt. An unverifiable
-orphaned worker is interrupted instead of risking duplicate tool effects.
-
-The gateway owns a separate SQLite database under `DIETER_GATEWAY_HOME` plus its
-private signing and daemon-CA keys. It stores account sessions, pending OAuth
-and enrollment records, daemon public identities, revocation generations,
-presence, and route metadata—never projects, transcripts, schedules, files, or
-harness credentials.
-
-## Protocol development
-
-The source contracts are:
-
-- [`api/proto/dieter/v1/dieter.proto`](api/proto/dieter/v1/dieter.proto)
-- [`api/proto/dieter/gateway/v1/gateway.proto`](api/proto/dieter/gateway/v1/gateway.proto)
-
-Regenerate Go and native inputs with:
+Install the pinned JavaScript harness runtime and run the full Go checks:
 
 ```sh
-./scripts/generate-proto.sh
+npm --prefix internal/harness/runtime ci
+make check
 ```
 
-The application has no REST data API. The daemon's generated Connect handler
-is retained as the HTTP/2 gRPC server implementation, while native clients and
-the raw gateway relay use protobuf gRPC.
+Run the native client test suites separately:
 
-## Verify
+```sh
+swift test --package-path apps/mac
+zsh -lic 'cd apps/android && ./gradlew testDebugUnitTest'
+```
 
-### Commit hooks
+Android builds use Android Studio's bundled JBR. If needed, set:
 
-Install the repository hooks once per clone:
+```sh
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+```
+
+The protobuf contracts are
+[`dieter.proto`](api/proto/dieter/v1/dieter.proto) and
+[`gateway.proto`](api/proto/dieter/gateway/v1/gateway.proto). Regenerate checked-in
+outputs with `./scripts/generate-proto.sh`.
+
+Before opening a pull request, keep changes focused, add tests for changed
+behavior, run the relevant checks above, and confirm `git diff --check` passes.
+Repository hooks for `gofmt` and secret scanning are available with:
 
 ```sh
 brew install pre-commit
 make hooks
 ```
 
-Before every commit, the hooks run `gofmt` on staged Go files and scan the
-staged diff with Gitleaks. If `gofmt` changes a file, review it, stage it again,
-and commit. Gitleaks output is redacted.
-
-Run the configured hooks manually with:
-
-```sh
-make pre-commit
-```
-
-### Full check
-
-```sh
-npm --prefix internal/harness/runtime ci
-make check
-swift test --package-path apps/mac
-zsh -lic 'cd apps/android && ./gradlew testDebugUnitTest'
-git diff --check
-```
-
-`internal/gateway/e2e_test.go` runs a real gateway, enrollment, signed daemon
-link, local Dieter data plane, unary relay, streaming relay, persistent
-terminal reconnect, token exchange, direct TLS call, and relayed WebRTC
-admission that receives a peer-to-peer synthetic VP8 frame in one test.
+Bug reports, design discussions, and contributions are welcome in
+[GitHub Issues](https://github.com/dbpprt/dieter/issues).
 
 ## License
 
-[MIT](LICENSE)
-
-The complete visual identity, production artwork, portable design tokens, and
-usage guide live in [`assets/brand`](assets/brand/README.md).
+Dieter is available under the [MIT License](LICENSE). Brand assets and usage
+guidance live in [`assets/brand`](assets/brand/README.md).
 
 <p align="center"><sub>Made with &hearts; in Berlin.</sub></p>

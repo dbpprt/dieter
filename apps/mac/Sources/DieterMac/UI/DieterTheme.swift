@@ -179,50 +179,115 @@ private extension NSColor {
     }
 }
 
+private extension NSAppearance {
+    var usesDieterDarkColors: Bool {
+        switch name {
+        case .darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua,
+             .accessibilityHighContrastVibrantDark:
+            true
+        default:
+            false
+        }
+    }
+}
+
 private extension Color {
     init(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) {
         let name = NSColor.Name("Dieter.\(light).\(dark).\(lightAlpha).\(darkAlpha)")
+        let lightColor = NSColor(rgb: light, alpha: lightAlpha)
+        let darkColor = NSColor(rgb: dark, alpha: darkAlpha)
         self.init(nsColor: NSColor(name: name) { appearance in
-            let match = appearance.bestMatch(from: [.aqua, .darkAqua])
-            return match == .darkAqua
-                ? NSColor(rgb: dark, alpha: darkAlpha)
-                : NSColor(rgb: light, alpha: lightAlpha)
+            appearance.usesDieterDarkColors ? darkColor : lightColor
         })
+    }
+}
+
+private struct DieterThemeTokens {
+    let background: Color
+    let sidebar: Color
+    let surface: Color
+    let raised: Color
+    let elevated: Color
+    let input: Color
+    let border: Color
+    let strongBorder: Color
+    let paneSeparator: Color
+    let text: Color
+    let subtle: Color
+    let tertiary: Color
+    let shellDeep: Color
+    let shell: Color
+    let primary: Color
+    let eyes: Color
+    let selection: Color
+    let terminalBackground: Color
+    let terminalBackgroundColor: NSColor
+    let terminalForegroundColor: NSColor
+    let terminalCaretColor: NSColor
+
+    init(palette: DieterPalette) {
+        let colors = palette.spec
+        background = Color(light: colors.light, dark: colors.darkBackground)
+        sidebar = Color(light: colors.lightSidebar, dark: colors.darkBrand)
+        surface = Color(light: colors.lightSurface, dark: colors.darkSurface)
+        raised = Color(light: colors.lightRaised, dark: colors.darkRaised)
+        elevated = Color(light: colors.paneStart, dark: colors.darkElevated)
+        input = Color(light: colors.lightSurface, dark: colors.darkInput)
+        border = Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.10, darkAlpha: 0.09)
+        strongBorder = Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.18, darkAlpha: 0.16)
+        paneSeparator = Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.22, darkAlpha: 0.18)
+        text = Color(light: colors.darkBrand, dark: colors.light)
+        subtle = Color(light: colors.lightSubtle, dark: colors.darkSubtle)
+        tertiary = Color(light: colors.lightTertiary, dark: colors.darkTertiary)
+        shellDeep = Color(light: colors.shellEnd, dark: colors.shellEnd)
+        shell = Color(light: colors.shellEnd, dark: colors.shellStart)
+        primary = Color(light: colors.shellEnd, dark: colors.shellStart)
+        eyes = Color(light: colors.shellEnd, dark: colors.eyes)
+        selection = Color(light: colors.shellEnd, dark: colors.shellStart, lightAlpha: 0.13, darkAlpha: 0.20)
+        terminalBackgroundColor = NSColor(rgb: colors.darkBackground)
+        terminalBackground = Color(nsColor: terminalBackgroundColor)
+        terminalForegroundColor = NSColor(rgb: colors.light)
+        terminalCaretColor = NSColor(rgb: colors.shellStart)
     }
 }
 
 /// Palette-backed surfaces adapted for native Aqua and Dark Aqua while retaining
 /// a consistent contrast hierarchy across every supplied Dieter palette.
 enum DieterTheme {
-    private static var colors: PaletteSpec { DieterPalette.selected.spec }
+    private static let palettes = Dictionary(uniqueKeysWithValues: DieterPalette.allCases.map {
+        ($0, DieterThemeTokens(palette: $0))
+    })
+    private static var colors: DieterThemeTokens {
+        palettes[DieterPalette.selected] ?? palettes[.monochrome]!
+    }
 
-    static var background: Color { Color(light: colors.light, dark: colors.darkBackground) }
-    static var sidebar: Color { Color(light: colors.lightSidebar, dark: colors.darkBrand) }
-    static var surface: Color { Color(light: colors.lightSurface, dark: colors.darkSurface) }
-    static var raised: Color { Color(light: colors.lightRaised, dark: colors.darkRaised) }
-    static var elevated: Color { Color(light: colors.paneStart, dark: colors.darkElevated) }
-    static var input: Color { Color(light: colors.lightSurface, dark: colors.darkInput) }
-    static var border: Color { Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.10, darkAlpha: 0.09) }
-    static var strongBorder: Color { Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.18, darkAlpha: 0.16) }
+    static var background: Color { colors.background }
+    static var sidebar: Color { colors.sidebar }
+    static var surface: Color { colors.surface }
+    static var raised: Color { colors.raised }
+    static var elevated: Color { colors.elevated }
+    static var input: Color { colors.input }
+    static var border: Color { colors.border }
+    static var strongBorder: Color { colors.strongBorder }
     /// Crisp 1px seam separating the three primary panes (nav · workspace · conversation).
-    static var paneSeparator: Color { Color(light: colors.darkBrand, dark: colors.eyes, lightAlpha: 0.22, darkAlpha: 0.18) }
-    static var text: Color { Color(light: colors.darkBrand, dark: colors.light) }
-    static var subtle: Color { Color(light: colors.lightSubtle, dark: colors.darkSubtle) }
-    static var tertiary: Color { Color(light: colors.lightTertiary, dark: colors.darkTertiary) }
-    static var shellDeep: Color { Color(light: colors.shellEnd, dark: colors.shellEnd) }
-    static var shell: Color { Color(light: colors.shellEnd, dark: colors.shellStart) }
-    static var primary: Color { Color(light: colors.shellEnd, dark: colors.shellStart) }
-    static var eyes: Color { Color(light: colors.shellEnd, dark: colors.eyes) }
+    static var paneSeparator: Color { colors.paneSeparator }
+    static var text: Color { colors.text }
+    static var subtle: Color { colors.subtle }
+    static var tertiary: Color { colors.tertiary }
+    static var shellDeep: Color { colors.shellDeep }
+    static var shell: Color { colors.shell }
+    static var primary: Color { colors.primary }
+    static var eyes: Color { colors.eyes }
     static let amber = Color(light: 0xA84C08, dark: 0xE8A33D)
     static let coral = Color(light: 0xD52D4B, dark: 0xF26D80)
 
     /// Background for the selected navigation or list row.
-    static var selection: Color { Color(light: colors.shellEnd, dark: colors.shellStart, lightAlpha: 0.13, darkAlpha: 0.20) }
+    static var selection: Color { colors.selection }
 
-    static var terminalBackground: Color { Color(nsColor: terminalBackgroundColor) }
-    static var terminalBackgroundColor: NSColor { NSColor(rgb: colors.darkBackground) }
-    static var terminalForegroundColor: NSColor { NSColor(rgb: colors.light) }
-    static var terminalCaretColor: NSColor { NSColor(rgb: colors.shellStart) }
+    static var terminalBackground: Color { colors.terminalBackground }
+    static var terminalBackgroundColor: NSColor { colors.terminalBackgroundColor }
+    static var terminalForegroundColor: NSColor { colors.terminalForegroundColor }
+    static var terminalCaretColor: NSColor { colors.terminalCaretColor }
 }
 
 enum DieterMetrics {
@@ -440,31 +505,29 @@ struct ExperimentalBadge: View {
     }
 }
 
-/// A compact, continuously rotating activity arc for rows whose agent is
-/// currently working. Timeline-driven rotation stays alive when list rows are
-/// reused or rebuilt during state synchronization.
+/// A compact native activity control for rows whose agent is currently working.
+/// AppKit owns its animation, so running rows do not invalidate their parent
+/// lazy stacks on every frame.
 struct DieterActivityIndicator: View {
     var color: Color = DieterTheme.primary
     var size: CGFloat = 11
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        ZStack {
-            Circle().stroke(color.opacity(0.35), lineWidth: 1.5)
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
-                Circle()
-                    .trim(from: 0.08, to: 0.72)
-                    .stroke(color, style: .init(lineWidth: 1.6, lineCap: .round))
-                    .rotationEffect(rotation(at: context.date))
+        Group {
+            if reduceMotion {
+                ZStack {
+                    Circle().stroke(color.opacity(0.35), lineWidth: 1.5)
+                    Circle().fill(color).frame(width: size * 0.45, height: size * 0.45)
+                }
+            } else {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.mini)
+                    .tint(color)
             }
         }
-        .frame(width: size, height: size)
-    }
-
-    private func rotation(at date: Date) -> Angle {
-        guard !reduceMotion else { return .zero }
-        let progress = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
-        return .degrees(progress * 360)
+            .frame(width: size, height: size)
     }
 }
 

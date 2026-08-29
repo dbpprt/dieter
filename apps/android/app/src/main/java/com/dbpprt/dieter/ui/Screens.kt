@@ -167,6 +167,7 @@ import com.dbpprt.dieter.connection.isServerConversationId
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.toColorInt
 import com.dbpprt.dieter.ui.theme.DieterAmber
+import com.dbpprt.dieter.ui.theme.DieterCoral
 import com.dbpprt.dieter.ui.theme.DieterEyes
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterShellDeep
@@ -4319,8 +4320,10 @@ private fun WorkCard(
                 Text(card.provider.ifBlank { "agent" }, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 Spacer(Modifier.width(8.dp))
                 Text(card.model, color = DieterMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                WorkspaceCardBadge(card, Modifier.widthIn(max = 118.dp))
                 val activityAge = boardCardActivityText(card.updatedAt, card.lastActivityAt, activityNow)
                 if (activityAge.isNotEmpty()) {
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         activityAge,
                         color = DieterMuted,
@@ -4329,7 +4332,6 @@ private fun WorkCard(
                         modifier = Modifier.testTag("card-activity-${card.id}")
                             .semantics { contentDescription = "Last activity $activityAge" },
                     )
-                    Spacer(Modifier.width(10.dp))
                 }
                 if (starting || onStart != null) {
                     Surface(
@@ -4363,6 +4365,34 @@ private fun WorkCard(
                 Icon(Icons.Outlined.CheckCircle, null, Modifier.size(18.dp), tint = if (card.lane.contains("done", true)) DieterEyes else DieterMuted)
             }
         }
+    }
+}
+
+@Composable
+private fun WorkspaceCardBadge(card: BoardCard, modifier: Modifier = Modifier) {
+    val badge = workspaceCardBadgeInfo(card) ?: return
+    val tint = if (badge.conflicted) DieterCoral else DieterShell
+    Row(
+        modifier = modifier
+            .testTag("workspace-badge-${card.id}")
+            .semantics { contentDescription = badge.accessibilityLabel },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            Icons.Outlined.AccountTree,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(13.dp),
+        )
+        Text(
+            badge.title,
+            color = tint,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
