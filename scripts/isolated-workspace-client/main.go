@@ -41,6 +41,7 @@ func main() {
 	client := dieterv1.NewDieterServiceClient(connection)
 	card, err := client.CreateChat(ctx, &dieterv1.CreateConversationRequest{
 		ProjectId: *projectID, Title: "Executable workspace E2E", Prompt: "exercise workspace", DeferStart: true,
+		WorkspaceMode: "worktree",
 	})
 	if err != nil {
 		fail(err)

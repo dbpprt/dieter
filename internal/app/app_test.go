@@ -404,7 +404,11 @@ func TestRegisterProjectCreatesNewGitWorkingTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if project.Path != target || project.Name != "New project" {
+	canonicalTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Path != canonicalTarget || project.Name != "New project" {
 		t.Fatalf("created project=%#v", project)
 	}
 	info, err := os.Stat(filepath.Join(target, ".git"))

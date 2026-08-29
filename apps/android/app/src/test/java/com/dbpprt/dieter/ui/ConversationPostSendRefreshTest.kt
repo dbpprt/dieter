@@ -45,6 +45,76 @@ class ConversationPostSendRefreshTest {
         assertFalse(conversationNeedsPostSendRefresh(snapshot, setOf("msg_in_another_chat")))
     }
 
+    @Test
+    fun `observed pending receipt starts recovery even when send callback was missed`() {
+        val snapshot = snapshot(status = "idle", messageIds = listOf("msg_pending"))
+
+        assertTrue(
+            foregroundConversationRecoveryShouldStart(
+                foreground = true,
+                selectedCardId = "c_open",
+                recoveryCardId = null,
+                recoveryActive = false,
+                snapshot = snapshot,
+                pendingMessageIds = setOf("msg_pending"),
+            ),
+        )
+    }
+
+    @Test
+    fun `observed running turn starts recovery without a pending receipt`() {
+        assertTrue(
+            foregroundConversationRecoveryShouldStart(
+                foreground = true,
+                selectedCardId = "c_open",
+                recoveryCardId = null,
+                recoveryActive = false,
+                snapshot = snapshot(status = "running"),
+                pendingMessageIds = emptySet(),
+            ),
+        )
+    }
+
+    @Test
+    fun `active recovery for the selected card is not restarted`() {
+        assertFalse(
+            foregroundConversationRecoveryShouldStart(
+                foreground = true,
+                selectedCardId = "c_open",
+                recoveryCardId = "c_open",
+                recoveryActive = true,
+                snapshot = snapshot(status = "running"),
+                pendingMessageIds = emptySet(),
+            ),
+        )
+    }
+
+    @Test
+    fun `background or closed conversations do not start recovery`() {
+        val running = snapshot(status = "running")
+
+        assertFalse(
+            foregroundConversationRecoveryShouldStart(
+                foreground = false,
+                selectedCardId = "c_open",
+                recoveryCardId = null,
+                recoveryActive = false,
+                snapshot = running,
+                pendingMessageIds = emptySet(),
+            ),
+        )
+        assertFalse(
+            foregroundConversationRecoveryShouldStart(
+                foreground = true,
+                selectedCardId = null,
+                recoveryCardId = null,
+                recoveryActive = false,
+                snapshot = running,
+                pendingMessageIds = emptySet(),
+            ),
+        )
+    }
+
     private fun snapshot(
         status: String,
         messageIds: List<String> = emptyList(),

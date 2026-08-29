@@ -17,7 +17,6 @@ data class WidgetConfig(
     val style: WidgetStyle = WidgetStyle.AUTO,
     val maxItems: Int = DEFAULT_MAX_ITEMS,
     val showSections: Boolean = true,
-    val includeChats: Boolean = true,
 ) {
     companion object {
         const val DEFAULT_MAX_ITEMS = 12
@@ -25,7 +24,7 @@ data class WidgetConfig(
     }
 }
 
-enum class WidgetRowKind { WAITING, RUNNING, REVIEW, DONE, FAILED, CHAT }
+enum class WidgetRowKind { WAITING, RUNNING, FAILED, CHAT }
 
 sealed interface WidgetRow {
     data class Section(val title: String) : WidgetRow
@@ -51,12 +50,10 @@ data class WidgetActivityModel(
 )
 
 /**
- * Projects the cached connection state into widget rows: attention first
- * (waiting on you, ready for review), then live work, then finished cards
- * grouped by day — mirroring the in-app activity ordering.
+ * Projects standalone chats from the cached connection state into home-screen
+ * rows: attention first, then live work, then recent replies grouped by day.
  */
 fun buildWidgetModel(
-    cards: List<Card>,
     chats: List<Card>,
     conversations: Map<String, ConversationSnapshot>,
     projects: List<Project>,
@@ -69,23 +66,15 @@ fun buildWidgetModel(
 ): WidgetActivityModel {
     val projectNames = projects.associate { it.id to it.name }
     fun projectLabel(card: Card): String = projectNames[card.projectId]?.takeIf(String::isNotBlank)
-        ?: if (card.scope == "chat") "Chat" else "Board"
+        ?: "Chat"
 
-    val boardCards = cards.filter { !it.archived }
-    val chatCards = if (config.includeChats) chats.filter { !it.archived } else emptyList()
-    val all = boardCards + chatCards
+    val chatCards = chats.filter { !it.archived }
 
-    val waiting = all.filter { it.runtime.equals("waiting_for_user", ignoreCase = true) }
+    val waiting = chatCards.filter { it.runtime.equals("waiting_for_user", ignoreCase = true) }
         .sortedByDescending { parseInstant(waitingSince(it)) ?: Instant.EPOCH }
-    val running = all.filter { isActiveRuntime(it.runtime) }
+    val running = chatCards.filter { isActiveRuntime(it.runtime) }
         .sortedByDescending { parseInstant(it.lastActivityAt.ifBlank { it.updatedAt }) ?: Instant.EPOCH }
-    val review = boardCards.filter { card ->
-        card.lane.equals("review", ignoreCase = true) &&
-            !isActiveRuntime(card.runtime) &&
-            !card.runtime.equals("waiting_for_user", ignoreCase = true)
-    }.sortedByDescending { parseInstant(card = it) ?: Instant.EPOCH }
-    val finished = (finishedBoardCards(boardCards) + finishedChats(chatCards))
-        .sortedByDescending { it.at ?: Instant.EPOCH }
+    val finished = finishedChats(chatCards).sortedByDescending { it.at ?: Instant.EPOCH }
 
     if (compact) {
         val items = finished.take(config.maxItems).map { entry ->
@@ -99,12 +88,12 @@ fun buildWidgetModel(
         }
         return WidgetActivityModel(
             compact = true,
-            headerTitle = "Last finished",
+            headerTitle = "Recent replies",
             statusText = statusLine(hostname, lastSyncAtMs, now),
             online = isOnline(lastSyncAtMs, now),
             rows = items,
-            emptyTitle = "Nothing finished yet",
-            emptyBody = "Completed work shows up here",
+            emptyTitle = "No replies yet",
+            emptyBody = "Recent chat replies show up here",
         )
     }
 
@@ -142,19 +131,6 @@ fun buildWidgetModel(
             )
         },
     )
-    addItems(
-        review.map { card ->
-            WidgetRow.Item(
-                cardId = card.id,
-                kind = WidgetRowKind.REVIEW,
-                title = card.title.ifBlank { "Untitled" },
-                subtitle = "${projectLabel(card)} · ready for review",
-                trailing = sinceLabel(parseInstant(card.phaseChangedAt.ifBlank { card.updatedAt }), now),
-                highlighted = true,
-            )
-        },
-    )
-
     val today = now.atZone(zoneId).toLocalDate()
     val clock = DateTimeFormatter.ofPattern("HH:mm")
     val dayStamp = DateTimeFormatter.ofPattern("MMM d")
@@ -163,7 +139,7 @@ fun buildWidgetModel(
         val date = entry.at?.atZone(zoneId)?.toLocalDate()
         val title = when {
             date == null -> "Earlier"
-            date == today -> "Finished today"
+            date == today -> "Replied today"
             date == today.minusDays(1) -> "Yesterday"
             else -> "Earlier"
         }
@@ -187,26 +163,16 @@ fun buildWidgetModel(
 
     return WidgetActivityModel(
         compact = false,
-        headerTitle = "Activity",
+        headerTitle = "Chats",
         statusText = statusLine(hostname, lastSyncAtMs, now),
         online = isOnline(lastSyncAtMs, now),
         rows = rows,
-        emptyTitle = "No activity yet",
-        emptyBody = "Open Dieter to connect and start agents",
+        emptyTitle = "No chats yet",
+        emptyBody = "Start a chat in Dieter",
     )
 }
 
 internal data class FinishedEntry(val card: Card, val at: Instant?, val kind: WidgetRowKind)
-
-private fun finishedBoardCards(cards: List<Card>): List<FinishedEntry> = cards
-    .filter { it.lane.contains("done", ignoreCase = true) && !isActiveRuntime(it.runtime) }
-    .map { card ->
-        FinishedEntry(
-            card = card,
-            at = parseInstant(card.phaseChangedAt.ifBlank { card.lastActivityAt.ifBlank { card.updatedAt } }),
-            kind = if (card.runtime.equals("failed", ignoreCase = true)) WidgetRowKind.FAILED else WidgetRowKind.DONE,
-        )
-    }
 
 private fun finishedChats(chats: List<Card>): List<FinishedEntry> = chats
     .filter { chat ->
@@ -228,21 +194,19 @@ private fun finishedChats(chats: List<Card>): List<FinishedEntry> = chats
     }
 
 private fun finishedSubtitle(entry: FinishedEntry, project: String): String = when (entry.kind) {
-    WidgetRowKind.CHAT -> "$project · chat replied"
+    WidgetRowKind.CHAT -> "$project · replied"
     WidgetRowKind.FAILED -> "$project · failed"
-    else -> entry.card.summary.replace(Regex("\\s+"), " ").trim().ifBlank { "$project · marked done" }
+    WidgetRowKind.WAITING, WidgetRowKind.RUNNING -> project
 }
 
 private fun compactPhrase(entry: FinishedEntry): String = when (entry.kind) {
     WidgetRowKind.CHAT -> "replied"
     WidgetRowKind.FAILED -> "failed"
-    else -> "marked done"
+    WidgetRowKind.WAITING, WidgetRowKind.RUNNING -> "updated"
 }
 
 private fun waitingSince(card: Card): String =
     card.runtimeUpdatedAt.ifBlank { card.phaseChangedAt.ifBlank { card.updatedAt } }
-
-private fun parseInstant(card: Card): Instant? = parseInstant(card.phaseChangedAt.ifBlank { card.updatedAt })
 
 internal fun parseInstant(value: String?): Instant? {
     if (value.isNullOrBlank()) return null

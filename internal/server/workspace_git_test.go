@@ -23,7 +23,7 @@ func TestConversationWorkspaceConnectEndToEndForCardAndChat(t *testing.T) {
 	repository := realGitRepository(t)
 	created, err := client.CreateProject(ctx, connect.NewRequest(&dieterv1.CreateProjectRequest{
 		Mode: "open", Path: repository, Name: "Workspace", BoardName: "Main", Workflow: model.WorkflowReview,
-		DefaultWorkspaceMode: model.WorkspaceModeWorktree, BaseBranch: "main",
+		BaseBranch: "main",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -31,13 +31,13 @@ func TestConversationWorkspaceConnectEndToEndForCardAndChat(t *testing.T) {
 	project, board := created.Msg.GetProject(), created.Msg.GetBoard()
 	card, err := client.CreateCard(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{
 		ProjectId: project.GetId(), BoardId: board.GetId(), Lane: model.LaneTodo,
-		Title: "Card workspace", Prompt: "work", DeferStart: true,
+		Title: "Card workspace", Prompt: "work", DeferStart: true, WorkspaceMode: model.WorkspaceModeWorktree,
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	chat, err := client.CreateChat(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{
-		ProjectId: project.GetId(), Title: "Chat workspace", Prompt: "work", DeferStart: true,
+		ProjectId: project.GetId(), Title: "Chat workspace", Prompt: "work", DeferStart: true, WorkspaceMode: model.WorkspaceModeWorktree,
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +116,18 @@ func TestConversationWorkspaceConnectEndToEndForCardAndChat(t *testing.T) {
 	listed, err := client.ListProjectWorkspaces(ctx, connect.NewRequest(&dieterv1.ProjectRef{ProjectId: project.GetId()}))
 	if err != nil || len(listed.Msg.GetWorkspaces()) != 2 {
 		t.Fatalf("workspaces=%#v err=%v", listed, err)
+	}
+}
+
+func TestConversationInputRequiresPerConversationWorkspaceMode(t *testing.T) {
+	_, err := conversationInput(&dieterv1.CreateConversationRequest{Title: "Missing workspace"})
+	if err == nil || !strings.Contains(err.Error(), "workspace mode must be selected") {
+		t.Fatalf("missing workspace mode error=%v", err)
+	}
+
+	input, err := conversationInput(&dieterv1.CreateConversationRequest{Title: "Explicit workspace", WorkspaceMode: "WORKTREE"})
+	if err != nil || input.WorkspaceMode != model.WorkspaceModeWorktree {
+		t.Fatalf("explicit workspace input=%#v err=%v", input, err)
 	}
 }
 

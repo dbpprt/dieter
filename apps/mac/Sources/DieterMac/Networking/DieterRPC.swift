@@ -7,6 +7,15 @@ import GRPCProtobuf
 import Security
 import SwiftProtobuf
 
+protocol DieterScheduleRPC: Sendable {
+    func schedules(projectID: String) async throws -> Dieter_V1_SchedulesResponse
+    func scheduleRuns(id: String, limit: Int32) async throws -> Dieter_V1_ScheduleRunsResponse
+}
+
+protocol DieterChatPinRPC: Sendable {
+    func pinChat(_ request: Dieter_V1_PinChatRequest) async throws -> Dieter_V1_Card
+}
+
 /// One long-lived native HTTP/2 gRPC channel to the loopback Dieter server.
 final class DieterRPC: Sendable {
     typealias Transport = HTTP2ClientTransport.Posix
@@ -653,6 +662,8 @@ final class DieterRPC: Sendable {
         return try await service.listScheduleRuns(request: .init(message: request))
     }
 }
+
+extension DieterRPC: DieterScheduleRPC, DieterChatPinRPC {}
 
 enum DieterTransportTarget {
     enum HostKind: Equatable {

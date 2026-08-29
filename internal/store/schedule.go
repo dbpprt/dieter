@@ -17,6 +17,7 @@ type ScheduleInput struct {
 	Project, Board, Name, Description, Cron, Timezone, Action string
 	TitleTemplate, PromptTemplate, Provider, Model, Effort    string
 	OpenCardPolicy, MisfirePolicy, BusyPolicy, NextRunAt      string
+	WorkspaceMode                                             string
 	LabelIDs                                                  []string
 	ProviderOptions                                           map[string]string
 	Enabled                                                   bool
@@ -31,6 +32,13 @@ func normalizeScheduleInput(input ScheduleInput) (ScheduleInput, error) {
 	input.PromptTemplate = strings.TrimSpace(input.PromptTemplate)
 	input.Provider = strings.TrimSpace(input.Provider)
 	input.Model = strings.TrimSpace(input.Model)
+	input.WorkspaceMode = strings.ToLower(strings.TrimSpace(input.WorkspaceMode))
+	if input.WorkspaceMode == "" {
+		input.WorkspaceMode = model.WorkspaceModeMain
+	}
+	if !validWorkspaceMode(input.WorkspaceMode) {
+		return input, errors.New("workspace mode must be main, branch, or worktree")
+	}
 	if input.Name == "" || input.Cron == "" || input.Timezone == "" {
 		return input, errors.New("schedule name, cron expression, and timezone are required")
 	}
@@ -91,6 +99,7 @@ func (s *Store) CreateSchedule(input ScheduleInput) (model.Schedule, error) {
 		ID: newID("sch_"), ProjectID: project.ID, BoardID: board.ID, Name: input.Name, Description: strings.TrimSpace(input.Description),
 		Cron: input.Cron, Timezone: input.Timezone, Enabled: input.Enabled, Action: input.Action,
 		TitleTemplate: input.TitleTemplate, PromptTemplate: input.PromptTemplate, Provider: input.Provider, Model: input.Model, Effort: strings.TrimSpace(input.Effort), ProviderOptions: cloneStringMap(input.ProviderOptions), LabelIDs: labels,
+		WorkspaceMode:  input.WorkspaceMode,
 		OpenCardPolicy: input.OpenCardPolicy, MisfirePolicy: input.MisfirePolicy, BusyPolicy: input.BusyPolicy, NextRunAt: input.NextRunAt,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -104,6 +113,9 @@ func (s *Store) readSchedule(path string) (model.Schedule, error) {
 		return model.Schedule{}, err
 	}
 	item.PromptTemplate = body
+	if item.WorkspaceMode == "" {
+		item.WorkspaceMode = model.WorkspaceModeMain
+	}
 	return item, nil
 }
 

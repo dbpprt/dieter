@@ -238,7 +238,7 @@ func (api *connectAPI) CreateProject(ctx context.Context, request *connect.Reque
 	}
 	project, err := api.core.server.app.RegisterProject(ctx, app.ProjectInput{
 		Path: input.GetPath(), Name: input.GetName(), Summary: input.GetSummary(), Prompt: input.GetPrompt(), Create: mode == "create",
-		DefaultWorkspaceMode: input.GetDefaultWorkspaceMode(), BaseRemote: input.GetBaseRemote(), BaseBranch: input.GetBaseBranch(),
+		BaseRemote: input.GetBaseRemote(), BaseBranch: input.GetBaseBranch(),
 		ValidationCommands: modelValidationCommands(input.GetValidationCommands()),
 	})
 	if err != nil {
@@ -265,7 +265,7 @@ func (api *connectAPI) UpdateProject(_ context.Context, request *connect.Request
 
 func (api *connectAPI) UpdateProjectWorkspaceSettings(_ context.Context, request *connect.Request[dieterv1.UpdateProjectWorkspaceSettingsRequest]) (*connect.Response[dieterv1.Project], error) {
 	value, err := api.core.server.store.UpdateProjectWorkspaceSettings(
-		request.Msg.GetProjectId(), request.Msg.GetDefaultWorkspaceMode(), request.Msg.GetBaseRemote(), request.Msg.GetBaseBranch(),
+		request.Msg.GetProjectId(), request.Msg.GetBaseRemote(), request.Msg.GetBaseBranch(),
 		modelValidationCommands(request.Msg.GetValidationCommands()),
 	)
 	if err != nil {

@@ -118,7 +118,7 @@ func TestGRPCMachineListener(t *testing.T) {
 	card, err := client.CreateCard(ctx, &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, BoardId: board.ID, Lane: model.LaneTodo,
 		Title: "Native work", Prompt: "Build the app", Provider: "codex",
-		Model: "gpt-5.5", DeferStart: true,
+		Model: "gpt-5.5", DeferStart: true, WorkspaceMode: model.WorkspaceModeMain,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -172,7 +172,7 @@ func TestGRPCMachineListener(t *testing.T) {
 		ProjectId: project.ID, BoardId: board.ID, Name: "Daily",
 		Cron: "0 9 * * 1-5", Timezone: "UTC", Action: model.ScheduleActionDraft,
 		TitleTemplate: "Daily check", PromptTemplate: "Check the repository",
-		Provider: "codex", Model: "gpt-5.5",
+		Provider: "codex", Model: "gpt-5.5", WorkspaceMode: model.WorkspaceModeMain,
 	}})
 	if err != nil || schedule.GetName() != "Daily" {
 		t.Fatalf("schedule = %#v, %v", schedule, err)

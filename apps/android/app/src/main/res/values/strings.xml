@@ -1,10 +1,12 @@
 <resources>
     <string name="app_name">Dieter</string>
-    <string name="widget_label">Dieter Activity</string>
-    <string name="widget_description">Agent activity at a glance: what needs you, what is running, and what just finished.</string>
-    <string name="widget_title_activity">Activity</string>
-    <string name="widget_title_last_finished">Last finished</string>
+    <string name="widget_label">Dieter Chats</string>
+    <string name="widget_description">Standalone chat activity at a glance: what needs you, what is running, and recent replies.</string>
+    <string name="widget_title_activity">Chats</string>
+    <string name="widget_title_last_finished">Recent replies</string>
     <string name="widget_refresh">Refresh</string>
-    <string name="widget_empty_title">No activity yet</string>
-    <string name="widget_empty_body">Open Dieter to connect</string>
+    <string name="widget_empty_title">No chats yet</string>
+    <string name="widget_empty_body">Start a chat in Dieter</string>
+    <string name="widget_empty_recent_title">No replies yet</string>
+    <string name="widget_empty_recent_body">Recent chat replies show up here</string>
 </resources>

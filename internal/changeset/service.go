@@ -275,9 +275,14 @@ func cleanPath(value string) (string, error) {
 }
 
 func (s *Service) FileDiff(ctx context.Context, cardID, expectedRevision, filePath, commitSHA string, offset, limit int) (model.FileDiff, error) {
-	filePath, err := cleanPath(filePath)
-	if err != nil {
-		return model.FileDiff{}, err
+	// An empty path with a commit produces the whole-commit patch; working-tree
+	// diffs still require a concrete file.
+	if commitSHA == "" || filePath != "" {
+		cleaned, err := cleanPath(filePath)
+		if err != nil {
+			return model.FileDiff{}, err
+		}
+		filePath = cleaned
 	}
 	changes, err := s.Get(ctx, cardID)
 	if err != nil {
@@ -312,7 +317,9 @@ func (s *Service) FileDiff(ctx context.Context, cardID, expectedRevision, filePa
 		}
 		args = append(args, comparison)
 	}
-	args = append(args, "--", filePath)
+	if filePath != "" {
+		args = append(args, "--", filePath)
+	}
 	var patch []byte
 	if untracked {
 		result, diffErr := s.Git.Run(ctx, workspaceValue.Path, "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", filePath)

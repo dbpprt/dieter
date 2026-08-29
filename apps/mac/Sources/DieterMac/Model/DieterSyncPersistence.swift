@@ -265,8 +265,16 @@ actor DieterSyncPersistence {
     private let fileURL: URL
 
     init(root: URL? = nil) {
-        let base = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = root ?? Self.overrideRoot() ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         fileURL = base.appending(path: "Dieter", directoryHint: .isDirectory).appending(path: "sync-state.json")
+    }
+
+    /// Smoke runs point the projection at a throwaway directory so isolated
+    /// fixtures neither read stale state nor write into the real projection.
+    nonisolated static func overrideRoot(arguments: [String] = ProcessInfo.processInfo.arguments) -> URL? {
+        guard let index = arguments.firstIndex(of: "--dieter-state-root"),
+              arguments.indices.contains(index + 1) else { return nil }
+        return URL(filePath: arguments[index + 1], directoryHint: .isDirectory)
     }
 
     nonisolated static func installationID(defaults: UserDefaults = .standard) -> String {

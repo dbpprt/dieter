@@ -301,6 +301,9 @@ message CardsResponse {
 }
 
 message Project {
+  reserved 13;
+  reserved "default_workspace_mode";
+
   string id = 1;
   string name = 2;
   string path = 3;
@@ -313,7 +316,6 @@ message Project {
   int32 card_count = 10;
   int32 chat_count = 11;
   string prompt_template = 12;
-  string default_workspace_mode = 13;
   string base_remote = 14;
   string base_branch = 15;
   repeated ValidationCommand validation_commands = 16;
@@ -674,6 +676,9 @@ message DirectoryListing {
 }
 
 message CreateProjectRequest {
+  reserved 8;
+  reserved "default_workspace_mode";
+
   string mode = 1;
   string path = 2;
   string name = 3;
@@ -681,7 +686,6 @@ message CreateProjectRequest {
   string prompt = 5;
   string board_name = 6;
   string workflow = 7;
-  string default_workspace_mode = 8;
   string base_remote = 9;
   string base_branch = 10;
   repeated ValidationCommand validation_commands = 11;
@@ -709,8 +713,10 @@ message ValidationCommand {
 }
 
 message UpdateProjectWorkspaceSettingsRequest {
+  reserved 2;
+  reserved "default_workspace_mode";
+
   string project_id = 1;
-  string default_workspace_mode = 2;
   string base_remote = 3;
   string base_branch = 4;
   repeated ValidationCommand validation_commands = 5;
@@ -1000,6 +1006,7 @@ message Workspace {
   string integrated_result_sha = 27;
   string integration_strategy = 28;
   string integrated_at = 29;
+  bool dirty = 30;
 }
 
 message WorkspacesResponse {
@@ -1537,6 +1544,7 @@ message Schedule {
   string updated_at = 22;
   repeated string next_runs = 23;
   map<string, string> provider_options = 24;
+  string workspace_mode = 25;
 }
 
 message ScheduleDraft {
@@ -1558,6 +1566,7 @@ message ScheduleDraft {
   string misfire_policy = 16;
   string busy_policy = 17;
   map<string, string> provider_options = 18;
+  string workspace_mode = 19;
 }
 
 message SaveScheduleRequest {

@@ -163,6 +163,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.connection.ProjectHost
+import com.dbpprt.dieter.connection.isServerConversationId
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.toColorInt
 import com.dbpprt.dieter.ui.theme.DieterAmber
@@ -1721,7 +1722,9 @@ private fun CardDetailScreen(
     val commentCount = snapshot?.detail?.commentsCount ?: card.commentCount
     val subagents = snapshot?.conversation?.subagentsList.orEmpty()
     val activeSubagents = subagents.count { it.status == "running" || it.status == "pending" }
-    val showDetailTabs = !standalone || subagents.isNotEmpty() || commentCount > 0
+    val serverBacked = isServerConversationId(card.id)
+    val changedFileCount = state.workspaceReview.changeset?.filesCount ?: card.workspace.changedFiles
+    val showDetailTabs = !standalone || serverBacked || subagents.isNotEmpty() || commentCount > 0
     val cardOperation = state.cardOperations[card.id]
     val displayRuntime = resolvedCardRuntime(card.runtime, snapshot?.conversation?.status.orEmpty(), cardOperation)
     val detailTab by rememberUpdatedState(state.detailTab)
@@ -1839,7 +1842,11 @@ private fun CardDetailScreen(
             )
         }
         if (showDetailTabs) {
-            PrimaryTabRow(selectedTabIndex = state.detailTab, containerColor = MaterialTheme.colorScheme.background) {
+            PrimaryScrollableTabRow(
+                selectedTabIndex = state.detailTab,
+                containerColor = MaterialTheme.colorScheme.background,
+                edgePadding = 4.dp,
+            ) {
                 detailSections.forEachIndexed { index, section ->
                     Tab(
                         selected = state.detailTab == index,
@@ -1851,6 +1858,7 @@ private fun CardDetailScreen(
                                 section.label,
                                 count = when (section) {
                                     DetailSection.CONVERSATION -> 0
+                                    DetailSection.CHANGES -> changedFileCount
                                     DetailSection.COMMENTS -> commentCount
                                     DetailSection.SUBAGENTS -> activeSubagents
                                 },
@@ -1867,6 +1875,12 @@ private fun CardDetailScreen(
             ) { page ->
                 when (detailSections[page]) {
                     DetailSection.CONVERSATION -> ConversationBody(state, model, Modifier.fillMaxSize())
+                    DetailSection.CHANGES -> WorkspaceChangesBody(
+                        state = state,
+                        model = model,
+                        active = detailSections.getOrNull(state.detailTab) == DetailSection.CHANGES,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                     DetailSection.COMMENTS -> CommentsBody(state, model, Modifier.fillMaxSize())
                     DetailSection.SUBAGENTS -> SubagentsBody(state, model, Modifier.fillMaxSize())
                 }
@@ -1892,14 +1906,15 @@ private fun CardDetailScreen(
 
 internal enum class DetailSection(val label: String) {
     CONVERSATION("Conversation"),
+    CHANGES("Changes"),
     COMMENTS("Comments"),
     SUBAGENTS("Subagents"),
 }
 
 internal fun detailSectionsFor(standalone: Boolean): List<DetailSection> = if (standalone) {
-    listOf(DetailSection.CONVERSATION, DetailSection.SUBAGENTS, DetailSection.COMMENTS)
+    listOf(DetailSection.CONVERSATION, DetailSection.CHANGES, DetailSection.SUBAGENTS, DetailSection.COMMENTS)
 } else {
-    listOf(DetailSection.CONVERSATION, DetailSection.COMMENTS, DetailSection.SUBAGENTS)
+    listOf(DetailSection.CONVERSATION, DetailSection.CHANGES, DetailSection.COMMENTS, DetailSection.SUBAGENTS)
 }
 
 @Composable

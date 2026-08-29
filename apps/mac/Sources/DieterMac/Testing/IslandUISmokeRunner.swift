@@ -54,6 +54,19 @@ enum IslandUISmokeRunner {
         controller.setEnabled(true)
         let restored = await waitUntil { controller.isVisible }
 
+        let navigation = installNavigationFixture(in: store)
+        await store.openConversation(cardID: navigation.cardID)
+        let boardCardOpened = store.section == .board &&
+            store.selectedProjectID == navigation.projectID &&
+            store.selectedBoardID == navigation.boardID &&
+            store.selectedCardID == navigation.cardID &&
+            store.selectedChatID == nil
+        await store.openConversation(cardID: navigation.chatID)
+        let chatOpened = store.section == .chats &&
+            store.selectedProjectID == navigation.projectID &&
+            store.selectedCardID == nil &&
+            store.selectedChatID == navigation.chatID
+
         store.openSettings(section: .island)
         try? await DieterTaskSleep.milliseconds(450)
         let settingsVisible = store.section == .settings && store.settingsSection == .island
@@ -68,6 +81,8 @@ enum IslandUISmokeRunner {
             "empty-activity-layout": emptyExpanded ? "passed" : "failed: empty activity did not use the balanced minimum layout",
             "settings-toggle-off": hidden ? "passed" : "failed: disabling the preference left the island visible",
             "settings-toggle-on": restored ? "passed" : "failed: re-enabling the preference did not restore the island",
+            "open-board-card": boardCardOpened ? "passed" : "failed: activity did not route to its project and board",
+            "open-chat": chatOpened ? "passed" : "failed: activity did not route to Chats",
             "settings-page": settingsVisible ? "passed" : "failed: Island was not the active Settings destination",
         ], to: output)
         NSApp.terminate(nil)
@@ -90,6 +105,33 @@ enum IslandUISmokeRunner {
         store.state.boards = [board]
         store.state.cards = [running, review, done]
         store.phase = .connected(version: "island-smoke")
+    }
+
+    private static func installNavigationFixture(
+        in store: DieterStore
+    ) -> (projectID: String, boardID: String, cardID: String, chatID: String) {
+        var project = Dieter_V1_Project()
+        project.id = "island-navigation-project"
+        project.name = "Island navigation"
+        var board = Dieter_V1_Board()
+        board.id = "island-navigation-board"
+        board.projectID = project.id
+        board.name = "Activity"
+        var card = Dieter_V1_Card()
+        card.id = "island-navigation-card"
+        card.projectID = project.id
+        card.boardID = board.id
+        card.title = "Open board card"
+        var chat = Dieter_V1_Card()
+        chat.id = "island-navigation-chat"
+        chat.projectID = project.id
+        chat.scope = "chat"
+        chat.title = "Open chat"
+        store.projectDirectory[project.id] = project
+        store.navigationBoards[project.id] = [board]
+        store.navigationCards[project.id] = [card]
+        store.chats = [chat]
+        return (project.id, board.id, card.id, chat.id)
     }
 
     private static func waitUntil(timeout: TimeInterval = 5, condition: @escaping @MainActor () -> Bool) async -> Bool {

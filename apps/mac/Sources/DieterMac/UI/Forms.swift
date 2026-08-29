@@ -13,9 +13,6 @@ struct NewConversationSheet: View {
     @State private var effort = ""
     @State private var providerOptions: [String: String] = [:]
     @State private var lane = ""
-    @State private var workspaceMode = ""
-    @State private var workspaceBranch = ""
-    @State private var workspaceBaseBranch = ""
     @State private var workspacePickerPresented = false
     @State private var selectedLabelIDs: Set<String> = []
     @State private var attachments: [Dieter_V1_MessagePart] = []
@@ -230,9 +227,7 @@ struct NewConversationSheet: View {
         .sheet(isPresented: $workspacePickerPresented) {
             ConversationWorkspacePickerSheet(
                 project: project,
-                mode: $workspaceMode,
-                branch: $workspaceBranch,
-                baseBranch: $workspaceBaseBranch
+                draft: $workspaceDraft
             )
         }
         .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
@@ -264,10 +259,7 @@ struct NewConversationSheet: View {
 
     private func chooseDefaults() {
         if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
-        if workspaceMode.isEmpty {
-            workspaceMode = ConversationWorkspaceMode.selectable(project?.defaultWorkspaceMode).rawValue
-        }
-        if workspaceBaseBranch.isEmpty { workspaceBaseBranch = project?.baseBranch ?? "" }
+        if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
         guard provider.isEmpty, let harness = store.harnessCatalog.harnesses.first else { return }
         provider = harness.id; model = harness.defaultModel; effort = harness.models.first(where: { $0.id == model })?.defaultEffort ?? harness.effort.options.first?.id ?? ""
         providerOptions = ProviderOptionValues.defaults(for: harness)
@@ -302,7 +294,7 @@ struct NewConversationSheet: View {
     }
 
     private var workspaceChoice: ConversationWorkspaceMode {
-        ConversationWorkspaceMode.selectable(workspaceMode)
+        workspaceDraft.mode
     }
 
     private func newCardLabel(_ title: String) -> some View {
@@ -361,9 +353,7 @@ struct NewConversationSheet: View {
 private struct ConversationWorkspacePickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let project: Dieter_V1_Project?
-    @Binding var mode: String
-    @Binding var branch: String
-    @Binding var baseBranch: String
+    @Binding var draft: ConversationWorkspaceDraft
     @State private var draftMode: ConversationWorkspaceMode
     @State private var draftBranch: String
     @State private var draftBaseBranch: String
@@ -371,17 +361,13 @@ private struct ConversationWorkspacePickerSheet: View {
 
     init(
         project: Dieter_V1_Project?,
-        mode: Binding<String>,
-        branch: Binding<String>,
-        baseBranch: Binding<String>
+        draft: Binding<ConversationWorkspaceDraft>
     ) {
         self.project = project
-        _mode = mode
-        _branch = branch
-        _baseBranch = baseBranch
-        _draftMode = State(initialValue: ConversationWorkspaceMode.selectable(mode.wrappedValue))
-        _draftBranch = State(initialValue: branch.wrappedValue)
-        _draftBaseBranch = State(initialValue: baseBranch.wrappedValue.isEmpty ? (project?.baseBranch ?? "") : baseBranch.wrappedValue)
+        _draft = draft
+        _draftMode = State(initialValue: draft.wrappedValue.mode)
+        _draftBranch = State(initialValue: draft.wrappedValue.branch)
+        _draftBaseBranch = State(initialValue: draft.wrappedValue.baseBranch.isEmpty ? (project?.baseBranch ?? "") : draft.wrappedValue.baseBranch)
     }
 
     var body: some View {
@@ -473,7 +459,7 @@ private struct ConversationWorkspacePickerSheet: View {
     }
 
     private var baseDetail: String {
-        if let base = project?.baseBranch, !base.isEmpty { return "Project default: \(base)" }
+        if let base = project?.baseBranch, !base.isEmpty { return "Project base: \(base)" }
         return "Leave empty to use the current branch."
     }
 
@@ -554,9 +540,9 @@ private struct ConversationWorkspacePickerSheet: View {
     }
 
     private func applySelection() {
-        mode = draftMode.rawValue
-        branch = draftMode == .worktree ? draftBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        baseBranch = draftMode == .worktree ? draftBaseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        draft.mode = draftMode
+        draft.branch = draftMode == .worktree ? draftBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        draft.baseBranch = draftMode == .worktree ? draftBaseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         dismiss()
     }
 }
@@ -646,7 +632,7 @@ struct EditCardSheet: View {
                     .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
                 if card.workspace.revision.isEmpty {
                     Picker("Workspace", selection: $workspaceDraft.mode) {
-                        ForEach(ConversationWorkspaceMode.allCases.filter { $0 != .projectDefault }) { mode in Text(mode.title).tag(mode) }
+                        ForEach(ConversationWorkspaceMode.allCases) { mode in Text(mode.title).tag(mode) }
                     }
                     .pickerStyle(.menu)
                     HStack {
@@ -959,13 +945,9 @@ struct NewProjectSheet: View {
                         VStack(alignment: .leading, spacing: 11) {
                             HStack(spacing: 12) {
                                 VStack(alignment: .leading, spacing: 7) {
-                                    projectLabel("Default workspace")
-                                    Picker("Default workspace", selection: $draft.defaultWorkspaceMode) {
-                                        Text("Worktree").tag("worktree")
-                                        Text("Branch").tag("branch")
-                                        Text("Main checkout").tag("main")
-                                    }
-                                    .pickerStyle(.segmented).labelsHidden()
+                                    projectLabel("Workspace base")
+                                    Text("Configured independently on every chat and card.")
+                                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                                 }
                             }
                             HStack(spacing: 12) {
@@ -978,7 +960,7 @@ struct NewProjectSheet: View {
                                     projectTextField("main", text: $draft.baseBranch)
                                 }
                             }
-                            Text("Worktree is recommended for concurrent agents. Git operations run on the selected project host.")
+                            Text("Each chat and card chooses its own workspace mode. Git operations run on the selected project host.")
                                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                         }
                         .padding(.top, 10)
@@ -1481,7 +1463,6 @@ struct ProjectContextSheet: View {
     @State private var name = ""
     @State private var summary = ""
     @State private var prompt = ""
-    @State private var workspaceMode = "worktree"
     @State private var baseRemote = "origin"
     @State private var baseBranch = "main"
     @State private var validationCommands: [ValidationCommandDraft] = []
@@ -1503,17 +1484,9 @@ struct ProjectContextSheet: View {
                 Section("Project") { TextField("Name", text: $name); TextField("Short summary", text: $summary) }
                 Section("Persistent context") { TextEditor(text: $prompt).font(.body.monospaced()).frame(height: 260); Text("This context is owned by Dieter and supplied to new work without writing into the repository.").font(.caption).foregroundStyle(.secondary) }
                 Section("Agent workspaces") {
-                    Picker("Default mode", selection: $workspaceMode) {
-                        Text("Worktree").tag("worktree")
-                        Text("Branch").tag("branch")
-                        Text("Main checkout").tag("main")
-                    }
-                    .pickerStyle(.segmented)
                     TextField("Base remote", text: $baseRemote)
                     TextField("Base branch", text: $baseBranch)
-                    Text(workspaceMode == "worktree"
-                        ? "Each conversation gets an isolated branch and Git worktree."
-                        : workspaceMode == "branch" ? "Each conversation gets a branch in the registered checkout." : "Conversations share the registered checkout and cannot safely run concurrently.")
+                    Text("Workspace mode is selected independently when each chat or card is created.")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("Manage existing workspaces…") { workspacesPresented = true }
                 }
@@ -1546,7 +1519,6 @@ struct ProjectContextSheet: View {
         .onAppear {
             guard let project = store.selectedProject else { return }
             name = project.name; summary = project.summary; prompt = project.prompt
-            workspaceMode = project.defaultWorkspaceMode.isEmpty ? "worktree" : project.defaultWorkspaceMode
             baseRemote = project.baseRemote.isEmpty ? "origin" : project.baseRemote
             baseBranch = project.baseBranch.isEmpty ? "main" : project.baseBranch
             validationCommands = project.validationCommands.map(ValidationCommandDraft.init)
@@ -1558,7 +1530,6 @@ struct ProjectContextSheet: View {
         saving = true
         Task {
             let workspaceSaved = await store.updateProjectWorkspaceSettings(
-                mode: workspaceMode,
                 remote: baseRemote,
                 branch: baseBranch,
                 validationCommands: validationCommands.map(\.value)

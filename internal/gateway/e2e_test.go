@@ -118,7 +118,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		}
 	}
 	project, err := boardStore.CreateProject(store.CreateProjectInput{
-		Name: "Relay", Path: repositoryPath, DefaultWorkspaceMode: "worktree", BaseBranch: "main",
+		Name: "Relay", Path: repositoryPath, BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +219,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	syncSequence := syncFrame.GetCursor().GetSequence()
 	command := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Relayed outbox", Prompt: "deliver once",
-		Provider: "mock", Model: "mock", DeferStart: true,
+		Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: "worktree",
 		ClientId: "gateway-e2e-client", CommandId: "gateway-e2e-command",
 	}
 	created, err := dieterClient.CreateChat(routed, command)

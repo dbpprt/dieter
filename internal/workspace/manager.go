@@ -51,11 +51,8 @@ func validMode(value string) bool {
 	}
 }
 
-func selectedMode(card model.Card, project model.Project) (string, error) {
+func selectedMode(card model.Card) (string, error) {
 	mode := strings.ToLower(strings.TrimSpace(card.WorkspaceMode))
-	if mode == "" {
-		mode = strings.ToLower(strings.TrimSpace(project.DefaultWorkspaceMode))
-	}
 	if mode == "" {
 		mode = model.WorkspaceModeMain
 	}
@@ -90,7 +87,7 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 			}
 		}
 	}
-	mode, err := selectedMode(detail.Card, detail.Project)
+	mode, err := selectedMode(detail.Card)
 	if err != nil {
 		return model.Workspace{}, err
 	}

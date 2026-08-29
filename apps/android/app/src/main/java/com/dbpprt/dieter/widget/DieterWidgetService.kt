@@ -34,7 +34,6 @@ internal class ActivityRemoteViewsFactory(
         compact = DieterActivityWidgetProvider.isCompact(config.style, options)
         val state = DieterActivityWidgetProvider.connectionState(context)
         rows = buildWidgetModel(
-            cards = state.cards,
             chats = state.chats,
             conversations = state.activeConversations,
             projects = state.projects,
@@ -85,30 +84,28 @@ internal class ActivityRemoteViewsFactory(
     }
 
     private fun iconRes(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> R.drawable.ic_widget_eye
+        WidgetRowKind.WAITING -> R.drawable.ic_widget_eye
         WidgetRowKind.RUNNING -> R.drawable.ic_widget_running
         WidgetRowKind.CHAT -> R.drawable.ic_widget_chat
-        WidgetRowKind.DONE, WidgetRowKind.FAILED -> R.drawable.ic_widget_check
+        WidgetRowKind.FAILED -> R.drawable.ic_widget_check
     }
 
     private fun iconColor(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> 0xFFE2BE6A.toInt()
+        WidgetRowKind.WAITING -> 0xFFE2BE6A.toInt()
         WidgetRowKind.RUNNING -> colors.liveForAppearanceInt(darkColors)
-        WidgetRowKind.DONE -> colors.eyesForAppearanceInt(darkColors)
         WidgetRowKind.FAILED -> 0xFFF1868E.toInt()
         WidgetRowKind.CHAT -> colors.mutedForAppearanceInt(darkColors)
     }
 
     private fun iconBgRes(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> R.drawable.bg_widget_icon_amber
+        WidgetRowKind.WAITING -> R.drawable.bg_widget_icon_amber
         WidgetRowKind.RUNNING -> palette.widgetIconBackground()
-        WidgetRowKind.DONE -> palette.widgetIconBackground()
         WidgetRowKind.FAILED -> R.drawable.bg_widget_icon_coral
         WidgetRowKind.CHAT -> palette.widgetIconBackground()
     }
 
     private fun trailingColor(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> 0xFFE2BE6A.toInt()
+        WidgetRowKind.WAITING -> 0xFFE2BE6A.toInt()
         WidgetRowKind.RUNNING -> colors.liveForAppearanceInt(darkColors)
         WidgetRowKind.FAILED -> 0xFFF1868E.toInt()
         else -> colors.mutedForAppearanceInt(darkColors)

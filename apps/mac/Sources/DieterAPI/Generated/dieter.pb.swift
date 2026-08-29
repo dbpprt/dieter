@@ -707,8 +707,6 @@ public nonisolated struct Dieter_V1_Project: Sendable {
 
   public var promptTemplate: String = String()
 
-  public var defaultWorkspaceMode: String = String()
-
   public var baseRemote: String = String()
 
   public var baseBranch: String = String()
@@ -1947,8 +1945,6 @@ public nonisolated struct Dieter_V1_CreateProjectRequest: Sendable {
 
   public var workflow: String = String()
 
-  public var defaultWorkspaceMode: String = String()
-
   public var baseRemote: String = String()
 
   public var baseBranch: String = String()
@@ -2061,8 +2057,6 @@ public nonisolated struct Dieter_V1_UpdateProjectWorkspaceSettingsRequest: Senda
   // methods supported on all messages.
 
   public var projectID: String = String()
-
-  public var defaultWorkspaceMode: String = String()
 
   public var baseRemote: String = String()
 
@@ -3005,6 +2999,11 @@ public nonisolated struct Dieter_V1_Workspace: @unchecked Sendable {
   public var integratedAt: String {
     get {_storage._integratedAt}
     set {_uniqueStorage()._integratedAt = newValue}
+  }
+
+  public var dirty: Bool {
+    get {_storage._dirty}
+    set {_uniqueStorage()._dirty = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -4656,6 +4655,11 @@ public nonisolated struct Dieter_V1_Schedule: @unchecked Sendable {
     set {_uniqueStorage()._providerOptions = newValue}
   }
 
+  public var workspaceMode: String {
+    get {_storage._workspaceMode}
+    set {_uniqueStorage()._workspaceMode = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -4756,6 +4760,11 @@ public nonisolated struct Dieter_V1_ScheduleDraft: @unchecked Sendable {
   public var providerOptions: Dictionary<String,String> {
     get {_storage._providerOptions}
     set {_uniqueStorage()._providerOptions = newValue}
+  }
+
+  public var workspaceMode: String {
+    get {_storage._workspaceMode}
+    set {_uniqueStorage()._workspaceMode = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -6113,7 +6122,7 @@ nonisolated extension Dieter_V1_CardsResponse: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Project"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}path\0\u{1}summary\0\u{1}prompt\0\u{1}archived\0\u{3}created_at\0\u{3}updated_at\0\u{3}board_count\0\u{3}card_count\0\u{3}chat_count\0\u{3}prompt_template\0\u{3}default_workspace_mode\0\u{3}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}path\0\u{1}summary\0\u{1}prompt\0\u{1}archived\0\u{3}created_at\0\u{3}updated_at\0\u{3}board_count\0\u{3}card_count\0\u{3}chat_count\0\u{3}prompt_template\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{b}default_workspace_mode\0\u{c}\u{d}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -6133,7 +6142,6 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
       case 10: try { try decoder.decodeSingularInt32Field(value: &self.cardCount) }()
       case 11: try { try decoder.decodeSingularInt32Field(value: &self.chatCount) }()
       case 12: try { try decoder.decodeSingularStringField(value: &self.promptTemplate) }()
-      case 13: try { try decoder.decodeSingularStringField(value: &self.defaultWorkspaceMode) }()
       case 14: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
       case 15: try { try decoder.decodeSingularStringField(value: &self.baseBranch) }()
       case 16: try { try decoder.decodeRepeatedMessageField(value: &self.validationCommands) }()
@@ -6179,9 +6187,6 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
     if !self.promptTemplate.isEmpty {
       try visitor.visitSingularStringField(value: self.promptTemplate, fieldNumber: 12)
     }
-    if !self.defaultWorkspaceMode.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultWorkspaceMode, fieldNumber: 13)
-    }
     if !self.baseRemote.isEmpty {
       try visitor.visitSingularStringField(value: self.baseRemote, fieldNumber: 14)
     }
@@ -6207,7 +6212,6 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
     if lhs.cardCount != rhs.cardCount {return false}
     if lhs.chatCount != rhs.chatCount {return false}
     if lhs.promptTemplate != rhs.promptTemplate {return false}
-    if lhs.defaultWorkspaceMode != rhs.defaultWorkspaceMode {return false}
     if lhs.baseRemote != rhs.baseRemote {return false}
     if lhs.baseBranch != rhs.baseBranch {return false}
     if lhs.validationCommands != rhs.validationCommands {return false}
@@ -8702,7 +8706,7 @@ nonisolated extension Dieter_V1_DirectoryListing: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateProjectRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{1}path\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}board_name\0\u{1}workflow\0\u{3}default_workspace_mode\0\u{3}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{1}path\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}board_name\0\u{1}workflow\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{b}default_workspace_mode\0\u{c}\u{8}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -8717,7 +8721,6 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
       case 5: try { try decoder.decodeSingularStringField(value: &self.prompt) }()
       case 6: try { try decoder.decodeSingularStringField(value: &self.boardName) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.workflow) }()
-      case 8: try { try decoder.decodeSingularStringField(value: &self.defaultWorkspaceMode) }()
       case 9: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
       case 10: try { try decoder.decodeSingularStringField(value: &self.baseBranch) }()
       case 11: try { try decoder.decodeRepeatedMessageField(value: &self.validationCommands) }()
@@ -8748,9 +8751,6 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
     if !self.workflow.isEmpty {
       try visitor.visitSingularStringField(value: self.workflow, fieldNumber: 7)
     }
-    if !self.defaultWorkspaceMode.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultWorkspaceMode, fieldNumber: 8)
-    }
     if !self.baseRemote.isEmpty {
       try visitor.visitSingularStringField(value: self.baseRemote, fieldNumber: 9)
     }
@@ -8771,7 +8771,6 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
     if lhs.prompt != rhs.prompt {return false}
     if lhs.boardName != rhs.boardName {return false}
     if lhs.workflow != rhs.workflow {return false}
-    if lhs.defaultWorkspaceMode != rhs.defaultWorkspaceMode {return false}
     if lhs.baseRemote != rhs.baseRemote {return false}
     if lhs.baseBranch != rhs.baseBranch {return false}
     if lhs.validationCommands != rhs.validationCommands {return false}
@@ -8963,7 +8962,7 @@ nonisolated extension Dieter_V1_ValidationCommand: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_V1_UpdateProjectWorkspaceSettingsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UpdateProjectWorkspaceSettingsRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}default_workspace_mode\0\u{3}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{b}default_workspace_mode\0\u{c}\u{2}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -8972,7 +8971,6 @@ nonisolated extension Dieter_V1_UpdateProjectWorkspaceSettingsRequest: SwiftProt
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.defaultWorkspaceMode) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.baseBranch) }()
       case 5: try { try decoder.decodeRepeatedMessageField(value: &self.validationCommands) }()
@@ -8984,9 +8982,6 @@ nonisolated extension Dieter_V1_UpdateProjectWorkspaceSettingsRequest: SwiftProt
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     if !self.projectID.isEmpty {
       try visitor.visitSingularStringField(value: self.projectID, fieldNumber: 1)
-    }
-    if !self.defaultWorkspaceMode.isEmpty {
-      try visitor.visitSingularStringField(value: self.defaultWorkspaceMode, fieldNumber: 2)
     }
     if !self.baseRemote.isEmpty {
       try visitor.visitSingularStringField(value: self.baseRemote, fieldNumber: 3)
@@ -9002,7 +8997,6 @@ nonisolated extension Dieter_V1_UpdateProjectWorkspaceSettingsRequest: SwiftProt
 
   public static func ==(lhs: Dieter_V1_UpdateProjectWorkspaceSettingsRequest, rhs: Dieter_V1_UpdateProjectWorkspaceSettingsRequest) -> Bool {
     if lhs.projectID != rhs.projectID {return false}
-    if lhs.defaultWorkspaceMode != rhs.defaultWorkspaceMode {return false}
     if lhs.baseRemote != rhs.baseRemote {return false}
     if lhs.baseBranch != rhs.baseBranch {return false}
     if lhs.validationCommands != rhs.validationCommands {return false}
@@ -10741,7 +10735,7 @@ nonisolated extension Dieter_V1_WorkspaceSummary: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Workspace"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}project_id\0\u{1}mode\0\u{1}path\0\u{3}base_remote\0\u{3}base_branch\0\u{3}base_sha\0\u{3}current_base_sha\0\u{1}branch\0\u{3}head_sha\0\u{3}upstream_ref\0\u{3}managed_branch\0\u{3}legacy_unmanaged\0\u{1}state\0\u{1}revision\0\u{3}current_operation_id\0\u{3}previous_card_ids\0\u{3}changed_files\0\u{1}additions\0\u{1}deletions\0\u{1}ahead\0\u{1}behind\0\u{3}size_bytes\0\u{3}created_at\0\u{3}updated_at\0\u{3}integrated_head_sha\0\u{3}integrated_result_sha\0\u{3}integration_strategy\0\u{3}integrated_at\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}project_id\0\u{1}mode\0\u{1}path\0\u{3}base_remote\0\u{3}base_branch\0\u{3}base_sha\0\u{3}current_base_sha\0\u{1}branch\0\u{3}head_sha\0\u{3}upstream_ref\0\u{3}managed_branch\0\u{3}legacy_unmanaged\0\u{1}state\0\u{1}revision\0\u{3}current_operation_id\0\u{3}previous_card_ids\0\u{3}changed_files\0\u{1}additions\0\u{1}deletions\0\u{1}ahead\0\u{1}behind\0\u{3}size_bytes\0\u{3}created_at\0\u{3}updated_at\0\u{3}integrated_head_sha\0\u{3}integrated_result_sha\0\u{3}integration_strategy\0\u{3}integrated_at\0\u{1}dirty\0")
 
   fileprivate class _StorageClass {
     var _cardID: String = String()
@@ -10773,6 +10767,7 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
     var _integratedResultSha: String = String()
     var _integrationStrategy: String = String()
     var _integratedAt: String = String()
+    var _dirty: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -10812,6 +10807,7 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
       _integratedResultSha = source._integratedResultSha
       _integrationStrategy = source._integrationStrategy
       _integratedAt = source._integratedAt
+      _dirty = source._dirty
     }
   }
 
@@ -10859,6 +10855,7 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
         case 27: try { try decoder.decodeSingularStringField(value: &_storage._integratedResultSha) }()
         case 28: try { try decoder.decodeSingularStringField(value: &_storage._integrationStrategy) }()
         case 29: try { try decoder.decodeSingularStringField(value: &_storage._integratedAt) }()
+        case 30: try { try decoder.decodeSingularBoolField(value: &_storage._dirty) }()
         default: break
         }
       }
@@ -10954,6 +10951,9 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
       if !_storage._integratedAt.isEmpty {
         try visitor.visitSingularStringField(value: _storage._integratedAt, fieldNumber: 29)
       }
+      if _storage._dirty != false {
+        try visitor.visitSingularBoolField(value: _storage._dirty, fieldNumber: 30)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -10992,6 +10992,7 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
         if _storage._integratedResultSha != rhs_storage._integratedResultSha {return false}
         if _storage._integrationStrategy != rhs_storage._integrationStrategy {return false}
         if _storage._integratedAt != rhs_storage._integratedAt {return false}
+        if _storage._dirty != rhs_storage._dirty {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -14430,7 +14431,7 @@ nonisolated extension Dieter_V1_SchedulesResponse: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Schedule"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{3}board_id\0\u{1}name\0\u{1}description\0\u{1}cron\0\u{1}timezone\0\u{1}enabled\0\u{1}action\0\u{3}title_template\0\u{3}prompt_template\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}open_card_policy\0\u{3}misfire_policy\0\u{3}busy_policy\0\u{3}next_run_at\0\u{3}last_run_at\0\u{3}created_at\0\u{3}updated_at\0\u{3}next_runs\0\u{3}provider_options\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{3}board_id\0\u{1}name\0\u{1}description\0\u{1}cron\0\u{1}timezone\0\u{1}enabled\0\u{1}action\0\u{3}title_template\0\u{3}prompt_template\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}open_card_policy\0\u{3}misfire_policy\0\u{3}busy_policy\0\u{3}next_run_at\0\u{3}last_run_at\0\u{3}created_at\0\u{3}updated_at\0\u{3}next_runs\0\u{3}provider_options\0\u{3}workspace_mode\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -14457,6 +14458,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
     var _updatedAt: String = String()
     var _nextRuns: [String] = []
     var _providerOptions: Dictionary<String,String> = [:]
+    var _workspaceMode: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -14491,6 +14493,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
       _updatedAt = source._updatedAt
       _nextRuns = source._nextRuns
       _providerOptions = source._providerOptions
+      _workspaceMode = source._workspaceMode
     }
   }
 
@@ -14533,6 +14536,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
         case 22: try { try decoder.decodeSingularStringField(value: &_storage._updatedAt) }()
         case 23: try { try decoder.decodeRepeatedStringField(value: &_storage._nextRuns) }()
         case 24: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._providerOptions) }()
+        case 25: try { try decoder.decodeSingularStringField(value: &_storage._workspaceMode) }()
         default: break
         }
       }
@@ -14613,6 +14617,9 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
       if !_storage._providerOptions.isEmpty {
         try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._providerOptions, fieldNumber: 24)
       }
+      if !_storage._workspaceMode.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._workspaceMode, fieldNumber: 25)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -14646,6 +14653,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
         if _storage._updatedAt != rhs_storage._updatedAt {return false}
         if _storage._nextRuns != rhs_storage._nextRuns {return false}
         if _storage._providerOptions != rhs_storage._providerOptions {return false}
+        if _storage._workspaceMode != rhs_storage._workspaceMode {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -14657,7 +14665,7 @@ nonisolated extension Dieter_V1_Schedule: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ScheduleDraft"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}name\0\u{1}description\0\u{1}cron\0\u{1}timezone\0\u{1}enabled\0\u{1}action\0\u{3}title_template\0\u{3}prompt_template\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}open_card_policy\0\u{3}misfire_policy\0\u{3}busy_policy\0\u{3}provider_options\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}name\0\u{1}description\0\u{1}cron\0\u{1}timezone\0\u{1}enabled\0\u{1}action\0\u{3}title_template\0\u{3}prompt_template\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}open_card_policy\0\u{3}misfire_policy\0\u{3}busy_policy\0\u{3}provider_options\0\u{3}workspace_mode\0")
 
   fileprivate class _StorageClass {
     var _projectID: String = String()
@@ -14678,6 +14686,7 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
     var _misfirePolicy: String = String()
     var _busyPolicy: String = String()
     var _providerOptions: Dictionary<String,String> = [:]
+    var _workspaceMode: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -14706,6 +14715,7 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
       _misfirePolicy = source._misfirePolicy
       _busyPolicy = source._busyPolicy
       _providerOptions = source._providerOptions
+      _workspaceMode = source._workspaceMode
     }
   }
 
@@ -14742,6 +14752,7 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
         case 16: try { try decoder.decodeSingularStringField(value: &_storage._misfirePolicy) }()
         case 17: try { try decoder.decodeSingularStringField(value: &_storage._busyPolicy) }()
         case 18: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._providerOptions) }()
+        case 19: try { try decoder.decodeSingularStringField(value: &_storage._workspaceMode) }()
         default: break
         }
       }
@@ -14804,6 +14815,9 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
       if !_storage._providerOptions.isEmpty {
         try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._providerOptions, fieldNumber: 18)
       }
+      if !_storage._workspaceMode.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._workspaceMode, fieldNumber: 19)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -14831,6 +14845,7 @@ nonisolated extension Dieter_V1_ScheduleDraft: SwiftProtobuf.Message, SwiftProto
         if _storage._misfirePolicy != rhs_storage._misfirePolicy {return false}
         if _storage._busyPolicy != rhs_storage._busyPolicy {return false}
         if _storage._providerOptions != rhs_storage._providerOptions {return false}
+        if _storage._workspaceMode != rhs_storage._workspaceMode {return false}
         return true
       }
       if !storagesAreEqual {return false}

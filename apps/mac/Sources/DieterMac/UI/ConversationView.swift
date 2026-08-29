@@ -75,8 +75,20 @@ struct ConversationView: View {
             }
         }
         .background(DieterTheme.background)
+        .overlay(alignment: .bottom) {
+            if let toast = store.workspaceToast {
+                WorkspaceToastView(toast: toast)
+                    .padding(.bottom, 18)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .id(toast.id)
+            }
+        }
+        .animation(.spring(duration: 0.3), value: store.workspaceToast)
         .onChange(of: store.selectedCardID) { _, _ in tab = "Conversation" }
         .onChange(of: store.selectedChatID) { _, _ in tab = "Conversation" }
+        .onReceive(NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.selectTabNotification)) { note in
+            if let name = note.object as? String { tab = name }
+        }
         .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case let .success(urls) = result { store.addAttachments(urls) }
             else if case let .failure(error) = result { store.show(error) }
@@ -118,7 +130,7 @@ private struct ConversationChrome: View {
                             Text(detail.project.name).lineLimit(1)
                             Text(standalone ? "· Standalone chat" : "/ \(detail.board.name)").lineLimit(1)
                         }
-                        if let id = card?.id, !id.isEmpty { Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()) }
+                        if let id = card?.id, !id.isEmpty { Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()).lineLimit(1) }
                         if card != nil {
                             Text("·")
                             TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -127,6 +139,7 @@ private struct ConversationChrome: View {
                                     syncing: store.conversationSyncing,
                                     now: context.date
                                 ))
+                                .lineLimit(1)
                                 .accessibilityIdentifier("conversation-last-refreshed")
                             }
                             if store.conversationSyncing {
@@ -205,7 +218,7 @@ private struct ConversationTabBar: View {
                         HStack(spacing: 5) {
                             Text(item.0).lineLimit(1)
                             if item.1 > 0 {
-                                Text("\(item.1)").font(.caption2.weight(.bold)).foregroundStyle(selection == item.0 ? DieterTheme.shell : DieterTheme.tertiary)
+                                ConversationTabCountBadge(count: item.1, selected: selection == item.0)
                             }
                         }
                         .font(.system(size: 12, weight: selection == item.0 ? .semibold : .medium))
@@ -214,9 +227,29 @@ private struct ConversationTabBar: View {
                     }
                     .fixedSize(horizontal: true, vertical: false)
                 }.buttonStyle(.plain)
+                    .accessibilityLabel(item.1 > 0 ? "\(item.0), \(item.1)" : item.0)
+                    .accessibilityIdentifier("conversation-tab-\(item.0.lowercased())")
             }
             Spacer()
         }
+    }
+}
+
+private struct ConversationTabCountBadge: View {
+    let count: Int
+    let selected: Bool
+
+    var body: some View {
+        Text(count, format: .number)
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(selected ? DieterTheme.text : DieterTheme.tertiary)
+            .padding(.horizontal, 6)
+            .frame(minWidth: 18, minHeight: 18)
+            .background(selected ? DieterTheme.selection : DieterTheme.raised, in: Capsule())
+            .overlay(Capsule().stroke(selected ? DieterTheme.strongBorder : DieterTheme.border))
+            .contentTransition(.numericText())
+            .accessibilityHidden(true)
     }
 }
 
@@ -1499,11 +1532,6 @@ private struct ConversationComposer: View {
     private var hasDraft: Bool {
         !store.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.composerAttachments.isEmpty
     }
-    private var composerEditorHeight: CGFloat {
-        let lines = store.composerText.split(separator: "\n", omittingEmptySubsequences: false).count
-        return min(126, 54 + CGFloat(max(0, lines - 1)) * 18)
-    }
-
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 8) {
@@ -1530,7 +1558,7 @@ private struct ConversationComposer: View {
                         if hasDraft { Task { await store.sendComposer() } }
                         return .handled
                     }
-                    .frame(height: composerEditorHeight, alignment: .topLeading)
+                    .frame(minHeight: 54, alignment: .topLeading)
 
                 if !store.composerAttachments.isEmpty {
                     AttachmentPreviewStrip(attachments: $store.composerAttachments)

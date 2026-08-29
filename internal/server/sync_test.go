@@ -44,7 +44,8 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 	request := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, BoardId: board.ID, Lane: model.LaneTodo,
 		Title: "Optimistic card", Prompt: "Queue me", Provider: "mock", Model: "mock", DeferStart: true,
-		ClientId: "mac-installation", CommandId: "create-1",
+		WorkspaceMode: model.WorkspaceModeWorktree,
+		ClientId:      "mac-installation", CommandId: "create-1",
 	}
 	created, err := client.CreateCard(ctx, connect.NewRequest(request))
 	if err != nil {
@@ -77,7 +78,8 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 
 	chatRequest := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Outbox chat", Prompt: "Wait", Provider: "mock", Model: "mock", DeferStart: true,
-		ClientId: "android-installation", CommandId: "chat-1",
+		WorkspaceMode: model.WorkspaceModeMain,
+		ClientId:      "android-installation", CommandId: "chat-1",
 	}
 	chat, err := client.CreateChat(ctx, connect.NewRequest(chatRequest))
 	if err != nil {
@@ -257,7 +259,8 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 
 	chat, err := client.CreateChat(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Warm cache", Prompt: "Hold", Provider: "mock", Model: "mock", DeferStart: true,
-		ClientId: "android-installation", CommandId: "bounded-chat-1",
+		WorkspaceMode: model.WorkspaceModeMain,
+		ClientId:      "android-installation", CommandId: "bounded-chat-1",
 	}))
 	if err != nil {
 		t.Fatal(err)

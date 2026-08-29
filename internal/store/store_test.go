@@ -53,7 +53,11 @@ func TestCreateProjectAcceptsLinkedGitWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if project.Path != worktree || project.Name != "linked-worktree" {
+	canonicalWorktree, err := filepath.EvalSymlinks(worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.Path != canonicalWorktree || project.Name != "linked-worktree" {
 		t.Fatalf("linked worktree project=%#v", project)
 	}
 }

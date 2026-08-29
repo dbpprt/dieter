@@ -122,6 +122,115 @@ import UniformTypeIdentifiers
     #expect(ScheduleActionPresentation.title("run") == "Running")
 }
 
+private actor ScheduleRPCStub: DieterScheduleRPC {
+    let schedulesResponse: Dieter_V1_SchedulesResponse
+    let runsResponse: Dieter_V1_ScheduleRunsResponse
+    private var requestedProjectIDs: [String] = []
+    private var requestedScheduleIDs: [String] = []
+
+    init(schedules: [Dieter_V1_Schedule], runs: [Dieter_V1_ScheduleRun]) {
+        var schedulesResponse = Dieter_V1_SchedulesResponse()
+        schedulesResponse.schedules = schedules
+        self.schedulesResponse = schedulesResponse
+        var runsResponse = Dieter_V1_ScheduleRunsResponse()
+        runsResponse.runs = runs
+        self.runsResponse = runsResponse
+    }
+
+    func schedules(projectID: String) async throws -> Dieter_V1_SchedulesResponse {
+        requestedProjectIDs.append(projectID)
+        return schedulesResponse
+    }
+
+    func scheduleRuns(id: String, limit _: Int32) async throws -> Dieter_V1_ScheduleRunsResponse {
+        requestedScheduleIDs.append(id)
+        return runsResponse
+    }
+
+    func requests() -> (projects: [String], schedules: [String]) {
+        (requestedProjectIDs, requestedScheduleIDs)
+    }
+}
+
+private actor ChatPinRPCStub: DieterChatPinRPC {
+    private var requests: [Dieter_V1_PinChatRequest] = []
+
+    func pinChat(_ request: Dieter_V1_PinChatRequest) async throws -> Dieter_V1_Card {
+        requests.append(request)
+        var card = Dieter_V1_Card()
+        card.id = request.cardID
+        card.projectID = "p_dieter"
+        card.scope = "chat"
+        card.pinned = request.pinned
+        return card
+    }
+
+    func recordedRequests() -> [Dieter_V1_PinChatRequest] { requests }
+}
+
+@Test @MainActor func pinningAndUnpinningAChatUpdatesTheMacProjectionImmediately() async throws {
+    let rpc = ChatPinRPCStub()
+    let store = DieterStore(chatPinRPCOverride: rpc)
+    var chat = Dieter_V1_Card()
+    chat.id = "c_chat"
+    chat.projectID = "p_dieter"
+    chat.scope = "chat"
+    chat.title = "Pinned conversation"
+    var project = Dieter_V1_Project()
+    project.id = chat.projectID
+    project.name = "Dieter"
+    store.projectDirectory[project.id] = project
+    store.selectedProjectID = chat.projectID
+    store.selectedChatID = chat.id
+    store.chats = [chat]
+    store.state.chats = [chat]
+
+    await store.pin(chat, pinned: true)
+
+    #expect(store.chats.first?.pinned == true)
+    #expect(store.state.chats.first?.pinned == true)
+
+    let pinned = try #require(store.chats.first)
+    await store.pin(pinned, pinned: false)
+
+    #expect(store.chats.first?.pinned == false)
+    #expect(store.state.chats.first?.pinned == false)
+    let requests = await rpc.recordedRequests()
+    #expect(requests.map(\.pinned) == [true, false])
+}
+
+@Test @MainActor func schedulesLoadFromDedicatedRPCWithoutWaitingForGlobalSync() async {
+    var schedule = Dieter_V1_Schedule()
+    schedule.id = "s_morning"
+    schedule.projectID = "p_dieter"
+    schedule.name = "Morning"
+    var run = Dieter_V1_ScheduleRun()
+    run.id = "sr_morning"
+    run.scheduleID = schedule.id
+    let rpc = ScheduleRPCStub(schedules: [schedule], runs: [run])
+    let store = DieterStore(scheduleRPCOverride: rpc)
+    store.selectedProjectID = schedule.projectID
+
+    await store.loadSchedules()
+
+    #expect(store.schedules.map(\.id) == [schedule.id])
+    #expect(store.selectedScheduleID == schedule.id)
+    #expect(store.scheduleRuns.map(\.id) == [run.id])
+    #expect(store.schedulesAreLoaded)
+    #expect(!store.schedulesLoading)
+    #expect(!store.scheduleRunsLoading)
+    let requests = await rpc.requests()
+    #expect(requests.projects == [schedule.projectID])
+    #expect(requests.schedules == [schedule.id])
+}
+
+@Test func schedulesDoNotPresentAnAuthoritativeEmptyStateBeforeLoadingCompletes() {
+    #expect(SchedulesPresentationState.resolve(isLoaded: false, isLoading: false, hasSchedules: false) == .loading)
+    #expect(SchedulesPresentationState.resolve(isLoaded: true, isLoading: true, hasSchedules: false) == .loading)
+    #expect(SchedulesPresentationState.resolve(isLoaded: true, isLoading: false, hasSchedules: false) == .empty)
+    #expect(SchedulesPresentationState.resolve(isLoaded: true, isLoading: true, hasSchedules: true) == .loaded)
+}
+
 @Test func remoteDesktopBindingRejectsLegacySignatureAfterControlBindingUpgrade() throws {
     let offer = "v=0\r\no=test"
     let answer = "v=0\r\na=fingerprint:sha-256 AA:BB\r\n"

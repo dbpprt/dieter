@@ -28,7 +28,6 @@ object DieterWidgetPrefs {
                 ?: defaults.style,
             maxItems = preferences.getInt("max_items_$appWidgetId", defaults.maxItems),
             showSections = preferences.getBoolean("sections_$appWidgetId", defaults.showSections),
-            includeChats = preferences.getBoolean("chats_$appWidgetId", defaults.includeChats),
         )
     }
 
@@ -37,7 +36,7 @@ object DieterWidgetPrefs {
             .putString("style_$appWidgetId", config.style.name)
             .putInt("max_items_$appWidgetId", config.maxItems)
             .putBoolean("sections_$appWidgetId", config.showSections)
-            .putBoolean("chats_$appWidgetId", config.includeChats)
+            .remove("chats_$appWidgetId")
             .apply()
     }
 

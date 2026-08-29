@@ -2,7 +2,6 @@ import DieterAPI
 import Foundation
 
 enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
-    case projectDefault = ""
     case worktree
     case branch
     case main
@@ -11,7 +10,6 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .projectDefault: "Project default"
         case .worktree: "Worktree"
         case .branch: "Dedicated branch"
         case .main: "Main checkout"
@@ -20,7 +18,6 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
 
     var shortTitle: String {
         switch self {
-        case .projectDefault: "Default"
         case .worktree: "Worktree"
         case .branch: "Branch"
         case .main: "Main"
@@ -29,7 +26,6 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
 
     var detail: String {
         switch self {
-        case .projectDefault: "Use the project’s configured workspace mode."
         case .worktree: "Create an isolated Git worktree and branch for this conversation."
         case .branch: "Use a dedicated branch in the registered checkout."
         case .main: "Share the registered checkout. Concurrent work is restricted."
@@ -47,13 +43,13 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
     var symbol: String {
         switch self {
         case .worktree: "point.3.connected.trianglepath.dotted"
-        case .projectDefault, .branch, .main: "folder"
+        case .branch, .main: "folder"
         }
     }
 }
 
 struct ConversationWorkspaceDraft: Equatable, Sendable {
-    var mode: ConversationWorkspaceMode = .projectDefault
+    var mode: ConversationWorkspaceMode = .worktree
     var branch = ""
     var baseBranch = ""
 
@@ -172,6 +168,17 @@ struct WorkspaceActionAvailability: Equatable {
     let hasRemote: Bool
     let scmAuthenticated: Bool
     let hasPullRequest: Bool
+    /// Uncommitted working-tree changes (as opposed to `changedFiles`, which
+    /// counts every file that differs from the base, committed or not).
+    var dirty = false
+
+    /// The merge sheet opens in more states than the raw merge_local gate: a
+    /// dirty tree is committed first, and a conflicted workspace shows the
+    /// blocked explanation instead of hiding the entry point.
+    var allowsMergeFlow: Bool {
+        guard !agentActive, !operationActive, workspaceMode != "main" else { return false }
+        return hasCommits || changedFiles > 0 || workspaceState == "conflicted"
+    }
 
     func allows(_ kind: GitOperationKind) -> Bool {
         if agentActive || operationActive { return false }
@@ -179,7 +186,7 @@ struct WorkspaceActionAvailability: Equatable {
             return kind == .continueConflict || kind == .abortConflict
         }
         return switch kind {
-        case .commit: changedFiles > 0
+        case .commit: dirty || changedFiles > 0
         case .update, .validate: true
         case .mergeLocal: workspaceMode != "main" && hasCommits && changedFiles == 0
         case .push: workspaceMode != "main" && hasRemote && hasCommits
@@ -204,6 +211,14 @@ struct UnifiedDiffLine: Identifiable, Equatable, Sendable {
 }
 
 enum UnifiedDiffParser {
+    /// Git metadata emitted between a `diff --git` line and its first hunk.
+    private static let metadataPrefixes = [
+        "+++", "---", "index ",
+        "new file mode", "deleted file mode", "old mode", "new mode",
+        "similarity index", "dissimilarity index",
+        "rename from", "rename to", "copy from", "copy to", "Binary files",
+    ]
+
     static func parse(_ patch: String) -> [UnifiedDiffLine] {
         var result: [UnifiedDiffLine] = []
         var oldLine: Int?
@@ -213,7 +228,14 @@ enum UnifiedDiffParser {
                 oldLine = ranges.old
                 newLine = ranges.new
                 result.append(.init(id: index, kind: .hunk, text: raw, oldLine: nil, newLine: nil))
-            } else if raw.hasPrefix("+++") || raw.hasPrefix("---") || raw.hasPrefix("diff ") || raw.hasPrefix("index ") || raw.hasPrefix("\\ No newline") {
+            } else if raw.hasPrefix("diff ") {
+                // A new file section: whole-commit patches concatenate several.
+                oldLine = nil
+                newLine = nil
+                result.append(.init(id: index, kind: .header, text: raw, oldLine: nil, newLine: nil))
+            } else if raw.hasPrefix("\\ No newline") {
+                result.append(.init(id: index, kind: .header, text: raw, oldLine: nil, newLine: nil))
+            } else if oldLine == nil, newLine == nil, metadataPrefixes.contains(where: raw.hasPrefix) {
                 result.append(.init(id: index, kind: .header, text: raw, oldLine: nil, newLine: nil))
             } else if raw.hasPrefix("+") {
                 result.append(.init(id: index, kind: .addition, text: raw, oldLine: nil, newLine: newLine))

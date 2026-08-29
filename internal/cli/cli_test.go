@@ -55,7 +55,7 @@ func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := c.Run([]string{"card", "create", "--project", projectID, "--board", boards[0].ID, "--lane", "todo", "--title", "Ship", "--prompt", "Implement it", "--attach", attachmentPath, "--provider", "codex", "--format", "id"}); err != nil {
+	if err := c.Run([]string{"card", "create", "--project", projectID, "--board", boards[0].ID, "--lane", "todo", "--title", "Ship", "--prompt", "Implement it", "--attach", attachmentPath, "--provider", "codex", "--workspace", "main", "--format", "id"}); err != nil {
 		t.Fatal(err)
 	}
 	cardID := strings.TrimSpace(out.String())

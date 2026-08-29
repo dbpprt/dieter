@@ -1556,25 +1556,24 @@ func (x *CardsResponse) GetCards() []*Card {
 }
 
 type Project struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	Id                   string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name                 string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Path                 string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	Summary              string                 `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
-	Prompt               string                 `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	Archived             bool                   `protobuf:"varint,6,opt,name=archived,proto3" json:"archived,omitempty"`
-	CreatedAt            string                 `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt            string                 `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	BoardCount           int32                  `protobuf:"varint,9,opt,name=board_count,json=boardCount,proto3" json:"board_count,omitempty"`
-	CardCount            int32                  `protobuf:"varint,10,opt,name=card_count,json=cardCount,proto3" json:"card_count,omitempty"`
-	ChatCount            int32                  `protobuf:"varint,11,opt,name=chat_count,json=chatCount,proto3" json:"chat_count,omitempty"`
-	PromptTemplate       string                 `protobuf:"bytes,12,opt,name=prompt_template,json=promptTemplate,proto3" json:"prompt_template,omitempty"`
-	DefaultWorkspaceMode string                 `protobuf:"bytes,13,opt,name=default_workspace_mode,json=defaultWorkspaceMode,proto3" json:"default_workspace_mode,omitempty"`
-	BaseRemote           string                 `protobuf:"bytes,14,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
-	BaseBranch           string                 `protobuf:"bytes,15,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	ValidationCommands   []*ValidationCommand   `protobuf:"bytes,16,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name               string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Path               string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	Summary            string                 `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
+	Prompt             string                 `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	Archived           bool                   `protobuf:"varint,6,opt,name=archived,proto3" json:"archived,omitempty"`
+	CreatedAt          string                 `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt          string                 `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	BoardCount         int32                  `protobuf:"varint,9,opt,name=board_count,json=boardCount,proto3" json:"board_count,omitempty"`
+	CardCount          int32                  `protobuf:"varint,10,opt,name=card_count,json=cardCount,proto3" json:"card_count,omitempty"`
+	ChatCount          int32                  `protobuf:"varint,11,opt,name=chat_count,json=chatCount,proto3" json:"chat_count,omitempty"`
+	PromptTemplate     string                 `protobuf:"bytes,12,opt,name=prompt_template,json=promptTemplate,proto3" json:"prompt_template,omitempty"`
+	BaseRemote         string                 `protobuf:"bytes,14,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	BaseBranch         string                 `protobuf:"bytes,15,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	ValidationCommands []*ValidationCommand   `protobuf:"bytes,16,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Project) Reset() {
@@ -1687,13 +1686,6 @@ func (x *Project) GetChatCount() int32 {
 func (x *Project) GetPromptTemplate() string {
 	if x != nil {
 		return x.PromptTemplate
-	}
-	return ""
-}
-
-func (x *Project) GetDefaultWorkspaceMode() string {
-	if x != nil {
-		return x.DefaultWorkspaceMode
 	}
 	return ""
 }
@@ -5008,20 +5000,19 @@ func (x *DirectoryListing) GetLocations() []*DirectoryLocation {
 }
 
 type CreateProjectRequest struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	Mode                 string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
-	Path                 string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
-	Name                 string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Summary              string                 `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
-	Prompt               string                 `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
-	BoardName            string                 `protobuf:"bytes,6,opt,name=board_name,json=boardName,proto3" json:"board_name,omitempty"`
-	Workflow             string                 `protobuf:"bytes,7,opt,name=workflow,proto3" json:"workflow,omitempty"`
-	DefaultWorkspaceMode string                 `protobuf:"bytes,8,opt,name=default_workspace_mode,json=defaultWorkspaceMode,proto3" json:"default_workspace_mode,omitempty"`
-	BaseRemote           string                 `protobuf:"bytes,9,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
-	BaseBranch           string                 `protobuf:"bytes,10,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	ValidationCommands   []*ValidationCommand   `protobuf:"bytes,11,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Mode               string                 `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	Path               string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Name               string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Summary            string                 `protobuf:"bytes,4,opt,name=summary,proto3" json:"summary,omitempty"`
+	Prompt             string                 `protobuf:"bytes,5,opt,name=prompt,proto3" json:"prompt,omitempty"`
+	BoardName          string                 `protobuf:"bytes,6,opt,name=board_name,json=boardName,proto3" json:"board_name,omitempty"`
+	Workflow           string                 `protobuf:"bytes,7,opt,name=workflow,proto3" json:"workflow,omitempty"`
+	BaseRemote         string                 `protobuf:"bytes,9,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	BaseBranch         string                 `protobuf:"bytes,10,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	ValidationCommands []*ValidationCommand   `protobuf:"bytes,11,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *CreateProjectRequest) Reset() {
@@ -5099,13 +5090,6 @@ func (x *CreateProjectRequest) GetBoardName() string {
 func (x *CreateProjectRequest) GetWorkflow() string {
 	if x != nil {
 		return x.Workflow
-	}
-	return ""
-}
-
-func (x *CreateProjectRequest) GetDefaultWorkspaceMode() string {
-	if x != nil {
-		return x.DefaultWorkspaceMode
 	}
 	return ""
 }
@@ -5336,14 +5320,13 @@ func (x *ValidationCommand) GetTimeoutSeconds() int32 {
 }
 
 type UpdateProjectWorkspaceSettingsRequest struct {
-	state                protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId            string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	DefaultWorkspaceMode string                 `protobuf:"bytes,2,opt,name=default_workspace_mode,json=defaultWorkspaceMode,proto3" json:"default_workspace_mode,omitempty"`
-	BaseRemote           string                 `protobuf:"bytes,3,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
-	BaseBranch           string                 `protobuf:"bytes,4,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	ValidationCommands   []*ValidationCommand   `protobuf:"bytes,5,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId          string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	BaseRemote         string                 `protobuf:"bytes,3,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	BaseBranch         string                 `protobuf:"bytes,4,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	ValidationCommands []*ValidationCommand   `protobuf:"bytes,5,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *UpdateProjectWorkspaceSettingsRequest) Reset() {
@@ -5379,13 +5362,6 @@ func (*UpdateProjectWorkspaceSettingsRequest) Descriptor() ([]byte, []int) {
 func (x *UpdateProjectWorkspaceSettingsRequest) GetProjectId() string {
 	if x != nil {
 		return x.ProjectId
-	}
-	return ""
-}
-
-func (x *UpdateProjectWorkspaceSettingsRequest) GetDefaultWorkspaceMode() string {
-	if x != nil {
-		return x.DefaultWorkspaceMode
 	}
 	return ""
 }
@@ -7838,6 +7814,7 @@ type Workspace struct {
 	IntegratedResultSha string                 `protobuf:"bytes,27,opt,name=integrated_result_sha,json=integratedResultSha,proto3" json:"integrated_result_sha,omitempty"`
 	IntegrationStrategy string                 `protobuf:"bytes,28,opt,name=integration_strategy,json=integrationStrategy,proto3" json:"integration_strategy,omitempty"`
 	IntegratedAt        string                 `protobuf:"bytes,29,opt,name=integrated_at,json=integratedAt,proto3" json:"integrated_at,omitempty"`
+	Dirty               bool                   `protobuf:"varint,30,opt,name=dirty,proto3" json:"dirty,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -8073,6 +8050,13 @@ func (x *Workspace) GetIntegratedAt() string {
 		return x.IntegratedAt
 	}
 	return ""
+}
+
+func (x *Workspace) GetDirty() bool {
+	if x != nil {
+		return x.Dirty
+	}
+	return false
 }
 
 type WorkspacesResponse struct {
@@ -12927,6 +12911,7 @@ type Schedule struct {
 	UpdatedAt       string                 `protobuf:"bytes,22,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	NextRuns        []string               `protobuf:"bytes,23,rep,name=next_runs,json=nextRuns,proto3" json:"next_runs,omitempty"`
 	ProviderOptions map[string]string      `protobuf:"bytes,24,rep,name=provider_options,json=providerOptions,proto3" json:"provider_options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	WorkspaceMode   string                 `protobuf:"bytes,25,opt,name=workspace_mode,json=workspaceMode,proto3" json:"workspace_mode,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -13129,6 +13114,13 @@ func (x *Schedule) GetProviderOptions() map[string]string {
 	return nil
 }
 
+func (x *Schedule) GetWorkspaceMode() string {
+	if x != nil {
+		return x.WorkspaceMode
+	}
+	return ""
+}
+
 type ScheduleDraft struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId       string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
@@ -13149,6 +13141,7 @@ type ScheduleDraft struct {
 	MisfirePolicy   string                 `protobuf:"bytes,16,opt,name=misfire_policy,json=misfirePolicy,proto3" json:"misfire_policy,omitempty"`
 	BusyPolicy      string                 `protobuf:"bytes,17,opt,name=busy_policy,json=busyPolicy,proto3" json:"busy_policy,omitempty"`
 	ProviderOptions map[string]string      `protobuf:"bytes,18,rep,name=provider_options,json=providerOptions,proto3" json:"provider_options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	WorkspaceMode   string                 `protobuf:"bytes,19,opt,name=workspace_mode,json=workspaceMode,proto3" json:"workspace_mode,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -13307,6 +13300,13 @@ func (x *ScheduleDraft) GetProviderOptions() map[string]string {
 		return x.ProviderOptions
 	}
 	return nil
+}
+
+func (x *ScheduleDraft) GetWorkspaceMode() string {
+	if x != nil {
+		return x.WorkspaceMode
+	}
+	return ""
 }
 
 type SaveScheduleRequest struct {
@@ -13945,7 +13945,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x10ProjectsResponse\x12.\n" +
 	"\bprojects\x18\x01 \x03(\v2\x12.dieter.v1.ProjectR\bprojects\"6\n" +
 	"\rCardsResponse\x12%\n" +
-	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\x9c\x04\n" +
+	"\x05cards\x18\x01 \x03(\v2\x0f.dieter.v1.CardR\x05cards\"\x84\x04\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -13964,13 +13964,12 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	" \x01(\x05R\tcardCount\x12\x1d\n" +
 	"\n" +
 	"chat_count\x18\v \x01(\x05R\tchatCount\x12'\n" +
-	"\x0fprompt_template\x18\f \x01(\tR\x0epromptTemplate\x124\n" +
-	"\x16default_workspace_mode\x18\r \x01(\tR\x14defaultWorkspaceMode\x12\x1f\n" +
+	"\x0fprompt_template\x18\f \x01(\tR\x0epromptTemplate\x12\x1f\n" +
 	"\vbase_remote\x18\x0e \x01(\tR\n" +
 	"baseRemote\x12\x1f\n" +
 	"\vbase_branch\x18\x0f \x01(\tR\n" +
 	"baseBranch\x12M\n" +
-	"\x13validation_commands\x18\x10 \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommands\"\xf0\x02\n" +
+	"\x13validation_commands\x18\x10 \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommandsJ\x04\b\r\x10\x0eR\x16default_workspace_mode\"\xf0\x02\n" +
 	"\x05Board\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -14302,7 +14301,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0egit_repository\x18\x04 \x01(\bR\rgitRepository\x12\x1c\n" +
 	"\tseparator\x18\x05 \x01(\tR\tseparator\x123\n" +
 	"\aentries\x18\x06 \x03(\v2\x19.dieter.v1.DirectoryEntryR\aentries\x12:\n" +
-	"\tlocations\x18\a \x03(\v2\x1c.dieter.v1.DirectoryLocationR\tlocations\"\x86\x03\n" +
+	"\tlocations\x18\a \x03(\v2\x1c.dieter.v1.DirectoryLocationR\tlocations\"\xee\x02\n" +
 	"\x14CreateProjectRequest\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
@@ -14311,14 +14310,13 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x06prompt\x18\x05 \x01(\tR\x06prompt\x12\x1d\n" +
 	"\n" +
 	"board_name\x18\x06 \x01(\tR\tboardName\x12\x1a\n" +
-	"\bworkflow\x18\a \x01(\tR\bworkflow\x124\n" +
-	"\x16default_workspace_mode\x18\b \x01(\tR\x14defaultWorkspaceMode\x12\x1f\n" +
+	"\bworkflow\x18\a \x01(\tR\bworkflow\x12\x1f\n" +
 	"\vbase_remote\x18\t \x01(\tR\n" +
 	"baseRemote\x12\x1f\n" +
 	"\vbase_branch\x18\n" +
 	" \x01(\tR\n" +
 	"baseBranch\x12M\n" +
-	"\x13validation_commands\x18\v \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommands\"m\n" +
+	"\x13validation_commands\x18\v \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommandsJ\x04\b\b\x10\tR\x16default_workspace_mode\"m\n" +
 	"\x15CreateProjectResponse\x12,\n" +
 	"\aproject\x18\x01 \x01(\v2\x12.dieter.v1.ProjectR\aproject\x12&\n" +
 	"\x05board\x18\x02 \x01(\v2\x10.dieter.v1.BoardR\x05board\"\xaa\x01\n" +
@@ -14343,16 +14341,15 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0ftimeout_seconds\x18\x06 \x01(\x05R\x0etimeoutSeconds\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8d\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf5\x01\n" +
 	"%UpdateProjectWorkspaceSettingsRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x124\n" +
-	"\x16default_workspace_mode\x18\x02 \x01(\tR\x14defaultWorkspaceMode\x12\x1f\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1f\n" +
 	"\vbase_remote\x18\x03 \x01(\tR\n" +
 	"baseRemote\x12\x1f\n" +
 	"\vbase_branch\x18\x04 \x01(\tR\n" +
 	"baseBranch\x12M\n" +
-	"\x13validation_commands\x18\x05 \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommands\"R\n" +
+	"\x13validation_commands\x18\x05 \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommandsJ\x04\b\x02\x10\x03R\x16default_workspace_mode\"R\n" +
 	"\x15ArchiveProjectRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1a\n" +
@@ -14567,7 +14564,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	" \x01(\x05R\tdeletions\x12\x14\n" +
 	"\x05ahead\x18\v \x01(\x05R\x05ahead\x12\x16\n" +
 	"\x06behind\x18\f \x01(\x05R\x06behind\x120\n" +
-	"\x14current_operation_id\x18\r \x01(\tR\x12currentOperationId\"\xd2\a\n" +
+	"\x14current_operation_id\x18\r \x01(\tR\x12currentOperationId\"\xe8\a\n" +
 	"\tWorkspace\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1d\n" +
 	"\n" +
@@ -14604,7 +14601,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x13integrated_head_sha\x18\x1a \x01(\tR\x11integratedHeadSha\x122\n" +
 	"\x15integrated_result_sha\x18\x1b \x01(\tR\x13integratedResultSha\x121\n" +
 	"\x14integration_strategy\x18\x1c \x01(\tR\x13integrationStrategy\x12#\n" +
-	"\rintegrated_at\x18\x1d \x01(\tR\fintegratedAt\"J\n" +
+	"\rintegrated_at\x18\x1d \x01(\tR\fintegratedAt\x12\x14\n" +
+	"\x05dirty\x18\x1e \x01(\bR\x05dirty\"J\n" +
 	"\x12WorkspacesResponse\x124\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x14.dieter.v1.WorkspaceR\n" +
@@ -15063,7 +15061,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\"F\n" +
 	"\x11SchedulesResponse\x121\n" +
-	"\tschedules\x18\x01 \x03(\v2\x13.dieter.v1.ScheduleR\tschedules\"\xc9\x06\n" +
+	"\tschedules\x18\x01 \x03(\v2\x13.dieter.v1.ScheduleR\tschedules\"\xf0\x06\n" +
 	"\bSchedule\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -15093,10 +15091,11 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x16 \x01(\tR\tupdatedAt\x12\x1b\n" +
 	"\tnext_runs\x18\x17 \x03(\tR\bnextRuns\x12S\n" +
-	"\x10provider_options\x18\x18 \x03(\v2(.dieter.v1.Schedule.ProviderOptionsEntryR\x0fproviderOptions\x1aB\n" +
+	"\x10provider_options\x18\x18 \x03(\v2(.dieter.v1.Schedule.ProviderOptionsEntryR\x0fproviderOptions\x12%\n" +
+	"\x0eworkspace_mode\x18\x19 \x01(\tR\rworkspaceMode\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa8\x05\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcf\x05\n" +
 	"\rScheduleDraft\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
@@ -15118,7 +15117,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0emisfire_policy\x18\x10 \x01(\tR\rmisfirePolicy\x12\x1f\n" +
 	"\vbusy_policy\x18\x11 \x01(\tR\n" +
 	"busyPolicy\x12X\n" +
-	"\x10provider_options\x18\x12 \x03(\v2-.dieter.v1.ScheduleDraft.ProviderOptionsEntryR\x0fproviderOptions\x1aB\n" +
+	"\x10provider_options\x18\x12 \x03(\v2-.dieter.v1.ScheduleDraft.ProviderOptionsEntryR\x0fproviderOptions\x12%\n" +
+	"\x0eworkspace_mode\x18\x13 \x01(\tR\rworkspaceMode\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"l\n" +

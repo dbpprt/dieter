@@ -273,10 +273,9 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 }
 
 type ProjectInput struct {
-	Path, Name, Summary, Prompt                  string
-	DefaultWorkspaceMode, BaseRemote, BaseBranch string
-	ValidationCommands                           []model.ValidationCommand
-	Create                                       bool
+	Path, Name, Summary, Prompt, BaseRemote, BaseBranch string
+	ValidationCommands                                  []model.ValidationCommand
+	Create                                              bool
 }
 
 func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (model.Project, error) {
@@ -304,8 +303,7 @@ func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (mode
 	}
 	return s.Store.CreateProject(store.CreateProjectInput{
 		Name: input.Name, Path: abs, Summary: input.Summary, Prompt: input.Prompt,
-		DefaultWorkspaceMode: input.DefaultWorkspaceMode, BaseRemote: input.BaseRemote,
-		BaseBranch: input.BaseBranch, ValidationCommands: input.ValidationCommands,
+		BaseRemote: input.BaseRemote, BaseBranch: input.BaseBranch, ValidationCommands: input.ValidationCommands,
 	})
 }
 

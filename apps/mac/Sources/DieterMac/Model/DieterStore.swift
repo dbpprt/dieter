@@ -482,6 +482,12 @@ struct OptimisticWorkspaceProjection {
 @MainActor
 @Observable
 final class DieterStore {
+    private struct PendingChatPin {
+        let operationID: UUID
+        let pinned: Bool
+        let original: Dieter_V1_Card
+    }
+
     var section: AppSection = .board {
         didSet {
             if oldValue != section, selectedMachineID != nil {
@@ -541,6 +547,8 @@ final class DieterStore {
     var workspaceError: String?
     var selectedChangePath = ""
     var selectedCommitSHA = ""
+    var workspaceToast: WorkspaceToast?
+    var mergeFlowStep: WorkspaceMergeStep?
     var fileScopeCardID: String?
     var terminalScopeCardID: String?
     var composerText = ""
@@ -609,6 +617,9 @@ final class DieterStore {
     var schedules: [Dieter_V1_Schedule] = []
     var scheduleRuns: [Dieter_V1_ScheduleRun] = []
     var selectedScheduleID: String?
+    private(set) var schedulesLoading = false
+    private(set) var scheduleRunsLoading = false
+    private(set) var schedulesLoadedProjectID = ""
     var newChatProjectID = ""
 
     var commandPalettePresented = false
@@ -625,6 +636,8 @@ final class DieterStore {
     var errorMessage: String?
 
     private(set) var rpc: DieterRPC?
+    private let scheduleRPCOverride: (any DieterScheduleRPC)?
+    private let chatPinRPCOverride: (any DieterChatPinRPC)?
     private var connectionTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var directRefreshTask: Task<Void, Never>?
@@ -635,6 +648,7 @@ final class DieterStore {
     private var stateTask: Task<Void, Never>?
     private var conversationTask: Task<Void, Never>?
     private var gitOperationTask: Task<Void, Never>?
+    private var workspaceToastTask: Task<Void, Never>?
     private var terminalWatchTask: Task<Void, Never>?
     private var conversationHistoryRequestID: UUID?
     private var syncTask: Task<Void, Never>?
@@ -658,10 +672,19 @@ final class DieterStore {
     private let syncClientID = DieterSyncPersistence.installationID()
     private let terminalInputForwarder = TerminalInputForwarder()
     private var terminalSequences: [String: UInt64] = [:]
+    private var pendingChatPins: [String: PendingChatPin] = [:]
+    private var schedulesLoadedEndpointID = ""
+    private var schedulesRequestGeneration: UInt64 = 0
+    private var scheduleRunsRequestGeneration: UInt64 = 0
     private var syncDiskState = DieterSyncDiskState.empty
     private var syncProjection = DieterSyncProjection.empty
 
-    init() {
+    init(
+        scheduleRPCOverride: (any DieterScheduleRPC)? = nil,
+        chatPinRPCOverride: (any DieterChatPinRPC)? = nil
+    ) {
+        self.scheduleRPCOverride = scheduleRPCOverride
+        self.chatPinRPCOverride = chatPinRPCOverride
         let arguments = ProcessInfo.processInfo.arguments
         if let flag = arguments.firstIndex(of: "--dieter-access-token-file"), arguments.indices.contains(flag + 1),
            let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)
@@ -827,8 +850,14 @@ final class DieterStore {
     }
 
     var selectedSchedule: Dieter_V1_Schedule? {
-        guard let selectedScheduleID else { return nil }
+        guard schedulesAreLoaded, let selectedScheduleID else { return nil }
         return schedules.first { $0.id == selectedScheduleID }
+    }
+
+    var schedulesAreLoaded: Bool {
+        !selectedProjectID.isEmpty &&
+            schedulesLoadedProjectID == selectedProjectID &&
+            schedulesLoadedEndpointID == endpoint.id
     }
 
     var selectedTerminal: Dieter_V1_Terminal? {
@@ -1320,6 +1349,12 @@ final class DieterStore {
         chatProjects.removeAll()
         schedules.removeAll()
         scheduleRuns.removeAll()
+        schedulesLoading = false
+        scheduleRunsLoading = false
+        schedulesLoadedProjectID = ""
+        schedulesLoadedEndpointID = ""
+        schedulesRequestGeneration &+= 1
+        scheduleRunsRequestGeneration &+= 1
         selectedProjectID = ""
         selectedBoardID = ""
         closeConversation()
@@ -2232,6 +2267,7 @@ final class DieterStore {
 
     private func applyGlobalSnapshot(_ snapshot: Dieter_V1_GlobalSnapshot, endpointID: String) {
         var global = snapshot.state
+        global.chats = reconcilePendingChatPins(global.chats)
         let boardProjection = OptimisticWorkspaceProjection.reconcileBoards(global.boards, pending: pendingBoards)
         global.boards = boardProjection.boards
         pendingBoards = boardProjection.pending
@@ -2289,7 +2325,13 @@ final class DieterStore {
         if chatProjects != nextChatProjects { chatProjects = nextChatProjects }
         updateSelectedState(base: global)
         if projectEndpointIDs[selectedProjectID] == endpointID {
+            schedulesRequestGeneration &+= 1
+            scheduleRunsRequestGeneration &+= 1
             schedules = snapshot.schedules.filter { $0.projectID == selectedProjectID }
+            schedulesLoadedProjectID = selectedProjectID
+            schedulesLoadedEndpointID = endpointID
+            schedulesLoading = false
+            scheduleRunsLoading = false
             if selectedScheduleID == nil || !schedules.contains(where: { $0.id == selectedScheduleID }) {
                 selectedScheduleID = schedules.first?.id
             }
@@ -2792,7 +2834,8 @@ final class DieterStore {
         guard let rpc else { return }
         do {
             let response = try await rpc.chats(includeArchived: includeArchived)
-            for card in response.chats {
+            let refreshedChats = reconcilePendingChatPins(response.chats)
+            for card in refreshedChats {
                 if let previous = notificationStatuses[card.id], previous != card.runtime,
                    ["review", "waiting", "completed", "failed"].contains(card.runtime.lowercased()) {
                     notify(title: card.title, body: "Status changed to \(card.runtime)")
@@ -2805,7 +2848,7 @@ final class DieterStore {
                 projectEndpointIDs[project.id] = endpoint.id
             }
             chats.removeAll { previousProjectIDs.contains($0.projectID) }
-            chats.append(contentsOf: response.chats)
+            chats.append(contentsOf: refreshedChats)
             chats = Array(chats.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
                 ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt)
             }
@@ -3571,9 +3614,62 @@ final class DieterStore {
 
     func pin(_ card: Dieter_V1_Card, pinned: Bool) async {
         guard await ensureProjectConnection(card.projectID) else { return }
-        guard let rpc else { return }
+        guard let client = chatPinRPCOverride ?? rpc else { return }
+        let original = chats.first(where: { $0.id == card.id })
+            ?? state.chats.first(where: { $0.id == card.id })
+            ?? card
+        guard original.pinned != pinned else { return }
+        let operationID = UUID()
+        pendingChatPins[card.id] = PendingChatPin(
+            operationID: operationID,
+            pinned: pinned,
+            original: original
+        )
+        var optimistic = original
+        optimistic.pinned = pinned
+        applyChatMutation(optimistic)
+
         var request = Dieter_V1_PinChatRequest(); request.cardID = card.id; request.pinned = pinned
-        do { _ = try await rpc.pinChat(request); await refreshChats() } catch { show(error) }
+        do {
+            let updated = try await client.pinChat(request)
+            guard pendingChatPins[card.id]?.operationID == operationID else { return }
+            applyChatMutation(updated)
+        } catch {
+            guard let pending = pendingChatPins[card.id], pending.operationID == operationID else { return }
+            pendingChatPins.removeValue(forKey: card.id)
+            applyChatMutation(pending.original)
+            show(error)
+        }
+    }
+
+    private func applyChatMutation(_ updated: Dieter_V1_Card) {
+        if let index = chats.firstIndex(where: { $0.id == updated.id }) {
+            chats[index] = updated
+        } else if updated.scope == "chat", updated.boardID.isEmpty {
+            chats.append(updated)
+        }
+        if var detail = selectedDetail, detail.card.id == updated.id {
+            detail.card = updated
+            selectedDetail = detail
+        }
+        if var snapshot = conversation, snapshot.detail.card.id == updated.id {
+            snapshot.detail.card = updated
+            conversation = snapshot
+        }
+        updateSelectedState()
+    }
+
+    private func reconcilePendingChatPins(_ serverChats: [Dieter_V1_Card]) -> [Dieter_V1_Card] {
+        serverChats.map { serverChat in
+            guard let pending = pendingChatPins[serverChat.id] else { return serverChat }
+            if serverChat.pinned == pending.pinned {
+                pendingChatPins.removeValue(forKey: serverChat.id)
+                return serverChat
+            }
+            var optimistic = serverChat
+            optimistic.pinned = pending.pinned
+            return optimistic
+        }
     }
 
     func fork(_ card: Dieter_V1_Card, at messageID: String = "") async {
@@ -3762,14 +3858,13 @@ final class DieterStore {
     }
 
     func updateProjectWorkspaceSettings(
-        mode: String,
         remote: String,
         branch: String,
         validationCommands: [Dieter_V1_ValidationCommand]
     ) async -> Bool {
         guard let rpc, !selectedProjectID.isEmpty else { return false }
         var request = Dieter_V1_UpdateProjectWorkspaceSettingsRequest()
-        request.projectID = selectedProjectID; request.defaultWorkspaceMode = mode
+        request.projectID = selectedProjectID
         request.baseRemote = remote.trimmingCharacters(in: .whitespacesAndNewlines)
         request.baseBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
         request.validationCommands = validationCommands
@@ -3812,6 +3907,134 @@ final class DieterStore {
         guard let rpc, let operation = gitOperation, GitOperationStatus.active(operation.status) else { return }
         do { gitOperation = try await rpc.cancelGitOperation(id: operation.id) }
         catch { workspaceError = DieterRPCFailure.message(for: error) }
+    }
+
+    func showWorkspaceToast(_ message: String) {
+        workspaceToast = WorkspaceToast(message: message)
+        workspaceToastTask?.cancel()
+        workspaceToastTask = Task { [weak self] in
+            try? await DieterTaskSleep.seconds(6)
+            guard !Task.isCancelled else { return }
+            self?.workspaceToast = nil
+        }
+    }
+
+    /// Runs the full merge flow the merge sheet offers: commit dirty work when
+    /// needed, merge into the base branch, then optionally remove the workspace
+    /// and move the card to Done. Each stage is an ordinary Git operation, so
+    /// progress, logs, and failures surface through the usual operation state.
+    @discardableResult
+    func performMergeFlow(
+        strategy: String,
+        subject: String,
+        body: String,
+        validate: Bool,
+        removeWorkspace: Bool,
+        moveCardToDone: Bool
+    ) async -> Bool {
+        guard mergeFlowStep == nil, let card = selectedCard ?? selectedDetail?.card else { return false }
+        let branch = conversationWorkspace?.branch ?? card.workspace.branch
+        var base = conversationWorkspace?.baseBranch ?? card.workspace.baseBranch
+        if base.isEmpty { base = "base" }
+        defer { mergeFlowStep = nil }
+
+        if conversationWorkspace?.dirty == true {
+            mergeFlowStep = .commit
+            guard await startGitOperation(.commit, parameters: [
+                "subject": subject, "body": body, "include_untracked": "true",
+            ]), await awaitCurrentGitOperationSuccess() else { return false }
+            await loadWorkspaceSurface()
+        }
+
+        mergeFlowStep = .merge
+        guard await startGitOperation(.mergeLocal, parameters: [
+            "strategy": strategy, "subject": subject, "validate": validate ? "true" : "false",
+        ]), await awaitCurrentGitOperationSuccess() else { return false }
+
+        if removeWorkspace {
+            mergeFlowStep = .cleanup
+            await loadWorkspaceSurface()
+            if await startGitOperation(.cleanup) {
+                _ = await awaitCurrentGitOperationSuccess()
+            }
+        }
+
+        var movedToDone = false
+        if moveCardToDone, card.scope != "chat", let lane = doneLane(for: card), card.lane != lane {
+            await move(card, lane: lane)
+            movedToDone = true
+        }
+        let mergedLabel = branch.isEmpty ? "workspace" : branch
+        showWorkspaceToast("Merged \(mergedLabel) into \(base)" + (movedToDone ? " · card moved to Done" : ""))
+        return true
+    }
+
+    /// Waits for the operation started last to settle. Polls the daemon
+    /// directly so orchestration survives a dropped watch stream.
+    private func awaitCurrentGitOperationSuccess() async -> Bool {
+        guard let id = gitOperation?.id else { return false }
+        let deadline = Date().addingTimeInterval(3_600)
+        while Date() < deadline, !Task.isCancelled {
+            if let current = gitOperation, current.id == id,
+               GitOperationStatus.terminal(current.status) || current.status == "waiting_for_resolution" {
+                return current.status == "succeeded"
+            }
+            if let rpc, let polled = try? await rpc.gitOperation(id: id),
+               GitOperationStatus.terminal(polled.status) || polled.status == "waiting_for_resolution" {
+                if gitOperation?.id == id { gitOperation = polled }
+                return polled.status == "succeeded"
+            }
+            try? await DieterTaskSleep.milliseconds(400)
+        }
+        return false
+    }
+
+    private func doneLane(for card: Dieter_V1_Card) -> String? {
+        let lanes = selectedDetail?.board.id == card.boardID
+            ? selectedDetail?.board.lanes
+            : boards(for: card.projectID).first { $0.id == card.boardID }?.lanes
+        guard let lanes, !lanes.isEmpty else { return nil }
+        return lanes.first { $0.id == "done" }?.id ?? lanes.last?.id
+    }
+
+    /// Sends a hand-off message into the conversation on the person's behalf,
+    /// e.g. "resolve the merge conflicts" or "address the review".
+    @discardableResult
+    func sendAgentMessage(_ text: String) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = selectedCardID ?? selectedChatID else { return false }
+        let card = selectedCard ?? selectedDetail?.card
+        let targetEndpointID = projectEndpointIDs[card?.projectID ?? ""] ?? endpoint.id
+        var part = Dieter_V1_MessagePart()
+        part.type = "text"
+        part.text = trimmed
+        var request = Dieter_V1_SendMessageRequest()
+        request.cardID = id
+        request.parts = [part]
+        request.provider = card?.provider ?? ""
+        request.model = card?.model ?? ""
+        request.effort = card?.effort ?? ""
+        request.providerOptions = card?.providerOptions ?? [:]
+        request.clientID = syncClientID
+        request.commandID = UUID().uuidString.lowercased()
+        request.messageID = "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+        do {
+            syncDiskState.outbox.append(DieterOutboxEntry(
+                commandID: request.commandID,
+                clientID: syncClientID,
+                endpointID: targetEndpointID,
+                kind: .sendMessage,
+                request: try request.serializedData(),
+                optimisticID: request.messageID,
+                attempts: 0,
+                createdAt: Date()
+            ))
+            await persistAndDrainOutbox()
+            return true
+        } catch {
+            show(error)
+            return false
+        }
     }
 
     private func resumeGitOperation(id: String) async {
@@ -4175,7 +4398,74 @@ final class DieterStore {
     }
 
     func loadSchedules() async {
-        await refreshState()
+        guard !selectedProjectID.isEmpty else { return }
+        let projectID = selectedProjectID
+        let endpointID = endpoint.id
+        guard let client = scheduleRPCOverride ?? rpc else { return }
+
+        schedulesRequestGeneration &+= 1
+        let generation = schedulesRequestGeneration
+        schedulesLoading = true
+        if !schedulesAreLoaded {
+            schedules = []
+            scheduleRuns = []
+            selectedScheduleID = nil
+        }
+
+        do {
+            let response = try await client.schedules(projectID: projectID)
+            guard generation == schedulesRequestGeneration,
+                  selectedProjectID == projectID, endpoint.id == endpointID else { return }
+            schedules = response.schedules
+            schedulesLoadedProjectID = projectID
+            schedulesLoadedEndpointID = endpointID
+            schedulesLoading = false
+            if selectedScheduleID == nil || !schedules.contains(where: { $0.id == selectedScheduleID }) {
+                selectedScheduleID = schedules.first?.id
+            }
+            guard let selectedScheduleID else {
+                scheduleRunsRequestGeneration &+= 1
+                scheduleRuns = []
+                scheduleRunsLoading = false
+                return
+            }
+            await loadScheduleRuns(for: selectedScheduleID)
+        } catch {
+            guard generation == schedulesRequestGeneration,
+                  selectedProjectID == projectID, endpoint.id == endpointID else { return }
+            schedulesLoading = false
+            show(error)
+        }
+    }
+
+    func selectSchedule(_ id: String) async {
+        guard schedulesAreLoaded, schedules.contains(where: { $0.id == id }) else { return }
+        selectedScheduleID = id
+        await loadScheduleRuns(for: id)
+    }
+
+    private func loadScheduleRuns(for scheduleID: String) async {
+        guard let client = scheduleRPCOverride ?? rpc else { return }
+        let projectID = selectedProjectID
+        let endpointID = endpoint.id
+        scheduleRunsRequestGeneration &+= 1
+        let generation = scheduleRunsRequestGeneration
+        scheduleRuns.removeAll { $0.scheduleID != scheduleID }
+        scheduleRunsLoading = true
+        do {
+            let response = try await client.scheduleRuns(id: scheduleID, limit: 50)
+            guard generation == scheduleRunsRequestGeneration,
+                  selectedProjectID == projectID, endpoint.id == endpointID,
+                  selectedScheduleID == scheduleID else { return }
+            scheduleRuns = response.runs
+            scheduleRunsLoading = false
+        } catch {
+            guard generation == scheduleRunsRequestGeneration,
+                  selectedProjectID == projectID, endpoint.id == endpointID,
+                  selectedScheduleID == scheduleID else { return }
+            scheduleRunsLoading = false
+            show(error)
+        }
     }
 
     @discardableResult

@@ -1,9 +1,12 @@
 # Native Workspaces, Changesets, and Pull Requests
 
 Status: server, daemon, gateway relay, persistence, and CLI are implemented and
-tested. macOS and Android product integration is the next phase.
+tested. The first macOS and Android product slices (conversation Changes
+surface, diff review, durable Git operations, merge flow, PR actions, and
+workspace-mode selection at creation) are implemented; remaining native work is
+tracked in sections 4–7.
 
-Last reviewed: 2026-08-27.
+Last reviewed: 2026-08-29.
 
 ## 1. Purpose of this document
 
@@ -22,14 +25,15 @@ repository path, call GitHub directly, or read `DIETER_HOME`.
 
 ### 2.1 There is no repository-policy object
 
-A project has defaults, not a separate repository policy:
+A project has shared Git integration settings, not a workspace-mode default or
+separate repository policy:
 
-- `default_workspace_mode`: `main`, `branch`, or `worktree`;
 - `base_remote`: normally `origin`, but it may be empty for local-only work;
 - `base_branch`: normally `main`, but it is repository-specific; and
 - `validation_commands`: an ordered list of daemon-host commands.
 
-Every board card and every standalone chat then has its own workspace selection:
+Every board card and every standalone chat must explicitly store its own
+workspace selection:
 
 - `workspace_mode`;
 - optional `workspace_branch`; and
@@ -342,11 +346,11 @@ Do not persist a Git operation as “canceled” merely because its watch task w
 canceled. On reconnect, use `Workspace.current_operation_id`, `GetGitOperation`,
 and `WatchGitOperation(after_sequence:)` to recover.
 
-### Phase B: project defaults and conversation creation
+### Phase B: project Git settings and explicit conversation creation
 
-Add project settings for mode, base remote, base branch, and validation command
-configuration. Add the same mode/branch/base fields to both card and chat
-creation. Display the resolved project default before submission.
+Add project settings for base remote, base branch, and validation command
+configuration. Add mode/branch/base fields to both card and chat creation and
+require a mode on every creation request.
 
 For deferred cards/chats, allow `UpdateConversationWorkspace` while
 `initial_prompt_sent_at` is empty. Once it is set, replace the picker with a
@@ -354,7 +358,7 @@ read-only mode/branch summary and expose only valid lifecycle operations such
 as branch-to-worktree migration.
 
 Worktree should be the recommended isolated choice, but the UI must preserve
-the user's explicit project default and per-conversation selection.
+each conversation's explicit selection.
 
 ### Phase C: make existing files and terminals conversation-aware
 
@@ -438,7 +442,7 @@ Recommended integration points:
   creation components; do not implement only board cards.
 - Add `cardID` overloads to the existing Files and Terminal store/RPC methods.
 - Add the conversation-level Changes surface from `UI/ConversationView.swift`.
-- Add project defaults to the existing project management/settings surface.
+- Add project Git integration settings to the existing project management/settings surface.
 - Reuse the app's current endpoint, reconnect, and foreground-refresh behavior.
   Do not open a second connection specifically for Git operations.
 
@@ -465,7 +469,7 @@ Recommended integration points:
 - Put durable UI projections and operation-stream ownership in the existing
   `DieterConnectionManager`/ViewModel boundary; do not let composables own
   long-running server operations.
-- Add project defaults to the existing `WorkspaceManagementScreen`. Note that
+- Add project Git integration settings to the existing `WorkspaceManagementScreen`. Note that
   this existing screen uses “workspace” to mean Dieter's overall project
   management area; name Git-specific types and state explicitly to avoid
   confusing the two concepts.
@@ -541,8 +545,8 @@ or recovery data.
 The CLI is useful as an executable contract while building native clients:
 
 ```sh
-dieter project open --workspace worktree --base-remote origin --base-branch main /path/to/repo
-dieter project workspace --mode worktree --base-remote origin --base-branch main PROJECT_ID
+dieter project open --base-remote origin --base-branch main /path/to/repo
+dieter project workspace --base-remote origin --base-branch main PROJECT_ID
 
 dieter card create --project PROJECT_ID --board BOARD_ID --lane todo \
   --title "Workspace test" --workspace worktree --base-branch main --format id
@@ -581,7 +585,7 @@ touching the normal daemon or gateway.
 Both native implementations should prove the following matrix for a board card
 and a standalone chat:
 
-1. Create with project default and with each explicit mode.
+1. Reject omitted workspace mode and create with each explicit mode.
 2. Change selection before first turn and verify it locks after first prompt.
 3. Provision `main`, `branch`, and `worktree`; confirm returned path/mode/branch
    without constructing paths client-side.

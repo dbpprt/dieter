@@ -20,9 +20,12 @@ import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.DieterNotificationSettings
 import com.dbpprt.dieter.settings.NavigationStyle
+import com.dbpprt.dieter.v1.AddChangeCommentRequest
 import com.dbpprt.dieter.v1.Board
 import com.dbpprt.dieter.v1.Card
 import com.dbpprt.dieter.v1.ConversationSnapshot
+import com.dbpprt.dieter.v1.GetDiffRequest
+import com.dbpprt.dieter.v1.GitOperationFrame
 import com.dbpprt.dieter.v1.CreateBoardRequest
 import com.dbpprt.dieter.v1.CreateConversationRequest
 import com.dbpprt.dieter.v1.CreateProjectRequest
@@ -188,6 +191,7 @@ data class DieterUiState(
     val machineOutboxSummaries: Map<String, MachineOutboxSummary> = emptyMap(),
     val cardOperations: Map<String, CardOperation> = emptyMap(),
     val cardOperationErrors: Map<String, String> = emptyMap(),
+    val workspaceReview: WorkspaceReviewState = WorkspaceReviewState(),
 ) {
     val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
     val hasCachedWorkspace: Boolean
@@ -260,6 +264,8 @@ class DieterViewModel(
     private var stateJob: Job? = null
     private var conversationJob: Job? = null
     private var postSendRefreshJob: Job? = null
+    private var postSendRefreshCardId: String? = null
+    private var postSendRefreshGeneration = 0L
     private var terminalWatchJob: Job? = null
     private var conversationStreamCardId: String? = null
     private var terminalEndpointId: String? = null
@@ -268,6 +274,13 @@ class DieterViewModel(
     private val terminalInputJobs = mutableMapOf<String, Job>()
     private val terminalResizeJobs = mutableMapOf<String, Job>()
     private var conversationHistoryRequestGeneration = 0L
+    private var workspaceSurfaceJob: Job? = null
+    private var workspaceDiffJob: Job? = null
+    private var gitOperationJob: Job? = null
+    private var gitOperationWatchId: String? = null
+    private var gitOperationLastSequence = 0L
+    private var mergeFlowJob: Job? = null
+    private var workspaceToastJob: Job? = null
     private var spacesJob: Job? = null
     private var connectionDialogGraceJob: Job? = null
     private var connectionDialogManuallyRequested = false
@@ -332,6 +345,11 @@ class DieterViewModel(
         cancelConversationStream()
         cancelPostSendRefresh()
         stopTerminalWatch()
+        // Backgrounding cancels only the local watch tasks; the durable Git
+        // operation keeps running on the daemon and is resumed by sequence.
+        workspaceSurfaceJob?.cancel()
+        workspaceDiffJob?.cancel()
+        gitOperationJob?.cancel()
         spacesJob?.cancel()
         connectionDialogGraceJob?.cancel()
         connectionDialogGraceJob = null
@@ -558,6 +576,7 @@ class DieterViewModel(
         if (foreground && conversationStreamNeedsRestart(conversationStreamCardId, resolvedSelectedCardId)) {
             startConversationStream(requireNotNull(resolvedSelectedCardId))
         }
+        resolvedSelectedCardId?.let(::ensureConversationRecovery)
         reconcileConnectionDialog(connection)
         if (remote != null && remote !== lastRemoteState) {
             lastRemoteState = remote
@@ -680,6 +699,7 @@ class DieterViewModel(
     fun navigate(destination: Destination) {
         rememberConversation()
         if (destination != Destination.TERMINALS) stopTerminalWatch()
+        resetWorkspaceReview(null)
         _state.update {
             it.copy(
                 destination = destination,
@@ -724,6 +744,7 @@ class DieterViewModel(
         rememberConversation()
         cancelConversationStream()
         stopTerminalWatch()
+        resetWorkspaceReview(null)
         _state.update {
             it.copy(
                 selectedProjectId = id,
@@ -878,6 +899,7 @@ class DieterViewModel(
             )
         } ?: conversationCache[cardId]
         val projectId = resolvedCard.projectId.ifBlank { _state.value.selectedProjectId }
+        if (_state.value.workspaceReview.cardId != cardId) resetWorkspaceReview(cardId)
         _state.update {
             it.copy(
                 destination = destination,
@@ -899,7 +921,10 @@ class DieterViewModel(
             )
         }
         connectionManager.selectProject(projectId)
-        if (isServerConversationId(cardId)) startConversationStream(cardId)
+        if (isServerConversationId(cardId)) {
+            startConversationStream(cardId)
+            ensureConversationRecovery(cardId)
+        }
     }
 
     fun openNotificationCard(cardId: String) {
@@ -990,6 +1015,7 @@ class DieterViewModel(
             )
         }
         rememberConversation(cardId)
+        ensureConversationRecovery(cardId)
     }
 
     fun forceRefreshConversation() {
@@ -1087,6 +1113,7 @@ class DieterViewModel(
         rememberConversation()
         cancelConversationStream()
         cancelPostSendRefresh()
+        resetWorkspaceReview(null)
         _state.update {
             it.copy(
                 selectedCardId = null,
@@ -1104,33 +1131,55 @@ class DieterViewModel(
     }
 
     private fun cancelPostSendRefresh() {
+        postSendRefreshGeneration += 1
         postSendRefreshJob?.cancel()
         postSendRefreshJob = null
+        postSendRefreshCardId = null
     }
 
-    private fun startPostSendRefresh(cardId: String) {
-        cancelPostSendRefresh()
-        postSendRefreshJob = viewModelScope.launch {
-            delay(POST_SEND_INITIAL_REFRESH_DELAY_MS)
-            while (foreground && _state.value.selectedCardId == cardId) {
-                val projectId = (_state.value.cards + _state.value.chats + _state.value.spaceCards)
-                    .firstOrNull { it.id == cardId }
-                    ?.projectId
-                    .orEmpty()
-                val snapshot = runCatching {
-                    connectionManager.ensureProjectRoute(projectId)
-                    withTimeout(HEDGE_FETCH_TIMEOUT_MS) {
-                        repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
-                    }
-                }.getOrNull()
-                if (!foreground || _state.value.selectedCardId != cardId) return@launch
-                if (snapshot != null) applyLiveConversation(cardId, snapshot)
+    private fun ensureConversationRecovery(cardId: String) {
+        val current = _state.value
+        if (!foregroundConversationRecoveryShouldStart(
+                foreground = foreground,
+                selectedCardId = current.selectedCardId,
+                recoveryCardId = postSendRefreshCardId,
+                recoveryActive = postSendRefreshJob?.isActive == true,
+                snapshot = current.conversation,
+                pendingMessageIds = current.pendingMessageIds,
+            )
+        ) return
 
-                val current = _state.value
-                if (snapshot != null && !conversationNeedsPostSendRefresh(current.conversation, current.pendingMessageIds)) {
-                    return@launch
+        cancelPostSendRefresh()
+        val recoveryGeneration = postSendRefreshGeneration
+        postSendRefreshCardId = cardId
+        postSendRefreshJob = viewModelScope.launch {
+            try {
+                delay(POST_SEND_INITIAL_REFRESH_DELAY_MS)
+                while (foreground && _state.value.selectedCardId == cardId) {
+                    val projectId = (_state.value.cards + _state.value.chats + _state.value.spaceCards)
+                        .firstOrNull { it.id == cardId }
+                        ?.projectId
+                        .orEmpty()
+                    val snapshot = runCatching {
+                        connectionManager.ensureProjectRoute(projectId)
+                        withTimeout(HEDGE_FETCH_TIMEOUT_MS) {
+                            repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
+                        }
+                    }.getOrNull()
+                    if (!foreground || _state.value.selectedCardId != cardId) return@launch
+                    if (snapshot != null) applyLiveConversation(cardId, snapshot)
+
+                    val current = _state.value
+                    if (snapshot != null && !conversationNeedsPostSendRefresh(current.conversation, current.pendingMessageIds)) {
+                        return@launch
+                    }
+                    delay(POST_SEND_REFRESH_INTERVAL_MS)
                 }
-                delay(POST_SEND_REFRESH_INTERVAL_MS)
+            } finally {
+                if (postSendRefreshGeneration == recoveryGeneration) {
+                    postSendRefreshJob = null
+                    postSendRefreshCardId = null
+                }
             }
         }
     }
@@ -1163,6 +1212,9 @@ class DieterViewModel(
         labelIds: List<String>,
         deferStart: Boolean,
         attachments: List<MessagePart> = emptyList(),
+        workspaceMode: String = ConversationWorkspaceMode.WORKTREE.wire,
+        workspaceBranch: String = "",
+        workspaceBaseBranch: String = "",
     ) = action(ensureProjectRoute = false) {
         val current = _state.value
         check(current.project != null) { "Select a project before creating a conversation." }
@@ -1175,6 +1227,9 @@ class DieterViewModel(
             .setProvider(provider)
             .setModel(model)
             .setEffort(effort)
+            .setWorkspaceMode(workspaceMode.ifBlank { ConversationWorkspaceMode.WORKTREE.wire })
+            .setWorkspaceBranch(workspaceBranch.trim())
+            .setWorkspaceBaseBranch(workspaceBaseBranch.trim())
             .addAllLabelIds(if (chat) emptyList() else labelIds)
             .setDeferStart(deferStart)
             .addAllAttachments(attachments)
@@ -1201,7 +1256,7 @@ class DieterViewModel(
         }
         connectionManager.enqueueMessage(id, parts, provider, model, effort)
         onSent()
-        startPostSendRefresh(id)
+        ensureConversationRecovery(id)
     }
 
     fun retryFailedTurn(parts: List<MessagePart>) = action(ensureProjectRoute = false) {
@@ -1210,7 +1265,7 @@ class DieterViewModel(
         val card = current.conversation?.detail?.card ?: current.selectedCard ?: return@action
         if (parts.isEmpty()) return@action
         connectionManager.enqueueMessage(id, parts, card.provider, card.model, card.effort)
-        startPostSendRefresh(id)
+        ensureConversationRecovery(id)
     }
 
     fun addComment(text: String) = action {
@@ -1688,6 +1743,453 @@ class DieterViewModel(
         loadSchedules()
     }
 
+    // MARK: Conversation workspace review surface
+
+    private fun resetWorkspaceReview(cardId: String?) {
+        workspaceSurfaceJob?.cancel()
+        workspaceSurfaceJob = null
+        workspaceDiffJob?.cancel()
+        workspaceDiffJob = null
+        gitOperationJob?.cancel()
+        gitOperationJob = null
+        gitOperationWatchId = null
+        gitOperationLastSequence = 0
+        mergeFlowJob?.cancel()
+        mergeFlowJob = null
+        workspaceToastJob?.cancel()
+        workspaceToastJob = null
+        _state.update { it.copy(workspaceReview = WorkspaceReviewState(cardId = cardId.orEmpty())) }
+    }
+
+    private fun updateWorkspaceReview(cardId: String, transform: (WorkspaceReviewState) -> WorkspaceReviewState) {
+        _state.update { current ->
+            if (current.workspaceReview.cardId != cardId) current
+            else current.copy(workspaceReview = transform(current.workspaceReview))
+        }
+    }
+
+    private fun conversationProjectId(cardId: String): String =
+        (_state.value.cards + _state.value.chats + _state.value.spaceCards)
+            .firstOrNull { it.id == cardId }?.projectId
+            ?.ifBlank { null }
+            ?: _state.value.selectedProjectId
+
+    fun loadWorkspaceSurface() {
+        val cardId = _state.value.selectedCardId ?: return
+        if (!isServerConversationId(cardId)) return
+        if (workspaceSurfaceJob?.isActive == true) return
+        workspaceSurfaceJob = viewModelScope.launch { refreshWorkspaceSurface(cardId) }
+    }
+
+    private suspend fun refreshWorkspaceSurface(cardId: String) {
+        updateWorkspaceReview(cardId) { it.copy(loading = true, error = null) }
+        try {
+            connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+            val (workspace, changes, scm) = coroutineScope {
+                val workspace = async { repository.workspace(cardId) }
+                val changes = async { repository.changeset(cardId) }
+                val scm = async { runCatching { repository.scmCapabilities(cardId) }.getOrNull() }
+                Triple(workspace.await(), changes.await(), scm.await())
+            }
+            val comments = runCatching { repository.changeComments(cardId, changes.revision).commentsList }
+                .getOrDefault(emptyList())
+            if (_state.value.selectedCardId != cardId) return
+            val previous = _state.value.workspaceReview
+            val selectionValid = (previous.selectedPath.isNotEmpty() && changes.filesList.any { it.path == previous.selectedPath }) ||
+                (previous.selectedCommitSha.isNotEmpty() && changes.commitsList.any { it.sha == previous.selectedCommitSha })
+            val revisionChanged = previous.changeset?.revision != changes.revision
+            updateWorkspaceReview(cardId) {
+                it.copy(
+                    workspace = workspace,
+                    changeset = changes,
+                    scm = scm,
+                    comments = comments,
+                    loading = false,
+                    error = null,
+                    surfaceRemoved = false,
+                    selectedPath = if (selectionValid) it.selectedPath else "",
+                    selectedCommitSha = if (selectionValid) it.selectedCommitSha else "",
+                    diff = if (selectionValid && !revisionChanged) it.diff else null,
+                    diffLines = if (selectionValid && !revisionChanged) it.diffLines else emptyList(),
+                )
+            }
+            if (selectionValid && revisionChanged) loadWorkspaceDiff(append = false)
+            val observed = _state.value.workspaceReview.operation?.takeIf { it.cardId == cardId }
+            val operationId = gitOperationReconciliationId(
+                workspaceOperationId = workspace.currentOperationId,
+                observedOperationId = observed?.id,
+                observedStatus = observed?.status,
+            )
+            if (operationId != null) resumeGitOperation(cardId, operationId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            if (_state.value.selectedCardId != cardId) return
+            updateWorkspaceReview(cardId) { it.copy(loading = false, error = readableError(error)) }
+        } finally {
+            updateWorkspaceReview(cardId) { it.copy(loading = false) }
+        }
+    }
+
+    fun selectWorkspaceChange(path: String, commitSha: String = "") {
+        val cardId = _state.value.selectedCardId ?: return
+        workspaceDiffJob?.cancel()
+        updateWorkspaceReview(cardId) {
+            it.copy(selectedPath = path, selectedCommitSha = commitSha, diff = null, diffLines = emptyList())
+        }
+        if (path.isNotEmpty() || commitSha.isNotEmpty()) loadWorkspaceDiff(append = false)
+    }
+
+    fun closeWorkspaceDiff() = selectWorkspaceChange("", "")
+
+    fun loadMoreWorkspaceDiff() = loadWorkspaceDiff(append = true)
+
+    private fun loadWorkspaceDiff(append: Boolean) {
+        val cardId = _state.value.selectedCardId ?: return
+        val review = _state.value.workspaceReview
+        val changes = review.changeset ?: return
+        if (review.selectedPath.isEmpty() && review.selectedCommitSha.isEmpty()) return
+        val path = review.selectedPath
+        val commitSha = review.selectedCommitSha
+        workspaceDiffJob?.cancel()
+        workspaceDiffJob = viewModelScope.launch {
+            updateWorkspaceReview(cardId) { it.copy(diffLoading = true) }
+            try {
+                connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+                val request = GetDiffRequest.newBuilder()
+                    .setCardId(cardId)
+                    .setPath(path)
+                    .setCommitSha(commitSha)
+                    .setExpectedRevision(changes.revision)
+                    .setLimit(1_048_576)
+                    .setOffset(if (append) review.diff?.nextOffset ?: 0 else 0)
+                    .build()
+                val page = if (commitSha.isEmpty()) repository.fileDiff(request) else repository.commitDiff(request)
+                val current = _state.value.workspaceReview
+                if (current.selectedPath != path || current.selectedCommitSha != commitSha) return@launch
+                val merged = if (append && current.diff != null) {
+                    current.diff.toBuilder()
+                        .setPatch(current.diff.patch + page.patch)
+                        .setTruncated(page.truncated)
+                        .setNextOffset(page.nextOffset)
+                        .setTotalBytes(page.totalBytes)
+                        .build()
+                } else {
+                    page
+                }
+                updateWorkspaceReview(cardId) {
+                    it.copy(diff = merged, diffLines = UnifiedDiffParser.parse(merged.patch), diffLoading = false)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (Status.fromThrowable(error).code == Status.Code.ABORTED) {
+                    updateWorkspaceReview(cardId) {
+                        it.copy(diffLoading = false, error = "The workspace changed while this diff was open. Refreshing…")
+                    }
+                    loadWorkspaceSurface()
+                } else {
+                    updateWorkspaceReview(cardId) { it.copy(diffLoading = false, error = readableError(error)) }
+                }
+            }
+        }
+    }
+
+    fun startWorkspaceGitOperation(kind: String, parameters: Map<String, String> = emptyMap()) {
+        val cardId = _state.value.selectedCardId ?: return
+        viewModelScope.launch { startGitOperationInternal(cardId, kind, parameters) }
+    }
+
+    private suspend fun startGitOperationInternal(
+        cardId: String,
+        kind: String,
+        parameters: Map<String, String>,
+    ): Boolean {
+        return try {
+            connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+            val revision = _state.value.workspaceReview.changeset?.revision.orEmpty()
+            val operation = repository.startGitOperation(cardId, kind, revision, parameters)
+            gitOperationLastSequence = 0
+            gitOperationWatchId = null
+            updateWorkspaceReview(cardId) {
+                it.copy(operation = operation, operationLogs = emptyList(), error = null)
+            }
+            observeGitOperation(cardId, operation.id)
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
+            false
+        }
+    }
+
+    fun cancelWorkspaceGitOperation() {
+        val cardId = _state.value.selectedCardId ?: return
+        val operation = _state.value.workspaceReview.operation ?: return
+        if (!GitOperationStatuses.active(operation.status)) return
+        viewModelScope.launch {
+            try {
+                val canceled = repository.cancelGitOperation(operation.id)
+                updateWorkspaceReview(cardId) { it.copy(operation = canceled) }
+            } catch (error: Throwable) {
+                updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
+            }
+        }
+    }
+
+    private suspend fun resumeGitOperation(cardId: String, operationId: String) {
+        if (gitOperationWatchId == operationId && gitOperationJob?.isActive == true) return
+        val known = _state.value.workspaceReview.operation?.takeIf { it.id == operationId }
+        val operation = known ?: runCatching { repository.gitOperation(operationId) }.getOrNull() ?: return
+        if (gitOperationWatchId != operationId) gitOperationLastSequence = 0
+        updateWorkspaceReview(cardId) { current ->
+            current.copy(operation = operation, operationLogs = if (known == null) emptyList() else current.operationLogs)
+        }
+        if (GitOperationStatuses.active(operation.status)) observeGitOperation(cardId, operationId)
+    }
+
+    private fun observeGitOperation(cardId: String, operationId: String) {
+        if (gitOperationWatchId == operationId && gitOperationJob?.isActive == true) return
+        gitOperationJob?.cancel()
+        gitOperationWatchId = operationId
+        gitOperationJob = viewModelScope.launch {
+            var attempt = 0
+            while (true) {
+                try {
+                    repository.watchGitOperation(operationId, gitOperationLastSequence).collect { frame ->
+                        attempt = 0
+                        acceptGitOperationFrame(cardId, operationId, frame)
+                    }
+                    // The daemon closes the stream once the operation settles.
+                    break
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    val code = Status.fromThrowable(error).code
+                    val transient = code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED
+                    if (!transient || !foreground) {
+                        if (code == Status.Code.NOT_FOUND) {
+                            updateWorkspaceReview(cardId) { it.copy(operation = null, operationLogs = emptyList()) }
+                        } else if (!transient) {
+                            updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
+                        }
+                        return@launch
+                    }
+                    delay((500L shl attempt.coerceAtMost(4)).coerceAtMost(8_000L))
+                    attempt += 1
+                }
+            }
+            if (_state.value.workspaceReview.operation?.id == operationId) onGitOperationSettled(cardId)
+        }
+    }
+
+    private fun acceptGitOperationFrame(cardId: String, operationId: String, frame: GitOperationFrame) {
+        if (frame.heartbeat && !frame.hasOperation()) return
+        val previousStatus = _state.value.workspaceReview.operation?.takeIf { it.id == operationId }?.status
+        gitOperationLastSequence = maxOf(
+            gitOperationLastSequence,
+            frame.operation.sequence,
+            frame.logsList.maxOfOrNull { it.sequence } ?: 0,
+        )
+        updateWorkspaceReview(cardId) { current ->
+            if (current.operation != null && current.operation.id != operationId) current
+            else current.copy(
+                operation = frame.operation,
+                operationLogs = mergeGitOperationLogs(current.operationLogs, frame.logsList),
+            )
+        }
+        val enteredConflict = previousStatus != "waiting_for_resolution" && frame.operation.status == "waiting_for_resolution"
+        if (enteredConflict) loadWorkspaceSurface()
+    }
+
+    private suspend fun onGitOperationSettled(cardId: String) {
+        val operation = _state.value.workspaceReview.operation ?: return
+        val removesWorkspace = operation.status == "succeeded" &&
+            operation.kind in setOf(GitOperationKinds.CLEANUP, GitOperationKinds.DISCARD, GitOperationKinds.ADOPT)
+        if (operation.status == "succeeded") {
+            showWorkspaceToast("${GitOperationKinds.title(operation.kind)} succeeded")
+        }
+        if (removesWorkspace) {
+            updateWorkspaceReview(cardId) {
+                it.copy(
+                    workspace = null,
+                    changeset = null,
+                    diff = null,
+                    diffLines = emptyList(),
+                    comments = emptyList(),
+                    selectedPath = "",
+                    selectedCommitSha = "",
+                    surfaceRemoved = true,
+                    loading = false,
+                    error = null,
+                )
+            }
+        } else if (_state.value.selectedCardId == cardId) {
+            refreshWorkspaceSurface(cardId)
+        }
+        // The hydrated card carries refreshed workspace and PR summaries.
+        runCatching { repository.card(cardId).card }.getOrNull()?.let(::updateCard)
+    }
+
+    private fun showWorkspaceToast(message: String) {
+        val cardId = _state.value.workspaceReview.cardId.ifBlank { return }
+        updateWorkspaceReview(cardId) { it.copy(toast = message) }
+        workspaceToastJob?.cancel()
+        workspaceToastJob = viewModelScope.launch {
+            delay(6_000)
+            updateWorkspaceReview(cardId) { it.copy(toast = null) }
+        }
+    }
+
+    fun clearWorkspaceError() {
+        val cardId = _state.value.workspaceReview.cardId.ifBlank { return }
+        updateWorkspaceReview(cardId) { it.copy(error = null) }
+    }
+
+    fun addWorkspaceChangeComment(path: String, side: String, line: Int, body: String) {
+        val cardId = _state.value.selectedCardId ?: return
+        val revision = _state.value.workspaceReview.changeset?.revision.orEmpty()
+        viewModelScope.launch {
+            try {
+                val comment = repository.addChangeComment(
+                    AddChangeCommentRequest.newBuilder()
+                        .setCardId(cardId)
+                        .setPath(path)
+                        .setSide(side)
+                        .setLine(line)
+                        .setBody(body)
+                        .setAuthor("You")
+                        .setRevision(revision)
+                        .build(),
+                )
+                updateWorkspaceReview(cardId) { it.copy(comments = it.comments + comment) }
+            } catch (error: Throwable) {
+                if (Status.fromThrowable(error).code == Status.Code.ABORTED) {
+                    updateWorkspaceReview(cardId) {
+                        it.copy(error = "The workspace changed before the comment was saved. Refreshing…")
+                    }
+                    loadWorkspaceSurface()
+                } else {
+                    updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
+                }
+            }
+        }
+    }
+
+    fun updateConversationWorkspace(mode: String, branch: String, baseBranch: String) = action {
+        val cardId = _state.value.selectedCardId ?: return@action
+        updateCard(repository.updateConversationWorkspace(cardId, mode, branch, baseBranch))
+        loadWorkspaceSurface()
+    }
+
+    /**
+     * The merge sheet's full flow: commit dirty work when needed, merge into the
+     * base branch, then optionally remove the workspace and move the card to
+     * Done. Each stage is an ordinary durable Git operation, so progress, logs,
+     * and failures surface through the shared operation state.
+     */
+    fun runWorkspaceMergeFlow(
+        strategy: String,
+        subject: String,
+        body: String,
+        validate: Boolean,
+        removeWorkspace: Boolean,
+        moveCardToDone: Boolean,
+    ) {
+        if (mergeFlowJob?.isActive == true) return
+        val cardId = _state.value.selectedCardId ?: return
+        val card = _state.value.selectedCard ?: return
+        mergeFlowJob = viewModelScope.launch {
+            val review = _state.value.workspaceReview
+            val branch = review.workspace?.branch ?: card.workspace.branch
+            val base = (review.workspace?.baseBranch ?: card.workspace.baseBranch).ifBlank { "base" }
+            try {
+                if (review.workspace?.dirty == true) {
+                    updateWorkspaceReview(cardId) { it.copy(mergeFlowStep = "commit") }
+                    val committed = startGitOperationInternal(
+                        cardId,
+                        GitOperationKinds.COMMIT,
+                        mapOf("subject" to subject, "body" to body, "include_untracked" to "true"),
+                    ) && awaitGitOperationSuccess()
+                    if (!committed) return@launch
+                    refreshWorkspaceSurface(cardId)
+                }
+                updateWorkspaceReview(cardId) { it.copy(mergeFlowStep = "merge") }
+                val merged = startGitOperationInternal(
+                    cardId,
+                    GitOperationKinds.MERGE_LOCAL,
+                    mapOf("strategy" to strategy, "subject" to subject, "validate" to if (validate) "true" else "false"),
+                ) && awaitGitOperationSuccess()
+                if (!merged) return@launch
+                if (removeWorkspace) {
+                    updateWorkspaceReview(cardId) { it.copy(mergeFlowStep = "cleanup") }
+                    refreshWorkspaceSurface(cardId)
+                    if (startGitOperationInternal(cardId, GitOperationKinds.CLEANUP, emptyMap())) {
+                        awaitGitOperationSuccess()
+                    }
+                }
+                var movedToDone = false
+                if (moveCardToDone && card.scope != "chat") {
+                    val lanes = _state.value.boards.firstOrNull { it.id == card.boardId }?.lanesList.orEmpty()
+                    val doneLane = lanes.firstOrNull { it.id == "done" }?.id ?: lanes.lastOrNull()?.id
+                    if (doneLane != null && card.lane != doneLane) {
+                        runCatching { updateCard(repository.moveCard(cardId, doneLane)) }
+                            .onSuccess { movedToDone = true }
+                    }
+                }
+                showWorkspaceToast(
+                    "Merged ${branch.ifBlank { "workspace" }} into $base" +
+                        if (movedToDone) " · card moved to Done" else "",
+                )
+            } finally {
+                updateWorkspaceReview(cardId) { it.copy(mergeFlowStep = null) }
+            }
+        }
+    }
+
+    /**
+     * Waits for the most recently started operation to settle. Polls the daemon
+     * directly so orchestration survives a dropped watch stream.
+     */
+    private suspend fun awaitGitOperationSuccess(): Boolean {
+        val operationId = _state.value.workspaceReview.operation?.id ?: return false
+        val deadline = System.currentTimeMillis() + 3_600_000L
+        while (System.currentTimeMillis() < deadline) {
+            val observed = _state.value.workspaceReview.operation
+            if (observed?.id == operationId &&
+                (GitOperationStatuses.terminal(observed.status) || observed.status == "waiting_for_resolution")
+            ) {
+                return observed.status == "succeeded"
+            }
+            val polled = runCatching { repository.gitOperation(operationId) }.getOrNull()
+            if (polled != null && (GitOperationStatuses.terminal(polled.status) || polled.status == "waiting_for_resolution")) {
+                val cardId = _state.value.workspaceReview.cardId
+                if (_state.value.workspaceReview.operation?.id == operationId && cardId.isNotBlank()) {
+                    updateWorkspaceReview(cardId) { it.copy(operation = polled) }
+                }
+                return polled.status == "succeeded"
+            }
+            delay(400)
+        }
+        return false
+    }
+
+    /** Hands conflict resolution or review follow-up to the conversation's agent. */
+    fun sendWorkspaceHandOffMessage(text: String) {
+        val cardId = _state.value.selectedCardId ?: return
+        val card = _state.value.selectedCard ?: return
+        viewModelScope.launch {
+            try {
+                connectionManager.enqueueMessage(cardId, listOf(textPart(text)), card.provider, card.model, card.effort)
+                ensureConversationRecovery(cardId)
+                selectDetailTab(0)
+            } catch (error: Throwable) {
+                updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
+            }
+        }
+    }
+
     fun loadAdministration() {
         viewModelScope.launch {
             try {
@@ -1929,6 +2431,7 @@ class DieterViewModel(
             .setOpenCardPolicy("skip_if_open")
             .setMisfirePolicy("latest")
             .setBusyPolicy("queue")
+            .setWorkspaceMode("worktree")
             .build()
     }
 }

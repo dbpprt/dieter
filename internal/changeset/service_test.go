@@ -86,3 +86,51 @@ func runGit(t *testing.T, directory string, args ...string) {
 		t.Fatalf("git %v: %s: %v", args, output, err)
 	}
 }
+
+func TestCommitDiffWithoutPathReturnsTheWholeCommitPatch(t *testing.T) {
+	repository := testRepository(t)
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Commits", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := workspace.New(data, nil)
+	value, err := manager.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "one.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "two.txt"), []byte("two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, value.Path, "add", "-A")
+	runGit(t, value.Path, "commit", "-m", "add both files")
+
+	service := changeset.New(manager)
+	set, err := service.Get(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Commits) != 1 {
+		t.Fatalf("expected one commit ahead, got %#v", set.Commits)
+	}
+	diff, err := service.CommitDiff(context.Background(), chat.ID, set.Revision, set.Commits[0].SHA, "", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(diff.Patch, "+one") || !strings.Contains(diff.Patch, "+two") {
+		t.Fatalf("whole-commit patch missing files: %#v", diff)
+	}
+	if _, err := service.FileDiff(context.Background(), chat.ID, set.Revision, "", "", 0, 0); err == nil {
+		t.Fatal("working-tree diff without a path must stay rejected")
+	}
+}

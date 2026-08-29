@@ -45,10 +45,29 @@ import com.dbpprt.dieter.v1.ListFilesRequest
 import com.dbpprt.dieter.v1.ListScheduleRunsRequest
 import com.dbpprt.dieter.v1.ListSchedulesRequest
 import com.dbpprt.dieter.v1.ListTerminalsRequest
+import com.dbpprt.dieter.v1.AddChangeCommentRequest
+import com.dbpprt.dieter.v1.ChangeComment
+import com.dbpprt.dieter.v1.ChangeCommentsResponse
+import com.dbpprt.dieter.v1.Changeset
+import com.dbpprt.dieter.v1.ConversationRef
+import com.dbpprt.dieter.v1.FileDiff
+import com.dbpprt.dieter.v1.GetChangesetRequest
+import com.dbpprt.dieter.v1.GetDiffRequest
+import com.dbpprt.dieter.v1.GitOperation
+import com.dbpprt.dieter.v1.GitOperationFrame
+import com.dbpprt.dieter.v1.GitOperationRef
+import com.dbpprt.dieter.v1.ListChangeCommentsRequest
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.MoveCardRequest
 import com.dbpprt.dieter.v1.MoveFileRequest
 import com.dbpprt.dieter.v1.MoveFileResponse
+import com.dbpprt.dieter.v1.ProjectRef
+import com.dbpprt.dieter.v1.SCMCapabilities
+import com.dbpprt.dieter.v1.StartGitOperationRequest
+import com.dbpprt.dieter.v1.UpdateConversationWorkspaceRequest
+import com.dbpprt.dieter.v1.WatchGitOperationRequest
+import com.dbpprt.dieter.v1.Workspace
+import com.dbpprt.dieter.v1.WorkspacesResponse
 import com.dbpprt.dieter.v1.PinChatRequest
 import com.dbpprt.dieter.v1.PreviewScheduleRequest
 import com.dbpprt.dieter.v1.Project
@@ -231,10 +250,24 @@ interface DieterRepository {
     suspend fun archiveCard(cardId: String, archived: Boolean): Card
     suspend fun pinChat(cardId: String, pinned: Boolean): Card
 
-    suspend fun files(projectId: String, path: String = "", showHidden: Boolean = false): FileList
-    suspend fun readFile(projectId: String, path: String): FileDocument
-    suspend fun saveFile(projectId: String, path: String, content: String, revision: String): FileDocument
-    suspend fun createFile(projectId: String, path: String, kind: String, content: String = ""): FileEntry
+    suspend fun updateConversationWorkspace(cardId: String, mode: String, branch: String, baseBranch: String): Card
+    suspend fun workspace(cardId: String): Workspace
+    suspend fun projectWorkspaces(projectId: String): WorkspacesResponse
+    suspend fun changeset(cardId: String): Changeset
+    suspend fun fileDiff(request: GetDiffRequest): FileDiff
+    suspend fun commitDiff(request: GetDiffRequest): FileDiff
+    suspend fun addChangeComment(request: AddChangeCommentRequest): ChangeComment
+    suspend fun changeComments(cardId: String, revision: String = ""): ChangeCommentsResponse
+    suspend fun scmCapabilities(cardId: String): SCMCapabilities
+    suspend fun startGitOperation(cardId: String, kind: String, expectedRevision: String, parameters: Map<String, String> = emptyMap()): GitOperation
+    suspend fun gitOperation(operationId: String): GitOperation
+    fun watchGitOperation(operationId: String, afterSequence: Long = 0): Flow<GitOperationFrame>
+    suspend fun cancelGitOperation(operationId: String): GitOperation
+
+    suspend fun files(projectId: String, path: String = "", showHidden: Boolean = false, cardId: String = ""): FileList
+    suspend fun readFile(projectId: String, path: String, cardId: String = ""): FileDocument
+    suspend fun saveFile(projectId: String, path: String, content: String, revision: String, cardId: String = ""): FileDocument
+    suspend fun createFile(projectId: String, path: String, kind: String, content: String = "", cardId: String = ""): FileEntry
     suspend fun moveFile(projectId: String, source: String, destination: String): MoveFileResponse
     suspend fun deleteFile(projectId: String, path: String, recursive: Boolean = false)
 
@@ -659,35 +692,105 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         PinChatRequest.newBuilder().setCardId(cardId).setPinned(pinned).build(),
     )
 
-    override suspend fun files(projectId: String, path: String, showHidden: Boolean): FileList = unary().listFiles(
+    override suspend fun updateConversationWorkspace(cardId: String, mode: String, branch: String, baseBranch: String): Card =
+        unary().updateConversationWorkspace(
+            UpdateConversationWorkspaceRequest.newBuilder()
+                .setCardId(cardId)
+                .setMode(mode)
+                .setBranch(branch.trim())
+                .setBaseBranch(baseBranch.trim())
+                .build(),
+        )
+
+    // GetWorkspace may lazily provision a branch or worktree, so it gets a
+    // provisioning-sized deadline rather than the default UI read deadline.
+    override suspend fun workspace(cardId: String): Workspace =
+        unary(deadlineSeconds = 60).getWorkspace(conversationRequest(cardId))
+
+    override suspend fun projectWorkspaces(projectId: String): WorkspacesResponse =
+        unary().listProjectWorkspaces(ProjectRef.newBuilder().setProjectId(projectId).build())
+
+    override suspend fun changeset(cardId: String): Changeset =
+        unary(deadlineSeconds = 30).getChangeset(GetChangesetRequest.newBuilder().setCardId(cardId).build())
+
+    override suspend fun fileDiff(request: GetDiffRequest): FileDiff = unary(deadlineSeconds = 30).getFileDiff(request)
+
+    override suspend fun commitDiff(request: GetDiffRequest): FileDiff = unary(deadlineSeconds = 30).getCommitDiff(request)
+
+    override suspend fun addChangeComment(request: AddChangeCommentRequest): ChangeComment =
+        unary().addChangeComment(request)
+
+    override suspend fun changeComments(cardId: String, revision: String): ChangeCommentsResponse =
+        unary().listChangeComments(
+            ListChangeCommentsRequest.newBuilder().setCardId(cardId).setRevision(revision).build(),
+        )
+
+    // Capability discovery may run `gh auth status` on the daemon host.
+    override suspend fun scmCapabilities(cardId: String): SCMCapabilities =
+        unary(deadlineSeconds = 30).getSCMCapabilities(conversationRequest(cardId))
+
+    override suspend fun startGitOperation(
+        cardId: String,
+        kind: String,
+        expectedRevision: String,
+        parameters: Map<String, String>,
+    ): GitOperation = unary().startGitOperation(
+        StartGitOperationRequest.newBuilder()
+            .setCardId(cardId)
+            .setKind(kind)
+            .setExpectedRevision(expectedRevision)
+            .putAllParameters(parameters)
+            .build(),
+    )
+
+    override suspend fun gitOperation(operationId: String): GitOperation =
+        unary().getGitOperation(GitOperationRef.newBuilder().setOperationId(operationId).build())
+
+    override fun watchGitOperation(operationId: String, afterSequence: Long): Flow<GitOperationFrame> = flow {
+        streaming().watchGitOperation(
+            WatchGitOperationRequest.newBuilder()
+                .setOperationId(operationId)
+                .setAfterSequence(afterSequence)
+                .setHeartbeatMs(15_000)
+                .build(),
+        ).collect(::emit)
+    }
+
+    override suspend fun cancelGitOperation(operationId: String): GitOperation =
+        unary().cancelGitOperation(GitOperationRef.newBuilder().setOperationId(operationId).build())
+
+    override suspend fun files(projectId: String, path: String, showHidden: Boolean, cardId: String): FileList = unary().listFiles(
         ListFilesRequest.newBuilder()
             .setProjectId(projectId)
             .setPath(path)
             .setShowHidden(showHidden)
+            .setCardId(cardId)
             .build(),
     )
 
-    override suspend fun readFile(projectId: String, path: String): FileDocument = unary().readFile(
-        ReadFileRequest.newBuilder().setProjectId(projectId).setPath(path).build(),
+    override suspend fun readFile(projectId: String, path: String, cardId: String): FileDocument = unary().readFile(
+        ReadFileRequest.newBuilder().setProjectId(projectId).setPath(path).setCardId(cardId).build(),
     )
 
-    override suspend fun saveFile(projectId: String, path: String, content: String, revision: String): FileDocument =
+    override suspend fun saveFile(projectId: String, path: String, content: String, revision: String, cardId: String): FileDocument =
         unary().saveFile(
             SaveFileRequest.newBuilder()
                 .setProjectId(projectId)
                 .setPath(path)
                 .setContent(content)
                 .setRevision(revision)
+                .setCardId(cardId)
                 .build(),
         )
 
-    override suspend fun createFile(projectId: String, path: String, kind: String, content: String): FileEntry =
+    override suspend fun createFile(projectId: String, path: String, kind: String, content: String, cardId: String): FileEntry =
         unary().createFile(
             CreateFileRequest.newBuilder()
                 .setProjectId(projectId)
                 .setPath(path)
                 .setKind(kind)
                 .setContent(content)
+                .setCardId(cardId)
                 .build(),
         )
 
@@ -792,6 +895,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
 
     private fun cardRequest(cardId: String): GetCardRequest =
         GetCardRequest.newBuilder().setCardId(cardId).build()
+
+    private fun conversationRequest(cardId: String): ConversationRef =
+        ConversationRef.newBuilder().setCardId(cardId).build()
 
     private fun scheduleRequest(scheduleId: String): ScheduleRef =
         ScheduleRef.newBuilder().setScheduleId(scheduleId).build()

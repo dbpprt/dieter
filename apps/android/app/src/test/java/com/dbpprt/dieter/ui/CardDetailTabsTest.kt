@@ -7,7 +7,7 @@ class CardDetailTabsTest {
     @Test
     fun boardCardsShowSubagentsAfterCommentsLikeMac() {
         assertEquals(
-            listOf("Conversation", "Comments", "Subagents"),
+            listOf("Conversation", "Changes", "Comments", "Subagents"),
             detailSectionsFor(standalone = false).map(DetailSection::label),
         )
     }
@@ -15,7 +15,7 @@ class CardDetailTabsTest {
     @Test
     fun standaloneChatsKeepSubagentsNextToConversation() {
         assertEquals(
-            listOf("Conversation", "Subagents", "Comments"),
+            listOf("Conversation", "Changes", "Subagents", "Comments"),
             detailSectionsFor(standalone = true).map(DetailSection::label),
         )
     }

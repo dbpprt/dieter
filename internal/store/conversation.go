@@ -97,7 +97,7 @@ func (s *Store) ForkChat(sourceRef, messageID, title string) (model.Card, error)
 		Project: source.Project.ID, Title: title, Provider: source.Card.Provider,
 		Model: source.Card.Model, Effort: source.Card.Effort,
 		ProviderOptions: source.Card.ProviderOptions,
-		WorkspaceMode:   source.Project.DefaultWorkspaceMode,
+		WorkspaceMode:   source.Card.WorkspaceMode,
 	})
 	if err != nil {
 		return model.Card{}, err

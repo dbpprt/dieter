@@ -655,7 +655,6 @@ func (c *CLI) projectRegister(args []string, create bool) error {
 	prompt := set.String("prompt", "", "prompt")
 	promptFile := set.String("prompt-file", "", "prompt file")
 	format := set.String("format", "json", "json or table")
-	workspaceMode := set.String("workspace", model.WorkspaceModeMain, "main, branch, or worktree")
 	baseRemote := set.String("base-remote", "", "base remote")
 	baseBranch := set.String("base-branch", "", "base branch")
 	validationFile := set.String("validation-file", "", "validation command JSON file")
@@ -676,7 +675,7 @@ func (c *CLI) projectRegister(args []string, create bool) error {
 	}
 	project, err := c.service().RegisterProject(context.Background(), app.ProjectInput{
 		Path: set.Arg(0), Name: *name, Summary: *summary, Prompt: value, Create: create,
-		DefaultWorkspaceMode: *workspaceMode, BaseRemote: *baseRemote, BaseBranch: *baseBranch, ValidationCommands: validation,
+		BaseRemote: *baseRemote, BaseBranch: *baseBranch, ValidationCommands: validation,
 	})
 	if err != nil {
 		return err
@@ -689,9 +688,8 @@ func (c *CLI) projectRegister(args []string, create bool) error {
 }
 
 func (c *CLI) projectWorkspace(args []string) error {
-	const usage = "Usage: dieter project workspace [--mode main|branch|worktree] [--base-remote REMOTE] [--base-branch BRANCH] [--validation-file FILE] PROJECT\n"
+	const usage = "Usage: dieter project workspace [--base-remote REMOTE] [--base-branch BRANCH] [--validation-file FILE] PROJECT\n"
 	set := flags("project workspace")
-	mode := set.String("mode", "", "default workspace mode")
 	remote := set.String("base-remote", "", "base remote")
 	branch := set.String("base-branch", "", "base branch")
 	validationFile := set.String("validation-file", "", "validation command JSON file")
@@ -706,9 +704,6 @@ func (c *CLI) projectWorkspace(args []string) error {
 	if err != nil {
 		return err
 	}
-	if *mode == "" {
-		*mode = current.DefaultWorkspaceMode
-	}
 	if *remote == "" {
 		*remote = current.BaseRemote
 	}
@@ -722,7 +717,7 @@ func (c *CLI) projectWorkspace(args []string) error {
 			return err
 		}
 	}
-	updated, err := c.Store.UpdateProjectWorkspaceSettings(current.ID, *mode, *remote, *branch, validation)
+	updated, err := c.Store.UpdateProjectWorkspaceSettings(current.ID, *remote, *branch, validation)
 	if err != nil {
 		return err
 	}
@@ -1100,7 +1095,7 @@ Options:
   --model MODEL          Model for the first turn
   --effort EFFORT        Reasoning or thinking effort for the first turn
   --labels LABELS        Comma-separated board label IDs or names
-  --workspace MODE       main, branch, or worktree (defaults to project setting)
+  --workspace MODE       main, branch, or worktree (required)
   --branch BRANCH        Existing or new workspace branch
   --base-branch BRANCH   Override the project base branch
   --format json|id       Output format
@@ -1125,6 +1120,9 @@ Options:
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
+	}
+	if strings.TrimSpace(*workspaceMode) == "" {
+		return errors.New("--workspace is required; choose main, branch, or worktree")
 	}
 	value, err := textValue(*prompt, *file, c.In)
 	if err != nil {
@@ -1473,13 +1471,14 @@ func (c *CLI) scheduleEdit(args []string, current *model.Schedule) error {
 
 Options:
   --action draft|run
+  --workspace main|branch|worktree
   --labels LABELS
   --provider AGENT --model MODEL --effort EFFORT
   --enabled=true|false
   --open-card skip_if_open|always
   --busy queue|skip
 `
-	defaults := model.Schedule{Enabled: true, Cron: "0 9 * * 1-5", Timezone: "UTC", Action: model.ScheduleActionDraft, OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", BusyPolicy: "queue"}
+	defaults := model.Schedule{Enabled: true, Cron: "0 9 * * 1-5", Timezone: "UTC", Action: model.ScheduleActionDraft, OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", BusyPolicy: "queue", WorkspaceMode: model.WorkspaceModeWorktree}
 	if current != nil {
 		defaults = *current
 	}
@@ -1491,6 +1490,7 @@ Options:
 	expression := set.String("cron", defaults.Cron, "five-field cron")
 	timezone := set.String("timezone", defaults.Timezone, "IANA timezone")
 	action := set.String("action", defaults.Action, "draft or run")
+	workspaceMode := set.String("workspace", defaults.WorkspaceMode, "main, branch, or worktree")
 	title := set.String("title", defaults.TitleTemplate, "card title template")
 	prompt := set.String("prompt", defaults.PromptTemplate, "card prompt template")
 	promptFile := set.String("prompt-file", "", "card prompt template file")
@@ -1520,7 +1520,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	input := store.ScheduleInput{Project: *project, Board: *board, Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIDs: splitCSV(*labels), Enabled: *enabled, OpenCardPolicy: *openCard, MisfirePolicy: "latest", BusyPolicy: *busy}
+	input := store.ScheduleInput{Project: *project, Board: *board, Name: *name, Description: *description, Cron: *expression, Timezone: *timezone, Action: *action, TitleTemplate: *title, PromptTemplate: promptValue, Provider: *provider, Model: *modelName, Effort: *effort, LabelIDs: splitCSV(*labels), Enabled: *enabled, OpenCardPolicy: *openCard, MisfirePolicy: "latest", BusyPolicy: *busy, WorkspaceMode: *workspaceMode}
 	manager := scheduler.New(c.Store, c.service())
 	var item model.Schedule
 	if current == nil {

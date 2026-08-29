@@ -17,7 +17,7 @@ import com.dbpprt.dieter.data.DieterSyncStore
 import com.dbpprt.dieter.settings.AppPreferences
 
 /**
- * Home-screen activity feed. Renders entirely from the cached global-sync
+ * Home-screen chat feed. Renders entirely from the cached global-sync
  * projection, so it works offline; a refresh tap kicks the sync service to
  * pull a fresh frame.
  */
@@ -88,11 +88,11 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             )
             views.setTextViewText(
                 R.id.widget_empty_title,
-                if (compact) "Nothing finished yet" else context.getString(R.string.widget_empty_title),
+                context.getString(if (compact) R.string.widget_empty_recent_title else R.string.widget_empty_title),
             )
             views.setTextViewText(
                 R.id.widget_empty_body,
-                if (compact) "Completed work shows up here" else context.getString(R.string.widget_empty_body),
+                context.getString(if (compact) R.string.widget_empty_recent_body else R.string.widget_empty_body),
             )
 
             val adapter = Intent(context, DieterWidgetService::class.java)
@@ -104,7 +104,7 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.widget_refresh, refreshIntent(context))
             views.setOnClickPendingIntent(R.id.widget_header, openAppIntent(context))
             views.setOnClickPendingIntent(R.id.widget_empty, openAppIntent(context))
-            views.setPendingIntentTemplate(R.id.widget_list, cardTemplateIntent(context, appWidgetId))
+            views.setPendingIntentTemplate(R.id.widget_list, chatTemplateIntent(context, appWidgetId))
 
             manager.updateAppWidget(appWidgetId, views)
             manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.widget_list)
@@ -155,8 +155,8 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        /** Mutable template so per-row fill-in intents can carry the card id. */
-        private fun cardTemplateIntent(context: Context, appWidgetId: Int): PendingIntent = PendingIntent.getActivity(
+        /** Mutable template so per-row fill-in intents can carry the chat's conversation id. */
+        private fun chatTemplateIntent(context: Context, appWidgetId: Int): PendingIntent = PendingIntent.getActivity(
             context,
             100 + appWidgetId,
             Intent(context, MainActivity::class.java)

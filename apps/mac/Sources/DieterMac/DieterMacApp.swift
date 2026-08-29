@@ -69,6 +69,10 @@ struct DieterMacApp: App {
                         await TerminalUISmokeRunner.run(store: store)
                         return
                     }
+                    if arguments.contains("--workspace-ui-smoke") {
+                        await WorkspaceUISmokeRunner.run(store: store)
+                        return
+                    }
                     if arguments.contains("--ui-smoke") {
                         await NativeUISmokeRunner.run(store: store)
                     }

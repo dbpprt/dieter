@@ -319,11 +319,6 @@ private struct StandaloneChatStartView: View {
     private var project: Dieter_V1_Project? { store.projects.first { $0.id == projectID } }
     private var harness: Dieter_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == provider } }
     private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
-    private var promptEditorHeight: CGFloat {
-        let lines = prompt.split(separator: "\n", omittingEmptySubsequences: false).count
-        return min(108, 42 + CGFloat(max(0, lines - 1)) * 18)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             FluidPaneChrome(background: DieterTheme.sidebar, spacing: 8) {
@@ -428,7 +423,7 @@ private struct StandaloneChatStartView: View {
                             }
                             return .handled
                         }
-                        .frame(height: promptEditorHeight)
+                        .frame(minHeight: 42, alignment: .topLeading)
                         .background(attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(attachmentDropTargeted ? DieterTheme.shell : DieterTheme.shellDeep.opacity(0.45), lineWidth: attachmentDropTargeted ? 1.5 : 1))
                         .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in

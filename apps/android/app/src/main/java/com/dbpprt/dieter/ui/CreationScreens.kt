@@ -29,6 +29,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -114,6 +115,7 @@ fun NewConversationScreen(
     var lane by remember(state.selectedLane) {
         mutableStateOf(state.selectedLane.ifBlank { state.board?.lanesList?.firstOrNull()?.id.orEmpty() })
     }
+    var workspaceMode by remember { mutableStateOf(ConversationWorkspaceMode.WORKTREE) }
     val labelIds = remember { mutableStateListOf<String>() }
     val attachments = remember { mutableStateListOf<MessagePart>() }
     var attachmentPickerVisible by remember { mutableStateOf(false) }
@@ -174,6 +176,7 @@ fun NewConversationScreen(
                                 labelIds = labelIds.toList(),
                                 deferStart = shouldDeferConversationStart(chat = false, lane = lane),
                                 attachments = attachments.toList(),
+                                workspaceMode = workspaceMode.wire,
                             )
                         },
                         enabled = canSubmit && !state.working,
@@ -204,6 +207,8 @@ fun NewConversationScreen(
                 effort = effort,
                 onEffortChange = { effort = it },
                 canSubmit = canSubmit && !state.working,
+                workspaceMode = workspaceMode,
+                onWorkspaceModeChange = { workspaceMode = it },
                 attachments = attachments,
                 onAttach = { attachmentPickerVisible = true },
                 onRemoveAttachment = { attachments.removeAt(it) },
@@ -220,6 +225,7 @@ fun NewConversationScreen(
                         labelIds = emptyList(),
                         deferStart = shouldDeferConversationStart(chat = true, lane = ""),
                         attachments = attachments.toList(),
+                        workspaceMode = workspaceMode.wire,
                     )
                 },
             )
@@ -240,6 +246,8 @@ fun NewConversationScreen(
                 lane = lane,
                 onLaneChange = { lane = it },
                 labelIds = labelIds,
+                workspaceMode = workspaceMode,
+                onWorkspaceModeChange = { workspaceMode = it },
                 attachments = attachments,
                 onAttach = { attachmentPickerVisible = true },
                 onRemoveAttachment = { attachments.removeAt(it) },
@@ -275,6 +283,8 @@ private fun NewChatBody(
     effort: String,
     onEffortChange: (String) -> Unit,
     canSubmit: Boolean,
+    workspaceMode: ConversationWorkspaceMode,
+    onWorkspaceModeChange: (ConversationWorkspaceMode) -> Unit,
     attachments: List<MessagePart>,
     onAttach: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
@@ -340,6 +350,8 @@ private fun NewChatBody(
         Spacer(Modifier.height(8.dp))
         ModelSelectors(state, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange)
         Spacer(Modifier.height(8.dp))
+        WorkspaceModeChips(workspaceMode, onWorkspaceModeChange)
+        Spacer(Modifier.height(8.dp))
         if (attachments.isNotEmpty()) {
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -398,6 +410,8 @@ private fun NewCardBody(
     lane: String,
     onLaneChange: (String) -> Unit,
     labelIds: MutableList<String>,
+    workspaceMode: ConversationWorkspaceMode,
+    onWorkspaceModeChange: (ConversationWorkspaceMode) -> Unit,
     attachments: List<MessagePart>,
     onAttach: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
@@ -446,6 +460,10 @@ private fun NewCardBody(
                 }
             }
         }
+        FormSection(Icons.Outlined.AccountTree, "Workspace") {
+            WorkspaceModeChips(workspaceMode, onWorkspaceModeChange)
+            Text(workspaceMode.detail, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
+        }
         FormSection(Icons.Outlined.Bolt, "Agent") {
             ModelSelectors(state, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange)
         }
@@ -455,6 +473,23 @@ private fun NewCardBody(
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun WorkspaceModeChips(
+    selected: ConversationWorkspaceMode,
+    onSelect: (ConversationWorkspaceMode) -> Unit,
+) {
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ConversationWorkspaceMode.entries.forEach { mode ->
+            FilterChip(
+                selected = selected == mode,
+                onClick = { onSelect(mode) },
+                label = { Text(mode.shortTitle) },
+                modifier = Modifier.testTag("workspace-mode-${mode.wire}"),
+            )
+        }
     }
 }
 
@@ -585,6 +620,7 @@ fun ScheduleEditorScreen(
                 .setOpenCardPolicy(openPolicy)
                 .setMisfirePolicy("latest")
                 .setBusyPolicy(busyPolicy)
+                .setWorkspaceMode(schedule?.workspaceMode.orEmpty().ifBlank { "worktree" })
                 .addAllLabelIds(labelIds)
                 .build(),
         )

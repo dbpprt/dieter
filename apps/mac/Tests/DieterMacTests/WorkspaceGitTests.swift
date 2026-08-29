@@ -89,11 +89,10 @@ import Testing
     #expect(restored.workingDirectory == draft.workingDirectory)
 }
 
-@Test func projectSetupCarriesGitWorkspaceDefaults() {
+@Test func projectSetupCarriesGitWorkspaceSettingsWithoutAModeDefault() {
     var draft = ProjectSetupDraft()
     draft.path = "/srv/repo"
     draft.name = "Repo"
-    draft.defaultWorkspaceMode = "worktree"
     draft.baseRemote = "upstream"
     draft.baseBranch = "develop"
     var validation = Dieter_V1_ValidationCommand()
@@ -103,7 +102,6 @@ import Testing
     draft.validationCommands = [validation]
 
     let request = draft.request()
-    #expect(request.defaultWorkspaceMode == "worktree")
     #expect(request.baseRemote == "upstream")
     #expect(request.baseBranch == "develop")
     #expect(request.validationCommands.first?.arguments == ["test"])

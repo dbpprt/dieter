@@ -140,7 +140,7 @@ func run(address, home, offlineTrigger string) error {
 		}
 	}
 	project, err := data.CreateProject(boardstore.CreateProjectInput{
-		Name: "Isolated E2E", Path: repository, DefaultWorkspaceMode: model.WorkspaceModeWorktree, BaseBranch: "main",
+		Name: "Isolated E2E", Path: repository, BaseBranch: "main",
 	})
 	if err != nil {
 		return err

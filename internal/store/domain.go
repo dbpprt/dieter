@@ -14,8 +14,8 @@ import (
 )
 
 type CreateProjectInput struct {
-	ID, Name, Path, Summary, Prompt, DefaultWorkspaceMode, BaseRemote, BaseBranch string
-	ValidationCommands                                                            []model.ValidationCommand
+	ID, Name, Path, Summary, Prompt, BaseRemote, BaseBranch string
+	ValidationCommands                                      []model.ValidationCommand
 }
 
 func validFileID(id string) bool {
@@ -56,27 +56,16 @@ func (s *Store) CreateProject(input CreateProjectInput) (model.Project, error) {
 		}
 	}
 	now := timestamp()
-	workspaceMode, err := normalizeWorkspaceMode(input.DefaultWorkspaceMode)
-	if err != nil {
-		return model.Project{}, err
-	}
 	validation, err := normalizeValidationCommands(input.ValidationCommands)
 	if err != nil {
 		return model.Project{}, err
 	}
 	project := model.Project{
 		ID: input.ID, Name: name, Path: path, Summary: strings.TrimSpace(input.Summary), Prompt: strings.TrimSpace(input.Prompt),
-		DefaultWorkspaceMode: workspaceMode, BaseRemote: strings.TrimSpace(input.BaseRemote), BaseBranch: strings.TrimSpace(input.BaseBranch),
+		BaseRemote: strings.TrimSpace(input.BaseRemote), BaseBranch: strings.TrimSpace(input.BaseBranch),
 		ValidationCommands: validation, CreatedAt: now, UpdatedAt: now,
 	}
 	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
-}
-
-func hydrateProject(item model.Project) model.Project {
-	if item.DefaultWorkspaceMode == "" {
-		item.DefaultWorkspaceMode = model.WorkspaceModeMain
-	}
-	return item
 }
 
 func (s *Store) listProjects() ([]model.Project, error) {
@@ -92,7 +81,7 @@ func (s *Store) listProjects() ([]model.Project, error) {
 			return nil, readErr
 		}
 		item.Prompt = body
-		result = append(result, hydrateProject(item))
+		result = append(result, item)
 	}
 	sort.Slice(result, func(i, j int) bool { return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name) })
 	return result, nil
@@ -283,12 +272,8 @@ func (s *Store) UpdateProjectPromptTemplate(ref, template string) (model.Project
 	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
 }
 
-func (s *Store) UpdateProjectWorkspaceSettings(ref, mode, baseRemote, baseBranch string, validation []model.ValidationCommand) (model.Project, error) {
-	mode, err := normalizeWorkspaceMode(mode)
-	if err != nil {
-		return model.Project{}, err
-	}
-	validation, err = normalizeValidationCommands(validation)
+func (s *Store) UpdateProjectWorkspaceSettings(ref, baseRemote, baseBranch string, validation []model.ValidationCommand) (model.Project, error) {
+	validation, err := normalizeValidationCommands(validation)
 	if err != nil {
 		return model.Project{}, err
 	}
@@ -301,7 +286,6 @@ func (s *Store) UpdateProjectWorkspaceSettings(ref, mode, baseRemote, baseBranch
 	if err != nil {
 		return model.Project{}, err
 	}
-	project.DefaultWorkspaceMode = mode
 	project.BaseRemote = strings.TrimSpace(baseRemote)
 	project.BaseBranch = strings.TrimSpace(baseBranch)
 	project.ValidationCommands = append([]model.ValidationCommand(nil), validation...)
@@ -651,11 +635,7 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, fmt.Errorf("card already exists")
 	}
 	existing, _ := s.ListCards(CardFilter{Board: board.ID, Lane: canonicalLane(board, lane)})
-	workspaceMode := strings.TrimSpace(input.WorkspaceMode)
-	if workspaceMode == "" {
-		workspaceMode = project.DefaultWorkspaceMode
-	}
-	workspaceMode, err = normalizeWorkspaceMode(workspaceMode)
+	workspaceMode, err := normalizeWorkspaceMode(input.WorkspaceMode)
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -688,11 +668,7 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, errors.New("chat already exists")
 	}
 	existing, _ := s.ListCards(CardFilter{Project: project.ID, Scope: model.ConversationScopeChat})
-	workspaceMode := strings.TrimSpace(input.WorkspaceMode)
-	if workspaceMode == "" {
-		workspaceMode = project.DefaultWorkspaceMode
-	}
-	workspaceMode, err = normalizeWorkspaceMode(workspaceMode)
+	workspaceMode, err := normalizeWorkspaceMode(input.WorkspaceMode)
 	if err != nil {
 		return model.Card{}, err
 	}

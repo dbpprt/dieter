@@ -78,7 +78,6 @@ private fun WidgetConfigScreen(
     var style by remember { mutableStateOf(initial.style) }
     var maxItems by remember { mutableStateOf(initial.maxItems) }
     var showSections by remember { mutableStateOf(initial.showSections) }
-    var includeChats by remember { mutableStateOf(initial.includeChats) }
 
     Scaffold { padding ->
         Surface(Modifier.fillMaxSize()) {
@@ -100,17 +99,17 @@ private fun WidgetConfigScreen(
                 Text("Style", style = MaterialTheme.typography.titleSmall)
                 StyleOption(
                     title = "Automatic",
-                    subtitle = "Full feed when wide, last finished when small",
+                    subtitle = "Chat activity when wide, recent replies when small",
                     selected = style == WidgetStyle.AUTO,
                 ) { style = WidgetStyle.AUTO }
                 StyleOption(
-                    title = "Activity feed",
-                    subtitle = "Waiting, running, and finished work",
+                    title = "Chat activity",
+                    subtitle = "Waiting, running, and recent replies",
                     selected = style == WidgetStyle.ACTIVITY,
                 ) { style = WidgetStyle.ACTIVITY }
                 StyleOption(
-                    title = "Last finished",
-                    subtitle = "Compact list of recently finished work",
+                    title = "Recent replies",
+                    subtitle = "Compact list of recently answered chats",
                     selected = style == WidgetStyle.LAST_FINISHED,
                 ) { style = WidgetStyle.LAST_FINISHED }
 
@@ -128,8 +127,7 @@ private fun WidgetConfigScreen(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                ToggleRow("Date sections", "Group finished work by day", showSections) { showSections = it }
-                ToggleRow("Include chats", "Show standalone chat activity", includeChats) { includeChats = it }
+                ToggleRow("Date sections", "Group recent replies by day", showSections) { showSections = it }
 
                 Spacer(Modifier.height(24.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -142,7 +140,6 @@ private fun WidgetConfigScreen(
                                     style = style,
                                     maxItems = maxItems,
                                     showSections = showSections,
-                                    includeChats = includeChats,
                                 ),
                             )
                         },

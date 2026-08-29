@@ -65,8 +65,36 @@ enum NativeUISmokeRunner {
         }
         store.selectedProjectID = project.id
         store.selectedBoardID = board.id
+        await store.loadSchedules()
+        var scheduleFixtureID = store.schedules.first?.id
+        var scheduleFixtureError: String?
+        if scheduleFixtureID == nil {
+            var draft = Dieter_V1_ScheduleDraft()
+            draft.projectID = project.id
+            draft.boardID = board.id
+            draft.name = "Native UI smoke schedule"
+            draft.cron = "0 9 * * 1-5"
+            draft.timezone = "UTC"
+            draft.enabled = false
+            draft.action = "draft"
+            draft.titleTemplate = "Native UI smoke · {{date}}"
+            draft.promptTemplate = "Exercise the native schedules list for {{project}}."
+            draft.provider = "mock"
+            draft.model = "mock"
+            draft.effort = "low"
+            draft.openCardPolicy = "skip_if_open"
+            draft.misfirePolicy = "latest"
+            draft.busyPolicy = "queue"
+            draft.workspaceMode = "worktree"
+            if await store.saveSchedule(id: nil, draft: draft) {
+                scheduleFixtureID = store.selectedScheduleID
+            } else {
+                scheduleFixtureError = store.errorMessage ?? "the schedule RPC was unavailable"
+            }
+        }
+        let schedulesOnly = ProcessInfo.processInfo.arguments.contains("--schedules-ui-smoke")
         var fixtureNote: String?
-        if store.state.cards.allSatisfy({ $0.boardID != board.id }) {
+        if !schedulesOnly && store.state.cards.allSatisfy({ $0.boardID != board.id }) {
             // Create the fixture card through the store's outbox rather than a raw
             // RPC: the outbox queues and retries across the sync-recovery reconnects
             // that would otherwise cancel a single in-flight createCard call.
@@ -111,6 +139,23 @@ enum NativeUISmokeRunner {
             "fixture-project": project.name,
         ]
         if let fixtureNote { results["fixture"] = fixtureNote }
+        if let scheduleFixtureError { results["schedule-fixture"] = "failed: \(scheduleFixtureError)" }
+
+        if schedulesOnly {
+            await store.openProject(project.id, section: .schedules)
+            let scheduleReady = await waitUntil(timeout: 10) {
+                store.schedulesAreLoaded &&
+                    scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) } == true
+            }
+            results["05-project-schedules"] = store.section == .schedules ? "passed" : "failed: \(store.section.rawValue)"
+            results["05-project-schedules-data"] = scheduleReady
+                ? "passed"
+                : "failed: dedicated schedule load did not return the fixture"
+            await captureAppearances(window, named: "05-project-schedules.png", in: output)
+            writeReport(results, to: output)
+            NSApp.terminate(nil)
+            return
+        }
         let originalWindowFrame = window.frame
         let originalZoomedState = window.isZoomed
         doubleClickTitleBar(of: window)
@@ -213,6 +258,10 @@ enum NativeUISmokeRunner {
             await captureAppearances(window, named: "\(step.name).png", in: output)
 
             if step.section == .schedules {
+                results["05-project-schedules-data"] = store.schedulesAreLoaded &&
+                    scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) } == true
+                    ? "passed"
+                    : "failed: dedicated schedule load did not return the fixture"
                 let cancellationWindow = NSPanel(
                     contentRect: NSRect(x: 0, y: 0, width: 980, height: 820),
                     styleMask: [.titled, .closable, .fullSizeContentView],
@@ -314,7 +363,7 @@ enum NativeUISmokeRunner {
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
             await captureAppearances(sheet, named: "13-new-card.png", in: output)
             results["13-new-card"] = "passed"
-            click(window: sheet, x: 215, distanceFromTop: 425)
+            click(window: sheet, x: 190, distanceFromTop: 400)
             try? await DieterTaskSleep.milliseconds(700)
             if let picker = NSApp.windows.first(where: {
                 $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
@@ -425,8 +474,33 @@ enum NativeUISmokeRunner {
             results["13d-standalone-chat-rename"] = renamed
                 ? "passed"
                 : "failed: packaged Mac RenameCard did not synchronize the chat title"
+
+            if let renamedChat = store.chats.first(where: { $0.id == chatID }) {
+                await store.pin(renamedChat, pinned: true)
+                let pinned = await waitUntil(timeout: 10) {
+                    store.chats.contains { $0.id == chatID && $0.pinned }
+                }
+                results["13e-standalone-chat-pin"] = pinned
+                    ? "passed"
+                    : "failed: packaged Mac PinChat did not update the chat projection"
+
+                if let pinnedChat = store.chats.first(where: { $0.id == chatID }) {
+                    await store.pin(pinnedChat, pinned: false)
+                }
+                let unpinned = await waitUntil(timeout: 10) {
+                    store.chats.contains { $0.id == chatID && !$0.pinned }
+                }
+                results["13f-standalone-chat-unpin"] = unpinned
+                    ? "passed"
+                    : "failed: packaged Mac PinChat did not clear the pinned state"
+            } else {
+                results["13e-standalone-chat-pin"] = "failed: renamed chat disappeared before pinning"
+                results["13f-standalone-chat-unpin"] = "failed: renamed chat disappeared before unpinning"
+            }
         } else {
             results["13d-standalone-chat-rename"] = "failed: created chat was unavailable for rename"
+            results["13e-standalone-chat-pin"] = "failed: created chat was unavailable for pinning"
+            results["13f-standalone-chat-unpin"] = "failed: created chat was unavailable for unpinning"
         }
         store.closeConversation()
         try? await DieterTaskSleep.milliseconds(500)

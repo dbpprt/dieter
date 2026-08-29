@@ -40,7 +40,7 @@ func protoProject(value model.Project) *dieterv1.Project {
 		Prompt: value.Prompt, Archived: value.Archived, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, BoardCount: int32(value.BoardCount),
 		CardCount: int32(value.CardCount), ChatCount: int32(value.ChatCount), PromptTemplate: value.PromptTemplate,
-		DefaultWorkspaceMode: value.DefaultWorkspaceMode, BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch,
+		BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch,
 	}
 	for _, command := range value.ValidationCommands {
 		result.ValidationCommands = append(result.ValidationCommands, protoValidationCommand(command))
@@ -144,6 +144,7 @@ func protoWorkspace(value model.Workspace) *dieterv1.Workspace {
 		Behind: int32(value.Behind), SizeBytes: value.SizeBytes, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		IntegratedHeadSha: value.IntegratedHeadSHA, IntegratedResultSha: value.IntegratedResultSHA,
 		IntegrationStrategy: value.IntegrationStrategy, IntegratedAt: value.IntegratedAt,
+		Dirty: value.Dirty,
 	}
 }
 
@@ -478,8 +479,8 @@ func protoSchedule(value model.Schedule) *dieterv1.Schedule {
 		Timezone: value.Timezone, Enabled: value.Enabled, Action: value.Action,
 		TitleTemplate: value.TitleTemplate, PromptTemplate: value.PromptTemplate,
 		Provider: value.Provider, Model: value.Model, Effort: value.Effort,
-		ProviderOptions: cloneProtoStringMap(value.ProviderOptions),
-		LabelIds:        append([]string(nil), value.LabelIDs...), OpenCardPolicy: value.OpenCardPolicy,
+		ProviderOptions: cloneProtoStringMap(value.ProviderOptions), WorkspaceMode: value.WorkspaceMode,
+		LabelIds: append([]string(nil), value.LabelIDs...), OpenCardPolicy: value.OpenCardPolicy,
 		MisfirePolicy: value.MisfirePolicy, BusyPolicy: value.BusyPolicy,
 		NextRunAt: value.NextRunAt, LastRunAt: value.LastRunAt,
 		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,

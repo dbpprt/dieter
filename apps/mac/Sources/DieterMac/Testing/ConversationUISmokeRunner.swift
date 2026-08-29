@@ -379,14 +379,32 @@ enum ConversationUISmokeRunner {
             results["attachment-image-preview"] = "failed: clicking the image attachment opened sheets \(sizes)"
         }
 
+        let pastedText = Array(repeating: "A pasted paragraph should wrap naturally in the composer.", count: 8)
+            .joined(separator: " ")
+        let typedSuffix = "x"
+        store.composerText = ""
+        store.composerAttachments = []
+        try? await DieterTaskSleep.milliseconds(500)
+        postClick(window: window, x: 850, distanceFromTop: 690)
+        try? await DieterTaskSleep.milliseconds(300)
+        progress("paste check focused responder: \(String(describing: window.firstResponder))", in: output)
         pasteboard.clearContents()
-        pasteboard.setString("plain text belongs to the text view", forType: .string)
+        pasteboard.setString(pastedText, forType: .string)
         let before = store.composerAttachments.count
         postCommandV(window)
         try? await DieterTaskSleep.milliseconds(600)
+        progress("paste check inserted \(store.composerText.count) characters", in: output)
         results["paste-text-passes-through"] = store.composerAttachments.count == before
             ? "passed"
             : "failed: text paste changed attachments"
+        postCharacter(typedSuffix, keyCode: 7, in: window)
+        try? await DieterTaskSleep.milliseconds(600)
+        progress("paste check typed suffix; composer now has \(store.composerText.count) characters", in: output)
+        results["paste-text-continues-typing"] = store.composerText == pastedText + typedSuffix
+            ? "passed"
+            : "failed: composer lost the paste caret (\(store.composerText.count) characters)"
+        capture(window, to: output.appending(path: "04c-pasted-text-continues.png"))
+        store.composerText = ""
         store.composerAttachments = []
     }
 
@@ -418,6 +436,22 @@ enum ConversationUISmokeRunner {
         NSApp.postEvent(event, atStart: false)
     }
 
+    private static func postCharacter(_ character: String, keyCode: UInt16, in window: NSWindow) {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown,
+            location: NSPoint(x: 5, y: 5),
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: character,
+            charactersIgnoringModifiers: character,
+            isARepeat: false,
+            keyCode: keyCode
+        ) else { return }
+        NSApp.postEvent(event, atStart: false)
+    }
+
     private static func click(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
         guard let content = window.contentView else { return }
         let location = NSPoint(x: x, y: content.bounds.height - distanceFromTop)
@@ -435,6 +469,29 @@ enum ConversationUISmokeRunner {
                 pressure: type == .leftMouseDown ? 1 : 0
             ) else { continue }
             window.sendEvent(event)
+        }
+    }
+
+    /// Editable SwiftUI controls must receive their click from the application
+    /// event queue. Sending it reentrantly from the smoke task can block while
+    /// AppKit installs the field editor.
+    private static func postClick(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
+        guard let content = window.contentView else { return }
+        let location = NSPoint(x: x, y: content.bounds.height - distanceFromTop)
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        for type in [NSEvent.EventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(
+                with: type,
+                location: location,
+                modifierFlags: [],
+                timestamp: timestamp,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: type == .mouseMoved ? 0 : 1,
+                pressure: type == .leftMouseDown ? 1 : 0
+            ) else { continue }
+            NSApp.postEvent(event, atStart: false)
         }
     }
 
@@ -470,6 +527,11 @@ enum ConversationUISmokeRunner {
         card.title = "Conversation renderer fixture"
         card.runtime = "idle"
         card.updatedAt = ISO8601DateFormatter().string(from: Date())
+        card.workspaceMode = "worktree"
+        card.workspace.mode = "worktree"
+        card.workspace.state = "ready"
+        card.workspace.changedFiles = 3
+        card.workspace.branch = "dieter/conversation-ui-smoke"
 
         var userText = Dieter_V1_MessagePart()
         userText.type = "text"

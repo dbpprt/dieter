@@ -57,22 +57,21 @@ func WorkflowLanes(workflow string) []Lane {
 }
 
 type Project struct {
-	ID                   string              `json:"id" yaml:"id"`
-	Name                 string              `json:"name" yaml:"name"`
-	Path                 string              `json:"path" yaml:"path"`
-	Summary              string              `json:"summary,omitempty" yaml:"summary,omitempty"`
-	Prompt               string              `json:"prompt" yaml:"-"`
-	PromptTemplate       string              `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	Archived             bool                `json:"archived,omitempty" yaml:"archived,omitempty"`
-	CreatedAt            string              `json:"createdAt" yaml:"created_at"`
-	UpdatedAt            string              `json:"updatedAt" yaml:"updated_at"`
-	BoardCount           int                 `json:"boardCount,omitempty" yaml:"-"`
-	CardCount            int                 `json:"cardCount,omitempty" yaml:"-"`
-	ChatCount            int                 `json:"chatCount,omitempty" yaml:"-"`
-	DefaultWorkspaceMode string              `json:"defaultWorkspaceMode,omitempty" yaml:"default_workspace_mode,omitempty"`
-	BaseRemote           string              `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
-	BaseBranch           string              `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
-	ValidationCommands   []ValidationCommand `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
+	ID                 string              `json:"id" yaml:"id"`
+	Name               string              `json:"name" yaml:"name"`
+	Path               string              `json:"path" yaml:"path"`
+	Summary            string              `json:"summary,omitempty" yaml:"summary,omitempty"`
+	Prompt             string              `json:"prompt" yaml:"-"`
+	PromptTemplate     string              `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	Archived           bool                `json:"archived,omitempty" yaml:"archived,omitempty"`
+	CreatedAt          string              `json:"createdAt" yaml:"created_at"`
+	UpdatedAt          string              `json:"updatedAt" yaml:"updated_at"`
+	BoardCount         int                 `json:"boardCount,omitempty" yaml:"-"`
+	CardCount          int                 `json:"cardCount,omitempty" yaml:"-"`
+	ChatCount          int                 `json:"chatCount,omitempty" yaml:"-"`
+	BaseRemote         string              `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	BaseBranch         string              `json:"baseBranch,omitempty" yaml:"base_branch,omitempty"`
+	ValidationCommands []ValidationCommand `json:"validationCommands,omitempty" yaml:"validation_commands,omitempty"`
 }
 
 type ValidationCommand struct {
@@ -404,6 +403,7 @@ type Schedule struct {
 	Model           string            `json:"model" yaml:"model"`
 	Effort          string            `json:"effort,omitempty" yaml:"effort,omitempty"`
 	ProviderOptions map[string]string `json:"providerOptions,omitempty" yaml:"provider_options,omitempty"`
+	WorkspaceMode   string            `json:"workspaceMode" yaml:"workspace_mode"`
 	LabelIDs        []string          `json:"labelIds,omitempty" yaml:"labels,omitempty"`
 	OpenCardPolicy  string            `json:"openCardPolicy" yaml:"open_card_policy"`
 	MisfirePolicy   string            `json:"misfirePolicy" yaml:"misfire_policy"`

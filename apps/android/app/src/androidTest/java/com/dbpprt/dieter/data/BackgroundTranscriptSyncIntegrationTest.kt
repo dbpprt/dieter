@@ -61,6 +61,7 @@ class BackgroundTranscriptSyncIntegrationTest {
                     .setProvider("mock")
                     .setModel("mock")
                     .setDeferStart(true)
+                    .setWorkspaceMode("main")
                     .setClientId("android-bg-sync-test")
                     .setCommandId(UUID.randomUUID().toString())
                     .build(),

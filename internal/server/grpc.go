@@ -176,6 +176,12 @@ func (api *grpcAPI) PreviewPrompt(_ context.Context, request *dieterv1.PreviewPr
 }
 
 func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInput, error) {
+	workspaceMode := strings.ToLower(strings.TrimSpace(request.GetWorkspaceMode()))
+	switch workspaceMode {
+	case model.WorkspaceModeMain, model.WorkspaceModeBranch, model.WorkspaceModeWorktree:
+	default:
+		return app.CardInput{}, errors.New("workspace mode must be selected for each conversation")
+	}
 	attachments, err := modelUserAttachmentParts(request.GetAttachments())
 	if err != nil {
 		return app.CardInput{}, err
@@ -185,7 +191,7 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInp
 		Title: request.GetTitle(), Prompt: request.GetPrompt(), Provider: request.GetProvider(),
 		Model: request.GetModel(), Effort: request.GetEffort(), ProviderOptions: cloneProtoStringMap(request.GetProviderOptions()),
 		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), Attachments: attachments,
-		WorkspaceMode: request.GetWorkspaceMode(), WorkspaceBranch: request.GetWorkspaceBranch(),
+		WorkspaceMode: workspaceMode, WorkspaceBranch: request.GetWorkspaceBranch(),
 		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(),
 	}, nil
 }
@@ -959,6 +965,12 @@ func scheduleInput(request *dieterv1.SaveScheduleRequest) (store.ScheduleInput, 
 	if value == nil {
 		return store.ScheduleInput{}, errors.New("schedule is required")
 	}
+	workspaceMode := strings.ToLower(strings.TrimSpace(value.GetWorkspaceMode()))
+	switch workspaceMode {
+	case model.WorkspaceModeMain, model.WorkspaceModeBranch, model.WorkspaceModeWorktree:
+	default:
+		return store.ScheduleInput{}, errors.New("workspace mode must be selected for each scheduled card")
+	}
 	return store.ScheduleInput{
 		Project: value.GetProjectId(), Board: value.GetBoardId(), Name: value.GetName(),
 		Description: value.GetDescription(), Cron: value.GetCron(), Timezone: value.GetTimezone(),
@@ -966,7 +978,7 @@ func scheduleInput(request *dieterv1.SaveScheduleRequest) (store.ScheduleInput, 
 		PromptTemplate: value.GetPromptTemplate(), Provider: value.GetProvider(), Model: value.GetModel(),
 		Effort: value.GetEffort(), ProviderOptions: cloneProtoStringMap(value.GetProviderOptions()), LabelIDs: append([]string(nil), value.GetLabelIds()...),
 		OpenCardPolicy: value.GetOpenCardPolicy(), MisfirePolicy: value.GetMisfirePolicy(),
-		BusyPolicy: value.GetBusyPolicy(),
+		BusyPolicy: value.GetBusyPolicy(), WorkspaceMode: workspaceMode,
 	}, nil
 }
 

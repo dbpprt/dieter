@@ -59,6 +59,7 @@ class IsolatedGatewayIntegrationTest {
                     .setProvider(harness.id)
                     .setModel(harness.defaultModel)
                     .setDeferStart(true)
+                    .setWorkspaceMode("main")
                     .setClientId("android-offline-start-test")
                     .setCommandId(UUID.randomUUID().toString())
                     .build(),
@@ -152,6 +153,7 @@ class IsolatedGatewayIntegrationTest {
                     .setProvider(harness.id)
                     .setModel(harness.defaultModel)
                     .setDeferStart(true)
+                    .setWorkspaceMode("main")
                     .setClientId("android-isolated-test")
                     .setCommandId(UUID.randomUUID().toString())
                     .build(),
@@ -205,6 +207,7 @@ class IsolatedGatewayIntegrationTest {
                     .setProvider(harness.id)
                     .setModel(harness.defaultModel)
                     .setDeferStart(true)
+                    .setWorkspaceMode("main")
                     .setClientId("android-isolated-test")
                     .setCommandId(UUID.randomUUID().toString())
                     .build(),

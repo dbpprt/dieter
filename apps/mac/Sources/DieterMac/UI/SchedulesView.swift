@@ -1,6 +1,17 @@
 import DieterAPI
 import SwiftUI
 
+enum SchedulesPresentationState: Equatable {
+    case loading
+    case empty
+    case loaded
+
+    static func resolve(isLoaded: Bool, isLoading: Bool, hasSchedules: Bool) -> Self {
+        if !isLoaded || (isLoading && !hasSchedules) { return .loading }
+        return hasSchedules ? .loaded : .empty
+    }
+}
+
 struct SchedulesView: View {
     @Environment(DieterStore.self) private var store
     @State private var editorPresentation: ScheduleEditorPresentation?
@@ -12,24 +23,50 @@ struct SchedulesView: View {
                     HStack(spacing: 8) {
                         PaneTitleBlock(
                             title: "Schedules",
-                            subtitle: "\(store.schedules.count) automation\(store.schedules.count == 1 ? "" : "s")",
+                            subtitle: store.schedulesAreLoaded
+                                ? "\(store.schedules.count) automation\(store.schedules.count == 1 ? "" : "s")"
+                                : "Loading automations…",
                             symbol: "calendar.badge.clock",
                             prominent: true
                         )
-                        Button { Task { await store.loadSchedules() } } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(DieterIconButtonStyle())
+                        Button { Task { await store.loadSchedules() } } label: {
+                            if store.schedulesLoading {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                        }
+                        .buttonStyle(DieterIconButtonStyle())
+                        .disabled(store.schedulesLoading)
                         Button { editorPresentation = ScheduleEditorPresentation(schedule: nil) } label: { Label("New", systemImage: "plus") }
                             .buttonStyle(DieterPrimaryButtonStyle()).accessibilityIdentifier("schedules.new")
                     }
                 }
-                if store.schedules.isEmpty {
+                switch SchedulesPresentationState.resolve(
+                    isLoaded: store.schedulesAreLoaded,
+                    isLoading: store.schedulesLoading,
+                    hasSchedules: !store.schedules.isEmpty
+                ) {
+                case .loading:
+                    VStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading schedules…")
+                            .font(DieterFont.meta)
+                            .foregroundStyle(DieterTheme.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Loading schedules")
+                    .accessibilityIdentifier("schedules.loading")
+                case .empty:
                     ContentUnavailableView("No schedules", systemImage: "calendar.badge.plus", description: Text("Automate cards and chats with cron schedules."))
-                } else {
+                        .accessibilityIdentifier("schedules.empty")
+                case .loaded:
                     ScrollView {
                         LazyVStack(spacing: 7) {
                         ForEach(store.schedules, id: \.id) { schedule in
                             Button {
-                                store.selectedScheduleID = schedule.id
-                                Task { await store.loadSchedules() }
+                                Task { await store.selectSchedule(schedule.id) }
                             } label: {
                                 ScheduleRow(schedule: schedule, selected: store.selectedScheduleID == schedule.id)
                             }
@@ -38,6 +75,7 @@ struct SchedulesView: View {
                         }
                         .padding(10)
                     }
+                    .accessibilityIdentifier("schedules.list")
                 }
             }.frame(minWidth: 280, idealWidth: 350, maxWidth: 440, maxHeight: .infinity, alignment: .top).background(DieterTheme.sidebar)
 
@@ -130,10 +168,18 @@ struct ScheduleDetail: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(14).dieterSurface(radius: 10)
                 HStack { Text("Recent runs").font(.system(size: 13, weight: .semibold)); Spacer(); Button("Delete schedule", role: .destructive) { Task { await store.deleteSchedule(schedule) } } }
-                if store.scheduleRuns.isEmpty { Text("No occurrences yet.").foregroundStyle(.secondary) }
-                ForEach(store.scheduleRuns, id: \.id) { run in
-                    HStack { StatusPill(text: run.status, color: runtimeColor(run.status)); VStack(alignment: .leading) { Text(run.scheduledFor); if !run.message.isEmpty { Text(run.message).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Text(run.manual ? "Manual" : "Scheduled").font(.caption).foregroundStyle(.secondary); if !run.cardID.isEmpty { Button("Open card") { store.section = .board; Task { await store.openConversation(cardID: run.cardID) } } } }
-                        .padding(10).dieterSurface(radius: 8)
+                if store.scheduleRunsLoading && store.scheduleRuns.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading occurrences…")
+                    }
+                    .foregroundStyle(.secondary)
+                } else {
+                    if store.scheduleRuns.isEmpty { Text("No occurrences yet.").foregroundStyle(.secondary) }
+                    ForEach(store.scheduleRuns, id: \.id) { run in
+                        HStack { StatusPill(text: run.status, color: runtimeColor(run.status)); VStack(alignment: .leading) { Text(run.scheduledFor); if !run.message.isEmpty { Text(run.message).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Text(run.manual ? "Manual" : "Scheduled").font(.caption).foregroundStyle(.secondary); if !run.cardID.isEmpty { Button("Open card") { store.section = .board; Task { await store.openConversation(cardID: run.cardID) } } } }
+                            .padding(10).dieterSurface(radius: 8)
+                    }
                 }
                 }.padding(20)
             }
@@ -189,6 +235,7 @@ struct ScheduleEditor: View {
 
     private var canSave: Bool {
         !saving && !draft.boardID.isEmpty && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !draft.workspaceMode.isEmpty &&
             !draft.titleTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !draft.promptTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
             !cron.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !draft.timezone.isEmpty
@@ -324,6 +371,13 @@ struct ScheduleEditor: View {
                                     Text("Running").tag("run")
                                 }
                                 .pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("schedule-editor.placement")
+                                Picker("Workspace", selection: $draft.workspaceMode) {
+                                    Text("Worktree").tag("worktree")
+                                    Text("Dedicated branch").tag("branch")
+                                    Text("Main checkout").tag("main")
+                                }
+                                .pickerStyle(.segmented)
+                                .accessibilityIdentifier("schedule-editor.workspace")
                                 Label(
                                     draft.action == "run"
                                         ? "Creates the card and asks the daemon to start its agent turn. If the project is busy, it follows the policy below."
@@ -506,6 +560,7 @@ enum ScheduleEditorDraft {
         }
         draft.busyPolicy = schedule?.busyPolicy == "skip" ? "skip" : "queue"
         draft.providerOptions = schedule?.providerOptions ?? [:]
+        draft.workspaceMode = schedule.flatMap { $0.workspaceMode.isEmpty ? nil : $0.workspaceMode } ?? "worktree"
         return draft
     }
 }

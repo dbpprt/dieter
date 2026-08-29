@@ -20,7 +20,7 @@ func TestWorktreeWorkspaceUsesSameCardIdentityForBoardCardsAndChats(t *testing.T
 		t.Fatal(err)
 	}
 	project, err := data.CreateProject(store.CreateProjectInput{
-		Name: "Fixture", Path: repository, DefaultWorkspaceMode: model.WorkspaceModeWorktree, BaseBranch: "main",
+		Name: "Fixture", Path: repository, BaseBranch: "main",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -29,11 +29,11 @@ func TestWorktreeWorkspaceUsesSameCardIdentityForBoardCardsAndChats(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Board work", Prompt: "work"})
+	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Board work", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Chat work", Prompt: "work"})
+	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Chat work", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}
