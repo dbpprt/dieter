@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,6 +90,24 @@ func TestGRPCMachineListener(t *testing.T) {
 	promptPreview, err := client.PreviewPrompt(ctx, &dieterv1.PreviewPromptRequest{ProjectId: project.ID, BoardId: board.ID, Scope: model.ConversationScopeBoard})
 	if err != nil || promptPreview.GetSource() != "project" || promptPreview.GetInstructions() == "" {
 		t.Fatalf("gRPC prompt preview = %#v, %v", promptPreview, err)
+	}
+	worktreeCard, err := data.CreateCard(store.CreateCardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Worktree preview", Prompt: "Inspect",
+		WorkspaceMode: model.WorkspaceModeWorktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktreePath := filepath.Join(data.WorktreeRoot(), project.ID, worktreeCard.ID)
+	if _, err := data.SaveWorkspace(model.Workspace{
+		CardID: worktreeCard.ID, ProjectID: project.ID, Mode: model.WorkspaceModeWorktree, Path: worktreePath,
+		Branch: "dieter/preview", BaseBranch: "main", State: model.WorkspaceStateReady,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	promptPreview, err = client.PreviewPrompt(ctx, &dieterv1.PreviewPromptRequest{CardId: worktreeCard.ID})
+	if err != nil || !strings.Contains(promptPreview.GetInstructions(), "Authoritative working tree: "+worktreePath) || strings.Contains(promptPreview.GetInstructions(), "Authoritative working tree: "+repo) {
+		t.Fatalf("worktree prompt preview = %#v, %v", promptPreview, err)
 	}
 	directories, err := client.ListDirectories(ctx, &dieterv1.ListDirectoriesRequest{Path: filepath.Dir(repo)})
 	if err != nil {

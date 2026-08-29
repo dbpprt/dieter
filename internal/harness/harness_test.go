@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -316,6 +317,77 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	capabilityStream := strings.Join(capabilities, "")
 	if err != nil || !strings.Contains(stream, "Mock harness received: hello") || !strings.Contains(stream, `"messageId":"assistant_1"`) || !strings.Contains(stream, `"messageMetadata":{"createdAt":`) || !strings.Contains(stream, `"totalTokens":150`) || !strings.Contains(stream, `"contextWindowTokens":1000`) || !strings.Contains(capabilityStream, `"id":"task-plan"`) || !strings.Contains(capabilityStream, `"state":"completed"`) {
 		t.Fatalf("chunks=%q capabilities=%q err=%v", chunks, capabilities, err)
+	}
+}
+
+func TestSubprocessRunnerKeepsConcurrentProjectWorkspacesIsolated(t *testing.T) {
+	cwd, _ := os.Getwd()
+	runtimeDir := filepath.Join(cwd, "runtime")
+	if _, err := os.Stat(filepath.Join(runtimeDir, "node_modules")); err != nil {
+		t.Skip("local harness dependencies are not installed")
+	}
+	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
+	base := t.TempDir()
+	projectA := filepath.Join(base, "project-a")
+	projectB := filepath.Join(base, "project-b")
+	for _, project := range []string{projectA, projectB} {
+		if err := os.MkdirAll(project, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runtimeRoot := filepath.Join(base, "shared-runtime")
+	runner := NewSubprocessRunner(t.TempDir())
+	type result struct {
+		session string
+		stream  string
+		err     error
+	}
+	results := make(chan result, 2)
+	var wait sync.WaitGroup
+	for _, request := range []Request{
+		{Harness: "mock", Prompt: "mock-concurrent-workspace-write", SessionID: "card-a", ResponseMessageID: "assistant-a", ProjectPath: projectA, RuntimeRoot: runtimeRoot},
+		{Harness: "mock", Prompt: "mock-concurrent-workspace-write", SessionID: "card-b", ResponseMessageID: "assistant-b", ProjectPath: projectB, RuntimeRoot: runtimeRoot},
+	} {
+		request := request
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			var chunks []string
+			err := runner.Run(context.Background(), request, func(output Output) error {
+				if output.Type == "chunk" {
+					chunks = append(chunks, string(output.Chunk))
+				}
+				return nil
+			})
+			results <- result{session: request.SessionID, stream: strings.Join(chunks, ""), err: err}
+		}()
+	}
+	wait.Wait()
+	close(results)
+	for result := range results {
+		project := projectA
+		if result.session == "card-b" {
+			project = projectB
+		}
+		if result.err != nil || !strings.Contains(result.stream, project) {
+			t.Fatalf("session=%s stream=%q err=%v", result.session, result.stream, result.err)
+		}
+	}
+	for _, marker := range []string{
+		filepath.Join(projectA, ".dieter-mock-card-a"),
+		filepath.Join(projectB, ".dieter-mock-card-b"),
+	} {
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("missing marker %s: %v", marker, err)
+		}
+	}
+	for _, marker := range []string{
+		filepath.Join(projectA, ".dieter-mock-card-b"),
+		filepath.Join(projectB, ".dieter-mock-card-a"),
+	} {
+		if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("cross-workspace marker %s err=%v", marker, err)
+		}
 	}
 }
 

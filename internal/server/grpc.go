@@ -160,7 +160,31 @@ func (api *grpcAPI) PreviewPrompt(_ context.Context, request *dieterv1.PreviewPr
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	resolved, err := dieterprompt.Resolve(settings, detail, labelIDs)
+	workspaceValue := model.Workspace{
+		Mode: model.WorkspaceModeMain, Path: detail.Project.Path, Branch: detail.Project.BaseBranch,
+		BaseBranch: detail.Project.BaseBranch,
+	}
+	if detail.Card.WorkspaceMode != "" {
+		workspaceValue.Mode = detail.Card.WorkspaceMode
+	}
+	if detail.Card.WorkspaceBranch != "" {
+		workspaceValue.Branch = detail.Card.WorkspaceBranch
+	}
+	if detail.Card.WorkspaceBaseBranch != "" {
+		workspaceValue.BaseBranch = detail.Card.WorkspaceBaseBranch
+	}
+	if workspaceValue.Mode == model.WorkspaceModeWorktree && detail.Card.ID != "" && detail.Card.ID != "preview" {
+		workspaceValue.Path = filepath.Join(api.server.store.WorktreeRoot(), detail.Project.ID, detail.Card.ID)
+	}
+	if request.GetCardId() != "" {
+		storedWorkspace, workspaceErr := api.server.store.WorkspaceByCardID(detail.Card.ID)
+		if workspaceErr == nil {
+			workspaceValue = storedWorkspace
+		} else if !errors.Is(workspaceErr, store.ErrNotFound) {
+			return nil, grpcFailure(workspaceErr)
+		}
+	}
+	resolved, err := dieterprompt.ResolveForWorkspace(settings, detail, labelIDs, workspaceValue)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}

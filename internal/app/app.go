@@ -126,15 +126,6 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		return err
 	}
 	resolution := dieterprompt.Resolution{}
-	if conversation.ActiveTurn != nil && conversation.ActiveTurn.Instructions != "" {
-		resolution.Instructions = conversation.ActiveTurn.Instructions
-		resolution.Source = conversation.ActiveTurn.InstructionSource
-	} else {
-		resolution, err = s.resolveInstructions(detail)
-		if err != nil {
-			return err
-		}
-	}
 	lease, err := s.Store.AcquireRuntimeLeaseFor(detail.Project.ID, detail.Board.ID, detail.Card.ID, adapter.ID)
 	if err != nil {
 		return err
@@ -178,6 +169,20 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)
 		return err
+	}
+	if conversation.ActiveTurn != nil && conversation.ActiveTurn.Instructions != "" {
+		resolution.Instructions = conversation.ActiveTurn.Instructions
+		resolution.Source = conversation.ActiveTurn.InstructionSource
+		resolution.Instructions = dieterprompt.BindWorkspace(resolution.Instructions, detail.Project.Path, workspaceValue)
+	} else {
+		resolution, err = s.resolveInstructions(detail, workspaceValue)
+		if err != nil {
+			cancel()
+			_ = s.Store.ReleaseRuntimeLease(lease)
+			s.clearActive(detail.Card.ID, turnID)
+			close(done)
+			return err
+		}
 	}
 	request := harness.Request{
 		Harness: adapter.ID, Adapter: adapter.Runtime, Model: configuredModel.RuntimeID(), ConfiguredModel: configuredModel.ID,
@@ -396,12 +401,12 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	return s.Store.ResolveCard(card.ID)
 }
 
-func (s *Service) resolveInstructions(detail model.CardDetail) (dieterprompt.Resolution, error) {
+func (s *Service) resolveInstructions(detail model.CardDetail, workspaceValue model.Workspace) (dieterprompt.Resolution, error) {
 	settings, err := s.Store.Settings()
 	if err != nil {
 		return dieterprompt.Resolution{}, err
 	}
-	return dieterprompt.Resolve(settings, detail, detail.Card.LabelIDs)
+	return dieterprompt.ResolveForWorkspace(settings, detail, detail.Card.LabelIDs, workspaceValue)
 }
 
 func (s *Service) StartCard(ref, content, provider, modelName, effort string) (<-chan TurnUpdate, error) {
@@ -507,11 +512,6 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 			return nil, errors.New("conversation provider options are locked")
 		}
 	}
-	resolution, err := s.resolveInstructions(detail)
-	if err != nil {
-		return nil, err
-	}
-
 	s.mu.Lock()
 	if s.shuttingDown {
 		s.mu.Unlock()
@@ -533,6 +533,14 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done}
 	s.mu.Unlock()
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
+	if err != nil {
+		cancel()
+		_ = s.Store.ReleaseRuntimeLease(lease)
+		s.clearActive(detail.Card.ID, turnID)
+		close(done)
+		return nil, err
+	}
+	resolution, err := s.resolveInstructions(detail, workspaceValue)
 	if err != nil {
 		cancel()
 		_ = s.Store.ReleaseRuntimeLease(lease)

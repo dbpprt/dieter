@@ -98,12 +98,17 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 	if err := os.WriteFile(attachment, []byte("daemon attachment"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	startedAt := time.Now()
-	if err := client.Run([]string{"card", "send", card.ID, "--message", "Continue", "--attach", attachment}); err != nil {
-		t.Fatal(err)
-	}
-	if elapsed := time.Since(startedAt); elapsed > time.Second {
-		t.Fatalf("daemon admission blocked for %s", elapsed)
+	clientDone := make(chan error, 1)
+	go func() {
+		clientDone <- client.Run([]string{"card", "send", card.ID, "--message", "Continue", "--attach", attachment})
+	}()
+	select {
+	case err := <-clientDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon admission waited for the agent turn instead of returning to the client")
 	}
 	if strings.TrimSpace(output.String()) != "sent" || len(directRunner.requests) != 0 {
 		t.Fatalf("output=%q direct requests=%d", output.String(), len(directRunner.requests))

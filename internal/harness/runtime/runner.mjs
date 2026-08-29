@@ -1,5 +1,5 @@
 import readline from 'node:readline';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +51,23 @@ const line = await new Promise(resolve => input.once('line', resolve));
 input.close();
 const request = JSON.parse(line);
 const adapter = request.adapter || request.harness;
+if (typeof request.sessionId !== 'string' || !/^[A-Za-z0-9._-]+$/.test(request.sessionId)) {
+  throw new Error('invalid harness session ID');
+}
+const sandboxWorkDir = `workspaces/${request.sessionId}/repo`;
+const sandbox = await createLocalSandboxProvider({
+  root: request.runtimeRoot,
+  projectPath: request.projectPath,
+  workDir: sandboxWorkDir,
+});
+const sandboxSession = await sandbox.createSession();
+const workspaceDirectory = join(request.runtimeRoot, sandboxWorkDir);
+const expectedWorkspace = await realpath(request.projectPath);
+const workspaceProbe = await sandboxSession.run({ command: 'pwd -P', workingDirectory: workspaceDirectory });
+const actualWorkspace = workspaceProbe.stdout.trim();
+if (workspaceProbe.exitCode !== 0 || actualWorkspace !== expectedWorkspace) {
+  throw new Error(`harness workspace mismatch: expected ${expectedWorkspace}, resolved ${actualWorkspace || '<empty>'}`);
+}
 
 const runtimePrompt = await promptWithLocalAttachments(request);
 const capabilityCollector = createSubagentCapabilityCollector({
@@ -80,6 +97,13 @@ if (request.harness === 'mock') {
   const createdAt = new Date().toISOString();
   console.log('mock bootstrap diagnostic');
   protocolWrite('\nmock package installer diagnostic\n');
+  if (runtimePrompt === 'mock-concurrent-workspace-write') {
+    await new Promise(resolveDelay => setTimeout(resolveDelay, 200));
+    await sandboxSession.writeTextFile({
+      path: join(workspaceDirectory, `.dieter-mock-${request.sessionId}`),
+      content: `${actualWorkspace}\n`,
+    });
+  }
   capabilityCollector.consumeBoardTaskPlan({ tasks: [
     { content: 'Inspect the request', status: 'completed' },
     { content: 'Produce a verified response', status: 'in_progress', activeForm: 'Producing a verified response' },
@@ -91,7 +115,7 @@ if (request.harness === 'mock') {
     { type: 'reasoning-delta', id: 'reasoning-1', delta: 'Inspecting the local workspace' },
     { type: 'reasoning-end', id: 'reasoning-1' },
     { type: 'tool-input-available', toolCallId: 'tool-1', toolName: 'bash', input: { command: 'pwd' } },
-    { type: 'tool-output-available', toolCallId: 'tool-1', output: { exitCode: 0, output: request.projectPath } },
+    { type: 'tool-output-available', toolCallId: 'tool-1', output: { exitCode: 0, output: actualWorkspace } },
     { type: 'tool-input-available', toolCallId: 'tool-2', toolName: 'bash', input: { command: 'git status --short' } },
     { type: 'tool-output-available', toolCallId: 'tool-2', output: { exitCode: 0, output: '' } },
     { type: 'text-start', id: 'text-1' },
@@ -109,7 +133,6 @@ if (request.harness === 'mock') {
   process.exit(0);
 }
 
-const sandbox = await createLocalSandboxProvider({ root: request.runtimeRoot, projectPath: request.projectPath });
 let harness;
 switch (adapter) {
   case 'codex':
@@ -225,7 +248,7 @@ try {
     instructions: instructions || undefined,
     ...(adapter === 'pi' ? { tools: { board_task_plan: piTaskPlanTool } } : {}),
     permissionMode: 'allow-all',
-    sandboxConfig: { workDir: 'repo' },
+    sandboxConfig: { workDir: sandboxWorkDir },
   });
   const sessionOptions = { sessionId: request.sessionId, abortSignal: controller.signal };
   const incompleteOMPSession = adapter === 'omp-acp' && request.session && !request.session.data?.acpSessionId;

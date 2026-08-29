@@ -63,3 +63,37 @@ func TestStandaloneChatUsesProjectOverrideWithoutBoardLabels(t *testing.T) {
 		t.Fatalf("resolution=%#v", resolved)
 	}
 }
+
+func TestResolveForWorkspaceMakesAssignedWorktreeAuthoritative(t *testing.T) {
+	detail := promptDetail()
+	detail.Project.PromptTemplate = "Working tree: {{project.path}}\nRegistered: {{project.registered_path}}\n{{project.instructions_block}}\n{{labels.instructions_block}}"
+	workspace := model.Workspace{
+		Mode: model.WorkspaceModeWorktree, Path: "/dieter/worktrees/c_one", Branch: "dieter/c-one",
+		BaseBranch: "main", BaseSHA: "abc123",
+	}
+	resolved, err := ResolveForWorkspace(NormalizeSettings(model.Settings{}), detail, detail.Card.LabelIDs, workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"Working tree: /dieter/worktrees/c_one",
+		"Registered: /work/atlas",
+		workspaceBoundaryHeader,
+		"Authoritative working tree: /dieter/worktrees/c_one",
+		"Assigned branch: dieter/c-one",
+		"registered checkout is outside this conversation's workspace",
+	} {
+		if !strings.Contains(resolved.Instructions, expected) {
+			t.Fatalf("instructions missing %q: %s", expected, resolved.Instructions)
+		}
+	}
+}
+
+func TestBindWorkspaceUpgradesPersistedInstructionsOnce(t *testing.T) {
+	workspace := model.Workspace{Mode: model.WorkspaceModeWorktree, Path: "/worktree", Branch: "topic"}
+	bound := BindWorkspace("Working tree: /main", "/main", workspace)
+	boundAgain := BindWorkspace(bound, "/main", workspace)
+	if bound != boundAgain || strings.Count(bound, workspaceBoundaryHeader) != 1 || !strings.Contains(bound, "Ignore any earlier instruction") {
+		t.Fatalf("bound instructions=%q", boundAgain)
+	}
+}

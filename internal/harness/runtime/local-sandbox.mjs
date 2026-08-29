@@ -1,6 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { access, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -57,11 +57,18 @@ async function writeLocalTextFile(path, content, encoding) {
   }
 }
 
-export async function createLocalSandboxProvider({ root, projectPath }) {
+export async function createLocalSandboxProvider({ root, projectPath, workDir = 'repo' }) {
   root = resolve(root);
   projectPath = await realpath(projectPath);
+  if (typeof workDir !== 'string' || workDir.length === 0 || isAbsolute(workDir) || workDir.includes('\0')) {
+    throw new Error('local sandbox workDir must be a non-empty relative path');
+  }
   await mkdir(root, { recursive: true, mode: 0o700 });
-  const repo = join(root, 'repo');
+  const repo = resolve(root, workDir);
+  if (repo === root || !repo.startsWith(`${root}${sep}`)) {
+    throw new Error('local sandbox workDir must stay inside the runtime root');
+  }
+  await mkdir(dirname(repo), { recursive: true, mode: 0o700 });
   const activeProcesses = new Set();
 
   const bridgePort = await new Promise((resolvePort, reject) => {
@@ -75,12 +82,19 @@ export async function createLocalSandboxProvider({ root, projectPath }) {
   try {
     const current = await realpath(repo);
     if (current !== projectPath) {
-      await rm(repo, { recursive: true, force: true });
-      await symlink(projectPath, repo, 'dir');
+      throw new Error(`local sandbox workspace is already bound to ${current}; refusing to retarget it to ${projectPath}`);
     }
-  } catch {
-    await rm(repo, { recursive: true, force: true });
-    await symlink(projectPath, repo, 'dir');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    await rm(repo, { force: true });
+    try {
+      await symlink(projectPath, repo, 'dir');
+    } catch (linkError) {
+      if (linkError?.code !== 'EEXIST' || await realpath(repo) !== projectPath) throw linkError;
+    }
+  }
+  if (await realpath(repo) !== projectPath) {
+    throw new Error(`local sandbox workspace binding does not resolve to ${projectPath}`);
   }
 
   const spawnProcess = ({ command, workingDirectory = root, env = {}, abortSignal }) => {
@@ -145,7 +159,7 @@ export async function createLocalSandboxProvider({ root, projectPath }) {
   };
 
   const session = {
-    id: `board-local-${Buffer.from(root).toString('base64url').slice(-24)}`,
+    id: `board-local-${Buffer.from(`${root}\0${workDir}`).toString('base64url').slice(-32)}`,
     description: `Unrestricted local host runtime rooted at ${root}; repo is ${projectPath}`,
     defaultWorkingDirectory: root,
     ports: [bridgePort],

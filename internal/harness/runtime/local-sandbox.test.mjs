@@ -74,3 +74,48 @@ test('stopping a local session terminates the entire spawned process group', { s
     await rm(base, { recursive: true, force: true });
   }
 });
+
+test('keeps concurrent workspaces isolated under one runtime root', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
+  try {
+    const runtimeRoot = join(base, 'runtime');
+    const projectA = join(base, 'project-a');
+    const projectB = join(base, 'project-b');
+    await Promise.all([mkdir(projectA), mkdir(projectB)]);
+    const workDirA = 'workspaces/card-a/repo';
+    const workDirB = 'workspaces/card-b/repo';
+    const [providerA, providerB] = await Promise.all([
+      createLocalSandboxProvider({ root: runtimeRoot, projectPath: projectA, workDir: workDirA }),
+      createLocalSandboxProvider({ root: runtimeRoot, projectPath: projectB, workDir: workDirB }),
+    ]);
+    const [sessionA, sessionB] = await Promise.all([providerA.createSession(), providerB.createSession()]);
+    const [resultA, resultB] = await Promise.all([
+      sessionA.run({ command: 'sleep 0.05; printf alpha > sentinel', workingDirectory: join(runtimeRoot, workDirA) }),
+      sessionB.run({ command: 'sleep 0.05; printf beta > sentinel', workingDirectory: join(runtimeRoot, workDirB) }),
+    ]);
+    assert.equal(resultA.exitCode, 0);
+    assert.equal(resultB.exitCode, 0);
+    assert.equal(await readFile(join(projectA, 'sentinel'), 'utf8'), 'alpha');
+    assert.equal(await readFile(join(projectB, 'sentinel'), 'utf8'), 'beta');
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test('refuses to retarget an existing conversation workspace', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
+  try {
+    const runtimeRoot = join(base, 'runtime');
+    const projectA = join(base, 'project-a');
+    const projectB = join(base, 'project-b');
+    await Promise.all([mkdir(projectA), mkdir(projectB)]);
+    const workDir = 'workspaces/card/repo';
+    await createLocalSandboxProvider({ root: runtimeRoot, projectPath: projectA, workDir });
+    await assert.rejects(
+      createLocalSandboxProvider({ root: runtimeRoot, projectPath: projectB, workDir }),
+      /already bound/,
+    );
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});

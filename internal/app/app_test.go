@@ -346,6 +346,101 @@ func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
 	if request.ProjectPath != value.Path || request.ProjectPath == repository {
 		t.Fatalf("turn path=%q workspace=%q repository=%q", request.ProjectPath, value.Path, repository)
 	}
+	if !strings.Contains(request.Instructions, "Working tree: "+value.Path) ||
+		!strings.Contains(request.Instructions, "Authoritative working tree: "+value.Path) ||
+		strings.Contains(request.Instructions, "Working tree: "+repository+"\n") {
+		t.Fatalf("worktree instructions=%q", request.Instructions)
+	}
+}
+
+func TestConcurrentMainAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t *testing.T) {
+	cwd, _ := os.Getwd()
+	runtimeDir := filepath.Join(filepath.Dir(cwd), "harness", "runtime")
+	if _, err := os.Stat(filepath.Join(runtimeDir, "node_modules")); err != nil {
+		t.Skip("local harness dependencies are not installed")
+	}
+	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+
+	repository := filepath.Join(t.TempDir(), "repository")
+	command := exec.Command("git", "init", "-b", "main", repository)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", output, err)
+	}
+	for _, args := range [][]string{{"config", "user.name", "Dieter Test"}, {"config", "user.email", "dieter@example.test"}} {
+		command = exec.Command("git", args...)
+		command.Dir = repository
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s: %v", args, output, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "README.md"}, {"commit", "-m", "base"}} {
+		command = exec.Command("git", args...)
+		command.Dir = repository
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s: %v", args, output, err)
+		}
+	}
+
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Concurrent", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := New(data, nil)
+	worktreeCard, err := service.CreateChat(context.Background(), CardInput{
+		Project: project.ID, Title: "Worktree", Prompt: "mock-concurrent-workspace-write",
+		Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeWorktree, DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainCard, err := service.CreateChat(context.Background(), CardInput{
+		Project: project.ID, Title: "Main", Prompt: "mock-concurrent-workspace-write",
+		Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeMain, DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	worktreeUpdates, err := service.StartCard(worktreeCard.ID, "", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainUpdates, err := service.StartCard(mainCard.ID, "", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, updates := range []<-chan TurnUpdate{worktreeUpdates, mainUpdates} {
+		for update := range updates {
+			if update.Err != nil {
+				t.Fatal(update.Err)
+			}
+		}
+	}
+
+	worktree, err := data.Workspace(worktreeCard.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainMarker := filepath.Join(repository, ".dieter-mock-"+mainCard.ID)
+	worktreeMarker := filepath.Join(worktree.Path, ".dieter-mock-"+worktreeCard.ID)
+	for _, marker := range []string{mainMarker, worktreeMarker} {
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("expected isolated marker %s: %v", marker, err)
+		}
+	}
+	for _, marker := range []string{
+		filepath.Join(repository, ".dieter-mock-"+worktreeCard.ID),
+		filepath.Join(worktree.Path, ".dieter-mock-"+mainCard.ID),
+	} {
+		if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("marker leaked into another workspace: %s err=%v", marker, err)
+		}
+	}
 }
 
 func TestWorkspaceProvisioningFailureDoesNotConsumeInitialTurn(t *testing.T) {

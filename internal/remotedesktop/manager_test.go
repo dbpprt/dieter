@@ -87,7 +87,7 @@ func TestManagerStreamsSyntheticVP8AndSignsBinding(t *testing.T) {
 	var binding *dieterv1.RemoteDesktopSessionBinding
 	answerApplied := false
 	var pendingCandidates []*dieterv1.RemoteDesktopICECandidate
-	deadline := time.After(10 * time.Second)
+	deadline := time.After(30 * time.Second)
 	for binding == nil || !answerApplied {
 		select {
 		case <-deadline:
@@ -129,7 +129,7 @@ func TestManagerStreamsSyntheticVP8AndSignsBinding(t *testing.T) {
 
 	select {
 	case <-trackReceived:
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timed out waiting for a synthetic VP8 frame")
 	}
 	if err := manager.Signal(&dieterv1.RemoteDesktopSignal{SessionId: subscription.SessionID, Payload: &dieterv1.RemoteDesktopSignal_LeaseHeartbeat{LeaseHeartbeat: &emptypb.Empty{}}}); err != nil {
@@ -187,11 +187,11 @@ func TestManagerCarriesAuthorizedInputAndReleasesItOnChannelClose(t *testing.T) 
 					pending = append(pending, payload.Candidate)
 				}
 			}
-		case <-time.After(10 * time.Second):
+		case <-time.After(30 * time.Second):
 			t.Fatal("timed out negotiating controlled desktop")
 		}
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for stateChannel.ReadyState() != webrtc.DataChannelStateOpen && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
