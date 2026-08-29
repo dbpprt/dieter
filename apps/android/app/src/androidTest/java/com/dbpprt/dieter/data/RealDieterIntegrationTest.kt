@@ -105,7 +105,7 @@ class RealDieterIntegrationTest {
                 .setProvider(harness.id)
                 .setModel(harness.defaultModel)
                 .setDeferStart(true)
-                .setWorkspaceMode("main")
+                .setWorkspaceMode("project")
                 .addAttachments(
                     MessagePart.newBuilder()
                         .setType("file")

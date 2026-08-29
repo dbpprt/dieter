@@ -22,7 +22,7 @@ page number because the newer plates appear first.
 | 22 | 10 | `card-comments.png`, `card-subagents.png` | Card comments and concurrent subagent progress tabs. |
 | 23 | 11 | `card-context-menu.png`, `card-drag-indicator.png`, `card-drag-preview.png`, `keyboard-shortcuts.png` | Card menu, drag insertion affordances, and shortcut help. |
 | 14 | 12 | `machine-popover.png` | Live machine utilization and Dieter process activity. |
-| 11 | 13 | `new-chat-workspace.png` | Choosing a worktree or the main checkout for a new chat. |
+| 11 | 13 | `new-chat-workspace.png` | Choosing a worktree or the registered project directory for a new chat. |
 | 12 | 14 | `changes-diff-viewer.png` | Worktree file list and inline diff in a card window. |
 | 13 | 15 | `merge-into-main.png` | Merge strategy, commit message, cleanup, and create-PR alternative. |
 | 01 | 16 | `board-card-inspector.png` | Main Board window with lane filters and a card inspector. |

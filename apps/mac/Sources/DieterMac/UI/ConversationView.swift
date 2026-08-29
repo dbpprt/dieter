@@ -133,15 +133,13 @@ private struct ConversationChrome: View {
                         if let id = card?.id, !id.isEmpty { Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()).lineLimit(1) }
                         if card != nil {
                             Text("·")
-                            TimelineView(.periodic(from: .now, by: 30)) { context in
-                                Text(ConversationRefreshText.label(
-                                    lastRefreshedAt: store.conversationLastRefreshedAt,
-                                    syncing: store.conversationSyncing,
-                                    now: context.date
-                                ))
-                                .lineLimit(1)
-                                .accessibilityIdentifier("conversation-last-refreshed")
-                            }
+                            Text(ConversationRefreshText.label(
+                                lastRefreshedAt: store.conversationLastRefreshedAt,
+                                syncing: store.conversationSyncing,
+                                now: .now
+                            ))
+                            .lineLimit(1)
+                            .accessibilityIdentifier("conversation-last-refreshed")
                             if store.conversationSyncing {
                                 ProgressView().controlSize(.mini)
                                     .accessibilityLabel("Refreshing conversation")

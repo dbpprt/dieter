@@ -125,7 +125,7 @@ func placeholderCounts(value string) map[string]int {
 
 func Resolve(settings model.Settings, detail model.CardDetail, labelIDs []string) (Resolution, error) {
 	return ResolveForWorkspace(settings, detail, labelIDs, model.Workspace{
-		Mode:       model.WorkspaceModeMain,
+		Mode:       model.WorkspaceModeProject,
 		Path:       detail.Project.Path,
 		Branch:     detail.Project.BaseBranch,
 		BaseBranch: detail.Project.BaseBranch,
@@ -189,7 +189,7 @@ func ResolveForWorkspace(settings model.Settings, detail model.CardDetail, label
 	}
 	workspaceMode := strings.TrimSpace(workspace.Mode)
 	if workspaceMode == "" {
-		workspaceMode = model.WorkspaceModeMain
+		workspaceMode = model.WorkspaceModeProject
 	}
 	variables := map[string]string{
 		"scope":        detail.Card.Scope,
@@ -228,7 +228,7 @@ const (
 
 // BindWorkspace appends an authoritative, non-template execution boundary.
 // Prompt templates are operator-configurable, but they must never be able to
-// redirect a branch or worktree conversation into another checkout.
+// redirect a project-directory or worktree conversation into another checkout.
 func BindWorkspace(instructions, registeredPath string, workspace model.Workspace) string {
 	for {
 		start := strings.Index(instructions, workspaceBoundaryStart)
@@ -248,7 +248,7 @@ func BindWorkspace(instructions, registeredPath string, workspace model.Workspac
 	}
 	mode := strings.TrimSpace(workspace.Mode)
 	if mode == "" {
-		mode = model.WorkspaceModeMain
+		mode = model.WorkspaceModeProject
 	}
 	lines := []string{
 		workspaceBoundaryHeader,

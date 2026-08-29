@@ -61,7 +61,7 @@ class BackgroundTranscriptSyncIntegrationTest {
                     .setProvider("mock")
                     .setModel("mock")
                     .setDeferStart(true)
-                    .setWorkspaceMode("main")
+                    .setWorkspaceMode("project")
                     .setClientId("android-bg-sync-test")
                     .setCommandId(UUID.randomUUID().toString())
                     .build(),
@@ -151,6 +151,7 @@ class BackgroundTranscriptSyncIntegrationTest {
                     .setPrompt("Reply with WARM_OK.")
                     .setProvider("mock")
                     .setModel("mock")
+                    .setWorkspaceMode("project")
                     .setClientId("android-bg-sync-test")
                     .setCommandId(UUID.randomUUID().toString())
                     .build(),

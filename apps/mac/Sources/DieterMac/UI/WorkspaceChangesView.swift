@@ -100,17 +100,19 @@ struct WorkspaceChangesView: View {
         return GitOperationStatus.active(operation.status) || operation.status == "failed" ? operation : nil
     }
     private var availability: WorkspaceActionAvailability {
-        let mode = workspace?.mode ?? card?.workspace.mode ?? card?.workspaceMode ?? "main"
+        let mode = ConversationWorkspaceMode.projectMode(workspace?.mode ?? card?.workspace.mode ?? card?.workspaceMode ?? "project").rawValue
         return WorkspaceActionAvailability(
             agentActive: ["starting", "running", "working", "streaming", "waiting", "waiting_for_user", "cancelling"].contains((card?.runtime ?? "").lowercased()),
             operationActive: operationActive,
             workspaceState: workspace?.state ?? card?.workspace.state ?? "",
-            workspaceMode: mode.isEmpty ? "main" : mode,
+            workspaceMode: mode,
             changedFiles: Int(changes?.files.count ?? Int(card?.workspace.changedFiles ?? 0)),
             hasCommits: !(changes?.commits.isEmpty ?? true) || (workspace?.ahead ?? card?.workspace.ahead ?? 0) > 0,
             hasRemote: store.conversationSCMCapabilities?.pushAvailable ?? false,
             scmAuthenticated: store.conversationSCMCapabilities?.authenticated ?? false,
             hasPullRequest: pullRequest != nil,
+            workspaceBranch: workspace?.branch ?? card?.workspace.branch ?? "",
+            baseBranch: workspace?.baseBranch ?? card?.workspace.baseBranch ?? "",
             dirty: workspace?.dirty ?? false
         )
     }
@@ -250,7 +252,7 @@ struct WorkspaceChangesView: View {
 
     @ViewBuilder private func toolbarActions(compact: Bool, roomy: Bool) -> some View {
         let mode = availability.workspaceMode
-        if mode == "main" {
+        if mode == "project" && !availability.hasReviewBranch {
             if availability.allows(.commit) {
                 Button { operationKind = .commit } label: {
                     Label(compact ? "Commit" : "Commit changes", systemImage: "checkmark.circle").lineLimit(1)
@@ -269,10 +271,12 @@ struct WorkspaceChangesView: View {
                 .disabled(!availability.allows(.update))
                 .help("Rebase this workspace onto the latest \(baseBranch)")
 
-                Button("Discard…") { operationKind = .discard }
-                    .buttonStyle(DieterSecondaryButtonStyle(destructive: true))
-                    .disabled(!availability.allows(.discard))
-                    .help("Remove the workspace and its branch")
+                if mode == "worktree" {
+                    Button("Discard…") { operationKind = .discard }
+                        .buttonStyle(DieterSecondaryButtonStyle(destructive: true))
+                        .disabled(!availability.allows(.discard))
+                        .help("Remove the worktree and its branch")
+                }
 
                 if pullRequest == nil {
                     Button {
@@ -284,15 +288,22 @@ struct WorkspaceChangesView: View {
                     .disabled(!availability.allows(.createPullRequest))
                 }
             }
-            Button {
-                mergeSheetPresented = true
-            } label: {
-                Label(!compact && roomy ? "Merge into \(baseBranch)…" : "Merge…", systemImage: "arrow.triangle.merge")
-                    .lineLimit(1).fixedSize()
+            if mode == "worktree" {
+                Button {
+                    mergeSheetPresented = true
+                } label: {
+                    Label(!compact && roomy ? "Merge into \(baseBranch)…" : "Merge…", systemImage: "arrow.triangle.merge")
+                        .lineLimit(1).fixedSize()
+                }
+                .buttonStyle(DieterPrimaryButtonStyle())
+                .disabled(!availability.allowsMergeFlow)
+                .accessibilityIdentifier("changes.merge-into-base")
+            } else if availability.allows(.commit) {
+                Button { operationKind = .commit } label: {
+                    Label(compact ? "Commit" : "Commit changes", systemImage: "checkmark.circle").lineLimit(1)
+                }
+                .buttonStyle(DieterPrimaryButtonStyle())
             }
-            .buttonStyle(DieterPrimaryButtonStyle())
-            .disabled(!availability.allowsMergeFlow)
-            .accessibilityIdentifier("changes.merge-into-base")
         }
     }
 
@@ -330,10 +341,6 @@ struct WorkspaceChangesView: View {
             }
             if let workspace {
                 Button("Reveal in Finder", systemImage: "finder") { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path) }
-            }
-            if workspace?.mode == "branch" {
-                Button(GitOperationKind.migrate.title, systemImage: "rectangle.on.rectangle.angled") { operationKind = .migrate }
-                    .disabled(!availability.allows(.migrate))
             }
             Button(GitOperationKind.adopt.title + "…", systemImage: "arrow.right.arrow.left") { operationKind = .adopt }
                 .disabled(!availability.allows(.adopt))
@@ -1812,8 +1819,6 @@ private struct GitOperationSheet: View {
         case .adopt:
             WorkspaceSheetField(label: "DESTINATION CARD ID", placeholder: "c_…", text: $adoptCardID)
             WorkspaceSheetNotice(title: "Transfer the complete workspace", detail: operationDescription, symbol: "arrow.right.arrow.left.circle.fill", tint: DieterTheme.shell)
-        case .migrate:
-            WorkspaceSheetNotice(title: "Isolate this conversation", detail: operationDescription, symbol: "rectangle.on.rectangle.angled", tint: DieterTheme.shell)
         case .push:
             WorkspaceSheetNotice(title: "Publish the workspace branch", detail: operationDescription, symbol: "arrow.up.circle.fill", tint: DieterTheme.shell)
             WorkspaceSheetOptions { Toggle("Force with lease", isOn: $forceWithLease) }
@@ -1837,7 +1842,6 @@ private struct GitOperationSheet: View {
         case .createPullRequest, .refreshPullRequest: "arrow.triangle.pull"
         case .continueConflict: "play.circle.fill"
         case .abortConflict: "arrow.uturn.backward.circle.fill"
-        case .migrate: "rectangle.on.rectangle.angled"
         case .adopt: "arrow.right.arrow.left.circle.fill"
         case .cleanup, .discard: "trash.fill"
         }
@@ -1866,7 +1870,6 @@ private struct GitOperationSheet: View {
         case .discard: "Remove the workspace even when it contains unintegrated work."
         case .abortConflict: "Abort the active rebase or merge and restore the workspace to its previous ready state."
         case .adopt: "Move this workspace, branch, recovery history, and terminal ownership to another unstarted conversation."
-        case .migrate: "Convert this clean branch workspace into an isolated Git worktree."
         default: ""
         }
     }
@@ -1891,7 +1894,6 @@ private struct GitOperationSheet: View {
         case .continueConflict: ["conflicted_operation_id": operation?.id ?? "", "validate": String(validate)]
         case .abortConflict: ["conflicted_operation_id": operation?.id ?? ""]
         case .adopt: ["target_card_id": adoptCardID.trimmingCharacters(in: .whitespacesAndNewlines)]
-        case .migrate: ["mode": "worktree"]
         default: [:]
         }
     }
@@ -1948,11 +1950,13 @@ struct ConversationWorkspaceSettingsSheet: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    WorkspaceSheetField(label: "BRANCH NAME", placeholder: "Optional — Dieter can generate one", text: $branch)
-                    WorkspaceSheetField(label: "BASE BRANCH", placeholder: "Optional — uses the project default", text: $baseBranch)
+                    if mode == .worktree {
+                        WorkspaceSheetField(label: "BRANCH NAME", placeholder: "Optional — Dieter can generate one", text: $branch)
+                        WorkspaceSheetField(label: "BASE BRANCH", placeholder: "Optional — uses the project default", text: $baseBranch)
+                    }
                     WorkspaceSheetNotice(
                         title: "Locked when work begins",
-                        detail: "Workspace mode, branch, and base branch cannot be changed after the first prompt starts.",
+                        detail: "The workspace choice cannot be changed after the first prompt starts.",
                         symbol: "lock.fill",
                         tint: DieterTheme.amber
                     )
@@ -1972,7 +1976,7 @@ struct ConversationWorkspaceSettingsSheet: View {
         }
         .frame(width: 540).background(DieterTheme.background)
         .onAppear {
-            mode = ConversationWorkspaceMode(rawValue: card.workspaceMode) ?? .main
+            mode = ConversationWorkspaceMode.selectable(card.workspaceMode)
             branch = card.workspaceBranch
             baseBranch = card.workspaceBaseBranch
         }

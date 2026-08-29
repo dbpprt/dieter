@@ -3,47 +3,43 @@ import Foundation
 
 enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
     case worktree
-    case branch
-    case main
+    case project
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .worktree: "Worktree"
-        case .branch: "Dedicated branch"
-        case .main: "Main checkout"
+        case .project: "Project directory"
         }
     }
 
     var shortTitle: String {
         switch self {
         case .worktree: "Worktree"
-        case .branch: "Branch"
-        case .main: "Main"
+        case .project: "Project"
         }
     }
 
     var detail: String {
         switch self {
-        case .worktree: "Create an isolated Git worktree and branch for this conversation."
-        case .branch: "Use a dedicated branch in the registered checkout."
-        case .main: "Share the registered checkout. Concurrent work is restricted."
+        case .worktree: "Create a new isolated Git worktree and branch for this conversation."
+        case .project: "Use the registered project directory on whichever branch it currently has checked out."
         }
     }
 
     static func projectMode(_ value: String) -> ConversationWorkspaceMode {
-        ConversationWorkspaceMode(rawValue: value) ?? .main
+        selectable(value)
     }
 
     static func selectable(_ rawValue: String?) -> ConversationWorkspaceMode {
-        rawValue?.lowercased() == Self.worktree.rawValue ? .worktree : .main
+        rawValue?.lowercased() == Self.worktree.rawValue ? .worktree : .project
     }
 
     var symbol: String {
         switch self {
         case .worktree: "point.3.connected.trianglepath.dotted"
-        case .branch, .main: "folder"
+        case .project: "folder"
         }
     }
 }
@@ -55,8 +51,8 @@ struct ConversationWorkspaceDraft: Equatable, Sendable {
 
     func apply(to request: inout Dieter_V1_CreateConversationRequest) {
         request.workspaceMode = mode.rawValue
-        request.workspaceBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
-        request.workspaceBaseBranch = baseBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.workspaceBranch = mode == .worktree ? branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        request.workspaceBaseBranch = mode == .worktree ? baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
     }
 }
 
@@ -106,7 +102,6 @@ enum GitOperationKind: String, CaseIterable, Identifiable, Sendable {
     case mergePullRequest = "merge_pr"
     case continueConflict = "continue_conflict"
     case abortConflict = "abort_conflict"
-    case migrate
     case adopt
     case cleanup
     case discard
@@ -125,7 +120,6 @@ enum GitOperationKind: String, CaseIterable, Identifiable, Sendable {
         case .mergePullRequest: "Merge pull request"
         case .continueConflict: "Continue after resolving"
         case .abortConflict: "Abort conflicted operation"
-        case .migrate: "Migrate to worktree"
         case .adopt: "Move workspace"
         case .cleanup: "Clean up workspace"
         case .discard: "Discard workspace"
@@ -168,6 +162,8 @@ struct WorkspaceActionAvailability: Equatable {
     let hasRemote: Bool
     let scmAuthenticated: Bool
     let hasPullRequest: Bool
+    var workspaceBranch = ""
+    var baseBranch = ""
     /// Uncommitted working-tree changes (as opposed to `changedFiles`, which
     /// counts every file that differs from the base, committed or not).
     var dirty = false
@@ -176,8 +172,12 @@ struct WorkspaceActionAvailability: Equatable {
     /// dirty tree is committed first, and a conflicted workspace shows the
     /// blocked explanation instead of hiding the entry point.
     var allowsMergeFlow: Bool {
-        guard !agentActive, !operationActive, workspaceMode != "main" else { return false }
+        guard !agentActive, !operationActive, workspaceMode == "worktree" else { return false }
         return hasCommits || changedFiles > 0 || workspaceState == "conflicted"
+    }
+
+    var hasReviewBranch: Bool {
+        !workspaceBranch.isEmpty && !baseBranch.isEmpty && workspaceBranch != baseBranch
     }
 
     func allows(_ kind: GitOperationKind) -> Bool {
@@ -188,15 +188,14 @@ struct WorkspaceActionAvailability: Equatable {
         return switch kind {
         case .commit: dirty || changedFiles > 0
         case .update, .validate: true
-        case .mergeLocal: workspaceMode != "main" && hasCommits && changedFiles == 0
-        case .push: workspaceMode != "main" && hasRemote && hasCommits
-        case .createPullRequest: workspaceMode != "main" && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest
+        case .mergeLocal: workspaceMode == "worktree" && hasCommits && changedFiles == 0
+        case .push: hasReviewBranch && hasRemote && hasCommits
+        case .createPullRequest: hasReviewBranch && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest
         case .refreshPullRequest, .mergePullRequest: hasPullRequest && scmAuthenticated
         case .continueConflict, .abortConflict: false
-        case .migrate: workspaceMode == "branch" && changedFiles == 0
-        case .adopt: true
-        case .cleanup: changedFiles == 0
-        case .discard: true
+        case .adopt: workspaceMode == "worktree"
+        case .cleanup: workspaceMode == "worktree" && changedFiles == 0
+        case .discard: workspaceMode == "worktree"
         }
     }
 }

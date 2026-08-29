@@ -158,52 +158,45 @@ struct WorkspaceFreshnessBanner: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            HStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(accent.opacity(0.12))
-                        .frame(width: 24, height: 24)
-                    if isWorking {
-                        TimelineView(.periodic(from: .now, by: 0.08)) { spinContext in
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(accent)
-                                .rotationEffect(.degrees(
-                                    spinContext.date.timeIntervalSinceReferenceDate
-                                        .truncatingRemainder(dividingBy: 1.2) / 1.2 * 360
-                                ))
-                        }
+        let now = Date()
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(accent.opacity(0.12))
+                    .frame(width: 24, height: 24)
+                if isWorking {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(accent)
                         .accessibilityHidden(true)
-                    } else {
-                        Image(systemName: "wifi.slash")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(accent)
-                            .accessibilityHidden(true)
-                    }
+                } else {
+                    Image(systemName: "wifi.slash")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(accent)
+                        .accessibilityHidden(true)
                 }
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                Text(detail)
-                    .font(.system(size: 10.5, weight: .regular))
-                    .foregroundStyle(DieterTheme.tertiary)
-                    .lineLimit(1)
-                Spacer(minLength: 12)
-                Text(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: context.date))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(DieterTheme.tertiary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(DieterTheme.background.opacity(0.54), in: Capsule())
             }
-            .padding(.horizontal, 12)
-            .frame(height: 40)
-            .background(accent.opacity(0.055))
-            .overlay(alignment: .bottom) { Rectangle().fill(accent.opacity(0.16)).frame(height: 1) }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(title). \(detail) \(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: context.date)).")
-            .accessibilityIdentifier("workspace.cached")
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+            Text(detail)
+                .font(.system(size: 10.5, weight: .regular))
+                .foregroundStyle(DieterTheme.tertiary)
+                .lineLimit(1)
+            Spacer(minLength: 12)
+            Text(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: now))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(DieterTheme.tertiary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(DieterTheme.background.opacity(0.54), in: Capsule())
         }
+        .padding(.horizontal, 12)
+        .frame(height: 40)
+        .background(accent.opacity(0.055))
+        .overlay(alignment: .bottom) { Rectangle().fill(accent.opacity(0.16)).frame(height: 1) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(detail) \(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: now)).")
+        .accessibilityIdentifier("workspace.cached")
     }
 }
 
@@ -227,29 +220,28 @@ private struct SidebarConnectionStatus: View {
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            Group {
-                if compact {
-                    Circle().fill(dotColor).frame(width: 7, height: 7)
-                        .padding(4)
-                } else {
-                    HStack(spacing: 5) {
-                        if store.workspaceFreshness == .syncing || store.workspaceFreshness == .reconnecting {
-                            ProgressView().controlSize(.mini).accessibilityHidden(true)
-                        } else {
-                            Circle().fill(dotColor).frame(width: 6, height: 6).accessibilityHidden(true)
-                        }
-                        Text(label)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(store.workspaceIsLive ? DieterTheme.subtle : dotColor)
+        let now = Date()
+        Group {
+            if compact {
+                Circle().fill(dotColor).frame(width: 7, height: 7)
+                    .padding(4)
+            } else {
+                HStack(spacing: 5) {
+                    if store.workspaceFreshness == .syncing || store.workspaceFreshness == .reconnecting {
+                        DieterActivityIndicator(color: dotColor, size: 9).accessibilityHidden(true)
+                    } else {
+                        Circle().fill(dotColor).frame(width: 6, height: 6).accessibilityHidden(true)
                     }
+                    Text(label)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(store.workspaceIsLive ? DieterTheme.subtle : dotColor)
                 }
             }
-            .help(accessibilityLabel(now: context.date))
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(accessibilityLabel(now: context.date))
-            .accessibilityIdentifier(accessibilityIdentifier)
         }
+        .help(accessibilityLabel(now: now))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel(now: now))
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 
     private func accessibilityLabel(now: Date) -> String {
@@ -474,12 +466,10 @@ struct AppSidebar: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("MACHINES").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
-                            if let age = MachinePresenceText.freshestAge(store.machines.map(\.lastSeenAt), relativeTo: context.date) {
-                                Text(age)
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundStyle(DieterTheme.tertiary.opacity(0.65))
-                            }
+                        if let age = MachinePresenceText.freshestAge(store.machines.map(\.lastSeenAt), relativeTo: .now) {
+                            Text(age)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(DieterTheme.tertiary.opacity(0.65))
                         }
                         Spacer()
                         SidebarConnectionStatus()

@@ -1983,11 +1983,13 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 @Test func conversationWorkspacePickerUsesOnlySupportedCreationChoices() {
     #expect(ConversationWorkspaceMode.selectable("worktree") == .worktree)
     #expect(ConversationWorkspaceMode.selectable("WORKTREE") == .worktree)
-    #expect(ConversationWorkspaceMode.selectable("main") == .main)
-    #expect(ConversationWorkspaceMode.selectable("branch") == .main)
-    #expect(ConversationWorkspaceMode.selectable(nil) == .main)
+    #expect(ConversationWorkspaceMode.selectable("project") == .project)
+    #expect(ConversationWorkspaceMode.selectable("main") == .project)
+    #expect(ConversationWorkspaceMode.selectable("branch") == .project)
+    #expect(ConversationWorkspaceMode.selectable(nil) == .project)
+    #expect(ConversationWorkspaceMode.allCases == [.worktree, .project])
     #expect(ConversationWorkspaceMode.worktree.title == "Worktree")
-    #expect(ConversationWorkspaceMode.main.title == "Main checkout")
+    #expect(ConversationWorkspaceMode.project.title == "Project directory")
 }
 
 @Test func onlyTodoCardsWhoseInitialTaskWasNeverSentCanBeEdited() {

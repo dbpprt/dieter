@@ -639,6 +639,9 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 	if err != nil {
 		return model.Card{}, err
 	}
+	if workspaceMode == model.WorkspaceModeProject {
+		input.WorkspaceBranch, input.WorkspaceBaseBranch = "", ""
+	}
 	now := timestamp()
 	item := model.Card{ID: input.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch)}
 	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
@@ -672,6 +675,9 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 	if err != nil {
 		return model.Card{}, err
 	}
+	if workspaceMode == model.WorkspaceModeProject {
+		input.WorkspaceBranch, input.WorkspaceBaseBranch = "", ""
+	}
 	now := timestamp()
 	item := model.Card{ID: input.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch)}
 	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
@@ -697,11 +703,13 @@ func (s *Store) listCards() ([]model.Card, error) {
 				item.Scope = model.ConversationScopeBoard
 			}
 		}
-		if item.WorkspaceMode == "" {
-			item.WorkspaceMode = model.WorkspaceModeMain
+		item.WorkspaceMode, readErr = normalizeWorkspaceMode(item.WorkspaceMode)
+		if readErr != nil {
+			return nil, readErr
 		}
 		var workspace model.Workspace
 		if readJSON(filepath.Join(s.workspaceDir(), item.ID+".json"), &workspace) == nil {
+			workspace.Mode, _ = normalizeWorkspaceMode(workspace.Mode)
 			item.Workspace = &model.WorkspaceSummary{
 				Mode: workspace.Mode, State: workspace.State, Branch: workspace.Branch, BaseBranch: workspace.BaseBranch,
 				Revision: workspace.Revision, HeadSHA: workspace.HeadSHA, BaseSHA: workspace.CurrentBaseSHA,
@@ -1178,8 +1186,12 @@ func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch strin
 		return model.Card{}, errors.New("workspace mode is locked after the first agent turn")
 	}
 	item.WorkspaceMode = mode
-	item.WorkspaceBranch = strings.TrimSpace(branch)
-	item.WorkspaceBaseBranch = strings.TrimSpace(baseBranch)
+	if mode == model.WorkspaceModeWorktree {
+		item.WorkspaceBranch = strings.TrimSpace(branch)
+		item.WorkspaceBaseBranch = strings.TrimSpace(baseBranch)
+	} else {
+		item.WorkspaceBranch, item.WorkspaceBaseBranch = "", ""
+	}
 	item.UpdatedAt = timestamp()
 	return item, s.writeCard(item)
 }

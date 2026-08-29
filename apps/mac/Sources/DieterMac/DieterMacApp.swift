@@ -28,6 +28,7 @@ struct DieterMacApp: App {
             DieterRootView()
                 .environment(store)
                 .id(paletteValue)
+                .dieterThemeRoot(palette: palette)
                 .preferredColorScheme(appearance.colorScheme)
                 .onAppear {
                     let selected = DieterPalette.resolve(paletteValue)
@@ -219,6 +220,7 @@ struct MenuBarContent: View {
         .frame(width: 384)
         .background(DieterTheme.background)
         .id(paletteValue)
+        .dieterThemeRoot(palette: DieterPalette.resolve(paletteValue))
         .preferredColorScheme(DieterAppearance.resolve(appearanceValue).colorScheme)
     }
 

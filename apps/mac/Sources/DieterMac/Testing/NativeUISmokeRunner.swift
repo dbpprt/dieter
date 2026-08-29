@@ -371,7 +371,7 @@ enum NativeUISmokeRunner {
                 await captureAppearances(picker, named: "13a-workspace-picker-worktree.png", in: output)
                 click(window: picker, x: 500, distanceFromTop: 190)
                 try? await DieterTaskSleep.milliseconds(350)
-                await captureAppearances(picker, named: "13a-workspace-picker-main.png", in: output)
+                await captureAppearances(picker, named: "13a-workspace-picker-project.png", in: output)
                 results["13a-workspace-picker"] = "passed"
                 click(window: picker, x: picker.frame.width - 32, distanceFromTop: 36)
                 try? await DieterTaskSleep.milliseconds(350)

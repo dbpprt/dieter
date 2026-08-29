@@ -40,7 +40,7 @@ func (s *Service) Get(ctx context.Context, cardID string) (model.Changeset, erro
 	if currentBase == "" {
 		currentBase = value.BaseSHA
 	}
-	if value.Mode != model.WorkspaceModeMain && currentBase != "" && value.HeadSHA != "" {
+	if value.Branch != "" && value.BaseBranch != "" && value.Branch != value.BaseBranch && currentBase != "" && value.HeadSHA != "" {
 		if result, mergeErr := s.Git.Run(ctx, value.Path, "merge-base", currentBase, value.HeadSHA); mergeErr == nil {
 			mergeBase = strings.TrimSpace(string(result.Output))
 			comparison = mergeBase
@@ -58,7 +58,7 @@ func (s *Service) Get(ctx context.Context, cardID string) (model.Changeset, erro
 		return model.Changeset{}, err
 	}
 	value.ChangedFiles, value.Additions, value.Deletions = len(files), additions, deletions
-	_, _ = s.Workspaces.Store.SaveWorkspace(value)
+	_, _ = s.Workspaces.Store.UpdateWorkspaceChangesetStats(value.CardID, len(files), additions, deletions)
 	return model.Changeset{
 		CardID: value.CardID, Revision: value.Revision, BaseBranch: value.BaseBranch,
 		BaseSHA: value.BaseSHA, CurrentBaseSHA: currentBase, MergeBaseSHA: mergeBase,
@@ -309,7 +309,7 @@ func (s *Service) FileDiff(ctx context.Context, cardID, expectedRevision, filePa
 		args = append(args, commitSHA+"^!")
 	} else {
 		comparison := changes.MergeBaseSHA
-		if workspaceValue.Mode == model.WorkspaceModeMain || comparison == "" {
+		if comparison == "" {
 			comparison = changes.BaseSHA
 		}
 		if comparison == "" {

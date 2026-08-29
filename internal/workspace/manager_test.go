@@ -62,6 +62,49 @@ func TestWorktreeWorkspaceUsesSameCardIdentityForBoardCardsAndChats(t *testing.T
 	}
 }
 
+func TestProjectDirectoryWorkspaceUsesCurrentBranchWithoutSwitching(t *testing.T) {
+	repository := testRepository(t)
+	runGit(t, repository, "switch", "-c", "feature/current-checkout")
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{
+		Name: "Fixture", Path: repository, BaseBranch: "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.CreateChat(store.CreateCardInput{
+		Project: project.ID, Title: "Direct work", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := workspace.New(data, nil).Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalRepository, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Mode != model.WorkspaceModeProject || value.Path != canonicalRepository || value.Branch != "feature/current-checkout" || value.BaseBranch != "main" {
+		t.Fatalf("unexpected project-directory workspace: %#v", value)
+	}
+	if branch := runGit(t, repository, "branch", "--show-current"); branch != "feature/current-checkout" {
+		t.Fatalf("project directory branch was switched to %q", branch)
+	}
+	runGit(t, repository, "checkout", "--detach")
+	value, err = workspace.New(data, nil).Refresh(context.Background(), chat.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Branch != "" {
+		t.Fatalf("detached project directory reported stale branch %q", value.Branch)
+	}
+}
+
 func testRepository(t *testing.T) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "repository")

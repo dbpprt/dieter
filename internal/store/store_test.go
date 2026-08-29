@@ -62,6 +62,84 @@ func TestCreateProjectAcceptsLinkedGitWorktree(t *testing.T) {
 	}
 }
 
+func TestLegacyWorkspaceModesCanonicalizeToProjectDirectory(t *testing.T) {
+	s, project, _ := setup(t, model.WorkflowDirect)
+	for _, legacy := range []string{"main", "branch"} {
+		chat, err := s.CreateChat(CreateCardInput{
+			Project: project.ID, Title: "Legacy " + legacy, Prompt: "work",
+			WorkspaceMode: legacy, WorkspaceBranch: "stale", WorkspaceBaseBranch: "stale-base",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if chat.WorkspaceMode != model.WorkspaceModeProject || chat.WorkspaceBranch != "" || chat.WorkspaceBaseBranch != "" {
+			t.Fatalf("legacy mode %q was not canonicalized: %#v", legacy, chat)
+		}
+	}
+}
+
+func TestWorkspaceChangesetStatsPreserveNewerLifecycleState(t *testing.T) {
+	s, project, _ := setup(t, model.WorkflowDirect)
+	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "stats-card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := s.SaveWorkspace(model.Workspace{
+		CardID: card.ID, ProjectID: project.ID, Mode: model.WorkspaceModeWorktree,
+		Path: "/tmp/stats-worktree", State: model.WorkspaceStateCleanupPending,
+		HeadSHA: "head", IntegratedHeadSHA: "head", IntegratedResultSHA: "result",
+		IntegrationStrategy: "squash", IntegratedAt: "2026-08-29T20:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := s.UpdateWorkspaceChangesetStats(card.ID, 3, 12, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.State != model.WorkspaceStateCleanupPending || updated.IntegratedHeadSHA != workspace.IntegratedHeadSHA || updated.IntegratedResultSHA != workspace.IntegratedResultSHA {
+		t.Fatalf("changeset stats overwrote lifecycle state: %#v", updated)
+	}
+	if updated.ChangedFiles != 3 || updated.Additions != 12 || updated.Deletions != 4 {
+		t.Fatalf("changeset stats were not updated: %#v", updated)
+	}
+}
+
+func TestWorkspaceGitStatePreservesNewerLifecycleState(t *testing.T) {
+	s, project, _ := setup(t, model.WorkflowDirect)
+	card, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "refresh-card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := s.SaveWorkspace(model.Workspace{
+		CardID: card.ID, ProjectID: project.ID, Mode: model.WorkspaceModeWorktree,
+		Path: "/tmp/refresh-worktree", Branch: "topic", State: model.WorkspaceStateCleanupPending,
+		HeadSHA: "old-head", CurrentOperationID: "gitop_active", IntegratedHeadSHA: "old-head",
+		IntegratedResultSHA: "result", IntegrationStrategy: "squash", IntegratedAt: "2026-08-29T20:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed := current
+	observed.Branch = "observed-topic"
+	observed.HeadSHA = "observed-head"
+	observed.CurrentBaseSHA = "observed-base"
+	observed.Dirty = true
+	observed.Ahead = 2
+	observed.Behind = 1
+	observed.Revision = "observed-revision"
+	updated, err := s.UpdateWorkspaceGitState(observed, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.State != model.WorkspaceStateCleanupPending || updated.CurrentOperationID != "gitop_active" || updated.IntegratedHeadSHA != "old-head" || updated.IntegratedResultSHA != "result" {
+		t.Fatalf("Git refresh overwrote lifecycle state: %#v", updated)
+	}
+	if updated.Branch != observed.Branch || updated.HeadSHA != observed.HeadSHA || updated.CurrentBaseSHA != observed.CurrentBaseSHA || !updated.Dirty || updated.Ahead != 2 || updated.Behind != 1 || updated.Revision != observed.Revision {
+		t.Fatalf("Git refresh fields were not updated: %#v", updated)
+	}
+}
+
 func TestUpdateProjectRelocatesCanonicalWorkingTree(t *testing.T) {
 	s, project, _ := setup(t, model.WorkflowDirect)
 	relocated := gitProject(t)

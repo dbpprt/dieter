@@ -372,9 +372,8 @@ struct ScheduleEditor: View {
                                 }
                                 .pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("schedule-editor.placement")
                                 Picker("Workspace", selection: $draft.workspaceMode) {
-                                    Text("Worktree").tag("worktree")
-                                    Text("Dedicated branch").tag("branch")
-                                    Text("Main checkout").tag("main")
+                                    Text("New worktree").tag("worktree")
+                                    Text("Project directory").tag("project")
                                 }
                                 .pickerStyle(.segmented)
                                 .accessibilityIdentifier("schedule-editor.workspace")
@@ -560,7 +559,7 @@ enum ScheduleEditorDraft {
         }
         draft.busyPolicy = schedule?.busyPolicy == "skip" ? "skip" : "queue"
         draft.providerOptions = schedule?.providerOptions ?? [:]
-        draft.workspaceMode = schedule.flatMap { $0.workspaceMode.isEmpty ? nil : $0.workspaceMode } ?? "worktree"
+        draft.workspaceMode = schedule.map { ConversationWorkspaceMode.selectable($0.workspaceMode).rawValue } ?? "worktree"
         return draft
     }
 }

@@ -1,13 +1,15 @@
 package model
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 const (
 	ConversationScopeBoard = "board"
 	ConversationScopeChat  = "chat"
 
-	WorkspaceModeMain     = "main"
-	WorkspaceModeBranch   = "branch"
+	WorkspaceModeProject  = "project"
 	WorkspaceModeWorktree = "worktree"
 
 	WorkspaceStateReserved         = "reserved"
@@ -42,6 +44,21 @@ const (
 	DoneArchiveAfter30Days = "after_30_days"
 	DoneArchiveAfter90Days = "after_90_days"
 )
+
+// CanonicalWorkspaceMode keeps old durable data and older clients readable
+// while exposing only the two workspace modes Dieter supports. Both legacy
+// shared-checkout values mean "use the registered project directory as-is";
+// Dieter never switches that directory's branch.
+func CanonicalWorkspaceMode(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case WorkspaceModeProject, "main", "branch":
+		return WorkspaceModeProject, true
+	case WorkspaceModeWorktree:
+		return WorkspaceModeWorktree, true
+	default:
+		return "", false
+	}
+}
 
 type Lane struct {
 	ID   string `json:"id" yaml:"id"`

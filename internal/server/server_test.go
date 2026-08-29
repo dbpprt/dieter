@@ -131,7 +131,7 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 	project, board := workspace.Msg.GetProject(), workspace.Msg.GetBoard()
 	cardResponse, err := client.CreateCard(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{
 		ProjectId: project.GetId(), BoardId: board.GetId(), Lane: model.LaneTodo,
-		Title: "Protocol", Prompt: "Build it", Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: model.WorkspaceModeMain,
+		Title: "Protocol", Prompt: "Build it", Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: model.WorkspaceModeProject,
 		Attachments: []*dieterv1.MessagePart{{
 			Type: "image", MediaType: "image/png", Filename: "wire.png", Data: []byte("png fixture bytes"),
 		}},
@@ -291,7 +291,7 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 		t.Fatalf("archived=%#v err=%v", archived, err)
 	}
 
-	chat, err := client.CreateChat(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{ProjectId: project.GetId(), Title: "Standalone", Prompt: "Discuss", Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: model.WorkspaceModeMain}))
+	chat, err := client.CreateChat(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{ProjectId: project.GetId(), Title: "Standalone", Prompt: "Discuss", Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: model.WorkspaceModeProject}))
 	if err != nil || chat.Msg.GetScope() != model.ConversationScopeChat || chat.Msg.GetBoardId() != "" {
 		t.Fatalf("chat=%#v err=%v", chat, err)
 	}
@@ -422,7 +422,7 @@ func TestConnectCancellationInterruptsActiveTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, err := client.CreateCard(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{ProjectId: workspace.Msg.GetProject().GetId(), BoardId: workspace.Msg.GetBoard().GetId(), Lane: model.LaneRunning, Title: "Cancel", Prompt: "Wait", Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: model.WorkspaceModeMain}))
+	card, err := client.CreateCard(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{ProjectId: workspace.Msg.GetProject().GetId(), BoardId: workspace.Msg.GetBoard().GetId(), Lane: model.LaneRunning, Title: "Cancel", Prompt: "Wait", Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: model.WorkspaceModeProject}))
 	if err != nil {
 		t.Fatal(err)
 	}

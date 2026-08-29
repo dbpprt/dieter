@@ -44,7 +44,7 @@ func (m *Manager) SetGitRunner(runner gitexec.Runner) {
 
 func validMode(value string) bool {
 	switch value {
-	case model.WorkspaceModeMain, model.WorkspaceModeBranch, model.WorkspaceModeWorktree:
+	case model.WorkspaceModeProject, model.WorkspaceModeWorktree:
 		return true
 	default:
 		return false
@@ -52,12 +52,12 @@ func validMode(value string) bool {
 }
 
 func selectedMode(card model.Card) (string, error) {
-	mode := strings.ToLower(strings.TrimSpace(card.WorkspaceMode))
-	if mode == "" {
-		mode = model.WorkspaceModeMain
+	if strings.TrimSpace(card.WorkspaceMode) == "" {
+		return model.WorkspaceModeProject, nil
 	}
-	if !validMode(mode) {
-		return "", errors.New("workspace mode must be main, branch, or worktree")
+	mode, ok := model.CanonicalWorkspaceMode(card.WorkspaceMode)
+	if !ok || !validMode(mode) {
+		return "", errors.New("workspace mode must be project or worktree")
 	}
 	return mode, nil
 }
@@ -65,9 +65,7 @@ func selectedMode(card model.Card) (string, error) {
 func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, error) {
 	if existing, err := m.Store.Workspace(cardRef); err == nil {
 		if existing.State == model.WorkspaceStateReady || existing.State == model.WorkspaceStateConflicted {
-			if existing.Mode != model.WorkspaceModeBranch || existing.State == model.WorkspaceStateConflicted {
-				return m.Refresh(ctx, existing.CardID, false)
-			}
+			return m.Refresh(ctx, existing.CardID, false)
 		} else if existing.State == model.WorkspaceStateCleanupPending || existing.State == model.WorkspaceStateRecoveryRequired {
 			return m.Refresh(ctx, existing.CardID, false)
 		}
@@ -97,18 +95,6 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 	}
 	defer release()
 	if existing, err := m.Store.WorkspaceByCardID(detail.Card.ID); err == nil && (existing.State == model.WorkspaceStateReady || existing.State == model.WorkspaceStateConflicted) {
-		if existing.Mode == model.WorkspaceModeBranch && existing.State == model.WorkspaceStateReady {
-			currentBranch, _ := m.output(ctx, detail.Project.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
-			if currentBranch != existing.Branch {
-				existing, err = m.provision(ctx, detail, existing)
-				if err != nil {
-					return model.Workspace{}, err
-				}
-				if _, err := m.Store.SaveWorkspace(existing); err != nil {
-					return model.Workspace{}, err
-				}
-			}
-		}
 		return m.Refresh(ctx, detail.Card.ID, false)
 	}
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -152,50 +138,17 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 		baseRef = "HEAD"
 	}
 	baseSHA, baseErr := m.output(ctx, projectPath, "rev-parse", "--verify", baseRef+"^{commit}")
-	if baseErr != nil && value.Mode != model.WorkspaceModeMain {
+	if baseErr != nil && value.Mode == model.WorkspaceModeWorktree {
 		return value, fmt.Errorf("resolve base branch %q: %w", baseRef, baseErr)
 	}
 	value.BaseSHA = baseSHA
 	value.CurrentBaseSHA = baseSHA
 	switch value.Mode {
-	case model.WorkspaceModeMain:
+	case model.WorkspaceModeProject:
 		value.Path = projectPath
 		value.Branch = currentBranch
+		value.ManagedBranch = false
 		value.LegacyUnmanaged = detail.Card.InitialPromptSentAt != ""
-		return value, nil
-	case model.WorkspaceModeBranch:
-		if value.Branch == "" {
-			value.Branch = branchName(detail.Card)
-			value.ManagedBranch = true
-		}
-		release, err := m.lock(ctx, "checkout-"+detail.Project.ID)
-		if err != nil {
-			return value, err
-		}
-		defer release()
-		if currentBranch != value.Branch {
-			if active, activeErr := m.Store.ProjectHasRuntimeLease(detail.Project.ID, detail.Card.ID); activeErr != nil {
-				return value, activeErr
-			} else if active {
-				return value, errors.New("cannot switch the registered checkout while another conversation is active")
-			}
-			clean, cleanErr := m.clean(ctx, projectPath)
-			if cleanErr != nil {
-				return value, cleanErr
-			}
-			if !clean {
-				return value, errors.New("registered project checkout has uncommitted changes")
-			}
-			if _, err := m.Git.Run(ctx, projectPath, "show-ref", "--verify", "--quiet", "refs/heads/"+value.Branch); err == nil {
-				_, err = m.Git.Run(ctx, projectPath, "switch", value.Branch)
-			} else {
-				_, err = m.Git.Run(ctx, projectPath, "switch", "-c", value.Branch, baseRef)
-			}
-			if err != nil {
-				return value, fmt.Errorf("switch workspace branch: %w", err)
-			}
-		}
-		value.Path = projectPath
 		return value, nil
 	case model.WorkspaceModeWorktree:
 		if value.Branch == "" {
@@ -258,18 +211,14 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 	}
 	if _, err := os.Stat(value.Path); err != nil {
 		value.State = model.WorkspaceStateOrphaned
-		return m.Store.SaveWorkspace(value)
+		return m.Store.UpdateWorkspaceGitState(value, includeSize)
 	}
 	currentBranch, _ := m.output(ctx, value.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
-	headRef := "HEAD"
-	if value.Mode == model.WorkspaceModeBranch && value.Branch != "" && currentBranch != value.Branch {
-		headRef = value.Branch
-	}
-	head, headErr := m.output(ctx, value.Path, "rev-parse", "--verify", headRef+"^{commit}")
+	head, headErr := m.output(ctx, value.Path, "rev-parse", "--verify", "HEAD^{commit}")
 	if headErr == nil {
 		value.HeadSHA = head
 	}
-	if currentBranch != "" && value.Mode != model.WorkspaceModeBranch {
+	if currentBranch != "" || value.Mode == model.WorkspaceModeProject {
 		value.Branch = currentBranch
 	}
 	status, statusErr := m.Git.Run(ctx, value.Path, "status", "--porcelain=v1", "-z", "--untracked-files=all")
@@ -324,7 +273,7 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 		value.State = model.WorkspaceStateReady
 	}
 	value.LastActivityAt = time.Now().UTC().Format(time.RFC3339Nano)
-	return m.Store.SaveWorkspace(value)
+	return m.Store.UpdateWorkspaceGitState(value, includeSize)
 }
 
 func bytesZeroFields(raw []byte) []string {

@@ -39,7 +39,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.CallMerge
-import androidx.compose.material.icons.outlined.CallSplit
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudUpload
@@ -499,7 +498,7 @@ private fun WorkspaceSummaryCard(
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(
-                    if (workspace.mode == "worktree") Icons.Outlined.AccountTree else Icons.Outlined.CallSplit,
+                    if (workspace.mode == "worktree") Icons.Outlined.AccountTree else Icons.Outlined.Folder,
                     null,
                     tint = DieterShell,
                     modifier = Modifier.size(16.dp),
@@ -607,14 +606,6 @@ private fun WorkspaceOverflowMenu(
             enabled = availability.allows(GitOperationKinds.PUSH),
             onClick = { onOperation(GitOperationKinds.PUSH) },
         )
-        if (workspaceMode == "branch") {
-            DropdownMenuItem(
-                text = { Text(GitOperationKinds.title(GitOperationKinds.MIGRATE)) },
-                leadingIcon = { Icon(Icons.Outlined.AccountTree, null) },
-                enabled = availability.allows(GitOperationKinds.MIGRATE),
-                onClick = { onOperation(GitOperationKinds.MIGRATE) },
-            )
-        }
         DropdownMenuItem(
             text = { Text(GitOperationKinds.title(GitOperationKinds.CLEANUP)) },
             leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null) },
@@ -659,7 +650,7 @@ private fun WorkspaceActionRow(
             Spacer(Modifier.width(6.dp))
             Text("Commit")
         }
-        if (availability.workspaceMode != "main") {
+        if (availability.workspaceMode == "worktree") {
             OutlinedButton(
                 onClick = onMerge,
                 enabled = availability.allowsMergeFlow,
@@ -669,21 +660,21 @@ private fun WorkspaceActionRow(
                 Spacer(Modifier.width(6.dp))
                 Text("Merge into $baseBranch")
             }
+        }
+        OutlinedButton(
+            onClick = { onOperation(GitOperationKinds.UPDATE) },
+            enabled = availability.allows(GitOperationKinds.UPDATE),
+        ) {
+            Icon(Icons.Outlined.Sync, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Update")
+        }
+        if (!hasPullRequest && availability.hasReviewBranch) {
             OutlinedButton(
-                onClick = { onOperation(GitOperationKinds.UPDATE) },
-                enabled = availability.allows(GitOperationKinds.UPDATE),
-            ) {
-                Icon(Icons.Outlined.Sync, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Update")
-            }
-            if (!hasPullRequest) {
-                OutlinedButton(
-                    onClick = { onOperation(GitOperationKinds.CREATE_PR) },
-                    enabled = availability.allows(GitOperationKinds.CREATE_PR),
-                    modifier = Modifier.testTag("workspace-create-pr"),
-                ) { Text("Create PR") }
-            }
+                onClick = { onOperation(GitOperationKinds.CREATE_PR) },
+                enabled = availability.allows(GitOperationKinds.CREATE_PR),
+                modifier = Modifier.testTag("workspace-create-pr"),
+            ) { Text("Create PR") }
         }
     }
 }
@@ -1313,7 +1304,7 @@ private fun GitOperationParameterSheet(
                 }
                 GitOperationKinds.UPDATE -> {
                     Text(
-                        "Fast-forwards a clean main checkout; otherwise rebases this conversation's branch onto the latest $baseBranch.",
+                        "Fast-forwards the project directory when it is on $baseBranch; otherwise rebases the checked-out review branch onto the latest $baseBranch.",
                         color = DieterMuted,
                         fontSize = 12.sp,
                     )
@@ -1360,11 +1351,6 @@ private fun GitOperationParameterSheet(
                         fontSize = 11.sp,
                     )
                 }
-                GitOperationKinds.MIGRATE -> Text(
-                    "Moves this clean branch conversation into an isolated worktree. Files and history are preserved.",
-                    color = DieterMuted,
-                    fontSize = 12.sp,
-                )
                 GitOperationKinds.CLEANUP -> Text(
                     "Removes the workspace only when its work is clean and safely integrated. Dieter-managed branches are deleted.",
                     color = DieterMuted,
@@ -1402,7 +1388,6 @@ private fun GitOperationParameterSheet(
                             put("strategy", strategy)
                             if (pullRequestHeadSha.isNotBlank()) put("expected_head_sha", pullRequestHeadSha)
                         }
-                        GitOperationKinds.MIGRATE -> mapOf("mode" to "worktree")
                         else -> emptyMap()
                     }
                     onStart(parameters)
@@ -1616,24 +1601,32 @@ private fun ConversationWorkspaceSettingsSheet(
             ConversationWorkspaceMode.entries.forEach { option ->
                 WorkspaceModeOption(option, selected = mode == option) { mode = option }
             }
-            OutlinedTextField(
-                value = branch,
-                onValueChange = { branch = it },
-                label = { Text("Branch (optional)") },
-                placeholder = { Text("Generated when empty") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = baseBranch,
-                onValueChange = { baseBranch = it },
-                label = { Text("Base branch (optional)") },
-                placeholder = { Text("Project default") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (mode == ConversationWorkspaceMode.WORKTREE) {
+                OutlinedTextField(
+                    value = branch,
+                    onValueChange = { branch = it },
+                    label = { Text("Branch (optional)") },
+                    placeholder = { Text("Generated when empty") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = baseBranch,
+                    onValueChange = { baseBranch = it },
+                    label = { Text("Base branch (optional)") },
+                    placeholder = { Text("Project default") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Button(
-                onClick = { onSave(mode.wire, branch, baseBranch) },
+                onClick = {
+                    onSave(
+                        mode.wire,
+                        branch.takeIf { mode == ConversationWorkspaceMode.WORKTREE }.orEmpty(),
+                        baseBranch.takeIf { mode == ConversationWorkspaceMode.WORKTREE }.orEmpty(),
+                    )
+                },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Save workspace settings") }
         }
@@ -1661,7 +1654,7 @@ internal fun WorkspaceModeOption(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
-                if (option == ConversationWorkspaceMode.WORKTREE) Icons.Outlined.AccountTree else Icons.Outlined.CallSplit,
+                if (option == ConversationWorkspaceMode.WORKTREE) Icons.Outlined.AccountTree else Icons.Outlined.Folder,
                 null,
                 tint = if (selected) DieterShell else DieterMuted,
                 modifier = Modifier.size(18.dp),

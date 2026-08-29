@@ -84,6 +84,25 @@ final class DieterIslandPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+private struct DieterIslandThemeRoot<Content: View>: View {
+    @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
+    private var appearanceValue = DieterAppearance.defaultValue.rawValue
+    @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
+    private var paletteValue = DieterPalette.defaultValue.rawValue
+    let content: Content
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .id(paletteValue)
+            .dieterThemeRoot(palette: DieterPalette.resolve(paletteValue))
+            .preferredColorScheme(DieterAppearance.resolve(appearanceValue).colorScheme)
+    }
+}
+
 @MainActor
 final class DieterIslandController: NSObject {
     private let store: DieterStore
@@ -199,11 +218,13 @@ final class DieterIslandController: NSObject {
         if panel == nil {
             let panel = DieterIslandPanel(frame: newGeometry.windowFrame(expanded: false))
             panel.contentView = NSHostingView(
-                rootView: DieterIslandView(
-                    presentation: presentation,
-                    onRequestExpansion: { [weak self] expanded in self?.setExpanded(expanded) }
-                )
-                    .environment(store)
+                rootView: DieterIslandThemeRoot {
+                    DieterIslandView(
+                        presentation: presentation,
+                        onRequestExpansion: { [weak self] expanded in self?.setExpanded(expanded) }
+                    )
+                        .environment(store)
+                }
             )
             panel.ignoresMouseEvents = true
             self.panel = panel

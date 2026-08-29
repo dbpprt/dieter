@@ -11,6 +11,15 @@ import Testing
     #expect(request.workspaceBaseBranch == "release")
 }
 
+@Test func projectDirectoryDraftDoesNotSendWorktreeBranchOverrides() {
+    var request = Dieter_V1_CreateConversationRequest()
+    ConversationWorkspaceDraft(mode: .project, branch: "stale", baseBranch: "main").apply(to: &request)
+
+    #expect(request.workspaceMode == "project")
+    #expect(request.workspaceBranch.isEmpty)
+    #expect(request.workspaceBaseBranch.isEmpty)
+}
+
 @Test func unifiedDiffParserTracksBothSidesOfAHunk() {
     let lines = UnifiedDiffParser.parse("""
     diff --git a/a.swift b/a.swift
@@ -48,6 +57,44 @@ import Testing
     #expect(!availability.allows(.mergePullRequest))
     #expect(availability.allows(.continueConflict))
     #expect(availability.allows(.abortConflict))
+}
+
+@Test func projectDirectoryActionsFollowItsActualCheckedOutBranch() {
+    let feature = WorkspaceActionAvailability(
+        agentActive: false,
+        operationActive: false,
+        workspaceState: "ready",
+        workspaceMode: "project",
+        changedFiles: 0,
+        hasCommits: true,
+        hasRemote: true,
+        scmAuthenticated: true,
+        hasPullRequest: false,
+        workspaceBranch: "feature/direct",
+        baseBranch: "main"
+    )
+
+    #expect(feature.allows(.push))
+    #expect(feature.allows(.createPullRequest))
+    #expect(!feature.allows(.mergeLocal))
+    #expect(!feature.allows(.discard))
+    #expect(!feature.allowsMergeFlow)
+
+    let base = WorkspaceActionAvailability(
+        agentActive: false,
+        operationActive: false,
+        workspaceState: "ready",
+        workspaceMode: "project",
+        changedFiles: 0,
+        hasCommits: true,
+        hasRemote: true,
+        scmAuthenticated: true,
+        hasPullRequest: false,
+        workspaceBranch: "main",
+        baseBranch: "main"
+    )
+    #expect(!base.allows(.push))
+    #expect(!base.allows(.createPullRequest))
 }
 
 @Test func activeGitOperationIsReconciledAfterWorkspaceClearsItsOperationID() {

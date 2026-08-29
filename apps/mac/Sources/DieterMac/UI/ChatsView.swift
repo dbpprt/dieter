@@ -193,12 +193,10 @@ struct ChatRow: View {
                                 Circle().fill(DieterTheme.primary).frame(width: 6, height: 6)
                                     .accessibilityLabel("Unread")
                             }
-                            TimelineView(.periodic(from: .now, by: 30)) { context in
-                                Text(ChatActivityText.compact(
-                                    card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt,
-                                    relativeTo: context.date
-                                ))
-                            }
+                            Text(ChatActivityText.compact(
+                                card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt,
+                                relativeTo: .now
+                            ))
                             .fixedSize()
                         }
                         .font(.system(size: 10, weight: .medium))

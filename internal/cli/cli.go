@@ -984,7 +984,7 @@ Actions:
   rename       Rename the card
   archive      Archive the card
   unarchive    Restore the card
-  workspace    Select main, branch, or worktree before the first turn
+  workspace    Select project directory or new worktree before the first turn
 `)
 		return nil
 	}
@@ -1095,9 +1095,9 @@ Options:
   --model MODEL          Model for the first turn
   --effort EFFORT        Reasoning or thinking effort for the first turn
   --labels LABELS        Comma-separated board label IDs or names
-  --workspace MODE       main, branch, or worktree (required)
-  --branch BRANCH        Existing or new workspace branch
-  --base-branch BRANCH   Override the project base branch
+  --workspace MODE       project or worktree (required)
+  --branch BRANCH        Optional worktree branch
+  --base-branch BRANCH   Optional worktree base-branch override
   --format json|id       Output format
 `
 	set := flags("card create")
@@ -1122,7 +1122,7 @@ Options:
 		return err
 	}
 	if strings.TrimSpace(*workspaceMode) == "" {
-		return errors.New("--workspace is required; choose main, branch, or worktree")
+		return errors.New("--workspace is required; choose project or worktree")
 	}
 	value, err := textValue(*prompt, *file, c.In)
 	if err != nil {
@@ -1148,7 +1148,7 @@ Options:
 }
 
 func (c *CLI) cardWorkspace(args []string) error {
-	const usage = "Usage: dieter card workspace --mode main|branch|worktree [--branch BRANCH] [--base-branch BRANCH] CARD\n"
+	const usage = "Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] CARD\n"
 	set := flags("card workspace")
 	mode := set.String("mode", "", "workspace mode")
 	branch := set.String("branch", "", "workspace branch")
@@ -1471,7 +1471,7 @@ func (c *CLI) scheduleEdit(args []string, current *model.Schedule) error {
 
 Options:
   --action draft|run
-  --workspace main|branch|worktree
+  --workspace project|worktree
   --labels LABELS
   --provider AGENT --model MODEL --effort EFFORT
   --enabled=true|false
@@ -1490,7 +1490,7 @@ Options:
 	expression := set.String("cron", defaults.Cron, "five-field cron")
 	timezone := set.String("timezone", defaults.Timezone, "IANA timezone")
 	action := set.String("action", defaults.Action, "draft or run")
-	workspaceMode := set.String("workspace", defaults.WorkspaceMode, "main, branch, or worktree")
+	workspaceMode := set.String("workspace", defaults.WorkspaceMode, "project or worktree")
 	title := set.String("title", defaults.TitleTemplate, "card title template")
 	prompt := set.String("prompt", defaults.PromptTemplate, "card prompt template")
 	promptFile := set.String("prompt-file", "", "card prompt template file")

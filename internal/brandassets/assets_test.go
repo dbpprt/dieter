@@ -82,8 +82,8 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 	assertContains(t, filepath.Join(root, "apps/mac/Sources/DieterMac/UI/DieterTheme.swift"),
 		"PaletteSpec(0x0D1B24, 0x193A49, 0x8DD8E8, 0x3D6E85",
 		"0x62B6CB, 0xBCEAF1, 0xF5FBFD, 0x081116",
-		"background = Color(light: colors.light, dark: colors.darkBackground)",
-		"shell = Color(light: colors.shellEnd, dark: colors.shellStart)",
+		"background = Color(rgb: dark ? colors.darkBackground : colors.light)",
+		"shell = Color(rgb: dark ? colors.shellStart : colors.shellEnd)",
 		`Font.custom("Sora"`,
 	)
 

@@ -91,7 +91,7 @@ class ConversationJumpToLatestEndToEndTest {
                     .setProvider(harness.id)
                     .setModel(harness.defaultModel)
                     .setDeferStart(true)
-                    .setWorkspaceMode("main")
+                    .setWorkspaceMode("project")
                     .setClientId("android-conversation-scroll-test")
                     .setCommandId(UUID.randomUUID().toString())
                     .build(),

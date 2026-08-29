@@ -702,7 +702,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
                 .build(),
         )
 
-    // GetWorkspace may lazily provision a branch or worktree, so it gets a
+    // GetWorkspace may lazily provision a project projection or worktree, so it gets a
     // provisioning-sized deadline rather than the default UI read deadline.
     override suspend fun workspace(cardId: String): Workspace =
         unary(deadlineSeconds = 60).getWorkspace(conversationRequest(cardId))

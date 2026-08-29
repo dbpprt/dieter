@@ -56,7 +56,7 @@ Actions:
   run --kind KIND CARD      Run a serialized durable Git operation
 
 Kinds include commit, update, continue_conflict, abort_conflict, validate,
-merge_local, push, cleanup, discard, adopt, migrate, create_pr, refresh_pr,
+merge_local, push, cleanup, discard, adopt, create_pr, refresh_pr,
 and merge_pr. Repeat --param KEY=VALUE for operation-specific parameters.
 `)
 		return nil

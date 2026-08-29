@@ -16,14 +16,16 @@ class WorkspaceCardBadgeTest {
     }
 
     @Test
-    fun fallsBackFromBranchToWorkspaceMode() {
+    fun fallsBackFromBranchToWorkspaceModeAndCanonicalizesLegacyValues() {
         val worktree = card(workspaceMode = "worktree")
-        val branch = card(workspaceMode = "branch")
-        val main = card(workspaceMode = "main")
+        val project = card(workspaceMode = "project")
+        val legacyBranch = card(workspaceMode = "branch")
+        val legacyMain = card(workspaceMode = "main")
 
         assertEquals("Worktree", workspaceCardBadgeInfo(worktree)?.title)
-        assertEquals("Branch", workspaceCardBadgeInfo(branch)?.title)
-        assertEquals("Main", workspaceCardBadgeInfo(main)?.title)
+        assertEquals("Project", workspaceCardBadgeInfo(project)?.title)
+        assertEquals("Project", workspaceCardBadgeInfo(legacyBranch)?.title)
+        assertEquals("Project", workspaceCardBadgeInfo(legacyMain)?.title)
     }
 
     @Test

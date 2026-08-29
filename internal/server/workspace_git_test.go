@@ -125,9 +125,16 @@ func TestConversationInputRequiresPerConversationWorkspaceMode(t *testing.T) {
 		t.Fatalf("missing workspace mode error=%v", err)
 	}
 
-	input, err := conversationInput(&dieterv1.CreateConversationRequest{Title: "Explicit workspace", WorkspaceMode: "WORKTREE"})
-	if err != nil || input.WorkspaceMode != model.WorkspaceModeWorktree {
-		t.Fatalf("explicit workspace input=%#v err=%v", input, err)
+	for wire, want := range map[string]string{
+		"WORKTREE": model.WorkspaceModeWorktree,
+		"PROJECT":  model.WorkspaceModeProject,
+		"main":     model.WorkspaceModeProject,
+		"branch":   model.WorkspaceModeProject,
+	} {
+		input, err := conversationInput(&dieterv1.CreateConversationRequest{Title: "Explicit workspace", WorkspaceMode: wire})
+		if err != nil || input.WorkspaceMode != want {
+			t.Fatalf("workspace %q input=%#v err=%v", wire, input, err)
+		}
 	}
 }
 

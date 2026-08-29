@@ -13,20 +13,16 @@ import com.dbpprt.dieter.v1.Workspace
 enum class ConversationWorkspaceMode(val wire: String, val title: String, val shortTitle: String, val detail: String) {
     WORKTREE(
         "worktree", "Worktree", "Worktree",
-        "Create an isolated Git worktree and branch for this conversation.",
+        "Create a new isolated Git worktree and branch for this conversation.",
     ),
-    BRANCH(
-        "branch", "Dedicated branch", "Branch",
-        "Use a dedicated branch in the registered checkout.",
-    ),
-    MAIN(
-        "main", "Main checkout", "Main",
-        "Share the registered checkout. Concurrent work is restricted.",
+    PROJECT(
+        "project", "Project directory", "Project",
+        "Use the registered project directory on whichever branch it currently has checked out.",
     );
 
     companion object {
         fun resolve(value: String?): ConversationWorkspaceMode =
-            entries.firstOrNull { it.wire == value?.lowercase() } ?: MAIN
+            if (value?.lowercase() == WORKTREE.wire) WORKTREE else PROJECT
     }
 }
 
@@ -42,7 +38,6 @@ object GitOperationKinds {
     const val MERGE_PR = "merge_pr"
     const val CONTINUE_CONFLICT = "continue_conflict"
     const val ABORT_CONFLICT = "abort_conflict"
-    const val MIGRATE = "migrate"
     const val ADOPT = "adopt"
     const val CLEANUP = "cleanup"
     const val DISCARD = "discard"
@@ -58,7 +53,6 @@ object GitOperationKinds {
         MERGE_PR -> "Merge pull request"
         CONTINUE_CONFLICT -> "Continue after resolving"
         ABORT_CONFLICT -> "Abort conflicted operation"
-        MIGRATE -> "Migrate to worktree"
         ADOPT -> "Move workspace"
         CLEANUP -> "Clean up workspace"
         DISCARD -> "Discard workspace"
@@ -100,6 +94,8 @@ data class WorkspaceActionAvailability(
     val hasPullRequest: Boolean,
     /** Uncommitted working-tree changes, unlike [changedFiles] which also counts committed diffs vs base. */
     val dirty: Boolean = false,
+    val workspaceBranch: String = "",
+    val baseBranch: String = "",
 ) {
     /**
      * The merge flow opens in more states than the raw merge_local gate: a dirty
@@ -108,9 +104,12 @@ data class WorkspaceActionAvailability(
      */
     val allowsMergeFlow: Boolean
         get() {
-            if (agentActive || operationActive || workspaceMode == "main") return false
+            if (agentActive || operationActive || workspaceMode != "worktree") return false
             return hasCommits || changedFiles > 0 || workspaceState == "conflicted"
         }
+
+    val hasReviewBranch: Boolean
+        get() = workspaceBranch.isNotEmpty() && baseBranch.isNotEmpty() && workspaceBranch != baseBranch
 
     fun allows(kind: String): Boolean {
         if (agentActive || operationActive) return false
@@ -120,16 +119,15 @@ data class WorkspaceActionAvailability(
         return when (kind) {
             GitOperationKinds.COMMIT -> dirty || changedFiles > 0
             GitOperationKinds.UPDATE, GitOperationKinds.VALIDATE -> true
-            GitOperationKinds.MERGE_LOCAL -> workspaceMode != "main" && hasCommits && changedFiles == 0
-            GitOperationKinds.PUSH -> workspaceMode != "main" && hasRemote && hasCommits
+            GitOperationKinds.MERGE_LOCAL -> workspaceMode == "worktree" && hasCommits && changedFiles == 0
+            GitOperationKinds.PUSH -> hasReviewBranch && hasRemote && hasCommits
             GitOperationKinds.CREATE_PR ->
-                workspaceMode != "main" && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest
+                hasReviewBranch && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest
             GitOperationKinds.REFRESH_PR, GitOperationKinds.MERGE_PR -> hasPullRequest && scmAuthenticated
             GitOperationKinds.CONTINUE_CONFLICT, GitOperationKinds.ABORT_CONFLICT -> false
-            GitOperationKinds.MIGRATE -> workspaceMode == "branch" && changedFiles == 0
-            GitOperationKinds.ADOPT -> true
-            GitOperationKinds.CLEANUP -> changedFiles == 0
-            GitOperationKinds.DISCARD -> true
+            GitOperationKinds.ADOPT -> workspaceMode == "worktree"
+            GitOperationKinds.CLEANUP -> workspaceMode == "worktree" && changedFiles == 0
+            GitOperationKinds.DISCARD -> workspaceMode == "worktree"
             else -> false
         }
     }
@@ -259,7 +257,7 @@ fun workspaceActionAvailability(card: Card?, review: WorkspaceReviewState): Work
     val mode = workspace?.mode?.ifBlank { null }
         ?: summary?.mode?.ifBlank { null }
         ?: card?.workspaceMode?.ifBlank { null }
-        ?: "main"
+        ?: "project"
     return WorkspaceActionAvailability(
         agentActive = agentRuntimeActive(card?.runtime.orEmpty()),
         operationActive = review.operationActive,
@@ -271,6 +269,8 @@ fun workspaceActionAvailability(card: Card?, review: WorkspaceReviewState): Work
         scmAuthenticated = review.scm?.authenticated == true,
         hasPullRequest = (card?.pullRequest?.number ?: 0) > 0,
         dirty = workspace?.dirty == true,
+        workspaceBranch = workspace?.branch ?: summary?.branch.orEmpty(),
+        baseBranch = workspace?.baseBranch ?: summary?.baseBranch.orEmpty(),
     )
 }
 

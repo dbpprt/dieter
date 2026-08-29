@@ -130,7 +130,7 @@ func (api *grpcAPI) SetBoardPromptTemplate(_ context.Context, request *dieterv1.
 	return protoBoard(value), nil
 }
 
-func (api *grpcAPI) PreviewPrompt(_ context.Context, request *dieterv1.PreviewPromptRequest) (*dieterv1.PromptPreview, error) {
+func (api *grpcAPI) PreviewPrompt(ctx context.Context, request *dieterv1.PreviewPromptRequest) (*dieterv1.PromptPreview, error) {
 	var detail model.CardDetail
 	var err error
 	if request.GetCardId() != "" {
@@ -161,7 +161,7 @@ func (api *grpcAPI) PreviewPrompt(_ context.Context, request *dieterv1.PreviewPr
 		return nil, grpcFailure(err)
 	}
 	workspaceValue := model.Workspace{
-		Mode: model.WorkspaceModeMain, Path: detail.Project.Path, Branch: detail.Project.BaseBranch,
+		Mode: model.WorkspaceModeProject, Path: detail.Project.Path, Branch: detail.Project.BaseBranch,
 		BaseBranch: detail.Project.BaseBranch,
 	}
 	if detail.Card.WorkspaceMode != "" {
@@ -172,6 +172,11 @@ func (api *grpcAPI) PreviewPrompt(_ context.Context, request *dieterv1.PreviewPr
 	}
 	if detail.Card.WorkspaceBaseBranch != "" {
 		workspaceValue.BaseBranch = detail.Card.WorkspaceBaseBranch
+	}
+	if workspaceValue.Mode == model.WorkspaceModeProject {
+		if result, gitErr := api.server.workspaces.Git.Run(ctx, detail.Project.Path, "symbolic-ref", "--quiet", "--short", "HEAD"); gitErr == nil {
+			workspaceValue.Branch = strings.TrimSpace(string(result.Output))
+		}
 	}
 	if workspaceValue.Mode == model.WorkspaceModeWorktree && detail.Card.ID != "" && detail.Card.ID != "preview" {
 		workspaceValue.Path = filepath.Join(api.server.store.WorktreeRoot(), detail.Project.ID, detail.Card.ID)
@@ -200,10 +205,8 @@ func (api *grpcAPI) PreviewPrompt(_ context.Context, request *dieterv1.PreviewPr
 }
 
 func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInput, error) {
-	workspaceMode := strings.ToLower(strings.TrimSpace(request.GetWorkspaceMode()))
-	switch workspaceMode {
-	case model.WorkspaceModeMain, model.WorkspaceModeBranch, model.WorkspaceModeWorktree:
-	default:
+	workspaceMode, ok := model.CanonicalWorkspaceMode(request.GetWorkspaceMode())
+	if strings.TrimSpace(request.GetWorkspaceMode()) == "" || !ok {
 		return app.CardInput{}, errors.New("workspace mode must be selected for each conversation")
 	}
 	attachments, err := modelUserAttachmentParts(request.GetAttachments())
@@ -989,10 +992,8 @@ func scheduleInput(request *dieterv1.SaveScheduleRequest) (store.ScheduleInput, 
 	if value == nil {
 		return store.ScheduleInput{}, errors.New("schedule is required")
 	}
-	workspaceMode := strings.ToLower(strings.TrimSpace(value.GetWorkspaceMode()))
-	switch workspaceMode {
-	case model.WorkspaceModeMain, model.WorkspaceModeBranch, model.WorkspaceModeWorktree:
-	default:
+	workspaceMode, ok := model.CanonicalWorkspaceMode(value.GetWorkspaceMode())
+	if strings.TrimSpace(value.GetWorkspaceMode()) == "" || !ok {
 		return store.ScheduleInput{}, errors.New("workspace mode must be selected for each scheduled card")
 	}
 	return store.ScheduleInput{

@@ -57,35 +57,35 @@ conversation. Avoid parallel `CardWorkspace` and `ChatWorkspace` state machines.
 
 | Mode | Execution location | Branch behavior | Isolation | Intended use |
 | --- | --- | --- | --- | --- |
-| `main` | Registered project checkout | Uses its current/base branch | None | Explicit small tasks where working directly in the checkout is desired |
-| `branch` | Registered project checkout | Switches the shared checkout to the selected/generated branch | Git branch only | Compatibility or explicitly shared-checkout work |
+| `project` | Registered project directory | Uses whichever branch is currently checked out and never switches it | None | Direct work in the existing checkout, whether it is on the base branch, a feature branch, or detached |
 | `worktree` | `$DIETER_HOME/worktrees/<project-id>/<card-id>` on the daemon host | Uses the selected branch or a Dieter-generated `dieter/...` branch | Filesystem and branch | Recommended default for concurrent cards/chats |
 
 The worktree path is daemon-local metadata. Never assume `.worktrees/`, never
 construct the path on a client, and never use `Workspace.path` as a remote file
 URL. Send `card_id` plus a repository-relative path to file and terminal RPCs.
 
-`main` and `branch` share the registered checkout. The daemon rejects unsafe
-checkout/Git operations while another conversation is active there. Worktrees
-are the mode that gives independent conversations independent working folders.
+`project` uses the registered directory exactly as the user has it checked out.
+The daemon never changes that directory's branch. Worktrees are the mode that
+gives independent conversations independent working folders.
 
 ### 2.4 Selection and provisioning lifecycle
 
-1. The user chooses a mode during card/chat creation, or accepts the project
-   default.
+1. The user chooses a mode during card/chat creation. Native clients should
+   preselect `worktree`, but the choice is stored on the conversation.
 2. `UpdateConversationWorkspace` may change the selection until the first agent
    prompt is sent. `Card.initial_prompt_sent_at` is the client-visible lock
    boundary.
 3. `GetWorkspace`, a card-scoped file/terminal call, or the first agent turn
    lazily provisions the durable workspace.
-4. After the first turn, normal mode editing is rejected. The only supported
-   migration is a clean `branch` workspace to `worktree`, using the durable
-   `migrate` Git operation.
+4. After the first turn, mode editing is rejected. Create a new conversation to
+   choose a different execution location.
 5. Integration marks the workspace `cleanup_pending`. Cleanup is a separate,
    explicit operation so a successful merge is never hidden by a cleanup error.
 
-Existing projects and conversations hydrate safely as `main` when no workspace
-fields are present.
+Existing projects and conversations hydrate safely as `project` when no
+workspace fields are present. Legacy stored or requested `main` and `branch`
+values also canonicalize to `project`; all new writes use only `project` or
+`worktree`.
 
 ## 3. What the server supports now
 
@@ -114,7 +114,8 @@ invalid environment names, and timeouts above one hour.
 - Workspace and repository locks work across daemon processes and recover stale
   lock holders.
 
-`GetWorkspace` is not a purely passive read: it may create a branch/worktree.
+`GetWorkspace` is not a purely passive read: it may create a worktree and always
+refreshes Git state.
 Call it when entering a conversation workspace or when an explicit refresh is
 needed, not in a rapid UI polling loop.
 
@@ -202,7 +203,7 @@ cannot be canceled through that RPC; use `abort_conflict`.
 
 The daemon admits only one Git operation per workspace. It also rejects Git
 operations while that card's agent turn or terminal is active. Operations on a
-shared `main`/`branch` checkout are rejected while another project conversation
+shared `project` directory are rejected while another project conversation
 is active. Map these failures to a non-destructive “workspace busy” state and
 offer retry.
 
@@ -214,16 +215,15 @@ All values in `parameters` are strings; booleans are exactly `"true"` or
 | Kind | Parameters | Behavior |
 | --- | --- | --- |
 | `commit` | required `subject`; optional `body`; `include_untracked` defaults to `true` | Stages and commits workspace changes; validation is not implicit |
-| `update` | `fetch` defaults to `true`; `validate` defaults to `true` | Fast-forwards a clean `main`, otherwise rebases the conversation branch onto the base |
+| `update` | `fetch` defaults to `true`; `validate` defaults to `true` | Fast-forwards a clean project directory when it is on the base branch; otherwise rebases its current review branch or the worktree branch onto the base |
 | `continue_conflict` | none | Continues the current conflicted rebase after files are resolved |
 | `abort_conflict` | none | Aborts the current rebase/merge and cancels the waiting operation |
 | `validate` | none | Runs all project validation commands in order |
 | `merge_local` | `strategy`: `squash` (default), `merge_commit`, or `fast_forward`; optional squash `subject`; `validate` defaults to `true` | Prepares and validates in an isolated integration worktree, then fast-forwards the registered base checkout |
 | `push` | optional `force_with_lease`; required `expected_remote_sha` when forcing | Pushes the conversation branch to the configured base remote |
-| `cleanup` | none | Removes only clean and safely integrated work; deletes only Dieter-managed branches |
-| `discard` | none | Creates recovery artifacts, then force-removes the workspace/managed branch |
-| `adopt` | required `target_card_id` | Transfers the existing workspace to an inactive same-project card/chat that has no workspace |
-| `migrate` | required `mode=worktree` | Moves a clean started `branch` conversation into a worktree |
+| `cleanup` | none | Worktree-only: removes clean and safely integrated work and deletes only Dieter-managed branches |
+| `discard` | none | Worktree-only: creates recovery artifacts, then force-removes the worktree/managed branch; Dieter never discards a user-owned project directory |
+| `adopt` | required `target_card_id` | Worktree-only: transfers the existing workspace to an inactive same-project card/chat that has no workspace |
 | `create_pr` | optional `title`, `body`, `draft`; `push` defaults to `true` | Idempotently pushes and creates or reuses an open GitHub PR for the head branch |
 | `refresh_pr` | none | Refreshes aggregate PR, checks, review, mergeability, and SHA state |
 | `merge_pr` | `strategy`: `squash` (default), `merge`, or `rebase`; optional `expected_head_sha` | Merges through GitHub with head-SHA protection and marks cleanup pending |
@@ -354,8 +354,8 @@ require a mode on every creation request.
 
 For deferred cards/chats, allow `UpdateConversationWorkspace` while
 `initial_prompt_sent_at` is empty. Once it is set, replace the picker with a
-read-only mode/branch summary and expose only valid lifecycle operations such
-as branch-to-worktree migration.
+read-only mode/branch summary and expose only lifecycle operations valid for
+that mode.
 
 Worktree should be the recommended isolated choice, but the UI must preserve
 each conversation's explicit selection.
@@ -371,7 +371,7 @@ This is required for correctness, not an optional enhancement:
 - keep project-only Files/Terminals behavior for their existing global screens.
 
 Without this phase, a worktree conversation could display or edit the registered
-main checkout, which is a data-integrity bug.
+project directory, which is a data-integrity bug.
 
 ### Phase D: changeset review
 
@@ -409,8 +409,10 @@ Derive action availability from server state:
 
 Add capability discovery, create/refresh/push/merge actions, aggregate checks
 and review status, provider URL, expected-head protection, and separate cleanup.
-Hide or disable PR creation in `main` mode. Show `unavailable_reason` rather
-than a generic network error when `gh` or daemon-host auth is missing.
+Allow PR creation for a worktree or for a project directory whose current branch
+differs from its configured base branch. Hide or disable it when the project
+directory is on the base branch. Show `unavailable_reason` rather than a generic
+network error when `gh` or daemon-host auth is missing.
 
 ### Phase G: project workspace administration
 
@@ -585,10 +587,11 @@ touching the normal daemon or gateway.
 Both native implementations should prove the following matrix for a board card
 and a standalone chat:
 
-1. Reject omitted workspace mode and create with each explicit mode.
+1. Reject omitted workspace mode and create with both explicit modes.
 2. Change selection before first turn and verify it locks after first prompt.
-3. Provision `main`, `branch`, and `worktree`; confirm returned path/mode/branch
-   without constructing paths client-side.
+3. Provision `project` while the registered directory is on both its base branch
+   and a feature branch, plus `worktree`; confirm returned path/mode/actual branch
+   without constructing paths client-side or switching the project directory.
 4. Read, create, save, move, and delete a file through `card_id`; prove the
    registered checkout is untouched for a worktree.
 5. Create/resume/close a card-scoped terminal and prove Git operations are busy
@@ -604,13 +607,12 @@ and a standalone chat:
     verify cleanup is separate.
 12. Discard and surface the recovery-artifact log message.
 13. Adopt a leftover worktree into a deferred same-project chat.
-14. Migrate a clean started branch workspace to worktree.
-15. Exercise SCM unavailable states without `gh`/auth.
-16. Against a disposable GitHub repository or fake provider fixture, create,
+14. Exercise SCM unavailable states without `gh`/auth.
+15. Against a disposable GitHub repository or fake provider fixture, create,
     idempotently recreate, refresh, head-protected merge, and cleanup a PR.
-17. Drop the gateway/watch connection during a running operation and prove the
+16. Drop the gateway/watch connection during a running operation and prove the
     operation continues and the client resumes it without duplication.
-18. Background/recreate the native screen and prove that local task cancellation
+17. Background/recreate the native screen and prove that local task cancellation
     does not call `CancelGitOperation`.
 
 Minimum repository checks after native implementation:

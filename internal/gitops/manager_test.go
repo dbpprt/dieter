@@ -133,46 +133,6 @@ func TestRebaseConflictCanBeResolvedAndContinued(t *testing.T) {
 	}
 }
 
-func TestBranchWorkspaceMigratesToWorktree(t *testing.T) {
-	repository := testRepository(t)
-	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
-	if err := data.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Migration", Prompt: "work", WorkspaceMode: model.WorkspaceModeBranch})
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspaces := workspace.New(data, nil)
-	before, err := workspaces.Ensure(context.Background(), chat.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if before.Mode != model.WorkspaceModeBranch || before.Branch == "main" {
-		t.Fatalf("branch workspace not activated: %#v", before)
-	}
-	manager := gitops.New(data, workspaces, nil)
-	operation, err := manager.Start(context.Background(), gitops.Request{CardID: chat.ID, Kind: "migrate", Parameters: map[string]string{"mode": "worktree"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	operation = waitOperation(t, manager, operation.ID)
-	if operation.Status != model.GitOperationSucceeded {
-		t.Fatalf("migration failed: %#v", operation)
-	}
-	after, err := data.Workspace(chat.ID)
-	if err != nil || after.Mode != model.WorkspaceModeWorktree || after.Path == before.Path || after.Branch != before.Branch {
-		t.Fatalf("unexpected migrated workspace: %#v %v", after, err)
-	}
-	if branch := runGit(t, repository, "branch", "--show-current"); branch != "main" {
-		t.Fatalf("registered checkout remained on %q", branch)
-	}
-}
-
 func TestWorkspaceCanBeAdoptedByAnotherConversation(t *testing.T) {
 	repository := testRepository(t)
 	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))

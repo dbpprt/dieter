@@ -102,6 +102,8 @@ class ScheduleEditorEndToEndTest {
         composeRule.onNodeWithTag("schedule-placement-running").performScrollTo().performClick()
         composeRule.onNodeWithText("The daemon creates the card and starts its agent turn when admission allows.")
             .performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("workspace-mode-worktree").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("workspace-mode-project").performScrollTo().performClick()
         composeRule.onAllNodesWithText("{{date}}")[0].performScrollTo().assertIsDisplayed()
 
         val context = instrumentation.targetContext
@@ -128,6 +130,7 @@ class ScheduleEditorEndToEndTest {
             }
         }
         assertEquals("run", persisted.action)
+        assertEquals("project", persisted.workspaceMode)
         assertEquals("Scheduled work · {{date}}", persisted.titleTemplate)
         assertTrue(persisted.promptTemplate.contains("{{project}}"))
         assertTrue(persisted.promptTemplate.contains("{{scheduled_at}}"))

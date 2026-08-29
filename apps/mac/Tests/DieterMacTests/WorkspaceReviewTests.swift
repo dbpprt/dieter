@@ -239,7 +239,7 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
     #expect(availability(files: 3, commits: false, dirty: true).allowsMergeFlow)
     #expect(availability(files: 0, commits: true, dirty: false).allowsMergeFlow)
     #expect(availability(state: "conflicted", files: 0, commits: false, dirty: false).allowsMergeFlow)
-    #expect(!availability(mode: "main", files: 3, commits: true, dirty: true).allowsMergeFlow)
+    #expect(!availability(mode: "project", files: 3, commits: true, dirty: true).allowsMergeFlow)
     #expect(!availability(files: 0, commits: false, dirty: false).allowsMergeFlow)
     // The raw merge gate still demands a clean tree.
     #expect(!availability(files: 3, commits: true, dirty: true).allows(.mergeLocal))

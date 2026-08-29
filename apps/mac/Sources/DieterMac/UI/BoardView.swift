@@ -712,20 +712,17 @@ struct BoardCardView: View {
                     if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
                     if !card.model.isEmpty { Text(card.model).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1) }
                     Spacer()
-                    TimelineView(.periodic(from: .now, by: 30)) { context in
-                        let age = BoardCardActivityText.compact(
-                            updatedAt: card.updatedAt,
-                            lastActivityAt: card.lastActivityAt,
-                            relativeTo: context.date
-                        )
-                        if !age.isEmpty {
-                            Text(age)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(DieterTheme.tertiary)
-                                .accessibilityLabel("Last activity \(age)")
-                        }
+                    let age = BoardCardActivityText.compact(
+                        updatedAt: card.updatedAt,
+                        lastActivityAt: card.lastActivityAt,
+                        relativeTo: .now
+                    )
+                    if !age.isEmpty {
+                        Text(age)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(DieterTheme.tertiary)
+                            .accessibilityLabel("Last activity \(age)")
                     }
-                    .fixedSize()
                     if card.commentCount > 0 { Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary) }
                     if !card.activeSubagents.isEmpty { Label("\(card.activeSubagents.count)", systemImage: "person.2").font(.system(size: 10)).foregroundStyle(DieterTheme.shell) }
                 }

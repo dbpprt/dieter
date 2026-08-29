@@ -486,7 +486,7 @@ private fun WorkspaceModeChips(
             FilterChip(
                 selected = selected == mode,
                 onClick = { onSelect(mode) },
-                label = { Text(mode.shortTitle) },
+                label = { Text(if (mode == ConversationWorkspaceMode.WORKTREE) "New worktree" else "Project directory") },
                 modifier = Modifier.testTag("workspace-mode-${mode.wire}"),
             )
         }
@@ -591,6 +591,9 @@ fun ScheduleEditorScreen(
     val labelIds = remember(schedule?.id) { mutableStateListOf<String>().also { it += schedule?.labelIdsList.orEmpty() } }
     var openPolicy by remember(schedule?.id) { mutableStateOf(schedule?.openCardPolicy ?: "skip_if_open") }
     var busyPolicy by remember(schedule?.id) { mutableStateOf(schedule?.busyPolicy ?: "queue") }
+    var workspaceMode by remember(schedule?.id) {
+        mutableStateOf(schedule?.let { ConversationWorkspaceMode.resolve(it.workspaceMode) } ?: ConversationWorkspaceMode.WORKTREE)
+    }
     val cron = scheduleCron(repeat, runAt, weeklyDay, customCron)
     val canSave = name.isNotBlank() && cron.isNotBlank() && timezone.isNotBlank() && titleTemplate.isNotBlank() &&
         prompt.isNotBlank() && provider.isNotBlank() && boardId.isNotBlank()
@@ -620,7 +623,7 @@ fun ScheduleEditorScreen(
                 .setOpenCardPolicy(openPolicy)
                 .setMisfirePolicy("latest")
                 .setBusyPolicy(busyPolicy)
-                .setWorkspaceMode(schedule?.workspaceMode.orEmpty().ifBlank { "worktree" })
+                .setWorkspaceMode(workspaceMode.wire)
                 .addAllLabelIds(labelIds)
                 .build(),
         )
@@ -737,6 +740,9 @@ fun ScheduleEditorScreen(
                     color = DieterMuted,
                     style = MaterialTheme.typography.bodySmall,
                 )
+                Text("Workspace", color = DieterMuted, fontSize = 12.sp)
+                WorkspaceModeChips(workspaceMode) { workspaceMode = it }
+                Text(workspaceMode.detail, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
                 val labels = state.boards.firstOrNull { it.id == boardId }?.labelsList.orEmpty()
                 if (labels.isNotEmpty()) {
                     Text("Labels", color = DieterMuted, fontSize = 12.sp)

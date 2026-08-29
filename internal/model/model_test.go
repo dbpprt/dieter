@@ -19,3 +19,21 @@ func TestUIMessageMigratesLegacyCreatedAtIntoMetadata(t *testing.T) {
 		t.Fatalf("legacy timestamp was not migrated to AI SDK metadata: %s", encoded)
 	}
 }
+
+func TestCanonicalWorkspaceModeHasOnlyProjectAndWorktreeSemantics(t *testing.T) {
+	for input, want := range map[string]string{
+		"project":  WorkspaceModeProject,
+		"PROJECT":  WorkspaceModeProject,
+		"main":     WorkspaceModeProject,
+		"branch":   WorkspaceModeProject,
+		"worktree": WorkspaceModeWorktree,
+	} {
+		got, ok := CanonicalWorkspaceMode(input)
+		if !ok || got != want {
+			t.Fatalf("CanonicalWorkspaceMode(%q) = %q, %v; want %q, true", input, got, ok, want)
+		}
+	}
+	if _, ok := CanonicalWorkspaceMode("shared"); ok {
+		t.Fatal("unsupported workspace mode was accepted")
+	}
+}

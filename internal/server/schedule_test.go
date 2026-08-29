@@ -48,7 +48,7 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	schedule, err := client.CreateSchedule(ctx, connect.NewRequest(&dieterv1.SaveScheduleRequest{Schedule: &dieterv1.ScheduleDraft{
 		ProjectId: project.GetId(), BoardId: board.GetId(), Name: "Morning", Cron: "0 9 * * 1-5", Timezone: "Europe/Berlin", Enabled: true,
 		Action: model.ScheduleActionRun, TitleTemplate: "Morning · {{date}}", PromptTemplate: "Check {{project}}", Provider: "mock", Model: "mock",
-		OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", BusyPolicy: "queue", WorkspaceMode: model.WorkspaceModeMain,
+		OpenCardPolicy: "skip_if_open", MisfirePolicy: "latest", BusyPolicy: "queue", WorkspaceMode: model.WorkspaceModeProject,
 	}}))
 	if err != nil {
 		t.Fatal(err)

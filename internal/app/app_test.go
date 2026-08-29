@@ -353,7 +353,7 @@ func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
 	}
 }
 
-func TestConcurrentMainAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t *testing.T) {
+func TestConcurrentProjectDirectoryAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t *testing.T) {
 	cwd, _ := os.Getwd()
 	runtimeDir := filepath.Join(filepath.Dir(cwd), "harness", "runtime")
 	if _, err := os.Stat(filepath.Join(runtimeDir, "node_modules")); err != nil {
@@ -398,9 +398,9 @@ func TestConcurrentMainAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mainCard, err := service.CreateChat(context.Background(), CardInput{
-		Project: project.ID, Title: "Main", Prompt: "mock-concurrent-workspace-write",
-		Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeMain, DeferStart: true,
+	projectCard, err := service.CreateChat(context.Background(), CardInput{
+		Project: project.ID, Title: "Project directory", Prompt: "mock-concurrent-workspace-write",
+		Provider: "mock", Model: "mock", WorkspaceMode: model.WorkspaceModeProject, DeferStart: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -410,11 +410,11 @@ func TestConcurrentMainAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mainUpdates, err := service.StartCard(mainCard.ID, "", "", "", "")
+	projectUpdates, err := service.StartCard(projectCard.ID, "", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, updates := range []<-chan TurnUpdate{worktreeUpdates, mainUpdates} {
+	for _, updates := range []<-chan TurnUpdate{worktreeUpdates, projectUpdates} {
 		for update := range updates {
 			if update.Err != nil {
 				t.Fatal(update.Err)
@@ -426,16 +426,16 @@ func TestConcurrentMainAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mainMarker := filepath.Join(repository, ".dieter-mock-"+mainCard.ID)
+	projectMarker := filepath.Join(repository, ".dieter-mock-"+projectCard.ID)
 	worktreeMarker := filepath.Join(worktree.Path, ".dieter-mock-"+worktreeCard.ID)
-	for _, marker := range []string{mainMarker, worktreeMarker} {
+	for _, marker := range []string{projectMarker, worktreeMarker} {
 		if _, err := os.Stat(marker); err != nil {
 			t.Fatalf("expected isolated marker %s: %v", marker, err)
 		}
 	}
 	for _, marker := range []string{
 		filepath.Join(repository, ".dieter-mock-"+worktreeCard.ID),
-		filepath.Join(worktree.Path, ".dieter-mock-"+mainCard.ID),
+		filepath.Join(worktree.Path, ".dieter-mock-"+projectCard.ID),
 	} {
 		if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("marker leaked into another workspace: %s err=%v", marker, err)
@@ -446,8 +446,8 @@ func TestConcurrentMainAndWorktreeHarnessTurnsStayIsolatedEndToEnd(t *testing.T)
 func TestWorkspaceProvisioningFailureDoesNotConsumeInitialTurn(t *testing.T) {
 	service, _, project, _ := appSetup(t)
 	card, err := service.CreateChat(context.Background(), CardInput{
-		Project: project.ID, Title: "Invalid branch workspace", Prompt: "work",
-		WorkspaceMode: model.WorkspaceModeBranch, DeferStart: true,
+		Project: project.ID, Title: "Invalid worktree base", Prompt: "work",
+		WorkspaceMode: model.WorkspaceModeWorktree, WorkspaceBaseBranch: "missing-base", DeferStart: true,
 	})
 	if err != nil {
 		t.Fatal(err)

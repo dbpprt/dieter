@@ -63,6 +63,45 @@ func TestChangesetIncludesTrackedAndUntrackedDiffsAndRejectsStaleRevision(t *tes
 	}
 }
 
+func TestProjectDirectoryChangesetUsesItsCurrentFeatureBranch(t *testing.T) {
+	repository := testRepository(t)
+	runGit(t, repository, "switch", "-c", "feature/direct")
+	if err := os.WriteFile(filepath.Join(repository, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repository, "add", "feature.txt")
+	runGit(t, repository, "commit", "-m", "feature commit")
+
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Direct", Prompt: "work", WorkspaceMode: model.WorkspaceModeProject})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := workspace.New(data, nil)
+	value, err := manager.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := changeset.New(manager).Get(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalRepository, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Path != canonicalRepository || value.Branch != "feature/direct" || len(set.Commits) != 1 || set.Commits[0].Subject != "feature commit" {
+		t.Fatalf("unexpected direct feature-branch changeset: workspace=%#v changes=%#v", value, set)
+	}
+}
+
 func testRepository(t *testing.T) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "repository")

@@ -449,17 +449,14 @@ private struct IslandCount: View {
     var animated = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: animated ? 0.08 : 1, paused: !animated)) { context in
-            HStack(spacing: 5) {
-                Image(systemName: symbol)
-                    .font(.system(size: 10.5, weight: .bold))
-                    .rotationEffect(.degrees(animated ? context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4 * 360 : 0))
-                if count > 0 { Text(String(count)).contentTransition(.numericText()) }
-            }
-            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-            .foregroundStyle(color)
-            .shadow(color: color.opacity(0.28), radius: 7)
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 10.5, weight: .bold))
+            if count > 0 { Text(String(count)).contentTransition(.numericText()) }
         }
+        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+        .foregroundStyle(color)
+        .shadow(color: color.opacity(animated ? 0.28 : 0.18), radius: animated ? 7 : 4)
         .fixedSize()
     }
 }

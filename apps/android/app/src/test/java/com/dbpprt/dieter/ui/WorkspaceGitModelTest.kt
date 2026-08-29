@@ -15,6 +15,18 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+class ConversationWorkspaceModeTest {
+    @Test
+    fun exposesOnlyProjectDirectoryAndWorktreeWhileReadingLegacyValues() {
+        assertEquals(listOf(ConversationWorkspaceMode.WORKTREE, ConversationWorkspaceMode.PROJECT), ConversationWorkspaceMode.entries)
+        assertEquals(ConversationWorkspaceMode.WORKTREE, ConversationWorkspaceMode.resolve("WORKTREE"))
+        assertEquals(ConversationWorkspaceMode.PROJECT, ConversationWorkspaceMode.resolve("project"))
+        assertEquals(ConversationWorkspaceMode.PROJECT, ConversationWorkspaceMode.resolve("main"))
+        assertEquals(ConversationWorkspaceMode.PROJECT, ConversationWorkspaceMode.resolve("branch"))
+        assertEquals("Project directory", ConversationWorkspaceMode.PROJECT.title)
+    }
+}
+
 class UnifiedDiffParserTest {
     @Test
     fun numbersAdditionsDeletionsAndContextFromHunkHeaders() {
@@ -113,9 +125,12 @@ class WorkspaceActionAvailabilityTest {
         scmAuthenticated: Boolean = false,
         hasPullRequest: Boolean = false,
         dirty: Boolean = false,
+        workspaceBranch: String = "feature/test",
+        baseBranch: String = "main",
     ) = WorkspaceActionAvailability(
         agentActive, operationActive, workspaceState, workspaceMode,
         changedFiles, hasCommits, hasRemote, scmAuthenticated, hasPullRequest, dirty,
+        workspaceBranch, baseBranch,
     )
 
     @Test
@@ -143,10 +158,10 @@ class WorkspaceActionAvailabilityTest {
     }
 
     @Test
-    fun mergeLocalNeedsCommitsAndCleanTreeOutsideMain() {
+    fun mergeLocalNeedsACleanWorktreeWithCommits() {
         assertTrue(availability(hasCommits = true).allows(GitOperationKinds.MERGE_LOCAL))
         assertFalse(availability(hasCommits = true, changedFiles = 1).allows(GitOperationKinds.MERGE_LOCAL))
-        assertFalse(availability(workspaceMode = "main", hasCommits = true).allows(GitOperationKinds.MERGE_LOCAL))
+        assertFalse(availability(workspaceMode = "project", hasCommits = true).allows(GitOperationKinds.MERGE_LOCAL))
     }
 
     @Test
@@ -155,16 +170,21 @@ class WorkspaceActionAvailabilityTest {
         assertTrue(ready.allows(GitOperationKinds.CREATE_PR))
         assertFalse(ready.copy(hasPullRequest = true).allows(GitOperationKinds.CREATE_PR))
         assertFalse(ready.copy(scmAuthenticated = false).allows(GitOperationKinds.CREATE_PR))
-        assertFalse(ready.copy(workspaceMode = "main").allows(GitOperationKinds.CREATE_PR))
+        assertFalse(ready.copy(workspaceMode = "project", workspaceBranch = "main").allows(GitOperationKinds.CREATE_PR))
         assertFalse(ready.allows(GitOperationKinds.MERGE_PR))
         assertTrue(ready.copy(hasPullRequest = true).allows(GitOperationKinds.MERGE_PR))
     }
 
     @Test
-    fun migrateOnlyMovesCleanBranchWorkspaces() {
-        assertTrue(availability(workspaceMode = "branch").allows(GitOperationKinds.MIGRATE))
-        assertFalse(availability(workspaceMode = "branch", changedFiles = 1).allows(GitOperationKinds.MIGRATE))
-        assertFalse(availability(workspaceMode = "worktree").allows(GitOperationKinds.MIGRATE))
+    fun projectDirectoryActionsFollowItsCheckedOutBranch() {
+        val feature = availability(workspaceMode = "project", hasCommits = true, hasRemote = true, scmAuthenticated = true)
+        assertTrue(feature.allows(GitOperationKinds.PUSH))
+        assertTrue(feature.allows(GitOperationKinds.CREATE_PR))
+        assertFalse(feature.allows(GitOperationKinds.MERGE_LOCAL))
+        assertFalse(feature.allows(GitOperationKinds.DISCARD))
+        val base = feature.copy(workspaceBranch = "main")
+        assertFalse(base.allows(GitOperationKinds.PUSH))
+        assertFalse(base.allows(GitOperationKinds.CREATE_PR))
     }
 
     @Test
@@ -175,11 +195,11 @@ class WorkspaceActionAvailabilityTest {
     }
 
     @Test
-    fun mergeFlowOpensForDirtyOrCommittedWorkButNeverOnMain() {
+    fun mergeFlowOpensForDirtyOrCommittedWorktreesOnly() {
         assertTrue(availability(changedFiles = 1).allowsMergeFlow)
         assertTrue(availability(hasCommits = true).allowsMergeFlow)
         assertFalse(availability().allowsMergeFlow)
-        assertFalse(availability(workspaceMode = "main", hasCommits = true).allowsMergeFlow)
+        assertFalse(availability(workspaceMode = "project", hasCommits = true).allowsMergeFlow)
     }
 }
 
@@ -243,8 +263,8 @@ class WorkspaceAvailabilityDerivationTest {
     fun derivesFromFreshWorkspaceOverCardSummary() {
         val card = Card.newBuilder()
             .setRuntime("idle")
-            .setWorkspaceMode("main")
-            .setWorkspace(WorkspaceSummary.newBuilder().setMode("main").setChangedFiles(9))
+            .setWorkspaceMode("project")
+            .setWorkspace(WorkspaceSummary.newBuilder().setMode("project").setChangedFiles(9))
             .build()
         val review = WorkspaceReviewState(
             cardId = "c1",

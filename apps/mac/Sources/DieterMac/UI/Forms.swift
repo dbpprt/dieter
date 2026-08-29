@@ -155,20 +155,22 @@ struct NewConversationSheet: View {
                             newCardMenu(
                                 title: "Workspace",
                                 value: workspaceDraft.mode.title,
-                                symbol: workspaceDraft.mode == .worktree ? "square.stack.3d.up" : "arrow.triangle.branch"
+                                symbol: workspaceDraft.mode.symbol
                             ) {
                                 ForEach(ConversationWorkspaceMode.allCases) { mode in
                                     Button(mode.title) { workspaceDraft.mode = mode }
                                 }
                             }
-                            Button(workspaceAdvanced ? "Hide details" : "Branch details…") {
-                                workspaceAdvanced.toggle()
+                            if workspaceDraft.mode == .worktree {
+                                Button(workspaceAdvanced ? "Hide details" : "Worktree details…") {
+                                    workspaceAdvanced.toggle()
+                                }
+                                .buttonStyle(DieterSecondaryButtonStyle())
                             }
-                            .buttonStyle(DieterSecondaryButtonStyle())
                         }
                         Text(workspaceDraft.mode.detail)
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                        if workspaceAdvanced {
+                        if workspaceAdvanced && workspaceDraft.mode == .worktree {
                             HStack(spacing: 11) {
                                 TextField("Generated branch name", text: $workspaceDraft.branch)
                                     .textFieldStyle(.plain).padding(.horizontal, 11).frame(height: 36)
@@ -379,7 +381,7 @@ private struct ConversationWorkspacePickerSheet: View {
                         .foregroundStyle(DieterTheme.tertiary)
                     Text("Where should the agent work?")
                         .font(.system(size: 20, weight: .semibold))
-                    Text("Choose whether this conversation gets an isolated Git checkout or shares the registered one.")
+                    Text("Choose whether this conversation gets a new isolated worktree or uses the registered project directory.")
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
@@ -395,12 +397,12 @@ private struct ConversationWorkspacePickerSheet: View {
                     workspaceOption(
                         .worktree,
                         badge: "Recommended",
-                        detail: "An isolated checkout on its own branch. The registered checkout stays clean for concurrent work and review."
+                        detail: "Creates a new isolated checkout and branch. The project directory stays untouched for concurrent work and review."
                     )
                     workspaceOption(
-                        .main,
+                        .project,
                         badge: "Direct",
-                        detail: "Works directly in the registered checkout on its current branch. Changes appear there immediately."
+                        detail: "Works directly in the registered project directory on its current branch. Dieter never switches it."
                     )
                 }
 
@@ -446,7 +448,7 @@ private struct ConversationWorkspacePickerSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
                 Button { applySelection() } label: {
-                    Label(draftMode == .worktree ? "Use worktree" : "Use main checkout", systemImage: draftMode.symbol)
+                    Label(draftMode == .worktree ? "Create worktree" : "Use project directory", systemImage: draftMode.symbol)
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
@@ -564,7 +566,7 @@ struct EditCardSheet: View {
         _title = State(initialValue: card.title)
         _task = State(initialValue: card.initialPrompt)
         _workspaceDraft = State(initialValue: .init(
-            mode: ConversationWorkspaceMode(rawValue: card.workspaceMode) ?? .main,
+            mode: ConversationWorkspaceMode.selectable(card.workspaceMode),
             branch: card.workspaceBranch,
             baseBranch: card.workspaceBaseBranch
         ))
@@ -635,9 +637,11 @@ struct EditCardSheet: View {
                         ForEach(ConversationWorkspaceMode.allCases) { mode in Text(mode.title).tag(mode) }
                     }
                     .pickerStyle(.menu)
-                    HStack {
-                        TextField("Optional branch", text: $workspaceDraft.branch)
-                        TextField("Optional base branch", text: $workspaceDraft.baseBranch)
+                    if workspaceDraft.mode == .worktree {
+                        HStack {
+                            TextField("Optional branch", text: $workspaceDraft.branch)
+                            TextField("Optional base branch", text: $workspaceDraft.baseBranch)
+                        }
                     }
                     Text(workspaceDraft.mode.detail).font(.caption).foregroundStyle(DieterTheme.tertiary)
                 } else {

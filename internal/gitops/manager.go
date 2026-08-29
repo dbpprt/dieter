@@ -81,7 +81,7 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 	if m.Busy != nil && m.Busy(workspaceValue.CardID) {
 		return model.GitOperation{}, fmt.Errorf("%w: active terminal or process", ErrWorkspaceBusy)
 	}
-	if workspaceValue.Mode == model.WorkspaceModeMain || workspaceValue.Mode == model.WorkspaceModeBranch || request.Kind == "merge_local" {
+	if workspaceValue.Mode == model.WorkspaceModeProject || request.Kind == "merge_local" {
 		if active, activeErr := m.Store.ProjectHasRuntimeLease(workspaceValue.ProjectID, workspaceValue.CardID); activeErr != nil {
 			return model.GitOperation{}, activeErr
 		} else if active {
@@ -144,7 +144,7 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 func supportedOperation(value string) bool {
 	switch value {
 	case "commit", "update", "abort_conflict", "continue_conflict", "validate", "merge_local", "push",
-		"cleanup", "discard", "adopt", "migrate", "create_pr", "refresh_pr", "merge_pr":
+		"cleanup", "discard", "adopt", "create_pr", "refresh_pr", "merge_pr":
 		return true
 	default:
 		return false
@@ -169,9 +169,7 @@ func (m *Manager) run(ctx context.Context, operation model.GitOperation) {
 	m.notify(operation.ID)
 
 	workspaceValue, err := m.Workspaces.Ensure(ctx, operation.CardID)
-	if err == nil && operation.Kind == "migrate" {
-		err = m.execute(ctx, &operation, workspaceValue)
-	} else if err == nil {
+	if err == nil {
 		var release func()
 		release, err = m.Workspaces.LockWorkspace(ctx, operation.CardID)
 		if err == nil {
@@ -238,8 +236,6 @@ func (m *Manager) execute(ctx context.Context, operation *model.GitOperation, va
 		return m.cleanup(ctx, operation, value, true)
 	case "adopt":
 		return m.adopt(ctx, operation, value)
-	case "migrate":
-		return m.migrate(ctx, operation, value)
 	case "create_pr":
 		return m.createPullRequest(ctx, operation, value)
 	case "refresh_pr":
@@ -294,13 +290,13 @@ func (m *Manager) commit(ctx context.Context, operation *model.GitOperation, val
 }
 
 func (m *Manager) update(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	if value.Mode == model.WorkspaceModeMain {
+	if !hasReviewBranch(value) {
 		clean, err := m.isClean(ctx, value.Path)
 		if err != nil {
 			return err
 		}
 		if !clean {
-			return errors.New("main workspace must be clean before updating")
+			return errors.New("project directory must be clean before updating its current branch")
 		}
 	}
 	target := value.BaseBranch
@@ -314,11 +310,11 @@ func (m *Manager) update(ctx context.Context, operation *model.GitOperation, val
 	if target == "" {
 		return errors.New("workspace base branch is not configured")
 	}
-	if value.Mode == model.WorkspaceModeMain {
+	if !hasReviewBranch(value) {
 		if _, err := m.Git.Run(ctx, value.Path, "merge", "--ff-only", target); err != nil {
 			return err
 		}
-		m.step(operation, "fast-forwarded main workspace")
+		m.step(operation, "fast-forwarded project directory")
 		_, _ = m.Workspaces.Refresh(ctx, value.CardID, false)
 		return nil
 	}
@@ -451,8 +447,8 @@ func (m *Manager) validate(ctx context.Context, operation *model.GitOperation, d
 }
 
 func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	if value.Mode == model.WorkspaceModeMain {
-		return errors.New("main workspaces are already on the target branch")
+	if value.Mode != model.WorkspaceModeWorktree {
+		return errors.New("local merge requires a worktree workspace")
 	}
 	clean, err := m.isClean(ctx, value.Path)
 	if err != nil {
@@ -548,12 +544,6 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	}
 	defer releaseCheckout()
 	branch, _ := m.gitOutput(ctx, project.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
-	if value.Mode == model.WorkspaceModeBranch && branch == value.Branch {
-		if _, err := m.Git.Run(ctx, project.Path, "switch", value.BaseBranch); err != nil {
-			return err
-		}
-		branch = value.BaseBranch
-	}
 	if branch != value.BaseBranch {
 		return fmt.Errorf("registered checkout must be on %s before local merge", value.BaseBranch)
 	}
@@ -586,6 +576,9 @@ func (m *Manager) push(ctx context.Context, operation *model.GitOperation, value
 	if value.Branch == "" {
 		return errors.New("workspace is not on a branch")
 	}
+	if !hasReviewBranch(value) {
+		return errors.New("the project directory is on its base branch; switch branches or use a worktree before pushing a review branch")
+	}
 	args := []string{"push", "--set-upstream", value.BaseRemote, value.Branch + ":" + value.Branch}
 	if operation.Parameters["force_with_lease"] == "true" {
 		expected := strings.TrimSpace(operation.Parameters["expected_remote_sha"])
@@ -601,6 +594,10 @@ func (m *Manager) push(ctx context.Context, operation *model.GitOperation, value
 	return nil
 }
 
+func hasReviewBranch(value model.Workspace) bool {
+	return value.Branch != "" && value.BaseBranch != "" && value.Branch != value.BaseBranch
+}
+
 func (m *Manager) cleanup(ctx context.Context, operation *model.GitOperation, value model.Workspace, discard bool) error {
 	if m.Busy != nil && m.Busy(value.CardID) {
 		return fmt.Errorf("%w: active terminal or process", ErrWorkspaceBusy)
@@ -612,6 +609,12 @@ func (m *Manager) cleanup(ctx context.Context, operation *model.GitOperation, va
 	if !clean && !discard {
 		return errors.New("workspace has uncommitted changes")
 	}
+	if value.Mode == model.WorkspaceModeProject {
+		if discard {
+			return errors.New("Dieter cannot discard the user-owned project directory")
+		}
+		return m.Store.DeleteWorkspace(value.CardID)
+	}
 	project, err := m.Store.ResolveProject(value.ProjectID)
 	if err != nil {
 		return err
@@ -621,37 +624,19 @@ func (m *Manager) cleanup(ctx context.Context, operation *model.GitOperation, va
 			return err
 		}
 	}
-	if value.Mode == model.WorkspaceModeMain {
-		return m.Store.DeleteWorkspace(value.CardID)
-	}
 	integrated := value.State == model.WorkspaceStateCleanupPending && value.IntegratedHeadSHA != "" && value.IntegratedHeadSHA == value.HeadSHA
 	if !discard && value.HeadSHA != "" && !integrated {
 		if _, err := m.Git.Run(ctx, value.Path, "merge-base", "--is-ancestor", value.HeadSHA, value.BaseBranch); err != nil {
 			return errors.New("workspace branch is not merged into its base")
 		}
 	}
-	if value.Mode == model.WorkspaceModeBranch {
-		current, _ := m.gitOutput(ctx, project.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
-		if current == value.Branch {
-			if !clean && discard {
-				if _, err := m.Git.Run(ctx, project.Path, "reset", "--hard", "HEAD"); err != nil {
-					return err
-				}
-				_, _ = m.Git.Run(ctx, project.Path, "clean", "-fd")
-			}
-			if _, err := m.Git.Run(ctx, project.Path, "switch", value.BaseBranch); err != nil {
-				return err
-			}
-		}
-	} else {
-		args := []string{"worktree", "remove"}
-		if discard {
-			args = append(args, "--force")
-		}
-		args = append(args, value.Path)
-		if _, err := m.Git.Run(ctx, project.Path, args...); err != nil {
-			return err
-		}
+	args := []string{"worktree", "remove"}
+	if discard {
+		args = append(args, "--force")
+	}
+	args = append(args, value.Path)
+	if _, err := m.Git.Run(ctx, project.Path, args...); err != nil {
+		return err
 	}
 	if value.ManagedBranch && value.Branch != "" {
 		deleteFlag := "-d"
@@ -778,65 +763,9 @@ func (m *Manager) adopt(ctx context.Context, operation *model.GitOperation, valu
 	return nil
 }
 
-func (m *Manager) migrate(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	mode := strings.TrimSpace(operation.Parameters["mode"])
-	if mode == value.Mode {
-		return nil
-	}
-	if mode != model.WorkspaceModeWorktree {
-		return errors.New("only migration to worktree mode is supported after a conversation starts")
-	}
-	if value.Mode != model.WorkspaceModeBranch {
-		return errors.New("only branch workspaces can be migrated to worktree mode")
-	}
-	releaseWorkspace, err := m.Workspaces.LockWorkspace(ctx, value.CardID)
-	if err != nil {
-		return err
-	}
-	clean, err := m.isClean(ctx, value.Path)
-	if err != nil || !clean {
-		releaseWorkspace()
-		return errors.New("workspace must be clean before migration")
-	}
-	project, err := m.Store.ResolveProject(value.ProjectID)
-	if err != nil {
-		releaseWorkspace()
-		return err
-	}
-	releaseCheckout, err := m.Workspaces.LockCheckout(ctx, value.ProjectID)
-	if err != nil {
-		releaseWorkspace()
-		return err
-	}
-	if _, err := m.Git.Run(ctx, project.Path, "switch", value.BaseBranch); err != nil {
-		releaseCheckout()
-		releaseWorkspace()
-		return err
-	}
-	if _, err := m.Store.UpdateCardWorkspaceSelection(value.CardID, mode, value.Branch, value.BaseBranch, true); err != nil {
-		releaseCheckout()
-		releaseWorkspace()
-		return err
-	}
-	if err := m.Store.DeleteWorkspace(value.CardID); err != nil {
-		releaseCheckout()
-		releaseWorkspace()
-		return err
-	}
-	releaseCheckout()
-	releaseWorkspace()
-	created, err := m.Workspaces.Ensure(ctx, value.CardID)
-	if err != nil {
-		return err
-	}
-	operation.Result = created.Path
-	m.step(operation, "migrated workspace to worktree mode")
-	return nil
-}
-
 func (m *Manager) createPullRequest(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	if value.Mode == model.WorkspaceModeMain {
-		return errors.New("main workspace cannot create a pull request")
+	if !hasReviewBranch(value) {
+		return errors.New("the project directory is on its base branch; switch branches or use a worktree before creating a pull request")
 	}
 	if operation.Parameters["push"] != "false" {
 		if err := m.push(ctx, operation, value); err != nil {

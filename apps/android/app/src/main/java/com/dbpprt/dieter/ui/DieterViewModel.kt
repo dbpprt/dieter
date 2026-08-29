@@ -1218,6 +1218,7 @@ class DieterViewModel(
     ) = action(ensureProjectRoute = false) {
         val current = _state.value
         check(current.project != null) { "Select a project before creating a conversation." }
+        val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(workspaceMode)
         val request = CreateConversationRequest.newBuilder()
             .setProjectId(current.selectedProjectId)
             .setBoardId(if (chat) "" else current.selectedBoardId)
@@ -1227,9 +1228,9 @@ class DieterViewModel(
             .setProvider(provider)
             .setModel(model)
             .setEffort(effort)
-            .setWorkspaceMode(workspaceMode.ifBlank { ConversationWorkspaceMode.WORKTREE.wire })
-            .setWorkspaceBranch(workspaceBranch.trim())
-            .setWorkspaceBaseBranch(workspaceBaseBranch.trim())
+            .setWorkspaceMode(selectedWorkspaceMode.wire)
+            .setWorkspaceBranch(workspaceBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
+            .setWorkspaceBaseBranch(workspaceBaseBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
             .addAllLabelIds(if (chat) emptyList() else labelIds)
             .setDeferStart(deferStart)
             .addAllAttachments(attachments)
@@ -2079,7 +2080,13 @@ class DieterViewModel(
 
     fun updateConversationWorkspace(mode: String, branch: String, baseBranch: String) = action {
         val cardId = _state.value.selectedCardId ?: return@action
-        updateCard(repository.updateConversationWorkspace(cardId, mode, branch, baseBranch))
+        val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(mode)
+        updateCard(repository.updateConversationWorkspace(
+            cardId,
+            selectedWorkspaceMode.wire,
+            branch.takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty(),
+            baseBranch.takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty(),
+        ))
         loadWorkspaceSurface()
     }
 

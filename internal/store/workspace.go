@@ -17,7 +17,7 @@ const maxGitOperationLogBytes = 8 << 20
 
 func validWorkspaceMode(value string) bool {
 	switch value {
-	case model.WorkspaceModeMain, model.WorkspaceModeBranch, model.WorkspaceModeWorktree:
+	case model.WorkspaceModeProject, model.WorkspaceModeWorktree:
 		return true
 	default:
 		return false
@@ -25,12 +25,12 @@ func validWorkspaceMode(value string) bool {
 }
 
 func normalizeWorkspaceMode(value string) (string, error) {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		value = model.WorkspaceModeMain
+	if strings.TrimSpace(value) == "" {
+		return model.WorkspaceModeProject, nil
 	}
-	if !validWorkspaceMode(value) {
-		return "", errors.New("workspace mode must be main, branch, or worktree")
+	value, ok := model.CanonicalWorkspaceMode(value)
+	if !ok || !validWorkspaceMode(value) {
+		return "", errors.New("workspace mode must be project or worktree")
 	}
 	return value, nil
 }
@@ -86,6 +86,10 @@ func (s *Store) WorkspaceByCardID(cardID string) (model.Workspace, error) {
 	}
 	var value model.Workspace
 	err := readJSON(filepath.Join(s.workspaceDir(), cardID+".json"), &value)
+	if err == nil {
+		value.Mode, err = normalizeWorkspaceMode(value.Mode)
+		value.ManagedBranch = value.ManagedBranch && value.Mode == model.WorkspaceModeWorktree
+	}
 	return value, err
 }
 
@@ -124,6 +128,77 @@ func (s *Store) SaveWorkspace(value model.Workspace) (model.Workspace, error) {
 	return value, writeJSON(filepath.Join(s.workspaceDir(), value.CardID+".json"), value)
 }
 
+// UpdateWorkspaceChangesetStats patches only derived changeset counters. A
+// changeset can take long enough to overlap a Git operation, so saving the
+// snapshot it started with would otherwise overwrite newer lifecycle state
+// such as cleanup_pending and its integration metadata.
+func (s *Store) UpdateWorkspaceChangesetStats(cardID string, changedFiles, additions, deletions int) (model.Workspace, error) {
+	if !validFileID(cardID) {
+		return model.Workspace{}, errors.New("workspace card ID is invalid")
+	}
+	release, err := s.beginWrite()
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	defer release()
+	var value model.Workspace
+	if err := readJSON(filepath.Join(s.workspaceDir(), cardID+".json"), &value); err != nil {
+		return model.Workspace{}, err
+	}
+	value.ChangedFiles = changedFiles
+	value.Additions = additions
+	value.Deletions = deletions
+	value.UpdatedAt = timestamp()
+	if err := writeJSON(filepath.Join(s.workspaceDir(), cardID+".json"), value); err != nil {
+		return model.Workspace{}, err
+	}
+	return value, nil
+}
+
+// UpdateWorkspaceGitState applies fields observed from Git while preserving
+// operation and integration fields that may have changed since the refresh
+// began.
+func (s *Store) UpdateWorkspaceGitState(observed model.Workspace, includeSize bool) (model.Workspace, error) {
+	if !validFileID(observed.CardID) {
+		return model.Workspace{}, errors.New("workspace card ID is invalid")
+	}
+	release, err := s.beginWrite()
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	defer release()
+	var current model.Workspace
+	if err := readJSON(filepath.Join(s.workspaceDir(), observed.CardID+".json"), &current); err != nil {
+		return model.Workspace{}, err
+	}
+	current.Mode, err = normalizeWorkspaceMode(current.Mode)
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	current.ManagedBranch = current.ManagedBranch && current.Mode == model.WorkspaceModeWorktree
+	current.Branch = observed.Branch
+	current.HeadSHA = observed.HeadSHA
+	current.CurrentBaseSHA = observed.CurrentBaseSHA
+	current.Dirty = observed.Dirty
+	current.Ahead = observed.Ahead
+	current.Behind = observed.Behind
+	current.Revision = observed.Revision
+	current.LastActivityAt = observed.LastActivityAt
+	if includeSize {
+		current.SizeBytes = observed.SizeBytes
+	}
+	if observed.State == model.WorkspaceStateOrphaned {
+		current.State = model.WorkspaceStateOrphaned
+	} else if current.State != model.WorkspaceStateConflicted && current.State != model.WorkspaceStateRecoveryRequired && current.State != model.WorkspaceStateCleanupPending {
+		current.State = model.WorkspaceStateReady
+	}
+	current.UpdatedAt = timestamp()
+	if err := writeJSON(filepath.Join(s.workspaceDir(), current.CardID+".json"), current); err != nil {
+		return model.Workspace{}, err
+	}
+	return current, nil
+}
+
 func (s *Store) ListWorkspaces(projectRef string) ([]model.Workspace, error) {
 	projectID := ""
 	if strings.TrimSpace(projectRef) != "" {
@@ -143,6 +218,11 @@ func (s *Store) ListWorkspaces(projectRef string) ([]model.Workspace, error) {
 		if err := readJSON(path, &value); err != nil {
 			return nil, err
 		}
+		value.Mode, err = normalizeWorkspaceMode(value.Mode)
+		if err != nil {
+			return nil, err
+		}
+		value.ManagedBranch = value.ManagedBranch && value.Mode == model.WorkspaceModeWorktree
 		if projectID == "" || value.ProjectID == projectID {
 			result = append(result, value)
 		}

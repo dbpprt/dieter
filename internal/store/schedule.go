@@ -32,12 +32,10 @@ func normalizeScheduleInput(input ScheduleInput) (ScheduleInput, error) {
 	input.PromptTemplate = strings.TrimSpace(input.PromptTemplate)
 	input.Provider = strings.TrimSpace(input.Provider)
 	input.Model = strings.TrimSpace(input.Model)
-	input.WorkspaceMode = strings.ToLower(strings.TrimSpace(input.WorkspaceMode))
-	if input.WorkspaceMode == "" {
-		input.WorkspaceMode = model.WorkspaceModeMain
-	}
-	if !validWorkspaceMode(input.WorkspaceMode) {
-		return input, errors.New("workspace mode must be main, branch, or worktree")
+	var err error
+	input.WorkspaceMode, err = normalizeWorkspaceMode(input.WorkspaceMode)
+	if err != nil {
+		return input, err
 	}
 	if input.Name == "" || input.Cron == "" || input.Timezone == "" {
 		return input, errors.New("schedule name, cron expression, and timezone are required")
@@ -113,8 +111,9 @@ func (s *Store) readSchedule(path string) (model.Schedule, error) {
 		return model.Schedule{}, err
 	}
 	item.PromptTemplate = body
-	if item.WorkspaceMode == "" {
-		item.WorkspaceMode = model.WorkspaceModeMain
+	item.WorkspaceMode, err = normalizeWorkspaceMode(item.WorkspaceMode)
+	if err != nil {
+		return model.Schedule{}, err
 	}
 	return item, nil
 }

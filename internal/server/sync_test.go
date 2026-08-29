@@ -78,7 +78,7 @@ func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
 
 	chatRequest := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Outbox chat", Prompt: "Wait", Provider: "mock", Model: "mock", DeferStart: true,
-		WorkspaceMode: model.WorkspaceModeMain,
+		WorkspaceMode: model.WorkspaceModeProject,
 		ClientId:      "android-installation", CommandId: "chat-1",
 	}
 	chat, err := client.CreateChat(ctx, connect.NewRequest(chatRequest))
@@ -259,7 +259,7 @@ func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {
 
 	chat, err := client.CreateChat(ctx, connect.NewRequest(&dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Warm cache", Prompt: "Hold", Provider: "mock", Model: "mock", DeferStart: true,
-		WorkspaceMode: model.WorkspaceModeMain,
+		WorkspaceMode: model.WorkspaceModeProject,
 		ClientId:      "android-installation", CommandId: "bounded-chat-1",
 	}))
 	if err != nil {
