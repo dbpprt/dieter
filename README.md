@@ -87,6 +87,12 @@ brew install dbpprt/tap/dieter
 dieter setup ~/Development/my-project
 ```
 
+Confirm that the daemon is running and connected:
+
+```sh
+dieter daemon status
+```
+
 `dieter setup` registers the Git working tree, enrolls the Mac, guides the
 macOS Screen & System Audio Recording permission, proves the exact
 signed ScreenCaptureKit/VideoToolbox helper with one discarded frame, guides
