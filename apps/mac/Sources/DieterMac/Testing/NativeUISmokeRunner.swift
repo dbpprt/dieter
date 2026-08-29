@@ -350,8 +350,10 @@ enum NativeUISmokeRunner {
                 effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort ?? "",
                 deferred: true,
                 lane: todoLane.id,
-                workspaceMode: "worktree",
-                workspaceBaseBranch: project.baseBranch
+                workspace: ConversationWorkspaceDraft(
+                    mode: .worktree,
+                    baseBranch: project.baseBranch
+                )
             )
             let created = await waitUntil(timeout: 10) {
                 store.state.cards.contains {

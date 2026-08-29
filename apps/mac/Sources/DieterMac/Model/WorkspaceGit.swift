@@ -12,7 +12,7 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .projectDefault: "Project default"
-        case .worktree: "Isolated worktree"
+        case .worktree: "Worktree"
         case .branch: "Dedicated branch"
         case .main: "Main checkout"
         }
@@ -38,6 +38,17 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
 
     static func projectMode(_ value: String) -> ConversationWorkspaceMode {
         ConversationWorkspaceMode(rawValue: value) ?? .main
+    }
+
+    static func selectable(_ rawValue: String?) -> ConversationWorkspaceMode {
+        rawValue?.lowercased() == Self.worktree.rawValue ? .worktree : .main
+    }
+
+    var symbol: String {
+        switch self {
+        case .worktree: "point.3.connected.trianglepath.dotted"
+        case .projectDefault, .branch, .main: "folder"
+        }
     }
 }
 
