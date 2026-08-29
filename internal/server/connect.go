@@ -372,6 +372,10 @@ func (api *connectAPI) CreateChat(ctx context.Context, request *connect.Request[
 	return connectUnary(ctx, request, api.core.CreateChat)
 }
 
+func (api *connectAPI) ForkChat(ctx context.Context, request *connect.Request[dieterv1.ForkChatRequest]) (*connect.Response[dieterv1.Card], error) {
+	return connectUnary(ctx, request, api.core.ForkChat)
+}
+
 func (api *connectAPI) ListChats(ctx context.Context, request *connect.Request[dieterv1.ListChatsRequest]) (*connect.Response[dieterv1.ChatsResponse], error) {
 	return connectUnary(ctx, request, api.core.ListChats)
 }

@@ -22,9 +22,10 @@ through either verified direct TLS or the bounded relay.
 - Server/agent settings, endpoint management, notifications, command palette,
   and a menu-bar status surface
 
-The 22 extracted design references are in [`reference`](reference/README.md).
-They are reproducibly generated from the supplied PDF by
-`design/extract_reference_images.py`.
+The 41 view-level design references are indexed in
+[`reference`](reference/README.md). They are reproducibly and losslessly
+extracted from the source design PDF by `design/extract_reference_images.py`;
+the source PDF itself is not checked in.
 
 ## Develop
 

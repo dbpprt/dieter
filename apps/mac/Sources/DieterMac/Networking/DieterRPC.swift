@@ -358,6 +358,10 @@ final class DieterRPC: Sendable {
         try await service.createChat(request: .init(message: request), options: Self.attachmentCallOptions())
     }
 
+    func forkChat(_ request: Dieter_V1_ForkChatRequest) async throws -> Dieter_V1_Card {
+        try await service.forkChat(request: .init(message: request))
+    }
+
     func chats(includeArchived: Bool = false) async throws -> Dieter_V1_ChatsResponse {
         var request = Dieter_V1_ListChatsRequest(); request.includeArchived = includeArchived
         return try await service.listChats(

@@ -1805,6 +1805,10 @@ private fun CardDetailScreen(
                         leadingIcon = { Icon(Icons.Outlined.Edit, null) },
                         onClick = { actionsOpen = false; renameOpen = true },
                     )
+                    DropdownMenuItem(
+                        text = { Text("Fork as new chat") },
+                        onClick = { actionsOpen = false; model.forkSelected() },
+                    )
                     if (card.scope == "board") {
                         DropdownMenuItem(
                             text = { Text("Labels") },
@@ -2146,6 +2150,13 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
         card?.id?.let(state.cardOperations::get),
     )
     val activeTurn = isActiveCardRuntime(runtime)
+    val turnFailure = resolveConversationTurnFailure(
+        messages = allMessages,
+        conversationStatus = conversation?.status.orEmpty(),
+        cardRuntime = card?.runtime.orEmpty(),
+    )
+    var presentedFailureLog by remember(card?.id, turnFailure?.log) { mutableStateOf<String?>(null) }
+    var failureRetryQueued by remember(card?.id, turnFailure?.log) { mutableStateOf(false) }
     val assistantCount = messages.count { it.role.equals("assistant", true) || it.role.equals("agent", true) }
     // Keep the live cue at the transcript tail for the whole turn. Partial
     // assistant text must not make the agent appear idle while it is still
@@ -2177,6 +2188,7 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
         if (state.error != null || assistantCount > assistantCountAtSend || (observedActiveTurn && !activeTurn)) {
             awaitingAgent = false
         }
+        if (activeTurn || turnFailure == null || state.error != null) failureRetryQueued = false
     }
     var consumedScrollRequest by remember(state.selectedCardId) { mutableStateOf(Long.MIN_VALUE) }
     LaunchedEffect(listState) {
@@ -2371,6 +2383,21 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
                             AgentWorkingIndicator(conversation?.pendingToolsList?.lastOrNull()?.toolName.orEmpty())
                         }
                     }
+                    if (turnFailure != null) {
+                        item(key = "turn-failure") {
+                            TurnFailureBanner(
+                                failure = turnFailure,
+                                retrying = failureRetryQueued,
+                                onViewLog = { presentedFailureLog = turnFailure.log },
+                                onRetry = {
+                                    if (!failureRetryQueued) {
+                                        failureRetryQueued = true
+                                        model.retryFailedTurn(turnFailure.retryParts)
+                                    }
+                                },
+                            )
+                        }
+                    }
                     items(queuedMessages, key = { "queued-${it.id}" }) { queued ->
                         QueuedMessageBlock(
                             queued = queued,
@@ -2474,6 +2501,109 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
             },
         )
     }
+    presentedFailureLog?.let { log ->
+        TurnFailureLogDialog(log = log, onDismiss = { presentedFailureLog = null })
+    }
+}
+
+@Composable
+internal fun TurnFailureBanner(
+    failure: ConversationTurnFailure,
+    retrying: Boolean,
+    onViewLog: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    Surface(
+        color = DieterSurfaceHigh.copy(alpha = 0.94f),
+        shape = RoundedCornerShape(17.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.48f)),
+        shadowElevation = 4.dp,
+        modifier = Modifier.fillMaxWidth().testTag("turn-failure"),
+    ) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "Turn failed",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    SelectionContainer {
+                        Text(
+                            "Turn failed — ${failure.summary}",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 13.sp,
+                            lineHeight = 18.sp,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Outlined.Cancel, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(color = MaterialTheme.colorScheme.error.copy(alpha = 0.13f), shape = CircleShape) {
+                    Text(
+                        "●  Failed",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onViewLog, modifier = Modifier.testTag("turn-failure-view-log")) {
+                    Text("View log", fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick = onRetry,
+                    enabled = !retrying && failure.retryParts.isNotEmpty(),
+                    modifier = Modifier.testTag("turn-failure-retry"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface,
+                    ),
+                ) {
+                    if (retrying) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Outlined.Refresh, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(if (retrying) "Retry queued…" else "Retry turn", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun TurnFailureLogDialog(log: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Turn failure log") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Complete output captured from the local harness worker.", color = DieterMuted, fontSize = 12.sp)
+                Surface(
+                    color = DieterSurface,
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
+                ) {
+                    SelectionContainer {
+                        Text(
+                            log,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)
+                                .verticalScroll(rememberScrollState()).padding(12.dp)
+                                .testTag("turn-failure-log"),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        modifier = Modifier.testTag("turn-failure-log-dialog"),
+    )
 }
 
 @Composable

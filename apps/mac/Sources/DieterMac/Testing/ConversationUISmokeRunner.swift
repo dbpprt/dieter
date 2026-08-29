@@ -35,7 +35,13 @@ enum ConversationUISmokeRunner {
         }
         progress("wait finished after \(waited)s, phase \(store.phase.label)", in: output)
         guard store.phase.isConnected else {
-            results["connection"] = "failed: daemon connection did not become ready"
+            let detail: String
+            if case let .failed(message) = store.phase {
+                detail = message
+            } else {
+                detail = store.phase.label
+            }
+            results["connection"] = "failed: daemon connection did not become ready (\(detail))"
             writeReport(results, to: output)
             return
         }
@@ -97,8 +103,66 @@ enum ConversationUISmokeRunner {
         await runActivityIndicatorCheck(store: store, window: window, results: &results, output: output)
         await runQueuedMessageCheck(store: store, window: window, results: &results, output: output)
         await runJumpToLatestCheck(store: store, window: window, results: &results, output: output)
+        await runTurnFailureCheck(store: store, window: window, results: &results, output: output)
 
         writeReport(results, to: output)
+    }
+
+    /// Renders the complete terminal failure affordance in the packaged app
+    /// and proves its retry payload still contains the original prompt.
+    private static func runTurnFailureCheck(
+        store: DieterStore,
+        window: NSWindow,
+        results: inout [String: String],
+        output: URL
+    ) async {
+        guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            results["turn-failure"] = "failed: renderer fixture unavailable"
+            return
+        }
+        var diagnostic = Dieter_V1_MessagePart()
+        diagnostic.type = "text"
+        diagnostic.state = "error"
+        diagnostic.text = "codex exited 1 after 42s (context overflow).\nprovider stderr: context window exceeded\nworker exited with status 1"
+        var assistant = Dieter_V1_UiMessage()
+        assistant.id = "message_failure"
+        assistant.role = "assistant"
+        assistant.parts = [diagnostic]
+        snapshot.conversation.messages.append(assistant)
+        snapshot.conversation.status = "failed"
+        snapshot.detail.card.runtime = "failed"
+        store.conversation = snapshot
+        store.selectedDetail = snapshot.detail
+        try? await DieterTaskSleep.seconds(1)
+        capture(window, to: output.appending(path: "08-turn-failed.png"))
+
+        let failure = ConversationTurnFailure.resolve(
+            messages: snapshot.conversation.messages,
+            conversationStatus: snapshot.conversation.status,
+            cardRuntime: snapshot.detail.card.runtime
+        )
+        results["turn-failure"] = failure != nil ? "passed" : "failed: failure presentation was not resolved"
+        results["turn-failure-log"] = failure?.log.contains("provider stderr") == true
+            ? "passed"
+            : "failed: complete diagnostic was not retained"
+        results["turn-failure-retry"] = failure?.retryParts.first?.text == "Update the config and show the work."
+            ? "passed"
+            : "failed: original prompt was not available for retry"
+
+        // The smoke window has a fixed size and deterministic fixture. Use a
+        // real in-process native click on the visible log action, then require
+        // the SwiftUI sheet to materialize before capturing it.
+        click(window: window, x: 1_223, distanceFromTop: 436)
+        try? await DieterTaskSleep.milliseconds(700)
+        if let sheet = NSApp.windows.first(where: {
+            $0.isSheet && $0.isVisible && $0.contentLayoutRect.width >= 620
+        }) {
+            results["turn-failure-log-action"] = "passed"
+            capture(sheet, to: output.appending(path: "09-turn-failure-log.png"))
+            sheet.sheetParent?.endSheet(sheet)
+        } else {
+            results["turn-failure-log-action"] = "failed: View log did not open the diagnostic sheet"
+        }
     }
 
     /// Grows a model answer after the short fixture has settled at its tail.

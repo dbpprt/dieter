@@ -813,3 +813,42 @@ func TestRuntimeLeaseAllowsParallelProjectTurnsButSerializesCards(t *testing.T) 
 		t.Fatal(err)
 	}
 }
+
+func TestForkChatCopiesPrefixWithoutSharingSession(t *testing.T) {
+	s, project, _ := setup(t, model.WorkflowReview)
+	source, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "Source", Provider: "codex", Model: "gpt-5.6-sol", Effort: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := []model.UIMessage{
+		{ID: "user-1", Role: "user", Parts: []model.UIMessagePart{{Type: "text", Text: "First question"}}},
+		{ID: "assistant-1", Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: "First answer"}}},
+		{ID: "user-2", Role: "user", Parts: []model.UIMessagePart{{Type: "text", Text: "Later question"}}},
+	}
+	if _, err := s.InitializeForkConversation(source.ID, messages); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetConversationSession(source.ID, "", json.RawMessage(`{"type":"resume-session","data":{"threadId":"source"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	fork, err := s.ForkChat(source.ID, "assistant-1", "Alternative")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fork.Scope != model.ConversationScopeChat || fork.Title != "Alternative" || fork.ID == source.ID {
+		t.Fatalf("fork = %#v", fork)
+	}
+	conversation, err := s.Conversation(fork.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conversation.Messages) != 2 || len(conversation.ForkSeed) != 2 {
+		t.Fatalf("messages=%d seed=%d", len(conversation.Messages), len(conversation.ForkSeed))
+	}
+	if len(conversation.Session) != 0 {
+		t.Fatalf("fork shared session: %s", conversation.Session)
+	}
+	if fork.InitialPromptSentAt == "" || fork.Provider != source.Provider || fork.Model != source.Model || fork.Effort != source.Effort {
+		t.Fatalf("fork settings = %#v", fork)
+	}
+}

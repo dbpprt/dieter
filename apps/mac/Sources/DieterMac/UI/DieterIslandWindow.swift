@@ -32,14 +32,15 @@ struct DieterIslandDisplayGeometry: Equatable {
 
     var collapsedSize: CGSize {
         hasPhysicalNotch
-            ? CGSize(width: max(272, notchWidth + 112), height: 38)
-            : CGSize(width: 238, height: 34)
+            ? CGSize(width: max(300, notchWidth + 132), height: 42)
+            : CGSize(width: 270, height: 38)
     }
 
     func expandedSize(itemCount: Int) -> CGSize {
         let visibleRows = min(max(itemCount, 0), 4)
-        let bodyHeight = visibleRows == 0 ? 148 : CGFloat(visibleRows * 49) + 16
-        return CGSize(width: 536, height: 45 + 1 + bodyHeight + 1 + 51)
+        let populatedBodyHeight = CGFloat(visibleRows * 62) + 48
+        let bodyHeight = visibleRows == 0 ? 190 : max(168, populatedBodyHeight)
+        return CGSize(width: 600, height: 68 + 1 + bodyHeight + 1 + 64)
     }
 
     func windowFrame(expanded: Bool, activityItemCount: Int = 4) -> CGRect {
@@ -223,7 +224,7 @@ final class DieterIslandController: NSObject {
     private func targetFrame(expanded: Bool, geometry: DieterIslandDisplayGeometry) -> CGRect {
         geometry.windowFrame(
             expanded: expanded,
-            activityItemCount: DieterIslandActivity.resolve(cards: store.state.cards + store.chats).items.count
+            activityItemCount: DieterIslandActivity.resolve(cards: store.synchronizedCards).items.count
         )
     }
 

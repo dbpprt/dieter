@@ -14,22 +14,43 @@ class ConnectionDialogPolicyTest {
     }
 
     @Test
-    fun transientReconnectGetsAFullSilentGracePeriod() {
-        assertEquals(
-            CONNECTION_DIALOG_GRACE_MS,
-            connectionDialogDelayMs(true, ConnectionPhase.RECONNECTING, 10_000L, 10_000L),
-        )
-        assertEquals(
-            30_000L,
-            connectionDialogDelayMs(true, ConnectionPhase.RECONNECTING, 10_000L, 40_000L),
+    fun reconnectNeverOpensTheConnectionDialogAutomatically() {
+        assertNull(connectionDialogDelayMs(true, ConnectionPhase.RECONNECTING, 10_000L, 10_000L))
+        assertNull(connectionDialogDelayMs(true, ConnectionPhase.RECONNECTING, 10_000L, 70_001L))
+        assertNull(
+            connectionDialogDelayMs(
+                true,
+                ConnectionPhase.UNAVAILABLE,
+                10_000L,
+                70_001L,
+                hasCachedWorkspace = true,
+            ),
         )
     }
 
     @Test
-    fun prolongedFailureBecomesDialogEligible() {
+    fun userActionableFailureGetsGraceBeforeOpeningTheDialog() {
+        assertEquals(
+            CONNECTION_DIALOG_GRACE_MS,
+            connectionDialogDelayMs(true, ConnectionPhase.AUTH_REQUIRED, 10_000L, 10_000L),
+        )
         assertEquals(
             0L,
-            connectionDialogDelayMs(true, ConnectionPhase.UNAVAILABLE, 10_000L, 70_001L),
+            connectionDialogDelayMs(true, ConnectionPhase.AUTH_REQUIRED, 10_000L, 70_001L),
+        )
+        assertEquals(
+            0L,
+            connectionDialogDelayMs(true, ConnectionPhase.INCOMPATIBLE, 10_000L, 70_001L),
+        )
+        assertEquals(
+            0L,
+            connectionDialogDelayMs(
+                true,
+                ConnectionPhase.UNAVAILABLE,
+                10_000L,
+                70_001L,
+                hasCachedWorkspace = false,
+            ),
         )
         assertNull(connectionDialogDelayMs(false, ConnectionPhase.STOPPED, null, 70_001L))
     }

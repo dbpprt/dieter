@@ -130,25 +130,26 @@ struct DieterIslandShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.move(to: CGPoint(x: rect.minX + topRadius, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - topRadius, y: rect.minY))
         path.addQuadCurve(
-            to: CGPoint(x: rect.minX + topRadius, y: rect.minY + topRadius),
-            control: CGPoint(x: rect.minX + topRadius, y: rect.minY)
+            to: CGPoint(x: rect.maxX, y: rect.minY + topRadius),
+            control: CGPoint(x: rect.maxX, y: rect.minY)
         )
-        path.addLine(to: CGPoint(x: rect.minX + topRadius, y: rect.maxY - bottomRadius))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - bottomRadius))
         path.addQuadCurve(
-            to: CGPoint(x: rect.minX + topRadius + bottomRadius, y: rect.maxY),
-            control: CGPoint(x: rect.minX + topRadius, y: rect.maxY)
+            to: CGPoint(x: rect.maxX - bottomRadius, y: rect.maxY),
+            control: CGPoint(x: rect.maxX, y: rect.maxY)
         )
-        path.addLine(to: CGPoint(x: rect.maxX - topRadius - bottomRadius, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + bottomRadius, y: rect.maxY))
         path.addQuadCurve(
-            to: CGPoint(x: rect.maxX - topRadius, y: rect.maxY - bottomRadius),
-            control: CGPoint(x: rect.maxX - topRadius, y: rect.maxY)
+            to: CGPoint(x: rect.minX, y: rect.maxY - bottomRadius),
+            control: CGPoint(x: rect.minX, y: rect.maxY)
         )
-        path.addLine(to: CGPoint(x: rect.maxX - topRadius, y: rect.minY + topRadius))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topRadius))
         path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: rect.minY),
-            control: CGPoint(x: rect.maxX - topRadius, y: rect.minY)
+            to: CGPoint(x: rect.minX + topRadius, y: rect.minY),
+            control: CGPoint(x: rect.minX, y: rect.minY)
         )
         path.closeSubpath()
         return path
@@ -165,7 +166,7 @@ struct DieterIslandView: View {
     private var paletteValue = DieterPalette.defaultValue.rawValue
 
     private var activity: DieterIslandActivity {
-        DieterIslandActivity.resolve(cards: store.state.cards + store.chats)
+        DieterIslandActivity.resolve(cards: store.synchronizedCards)
     }
 
     var body: some View {
@@ -182,7 +183,17 @@ struct DieterIslandView: View {
         .background(islandBackground)
         .clipShape(islandShape)
         .overlay(islandShape.stroke(.white.opacity(presentation.expanded ? 0.12 : 0.08), lineWidth: 0.75))
-        .shadow(color: .black.opacity(presentation.expanded ? 0.42 : 0.24), radius: presentation.expanded ? 28 : 12, y: presentation.expanded ? 15 : 6)
+        .overlay(alignment: .top) {
+            LinearGradient(
+                colors: [.clear, .white.opacity(presentation.expanded ? 0.16 : 0.10), .clear],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(height: 1)
+            .padding(.horizontal, presentation.expanded ? 42 : 28)
+        }
+        .shadow(color: DieterTheme.primary.opacity(presentation.expanded ? 0.12 : 0.05), radius: presentation.expanded ? 38 : 18, y: 8)
+        .shadow(color: .black.opacity(presentation.expanded ? 0.52 : 0.30), radius: presentation.expanded ? 30 : 14, y: presentation.expanded ? 16 : 7)
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: presentation.expanded)
         .id(paletteValue)
         .preferredColorScheme(.dark)
@@ -192,12 +203,24 @@ struct DieterIslandView: View {
 
     private var islandBackground: some View {
         ZStack {
-            Color(nsColor: NSColor(calibratedWhite: 0.018, alpha: 0.985))
+            Color(nsColor: NSColor(calibratedRed: 0.012, green: 0.020, blue: 0.033, alpha: 0.992))
             if presentation.expanded {
+                RadialGradient(
+                    colors: [DieterTheme.primary.opacity(0.19), .clear],
+                    center: .topLeading,
+                    startRadius: 0,
+                    endRadius: 330
+                )
+                RadialGradient(
+                    colors: [DieterTheme.eyes.opacity(0.08), .clear],
+                    center: .bottomTrailing,
+                    startRadius: 0,
+                    endRadius: 250
+                )
                 LinearGradient(
-                    colors: [DieterTheme.primary.opacity(0.11), .clear, DieterTheme.eyes.opacity(0.055)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    colors: [.white.opacity(0.025), .clear, .black.opacity(0.16)],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
             }
         }
@@ -205,8 +228,8 @@ struct DieterIslandView: View {
 
     private var islandShape: DieterIslandShape {
         DieterIslandShape(
-            topRadius: presentation.expanded ? 15 : (presentation.hasPhysicalNotch ? 5 : 14),
-            bottomRadius: presentation.expanded ? 23 : 14
+            topRadius: presentation.expanded ? 18 : (presentation.hasPhysicalNotch ? 5 : 15),
+            bottomRadius: presentation.expanded ? 28 : 16
         )
     }
 
@@ -227,7 +250,7 @@ struct DieterIslandView: View {
             }
             if activity.runningCount == 0 && activity.reviewCount == 0 && activity.doneTodayCount == 0 {
                 Text(store.phase.isConnected ? "All quiet" : store.phase.label)
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.58))
             }
         }
@@ -239,33 +262,67 @@ struct DieterIslandView: View {
 
     private var expandedContent: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 9) {
-                HStack(spacing: 7) {
-                    Circle().fill(connectionColor).frame(width: 6, height: 6)
-                    Text(headerTitle)
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.94))
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(DieterTheme.primary.opacity(0.16))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(DieterTheme.primary.opacity(0.28), lineWidth: 0.75)
+                    Image(systemName: activity.runningCount > 0 ? "sparkle" : connectionSymbol)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(activity.runningCount > 0 ? DieterTheme.primary : connectionColor)
                 }
-                Text("·").foregroundStyle(.white.opacity(0.2))
-                Text("\(activity.reviewCount) review")
-                    .foregroundStyle(activity.reviewCount > 0 ? DieterTheme.amber : .white.opacity(0.42))
-                Text("·").foregroundStyle(.white.opacity(0.2))
-                Text("\(activity.doneTodayCount) done today")
-                    .foregroundStyle(activity.doneTodayCount > 0 ? DieterTheme.eyes : .white.opacity(0.42))
-                Spacer(minLength: 8)
-                Text(store.endpoint.name)
-                    .lineLimit(1)
-                    .foregroundStyle(.white.opacity(0.42))
+                .frame(width: 34, height: 34)
+                .shadow(color: DieterTheme.primary.opacity(0.25), radius: 12)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(headerTitle)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.96))
+                    Text("Dieter activity")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.38))
+                }
+
+                Spacer(minLength: 4)
+
+                HStack(spacing: 0) {
+                    IslandHeaderMetric(value: activity.runningCount, label: "running", color: DieterTheme.primary)
+                    IslandMetricDivider()
+                    IslandHeaderMetric(value: activity.reviewCount, label: "review", color: DieterTheme.amber)
+                    IslandMetricDivider()
+                    IslandHeaderMetric(value: activity.doneTodayCount, label: "done", color: DieterTheme.eyes)
+                }
+                .padding(.horizontal, 3)
+                .frame(height: 34)
+                .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(.white.opacity(0.06), lineWidth: 0.75)
+                }
+
+                HStack(spacing: 6) {
+                    Circle().fill(connectionColor).frame(width: 5, height: 5)
+                    Text(store.endpoint.name)
+                        .lineLimit(1)
+                }
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.52))
+                .padding(.horizontal, 9)
+                .frame(height: 30)
+                .background(.white.opacity(0.035), in: Capsule())
+
                 Button {
                     onRequestExpansion(false)
                 } label: {
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 9, weight: .bold))
-                        .frame(width: 22, height: 22)
-                        .background(.white.opacity(0.07), in: Circle())
+                        .font(.system(size: 9.5, weight: .bold))
+                        .frame(width: 30, height: 30)
+                        .background(.white.opacity(0.06), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.07), lineWidth: 0.75))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.white.opacity(0.58))
+                .foregroundStyle(.white.opacity(0.62))
                 .accessibilityLabel("Collapse Dieter Island")
             }
             .font(.system(size: 10.5, weight: .medium))
@@ -275,24 +332,47 @@ struct DieterIslandView: View {
             .padding(.horizontal, 30)
             .frame(height: 45)
 
-            Rectangle().fill(.white.opacity(0.08)).frame(height: 1)
+            IslandSeparator()
 
             if activity.items.isEmpty {
-                VStack(spacing: 9) {
-                    Image(systemName: store.phase.isConnected ? "checkmark.circle" : "wifi.slash")
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(connectionColor)
+                VStack(spacing: 10) {
+                    ZStack {
+                        Circle().fill(connectionColor.opacity(0.10)).frame(width: 46, height: 46)
+                        Circle().stroke(connectionColor.opacity(0.22), lineWidth: 0.75).frame(width: 46, height: 46)
+                        Image(systemName: store.phase.isConnected ? "checkmark" : "wifi.slash")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(connectionColor)
+                    }
                     Text(store.phase.isConnected ? "No agent activity right now" : "Dieter is offline")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.88))
                     Text(store.phase.isConnected ? "Running turns and reviews will appear here." : "The Island will update when Dieter reconnects.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.white.opacity(0.42))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.40))
                 }
                 .padding(.horizontal, 30)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                VStack(spacing: 1) {
+                VStack(spacing: 7) {
+                    HStack(spacing: 7) {
+                        Text("LIVE ACTIVITY")
+                            .font(.system(size: 9, weight: .bold, design: .rounded))
+                            .tracking(0.8)
+                            .foregroundStyle(.white.opacity(0.38))
+                        Text(String(activity.items.count))
+                            .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(DieterTheme.primary)
+                            .padding(.horizontal, 6)
+                            .frame(height: 17)
+                            .background(DieterTheme.primary.opacity(0.11), in: Capsule())
+                        Spacer()
+                        Text("Click a card to jump back in")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.28))
+                    }
+                    .frame(height: 19)
+                    .padding(.horizontal, 4)
+
                     ForEach(activity.items) { item in
                         IslandActivityRow(item: item) {
                             open(item)
@@ -306,14 +386,14 @@ struct DieterIslandView: View {
                 .frame(maxHeight: .infinity, alignment: .top)
             }
 
-            Rectangle().fill(.white.opacity(0.08)).frame(height: 1)
+            IslandSeparator()
 
-            HStack(spacing: 8) {
+            HStack(spacing: 9) {
                 Button {
                     NSApp.activate(ignoringOtherApps: true)
                     if let first = activity.items.first { open(first) }
                 } label: {
-                    Label("Open activity", systemImage: "rectangle.grid.1x2")
+                    Label("Open activity", systemImage: "arrow.up.right.square")
                 }
                 .buttonStyle(IslandActionButtonStyle(primary: true))
                 .disabled(activity.items.isEmpty)
@@ -330,8 +410,11 @@ struct DieterIslandView: View {
                 Spacer()
                 if activity.subagentCount > 0 {
                     Label("\(activity.subagentCount) subagent\(activity.subagentCount == 1 ? "" : "s")", systemImage: "person.2.fill")
-                        .font(.system(size: 9.5, weight: .medium))
+                        .font(.system(size: 9.5, weight: .semibold))
                         .foregroundStyle(DieterTheme.primary)
+                        .padding(.horizontal, 9)
+                        .frame(height: 28)
+                        .background(DieterTheme.primary.opacity(0.09), in: Capsule())
                 }
             }
             .padding(.horizontal, 30)
@@ -369,20 +452,60 @@ private struct IslandCount: View {
         TimelineView(.animation(minimumInterval: animated ? 0.08 : 1, paused: !animated)) { context in
             HStack(spacing: 5) {
                 Image(systemName: symbol)
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(.system(size: 10.5, weight: .bold))
                     .rotationEffect(.degrees(animated ? context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4 * 360 : 0))
                 if count > 0 { Text(String(count)).contentTransition(.numericText()) }
             }
-            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
             .foregroundStyle(color)
+            .shadow(color: color.opacity(0.28), radius: 7)
         }
         .fixedSize()
+    }
+}
+
+private struct IslandHeaderMetric: View {
+    let value: Int
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(String(value))
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(value > 0 ? color : .white.opacity(0.42))
+                .contentTransition(.numericText())
+            Text(label)
+                .font(.system(size: 8, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.32))
+        }
+        .frame(minWidth: 49)
+    }
+}
+
+private struct IslandMetricDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(.white.opacity(0.07))
+            .frame(width: 1, height: 18)
+    }
+}
+
+private struct IslandSeparator: View {
+    var body: some View {
+        LinearGradient(
+            colors: [.clear, .white.opacity(0.09), .white.opacity(0.09), .clear],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .frame(height: 1)
     }
 }
 
 private struct IslandActivityRow: View {
     let item: DieterIslandActivity.Item
     let action: () -> Void
+    @State private var isHovering = false
 
     private var color: Color {
         switch item.kind {
@@ -401,34 +524,59 @@ private struct IslandActivityRow: View {
         }
     }
 
+    private var status: String {
+        switch item.kind {
+        case .running: "RUNNING"
+        case .review: "REVIEW"
+        case .needsInput: "NEEDS YOU"
+        case .completed: "DONE"
+        }
+    }
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 11) {
+            HStack(spacing: 12) {
                 ZStack {
-                    Circle().fill(color.opacity(0.14)).frame(width: 30, height: 30)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(color.opacity(0.13))
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(color.opacity(0.18), lineWidth: 0.75)
                     Image(systemName: symbol)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(color)
                 }
-                VStack(alignment: .leading, spacing: 2) {
+                .frame(width: 36, height: 36)
+
+                VStack(alignment: .leading, spacing: 3) {
                     Text(item.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.92))
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.94))
                         .lineLimit(1)
                     Text(item.detail)
                         .font(.system(size: 10.5))
-                        .foregroundStyle(item.kind == .running ? color.opacity(0.9) : .white.opacity(0.42))
+                        .foregroundStyle(item.kind == .running ? color.opacity(0.86) : .white.opacity(0.42))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 if !item.provider.isEmpty {
                     Text(item.provider)
-                        .font(.system(size: 9.5, weight: .medium))
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.5))
                         .padding(.horizontal, 7)
-                        .frame(height: 22)
-                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .frame(height: 23)
+                        .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(.white.opacity(0.06), lineWidth: 0.75)
+                        }
                 }
+                Text(status)
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .tracking(0.35)
+                    .foregroundStyle(color)
+                    .padding(.horizontal, 7)
+                    .frame(height: 23)
+                    .background(color.opacity(0.11), in: Capsule())
                 if let timestamp = item.timestamp {
                     Text(relativeAge(since: timestamp))
                         .font(.system(size: 9.5))
@@ -438,12 +586,22 @@ private struct IslandActivityRow: View {
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.white.opacity(0.22))
             }
-            .padding(.horizontal, 9)
-            .frame(height: 49)
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 11)
+            .frame(height: 56)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
-        .background(.white.opacity(0.001), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(
+            isHovering ? Color.white.opacity(0.075) : color.opacity(item.kind == .running ? 0.065 : 0.022),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(item.kind == .running ? color.opacity(0.15) : .white.opacity(0.045), lineWidth: 0.75)
+        }
+        .shadow(color: item.kind == .running ? color.opacity(0.08) : .clear, radius: 10)
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.14), value: isHovering)
     }
 
     private func relativeAge(since timestamp: Date) -> String {
@@ -462,14 +620,19 @@ private struct IslandActionButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(primary ? Color.black.opacity(0.82) : Color.white.opacity(0.68))
-            .padding(.horizontal, 11)
-            .frame(height: 29)
+            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+            .foregroundStyle(primary ? Color.white.opacity(0.88) : Color.white.opacity(0.64))
+            .padding(.horizontal, 13)
+            .frame(height: 34)
             .background(
-                primary ? DieterTheme.primary.opacity(configuration.isPressed ? 0.72 : 0.94) : Color.white.opacity(configuration.isPressed ? 0.11 : 0.07),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                primary ? DieterTheme.primary.opacity(configuration.isPressed ? 0.23 : 0.16) : Color.white.opacity(configuration.isPressed ? 0.10 : 0.052),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(primary ? DieterTheme.primary.opacity(0.38) : .white.opacity(0.07), lineWidth: 0.75)
+            }
+            .shadow(color: primary ? DieterTheme.primary.opacity(0.12) : .clear, radius: 10)
     }
 }
 
@@ -482,10 +645,14 @@ struct DieterIslandSettingsPreview: View {
                 Label("1", systemImage: "sparkles").foregroundStyle(DieterTheme.amber)
                 Label("5", systemImage: "checkmark").foregroundStyle(DieterTheme.eyes)
             }
-            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-            .padding(.horizontal, 14)
-            .frame(width: 250, height: 36)
-            .background(Color.black, in: DieterIslandShape(topRadius: 5, bottomRadius: 14))
+            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+            .padding(.horizontal, 18)
+            .frame(width: 282, height: 40)
+            .background(
+                Color(nsColor: NSColor(calibratedRed: 0.012, green: 0.020, blue: 0.033, alpha: 1)),
+                in: DieterIslandShape(topRadius: 5, bottomRadius: 16)
+            )
+            .overlay(DieterIslandShape(topRadius: 5, bottomRadius: 16).stroke(.white.opacity(0.08), lineWidth: 0.75))
             Text("Hover the notch to expand live activity")
                 .font(.caption2)
                 .foregroundStyle(DieterTheme.tertiary)

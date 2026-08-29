@@ -446,19 +446,23 @@ type Author struct {
 // opaque Session value is produced by AI SDK HarnessAgent.stop and is passed
 // back untouched on the next turn.
 type Conversation struct {
-	ProjectionVersion int               `json:"projectionVersion"`
-	CardID            string            `json:"cardId"`
-	Status            string            `json:"status"`
-	Messages          []UIMessage       `json:"messages"`
-	DraftAttachments  []UIMessagePart   `json:"draftAttachments,omitempty"`
-	PendingTools      []PendingTool     `json:"pendingTools,omitempty"`
-	Subagents         []Subagent        `json:"subagents,omitempty"`
-	TaskPlans         []TaskPlan        `json:"taskPlans,omitempty"`
-	Queue             []QueuedMessage   `json:"queue,omitempty"`
-	Session           json.RawMessage   `json:"session,omitempty"`
-	ActiveTurn        *ConversationTurn `json:"activeTurn,omitempty"`
-	LastSeq           int64             `json:"lastSeq"`
-	UpdatedAt         string            `json:"updatedAt"`
+	ProjectionVersion int         `json:"projectionVersion"`
+	CardID            string      `json:"cardId"`
+	Status            string      `json:"status"`
+	Messages          []UIMessage `json:"messages"`
+	// ForkSeed is the immutable source transcript used to seed the first turn
+	// of a forked chat. It is cleared as soon as the new harness session emits
+	// resumable state; copied Messages remain the user-visible history.
+	ForkSeed         []UIMessage       `json:"forkSeed,omitempty"`
+	DraftAttachments []UIMessagePart   `json:"draftAttachments,omitempty"`
+	PendingTools     []PendingTool     `json:"pendingTools,omitempty"`
+	Subagents        []Subagent        `json:"subagents,omitempty"`
+	TaskPlans        []TaskPlan        `json:"taskPlans,omitempty"`
+	Queue            []QueuedMessage   `json:"queue,omitempty"`
+	Session          json.RawMessage   `json:"session,omitempty"`
+	ActiveTurn       *ConversationTurn `json:"activeTurn,omitempty"`
+	LastSeq          int64             `json:"lastSeq"`
+	UpdatedAt        string            `json:"updatedAt"`
 }
 
 // ConversationTurn identifies the one in-flight response. Persisting the

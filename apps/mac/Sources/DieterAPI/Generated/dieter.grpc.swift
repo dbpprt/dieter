@@ -424,6 +424,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ForkChat" metadata.
+        public enum ForkChat: Sendable {
+            /// Request type for "ForkChat".
+            public typealias Input = Dieter_V1_ForkChatRequest
+            /// Response type for "ForkChat".
+            public typealias Output = Dieter_V1_Card
+            /// Descriptor for "ForkChat".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ForkChat",
+                type: .unary
+            )
+        }
         /// Namespace for "ListChats" metadata.
         public enum ListChats: Sendable {
             /// Request type for "ListChats".
@@ -1185,6 +1198,7 @@ public enum Dieter_V1_DieterService: Sendable {
             DeleteBoardLabel.descriptor,
             CreateCard.descriptor,
             CreateChat.descriptor,
+            ForkChat.descriptor,
             ListChats.descriptor,
             GetCard.descriptor,
             GetConversation.descriptor,
@@ -1855,6 +1869,25 @@ extension Dieter_V1_DieterService {
         func createChat<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_CreateConversationRequest>,
             serializer: some GRPCCore.MessageSerializer<Dieter_V1_CreateConversationRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ForkChat" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ForkChatRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ForkChatRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func forkChat<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ForkChatRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ForkChatRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
@@ -3887,6 +3920,36 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.CreateChat.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ForkChat" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ForkChatRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ForkChatRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func forkChat<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ForkChatRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ForkChatRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ForkChat.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -6369,6 +6432,31 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "ForkChat" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ForkChatRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func forkChat<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ForkChatRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.forkChat(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ForkChatRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Card>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListChats" method.
     ///
     /// - Parameters:
@@ -8681,6 +8769,35 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.createChat(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ForkChat" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func forkChat<Result>(
+        _ message: Dieter_V1_ForkChatRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ForkChatRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.forkChat(
             request: request,
             options: options,
             onResponse: handleResponse

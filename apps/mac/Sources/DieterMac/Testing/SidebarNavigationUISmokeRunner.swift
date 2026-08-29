@@ -48,10 +48,10 @@ enum SidebarNavigationUISmokeRunner {
 
     // Projects are compressed by default; the trailing chevron of each row sits
     // near the right edge of the 234pt sidebar. Rows share a 42pt vertical pitch
-    // once the PROJECTS section header and title-bar inset are accounted for.
+    // below the global destinations and PROJECTS section header.
     private static let chevronX: CGFloat = 211
-    private static let firstRowTop: CGFloat = 240
-    private static let secondRowTop: CGFloat = 282
+    private static let firstRowTop: CGFloat = 271
+    private static let secondRowTop: CGFloat = 314
 
     private static func prepare(window: NSWindow, results: inout [String: String]) async {
         click(window: window, x: chevronX, distanceFromTop: firstRowTop)
@@ -103,6 +103,14 @@ enum SidebarNavigationUISmokeRunner {
 
     private static func seed(_ store: DieterStore) {
         let names = ["Alpha", "Beta", "Gamma"]
+        let machine = DieterEndpoint(
+            name: "studio-mini",
+            host: "127.0.0.1",
+            port: 4242,
+            daemonID: "sidebar-smoke-machine",
+            online: true,
+            version: "smoke"
+        )
         var projects: [Dieter_V1_Project] = []
         var boardsByProject: [String: [Dieter_V1_Board]] = [:]
         for (index, id) in projectIDs.enumerated() {
@@ -122,7 +130,10 @@ enum SidebarNavigationUISmokeRunner {
         store.projectDirectory = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
         store.navigationBoards = boardsByProject
         store.navigationCards = Dictionary(uniqueKeysWithValues: projectIDs.map { ($0, []) })
-        store.projectEndpointIDs = [:]
+        store.endpoint = machine
+        store.endpoints = [machine]
+        store.projectEndpointIDs = Dictionary(uniqueKeysWithValues: projectIDs.map { ($0, machine.id) })
+        store.machineConnectionStatuses = [machine.id: MachineConnectionStatus(route: .local, latencyMilliseconds: 3)]
         store.chats = []
         store.chatProjects = []
         store.state.project = projects[0]

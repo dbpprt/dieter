@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract the macOS SwiftUI mockups embedded in the design PDF losslessly."""
+"""Extract the macOS SwiftUI reference views embedded in the design PDF."""
 
 from __future__ import annotations
 
@@ -10,29 +10,41 @@ from pypdf import PdfReader
 
 
 REFERENCE_NAMES = (
-    ("desktop-board-conversation.png",),
-    ("desktop-chats-conversation.png",),
-    ("desktop-chat-idle.png",),
-    ("conversation-subagent-timeline.png",),
-    ("conversation-subagents.png", "app-settings-connection.png"),
+    ("island-collapsed.png", "island-expanded.png", "settings-island.png"),
+    ("settings-desk-pet.png", "desk-pet-companion.png"),
+    ("merge-conflict.png", "merge-failed-toast.png"),
+    ("pull-request-states.png",),
+    ("worktree-manager.png", "worktree-commits.png"),
+    (
+        "machine-offline.png",
+        "turn-failed.png",
+        "session-expired.png",
+        "merge-completed-toast.png",
+    ),
+    ("empty-states.png",),
     ("command-palette.png",),
+    ("settings-overview.png",),
+    ("card-comments.png", "card-subagents.png"),
     (
-        "new-chat.png",
-        "menu-bar-item.png",
-        "connection-popover.png",
-        "review-notification.png",
-    ),
-    ("new-board-card.png", "project-context.png"),
-    (
-        "done-retention.png",
-        "create-board.png",
-        "board-labels.png",
         "card-context-menu.png",
+        "card-drag-indicator.png",
+        "card-drag-preview.png",
+        "keyboard-shortcuts.png",
     ),
-    ("archived-chats.png", "app-settings-agents.png"),
-    ("add-git-project.png",),
-    ("schedules.png",),
-    ("files.png",),
+    ("machine-popover.png",),
+    ("new-chat-workspace.png",),
+    ("changes-diff-viewer.png",),
+    ("merge-into-main.png",),
+    ("board-card-inspector.png",),
+    ("chats-standalone-chat.png",),
+    ("new-conversation.png", "board-labels.png"),
+    ("connect-onboarding.png", "choose-git-repository.png"),
+    ("settings-connection.png",),
+    ("collapsed-navigation.png",),
+    ("files-editor.png",),
+    ("schedules-editor.png",),
+    ("terminals.png",),
+    ("menu-bar-item.png", "connection-popover.png", "review-notification.png"),
 )
 
 
@@ -52,7 +64,7 @@ def main() -> None:
             f"expected {len(REFERENCE_NAMES)} PDF pages, found {len(reader.pages)}"
         )
 
-    args.output.mkdir(parents=True, exist_ok=True)
+    extracted: list[tuple[str, bytes, int, int]] = []
     for page_number, (page, names) in enumerate(
         zip(reader.pages, REFERENCE_NAMES, strict=True), start=1
     ):
@@ -68,9 +80,23 @@ def main() -> None:
                     f"expected an RGBA reference on page {page_number}, "
                     f"found {image.image.mode}"
                 )
-            target = args.output / name
-            target.write_bytes(image.data)
-            print(f"{target}: {image.image.width}x{image.image.height}")
+            extracted.append(
+                (name, image.data, image.image.width, image.image.height)
+            )
+
+    args.output.mkdir(parents=True, exist_ok=True)
+    expected_names = {name for names in REFERENCE_NAMES for name in names}
+    for name, data, width, height in extracted:
+        target = args.output / name
+        temporary = target.with_suffix(".png.tmp")
+        temporary.write_bytes(data)
+        temporary.replace(target)
+        print(f"{target}: {width}x{height}")
+
+    for stale in sorted(args.output.glob("*.png")):
+        if stale.name not in expected_names:
+            stale.unlink()
+            print(f"removed stale reference: {stale}")
 
 
 if __name__ == "__main__":

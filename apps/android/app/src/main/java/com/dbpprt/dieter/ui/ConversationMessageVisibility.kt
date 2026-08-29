@@ -36,6 +36,7 @@ internal fun MessagePart.conversationPartPresentation(
     includeReasoning: Boolean,
 ): ConversationPartPresentation = when {
     type == "dynamic-tool" || type.startsWith("tool-") -> ConversationPartPresentation.TOOL
+    isTurnFailurePart() -> ConversationPartPresentation.HIDDEN
     type == "file" && (url.isNotBlank() || filename.isNotBlank()) -> ConversationPartPresentation.FILE
     type == "text" && text.isNotBlank() -> ConversationPartPresentation.TEXT
     type == "reasoning" && includeReasoning && text.isNotBlank() -> ConversationPartPresentation.REASONING

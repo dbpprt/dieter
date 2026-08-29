@@ -328,6 +328,13 @@ func (s *Service) CreateChat(ctx context.Context, input CardInput) (model.Card, 
 	return s.createConversation(ctx, input, model.ConversationScopeChat)
 }
 
+// ForkChat creates an independent standalone chat from a stable transcript
+// boundary. Provider lifecycle state and workspace state are intentionally not
+// shared with the source conversation.
+func (s *Service) ForkChat(sourceRef, messageID, title string) (model.Card, error) {
+	return s.Store.ForkChat(sourceRef, messageID, title)
+}
+
 func (s *Service) createConversation(ctx context.Context, input CardInput, scope string) (model.Card, error) {
 	project, err := s.Store.ResolveProject(input.Project)
 	if err != nil {
@@ -584,6 +591,10 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 
 	conversation, _ := s.Store.Conversation(detail.Card.ID)
 	updates := make(chan TurnUpdate, 1024)
+	harnessPrompt := content
+	if len(conversation.ForkSeed) > 0 && len(conversation.Session) == 0 {
+		harnessPrompt = forkedConversationPrompt(conversation.ForkSeed, content)
+	}
 	request := harness.Request{
 		Harness: provider, Adapter: adapter.Runtime, Model: configuredModel.RuntimeID(), ConfiguredModel: modelName, ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, Prompt: content, ResponseMessageID: responseMessageID,
 		Attachments:  messagePartsAttachments(parts),
@@ -591,8 +602,32 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		ProjectPath: workspaceValue.Path,
 		RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID),
 	}
+	request.Prompt = harnessPrompt
 	go s.runTurn(ctx, detail, turnID, request, updates, done)
 	return updates, nil
+}
+
+func forkedConversationPrompt(messages []model.UIMessage, prompt string) string {
+	var transcript strings.Builder
+	for _, message := range messages {
+		role := strings.ToUpper(strings.TrimSpace(message.Role))
+		if role != "USER" && role != "ASSISTANT" {
+			continue
+		}
+		var text strings.Builder
+		for _, part := range message.Parts {
+			if part.Type == "text" && strings.TrimSpace(part.Text) != "" {
+				if text.Len() > 0 {
+					text.WriteString("\n")
+				}
+				text.WriteString(strings.TrimSpace(part.Text))
+			}
+		}
+		if text.Len() > 0 {
+			fmt.Fprintf(&transcript, "%s:\n%s\n\n", role, text.String())
+		}
+	}
+	return "This is a fork of an earlier Dieter chat. Treat the transcript below as prior conversation context. Do not repeat or summarize it unless the user asks. Continue independently from it.\n\n<forked_transcript>\n" + transcript.String() + "</forked_transcript>\n\nUSER:\n" + strings.TrimSpace(prompt)
 }
 
 func messagePartsText(parts []model.UIMessagePart) string {
@@ -687,6 +722,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		_, _ = s.Workspaces.Refresh(refreshCtx, detail.Card.ID, false)
 	}()
 	streamFailed := false
+	var reportedFailure error
 	err := s.Runner.Run(ctx, request, func(output harness.Output) error {
 		switch output.Type {
 		case "chunk":
@@ -719,10 +755,20 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			_, _, err := s.Store.AppendCapability(detail.Card.ID, turnID, output.Capability)
 			return err
 		case "error":
-			return errors.New(output.Message)
+			// Keep consuming the worker protocol after its structured error frame.
+			// SubprocessRunner appends stderr and non-protocol stdout diagnostics
+			// only after the child exits; returning here used to kill the child and
+			// discard the logs that explain the failure.
+			if message := strings.TrimSpace(output.Message); message != "" {
+				reportedFailure = errors.New(message)
+			}
+			return nil
 		}
 		return nil
 	})
+	if err == nil && reportedFailure != nil {
+		err = reportedFailure
+	}
 	if s.turnIsSuspending(detail.Card.ID, turnID) {
 		conversation, conversationErr := s.Store.Conversation(detail.Card.ID)
 		if conversationErr == nil && hasTurnContinuation(conversation.Session) {

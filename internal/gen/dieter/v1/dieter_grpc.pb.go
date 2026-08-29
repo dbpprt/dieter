@@ -51,6 +51,7 @@ const (
 	DieterService_DeleteBoardLabel_FullMethodName               = "/dieter.v1.DieterService/DeleteBoardLabel"
 	DieterService_CreateCard_FullMethodName                     = "/dieter.v1.DieterService/CreateCard"
 	DieterService_CreateChat_FullMethodName                     = "/dieter.v1.DieterService/CreateChat"
+	DieterService_ForkChat_FullMethodName                       = "/dieter.v1.DieterService/ForkChat"
 	DieterService_ListChats_FullMethodName                      = "/dieter.v1.DieterService/ListChats"
 	DieterService_GetCard_FullMethodName                        = "/dieter.v1.DieterService/GetCard"
 	DieterService_GetConversation_FullMethodName                = "/dieter.v1.DieterService/GetConversation"
@@ -149,6 +150,7 @@ type DieterServiceClient interface {
 	DeleteBoardLabel(ctx context.Context, in *DeleteBoardLabelRequest, opts ...grpc.CallOption) (*Board, error)
 	CreateCard(ctx context.Context, in *CreateConversationRequest, opts ...grpc.CallOption) (*Card, error)
 	CreateChat(ctx context.Context, in *CreateConversationRequest, opts ...grpc.CallOption) (*Card, error)
+	ForkChat(ctx context.Context, in *ForkChatRequest, opts ...grpc.CallOption) (*Card, error)
 	ListChats(ctx context.Context, in *ListChatsRequest, opts ...grpc.CallOption) (*ChatsResponse, error)
 	GetCard(ctx context.Context, in *GetCardRequest, opts ...grpc.CallOption) (*CardDetail, error)
 	GetConversation(ctx context.Context, in *GetConversationRequest, opts ...grpc.CallOption) (*ConversationSnapshot, error)
@@ -544,6 +546,16 @@ func (c *dieterServiceClient) CreateChat(ctx context.Context, in *CreateConversa
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Card)
 	err := c.cc.Invoke(ctx, DieterService_CreateChat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ForkChat(ctx context.Context, in *ForkChatRequest, opts ...grpc.CallOption) (*Card, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Card)
+	err := c.cc.Invoke(ctx, DieterService_ForkChat_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1186,6 +1198,7 @@ type DieterServiceServer interface {
 	DeleteBoardLabel(context.Context, *DeleteBoardLabelRequest) (*Board, error)
 	CreateCard(context.Context, *CreateConversationRequest) (*Card, error)
 	CreateChat(context.Context, *CreateConversationRequest) (*Card, error)
+	ForkChat(context.Context, *ForkChatRequest) (*Card, error)
 	ListChats(context.Context, *ListChatsRequest) (*ChatsResponse, error)
 	GetCard(context.Context, *GetCardRequest) (*CardDetail, error)
 	GetConversation(context.Context, *GetConversationRequest) (*ConversationSnapshot, error)
@@ -1351,6 +1364,9 @@ func (UnimplementedDieterServiceServer) CreateCard(context.Context, *CreateConve
 }
 func (UnimplementedDieterServiceServer) CreateChat(context.Context, *CreateConversationRequest) (*Card, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateChat not implemented")
+}
+func (UnimplementedDieterServiceServer) ForkChat(context.Context, *ForkChatRequest) (*Card, error) {
+	return nil, status.Error(codes.Unimplemented, "method ForkChat not implemented")
 }
 func (UnimplementedDieterServiceServer) ListChats(context.Context, *ListChatsRequest) (*ChatsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListChats not implemented")
@@ -2081,6 +2097,24 @@ func _DieterService_CreateChat_Handler(srv interface{}, ctx context.Context, dec
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).CreateChat(ctx, req.(*CreateConversationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ForkChat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ForkChatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ForkChat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ForkChat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ForkChat(ctx, req.(*ForkChatRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3187,6 +3221,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateChat",
 			Handler:    _DieterService_CreateChat_Handler,
+		},
+		{
+			MethodName: "ForkChat",
+			Handler:    _DieterService_ForkChat_Handler,
 		},
 		{
 			MethodName: "ListChats",

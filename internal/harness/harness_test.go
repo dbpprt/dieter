@@ -318,3 +318,30 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 		t.Fatalf("chunks=%q capabilities=%q err=%v", chunks, capabilities, err)
 	}
 }
+
+func TestSubprocessRunnerRetainsDiagnosticsAfterStructuredError(t *testing.T) {
+	runtimeDir := t.TempDir()
+	script := `process.stdin.once('data', () => {
+  process.stderr.write('provider stderr: context window exceeded\n');
+  process.stdout.write(JSON.stringify({type:'error', error:'codex exited 1'}) + '\n');
+  process.exitCode = 1;
+});`
+	if err := os.WriteFile(filepath.Join(runtimeDir, "runner.mjs"), []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
+	runner := NewSubprocessRunner(t.TempDir())
+	var reported string
+	err := runner.Run(context.Background(), Request{
+		Harness: "codex", Prompt: "fail", SessionID: "card", ProjectPath: t.TempDir(), RuntimeRoot: t.TempDir(),
+	}, func(output Output) error {
+		if output.Type == "error" {
+			reported = output.Message
+		}
+		return nil
+	})
+	if reported != "codex exited 1" || err == nil || !strings.Contains(err.Error(), "codex exited 1") ||
+		!strings.Contains(err.Error(), "provider stderr: context window exceeded") {
+		t.Fatalf("reported=%q err=%v", reported, err)
+	}
+}

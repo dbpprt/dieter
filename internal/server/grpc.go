@@ -277,6 +277,14 @@ func (api *grpcAPI) CreateChat(ctx context.Context, request *dieterv1.CreateConv
 	return api.idempotentConversation(ctx, request, model.ConversationScopeChat)
 }
 
+func (api *grpcAPI) ForkChat(_ context.Context, request *dieterv1.ForkChatRequest) (*dieterv1.Card, error) {
+	value, err := api.server.app.ForkChat(request.GetSourceCardId(), request.GetMessageId(), request.GetTitle())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoCard(value), nil
+}
+
 func (api *grpcAPI) ListChats(_ context.Context, request *dieterv1.ListChatsRequest) (*dieterv1.ChatsResponse, error) {
 	projects, err := api.server.store.ListProjects()
 	if err != nil {

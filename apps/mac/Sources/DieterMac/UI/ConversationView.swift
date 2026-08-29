@@ -152,6 +152,7 @@ private struct ConversationChrome: View {
                             Divider()
                         }
                         if standalone { Button(card.pinned ? "Unpin chat" : "Pin chat") { Task { await store.pin(card, pinned: !card.pinned) } } }
+                        Button("Fork as new chat", systemImage: "arrow.triangle.branch") { Task { await store.fork(card) } }
                         if !standalone, BoardCardEditingPolicy.canEditDraft(card) {
                             Button("Edit card…") { editCardPresented = true }
                         }
@@ -260,14 +261,22 @@ struct ConversationTimeline: View {
     @State private var historyLoadInFlight = false
     @State private var initialScrollComplete = false
     @State private var isAtLatest = true
+    @State private var presentedFailureLog: String?
+    @State private var retryingFailureLog: String?
 
     private var messages: [Dieter_V1_UiMessage] { store.conversationMessages }
     private var timelineItems: [ConversationTimelineItem] {
-        ConversationTimelineItem.group(
-            ConversationQueuePresentation.deliveredMessages(
-                messages,
-                whileQueued: store.conversation?.conversation.queue ?? []
-            ),
+        let structuredMessageIDs = Set(plans.map(\.messageID) + subagents.map(\.messageID))
+        let visibleMessages = ConversationQueuePresentation.deliveredMessages(
+            messages,
+            whileQueued: store.conversation?.conversation.queue ?? []
+        ).filter { message in
+            ["user", "human"].contains(message.role.lowercased())
+                || structuredMessageIDs.contains(message.id)
+                || message.parts.contains { !ConversationMessagePartGroup.isHidden($0, showReasoning: store.showReasoning) }
+        }
+        return ConversationTimelineItem.group(
+            visibleMessages,
             showReasoning: store.showReasoning
         )
     }
@@ -304,6 +313,14 @@ struct ConversationTimeline: View {
     private var agentIsWorking: Bool {
         let card = store.selectedCard ?? store.selectedDetail?.card
         return ConversationActivityPresentation.isActive(
+            conversationStatus: store.conversation?.conversation.status ?? "",
+            cardRuntime: card?.runtime ?? ""
+        )
+    }
+    private var turnFailure: ConversationTurnFailure? {
+        let card = store.selectedCard ?? store.selectedDetail?.card
+        return ConversationTurnFailure.resolve(
+            messages: messages,
             conversationStatus: store.conversation?.conversation.status ?? "",
             cardRuntime: card?.runtime ?? ""
         )
@@ -378,6 +395,23 @@ struct ConversationTimeline: View {
                         ConversationAgentWorkingIndicator(hasPendingTool: !pendingTools.isEmpty)
                             .id("conversation.agent-working")
                     }
+                    if let turnFailure {
+                        TurnFailureBanner(
+                            failure: turnFailure,
+                            retrying: retryingFailureLog == turnFailure.log,
+                            onViewLog: { presentedFailureLog = turnFailure.log },
+                            onRetry: {
+                                guard retryingFailureLog == nil else { return }
+                                retryingFailureLog = turnFailure.log
+                                Task { @MainActor in
+                                    if !(await store.retryFailedTurn(turnFailure)) {
+                                        retryingFailureLog = nil
+                                    }
+                                }
+                            }
+                        )
+                        .id("conversation.turn-failure")
+                    }
                     Color.clear.frame(height: 1).id(ConversationScrollBehavior.bottomID)
                 }
                 .padding(.horizontal, 18).padding(.vertical, 17)
@@ -415,6 +449,9 @@ struct ConversationTimeline: View {
             .onChange(of: showsJumpToLatest) { _, visible in
                 ConversationUISmokeRunner.recordJumpToLatestVisibility(visible)
             }
+            .onChange(of: turnFailure?.log) { _, log in
+                if log == nil { retryingFailureLog = nil }
+            }
             .task(id: conversationID) {
                 historyLoadInFlight = false
                 initialScrollComplete = false
@@ -424,6 +461,12 @@ struct ConversationTimeline: View {
                 await Task.yield()
                 initialScrollComplete = true
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { presentedFailureLog != nil },
+            set: { if !$0 { presentedFailureLog = nil } }
+        )) {
+            TurnFailureLogSheet(log: presentedFailureLog ?? "")
         }
     }
 
@@ -449,6 +492,109 @@ struct ConversationTimeline: View {
             }
             historyLoadInFlight = false
         }
+    }
+}
+
+struct TurnFailureBanner: View {
+    let failure: ConversationTurnFailure
+    let retrying: Bool
+    let onViewLog: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Turn failed")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(DieterTheme.text)
+                    Text("Turn failed — \(failure.summary)")
+                        .font(.callout)
+                        .foregroundStyle(DieterTheme.coral.opacity(0.9))
+                        .textSelection(.enabled)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "xmark.circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(DieterTheme.coral)
+                    .accessibilityHidden(true)
+            }
+            HStack(spacing: 10) {
+                Label("Failed", systemImage: "circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(DieterTheme.coral)
+                    .padding(.horizontal, 11)
+                    .frame(height: 29)
+                    .background(DieterTheme.coral.opacity(0.13), in: Capsule())
+                Spacer(minLength: 10)
+                Button("View log", action: onViewLog)
+                    .buttonStyle(.plain)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(DieterTheme.primary)
+                    .accessibilityIdentifier("conversation.failure.view-log")
+                Button(action: onRetry) {
+                    HStack(spacing: 6) {
+                        if retrying { ProgressView().controlSize(.mini) }
+                        Text(retrying ? "Retry queued…" : "Retry turn")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(DieterTheme.elevated)
+                .foregroundStyle(DieterTheme.text)
+                .disabled(retrying || failure.retryParts.isEmpty)
+                .accessibilityIdentifier("conversation.failure.retry")
+            }
+        }
+        .padding(16)
+        .background(DieterTheme.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(DieterTheme.coral.opacity(0.45), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("conversation.turn-failure")
+    }
+}
+
+private struct TurnFailureLogSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let log: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Turn failure log").font(.title3.weight(.semibold))
+                    Text("Complete output captured from the local harness worker.")
+                        .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            ScrollView([.horizontal, .vertical]) {
+                Text(log)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(DieterTheme.text)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(12)
+            }
+            .background(DieterTheme.background, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(DieterTheme.border))
+            HStack {
+                Button("Copy log") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(log, forType: .string)
+                }
+                Spacer()
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 640, minHeight: 440)
+        .background(DieterTheme.surface)
+        .accessibilityIdentifier("conversation.failure.log-sheet")
     }
 }
 
@@ -753,6 +899,7 @@ struct ConversationMessagePartGroup {
     // matching the Android timeline behavior.
     static func isHidden(_ part: Dieter_V1_MessagePart, showReasoning: Bool) -> Bool {
         if isToolCall(part) { return false }
+        if ConversationTurnFailure.isFailurePart(part) { return true }
         switch part.type.lowercased() {
         case "reasoning", "thinking":
             return !showReasoning || part.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

@@ -13,6 +13,10 @@ struct NewConversationSheet: View {
     @State private var effort = ""
     @State private var providerOptions: [String: String] = [:]
     @State private var lane = ""
+    @State private var workspaceMode = ""
+    @State private var workspaceBranch = ""
+    @State private var workspaceBaseBranch = ""
+    @State private var workspacePickerPresented = false
     @State private var selectedLabelIDs: Set<String> = []
     @State private var attachments: [Dieter_V1_MessagePart] = []
     @State private var fileImporterPresented = false
@@ -27,6 +31,7 @@ struct NewConversationSheet: View {
     private var harness: Dieter_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == provider } }
     private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
     private var selectedLane: Dieter_V1_Lane? { store.selectedBoard?.lanes.first { $0.id == lane } }
+    private var project: Dieter_V1_Project? { store.selectedProject }
     private var deferred: Bool { lane.lowercased() != "running" }
     private var canSubmit: Bool {
         !submitting && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -126,6 +131,7 @@ struct NewConversationSheet: View {
                                 Button(item.name) { lane = item.id }
                             }
                         }
+                        newCardWorkspaceButton
                         newCardMenu(title: "Provider", value: harness?.name ?? "Server default", symbol: "cpu") {
                             ForEach(store.harnessCatalog.harnesses, id: \.id) { item in
                                 Button(item.name) {
@@ -221,6 +227,14 @@ struct NewConversationSheet: View {
         }
         .frame(width: 700, height: 820)
         .background(DieterTheme.background)
+        .sheet(isPresented: $workspacePickerPresented) {
+            ConversationWorkspacePickerSheet(
+                project: project,
+                mode: $workspaceMode,
+                branch: $workspaceBranch,
+                baseBranch: $workspaceBaseBranch
+            )
+        }
         .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             do { attachments = try store.attachmentParts(try result.get(), appendingTo: attachments) }
             catch { store.show(error) }
@@ -250,6 +264,10 @@ struct NewConversationSheet: View {
 
     private func chooseDefaults() {
         if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
+        if workspaceMode.isEmpty {
+            workspaceMode = ConversationWorkspaceMode.selectable(project?.defaultWorkspaceMode).rawValue
+        }
+        if workspaceBaseBranch.isEmpty { workspaceBaseBranch = project?.baseBranch ?? "" }
         guard provider.isEmpty, let harness = store.harnessCatalog.harnesses.first else { return }
         provider = harness.id; model = harness.defaultModel; effort = harness.models.first(where: { $0.id == model })?.defaultEffort ?? harness.effort.options.first?.id ?? ""
         providerOptions = ProviderOptionValues.defaults(for: harness)
@@ -258,6 +276,33 @@ struct NewConversationSheet: View {
     private var laneTitle: String {
         let title = selectedLane?.name ?? "Todo"
         return deferred ? "\(title) · draft" : "\(title) · starts agent"
+    }
+
+    private var newCardWorkspaceButton: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Workspace").font(.system(size: 11, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+            Button { workspacePickerPresented = true } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: workspaceChoice.symbol)
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.shell)
+                    Text(workspaceChoice.title).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 7, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
+                }
+                .font(.system(size: 11, weight: .medium)).foregroundStyle(DieterTheme.text)
+                .padding(.horizontal, 1).frame(height: 38)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("new-card.workspace")
+            .help("Choose where this agent should work")
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var workspaceChoice: ConversationWorkspaceMode {
+        ConversationWorkspaceMode.selectable(workspaceMode)
     }
 
     private func newCardLabel(_ title: String) -> some View {
@@ -310,6 +355,234 @@ struct NewConversationSheet: View {
             workspace: workspaceDraft
         )
         submitting = false
+    }
+}
+
+enum ConversationWorkspaceMode: String, CaseIterable, Identifiable {
+    case worktree
+    case main
+
+    var id: String { rawValue }
+
+    static func selectable(_ rawValue: String?) -> Self {
+        rawValue?.lowercased() == Self.worktree.rawValue ? .worktree : .main
+    }
+
+    var title: String {
+        switch self {
+        case .worktree: "Worktree"
+        case .main: "Main checkout"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .worktree: "point.3.connected.trianglepath.dotted"
+        case .main: "folder"
+        }
+    }
+}
+
+private struct ConversationWorkspacePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let project: Dieter_V1_Project?
+    @Binding var mode: String
+    @Binding var branch: String
+    @Binding var baseBranch: String
+    @State private var draftMode: ConversationWorkspaceMode
+    @State private var draftBranch: String
+    @State private var draftBaseBranch: String
+    @FocusState private var branchFocused: Bool
+
+    init(
+        project: Dieter_V1_Project?,
+        mode: Binding<String>,
+        branch: Binding<String>,
+        baseBranch: Binding<String>
+    ) {
+        self.project = project
+        _mode = mode
+        _branch = branch
+        _baseBranch = baseBranch
+        _draftMode = State(initialValue: ConversationWorkspaceMode.selectable(mode.wrappedValue))
+        _draftBranch = State(initialValue: branch.wrappedValue)
+        _draftBaseBranch = State(initialValue: baseBranch.wrappedValue.isEmpty ? (project?.baseBranch ?? "") : baseBranch.wrappedValue)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("AGENT WORKSPACE  /  \(project?.name.uppercased() ?? "PROJECT")")
+                        .font(DieterFont.sectionLabel).tracking(1.4)
+                        .foregroundStyle(DieterTheme.tertiary)
+                    Text("Where should the agent work?")
+                        .font(.system(size: 20, weight: .semibold))
+                    Text("Choose whether this conversation gets an isolated Git checkout or shares the registered one.")
+                        .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
+                }
+                .buttonStyle(DieterIconButtonStyle()).help("Close")
+            }
+            .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 18)
+
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 12) {
+                    workspaceOption(
+                        .worktree,
+                        badge: "Recommended",
+                        detail: "An isolated checkout on its own branch. The registered checkout stays clean for concurrent work and review."
+                    )
+                    workspaceOption(
+                        .main,
+                        badge: "Direct",
+                        detail: "Works directly in the registered checkout on its current branch. Changes appear there immediately."
+                    )
+                }
+
+                if draftMode == .worktree {
+                    HStack(alignment: .top, spacing: 12) {
+                        workspaceField(title: "Branch", detail: "Leave empty and Dieter will generate one from the card ID and title.") {
+                            HStack(spacing: 8) {
+                                Image(systemName: "point.3.connected.trianglepath.dotted")
+                                    .foregroundStyle(DieterTheme.shell)
+                                TextField("Generated automatically", text: $draftBranch)
+                                    .textFieldStyle(.plain)
+                                    .focused($branchFocused)
+                                    .accessibilityIdentifier("workspace.branch")
+                            }
+                            .padding(.horizontal, 12).frame(height: 42)
+                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
+                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(
+                                branchFocused ? DieterTheme.shellDeep.opacity(0.8) : DieterTheme.strongBorder,
+                                lineWidth: branchFocused ? 1.5 : 1
+                            ))
+                        }
+                        workspaceField(title: "Base", detail: baseDetail) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.triangle.branch").foregroundStyle(DieterTheme.shell)
+                                TextField("Current branch", text: $draftBaseBranch)
+                                    .textFieldStyle(.plain)
+                                    .accessibilityIdentifier("workspace.base-branch")
+                            }
+                            .padding(.horizontal, 12).frame(height: 42)
+                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
+                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
+                        }
+                        .frame(maxWidth: 220)
+                    }
+                }
+
+                workspaceNotice
+            }
+            .padding(.horizontal, 24).padding(.bottom, 22)
+
+            Divider().overlay(DieterTheme.border)
+            HStack(spacing: 10) {
+                Spacer()
+                Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
+                Button { applySelection() } label: {
+                    Label(draftMode == .worktree ? "Use worktree" : "Use main checkout", systemImage: draftMode.symbol)
+                }
+                .buttonStyle(DieterPrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("workspace.confirm")
+            }
+            .padding(.horizontal, 24).padding(.vertical, 14)
+        }
+        .frame(width: 680)
+        .background(DieterTheme.background)
+    }
+
+    private var baseDetail: String {
+        if let base = project?.baseBranch, !base.isEmpty { return "Project default: \(base)" }
+        return "Leave empty to use the current branch."
+    }
+
+    private var abbreviatedProjectPath: String {
+        guard let path = project?.path, !path.isEmpty else { return "the registered Git checkout" }
+        return (path as NSString).abbreviatingWithTildeInPath
+    }
+
+    @ViewBuilder private var workspaceNotice: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: draftMode == .worktree ? "checkmark.shield" : "exclamationmark.triangle")
+                .foregroundStyle(draftMode == .worktree ? DieterTheme.shell : DieterTheme.amber)
+                .frame(width: 16)
+            Text(draftMode == .worktree
+                ? "Dieter creates a lightweight Git worktree that shares the repository’s object store—no second clone."
+                : "The agent uses \(abbreviatedProjectPath). Other conversations can see its changes, so concurrent work is restricted.")
+                .font(.caption).foregroundStyle(DieterTheme.subtle).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .background(
+            (draftMode == .worktree ? DieterTheme.shellDeep : DieterTheme.amber).opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 9)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(
+            (draftMode == .worktree ? DieterTheme.shellDeep : DieterTheme.amber).opacity(0.26)
+        ))
+    }
+
+    private func workspaceOption(
+        _ option: ConversationWorkspaceMode,
+        badge: String,
+        detail: String
+    ) -> some View {
+        let selected = draftMode == option
+        return Button { draftMode = option } label: {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Image(systemName: option.symbol)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(selected ? DieterTheme.shell : DieterTheme.tertiary)
+                    Spacer()
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(selected ? DieterTheme.shell : DieterTheme.tertiary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.title).font(.system(size: 15, weight: .semibold))
+                    Text(badge).font(.caption2.weight(.medium)).foregroundStyle(selected ? DieterTheme.shell : DieterTheme.tertiary)
+                }
+                Text(detail)
+                    .font(.caption).foregroundStyle(DieterTheme.subtle)
+                    .multilineTextAlignment(.leading).lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(16).frame(maxWidth: .infinity, minHeight: 154, alignment: .topLeading)
+            .background(selected ? DieterTheme.shellDeep.opacity(0.1) : DieterTheme.surface.opacity(0.52), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(
+                selected ? DieterTheme.shell.opacity(0.75) : DieterTheme.strongBorder,
+                lineWidth: selected ? 1.5 : 1
+            ))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("workspace.mode.\(option.rawValue)")
+    }
+
+    private func workspaceField<Content: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+            content()
+            Text(detail).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func applySelection() {
+        mode = draftMode.rawValue
+        branch = draftMode == .worktree ? draftBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        baseBranch = draftMode == .worktree ? draftBaseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        dismiss()
     }
 }
 
@@ -1148,6 +1421,43 @@ struct RenameBoardSheet: View {
     private func rename(_ boardID: String) {
         guard !normalizedName.isEmpty else { return }
         Task { await store.renameBoard(id: boardID, name: normalizedName) }
+    }
+}
+
+struct RenameProjectSheet: View {
+    @Environment(DieterStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+
+    private var normalizedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Rename project").font(.title2.weight(.bold))
+            if let project = store.renameProjectTarget {
+                Text("Choose a new display name for \(project.name). The Git working tree and Dieter history stay unchanged.")
+                    .foregroundStyle(.secondary)
+                TextField("Project name", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { rename(project.id) }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { dismiss() }
+                    Button("Rename") { rename(project.id) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(normalizedName.isEmpty || normalizedName == project.name)
+                }
+            } else {
+                ContentUnavailableView("Project unavailable", systemImage: "folder.badge.questionmark")
+            }
+        }
+        .padding(24).frame(width: 480)
+        .onAppear { name = store.renameProjectTarget?.name ?? "" }
+    }
+
+    private func rename(_ projectID: String) {
+        guard !normalizedName.isEmpty else { return }
+        Task { await store.renameProject(id: projectID, name: normalizedName) }
     }
 }
 

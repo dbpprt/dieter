@@ -32,6 +32,7 @@ import com.dbpprt.dieter.v1.DirectoryListing
 import com.dbpprt.dieter.v1.FileDocument
 import com.dbpprt.dieter.v1.FileEntry
 import com.dbpprt.dieter.v1.FileList
+import com.dbpprt.dieter.v1.ForkChatRequest
 import com.dbpprt.dieter.v1.GetCardRequest
 import com.dbpprt.dieter.v1.GetConversationRequest
 import com.dbpprt.dieter.v1.GetStateRequest
@@ -206,6 +207,7 @@ interface DieterRepository {
     suspend fun deleteBoardLabel(boardId: String, labelId: String): Board
 
     suspend fun createConversation(request: CreateConversationRequest, chat: Boolean): Card
+    suspend fun forkChat(sourceCardId: String, messageId: String = "", title: String = ""): Card
     suspend fun chats(includeArchived: Boolean = true): ChatsResponse
     suspend fun card(cardId: String): CardDetail
     suspend fun conversation(cardId: String, limit: Int = 30, before: Int? = null): ConversationSnapshot
@@ -631,6 +633,14 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
 
     override suspend fun renameCard(cardId: String, title: String): Card = unary().renameCard(
         RenameCardRequest.newBuilder().setCardId(cardId).setTitle(title).build(),
+    )
+
+    override suspend fun forkChat(sourceCardId: String, messageId: String, title: String): Card = unary().forkChat(
+        ForkChatRequest.newBuilder()
+            .setSourceCardId(sourceCardId)
+            .setMessageId(messageId)
+            .setTitle(title)
+            .build(),
     )
 
     override suspend fun updateCard(cardId: String, title: String, initialPrompt: String): Card = unary().updateCard(

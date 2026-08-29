@@ -20,9 +20,29 @@ enum IslandUISmokeRunner {
         controller.setExpanded(true, animated: false)
         try? await DieterTaskSleep.milliseconds(450)
         let expandedSize = controller.islandWindow?.frame.size ?? .zero
-        let expanded = controller.isExpanded && expandedSize.width == 536 && expandedSize.height >= 240
+        let expanded = controller.isExpanded && expandedSize.width == 600 && expandedSize.height >= 300
         if let window = controller.islandWindow {
             capture(window, to: output.appending(path: "island-expanded.png"))
+        }
+
+        controller.setExpanded(false, animated: false)
+        store.state.cards = Array(store.state.cards.prefix(1))
+        controller.setExpanded(true, animated: false)
+        try? await DieterTaskSleep.milliseconds(600)
+        let singleItemSize = controller.islandWindow?.frame.size ?? .zero
+        let singleItemExpanded = controller.isExpanded && singleItemSize == CGSize(width: 600, height: 302)
+        if let window = controller.islandWindow {
+            capture(window, to: output.appending(path: "island-expanded-single.png"))
+        }
+
+        controller.setExpanded(false, animated: false)
+        store.state.cards = []
+        controller.setExpanded(true, animated: false)
+        try? await DieterTaskSleep.milliseconds(600)
+        let emptySize = controller.islandWindow?.frame.size ?? .zero
+        let emptyExpanded = controller.isExpanded && emptySize == CGSize(width: 600, height: 324)
+        if let window = controller.islandWindow {
+            capture(window, to: output.appending(path: "island-expanded-empty.png"))
         }
 
         DieterIslandPreferences.setEnabled(false, in: defaults)
@@ -44,6 +64,8 @@ enum IslandUISmokeRunner {
         writeReport([
             "collapsed-window": appeared ? "passed" : "failed: island window did not appear",
             "expanded-window": expanded ? "passed" : "failed: island did not expand to its activity panel",
+            "single-activity-layout": singleItemExpanded ? "passed" : "failed: single activity did not use the roomy minimum layout",
+            "empty-activity-layout": emptyExpanded ? "passed" : "failed: empty activity did not use the balanced minimum layout",
             "settings-toggle-off": hidden ? "passed" : "failed: disabling the preference left the island visible",
             "settings-toggle-on": restored ? "passed" : "failed: re-enabling the preference did not restore the island",
             "settings-page": settingsVisible ? "passed" : "failed: Island was not the active Settings destination",

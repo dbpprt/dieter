@@ -59,6 +59,7 @@ class DieterSyncService : Service() {
     private var postedRunningChatIds: Set<String> = emptySet()
     private var postedTerminalChatIds: Set<String> = emptySet()
     private var postedReviewCardIds: Set<String> = emptySet()
+    private var summarizedResultNotificationIds: Set<Int> = emptySet()
     private val paletteTokens get() = AppPreferences.selectedPalette(this).tokens
     private val notificationAccent get() = paletteTokens.shellStartInt
     private val reviewAccent get() = Color.rgb(226, 190, 106)
@@ -262,10 +263,47 @@ class DieterSyncService : Service() {
     }
 
     private fun reconcileResultsSummary() {
-        if (postedTerminalChatIds.isEmpty() && postedReviewCardIds.isEmpty()) {
-            notifications.cancel(RESULTS_SUMMARY_NOTIFICATION_ID)
-        } else {
-            postNotification(RESULTS_SUMMARY_NOTIFICATION_ID, resultsGroupSummary())
+        val activeNotifications = getSystemService(NotificationManager::class.java).activeNotifications
+        val activeResultNotificationIds = activeNotifications.asSequence()
+            .filter { status ->
+                status.id != RESULTS_SUMMARY_NOTIFICATION_ID &&
+                    status.notification.group == RESULTS_GROUP &&
+                    status.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0
+            }
+            .mapTo(mutableSetOf()) { it.id }
+
+        // Android owns dismissal and auto-cancel state. Keep the service's
+        // bookkeeping aligned with what is actually still visible.
+        postedTerminalChatIds = postedTerminalChatIds.filterTo(mutableSetOf()) { cardId ->
+            terminalNotificationId(cardId) in activeResultNotificationIds
+        }
+        postedReviewCardIds = postedReviewCardIds.filterTo(mutableSetOf()) { cardId ->
+            reviewNotificationId(cardId) in activeResultNotificationIds
+        }
+
+        val summaryActive = activeNotifications.any { it.id == RESULTS_SUMMARY_NOTIFICATION_ID }
+        when (
+            resultSummaryAction(
+                activeChildIds = activeResultNotificationIds,
+                summarizedChildIds = summarizedResultNotificationIds,
+                summaryActive = summaryActive,
+            )
+        ) {
+            ResultSummaryAction.UNCHANGED -> Unit
+            ResultSummaryAction.CANCEL -> {
+                notifications.cancel(RESULTS_SUMMARY_NOTIFICATION_ID)
+                summarizedResultNotificationIds = emptySet()
+            }
+            ResultSummaryAction.POST -> {
+                if (
+                    postNotification(
+                        RESULTS_SUMMARY_NOTIFICATION_ID,
+                        resultsGroupSummary(activeResultNotificationIds.size),
+                    )
+                ) {
+                    summarizedResultNotificationIds = activeResultNotificationIds
+                }
+            }
         }
     }
 
@@ -503,6 +541,8 @@ class DieterSyncService : Service() {
             .setCategory(Notification.CATEGORY_STATUS)
             .setAutoCancel(true)
             .setGroup(RESULTS_GROUP)
+            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+            .setOnlyAlertOnce(true)
             .setContentIntent(openIntent(cardId = event.card.id))
         if (
             settings.displayStyle == NotificationDisplayStyle.DETAILED &&
@@ -533,6 +573,8 @@ class DieterSyncService : Service() {
             .setCategory(Notification.CATEGORY_STATUS)
             .setAutoCancel(true)
             .setGroup(RESULTS_GROUP)
+            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+            .setOnlyAlertOnce(true)
             .setContentIntent(openIntent(cardId = card.id))
             .addAction(
                 Notification.Action.Builder(null, "Mark done", markDoneIntent(card)).build(),
@@ -550,14 +592,20 @@ class DieterSyncService : Service() {
         return builder.build()
     }
 
-    /** Collapses agent results into one tidy stack in the shade. */
-    private fun resultsGroupSummary(): Notification = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
+    /** Collapses multiple agent results into one tidy, silent stack in the shade. */
+    private fun resultsGroupSummary(childCount: Int): Notification = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_notification)
+        .setContentTitle("$childCount Dieter updates")
+        .setContentText("Chats finished or cards are ready for review")
         .setColor(notificationAccent)
         .setCategory(Notification.CATEGORY_STATUS)
         .setGroup(RESULTS_GROUP)
         .setGroupSummary(true)
+        .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
         .setAutoCancel(true)
+        .setOnlyAlertOnce(true)
+        .setShowWhen(false)
+        .setNumber(childCount)
         .setContentIntent(openIntent())
         .build()
 

@@ -61,6 +61,15 @@ enum DieterConversationOpenFailurePolicy {
 }
 
 enum DieterOutboxPolicy {
+    static func removeUndelivered(
+        from entries: inout [DieterOutboxEntry],
+        endpointID: String
+    ) -> [DieterOutboxEntry] {
+        let removed = entries.filter { $0.endpointID == endpointID && $0.serverID == nil }
+        entries.removeAll { $0.endpointID == endpointID && $0.serverID == nil }
+        return removed
+    }
+
     static func nextIndex(
         in entries: [DieterOutboxEntry],
         endpointID: String,

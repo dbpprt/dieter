@@ -48,6 +48,69 @@ func (s *Store) ConversationByID(cardID string) (model.Conversation, error) {
 	return s.loadConversation(cardID)
 }
 
+// InitializeForkConversation copies a completed prefix into a newly created
+// standalone chat. The source session is deliberately not copied: lifecycle
+// payloads identify one provider session and cannot safely back two chats.
+func (s *Store) InitializeForkConversation(targetRef string, messages []model.UIMessage) (model.Conversation, error) {
+	if len(messages) == 0 {
+		return model.Conversation{}, errors.New("fork requires at least one message")
+	}
+	cloned := append([]model.UIMessage(nil), messages...)
+	_, conversation, err := s.AppendConversationEvent(targetRef, "fork", "", "", cloned)
+	return conversation, err
+}
+
+// ForkChat creates a provider-neutral transcript fork. The target gets its
+// own card ID, workspace, runtime lease, and harness lifecycle.
+func (s *Store) ForkChat(sourceRef, messageID, title string) (model.Card, error) {
+	source, err := s.CardDetail(sourceRef)
+	if err != nil {
+		return model.Card{}, err
+	}
+	conversation, err := s.Conversation(source.Card.ID)
+	if err != nil {
+		return model.Card{}, err
+	}
+	if conversation.Status == "running" || conversation.Status == "starting" || conversation.ActiveTurn != nil {
+		return model.Card{}, errors.New("cannot fork a conversation with an active turn")
+	}
+	end := len(conversation.Messages)
+	if strings.TrimSpace(messageID) != "" {
+		end = 0
+		for index, message := range conversation.Messages {
+			if message.ID == messageID {
+				end = index + 1
+				break
+			}
+		}
+		if end == 0 {
+			return model.Card{}, fmt.Errorf("message %q is not in the source conversation", messageID)
+		}
+	}
+	if end == 0 {
+		return model.Card{}, errors.New("cannot fork an empty conversation")
+	}
+	if strings.TrimSpace(title) == "" {
+		title = "Fork of " + source.Card.Title
+	}
+	target, err := s.CreateChat(CreateCardInput{
+		Project: source.Project.ID, Title: title, Provider: source.Card.Provider,
+		Model: source.Card.Model, Effort: source.Card.Effort,
+		ProviderOptions: source.Card.ProviderOptions,
+		WorkspaceMode:   source.Project.DefaultWorkspaceMode,
+	})
+	if err != nil {
+		return model.Card{}, err
+	}
+	if _, err = s.InitializeForkConversation(target.ID, conversation.Messages[:end]); err != nil {
+		return target, err
+	}
+	if _, err = s.MarkPromptSent(target.ID); err != nil {
+		return target, err
+	}
+	return s.ResolveCard(target.ID)
+}
+
 // ConversationRevision is a cheap change token for the durable transcript.
 // It lets read-only pollers avoid decoding snapshot.json when neither the
 // snapshot nor its append-only event source has changed.
@@ -366,6 +429,13 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 		if json.Unmarshal(event.Data, &parts) == nil {
 			conversation.DraftAttachments = append(conversation.DraftAttachments[:0], parts...)
 		}
+	case "fork":
+		var messages []model.UIMessage
+		if json.Unmarshal(event.Data, &messages) == nil {
+			conversation.Messages = append(conversation.Messages[:0], messages...)
+			conversation.ForkSeed = append(conversation.ForkSeed[:0], messages...)
+			conversation.Status = "idle"
+		}
 	case "user-message":
 		var message model.UIMessage
 		if json.Unmarshal(event.Data, &message) == nil {
@@ -397,6 +467,7 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 		var state json.RawMessage
 		if json.Unmarshal(event.Data, &state) == nil {
 			conversation.Session = append(conversation.Session[:0], state...)
+			conversation.ForkSeed = nil
 		}
 	case "turn-start":
 		var turn model.ConversationTurn

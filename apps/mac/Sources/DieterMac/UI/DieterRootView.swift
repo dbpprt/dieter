@@ -115,6 +115,7 @@ struct DieterRootView: View {
         .sheet(isPresented: $store.createConversationPresented) { NewConversationSheet().environment(store) }
         .sheet(isPresented: $store.createProjectPresented) { NewProjectSheet().environment(store) }
         .sheet(isPresented: $store.createBoardPresented) { NewBoardSheet().environment(store) }
+        .sheet(isPresented: $store.renameProjectPresented) { RenameProjectSheet().environment(store) }
         .sheet(isPresented: $store.renameBoardPresented) { RenameBoardSheet().environment(store) }
         .sheet(isPresented: $store.projectContextPresented) { ProjectContextSheet().environment(store) }
         .sheet(isPresented: $store.labelsPresented) { LabelsSheet().environment(store) }
@@ -507,7 +508,7 @@ struct AppSidebar: View {
                             .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
 
                             if let summary = store.outboxSummary(for: machine) {
-                                machineQueueBanner(machine: machine, summary: summary)
+                                MachineQueueBanner(machine: machine, summary: summary)
                             }
                         }
                     }
@@ -552,7 +553,15 @@ struct AppSidebar: View {
         store.workspaceIsLive && machine.online
     }
 
-    private func machineQueueBanner(machine: DieterEndpoint, summary: MachineOutboxSummary) -> some View {
+}
+
+private struct MachineQueueBanner: View {
+    @Environment(DieterStore.self) private var store
+    let machine: DieterEndpoint
+    let summary: MachineOutboxSummary
+    @State private var discardConfirmationPresented = false
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "exclamationmark.circle")
@@ -564,6 +573,12 @@ struct AppSidebar: View {
                 .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
+                Button("Cancel queue…", role: .destructive) {
+                    discardConfirmationPresented = true
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.mini)
+                .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).cancel-queue")
                 Spacer()
                 Button("Retry now") { Task { await store.retryOutbox(for: machine) } }
                     .buttonStyle(.bordered)
@@ -577,6 +592,18 @@ struct AppSidebar: View {
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(DieterTheme.amber.opacity(0.4)))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).queue")
+        .confirmationDialog(
+            "Cancel \(summary.itemCount) queued \(summary.itemCount == 1 ? "item" : "items")?",
+            isPresented: $discardConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel queued \(summary.itemCount == 1 ? "item" : "items")", role: .destructive) {
+                Task { await store.discardOutbox(for: machine) }
+            }
+            Button("Keep queued", role: .cancel) {}
+        } message: {
+            Text("This permanently removes the queued work from this Mac. Work already accepted by \(machine.name) is not affected.")
+        }
     }
 }
 
@@ -604,6 +631,10 @@ private struct SidebarProjectRow: View {
         return store.workspaceIsLive && machine.online
     }
 
+    private var projectMachine: DieterEndpoint? {
+        store.machine(forProjectID: project.id)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
@@ -614,6 +645,10 @@ private struct SidebarProjectRow: View {
                             .font(.system(size: 12, weight: selected ? .semibold : .medium))
                             .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
                             .lineLimit(1)
+                        if let projectMachine {
+                            ProjectMachineBadge(machine: projectMachine, online: projectMachineOnline == true)
+                                .accessibilityIdentifier("sidebar.project.\(project.id).machine")
+                        }
                         Spacer(minLength: 2)
                     }
                     .contentShape(Rectangle())
@@ -684,6 +719,73 @@ private struct SidebarProjectRow: View {
         }
         .padding(.bottom, 2)
         .animation(.snappy(duration: 0.18), value: expanded)
+        .projectContextMenu(for: project)
+    }
+}
+
+/// Compact host marker shown beside each project name.
+private struct ProjectMachineBadge: View {
+    let machine: DieterEndpoint
+    let online: Bool
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(online ? DieterTheme.eyes : DieterTheme.tertiary)
+                .frame(width: 5, height: 5)
+            Text(machine.name)
+                .font(.system(size: 8.5, weight: .semibold))
+                .lineLimit(1)
+                .frame(maxWidth: 68)
+        }
+        .foregroundStyle(online ? DieterTheme.subtle : DieterTheme.tertiary)
+        .padding(.horizontal, 6)
+        .frame(height: 16)
+        .background(DieterTheme.surface.opacity(0.9), in: Capsule())
+        .overlay(Capsule().stroke(DieterTheme.border))
+        .help("Hosted on \(machine.name) · \(online ? "Online" : "Offline")")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Hosted on \(machine.name), \(online ? "online" : "offline")")
+    }
+}
+
+private struct ProjectContextMenuModifier: ViewModifier {
+    @Environment(DieterStore.self) private var store
+    let project: Dieter_V1_Project
+    @State private var deleteConfirmationPresented = false
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                Button("Rename project…", systemImage: "pencil") {
+                    store.presentRenameProject(projectID: project.id)
+                }
+                Button("Edit project…", systemImage: "slider.horizontal.3") {
+                    store.presentProjectEditor(projectID: project.id)
+                }
+                Divider()
+                Button("Delete project…", systemImage: "trash", role: .destructive) {
+                    deleteConfirmationPresented = true
+                }
+            }
+            .confirmationDialog(
+                "Delete \(project.name) from Dieter?",
+                isPresented: $deleteConfirmationPresented,
+                titleVisibility: .visible
+            ) {
+                Button("Delete project", role: .destructive) {
+                    Task { await store.setProjectArchived(id: project.id, archived: true) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the project from the sidebar without deleting its Git working tree. You can restore it from Archive.")
+            }
+    }
+}
+
+private extension View {
+    func projectContextMenu(for project: Dieter_V1_Project) -> some View {
+        modifier(ProjectContextMenuModifier(project: project))
     }
 }
 
@@ -767,6 +869,7 @@ private struct SidebarProjectRail: View {
             ProjectQuickNav(project: project) { popoverPresented = false }
                 .environment(store)
         }
+        .projectContextMenu(for: project)
     }
 }
 

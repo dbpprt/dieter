@@ -980,6 +980,7 @@ Actions:
   show         Show Dieter card metadata and comments
   context      Print compact in-chat Dieter context
   transcript   Read Dieter's durable conversation
+  fork         Fork a completed conversation into a new standalone chat
   send         Submit a message; the running daemon owns the agent turn
   comment      Add a non-triggering Dieter annotation
   move         Move to todo, running, review, or done
@@ -1003,6 +1004,8 @@ Actions:
 		return c.cardShow(args[1:], true)
 	case "transcript":
 		return c.cardTranscript(args[1:])
+	case "fork":
+		return c.cardFork(args[1:])
 	case "send":
 		return c.cardSend(args[1:])
 	case "comment":
@@ -1024,6 +1027,33 @@ Actions:
 	default:
 		return fmt.Errorf("unknown card action %q", args[0])
 	}
+}
+
+func (c *CLI) cardFork(args []string) error {
+	const usage = "Usage: dieter card fork [--at MESSAGE_ID] [--title TITLE] [--format json|id] CARD\n"
+	set := flags("card fork")
+	messageID := set.String("at", "", "message boundary")
+	title := set.String("title", "", "fork title")
+	format := set.String("format", "json", "format")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 {
+		return errors.New("CARD is required")
+	}
+	if *format != "json" && *format != "id" {
+		return errors.New("format must be json or id")
+	}
+	item, err := c.Store.ForkChat(set.Arg(0), *messageID, *title)
+	if err != nil {
+		return err
+	}
+	if *format == "id" {
+		fmt.Fprintln(c.Out, item.ID)
+		return nil
+	}
+	return jsonOut(c.Out, item)
 }
 
 func (c *CLI) cardLabels(args []string) error {

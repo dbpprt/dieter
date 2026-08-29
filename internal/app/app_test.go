@@ -25,6 +25,13 @@ type fakeRunner struct {
 
 type streamErrorRunner struct{}
 
+type diagnosticErrorRunner struct{}
+
+type failOnceRunner struct {
+	mu       sync.Mutex
+	requests []harness.Request
+}
+
 func (streamErrorRunner) Run(_ context.Context, _ harness.Request, emit func(harness.Output) error) error {
 	for _, chunk := range []string{
 		`{"type":"start","messageId":"assistant"}`,
@@ -35,6 +42,44 @@ func (streamErrorRunner) Run(_ context.Context, _ harness.Request, emit func(har
 		}
 	}
 	return emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{}}`)})
+}
+
+func (diagnosticErrorRunner) Run(_ context.Context, _ harness.Request, emit func(harness.Output) error) error {
+	if err := emit(harness.Output{Type: "error", Message: "codex exited 1"}); err != nil {
+		return err
+	}
+	return errors.New("codex exited 1: provider stderr\ncontext window exceeded at 120000 tokens")
+}
+
+func (runner *failOnceRunner) Run(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+	runner.mu.Lock()
+	runner.requests = append(runner.requests, request)
+	attempt := len(runner.requests)
+	runner.mu.Unlock()
+	if attempt == 1 {
+		if err := emit(harness.Output{Type: "error", Message: "provider failed"}); err != nil {
+			return err
+		}
+		return errors.New("provider failed: complete diagnostic")
+	}
+	for _, chunk := range []string{
+		`{"type":"start","messageId":"assistant-retry"}`,
+		`{"type":"text-start","id":"text"}`,
+		`{"type":"text-delta","id":"text","delta":"retry completed"}`,
+		`{"type":"text-end","id":"text"}`,
+		`{"type":"finish","finishReason":"stop"}`,
+	} {
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (runner *failOnceRunner) count() int {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	return len(runner.requests)
 }
 
 type emptyResponseRunner struct{}
@@ -148,6 +193,23 @@ func (runner *interruptQueueRunner) prompts() []string {
 		prompts[index] = request.Prompt
 	}
 	return prompts
+}
+
+func TestForkedConversationPromptContainsOnlyVisibleConversationText(t *testing.T) {
+	prompt := forkedConversationPrompt([]model.UIMessage{
+		{Role: "user", Parts: []model.UIMessagePart{{Type: "text", Text: "Original question"}, {Type: "file", Filename: "secret.txt"}}},
+		{Role: "assistant", Parts: []model.UIMessagePart{{Type: "reasoning", Text: "private reasoning"}, {Type: "text", Text: "Original answer"}}},
+	}, "Try another direction")
+	for _, expected := range []string{"<forked_transcript>", "Original question", "Original answer", "Try another direction"} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("prompt missing %q: %s", expected, prompt)
+		}
+	}
+	for _, excluded := range []string{"private reasoning", "secret.txt"} {
+		if strings.Contains(prompt, excluded) {
+			t.Fatalf("prompt leaked %q: %s", excluded, prompt)
+		}
+	}
 }
 
 func (emptyResponseRunner) Run(_ context.Context, _ harness.Request, emit func(harness.Output) error) error {
@@ -593,6 +655,72 @@ func TestRunnerFailureIsPersisted(t *testing.T) {
 	conversation, _ := service.Store.Conversation(card.ID)
 	if conversation.Status != "failed" {
 		t.Fatalf("conversation=%#v", conversation)
+	}
+}
+
+func TestRunnerFailurePersistsCompleteDiagnostics(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	service.Runner = diagnosticErrorRunner{}
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Diagnostics", Prompt: "Ship it", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range updates {
+	}
+	conversation, err := service.Store.Conversation(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := conversation.Messages[len(conversation.Messages)-1]
+	if conversation.Status != "failed" || len(last.Parts) != 1 ||
+		!strings.Contains(last.Parts[0].Text, "provider stderr") ||
+		!strings.Contains(last.Parts[0].Text, "context window exceeded") {
+		t.Fatalf("conversation=%#v", conversation)
+	}
+}
+
+func TestFailedTurnCanRetryExactUserMessage(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	runner := &failOnceRunner{}
+	service.Runner = runner
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Retry", Prompt: "Run the flaky verification", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range updates {
+	}
+	failed, err := service.Store.Conversation(card.ID)
+	if err != nil || failed.Status != "failed" || len(failed.Messages) < 2 {
+		t.Fatalf("failed conversation=%#v err=%v", failed, err)
+	}
+	retryParts := append([]model.UIMessagePart(nil), failed.Messages[0].Parts...)
+	queued, err := service.SubmitCardParts(card.ID, retryParts, card.Provider, card.Model, card.Effort, nil)
+	if err != nil || queued {
+		t.Fatalf("queued=%v err=%v", queued, err)
+	}
+	waitFor(t, func() bool {
+		conversation, _ := service.Store.Conversation(card.ID)
+		return runner.count() == 2 && conversation.Status == "idle" && !hasActiveTurn(service, project.ID)
+	})
+	retried, err := service.Store.Conversation(card.ID)
+	if err != nil || len(retried.Messages) != 4 || retried.Messages[2].Role != "user" ||
+		retried.Messages[2].Parts[0].Text != "Run the flaky verification" ||
+		!strings.Contains(retried.Messages[3].Parts[0].Text, "retry completed") {
+		t.Fatalf("retried conversation=%#v err=%v", retried, err)
 	}
 }
 

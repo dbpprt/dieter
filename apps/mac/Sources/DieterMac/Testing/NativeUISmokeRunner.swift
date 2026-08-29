@@ -314,6 +314,21 @@ enum NativeUISmokeRunner {
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
             await captureAppearances(sheet, named: "13-new-card.png", in: output)
             results["13-new-card"] = "passed"
+            click(window: sheet, x: 215, distanceFromTop: 425)
+            try? await DieterTaskSleep.milliseconds(700)
+            if let picker = NSApp.windows.first(where: {
+                $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
+            }) {
+                await captureAppearances(picker, named: "13a-workspace-picker-worktree.png", in: output)
+                click(window: picker, x: 500, distanceFromTop: 190)
+                try? await DieterTaskSleep.milliseconds(350)
+                await captureAppearances(picker, named: "13a-workspace-picker-main.png", in: output)
+                results["13a-workspace-picker"] = "passed"
+                click(window: picker, x: picker.frame.width - 32, distanceFromTop: 36)
+                try? await DieterTaskSleep.milliseconds(350)
+            } else {
+                results["13a-workspace-picker"] = "failed: sheet not visible"
+            }
         } else {
             results["13-new-card"] = "failed: sheet not visible"
         }
@@ -334,12 +349,15 @@ enum NativeUISmokeRunner {
                 model: harness?.defaultModel ?? "",
                 effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort ?? "",
                 deferred: true,
-                lane: todoLane.id
+                lane: todoLane.id,
+                workspaceMode: "worktree",
+                workspaceBaseBranch: project.baseBranch
             )
             let created = await waitUntil(timeout: 10) {
                 store.state.cards.contains {
                     $0.title == title &&
                         $0.lane.caseInsensitiveCompare("todo") == .orderedSame &&
+                        $0.workspaceMode == "worktree" &&
                         DieterConversationID.isServerBacked($0.id)
                 }
             }
@@ -504,9 +522,9 @@ enum NativeUISmokeRunner {
                 } else {
                     store.disconnect()
                 }
-                let offlineMessage = "Offline outbox smoke \(UUID().uuidString.lowercased())"
+                let canceledOfflineMessage = "Canceled offline outbox smoke \(UUID().uuidString.lowercased())"
                 if let liveCard, let machine = store.machine(forProjectID: liveCard.projectID) {
-                    store.composerText = offlineMessage
+                    store.composerText = canceledOfflineMessage
                     await store.sendComposer()
                     let queued = await waitUntil(timeout: 5) {
                         store.outboxSummary(for: machine)?.messageCount == 1
@@ -515,8 +533,27 @@ enum NativeUISmokeRunner {
                         ? "passed"
                         : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), draft=\(store.composerText)"
                     await captureAppearances(window, named: "17a-offline-message-queued.png", in: output)
+
+                    let removed = await store.discardOutbox(for: machine)
+                    let canceled = await waitUntil(timeout: 5) {
+                        store.outboxSummary(for: machine) == nil &&
+                            !store.conversationMessages.contains { message in
+                                message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
+                            }
+                    }
+                    results["17b-offline-message-canceled"] = removed == 1 && canceled
+                        ? "passed"
+                        : "failed: removed=\(removed), queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0)"
+                    await captureAppearances(window, named: "17b-offline-message-canceled.png", in: output)
+
+                    store.composerText = "Offline delivery smoke \(UUID().uuidString.lowercased())"
+                    await store.sendComposer()
+                    _ = await waitUntil(timeout: 5) {
+                        store.outboxSummary(for: machine)?.messageCount == 1
+                    }
                 } else {
                     results["17a-offline-message-queued"] = "failed: live card or owning machine missing"
+                    results["17b-offline-message-canceled"] = "failed: live card or owning machine missing"
                 }
                 await store.openBoard(cachedBoard.id, projectID: project.id)
                 try? await DieterTaskSleep.milliseconds(700)
@@ -546,15 +583,18 @@ enum NativeUISmokeRunner {
                     }
                     let visible = await waitUntil(timeout: 10) {
                         store.conversationMessages.contains { message in
-                            message.parts.contains { $0.type == "text" && $0.text == offlineMessage }
+                            message.parts.contains { $0.type == "text" && $0.text.hasPrefix("Offline delivery smoke ") }
                         }
                     }
-                    results["17b-reconnected-message-delivered"] = reconnected && delivered && visible
+                    let canceledStayedAbsent = !store.conversationMessages.contains { message in
+                        message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
+                    }
+                    results["17c-reconnected-message-delivered"] = reconnected && delivered && visible && canceledStayedAbsent
                         ? "passed"
-                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible)"
-                    await captureAppearances(window, named: "17b-reconnected-message-delivered.png", in: output)
+                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible), canceledAbsent=\(canceledStayedAbsent)"
+                    await captureAppearances(window, named: "17c-reconnected-message-delivered.png", in: output)
                 } else {
-                    results["17b-reconnected-message-delivered"] = "failed: reconnect trigger or live card missing"
+                    results["17c-reconnected-message-delivered"] = "failed: reconnect trigger or live card missing"
                 }
             } catch {
                 results["17-offline-cached-board-navigation"] = "failed: could not prepare cached board: \(error.localizedDescription)"

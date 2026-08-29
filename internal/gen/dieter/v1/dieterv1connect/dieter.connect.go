@@ -124,6 +124,8 @@ const (
 	// DieterServiceCreateChatProcedure is the fully-qualified name of the DieterService's CreateChat
 	// RPC.
 	DieterServiceCreateChatProcedure = "/dieter.v1.DieterService/CreateChat"
+	// DieterServiceForkChatProcedure is the fully-qualified name of the DieterService's ForkChat RPC.
+	DieterServiceForkChatProcedure = "/dieter.v1.DieterService/ForkChat"
 	// DieterServiceListChatsProcedure is the fully-qualified name of the DieterService's ListChats RPC.
 	DieterServiceListChatsProcedure = "/dieter.v1.DieterService/ListChats"
 	// DieterServiceGetCardProcedure is the fully-qualified name of the DieterService's GetCard RPC.
@@ -323,6 +325,7 @@ type DieterServiceClient interface {
 	DeleteBoardLabel(context.Context, *connect.Request[v1.DeleteBoardLabelRequest]) (*connect.Response[v1.Board], error)
 	CreateCard(context.Context, *connect.Request[v1.CreateConversationRequest]) (*connect.Response[v1.Card], error)
 	CreateChat(context.Context, *connect.Request[v1.CreateConversationRequest]) (*connect.Response[v1.Card], error)
+	ForkChat(context.Context, *connect.Request[v1.ForkChatRequest]) (*connect.Response[v1.Card], error)
 	ListChats(context.Context, *connect.Request[v1.ListChatsRequest]) (*connect.Response[v1.ChatsResponse], error)
 	GetCard(context.Context, *connect.Request[v1.GetCardRequest]) (*connect.Response[v1.CardDetail], error)
 	GetConversation(context.Context, *connect.Request[v1.GetConversationRequest]) (*connect.Response[v1.ConversationSnapshot], error)
@@ -583,6 +586,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceCreateChatProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("CreateChat")),
+			connect.WithClientOptions(opts...),
+		),
+		forkChat: connect.NewClient[v1.ForkChatRequest, v1.Card](
+			httpClient,
+			baseURL+DieterServiceForkChatProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ForkChat")),
 			connect.WithClientOptions(opts...),
 		),
 		listChats: connect.NewClient[v1.ListChatsRequest, v1.ChatsResponse](
@@ -957,6 +966,7 @@ type dieterServiceClient struct {
 	deleteBoardLabel               *connect.Client[v1.DeleteBoardLabelRequest, v1.Board]
 	createCard                     *connect.Client[v1.CreateConversationRequest, v1.Card]
 	createChat                     *connect.Client[v1.CreateConversationRequest, v1.Card]
+	forkChat                       *connect.Client[v1.ForkChatRequest, v1.Card]
 	listChats                      *connect.Client[v1.ListChatsRequest, v1.ChatsResponse]
 	getCard                        *connect.Client[v1.GetCardRequest, v1.CardDetail]
 	getConversation                *connect.Client[v1.GetConversationRequest, v1.ConversationSnapshot]
@@ -1168,6 +1178,11 @@ func (c *dieterServiceClient) CreateCard(ctx context.Context, req *connect.Reque
 // CreateChat calls dieter.v1.DieterService.CreateChat.
 func (c *dieterServiceClient) CreateChat(ctx context.Context, req *connect.Request[v1.CreateConversationRequest]) (*connect.Response[v1.Card], error) {
 	return c.createChat.CallUnary(ctx, req)
+}
+
+// ForkChat calls dieter.v1.DieterService.ForkChat.
+func (c *dieterServiceClient) ForkChat(ctx context.Context, req *connect.Request[v1.ForkChatRequest]) (*connect.Response[v1.Card], error) {
+	return c.forkChat.CallUnary(ctx, req)
 }
 
 // ListChats calls dieter.v1.DieterService.ListChats.
@@ -1488,6 +1503,7 @@ type DieterServiceHandler interface {
 	DeleteBoardLabel(context.Context, *connect.Request[v1.DeleteBoardLabelRequest]) (*connect.Response[v1.Board], error)
 	CreateCard(context.Context, *connect.Request[v1.CreateConversationRequest]) (*connect.Response[v1.Card], error)
 	CreateChat(context.Context, *connect.Request[v1.CreateConversationRequest]) (*connect.Response[v1.Card], error)
+	ForkChat(context.Context, *connect.Request[v1.ForkChatRequest]) (*connect.Response[v1.Card], error)
 	ListChats(context.Context, *connect.Request[v1.ListChatsRequest]) (*connect.Response[v1.ChatsResponse], error)
 	GetCard(context.Context, *connect.Request[v1.GetCardRequest]) (*connect.Response[v1.CardDetail], error)
 	GetConversation(context.Context, *connect.Request[v1.GetConversationRequest]) (*connect.Response[v1.ConversationSnapshot], error)
@@ -1744,6 +1760,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceCreateChatProcedure,
 		svc.CreateChat,
 		connect.WithSchema(dieterServiceMethods.ByName("CreateChat")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceForkChatHandler := connect.NewUnaryHandler(
+		DieterServiceForkChatProcedure,
+		svc.ForkChat,
+		connect.WithSchema(dieterServiceMethods.ByName("ForkChat")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceListChatsHandler := connect.NewUnaryHandler(
@@ -2146,6 +2168,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceCreateCardHandler.ServeHTTP(w, r)
 		case DieterServiceCreateChatProcedure:
 			dieterServiceCreateChatHandler.ServeHTTP(w, r)
+		case DieterServiceForkChatProcedure:
+			dieterServiceForkChatHandler.ServeHTTP(w, r)
 		case DieterServiceListChatsProcedure:
 			dieterServiceListChatsHandler.ServeHTTP(w, r)
 		case DieterServiceGetCardProcedure:
@@ -2389,6 +2413,10 @@ func (UnimplementedDieterServiceHandler) CreateCard(context.Context, *connect.Re
 
 func (UnimplementedDieterServiceHandler) CreateChat(context.Context, *connect.Request[v1.CreateConversationRequest]) (*connect.Response[v1.Card], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CreateChat is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ForkChat(context.Context, *connect.Request[v1.ForkChatRequest]) (*connect.Response[v1.Card], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ForkChat is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) ListChats(context.Context, *connect.Request[v1.ListChatsRequest]) (*connect.Response[v1.ChatsResponse], error) {

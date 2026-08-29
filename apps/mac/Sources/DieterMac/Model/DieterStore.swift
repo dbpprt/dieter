@@ -615,6 +615,8 @@ final class DieterStore {
     var createConversationPresented = false
     var createProjectPresented = false
     var createBoardPresented = false
+    var renameProjectPresented = false
+    var renameProjectTargetID = ""
     var renameBoardPresented = false
     var renameBoardTargetID = ""
     var projectContextPresented = false
@@ -707,11 +709,41 @@ final class DieterStore {
         return state.project.id == selectedProjectID ? state.project : nil
     }
 
+    var renameProjectTarget: Dieter_V1_Project? {
+        projectDirectory[renameProjectTargetID]
+            ?? state.projects.first(where: { $0.id == renameProjectTargetID })
+            ?? (state.project.id == renameProjectTargetID ? state.project : nil)
+    }
+
     var projects: [Dieter_V1_Project] {
         let values = projectDirectory.isEmpty ? state.projects : Array(projectDirectory.values)
         return values.sorted {
             if $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedSame { return $0.id < $1.id }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    /// The daemon-wide card projection used by app-global surfaces such as the
+    /// Island. `state.cards` intentionally contains only the selected project,
+    /// while `navigationCards` is kept current by WatchSync in the background.
+    var synchronizedCards: [Dieter_V1_Card] {
+        var byID: [String: Dieter_V1_Card] = [:]
+        for card in navigationCards.values.joined() where !card.id.isEmpty {
+            byID[card.id] = card
+        }
+        for card in chats where !card.id.isEmpty {
+            byID[card.id] = card
+        }
+        // Selected-project state also carries optimistic changes that may not
+        // have reached the authoritative projection yet.
+        for card in state.cards + state.chats where !card.id.isEmpty {
+            byID[card.id] = card
+        }
+        return byID.values.sorted {
+            let lhsActivity = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
+            let rhsActivity = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
+            if lhsActivity == rhsActivity { return $0.id < $1.id }
+            return lhsActivity > rhsActivity
         }
     }
 
@@ -2047,6 +2079,23 @@ final class DieterStore {
         }
     }
 
+    func presentRenameProject(projectID: String) {
+        Task {
+            guard await ensureProjectConnection(projectID) else { return }
+            selectedProjectID = projectID
+            renameProjectTargetID = projectID
+            renameProjectPresented = true
+        }
+    }
+
+    func presentProjectEditor(projectID: String) {
+        Task {
+            guard await ensureProjectConnection(projectID) else { return }
+            selectedProjectID = projectID
+            projectContextPresented = true
+        }
+    }
+
     func presentRenameBoard(boardID: String) {
         guard let target = board(id: boardID) else { return }
         Task {
@@ -2357,6 +2406,9 @@ final class DieterStore {
                 card.provider = request.provider
                 card.model = request.model
                 card.effort = request.effort
+                card.workspaceMode = request.workspaceMode
+                card.workspaceBranch = request.workspaceBranch
+                card.workspaceBaseBranch = request.workspaceBaseBranch
                 card.runtime = entry.state == .failed ? "failed" : "pending"
                 card.createdAt = ISO8601DateFormatter().string(from: entry.createdAt)
                 card.updatedAt = card.createdAt
@@ -2553,29 +2605,51 @@ final class DieterStore {
 
     func discardOutboxItem(_ id: String) async {
         guard let index = syncDiskState.outbox.firstIndex(where: {
-            ($0.optimisticID == id || $0.serverID == id) && $0.state == .failed
+            ($0.optimisticID == id || $0.serverID == id) && $0.serverID == nil
         }) else { return }
         let entry = syncDiskState.outbox.remove(at: index)
-        switch entry.kind {
-        case .createCard, .createChat:
-            let ids = Set([entry.optimisticID, entry.serverID].compactMap { $0 })
-            state.cards.removeAll { ids.contains($0.id) }
-            chats.removeAll { ids.contains($0.id) }
-            for projectID in Array(navigationCards.keys) {
-                navigationCards[projectID]?.removeAll { ids.contains($0.id) }
-            }
-            if let selected = selectedCardID ?? selectedChatID, ids.contains(selected) {
-                closeConversation()
-            }
-        case .sendMessage:
-            if var snapshot = conversation {
-                snapshot.conversation.messages.removeAll { $0.id == entry.optimisticID }
-                conversation = snapshot
-            }
-        }
+        removeOptimisticOutboxArtifacts(for: [entry])
         rebuildOutboxOverlays()
         try? await syncPersistence.save(syncDiskState)
         startOutboxWorker()
+    }
+
+    @discardableResult
+    func discardOutbox(for machine: DieterEndpoint) async -> Int {
+        let removed = DieterOutboxPolicy.removeUndelivered(
+            from: &syncDiskState.outbox,
+            endpointID: machine.id
+        )
+        guard !removed.isEmpty else { return 0 }
+        removeOptimisticOutboxArtifacts(for: removed)
+        rebuildOutboxOverlays()
+        try? await syncPersistence.save(syncDiskState)
+        startOutboxWorker()
+        return removed.count
+    }
+
+    private func removeOptimisticOutboxArtifacts(for entries: [DieterOutboxEntry]) {
+        let conversationIDs = Set(entries.lazy
+            .filter { $0.kind != .sendMessage }
+            .flatMap { [$0.optimisticID, $0.serverID].compactMap { $0 } })
+        let messageIDs = Set(entries.lazy
+            .filter { $0.kind == .sendMessage }
+            .map(\.optimisticID))
+
+        if !conversationIDs.isEmpty {
+            state.cards.removeAll { conversationIDs.contains($0.id) }
+            chats.removeAll { conversationIDs.contains($0.id) }
+            for projectID in Array(navigationCards.keys) {
+                navigationCards[projectID]?.removeAll { conversationIDs.contains($0.id) }
+            }
+            if let selected = selectedCardID ?? selectedChatID, conversationIDs.contains(selected) {
+                closeConversation()
+            }
+        }
+        if !messageIDs.isEmpty, var snapshot = conversation {
+            snapshot.conversation.messages.removeAll { messageIDs.contains($0.id) }
+            conversation = snapshot
+        }
     }
 
     @discardableResult
@@ -2747,13 +2821,26 @@ final class DieterStore {
     }
 
     func openConversation(cardID: String, chat: Bool = false) async {
-        let card = chats.first(where: { $0.id == cardID })
+        let knownChat = chats.first(where: { $0.id == cardID })
+            ?? state.chats.first(where: { $0.id == cardID })
+        let card = knownChat
+            ?? state.cards.first(where: { $0.id == cardID })
             ?? navigationCards.values.lazy.compactMap({ $0.first(where: { $0.id == cardID }) }).first
+        let opensChat = chat || knownChat != nil || card?.scope.caseInsensitiveCompare("chat") == .orderedSame
         let projectID = card?.projectID ?? ""
         let endpointID = projectEndpointIDs[projectID] ?? endpoint.id
-        selectedCardID = chat ? nil : cardID
-        selectedChatID = chat ? cardID : nil
-        if chat { newChatProjectID = "" }
+        stopTerminalWatch()
+        section = opensChat ? .chats : .board
+        if !projectID.isEmpty {
+            selectedProjectID = projectID
+            if !opensChat, let boardID = card?.boardID, !boardID.isEmpty {
+                selectedBoardID = boardID
+            }
+            updateSelectedState()
+        }
+        selectedCardID = opensChat ? nil : cardID
+        selectedChatID = opensChat ? cardID : nil
+        if opensChat { newChatProjectID = "" }
         resetConversationHistory()
         conversationTask?.cancel()
         gitOperationTask?.cancel()
@@ -2769,7 +2856,7 @@ final class DieterStore {
                 var snapshot = Dieter_V1_ConversationSnapshot()
                 snapshot.detail.card = card ?? Dieter_V1_Card()
                 snapshot.detail.project = projectDirectory[request.projectID] ?? Dieter_V1_Project()
-                if !chat { snapshot.detail.board = board(id: request.boardID) ?? Dieter_V1_Board() }
+                if !opensChat { snapshot.detail.board = board(id: request.boardID) ?? Dieter_V1_Board() }
                 snapshot.conversation.cardID = cardID
                 snapshot.conversation.status = entry.state == .failed ? "failed" : "pending"
                 snapshot.conversation.draftAttachments = request.attachments
@@ -2785,7 +2872,7 @@ final class DieterStore {
         if let cached = projectedConversation(cardID: cardID, endpointID: endpointID) {
             acceptConversation(
                 cached,
-                chat: chat,
+                chat: opensChat,
                 refreshedAt: conversationRefreshDate(cardID: cardID, endpointID: endpointID),
                 cache: false
             )
@@ -2806,7 +2893,7 @@ final class DieterStore {
             conversationSyncing = false
             return
         }
-        await fetchConversation(cardID: cardID, chat: chat, rpc: rpc)
+        await fetchConversation(cardID: cardID, chat: opensChat, rpc: rpc)
     }
 
     private func fetchConversation(
@@ -3094,6 +3181,41 @@ final class DieterStore {
             composerText = text
             composerAttachments = attachments
             show(error)
+        }
+    }
+
+    @discardableResult
+    func retryFailedTurn(_ failure: ConversationTurnFailure) async -> Bool {
+        guard !failure.retryParts.isEmpty,
+              let id = selectedCardID ?? selectedChatID,
+              let card = selectedCard ?? selectedDetail?.card else { return false }
+        let targetEndpointID = projectEndpointIDs[card.projectID] ?? endpoint.id
+        var request = Dieter_V1_SendMessageRequest()
+        request.cardID = id
+        request.parts = failure.retryParts
+        request.provider = card.provider
+        request.model = card.model
+        request.effort = card.effort
+        request.providerOptions = card.providerOptions
+        request.clientID = syncClientID
+        request.commandID = UUID().uuidString.lowercased()
+        request.messageID = "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+        do {
+            syncDiskState.outbox.append(DieterOutboxEntry(
+                commandID: request.commandID,
+                clientID: syncClientID,
+                endpointID: targetEndpointID,
+                kind: .sendMessage,
+                request: try request.serializedData(),
+                optimisticID: request.messageID,
+                attempts: 0,
+                createdAt: Date()
+            ))
+            await persistAndDrainOutbox()
+            return true
+        } catch {
+            show(error)
+            return false
         }
     }
 
@@ -3452,6 +3574,20 @@ final class DieterStore {
         guard let rpc else { return }
         var request = Dieter_V1_PinChatRequest(); request.cardID = card.id; request.pinned = pinned
         do { _ = try await rpc.pinChat(request); await refreshChats() } catch { show(error) }
+    }
+
+    func fork(_ card: Dieter_V1_Card, at messageID: String = "") async {
+        guard await ensureProjectConnection(card.projectID), let rpc else { return }
+        var request = Dieter_V1_ForkChatRequest()
+        request.sourceCardID = card.id
+        request.messageID = messageID
+        do {
+            let fork = try await rpc.forkChat(request)
+            await refreshChats()
+            await openConversation(cardID: fork.id, chat: true)
+        } catch {
+            show(error)
+        }
     }
 
     func cancel(_ card: Dieter_V1_Card) async {
@@ -3855,12 +3991,26 @@ final class DieterStore {
     }
 
     func setProjectArchived(id: String, archived: Bool) async {
+        guard await ensureProjectConnection(id) else { return }
         guard let rpc else { return }
         var request = Dieter_V1_ArchiveProjectRequest(); request.projectID = id; request.archived = archived
         do { _ = try await rpc.archiveProject(request); await refreshState(); await refreshNavigation(); await loadArchive() } catch { show(error) }
     }
 
+    func renameProject(id: String, name: String) async {
+        let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, await ensureProjectConnection(id), let rpc else { return }
+        var request = Dieter_V1_UpdateProjectRequest(); request.projectID = id; request.name = normalized
+        do {
+            _ = try await rpc.updateProject(request)
+            renameProjectPresented = false
+            await refreshState()
+            await refreshNavigation()
+        } catch { show(error) }
+    }
+
     func updateProject(name: String, summary: String, prompt: String) async {
+        guard await ensureProjectConnection(selectedProjectID) else { return }
         guard let rpc else { return }
         var request = Dieter_V1_UpdateProjectRequest(); request.projectID = selectedProjectID
         request.name = name; request.summary = summary; request.prompt = prompt

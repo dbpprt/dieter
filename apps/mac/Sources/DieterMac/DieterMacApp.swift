@@ -41,12 +41,13 @@ struct DieterMacApp: App {
                 .onChange(of: islandEnabled) { _, enabled in
                     islandController.setEnabled(enabled)
                 }
-                .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { store.applicationDidBecomeActive() }
-                }
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
                     let arguments = ProcessInfo.processInfo.arguments
+                    // Normal app startup is owned by the always-present menu
+                    // bar label below. Keep this window task only for smoke
+                    // modes, which install their own isolated test state.
+                    guard arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) else { return }
                     if arguments.contains("--island-ui-smoke") {
                         await IslandUISmokeRunner.run(store: store, controller: islandController)
                         return
@@ -114,6 +115,23 @@ struct DieterMacApp: App {
             Image(nsImage: MenuBarIcon.template)
                 .opacity(store.phase.isConnected ? 1 : 0.55)
                 .accessibilityLabel(store.phase.isConnected ? "Dieter connected" : "Dieter disconnected")
+                .onAppear {
+                    // MenuBarExtra survives when macOS restores Dieter without
+                    // a workspace window, so it owns the island and sync
+                    // lifetime rather than waiting for DieterRootView to open.
+                    islandController.start(enabled: islandEnabled)
+                }
+                .onChange(of: islandEnabled) { _, enabled in
+                    islandController.setEnabled(enabled)
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { store.applicationDidBecomeActive() }
+                }
+                .task {
+                    let arguments = ProcessInfo.processInfo.arguments
+                    guard !arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) else { return }
+                    await store.connect()
+                }
         }
         .menuBarExtraStyle(.window)
     }

@@ -17,7 +17,66 @@ snapshot configuration and can leave Android system services unresponsive. If
 the saved snapshot fails to load, stop and diagnose the AVD instead of silently
 continuing with a cold boot. Before launching, avoid CPU starvation from stale
 browser-automation sessions and confirm that another emulator is not already
-running.
+running. Leave the AVD's `hw.gpu.mode` set to `auto`. Stop leftover Gradle
+daemons before a snapshot repair and make enough host memory available for the
+emulator's host GLES renderer:
+
+```sh
+./apps/android/gradlew --project-dir apps/android --stop
+memory_pressure -Q
+```
+
+The startup log must report `gles_mode_selected:host` and identify the Apple
+GPU. If it instead says that software GL will be used due to system memory
+pressure, free memory and restart the emulator before using or saving its
+state. A software-rendered fallback snapshot is not a healthy replacement for
+the standard AVD snapshot.
+
+Never stop or snapshot the emulator while ADB is offline, boot animation is
+running, or Android has no focused window. A normal emulator shutdown saves
+`default_boot` automatically, including after a failed snapshot load; stopping
+an incomplete fallback boot can therefore replace a missing snapshot with a
+corrupt one. Before a deliberate shutdown, require all of the following:
+
+```sh
+adb -s emulator-5554 shell getprop sys.boot_completed        # 1
+adb -s emulator-5554 shell getprop init.svc.bootanim          # stopped
+adb -s emulator-5554 shell dumpsys window | rg 'mCurrentFocus|mFocusedApp'
+adb -s emulator-5554 shell uiautomator dump /sdcard/avd-health.xml
+adb -s emulator-5554 shell screencap -p /sdcard/avd-health.png
+```
+
+`mCurrentFocus` must name a real window rather than `null`, the UI dump must
+complete without a null-root error, and the screenshot must be a valid full-size
+PNG. Also reject a boot if emulator output contains `Failed to find
+ColorBuffer`, `bad color buffer handle`, or snapshot restore errors. Keep the
+healthy emulator running between test passes when practical.
+
+## Recover a missing or corrupt snapshot
+
+Snapshot repair is exceptional maintenance, not a routine test launch. Confirm
+that no emulator process or ADB device remains and that the data volume has at
+least 10 GiB free after quarantining the old snapshot. Quarantine, rather than
+immediately delete, only the broken `snapshots/default_boot` directory and
+stale `hardware-qemu.ini.lock` or `multiinstance.lock` files. Preserve the AVD
+userdata images. If retaining a known-bad quarantine would leave insufficient
+working space, it may be deleted only after confirming its replacement is not
+needed for user-data recovery.
+
+Launch once with the standard command above and no override flags. Because the
+bad snapshot has been quarantined, this one recovery launch intentionally boots
+from preserved userdata. Let it reach every health condition above; do not
+interrupt the fallback boot. Once Android is responsive and screenshots plus
+accessibility work, shut it down gracefully with `adb -s emulator-5554 emu
+kill` and wait for snapshot saving and the emulator process to finish.
+
+Relaunch with the same standard command. A repaired AVD is not accepted until
+the emulator reports that `default_boot` loaded successfully and the second
+boot again selects host GLES and passes every focus, accessibility, and
+screenshot check without color-buffer errors. Confirm that the saved
+`textures.bin` is nonempty. If that verification fails, quarantine the new
+snapshot and recreate the one standard AVD in Android Studio instead of
+repeatedly loading or overwriting broken graphics state.
 
 ## Start and connect
 

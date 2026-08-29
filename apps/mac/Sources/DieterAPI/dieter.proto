@@ -49,6 +49,7 @@ service DieterService {
 
   rpc CreateCard(CreateConversationRequest) returns (Card);
   rpc CreateChat(CreateConversationRequest) returns (Card);
+  rpc ForkChat(ForkChatRequest) returns (Card);
   rpc ListChats(ListChatsRequest) returns (ChatsResponse);
   rpc GetCard(GetCardRequest) returns (CardDetail);
   rpc GetConversation(GetConversationRequest) returns (ConversationSnapshot);
@@ -789,6 +790,12 @@ message CreateConversationRequest {
 
 message ListChatsRequest {
   bool include_archived = 1;
+}
+
+message ForkChatRequest {
+  string source_card_id = 1;
+  string message_id = 2;
+  string title = 3;
 }
 
 message ChatsResponse {

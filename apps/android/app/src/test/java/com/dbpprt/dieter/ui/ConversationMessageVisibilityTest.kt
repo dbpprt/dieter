@@ -72,6 +72,40 @@ class ConversationMessageVisibilityTest {
         assertTrue(message().hasRenderableConversationContent(subagents = listOf(Subagent.newBuilder().setId("worker").build())))
     }
 
+    @Test
+    fun failedTurnKeepsCompleteLogAndRetryPayloadOutOfTheMessageTimeline() {
+        val prompt = part("text", "Run the flaky verification")
+        val attachment = MessagePart.newBuilder()
+            .setType("file")
+            .setFilename("failure.png")
+            .setUrl("data:image/png;base64,iVBORw0KGgo=")
+            .build()
+        val user = UiMessage.newBuilder()
+            .setId("user-one")
+            .setRole("user")
+            .addAllParts(listOf(prompt, attachment))
+            .build()
+        val diagnostic = MessagePart.newBuilder()
+            .setType("text")
+            .setState("error")
+            .setText("Turn failed — codex exited 1 after 42s (context overflow).\nprovider stderr\nstack frame")
+            .build()
+        val assistant = message(diagnostic)
+
+        val failure = requireNotNull(resolveConversationTurnFailure(listOf(user, assistant), "failed", "failed"))
+
+        assertEquals("codex exited 1 after 42s (context overflow).", failure.summary)
+        assertTrue(failure.log.contains("provider stderr\nstack frame"))
+        assertEquals(2, failure.retryParts.size)
+        assertEquals(prompt.text, failure.retryParts.first().text)
+        assertFalse(assistant.hasRenderableConversationContent())
+        assertEquals(
+            ConversationPartPresentation.HIDDEN,
+            diagnostic.conversationPartPresentation(includeReasoning = true),
+        )
+        assertEquals(null, resolveConversationTurnFailure(listOf(user, assistant), "idle", "idle"))
+    }
+
     private fun message(vararg parts: MessagePart): UiMessage = UiMessage.newBuilder()
         .setId("assistant-message")
         .setRole("assistant")

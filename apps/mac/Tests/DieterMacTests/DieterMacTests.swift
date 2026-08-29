@@ -985,6 +985,45 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(groups[3].isToolCallGroup)
 }
 
+@Test func failedTurnPresentationKeepsCompleteLogAndRetryPayload() throws {
+    var prompt = Dieter_V1_MessagePart()
+    prompt.type = "text"
+    prompt.text = "Run the flaky verification"
+    var attachment = Dieter_V1_MessagePart()
+    attachment.type = "file"
+    attachment.filename = "failure.png"
+    attachment.url = "data:image/png;base64,iVBORw0KGgo="
+    var user = Dieter_V1_UiMessage()
+    user.id = "user-one"
+    user.role = "user"
+    user.parts = [prompt, attachment]
+
+    var diagnostic = Dieter_V1_MessagePart()
+    diagnostic.type = "text"
+    diagnostic.state = "error"
+    diagnostic.text = "Turn failed — codex exited 1 after 42s (context overflow).\nprovider stderr\nstack frame"
+    var assistant = Dieter_V1_UiMessage()
+    assistant.id = "assistant-one"
+    assistant.role = "assistant"
+    assistant.parts = [diagnostic]
+
+    let failure = try #require(ConversationTurnFailure.resolve(
+        messages: [user, assistant],
+        conversationStatus: "failed",
+        cardRuntime: "failed"
+    ))
+    #expect(failure.summary == "codex exited 1 after 42s (context overflow).")
+    #expect(failure.log.contains("provider stderr\nstack frame"))
+    #expect(failure.retryParts.count == 2)
+    #expect(failure.retryParts[0].text == prompt.text)
+    #expect(ConversationMessagePartGroup.group([diagnostic]).isEmpty)
+    #expect(ConversationTurnFailure.resolve(
+        messages: [user, assistant],
+        conversationStatus: "idle",
+        cardRuntime: "idle"
+    ) == nil)
+}
+
 @Test func hiddenReasoningDoesNotSplitAdjacentToolCallGroups() {
     var reasoning = Dieter_V1_MessagePart()
     reasoning.type = "reasoning"
@@ -1533,6 +1572,35 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     ) == 1)
 }
 
+@Test func cancelingAMachineQueueRemovesOnlyItsUndeliveredWork() {
+    let canceledMessage = DieterOutboxEntry(
+        commandID: "message", clientID: "mac", endpointID: "gateway#one", kind: .sendMessage,
+        request: Data(), optimisticID: "msg_one", attempts: 1, state: .failed,
+        createdAt: Date(timeIntervalSince1970: 1)
+    )
+    let canceledCreation = DieterOutboxEntry(
+        commandID: "creation", clientID: "mac", endpointID: "gateway#one", kind: .createChat,
+        request: Data(), optimisticID: "local_chat", attempts: 0,
+        createdAt: Date(timeIntervalSince1970: 2)
+    )
+    let accepted = DieterOutboxEntry(
+        commandID: "accepted", clientID: "mac", endpointID: "gateway#one", kind: .createCard,
+        request: Data(), optimisticID: "local_card", serverID: "c_server", attempts: 0,
+        createdAt: Date(timeIntervalSince1970: 3)
+    )
+    let anotherMachine = DieterOutboxEntry(
+        commandID: "other", clientID: "mac", endpointID: "gateway#two", kind: .sendMessage,
+        request: Data(), optimisticID: "msg_two", attempts: 0,
+        createdAt: Date(timeIntervalSince1970: 4)
+    )
+    var entries = [canceledMessage, accepted, canceledCreation, anotherMachine]
+
+    let removed = DieterOutboxPolicy.removeUndelivered(from: &entries, endpointID: "gateway#one")
+
+    #expect(Set(removed.map(\.commandID)) == ["message", "creation"])
+    #expect(entries.map(\.commandID) == ["accepted", "other"])
+}
+
 @Test func createSuccessRetargetsDependentQueuedMessages() throws {
     var request = Dieter_V1_SendMessageRequest()
     request.cardID = "local_chat"
@@ -1803,6 +1871,16 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(DieterStore.shouldOpenCreatedConversation(chat: true, lane: "todo"))
 }
 
+@Test func conversationWorkspacePickerUsesOnlySupportedCreationChoices() {
+    #expect(ConversationWorkspaceMode.selectable("worktree") == .worktree)
+    #expect(ConversationWorkspaceMode.selectable("WORKTREE") == .worktree)
+    #expect(ConversationWorkspaceMode.selectable("main") == .main)
+    #expect(ConversationWorkspaceMode.selectable("branch") == .main)
+    #expect(ConversationWorkspaceMode.selectable(nil) == .main)
+    #expect(ConversationWorkspaceMode.worktree.title == "Worktree")
+    #expect(ConversationWorkspaceMode.main.title == "Main checkout")
+}
+
 @Test func onlyTodoCardsWhoseInitialTaskWasNeverSentCanBeEdited() {
     var card = Dieter_V1_Card()
     card.lane = "todo"
@@ -1957,4 +2035,52 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(SidebarProjectDragPayload(payload.encoded) == payload)
     #expect(SidebarProjectDragPayload("not-a-sidebar-project") == nil)
     #expect(SidebarProjectDragPayload("dieter:sidebar-project:") == nil)
+}
+
+@Test @MainActor func openingAConversationRoutesToItsChatOrBoardWorkspace() async {
+    let store = DieterStore()
+    var firstProject = Dieter_V1_Project()
+    firstProject.id = "p_first"
+    firstProject.name = "First"
+    var targetProject = Dieter_V1_Project()
+    targetProject.id = "p_target"
+    targetProject.name = "Target"
+    var firstBoard = Dieter_V1_Board()
+    firstBoard.id = "b_first"
+    firstBoard.projectID = firstProject.id
+    var targetBoard = Dieter_V1_Board()
+    targetBoard.id = "b_target"
+    targetBoard.projectID = targetProject.id
+    var boardCard = Dieter_V1_Card()
+    boardCard.id = "c_board"
+    boardCard.projectID = targetProject.id
+    boardCard.boardID = targetBoard.id
+    var chat = Dieter_V1_Card()
+    chat.id = "c_chat"
+    chat.projectID = targetProject.id
+    chat.scope = "chat"
+
+    store.projectDirectory = [firstProject.id: firstProject, targetProject.id: targetProject]
+    store.navigationBoards = [firstProject.id: [firstBoard], targetProject.id: [targetBoard]]
+    store.navigationCards = [targetProject.id: [boardCard]]
+    store.chats = [chat]
+    store.selectedProjectID = firstProject.id
+    store.selectedBoardID = firstBoard.id
+    store.section = .settings
+
+    await store.openConversation(cardID: boardCard.id)
+
+    #expect(store.section == .board)
+    #expect(store.selectedProjectID == targetProject.id)
+    #expect(store.selectedBoardID == targetBoard.id)
+    #expect(store.selectedCardID == boardCard.id)
+    #expect(store.selectedChatID == nil)
+    #expect(store.state.cards.map(\.id) == [boardCard.id])
+
+    await store.openConversation(cardID: chat.id)
+
+    #expect(store.section == .chats)
+    #expect(store.selectedProjectID == targetProject.id)
+    #expect(store.selectedCardID == nil)
+    #expect(store.selectedChatID == chat.id)
 }

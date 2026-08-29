@@ -78,8 +78,15 @@ internal fun connectionDialogDelayMs(
     phase: ConnectionPhase,
     interruptedAtMs: Long?,
     nowMs: Long,
+    hasCachedWorkspace: Boolean = false,
 ): Long? {
-    if (!desiredConnected || phase == ConnectionPhase.CONNECTED || phase == ConnectionPhase.STOPPED) return null
+    // Transport recovery is routine and already represented by the inline
+    // workspace status. Only interrupt the user for a failure that requires
+    // an explicit action from them.
+    val requiresUserAction = phase == ConnectionPhase.AUTH_REQUIRED ||
+        phase == ConnectionPhase.INCOMPATIBLE ||
+        (phase == ConnectionPhase.UNAVAILABLE && !hasCachedWorkspace)
+    if (!desiredConnected || !requiresUserAction) return null
     val elapsed = (nowMs - (interruptedAtMs ?: nowMs)).coerceAtLeast(0L)
     return (CONNECTION_DIALOG_GRACE_MS - elapsed).coerceAtLeast(0L)
 }
@@ -436,14 +443,11 @@ class DieterViewModel(
 
     fun showConnectionDialogIfNeeded() {
         val connection = connectionManager.state.value
-        val elapsedGrace = connectionDialogDelayMs(
-            connection.desiredConnected,
-            connection.phase,
-            connection.connectionInterruptedAtMs,
-            System.currentTimeMillis(),
-        ) == 0L
-        if (!connection.desiredConnected || elapsedGrace) {
-            connectionDialogManuallyRequested = false
+        if (!connection.desiredConnected || connection.phase != ConnectionPhase.CONNECTED) {
+            // This path comes from the connection notification's content or
+            // Open action, so it is an explicit request rather than an
+            // automatic interruption.
+            connectionDialogManuallyRequested = true
             _state.update { it.copy(connectionDialogVisible = true) }
         }
     }
@@ -593,15 +597,20 @@ class DieterViewModel(
                     connection.phase,
                     connection.connectionInterruptedAtMs,
                     System.currentTimeMillis(),
+                    hasCachedWorkspace = connection.selectedState != null,
                 ) ?: return
                 connectionDialogGraceJob = viewModelScope.launch {
                     delay(waitMs)
                     val latest = connectionManager.state.value
                     if (
                         foreground &&
-                        latest.desiredConnected &&
-                        latest.phase != ConnectionPhase.CONNECTED &&
-                        latest.phase != ConnectionPhase.STOPPED
+                        connectionDialogDelayMs(
+                            latest.desiredConnected,
+                            latest.phase,
+                            latest.connectionInterruptedAtMs,
+                            System.currentTimeMillis(),
+                            hasCachedWorkspace = latest.selectedState != null,
+                        ) == 0L
                     ) {
                         connectionDialogManuallyRequested = false
                         _state.update {
@@ -1195,6 +1204,15 @@ class DieterViewModel(
         startPostSendRefresh(id)
     }
 
+    fun retryFailedTurn(parts: List<MessagePart>) = action(ensureProjectRoute = false) {
+        val current = _state.value
+        val id = current.selectedCardId ?: return@action
+        val card = current.conversation?.detail?.card ?: current.selectedCard ?: return@action
+        if (parts.isEmpty()) return@action
+        connectionManager.enqueueMessage(id, parts, card.provider, card.model, card.effort)
+        startPostSendRefresh(id)
+    }
+
     fun addComment(text: String) = action {
         val id = _state.value.selectedCardId ?: return@action
         repository.addComment(id, text)
@@ -1254,6 +1272,13 @@ class DieterViewModel(
     fun renameSelected(title: String) = action {
         val id = _state.value.selectedCardId ?: return@action
         updateCard(repository.renameCard(id, title))
+    }
+
+    fun forkSelected(messageId: String = "") = action {
+        val source = _state.value.selectedCard ?: return@action
+        val fork = repository.forkChat(source.id, messageId)
+        _state.update { current -> current.copy(chats = listOf(fork) + current.chats.filterNot { it.id == fork.id }) }
+        openCard(fork, Destination.CHATS)
     }
 
     fun editBoardCard(cardId: String, title: String, initialPrompt: String) = action {
