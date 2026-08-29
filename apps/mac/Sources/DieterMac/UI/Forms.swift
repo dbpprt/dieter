@@ -265,7 +265,7 @@ struct NewConversationSheet: View {
     private func chooseDefaults() {
         if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
         if workspaceMode.isEmpty {
-            workspaceMode = ConversationWorkspaceMode.selectable(project?.defaultWorkspaceMode).rawValue
+            workspaceMode = ConversationWorkspacePickerMode.selectable(project?.defaultWorkspaceMode).rawValue
         }
         if workspaceBaseBranch.isEmpty { workspaceBaseBranch = project?.baseBranch ?? "" }
         guard provider.isEmpty, let harness = store.harnessCatalog.harnesses.first else { return }
@@ -301,8 +301,8 @@ struct NewConversationSheet: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var workspaceChoice: ConversationWorkspaceMode {
-        ConversationWorkspaceMode.selectable(workspaceMode)
+    private var workspaceChoice: ConversationWorkspacePickerMode {
+        ConversationWorkspacePickerMode.selectable(workspaceMode)
     }
 
     private func newCardLabel(_ title: String) -> some View {
@@ -358,7 +358,7 @@ struct NewConversationSheet: View {
     }
 }
 
-enum ConversationWorkspaceMode: String, CaseIterable, Identifiable {
+enum ConversationWorkspacePickerMode: String, CaseIterable, Identifiable {
     case worktree
     case main
 
@@ -389,7 +389,7 @@ private struct ConversationWorkspacePickerSheet: View {
     @Binding var mode: String
     @Binding var branch: String
     @Binding var baseBranch: String
-    @State private var draftMode: ConversationWorkspaceMode
+    @State private var draftMode: ConversationWorkspacePickerMode
     @State private var draftBranch: String
     @State private var draftBaseBranch: String
     @FocusState private var branchFocused: Bool
@@ -404,7 +404,7 @@ private struct ConversationWorkspacePickerSheet: View {
         _mode = mode
         _branch = branch
         _baseBranch = baseBranch
-        _draftMode = State(initialValue: ConversationWorkspaceMode.selectable(mode.wrappedValue))
+        _draftMode = State(initialValue: ConversationWorkspacePickerMode.selectable(mode.wrappedValue))
         _draftBranch = State(initialValue: branch.wrappedValue)
         _draftBaseBranch = State(initialValue: baseBranch.wrappedValue.isEmpty ? (project?.baseBranch ?? "") : baseBranch.wrappedValue)
     }
@@ -529,7 +529,7 @@ private struct ConversationWorkspacePickerSheet: View {
     }
 
     private func workspaceOption(
-        _ option: ConversationWorkspaceMode,
+        _ option: ConversationWorkspacePickerMode,
         badge: String,
         detail: String
     ) -> some View {
