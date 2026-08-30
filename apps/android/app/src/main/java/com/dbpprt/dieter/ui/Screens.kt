@@ -2298,6 +2298,7 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
         card?.id?.let(state.cardOperations::get),
     )
     val activeTurn = isActiveCardRuntime(runtime)
+    val interrupting = card != null && state.cardOperations[card.id] == CardOperation.CANCELLING
     val turnFailure = resolveConversationTurnFailure(
         messages = allMessages,
         conversationStatus = conversation?.status.orEmpty(),
@@ -2550,7 +2551,7 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
                         QueuedMessageBlock(
                             queued = queued,
                             showInterrupt = queued.id == queuedMessages.firstOrNull()?.id && activeTurn,
-                            working = state.working,
+                            interrupting = interrupting,
                             onInterrupt = model::cancelSelected,
                         )
                     }
@@ -2758,7 +2759,7 @@ internal fun TurnFailureLogDialog(log: String, onDismiss: () -> Unit) {
 internal fun QueuedMessageBlock(
     queued: QueuedMessage,
     showInterrupt: Boolean,
-    working: Boolean,
+    interrupting: Boolean,
     onInterrupt: () -> Unit,
 ) {
     val parts = queued.partsList.ifEmpty {
@@ -2770,14 +2771,17 @@ internal fun QueuedMessageBlock(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Surface(
-            color = DieterSurfaceHigh.copy(alpha = 0.72f),
-            contentColor = DieterMuted,
+            color = DieterShellDeep.copy(alpha = 0.82f),
+            contentColor = Color.White,
             shape = RoundedCornerShape(17.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
+            border = androidx.compose.foundation.BorderStroke(1.dp, DieterAmber.copy(alpha = 0.48f)),
             modifier = Modifier.widthIn(max = 340.dp).testTag("queued-message-${queued.id}"),
         ) {
-            Column {
-                Column(Modifier.padding(horizontal = 13.dp, vertical = 8.dp)) {
+            Column(
+                Modifier.padding(start = 13.dp, top = 9.dp, end = 9.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Column(Modifier.padding(end = 9.dp)) {
                     parts.forEach { part ->
                         when {
                             part.type == "text" && part.text.isNotBlank() -> SelectionContainer {
@@ -2788,37 +2792,58 @@ internal fun QueuedMessageBlock(
                         }
                     }
                 }
-                if (showInterrupt) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = 7.dp, end = 7.dp, bottom = 5.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 28.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Outlined.Schedule, null, Modifier.size(13.dp), tint = DieterAmber)
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        "QUEUED",
+                        color = DieterAmber,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.7.sp,
+                    )
+                    if (showInterrupt) {
+                        Spacer(Modifier.weight(1f))
+                        Surface(
                             onClick = onInterrupt,
-                            enabled = !working,
+                            enabled = !interrupting,
                             modifier = Modifier
-                                .heightIn(min = 30.dp)
+                                .heightIn(min = 28.dp)
                                 .testTag("interrupt-queued-message")
                                 .semantics {
                                     contentDescription = "Interrupt current turn and send this message now"
                                 },
-                            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp),
-                            colors = ButtonDefaults.textButtonColors(
-                                contentColor = MaterialTheme.colorScheme.error,
-                                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.11f),
+                            contentColor = MaterialTheme.colorScheme.error,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.error.copy(alpha = 0.24f),
                             ),
                         ) {
-                            if (working) {
-                                CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Outlined.Cancel, null, Modifier.size(14.dp))
+                            Row(
+                                Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (interrupting) {
+                                    CircularProgressIndicator(
+                                        Modifier.size(13.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                } else {
+                                    Icon(Icons.Outlined.Cancel, null, Modifier.size(14.dp))
+                                }
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    if (interrupting) "Interrupting…" else "Interrupt",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
                             }
-                            Spacer(Modifier.width(5.dp))
-                            Text(
-                                if (working) "Interrupting…" else "Interrupt",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
                         }
                     }
                 }

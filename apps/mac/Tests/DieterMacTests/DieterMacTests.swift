@@ -1425,6 +1425,14 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(!DieterRPCFailure.isTransient(RPCError(code: .notFound, message: "board missing")))
 }
 
+@Test @MainActor func transientRPCFailuresStaySilentAfterTheClientIsReleased() {
+    let store = DieterStore()
+
+    store.show(RPCError(code: .unavailable, message: "stream unexpectedly closed"))
+
+    #expect(store.errorMessage == nil)
+}
+
 @Test func offlineConnectionLabelsUseCompactRelativeAges() {
     let now = Date(timeIntervalSince1970: 100_000)
     #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: nil, now: now) == "Last connected unknown")

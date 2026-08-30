@@ -4513,8 +4513,12 @@ final class DieterStore {
 
     func show(_ error: Error) {
         guard !Self.isExpectedCancellation(error) else { return }
-        if DieterRPCFailure.isTransient(error), let rpc {
-            connectionStopped(error, client: rpc)
+        if DieterRPCFailure.isTransient(error) {
+            // One stream usually notices a dropped connection first and starts
+            // reconnecting. Other in-flight calls may then fail after `rpc` has
+            // already been released; those failures are the same connectivity
+            // event and must not fall through to the global alert.
+            if let rpc { connectionStopped(error, client: rpc) }
             return
         }
         errorMessage = DieterRPCFailure.message(for: error)

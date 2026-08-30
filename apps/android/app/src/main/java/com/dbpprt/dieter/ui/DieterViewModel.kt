@@ -103,6 +103,17 @@ internal fun connectionDialogDismissalApplies(
     dismissedInterruptionKey != null &&
     dismissedInterruptionKey == (interruptedAtMs ?: CONNECTION_DIALOG_NO_INTERRUPTION_KEY)
 
+/**
+ * Content streams can remain healthy while the workspace stream is still
+ * syncing or reconnecting. Keep transport presentation owned by the
+ * connection manager so transcript and snapshot frames cannot make the UI
+ * oscillate between CONNECTED and the authoritative connection phase.
+ */
+internal fun DieterUiState.preserveConnectionPresentation(previous: DieterUiState): DieterUiState = copy(
+    connectionPhase = previous.connectionPhase,
+    connectionError = previous.connectionError,
+)
+
 enum class Destination { CHATS, BOARD, TERMINALS, FILES, SCHEDULES }
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
@@ -679,8 +690,6 @@ class DieterViewModel(
             ?: board?.lanesList?.firstOrNull()?.id.orEmpty()
         _state.update { current ->
             current.copy(
-                connectionPhase = ConnectionPhase.CONNECTED,
-                connectionError = null,
                 loading = false,
                 error = null,
                 boards = remote.boardsList,
@@ -692,7 +701,7 @@ class DieterViewModel(
                 selectedProjectId = projectId,
                 selectedBoardId = boardId,
                 selectedLane = lane,
-            )
+            ).preserveConnectionPresentation(current)
         }
         when (_state.value.destination) {
             Destination.FILES -> viewModelScope.launch { loadFiles() }
@@ -1039,7 +1048,6 @@ class DieterViewModel(
                 conversation = accepted,
                 conversationSyncing = false,
                 conversationLastRefreshedAtMillis = connection.conversationRefreshedAtMillis[cardId],
-                connectionPhase = ConnectionPhase.CONNECTED,
                 error = null,
                 // A foreground transcript frame is also the durable delivery
                 // acknowledgement. Apply its reconciled presentation in the
@@ -1051,7 +1059,7 @@ class DieterViewModel(
                 historyStart = if (current.historyTotal == 0) accepted.page.start else current.historyStart,
                 historyTotal = maxOf(current.historyTotal, accepted.page.total),
                 historyHasMore = if (current.olderMessages.isEmpty()) accepted.page.hasMore else current.historyHasMore,
-            )
+            ).preserveConnectionPresentation(current)
         }
         rememberConversation(cardId)
         ensureConversationRecovery(cardId)
@@ -1086,9 +1094,8 @@ class DieterViewModel(
                             acceptedOutboxIds = connection.acceptedOutboxIds,
                             failedOutboxIds = connection.failedOutboxIds,
                             conversationScrollRequest = current.conversationScrollRequest + 1,
-                            connectionPhase = ConnectionPhase.CONNECTED,
                             error = null,
-                        )
+                        ).preserveConnectionPresentation(current)
                     }
                     refreshStateOnce()
                     rememberConversation(cardId)
