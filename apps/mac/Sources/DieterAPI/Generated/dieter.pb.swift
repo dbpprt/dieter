@@ -2020,6 +2020,15 @@ public nonisolated struct Dieter_V1_UpdateProjectRequest: Sendable {
   /// Clears the value of `prompt`. Subsequent reads from it will return its default value.
   public mutating func clearPrompt() {self._prompt = nil}
 
+  public var path: String {
+    get {_path ?? String()}
+    set {_path = newValue}
+  }
+  /// Returns true if `path` has been explicitly set.
+  public var hasPath: Bool {self._path != nil}
+  /// Clears the value of `path`. Subsequent reads from it will return its default value.
+  public mutating func clearPath() {self._path = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -2027,6 +2036,7 @@ public nonisolated struct Dieter_V1_UpdateProjectRequest: Sendable {
   fileprivate var _name: String? = nil
   fileprivate var _summary: String? = nil
   fileprivate var _prompt: String? = nil
+  fileprivate var _path: String? = nil
 }
 
 public nonisolated struct Dieter_V1_ValidationCommand: Sendable {
@@ -8858,7 +8868,7 @@ nonisolated extension Dieter_V1_CreateProjectResponse: SwiftProtobuf.Message, Sw
 
 nonisolated extension Dieter_V1_UpdateProjectRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UpdateProjectRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}summary\0\u{1}prompt\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{1}path\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -8870,6 +8880,7 @@ nonisolated extension Dieter_V1_UpdateProjectRequest: SwiftProtobuf.Message, Swi
       case 2: try { try decoder.decodeSingularStringField(value: &self._name) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self._summary) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self._prompt) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self._path) }()
       default: break
       }
     }
@@ -8892,6 +8903,9 @@ nonisolated extension Dieter_V1_UpdateProjectRequest: SwiftProtobuf.Message, Swi
     try { if let v = self._prompt {
       try visitor.visitSingularStringField(value: v, fieldNumber: 4)
     } }()
+    try { if let v = self._path {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 5)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -8900,6 +8914,7 @@ nonisolated extension Dieter_V1_UpdateProjectRequest: SwiftProtobuf.Message, Swi
     if lhs._name != rhs._name {return false}
     if lhs._summary != rhs._summary {return false}
     if lhs._prompt != rhs._prompt {return false}
+    if lhs._path != rhs._path {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

@@ -1451,6 +1451,10 @@ private struct SubagentDetailCard: View {
                 }
                 Text(agent.activity.isEmpty ? (agent.assignment.isEmpty ? agent.task : agent.assignment) : agent.activity)
                     .font(.caption).foregroundStyle(DieterTheme.subtle).lineLimit(2)
+                let usage = SubagentUsagePresentation.resolve(tokens: agent.tokens, contextTokens: agent.contextTokens, contextWindow: agent.contextWindow)
+                if !usage.metrics.isEmpty {
+                    Text(usage.metrics.joined(separator: " · ")).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                }
                 if agent.status == "running" {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {

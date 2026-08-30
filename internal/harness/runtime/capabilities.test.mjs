@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -27,6 +27,23 @@ test('normalizes rich OMP progress without exposing its session file', () => {
   assert.equal(subagent.model, 'anthropic/sonnet');
   assert.equal(subagent.transcriptAvailable, true);
   assert.equal('sessionFile' in subagent, false);
+});
+
+test('samples OMP heartbeats at most once per minute', () => {
+  const events = [];
+  const collector = createSubagentCapabilityCollector({ provider: 'omp', adapter: 'omp-acp', messageId: 'm-heartbeat', emit: event => events.push(event), now: () => '2026-08-30T10:00:00Z' });
+  collector.consumeOMPEnvelope({ kind: 'lifecycle', payload: { id: 'worker', status: 'started', agent: 'scout' } });
+  for (let index = 1; index <= 10_000; index += 1) {
+    collector.consumeOMPEnvelope({ kind: 'progress', payload: { id: 'worker', agent: 'scout', task: 'Inspect', progress: {
+      id: 'worker', status: 'running', description: 'Repository scout', toolCount: 1, requests: 1,
+      tokens: 500, contextTokens: 400, contextWindow: 1000, durationMs: index * 150, recentOutput: [`tick ${index}`],
+    } } });
+  }
+  collector.consumeOMPEnvelope({ kind: 'lifecycle', payload: { id: 'worker', status: 'completed', agent: 'scout' } });
+  assert.equal(events.length, 28);
+  assert.equal(events[1].subagent.durationMs, 150);
+  assert.equal(events.at(-1).subagent.status, 'completed');
+  assert.equal(events.at(-1).subagent.durationMs, 1_500_000);
 });
 
 test('projects Claude TodoWrite as a versioned task plan', () => {
@@ -131,6 +148,44 @@ test('tails complete NDJSON events', async () => {
     await writeFile(path, '{"kind":"lifecycle","payload":{"id":"one"}}\n');
     await tailer.drain();
     assert.equal(events[0].payload.id, 'one');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('drains a large OMP backlog incrementally and coalesces adjacent progress', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'board-capabilities-load-'));
+  try {
+    const path = join(dir, 'events.ndjson');
+    const task = 'Review the repository carefully. '.repeat(80);
+    const records = [JSON.stringify({ kind: 'lifecycle', payload: { id: 'worker', status: 'started', agent: 'scout' } })];
+    for (let index = 1; index <= 12_000; index += 1) {
+      records.push(JSON.stringify({ kind: 'progress', payload: { id: 'worker', task, progress: { id: 'worker', status: 'running', toolCount: index, durationMs: index * 150 } } }));
+    }
+    records.push(JSON.stringify({ kind: 'lifecycle', payload: { id: 'worker', status: 'completed', agent: 'scout' } }));
+    await writeFile(path, `${records.join('\n')}\n`);
+    const events = [];
+    const tailer = createNDJSONTailer(path, event => events.push(event), 1000);
+    await tailer.drain();
+    assert.equal(events.length, 3);
+    assert.equal(events[1].payload.progress.toolCount, 12_000);
+    assert.equal(events[2].payload.status, 'completed');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('tails appended records without replaying earlier bytes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'board-capabilities-append-'));
+  try {
+    const path = join(dir, 'events.ndjson');
+    await writeFile(path, '{"kind":"lifecycle","payload":{"id":"one"}}\n');
+    const events = [];
+    const tailer = createNDJSONTailer(path, event => events.push(event), 10);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    await appendFile(path, '{"kind":"lifecycle","payload":{"id":"two"}}\n');
+    await tailer.drain();
+    assert.deepEqual(events.map(event => event.payload.id), ['one', 'two']);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -26,6 +26,8 @@ class AppPreferences(context: Context) {
     val notificationSettings: StateFlow<DieterNotificationSettings> = _notificationSettings.asStateFlow()
     private val _projectOrder = MutableStateFlow(readProjectOrder())
     val projectOrder: StateFlow<List<String>> = _projectOrder.asStateFlow()
+    private val _pinnedChatOrder = MutableStateFlow(readPinnedChatOrder())
+    val pinnedChatOrder: StateFlow<List<String>> = _pinnedChatOrder.asStateFlow()
 
     init {
         DieterLauncherIcon.apply(appContext, _palette.value)
@@ -84,6 +86,13 @@ class AppPreferences(context: Context) {
         _projectOrder.value = updated
     }
 
+    fun setPinnedChatOrder(chatIds: List<String>) {
+        val updated = chatIds.filter(String::isNotBlank).distinct()
+        val encoded = JSONArray().apply { updated.forEach { put(it) } }.toString()
+        preferences.edit().putString(KEY_PINNED_CHAT_ORDER, encoded).apply()
+        _pinnedChatOrder.value = updated
+    }
+
     private fun readNavigationStyle(): NavigationStyle = runCatching {
         NavigationStyle.valueOf(
             preferences.getString(KEY_NAVIGATION_STYLE, NavigationStyle.CLASSIC.name)
@@ -122,6 +131,16 @@ class AppPreferences(context: Context) {
         }.distinct()
     }.getOrDefault(emptyList())
 
+    private fun readPinnedChatOrder(): List<String> = runCatching {
+        val encoded = preferences.getString(KEY_PINNED_CHAT_ORDER, null) ?: return@runCatching emptyList()
+        val array = JSONArray(encoded)
+        buildList {
+            for (index in 0 until array.length()) {
+                array.optString(index).takeIf(String::isNotBlank)?.let(::add)
+            }
+        }.distinct()
+    }.getOrDefault(emptyList())
+
     companion object {
         private const val PREFERENCES = "dieter_app_settings"
         private const val KEY_NAVIGATION_STYLE = "navigation_style"
@@ -137,6 +156,7 @@ class AppPreferences(context: Context) {
         private const val KEY_RESULT_PREVIEWS_ENABLED = "result_previews_enabled"
         private const val KEY_LIVE_STATUS_ACTIVITY_ENABLED = "live_status_activity_enabled"
         private const val KEY_PROJECT_ORDER = "project_order"
+        private const val KEY_PINNED_CHAT_ORDER = "pinned_chat_order"
 
         fun selectedPalette(context: Context): DieterPalette = DieterPalette.resolve(
             context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)

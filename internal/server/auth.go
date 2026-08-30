@@ -44,7 +44,7 @@ type authConfig struct {
 	NativeRedirects map[string]struct{}
 }
 
-// LoadEnvFile loads Board's private deployment environment without replacing
+// LoadEnvFile loads Dieter's private deployment environment without replacing
 // values explicitly supplied by the process environment.
 func LoadEnvFile(root, explicit string) error {
 	return envfile.Load(root, explicit)

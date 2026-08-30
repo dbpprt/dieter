@@ -1,54 +1,115 @@
 ---
 name: dieter-cli
-description: Work with Dieter's direct-storage CLI where every card is one durable local harness conversation.
+description: Operate Dieter conversations, projects, workspaces, files, terminals, schedules, prompts, and enrolled daemon machines through the authenticated daemon CLI.
 ---
 
 # Use Dieter CLI
 
-Use `dieter`, not Dieter's browser API or central data files. The initial task
-supplies the exact card ID. Never invent one.
+Use the `dieter` binary for Dieter state and actions. Operational commands call
+the running daemon; never edit `DIETER_HOME` or use project-repository metadata
+as a substitute. Every card or standalone chat is one durable harness
+conversation owned by its daemon.
 
-Load bounded Dieter context and post non-triggering progress:
+## Choose the target
 
-```sh
-dieter card context <card-id>
-dieter card comment <card-id> --message "Meaningful progress."
-dieter card move <card-id> --lane review
-```
-
-Comments never resume the agent or count as approval.
-
-Inspect before mutation and prefer exact IDs plus bounded machine output:
+Omit `--machine` to use the running daemon on this machine:
 
 ```sh
 dieter status
+dieter project list --format jsonl
+```
+
+For another enrolled machine, authenticate once and pass its exact ID or unique
+name as a global option before the command:
+
+```sh
+dieter auth login --gateway https://dieter.example.com
+dieter machine list --format jsonl
+dieter --machine <machine-id> status
+dieter --machine <machine-id> project list --format jsonl
+```
+
+Remote commands prefer the daemon's authenticated direct TLS route and fall
+back to the bounded gateway relay. The gateway routes requests but does not
+store projects, transcripts, files, schedules, or harness credentials. Use
+`dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
+inspect presence and advertised routes.
+
+The initial task should supply an exact card ID. Never guess one. Resolve names
+only for interactive discovery, then retain returned IDs for mutation.
+
+## Work inside a card
+
+Load bounded context before acting and use comments only for non-triggering
+annotations:
+
+```sh
+dieter card context <card-id>
+dieter card transcript --last 20 <card-id>
+dieter card comment --message "Meaningful progress." <card-id>
+dieter card move --lane review <card-id>
+```
+
+Comments never wake the agent and never count as approval. A human message does
+resume the same durable harness session:
+
+```sh
+dieter card send --message "Address the review feedback." <card-id>
+dieter card send --message "Inspect these inputs." \
+  --attach screenshot.png --attach notes.pdf <card-id>
+```
+
+Use `card poll` for one bounded update and `card watch` for JSON Lines streaming.
+Fetch a large tool payload separately with `card tool-output` when the transcript
+contains only its bounded preview.
+
+Standalone chats share conversation, workspace, transcript, attachment, and
+archive operations:
+
+```sh
+dieter chat list --project <project-id> --format jsonl
+dieter chat create --project <project-id> --title "Investigate" \
+  --prompt "Trace the failure" --workspace worktree --format id
+dieter chat pin <chat-id>
+```
+
+## Discover and create work
+
+Prefer bounded machine-readable output:
+
+```sh
+dieter harness list --format jsonl
 dieter project list --format jsonl
 dieter board list --project <project-id> --format jsonl
 dieter card list --project <project-id> --board <board-id> \
   --lane running --format jsonl --limit 10
 ```
 
-Register a Git project and create work:
+Paths passed to project commands are paths on the targeted daemon host:
 
 ```sh
-dieter project open /path/to/repo --prompt-file prompt.md
+dieter project directories /path/on/daemon
+dieter project open --prompt-file prompt.md /path/on/daemon/repo
 dieter board create --project <project-id> --name Delivery --workflow review
 dieter card create --project <project-id> --board <board-id> \
-  --lane todo --title "Implement recovery" --prompt-file task.md --format id
+  --lane todo --title "Implement recovery" --prompt-file task.md \
+  --workspace worktree --format id
 ```
 
-Boards define their own labels. Use exact label IDs for filtering and assignment:
+`card start` admits a draft's first turn. `card send` admits a human follow-up.
+Both return without waiting for the agent to finish. Do not replay either just
+because the client disconnected; inspect the card and conversation first.
+
+Boards own their labels. Use label IDs for filtering and assignment:
 
 ```sh
 dieter board label add --board <board-id> --name Backend --color '#3366ff'
 dieter board label list --board <board-id>
-dieter card labels <card-id> --set <label-id>,<label-id>
-dieter card list --project <project-id> --board <board-id> \
-  --label <label-id> --format jsonl
+dieter card labels --set <label-id>,<label-id> <card-id>
+dieter card list --board <board-id> --label <label-id> --format jsonl
 ```
 
-Archiving is reversible. Operators can set a board's Done retention policy and
-inspect archived cards without editing the central store:
+Archiving is reversible. Inspect before changing retention or archive state:
 
 ```sh
 dieter board retention --archive-done after_30_days <board-id>
@@ -57,16 +118,58 @@ dieter card archive <card-id>
 dieter card unarchive <card-id>
 ```
 
-Operators can inspect and resume the same durable session:
+## Inspect code and Git work
+
+File commands operate on a project directory or a conversation's selected
+worktree through the daemon. Existing text saves are revision checked:
 
 ```sh
-dieter card transcript <card-id> --last 20
-dieter card send <card-id> --message "Address the review feedback."
-dieter card send <card-id> --message "Inspect these inputs." \
-  --attach screenshot.png --attach notes.pdf
+dieter file list --card <card-id> --format jsonl
+dieter file read --card <card-id> path/to/file.go
+dieter file save --card <card-id> --revision auto \
+  --file /tmp/replacement.go path/to/file.go
 ```
 
-Inspect or operate project schedules through the direct store as well:
+Inspect the current workspace revision before commenting on or mutating Git
+state:
+
+```sh
+dieter workspace show <card-id>
+dieter workspace changes <card-id>
+dieter workspace diff --path path/to/file.go <card-id>
+dieter workspace comments <card-id>
+dieter workspace scm <card-id>
+```
+
+Git operations are daemon-owned, serialized, and durable. Supply the expected
+revision where the operation depends on the changeset, and repeat `--param` for
+kind-specific values:
+
+```sh
+dieter workspace run --kind validate --revision <revision> --wait <card-id>
+dieter workspace operation <operation-id>
+dieter workspace watch <operation-id>
+```
+
+Kinds include `commit`, `update`, `continue_conflict`, `abort_conflict`,
+`validate`, `merge_local`, `push`, `cleanup`, `discard`, `adopt`, `create_pr`,
+`refresh_pr`, and `merge_pr`. Inspect help and current state before destructive
+or externally visible Git operations.
+
+## Terminals, schedules, and policy
+
+Daemon-owned PTYs survive client disconnects and can be reattached:
+
+```sh
+dieter terminal list --card <card-id> --format jsonl
+dieter terminal create --card <card-id> --name validation --format id
+dieter terminal attach <terminal-id>
+dieter terminal close <terminal-id>
+```
+
+Schedule occurrence records are authoritative. Running a schedule creates a
+real occurrence and may start an agent, so inspect the definition and recent
+runs first:
 
 ```sh
 dieter schedule list --project <project-id> --format jsonl
@@ -77,10 +180,29 @@ dieter schedule pause <schedule-id>
 dieter schedule resume <schedule-id>
 ```
 
-`dieter schedule run` creates a real occurrence and may start an agent. Inspect
-the schedule and its recent runs before invoking it. Global admission policy is
-available through `dieter settings show`; do not change it unless the task
-explicitly asks for an operational policy change.
+Inspect prompt and admission policy freely. Change them only when the task asks
+for that operational change:
 
-Read `dieter <group> <action> --help` before unfamiliar mutations. Never edit
-`DIETER_HOME` manually during normal operation.
+```sh
+dieter settings show
+dieter settings options
+dieter prompt show
+dieter prompt preview --card <card-id>
+```
+
+Screen sharing uses explicit daemon policy plus WebRTC signaling. Check
+`dieter screen capabilities` and `dieter screen settings`; do not enable capture
+or control, start a session, restart/shut down a machine, revoke enrollment, or
+delete data without explicit authorization.
+
+## Command discipline
+
+- Run `dieter help <group> <action>` or append `--help` before unfamiliar
+  mutations. Every command provides offline help.
+- Prefer exact IDs and `--format jsonl`, `--format json`, or `--format ids` for
+  automation. Streaming commands emit JSON Lines.
+- Use global `--timeout` for slow unary operations. Watch, attach, and signaling
+  commands run until completion, count, or interruption.
+- Never stop or replace an operator's live daemon for testing. Use isolated
+  temporary daemon/gateway instances on random loopback ports.
+- Never edit `DIETER_HOME` manually during normal operation.

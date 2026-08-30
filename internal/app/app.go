@@ -718,6 +718,50 @@ func mergeInitialMessageParts(content string, explicit, draft []model.UIMessageP
 	return parts
 }
 
+type capabilityProgressFilter struct {
+	fingerprints map[string]string
+}
+
+func newCapabilityProgressFilter() *capabilityProgressFilter {
+	return &capabilityProgressFilter{fingerprints: map[string]string{}}
+}
+
+// shouldPersist is a second line of defense around third-party runtimes. A
+// subagent heartbeat that only advances wall-clock fields does not change the
+// durable conversation projection and must not trigger an event fsync plus a
+// full snapshot rewrite.
+func (filter *capabilityProgressFilter) shouldPersist(capability json.RawMessage) bool {
+	var envelope struct {
+		ID        string         `json:"id"`
+		Operation string         `json:"operation"`
+		Subagent  map[string]any `json:"subagent"`
+	}
+	if json.Unmarshal(capability, &envelope) != nil || envelope.ID != "subagents" || envelope.Operation != "upsert" || len(envelope.Subagent) == 0 {
+		return true
+	}
+	id, ok := envelope.Subagent["id"].(string)
+	if !ok || strings.TrimSpace(id) == "" {
+		return true
+	}
+	durationMinute := int64(0)
+	if duration, ok := envelope.Subagent["durationMs"].(float64); ok && duration > 0 {
+		durationMinute = int64(duration) / int64(time.Minute/time.Millisecond)
+	}
+	delete(envelope.Subagent, "updatedAt")
+	delete(envelope.Subagent, "durationMs")
+	delete(envelope.Subagent, "recentOutput")
+	material, err := json.Marshal(envelope.Subagent)
+	if err != nil {
+		return true
+	}
+	fingerprint := fmt.Sprintf("%s:%d", material, durationMinute)
+	if filter.fingerprints[id] == fingerprint {
+		return false
+	}
+	filter.fingerprints[id] = fingerprint
+	return true
+}
+
 func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID string, request harness.Request, updates chan TurnUpdate, done chan struct{}) {
 	defer close(updates)
 	defer close(done)
@@ -729,6 +773,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	}()
 	streamFailed := false
 	var reportedFailure error
+	capabilityFilter := newCapabilityProgressFilter()
 	err := s.Runner.Run(ctx, request, func(output harness.Output) error {
 		switch output.Type {
 		case "chunk":
@@ -758,6 +803,9 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			_, err := s.Store.SetConversationSession(detail.Card.ID, turnID, output.State)
 			return err
 		case "capability":
+			if !capabilityFilter.shouldPersist(output.Capability) {
+				return nil
+			}
 			_, _, err := s.Store.AppendCapability(detail.Card.ID, turnID, output.Capability)
 			return err
 		case "error":

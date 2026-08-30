@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,8 @@ type streamErrorRunner struct{}
 
 type diagnosticErrorRunner struct{}
 
+type capabilityStormRunner struct{}
+
 type failOnceRunner struct {
 	mu       sync.Mutex
 	requests []harness.Request
@@ -49,6 +52,32 @@ func (diagnosticErrorRunner) Run(_ context.Context, _ harness.Request, emit func
 		return err
 	}
 	return errors.New("codex exited 1: provider stderr\ncontext window exceeded at 120000 tokens")
+}
+
+func (capabilityStormRunner) Run(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+	for index := 1; index <= 12_000; index++ {
+		capability := fmt.Sprintf(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker","provider":"omp","messageId":%q,"status":"running","toolCount":1,"tokens":500,"contextTokens":400,"contextWindow":1000,"durationMs":%d,"updatedAt":%q,"recentOutput":[%q]}}`, request.ResponseMessageID, index*150, fmt.Sprintf("tick-%d", index), fmt.Sprintf("output-%d", index))
+		if err := emit(harness.Output{Type: "capability", Capability: json.RawMessage(capability)}); err != nil {
+			return err
+		}
+	}
+	terminal := fmt.Sprintf(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker","provider":"omp","messageId":%q,"status":"completed","toolCount":1,"tokens":500,"contextTokens":400,"contextWindow":1000,"durationMs":1800000}}`, request.ResponseMessageID)
+	if err := emit(harness.Output{Type: "capability", Capability: json.RawMessage(terminal)}); err != nil {
+		return err
+	}
+	for _, chunk := range []string{
+		`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`,
+		`{"type":"message-metadata","messageMetadata":{"usage":{"totalTokens":400},"contextWindowTokens":1000}}`,
+		`{"type":"text-start","id":"text"}`,
+		`{"type":"text-delta","id":"text","delta":"done"}`,
+		`{"type":"text-end","id":"text"}`,
+		`{"type":"finish","finishReason":"stop","messageMetadata":{"usage":{"totalTokens":450},"totalUsage":{"totalTokens":5000},"contextWindowTokens":1000}}`,
+	} {
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (runner *failOnceRunner) Run(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
@@ -1148,5 +1177,65 @@ func TestPersistedSelectionSurvivesBeforeLiveDiscovery(t *testing.T) {
 	}
 	if adapter.ID != "codex" || configuredModel.ID != "gpt-future-discovered" || configuredModel.RuntimeID() != "gpt-future-discovered" {
 		t.Fatalf("adapter=%#v model=%#v", adapter, configuredModel)
+	}
+}
+
+func TestCapabilityProgressFilterDropsCosmeticHeartbeats(t *testing.T) {
+	filter := newCapabilityProgressFilter()
+	first := json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker","provider":"omp","messageId":"assistant","status":"running","toolCount":4,"durationMs":1000,"updatedAt":"one","recentOutput":["one"]}}`)
+	heartbeat := json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker","provider":"omp","messageId":"assistant","status":"running","toolCount":4,"durationMs":59000,"updatedAt":"two","recentOutput":["two"]}}`)
+	minute := json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker","provider":"omp","messageId":"assistant","status":"running","toolCount":4,"durationMs":60000,"updatedAt":"three","recentOutput":["three"]}}`)
+	progress := json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker","provider":"omp","messageId":"assistant","status":"running","toolCount":5,"durationMs":2100,"updatedAt":"three"}}`)
+	terminal := json.RawMessage(`{"id":"subagents","operation":"upsert","subagent":{"id":"worker","provider":"omp","messageId":"assistant","status":"completed","toolCount":5,"durationMs":2200,"updatedAt":"four"}}`)
+
+	if !filter.shouldPersist(first) {
+		t.Fatal("first progress update was dropped")
+	}
+	if filter.shouldPersist(heartbeat) {
+		t.Fatal("duration/output-only heartbeat was persisted")
+	}
+	if !filter.shouldPersist(minute) {
+		t.Fatal("minute heartbeat was dropped")
+	}
+	if !filter.shouldPersist(progress) {
+		t.Fatal("material tool progress was dropped")
+	}
+	if !filter.shouldPersist(terminal) {
+		t.Fatal("terminal status was dropped")
+	}
+}
+
+func TestCapabilityStormCompletesWithBoundedDurableEvents(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	service.Runner = capabilityStormRunner{}
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Telemetry storm", Prompt: "Finish despite noisy progress", Provider: "omp", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range updates {
+	}
+	conversation, err := service.Store.Conversation(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Status != "idle" || len(conversation.Subagents) != 1 || conversation.Subagents[0].Status != "completed" {
+		t.Fatalf("conversation did not finish cleanly: %#v", conversation)
+	}
+	var metadata struct {
+		Usage      struct{ TotalTokens int64 } `json:"usage"`
+		TotalUsage struct{ TotalTokens int64 } `json:"totalUsage"`
+	}
+	if len(conversation.Messages) < 2 || json.Unmarshal(conversation.Messages[len(conversation.Messages)-1].Metadata, &metadata) != nil || metadata.Usage.TotalTokens != 450 || metadata.TotalUsage.TotalTokens != 5000 {
+		t.Fatalf("current and cumulative usage were not preserved separately: %#v", conversation.Messages)
+	}
+	if conversation.LastSeq > 50 {
+		t.Fatalf("12,000 cosmetic progress records expanded to %d durable events", conversation.LastSeq)
 	}
 }

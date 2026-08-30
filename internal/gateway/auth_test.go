@@ -40,3 +40,29 @@ func TestExchangeDecodesGitHubAccessToken(t *testing.T) {
 		t.Fatalf("unexpected token %q", token)
 	}
 }
+
+func TestNativeRedirectAllowsOnlyConfiguredOrRFC8252LoopbackCallback(t *testing.T) {
+	auth := NewAuth(Config{NativeRedirects: map[string]struct{}{"dieter://auth/callback": {}}}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, test := range []struct {
+		value string
+		want  bool
+	}{
+		{"dieter://auth/callback", true},
+		{"http://127.0.0.1:49152/auth/callback", true},
+		{"http://127.0.0.1:1/auth/callback", true},
+		{"http://localhost:49152/auth/callback", false},
+		{"http://[::1]:49152/auth/callback", false},
+		{"https://127.0.0.1:49152/auth/callback", false},
+		{"http://127.0.0.1/auth/callback", false},
+		{"http://127.0.0.1:49152/other", false},
+		{"http://127.0.0.1:49152/auth/callback?code=preloaded", false},
+		{"http://user@127.0.0.1:49152/auth/callback", false},
+		{"http://127.0.0.1:70000/auth/callback", false},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			if got := auth.nativeRedirectAllowed(test.value); got != test.want {
+				t.Fatalf("nativeRedirectAllowed(%q)=%v want %v", test.value, got, test.want)
+			}
+		})
+	}
+}

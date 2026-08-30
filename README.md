@@ -86,6 +86,25 @@ dieter daemon permissions --check
 brew services restart dieter
 ```
 
+The same `dieter` binary is a complete daemon client. Local commands use the
+running daemon on this machine. To control another enrolled machine, sign in
+once and select it globally; the CLI prefers verified direct TLS and falls back
+to the gateway relay:
+
+```sh
+dieter auth login
+dieter machine list --format jsonl
+dieter --machine <machine-id> status
+dieter --machine <machine-id> project list --format jsonl
+dieter --machine <machine-id> terminal list --format jsonl
+```
+
+Run `dieter --help` for the complete surface and
+`dieter help <group> <action>` for command-specific flags. Projects, cards and
+chats, files, terminals, workspaces and Git operations, schedules, prompts,
+admission settings, screen signaling, and machine control all use the same
+daemon API as the native apps.
+
 ## How it works
 
 Every Dieter card and standalone chat maps to one durable AI SDK Harness
@@ -148,6 +167,26 @@ make build
 The binaries are written to `bin/dieter` and `bin/dieter-gateway`. A normal
 agent machine needs only `dieter`; the public host needs only
 `dieter-gateway`.
+
+Install a source build into a directory already on `PATH` (override `PREFIX` or
+`DESTDIR` for packaging):
+
+```sh
+make install PREFIX="$HOME/.local"
+```
+
+Published macOS and Linux archives also contain `install.sh`. For a one-command
+user install, the script defaults to `/usr/local/bin` when writable and
+otherwise uses `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dbpprt/dieter/main/scripts/install.sh | sh
+```
+
+Set `DIETER_INSTALL_DIR` to choose another destination or `DIETER_VERSION` to
+pin a release. Installing the CLI does not start, stop, or replace a running
+daemon; service lifecycle remains explicit through `dieter setup` or
+`dieter daemon start`.
 
 ### Daemon
 
@@ -232,6 +271,12 @@ The protobuf contracts are
 [`dieter.proto`](api/proto/dieter/v1/dieter.proto) and
 [`gateway.proto`](api/proto/dieter/gateway/v1/gateway.proto). Regenerate checked-in
 outputs with `./scripts/generate-proto.sh`.
+
+Daemon RPC and CLI feature parity is enforced by descriptor-driven contract
+tests in `internal/server/rpc_parity_test.go` and
+`internal/cli/help_contract_test.go`. Any native operation change must update
+the CLI implementation, offline help, end-to-end route coverage, README, and
+the Dieter CLI agent skill in the same change.
 
 Before opening a pull request, keep changes focused, add tests for changed
 behavior, run the relevant checks above, and confirm `git diff --check` passes.

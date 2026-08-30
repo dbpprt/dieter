@@ -1,4 +1,7 @@
-.PHONY: build proto test test-race check hooks pre-commit run clean
+.PHONY: build install proto test test-race check hooks pre-commit run clean
+
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
 
 proto:
 	./scripts/generate-proto.sh
@@ -6,6 +9,10 @@ proto:
 build:
 	go build -trimpath -o bin/dieter ./cmd/dieter
 	go build -trimpath -o bin/dieter-gateway ./cmd/dieter-gateway
+
+install: build
+	install -d "$(DESTDIR)$(BINDIR)"
+	install -m 0755 bin/dieter "$(DESTDIR)$(BINDIR)/dieter"
 
 test:
 	go test ./...

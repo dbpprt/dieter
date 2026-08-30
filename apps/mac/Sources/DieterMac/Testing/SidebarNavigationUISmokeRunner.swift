@@ -5,9 +5,9 @@ import DieterAPI
 /// A direct native-app smoke driver for sidebar ordering and persistence.
 ///
 /// The shell runner launches the packaged app twice with one isolated defaults
-/// suite. The first launch clicks the real SwiftUI collapse control and records
-/// an accepted project drop; the second launch proves both states were
-/// reconstructed in the rendered sidebar.
+/// suite. The first launch clicks the real SwiftUI controls, records an accepted
+/// project drop, and drags the sidebar divider. The second launch proves those
+/// states were reconstructed in the rendered sidebar.
 @MainActor
 enum SidebarNavigationUISmokeRunner {
     private static let projectIDs = ["p_sidebar_one", "p_sidebar_two", "p_sidebar_three"]
@@ -46,15 +46,14 @@ enum SidebarNavigationUISmokeRunner {
         writeReport(results, to: output)
     }
 
-    // Projects are compressed by default; the trailing chevron of each row sits
-    // near the right edge of the 234pt sidebar. Rows share a 42pt vertical pitch
-    // below the global destinations and PROJECTS section header.
-    private static let chevronX: CGFloat = 211
+    // Projects are compressed by default; the trailing chevron stays 23pt from
+    // the current sidebar edge. Rows share a 42pt vertical pitch below the
+    // global destinations and PROJECTS section header.
     private static let firstRowTop: CGFloat = 271
     private static let secondRowTop: CGFloat = 314
 
     private static func prepare(window: NSWindow, results: inout [String: String]) async {
-        click(window: window, x: chevronX, distanceFromTop: firstRowTop)
+        click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
         try? await DieterTaskSleep.milliseconds(450)
         var preferences = loadPreferences()
         results["expand-click"] = preferences.isExpanded(projectIDs[0]) ? "passed" : "failed: first project did not expand"
@@ -77,27 +76,46 @@ enum SidebarNavigationUISmokeRunner {
         let order = preferences.orderedIDs(from: projectIDs)
         results["drag-order"] = order == [projectIDs[2], projectIDs[0], projectIDs[1]] ? "passed" : "failed: \(order.joined(separator: ","))"
         results["saved-expand"] = preferences.isExpanded(projectIDs[0]) ? "passed" : "failed: expanded state was not saved"
+
+        let initialWidth = persistedSidebarWidth()
+        let targetWidth = SidebarSizing.clamped(initialWidth + 112)
+        await drag(
+            window: window,
+            fromX: initialWidth + (SidebarSizing.dividerWidth / 2),
+            fromTop: 500,
+            toX: targetWidth + (SidebarSizing.dividerWidth / 2),
+            toTop: 500
+        )
+        try? await DieterTaskSleep.milliseconds(500)
+        let resizedWidth = persistedSidebarWidth()
+        results["resize-drag"] = resizedWidth > initialWidth + 40
+            ? "passed: saved \(resizedWidth)"
+            : "failed: expected meaningful growth from \(initialWidth), saved \(resizedWidth)"
     }
 
     private static func verify(window: NSWindow, results: inout [String: String]) async {
         let restored = loadPreferences()
         results["restored-order"] = restored.orderedIDs(from: projectIDs) == [projectIDs[2], projectIDs[0], projectIDs[1]] ? "passed" : "failed"
         results["restored-expand"] = restored.isExpanded(projectIDs[0]) ? "passed" : "failed"
+        let restoredWidth = persistedSidebarWidth()
+        results["restored-width"] = restoredWidth > SidebarSizing.defaultWidth + 40
+            ? "passed"
+            : "failed: restored \(restoredWidth)"
 
         // The reordered third project is the first visible row after relaunch.
-        click(window: window, x: chevronX, distanceFromTop: firstRowTop)
+        click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
         try? await DieterTaskSleep.milliseconds(350)
         var interacted = loadPreferences()
         results["order-in-relaunched-ui"] = interacted.isExpanded(projectIDs[2]) ? "passed" : "failed: first visible toggle was not the reordered project"
-        click(window: window, x: chevronX, distanceFromTop: firstRowTop)
+        click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
         try? await DieterTaskSleep.milliseconds(350)
 
         // The saved-expanded project renders second; collapsing it clears the flag.
-        click(window: window, x: chevronX, distanceFromTop: secondRowTop)
+        click(window: window, x: chevronX(), distanceFromTop: secondRowTop)
         try? await DieterTaskSleep.milliseconds(350)
         interacted = loadPreferences()
         results["expand-in-relaunched-ui"] = !interacted.isExpanded(projectIDs[0]) ? "passed" : "failed: saved expanded project was not rendered second"
-        click(window: window, x: chevronX, distanceFromTop: secondRowTop)
+        click(window: window, x: chevronX(), distanceFromTop: secondRowTop)
         try? await DieterTaskSleep.milliseconds(350)
     }
 
@@ -196,6 +214,15 @@ enum SidebarNavigationUISmokeRunner {
 
     private static func loadPreferences() -> SidebarProjectNavigationPreferences {
         SidebarProjectNavigationPreferences.load(from: SidebarProjectNavigationPreferences.applicationDefaults())
+    }
+
+    private static func persistedSidebarWidth() -> CGFloat {
+        let value = SidebarProjectNavigationPreferences.applicationDefaults().double(forKey: SidebarSizing.storageKey)
+        return value > 0 ? SidebarSizing.clamped(CGFloat(value)) : SidebarSizing.defaultWidth
+    }
+
+    private static func chevronX() -> CGFloat {
+        persistedSidebarWidth() - 23
     }
 
     private static func outputDirectory() -> URL {

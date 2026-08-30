@@ -45,9 +45,9 @@ struct ChatsView: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         let pinned = showArchived ? [] : visibleChats.filter(\.pinned)
                         if !pinned.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
+                            VStack(alignment: .leading, spacing: 5) {
                                 Label("PINNED", systemImage: "pin.fill").font(DieterFont.sectionLabel).foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 8)
-                                ForEach(pinned, id: \.id) { ChatRow(card: $0) }
+                                ChatGroupCard(chats: pinned).padding(.leading, 14)
                             }
                         }
 
@@ -123,7 +123,7 @@ private struct ChatProjectGroup: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 7) {
                 Button(action: toggleCollapsed) {
                     HStack(spacing: 7) {
@@ -141,17 +141,63 @@ private struct ChatProjectGroup: View {
             }.padding(.horizontal, 8).frame(height: 24)
 
             if !collapsed {
-                ForEach(displayed, id: \.id) { ChatRow(card: $0) }
-                if chats.count > 5 {
-                    Button(action: toggleExpanded) {
-                        HStack { Text(expanded ? "Show fewer" : "Show more"); if !expanded { Text("\(chats.count - 5)").foregroundStyle(DieterTheme.tertiary) } }
-                            .font(.caption2.weight(.medium)).foregroundStyle(DieterTheme.subtle).padding(.horizontal, 31).padding(.vertical, 5)
-                    }.buttonStyle(.plain)
-                } else if chats.isEmpty {
-                    Text(showArchived ? "No archived chats" : "No chats").font(.caption).foregroundStyle(.tertiary).padding(.leading, 31).padding(.vertical, 5)
+                if chats.isEmpty {
+                    Text(showArchived ? "No archived chats" : "No chats").font(.caption).foregroundStyle(.tertiary).padding(.leading, 36).padding(.vertical, 2)
+                } else {
+                    ChatGroupCard(chats: displayed) {
+                        if chats.count > 5 {
+                            ChatRowSeparator()
+                            Button(action: toggleExpanded) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 7, weight: .bold))
+                                    Text(expanded ? "Show fewer" : "Show \(chats.count - 5) more")
+                                }
+                                .font(.system(size: 10.5, weight: .medium)).foregroundStyle(DieterTheme.subtle)
+                                .padding(.leading, 27).padding(.vertical, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.leading, 14)
                 }
             }
         }
+    }
+}
+
+/// Inset container that gives a project's conversations one bounded surface,
+/// with hairline separators between rows for legible scanning.
+private struct ChatGroupCard<Footer: View>: View {
+    let chats: [Dieter_V1_Card]
+    let footer: Footer
+
+    init(chats: [Dieter_V1_Card], @ViewBuilder footer: () -> Footer) {
+        self.chats = chats
+        self.footer = footer()
+    }
+
+    init(chats: [Dieter_V1_Card]) where Footer == EmptyView {
+        self.chats = chats
+        footer = EmptyView()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(chats.enumerated()), id: \.element.id) { index, chat in
+                if index > 0 { ChatRowSeparator() }
+                ChatRow(card: chat)
+            }
+            footer
+        }
+        .padding(3)
+        .dieterSurface(radius: DieterMetrics.cardRadius)
+    }
+}
+
+private struct ChatRowSeparator: View {
+    var body: some View {
+        Rectangle().fill(DieterTheme.border).frame(height: 1).padding(.leading, 27).padding(.trailing, 4)
     }
 }
 
@@ -162,6 +208,8 @@ struct ChatRow: View {
     @State private var renamePresented = false
     @State private var renameText = ""
 
+    private var unread: Bool { store.isChatUnread(card) }
+
     var body: some View {
         Button {
             Task {
@@ -169,7 +217,7 @@ struct ChatRow: View {
                 await store.openConversation(cardID: card.id, chat: true)
             }
         } label: {
-            HStack(alignment: .top, spacing: 9) {
+            HStack(alignment: .top, spacing: 8) {
                 Group {
                     if ["running", "starting"].contains(card.runtime) {
                         DieterActivityIndicator(color: runtimeColor(card.runtime))
@@ -182,15 +230,17 @@ struct ChatRow: View {
                     }
                 }
                 .padding(.top, 3)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     HStack {
-                        Text(card.title.isEmpty ? "Untitled chat" : card.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                        Text(card.title.isEmpty ? "Untitled chat" : card.title)
+                            .font(.system(size: 12.5, weight: unread ? .semibold : .medium))
+                            .lineLimit(1)
                         if card.pinned { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(DieterTheme.shell) }
                         if card.archived { Image(systemName: "archivebox.fill").font(.system(size: 8)).foregroundStyle(DieterTheme.tertiary) }
                         Spacer()
                         HStack(spacing: 5) {
-                            if store.isChatUnread(card) {
-                                Circle().fill(DieterTheme.primary).frame(width: 6, height: 6)
+                            if unread {
+                                Circle().fill(DieterTheme.primary).frame(width: 6.5, height: 6.5)
                                     .accessibilityLabel("Unread")
                             }
                             Text(ChatActivityText.compact(
@@ -199,8 +249,8 @@ struct ChatRow: View {
                             ))
                             .fixedSize()
                         }
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(DieterTheme.tertiary)
+                        .font(.system(size: 10, weight: unread ? .semibold : .medium))
+                        .foregroundStyle(unread ? DieterTheme.primary : DieterTheme.tertiary)
                     }
                     HStack(spacing: 6) {
                         if ["running", "starting"].contains(card.runtime) { Text("Running").foregroundStyle(DieterTheme.primary) }
@@ -210,11 +260,11 @@ struct ChatRow: View {
                             Text("· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")").foregroundStyle(DieterTheme.subtle)
                         }
                     }
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 }
             }
-            .padding(.horizontal, 9).padding(.vertical, 8)
-            .background(store.selectedChatID == card.id ? DieterTheme.selection : (hovering ? DieterTheme.surface.opacity(0.62) : .clear), in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+            .padding(.horizontal, 8).padding(.vertical, 7)
+            .background(store.selectedChatID == card.id ? DieterTheme.selection : (hovering ? DieterTheme.raised.opacity(0.75) : .clear), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .opacity(store.isPendingCard(card.id) ? 0.52 : 1)

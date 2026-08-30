@@ -25,6 +25,24 @@ class AppPreferencesTest {
     }
 
     @Test
+    fun pinnedChatOrderPersistsInSequence() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = AppPreferences(context)
+        val originalOrder = preferences.pinnedChatOrder.value
+        val prefix = "pinned-chat-order-test-${System.nanoTime()}"
+        val expected = listOf("$prefix-c", "$prefix-a", "$prefix-b")
+
+        try {
+            preferences.setPinnedChatOrder(expected + expected.first())
+
+            assertEquals(expected, preferences.pinnedChatOrder.value)
+            assertEquals(expected, AppPreferences(context).pinnedChatOrder.value)
+        } finally {
+            preferences.setPinnedChatOrder(originalOrder)
+        }
+    }
+
+    @Test
     fun boardNotificationPreferencePersistsPerBoard() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val enabledBoardId = "notification-test-${System.nanoTime()}"

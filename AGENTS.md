@@ -63,6 +63,37 @@ go build ./cmd/dieter-gateway
 
 Use `gofmt` on Go files. Keep both native clients accessible and adaptive.
 
+## Daemon CLI feature parity
+
+The `dieter` binary is the supported automation client as well as the local
+daemon executable. Operational commands must go through the running daemon API;
+do not reintroduce direct-store reads or writes for normal CLI operation.
+
+When a feature team adds, changes, or removes a native-client operation:
+
+1. Declare the operation in `api/proto/dieter/v1/dieter.proto` and implement it
+   explicitly on `grpcAPI`. Keep `connectAPI` a thin adapter to that core so
+   loopback, authenticated direct TLS, and gateway relay routes behave alike.
+2. Add or update the equivalent command in `internal/cli`. It must work against
+   the local daemon and with global `--machine ID|NAME`; machine targeting must
+   prefer verified direct TLS and fall back to the authenticated bounded relay.
+3. Give the group and every leaf command useful offline `--help` text. Update
+   the root help, `README.md`, and `.agents/skills/dieter-cli/SKILL.md` whenever
+   discovery, flags, output, safety, or semantics change.
+4. Extend `rpcCommand` in `internal/cli/help_contract_test.go`, add operation
+   tests, and cover the CLI path end to end. Keep
+   `TestGRPCAPIImplementsEveryDeclaredRPC` passing; it prevents implicit
+   `Unimplemented` drift.
+5. Regenerate Go and copied schemas with `./scripts/generate-proto.sh`, then
+   regenerate checked-in Swift clients with
+   `./apps/mac/scripts/generate-swift-proto.sh`. Android generates from the
+   authoritative schema during its build.
+
+Never stop, restart, replace, or install over an operator's currently running
+daemon during tests. Use temporary `DIETER_HOME` roots, random loopback
+listeners, isolated in-process gateways/daemons, and disposable credentials.
+Verify local, direct-TLS, and relay CLI routes without touching the live service.
+
 ## Use Dieter as an agent
 
 Read `.agents/skills/dieter-cli/SKILL.md`. Prefer bounded context:

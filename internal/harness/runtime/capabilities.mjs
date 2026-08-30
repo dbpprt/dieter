@@ -1,8 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { createTerminalStepReconciler } from './stream-reconciliation.mjs';
 
 const terminalStatuses = new Set(['completed', 'failed', 'aborted']);
 const terminalPlanStates = new Set(['completed', 'stopped', 'failed', 'aborted']);
+const progressHeartbeatMs = 60_000;
+const tailerReadChunkBytes = 256 * 1024;
 
 function compactLines(value, limit = 5) {
   const text = typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
@@ -15,6 +17,7 @@ function clean(value) {
 
 export function createSubagentCapabilityCollector({ provider, adapter = provider, messageId, emit, now = () => new Date().toISOString() }) {
   const subagents = new Map();
+  const emittedSubagents = new Map();
   const claudeToolNames = new Map();
   const claudeTaskCreates = new Map();
   const claudeTasks = new Map();
@@ -105,7 +108,7 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
     });
   }
 
-  function upsert(id, patch) {
+  function upsert(id, patch, { force = false } = {}) {
     if (!id) return;
     const timestamp = now();
     const previous = subagents.get(id) || {
@@ -125,6 +128,10 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       ...(terminalStatuses.has(patch.status) ? { endedAt: timestamp } : {}),
     });
     subagents.set(id, next);
+    const { updatedAt: _updatedAt, durationMs = 0, recentOutput: _recentOutput, ...material } = next;
+    const fingerprint = JSON.stringify({ ...material, progressMinute: Math.floor(Number(durationMs) / progressHeartbeatMs) });
+    if (!force && emittedSubagents.get(id) === fingerprint) return;
+    emittedSubagents.set(id, fingerprint);
     emit({ id: 'subagents', operation: 'upsert', subagent: next });
   }
 
@@ -234,22 +241,24 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       return;
     }
     if (envelope.kind === 'lifecycle') {
+      const status = payload.status === 'started' ? 'running' : payload.status;
       upsert(payload.id, {
         parentToolCallId: payload.parentToolCallId || '',
         name: payload.description || payload.agent || 'Subagent',
         agentType: payload.agent || '',
         agentSource: payload.agentSource || '',
         description: payload.description || '',
-        status: payload.status === 'started' ? 'running' : payload.status,
+        status,
         detached: Boolean(payload.detached),
         transcriptAvailable: Boolean(payload.sessionFile),
-      });
+      }, { force: terminalStatuses.has(status) });
       return;
     }
     if (envelope.kind !== 'progress') return;
     const progress = payload.progress && typeof payload.progress === 'object' ? payload.progress : {};
     const retryState = progress.retryState && typeof progress.retryState === 'object' ? progress.retryState : undefined;
     const retryFailure = progress.retryFailure && typeof progress.retryFailure === 'object' ? progress.retryFailure : undefined;
+    const status = progress.status || 'running';
     upsert(progress.id || payload.id, {
       parentToolCallId: payload.parentToolCallId || '',
       name: progress.description || payload.description || payload.agent || progress.agent || 'Subagent',
@@ -258,7 +267,7 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       description: progress.description || payload.description || '',
       task: payload.task || progress.task || '',
       assignment: payload.assignment || progress.assignment || '',
-      status: progress.status || 'running',
+      status,
       detached: Boolean(payload.detached),
       model: progress.resolvedModel || '',
       activity: progress.lastIntent || progress.currentTool || '',
@@ -275,7 +284,7 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       transcriptAvailable: Boolean(payload.sessionFile),
       ...(retryState ? { retry: `Retry ${retryState.attempt}/${retryState.maxAttempts}: ${retryState.errorMessage || 'provider unavailable'}` } : {}),
       ...(retryFailure ? { error: retryFailure.errorMessage || 'Provider retries exhausted' } : {}),
-    });
+    }, { force: terminalStatuses.has(status) });
   }
 
   function consumeHarnessEvent(event) {
@@ -311,7 +320,7 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
 
   function finalize(status) {
     for (const subagent of subagents.values()) {
-      if (!terminalStatuses.has(subagent.status)) upsert(subagent.id, { status });
+      if (!terminalStatuses.has(subagent.status)) upsert(subagent.id, { status }, { force: true });
     }
   }
 
@@ -367,45 +376,114 @@ export function observeHarnessCapabilities(harness, collector) {
   return observed;
 }
 
+function createCapabilityEventCoalescer() {
+  const result = [];
+  const pendingProgress = new Map();
+  let progressSequence = 0;
+
+  function flushProgress() {
+    for (const { event } of [...pendingProgress.values()].sort((left, right) => left.sequence - right.sequence)) result.push(event);
+    pendingProgress.clear();
+  }
+
+  function consume(event) {
+    if (event?.kind === 'progress') {
+      const id = event.payload?.progress?.id || event.payload?.id;
+      if (!id) {
+        flushProgress();
+        result.push(event);
+        return;
+      }
+      if (!pendingProgress.has(id)) progressSequence += 1;
+      pendingProgress.set(id, { event, sequence: pendingProgress.get(id)?.sequence || progressSequence });
+      return;
+    }
+    flushProgress();
+    result.push(event);
+  }
+
+  return {
+    consume,
+    finish() {
+      flushProgress();
+      return result;
+    },
+  };
+}
+
+export function coalesceCapabilityEvents(events) {
+  const coalescer = createCapabilityEventCoalescer();
+  for (const event of events) coalescer.consume(event);
+  return coalescer.finish();
+}
+
 export function createNDJSONTailer(path, consume, intervalMs = 40) {
   let offset = 0;
   let remainder = '';
   let pending = Promise.resolve();
+  let timer;
+  let stopped = false;
+  let failure;
 
   async function readNewLines() {
-    let bytes;
+    let file;
     try {
-      bytes = await readFile(path);
+      file = await open(path, 'r');
     } catch (error) {
       if (error?.code === 'ENOENT') return;
       throw error;
     }
-    if (bytes.length < offset) {
-      offset = 0;
-      remainder = '';
-    }
-    if (bytes.length === offset) return;
-    const text = remainder + bytes.subarray(offset).toString('utf8');
-    offset = bytes.length;
-    const lines = text.split('\n');
-    remainder = lines.pop() || '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try { consume(JSON.parse(line)); } catch {}
+    try {
+      const { size } = await file.stat();
+      if (size < offset) {
+        offset = 0;
+        remainder = '';
+      }
+      if (size === offset) return;
+      const coalescer = createCapabilityEventCoalescer();
+      while (offset < size) {
+        const bytes = Buffer.allocUnsafe(Math.min(tailerReadChunkBytes, size - offset));
+        const result = await file.read(bytes, 0, bytes.length, offset);
+        if (result.bytesRead === 0) break;
+        offset += result.bytesRead;
+        const text = remainder + bytes.subarray(0, result.bytesRead).toString('utf8');
+        const lines = text.split('\n');
+        remainder = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try { coalescer.consume(JSON.parse(line)); } catch {}
+        }
+      }
+      for (const event of coalescer.finish()) consume(event);
+    } finally {
+      await file.close();
     }
   }
 
-  function schedule() {
-    pending = pending.then(readNewLines);
+  function poll() {
+    if (stopped) return;
+    pending = readNewLines()
+      .catch(error => {
+        failure = error;
+        stopped = true;
+      })
+      .finally(() => {
+        if (!stopped) {
+          timer = setTimeout(poll, intervalMs);
+          timer.unref?.();
+        }
+      });
   }
 
-  const timer = setInterval(schedule, intervalMs);
+  timer = setTimeout(poll, intervalMs);
   timer.unref?.();
   return {
     async drain() {
-      clearInterval(timer);
-      schedule();
+      stopped = true;
+      clearTimeout(timer);
       await pending;
+      if (failure) throw failure;
+      await readNewLines();
       if (remainder.trim()) {
         try { consume(JSON.parse(remainder)); } catch {}
         remainder = '';

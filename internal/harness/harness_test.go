@@ -315,7 +315,7 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	})
 	stream := strings.Join(chunks, "")
 	capabilityStream := strings.Join(capabilities, "")
-	if err != nil || !strings.Contains(stream, "Mock harness received: hello") || !strings.Contains(stream, `"messageId":"assistant_1"`) || !strings.Contains(stream, `"messageMetadata":{"createdAt":`) || !strings.Contains(stream, `"totalTokens":150`) || !strings.Contains(stream, `"contextWindowTokens":1000`) || !strings.Contains(capabilityStream, `"id":"task-plan"`) || !strings.Contains(capabilityStream, `"state":"completed"`) {
+	if err != nil || !strings.Contains(stream, "Mock harness received: hello") || !strings.Contains(stream, `"messageId":"assistant_1"`) || !strings.Contains(stream, `"type":"message-metadata"`) || !strings.Contains(stream, `"messageMetadata":{"createdAt":`) || !strings.Contains(stream, `"totalTokens":150`) || !strings.Contains(stream, `"contextWindowTokens":1000`) || !strings.Contains(capabilityStream, `"id":"task-plan"`) || !strings.Contains(capabilityStream, `"state":"completed"`) {
 		t.Fatalf("chunks=%q capabilities=%q err=%v", chunks, capabilities, err)
 	}
 }

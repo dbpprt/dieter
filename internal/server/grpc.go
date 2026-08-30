@@ -67,6 +67,10 @@ func (api *grpcAPI) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthRes
 	return &dieterv1.HealthResponse{Status: "ok", Version: "2", StorePath: api.server.store.Root}, nil
 }
 
+func (api *grpcAPI) GetRuntimeStatus(context.Context, *emptypb.Empty) (*dieterv1.RuntimeStatus, error) {
+	return &dieterv1.RuntimeStatus{Ready: true, Mode: "local-host", Sandboxed: false, NodeRequired: true}, nil
+}
+
 func (api *grpcAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoardRequest) (*dieterv1.Board, error) {
 	value, err := api.server.store.RenameBoard(request.GetBoardId(), request.GetName())
 	if err != nil {
@@ -86,8 +90,87 @@ func (api *grpcAPI) GetState(_ context.Context, request *dieterv1.GetStateReques
 	return protoState(value), nil
 }
 
+func (api *grpcAPI) watchState(ctx context.Context, request *dieterv1.WatchStateRequest, send func(*dieterv1.State) error) error {
+	interval := boundedInterval(request.GetIntervalMs(), time.Second)
+	filter := request.GetFilter()
+	if filter == nil {
+		filter = &dieterv1.GetStateRequest{}
+	}
+	var previous [sha256.Size]byte
+	sendChanged := func() error {
+		value, err := api.GetState(ctx, filter)
+		if err != nil {
+			return err
+		}
+		raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(value)
+		if err != nil {
+			return err
+		}
+		digest := sha256.Sum256(raw)
+		if digest == previous {
+			return nil
+		}
+		previous = digest
+		return send(value)
+	}
+	if err := sendChanged(); err != nil {
+		return grpcFailure(err)
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := sendChanged(); err != nil {
+				return grpcFailure(err)
+			}
+		}
+	}
+}
+
+func (api *grpcAPI) WatchState(request *dieterv1.WatchStateRequest, stream dieterv1.DieterService_WatchStateServer) error {
+	return api.watchState(stream.Context(), request, stream.Send)
+}
+
 func (api *grpcAPI) GetHarnesses(ctx context.Context, _ *emptypb.Empty) (*dieterv1.HarnessCatalog, error) {
 	return protoHarnessCatalog(harness.RefreshCatalog(ctx, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")), nil
+}
+
+func (api *grpcAPI) GetSettings(context.Context, *emptypb.Empty) (*dieterv1.Settings, error) {
+	value, err := api.server.store.Settings()
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoSettings(value), nil
+}
+
+func (api *grpcAPI) GetSettingsOptions(ctx context.Context, _ *emptypb.Empty) (*dieterv1.SettingsOptions, error) {
+	projects, err := api.server.store.ListProjects()
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	boards, err := api.server.store.ListBoards("")
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	result := &dieterv1.SettingsOptions{Agents: protoHarnessCatalog(harness.RefreshCatalog(ctx, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1"))}
+	for _, value := range projects {
+		result.Projects = append(result.Projects, protoProject(value))
+	}
+	for _, value := range boards {
+		result.Boards = append(result.Boards, protoBoard(value))
+	}
+	return result, nil
+}
+
+func (api *grpcAPI) UpdateSettings(_ context.Context, request *dieterv1.UpdateSettingsRequest) (*dieterv1.Settings, error) {
+	value, err := api.server.store.UpdateSettings(modelSettings(request.GetSettings()))
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoSettings(value), nil
 }
 
 func (api *grpcAPI) GetPromptSettings(context.Context, *emptypb.Empty) (*dieterv1.PromptSettings, error) {
@@ -202,6 +285,164 @@ func (api *grpcAPI) PreviewPrompt(ctx context.Context, request *dieterv1.Preview
 		result.AppliedLabels = append(result.AppliedLabels, &dieterv1.Label{Id: label.ID, Name: label.Name, Color: label.Color, Instructions: label.Instructions})
 	}
 	return result, nil
+}
+
+func (api *grpcAPI) ListDirectories(_ context.Context, request *dieterv1.ListDirectoriesRequest) (*dieterv1.DirectoryListing, error) {
+	listing, err := listProjectDirectories(request.GetPath())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	result := &dieterv1.DirectoryListing{
+		Path: listing.Path, Parent: listing.Parent, Name: listing.Name,
+		GitRepository: listing.GitRepository, Separator: listing.Separator,
+	}
+	for _, value := range listing.Entries {
+		result.Entries = append(result.Entries, &dieterv1.DirectoryEntry{
+			Name: value.Name, Path: value.Path, GitRepository: value.GitRepository, Hidden: value.Hidden,
+		})
+	}
+	for _, value := range listing.Locations {
+		result.Locations = append(result.Locations, &dieterv1.DirectoryLocation{Name: value.Name, Path: value.Path, Kind: value.Kind})
+	}
+	return result, nil
+}
+
+func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateProjectRequest) (*dieterv1.CreateProjectResponse, error) {
+	mode := strings.TrimSpace(request.GetMode())
+	if mode == "" {
+		mode = "open"
+	}
+	if mode != "open" && mode != "create" {
+		return nil, grpcFailure(errors.New("project mode must be open or create"))
+	}
+	project, err := api.server.app.RegisterProject(ctx, app.ProjectInput{
+		Path: request.GetPath(), Name: request.GetName(), Summary: request.GetSummary(), Prompt: request.GetPrompt(),
+		Create: mode == "create", BaseRemote: request.GetBaseRemote(), BaseBranch: request.GetBaseBranch(),
+		ValidationCommands: modelValidationCommands(request.GetValidationCommands()),
+	})
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	boardName := strings.TrimSpace(request.GetBoardName())
+	if boardName == "" {
+		boardName = "Main"
+	}
+	board, err := api.server.store.CreateBoard(store.CreateBoardInput{
+		Project: project.ID, Name: boardName, Workflow: request.GetWorkflow(),
+	})
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return &dieterv1.CreateProjectResponse{Project: protoProject(project), Board: protoBoard(board)}, nil
+}
+
+func (api *grpcAPI) UpdateProject(_ context.Context, request *dieterv1.UpdateProjectRequest) (*dieterv1.Project, error) {
+	value, err := api.server.store.UpdateProject(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoProject(value), nil
+}
+
+func (api *grpcAPI) UpdateProjectWorkspaceSettings(_ context.Context, request *dieterv1.UpdateProjectWorkspaceSettingsRequest) (*dieterv1.Project, error) {
+	value, err := api.server.store.UpdateProjectWorkspaceSettings(
+		request.GetProjectId(), request.GetBaseRemote(), request.GetBaseBranch(),
+		modelValidationCommands(request.GetValidationCommands()),
+	)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoProject(value), nil
+}
+
+func (api *grpcAPI) ArchiveProject(_ context.Context, request *dieterv1.ArchiveProjectRequest) (*dieterv1.Project, error) {
+	value, err := api.server.store.ArchiveProject(request.GetProjectId(), request.GetArchived())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoProject(value), nil
+}
+
+func (api *grpcAPI) ListArchivedProjects(context.Context, *emptypb.Empty) (*dieterv1.ProjectsResponse, error) {
+	values, err := api.server.store.ListArchivedProjects()
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	result := &dieterv1.ProjectsResponse{}
+	for _, value := range values {
+		result.Projects = append(result.Projects, protoProject(value))
+	}
+	return result, nil
+}
+
+func (api *grpcAPI) CreateBoard(_ context.Context, request *dieterv1.CreateBoardRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.CreateBoard(store.CreateBoardInput{
+		Project: request.GetProjectId(), Name: request.GetName(), Workflow: request.GetWorkflow(),
+		Description: request.GetDescription(), DoneArchivePolicy: request.GetDoneArchivePolicy(),
+	})
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
+}
+
+func (api *grpcAPI) SetBoardArchivePolicy(_ context.Context, request *dieterv1.SetBoardArchivePolicyRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.UpdateBoardDoneArchivePolicy(request.GetBoardId(), request.GetDoneArchivePolicy())
+	if err == nil {
+		_, err = api.server.store.ArchiveDoneCards(time.Now())
+	}
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
+}
+
+func (api *grpcAPI) ListArchivedCards(_ context.Context, request *dieterv1.BoardRef) (*dieterv1.CardsResponse, error) {
+	board, err := api.server.store.ResolveBoard("", request.GetBoardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	values, err := api.server.store.ListCards(store.CardFilter{
+		Board: board.ID, Scope: model.ConversationScopeBoard, IncludeArchived: true,
+	})
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	result := &dieterv1.CardsResponse{}
+	for _, value := range values {
+		if value.Archived {
+			result.Cards = append(result.Cards, protoCard(value))
+		}
+	}
+	return result, nil
+}
+
+func (api *grpcAPI) CreateBoardLabel(_ context.Context, request *dieterv1.CreateBoardLabelRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.CreateBoardLabel(
+		request.GetBoardId(), request.GetName(), request.GetColor(), request.GetInstructions(),
+	)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
+}
+
+func (api *grpcAPI) UpdateBoardLabel(_ context.Context, request *dieterv1.UpdateBoardLabelRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.UpdateBoardLabel(
+		request.GetBoardId(), request.GetLabelId(), request.GetName(), request.GetColor(), request.GetInstructions(),
+	)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
+}
+
+func (api *grpcAPI) DeleteBoardLabel(_ context.Context, request *dieterv1.DeleteBoardLabelRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.DeleteBoardLabel(request.GetBoardId(), request.GetLabelId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
 }
 
 func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInput, error) {
@@ -965,6 +1206,155 @@ func (api *grpcAPI) ReadFile(ctx context.Context, request *dieterv1.ReadFileRequ
 		result.Content = string(content)
 	}
 	return result, nil
+}
+
+func (api *grpcAPI) SaveFile(ctx context.Context, request *dieterv1.SaveFileRequest) (*dieterv1.FileDocument, error) {
+	api.server.filesMu.Lock()
+	defer api.server.filesMu.Unlock()
+	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	relative, err := cleanProjectPath(request.GetPath(), false)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	root, target, err := existingProjectPath(project, relative)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	if err := ensureNonSymlinkRegular(target, relative); err != nil {
+		return nil, grpcFailure(err)
+	}
+	current, err := readLimitedProjectFile(target)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	if request.GetRevision() == "" || request.GetRevision() != projectFileRevision(current) {
+		return nil, grpcFailure(fileError(http.StatusConflict, "%q changed on disk; reload it before saving", relative))
+	}
+	content := []byte(request.GetContent())
+	if len(content) > maxProjectFileSize {
+		return nil, grpcFailure(fileError(http.StatusRequestEntityTooLarge, "file exceeds the %d MiB editor limit", maxProjectFileSize>>20))
+	}
+	if err := ensureContained(root, target); err != nil {
+		return nil, grpcFailure(err)
+	}
+	if err := atomicWriteProjectFile(target, content); err != nil {
+		return nil, grpcFailure(projectPathIOError(relative, err))
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return nil, grpcFailure(projectPathIOError(relative, err))
+	}
+	return &dieterv1.FileDocument{
+		Path: relative, Name: path.Base(relative), Size: int64(len(content)),
+		ModifiedAt: info.ModTime().UTC().Format(projectTimeFormat), Revision: projectFileRevision(content),
+		Content: request.GetContent(),
+	}, nil
+}
+
+func (api *grpcAPI) CreateFile(ctx context.Context, request *dieterv1.CreateFileRequest) (*dieterv1.FileEntry, error) {
+	api.server.filesMu.Lock()
+	defer api.server.filesMu.Unlock()
+	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	relative, err := cleanProjectPath(request.GetPath(), false)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	_, target, err := newProjectPath(project, relative)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	kind := request.GetKind()
+	if kind != "file" && kind != "directory" {
+		return nil, grpcFailure(errors.New("kind must be file or directory"))
+	}
+	content := []byte(request.GetContent())
+	if len(content) > maxProjectFileSize {
+		return nil, grpcFailure(fileError(http.StatusRequestEntityTooLarge, "file exceeds the %d MiB editor limit", maxProjectFileSize>>20))
+	}
+	if kind == "directory" {
+		err = os.Mkdir(target, 0o755)
+	} else {
+		err = atomicCreateProjectFile(target, content)
+	}
+	if err != nil {
+		return nil, grpcFailure(projectPathIOError(relative, err))
+	}
+	return &dieterv1.FileEntry{Name: path.Base(relative), Path: relative, Kind: kind, Size: int64(len(content))}, nil
+}
+
+func (api *grpcAPI) MoveFile(ctx context.Context, request *dieterv1.MoveFileRequest) (*dieterv1.MoveFileResponse, error) {
+	api.server.filesMu.Lock()
+	defer api.server.filesMu.Unlock()
+	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	sourceRelative, err := cleanProjectPath(request.GetSource(), false)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	destinationRelative, err := cleanProjectPath(request.GetDestination(), false)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	_, source, err := existingProjectPathNoFollow(project, sourceRelative)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	_, destination, err := newProjectPath(project, destinationRelative)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	info, err := os.Lstat(source)
+	if err != nil {
+		return nil, grpcFailure(projectPathIOError(sourceRelative, err))
+	}
+	if info.IsDir() && (destinationRelative == sourceRelative || strings.HasPrefix(destinationRelative, sourceRelative+"/")) {
+		return nil, grpcFailure(errors.New("a directory cannot be moved inside itself"))
+	}
+	if err := os.Rename(source, destination); err != nil {
+		return nil, grpcFailure(projectPathIOError(sourceRelative, err))
+	}
+	return &dieterv1.MoveFileResponse{Source: sourceRelative, Destination: destinationRelative}, nil
+}
+
+func (api *grpcAPI) DeleteFile(ctx context.Context, request *dieterv1.DeleteFileRequest) (*emptypb.Empty, error) {
+	api.server.filesMu.Lock()
+	defer api.server.filesMu.Unlock()
+	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	relative, err := cleanProjectPath(request.GetPath(), false)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	_, target, err := existingProjectPathNoFollow(project, relative)
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		return nil, grpcFailure(projectPathIOError(relative, err))
+	}
+	if info.IsDir() {
+		if !request.GetRecursive() {
+			return nil, grpcFailure(errors.New("deleting a directory requires recursive=true"))
+		}
+		err = os.RemoveAll(target)
+	} else {
+		err = os.Remove(target)
+	}
+	if err != nil {
+		return nil, grpcFailure(projectPathIOError(relative, err))
+	}
+	return &emptypb.Empty{}, nil
 }
 
 func (api *grpcAPI) ListSchedules(_ context.Context, request *dieterv1.ListSchedulesRequest) (*dieterv1.SchedulesResponse, error) {

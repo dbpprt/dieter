@@ -139,6 +139,7 @@ data class DieterUiState(
     val harnesses: List<Harness> = emptyList(),
     val projects: List<Project> = emptyList(),
     val projectOrder: List<String> = emptyList(),
+    val pinnedChatOrder: List<String> = emptyList(),
     val projectHosts: Map<String, ProjectHost> = emptyMap(),
     val boards: List<Board> = emptyList(),
     val cards: List<Card> = emptyList(),
@@ -322,6 +323,11 @@ class DieterViewModel(
                         projectOrder = projectOrder,
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.pinnedChatOrder.collectLatest { pinnedChatOrder ->
+                _state.update { it.copy(pinnedChatOrder = pinnedChatOrder) }
             }
         }
     }
@@ -738,6 +744,39 @@ class DieterViewModel(
             }
         }
         updatedOrder?.let(appPreferences::setProjectOrder)
+    }
+
+    fun movePinnedChat(chatId: String, targetChatId: String) {
+        var updatedOrder: List<String>? = null
+        _state.update { current ->
+            val currentOrder = orderedPinnedChats(
+                current.chats.filter(Card::getPinned),
+                current.pinnedChatOrder,
+            ).map(Card::getId)
+            val nextOrder = movePinnedChatToTarget(currentOrder, chatId, targetChatId)
+            if (nextOrder == currentOrder) {
+                current
+            } else {
+                updatedOrder = nextOrder
+                current.copy(pinnedChatOrder = nextOrder)
+            }
+        }
+        updatedOrder?.let(appPreferences::setPinnedChatOrder)
+    }
+
+    fun initializePinnedChatOrderIfNeeded(chatIds: List<String>) {
+        val initialOrder = chatIds.filter(String::isNotBlank).distinct()
+        if (initialOrder.isEmpty()) return
+        var persist = false
+        _state.update { current ->
+            if (current.pinnedChatOrder.isNotEmpty()) {
+                current
+            } else {
+                persist = true
+                current.copy(pinnedChatOrder = initialOrder)
+            }
+        }
+        if (persist) appPreferences.setPinnedChatOrder(initialOrder)
     }
 
     fun selectProject(id: String) {

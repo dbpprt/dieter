@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -142,7 +143,7 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 	nativeRedirect := strings.TrimSpace(r.URL.Query().Get("native_redirect_uri"))
 	nativeChallenge := strings.TrimSpace(r.URL.Query().Get("native_code_challenge"))
 	if nativeRedirect != "" || nativeChallenge != "" {
-		if _, ok := a.config.NativeRedirects[nativeRedirect]; !ok || !validPKCEChallenge(nativeChallenge) {
+		if !a.nativeRedirectAllowed(nativeRedirect) || !validPKCEChallenge(nativeChallenge) {
 			http.Error(w, "native callback is not allowed", http.StatusBadRequest)
 			return
 		}
@@ -176,6 +177,25 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(digest[:])}, "code_challenge_method": {"S256"},
 	}
 	http.Redirect(w, r, strings.TrimRight(a.config.GitHubBaseURL, "/")+"/login/oauth/authorize?"+query.Encode(), http.StatusFound)
+}
+
+// nativeRedirectAllowed accepts configured app schemes and RFC 8252 loopback
+// callbacks used by the CLI. The CLI binds the port before starting OAuth and
+// protects the one-time code with PKCE, so an unprivileged local process cannot
+// redeem a callback intended for another login attempt.
+func (a *Auth) nativeRedirectAllowed(raw string) bool {
+	if _, ok := a.config.NativeRedirects[raw]; ok {
+		return true
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.Fragment != "" || parsed.RawQuery != "" {
+		return false
+	}
+	if parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" || parsed.Path != "/auth/callback" {
+		return false
+	}
+	port, err := strconv.ParseUint(parsed.Port(), 10, 16)
+	return err == nil && port > 0
 }
 
 func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {

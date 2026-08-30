@@ -22,6 +22,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -138,6 +139,7 @@ import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
@@ -566,6 +568,64 @@ private class ProjectDragState {
             null
         } else {
             projectBounds.entries.firstOrNull { (id, bounds) -> id != source && bounds.contains(pointerInRoot) }?.key
+        }
+    }
+}
+
+private class PinnedChatDragState {
+    private val chatBounds = mutableStateMapOf<String, Rect>()
+
+    var chatId by mutableStateOf<String?>(null)
+        private set
+    var targetChatId by mutableStateOf<String?>(null)
+        private set
+    var offsetY by mutableFloatStateOf(0f)
+        private set
+    private var pointerInRoot by mutableStateOf(Offset.Unspecified)
+
+    fun register(chatId: String, bounds: Rect) {
+        chatBounds[chatId] = bounds
+        updateTarget()
+    }
+
+    fun unregister(chatId: String) {
+        chatBounds.remove(chatId)
+        updateTarget()
+    }
+
+    fun start(chatId: String, pointerInRoot: Offset) {
+        this.chatId = chatId
+        this.pointerInRoot = pointerInRoot
+        offsetY = 0f
+        updateTarget()
+    }
+
+    fun moveBy(amount: Offset) {
+        if (chatId == null || !pointerInRoot.isSpecified) return
+        pointerInRoot += amount
+        offsetY += amount.y
+        updateTarget()
+    }
+
+    fun finish(): Pair<String, String>? {
+        val result = chatId?.let { source -> targetChatId?.let { target -> source to target } }
+        reset()
+        return result
+    }
+
+    fun reset() {
+        chatId = null
+        targetChatId = null
+        pointerInRoot = Offset.Unspecified
+        offsetY = 0f
+    }
+
+    private fun updateTarget() {
+        val source = chatId
+        targetChatId = if (source == null || !pointerInRoot.isSpecified) {
+            null
+        } else {
+            chatBounds.entries.firstOrNull { (id, bounds) -> id != source && bounds.contains(pointerInRoot) }?.key
         }
     }
 }
@@ -1146,6 +1206,13 @@ fun ChatsScreen(
 private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
     var query by remember { mutableStateOf("") }
     var expandedProjects by remember { mutableStateOf(emptySet<String>()) }
+    val pinnedChatDragState = remember { PinnedChatDragState() }
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(state.chats, state.pinnedChatOrder) {
+        if (state.pinnedChatOrder.isEmpty()) {
+            model.initializePinnedChatOrderIfNeeded(state.chats.filter { it.pinned }.map { it.id })
+        }
+    }
     Box(modifier) {
         Column(Modifier.fillMaxSize()) {
             SimpleScreenHeader("Chats") {
@@ -1166,10 +1233,47 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
                 LazyColumn(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                 ) {
-                    val pinned = chats.filter { it.pinned }
+                    val pinned = orderedPinnedChats(chats.filter { it.pinned }, state.pinnedChatOrder)
                     if (pinned.isNotEmpty()) {
                         item { ListSectionLabel("Pinned") }
-                        items(pinned, key = { it.id }) { chat -> ChatRow(chat, model) }
+                        items(pinned, key = { it.id }) { chat ->
+                            val dragged = pinnedChatDragState.chatId == chat.id
+                            var originInRoot by remember(chat.id) { mutableStateOf(Offset.Zero) }
+                            DisposableEffect(pinnedChatDragState, chat.id) {
+                                onDispose { pinnedChatDragState.unregister(chat.id) }
+                            }
+                            ChatRow(
+                                chat = chat,
+                                model = model,
+                                dropTarget = pinnedChatDragState.targetChatId == chat.id,
+                                dragged = dragged,
+                                modifier = Modifier
+                                    .onGloballyPositioned {
+                                        originInRoot = it.positionInRoot()
+                                        pinnedChatDragState.register(chat.id, it.boundsInRoot())
+                                    }
+                                    .offset { IntOffset(0, if (dragged) pinnedChatDragState.offsetY.toInt() else 0) }
+                                    .zIndex(if (dragged) 2f else 0f)
+                                    .pointerInput(chat.id, pinnedChatDragState) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = { offset ->
+                                                pinnedChatDragState.start(chat.id, originInRoot + offset)
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                change.consume()
+                                                pinnedChatDragState.moveBy(dragAmount)
+                                            },
+                                            onDragEnd = {
+                                                pinnedChatDragState.finish()?.let { (chatId, targetChatId) ->
+                                                    model.movePinnedChat(chatId, targetChatId)
+                                                }
+                                            },
+                                            onDragCancel = pinnedChatDragState::reset,
+                                        )
+                                    },
+                            )
+                        }
                     }
                     chatProjectsForQuery(state.projects, chats, query).forEach { project ->
                         val projectChats = chats.filter { !it.pinned && it.projectId == project.id }
@@ -1250,11 +1354,29 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
 }
 
 @Composable
-private fun ChatRow(chat: BoardCard, model: DieterViewModel) {
+private fun ChatRow(
+    chat: BoardCard,
+    model: DieterViewModel,
+    modifier: Modifier = Modifier,
+    dropTarget: Boolean = false,
+    dragged: Boolean = false,
+) {
     Surface(
         color = if (chat.pinned) DieterSurface else Color.Transparent,
         shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp).alpha(if (model.isPendingCard(chat.id)) 0.52f else 1f),
+        border = if (dropTarget) androidx.compose.foundation.BorderStroke(2.dp, DieterShellDeep) else null,
+        shadowElevation = if (dragged) 8.dp else 0.dp,
+        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp)
+            .alpha(if (model.isPendingCard(chat.id)) 0.52f else 1f)
+            .then(
+                if (chat.pinned) {
+                    Modifier.testTag("pinned-chat-${chat.id}").semantics {
+                        contentDescription = "${chat.title.ifBlank { "Untitled chat" }}; long press and drag to reorder"
+                    }
+                } else {
+                    Modifier
+                },
+            ),
     ) {
         Row(
             Modifier.fillMaxWidth().clickable { model.openCard(chat, Destination.CHATS) }
@@ -1280,7 +1402,17 @@ private fun ChatRow(chat: BoardCard, model: DieterViewModel) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            Spacer(Modifier.width(if (chat.pinned) 12.dp else 8.dp))
             Text(shortTimestamp(chat.lastActivityAt.ifBlank { chat.updatedAt }), color = DieterMuted, fontSize = 11.sp)
+            if (chat.pinned) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Outlined.DragHandle,
+                    contentDescription = "Drag pinned chat to reorder",
+                    tint = DieterMuted,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
         }
     }
 }
@@ -3103,9 +3235,7 @@ private fun SubagentBlock(subagents: List<Subagent>) {
                             val metrics = listOfNotNull(
                                 subagent.model.takeIf(String::isNotBlank),
                                 subagent.toolCount.takeIf { it > 0 }?.let { "$it tools" },
-                                subagent.tokens.takeIf { it > 0 }?.let { "$it tokens" },
-                                if (subagent.contextTokens > 0 && subagent.contextWindow > 0) "${(subagent.contextTokens * 100 / subagent.contextWindow)}% context" else null,
-                            )
+                            ) + subagentUsageMetrics(subagent.tokens, subagent.contextTokens, subagent.contextWindow)
                             if (metrics.isNotEmpty()) Text(metrics.joinToString(" · "), color = DieterMuted, fontSize = 8.sp)
                             if (subagent.error.isNotBlank()) Text(subagent.error, color = MaterialTheme.colorScheme.error, fontSize = 9.sp)
                         }
@@ -4264,6 +4394,11 @@ private fun WorkCard(
 ) {
     val labels = board?.labelsList.orEmpty().filter { card.labelIdsList.contains(it.id) }
     val starting = operation == CardOperation.STARTING || card.runtime.equals("starting", ignoreCase = true)
+    val activityAge = boardCardActivityText(card.updatedAt, card.lastActivityAt, activityNow)
+    val hasStartAction = starting || onStart != null
+    val hasWorkspaceBadge = workspaceCardBadgeInfo(card) != null
+    val isDone = card.lane.contains("done", ignoreCase = true)
+    val startContentColor = MaterialTheme.colorScheme.onPrimary
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().then(
@@ -4276,8 +4411,8 @@ private fun WorkCard(
         // the entire card exposes the swipe actions rendered underneath it.
         Column(Modifier.alpha(if (pending) 0.52f else 1f)) {
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 Row(verticalAlignment = Alignment.Top) {
                     Text(
@@ -4285,12 +4420,21 @@ private fun WorkCard(
                         Modifier.weight(1f),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
+                        lineHeight = 20.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(Modifier.width(10.dp))
-                    labels.firstOrNull()?.let { label ->
-                        LabelPill(label.name, label.color)
+                    if (activityAge.isNotEmpty()) {
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            activityAge,
+                            color = DieterMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(top = 2.dp)
+                                .testTag("card-activity-${card.id}")
+                                .semantics { contentDescription = "Last activity $activityAge" },
+                        )
                     }
                 }
                 if (card.summary.isNotBlank()) {
@@ -4303,66 +4447,94 @@ private fun WorkCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (labels.size > 1) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        labels.drop(1).take(2).forEach { label -> LabelPill(label.name, label.color) }
+                if (labels.isNotEmpty() || hasWorkspaceBadge) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        labels.take(3).forEach { label -> LabelPill(label.name, label.color) }
+                        if (labels.size > 3) MoreLabelsPill(labels.size - 3)
+                        if (hasWorkspaceBadge) WorkspaceCardBadge(card, Modifier.widthIn(max = 176.dp))
                     }
                 }
                 if (!operationError.isNullOrBlank()) {
                     Text(operationError, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
-            HorizontalDivider(color = DieterOutline.copy(alpha = 0.38f))
+            HorizontalDivider(color = DieterOutline)
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 10.dp),
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = if (hasStartAction) 8.dp else 11.dp)
+                    .then(if (hasStartAction) Modifier.heightIn(min = 48.dp) else Modifier),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(card.provider.ifBlank { "agent" }, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                Spacer(Modifier.width(8.dp))
-                Text(card.model, color = DieterMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                WorkspaceCardBadge(card, Modifier.widthIn(max = 118.dp))
-                val activityAge = boardCardActivityText(card.updatedAt, card.lastActivityAt, activityNow)
-                if (activityAge.isNotEmpty()) {
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        activityAge,
-                        color = DieterMuted,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.testTag("card-activity-${card.id}")
-                            .semantics { contentDescription = "Last activity $activityAge" },
+                Text(
+                    buildAnnotatedString {
+                        pushStyle(SpanStyle(fontWeight = FontWeight.SemiBold))
+                        append(card.provider.ifBlank { "agent" })
+                        pop()
+                        if (card.model.isNotBlank()) {
+                            append("  ")
+                            pushStyle(SpanStyle(color = DieterMuted))
+                            append(card.model)
+                            pop()
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (card.commentCount > 0) {
+                    Row(
+                        Modifier.padding(start = 12.dp)
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = "${card.commentCount} comments"
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(15.dp), tint = DieterMuted)
+                        Spacer(Modifier.width(4.dp))
+                        Text(card.commentCount.toString(), color = DieterMuted, fontSize = 12.sp)
+                    }
+                }
+                if (isDone) {
+                    Spacer(Modifier.width(12.dp))
+                    Icon(
+                        Icons.Outlined.CheckCircle,
+                        contentDescription = "Done",
+                        modifier = Modifier.size(18.dp),
+                        tint = DieterEyes,
                     )
                 }
-                if (starting || onStart != null) {
+                if (hasStartAction) {
+                    Spacer(Modifier.width(12.dp))
                     Surface(
                         onClick = { onStart?.invoke() },
                         enabled = onStart != null && operation == null && !starting,
-                        modifier = Modifier.testTag("start-card-${card.id}"),
-                        shape = RoundedCornerShape(10.dp),
-                        color = DieterEyes.copy(alpha = 0.16f),
-                        contentColor = DieterEyes,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                            .testTag("start-card-${card.id}")
+                            .semantics {
+                                contentDescription = "Start ${card.title.ifBlank { "card" }}"
+                            },
+                        shape = RoundedCornerShape(13.dp),
+                        color = DieterEyes,
+                        contentColor = startContentColor,
                     ) {
                         Row(
-                            Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             if (starting) {
-                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = startContentColor)
                             } else {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, Modifier.size(16.dp))
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, Modifier.size(18.dp))
                             }
-                            Spacer(Modifier.width(3.dp))
+                            Spacer(Modifier.width(5.dp))
                             Text(if (starting) "Starting…" else "Start", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    Spacer(Modifier.width(8.dp))
                 }
-                if (card.commentCount > 0) {
-                    Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(15.dp), tint = DieterMuted)
-                    Text(" ${card.commentCount}", color = DieterMuted, fontSize = 12.sp)
-                    Spacer(Modifier.width(10.dp))
-                }
-                Icon(Icons.Outlined.CheckCircle, null, Modifier.size(18.dp), tint = if (card.lane.contains("done", true)) DieterEyes else DieterMuted)
             }
         }
     }
@@ -4372,27 +4544,32 @@ private fun WorkCard(
 private fun WorkspaceCardBadge(card: BoardCard, modifier: Modifier = Modifier) {
     val badge = workspaceCardBadgeInfo(card) ?: return
     val tint = if (badge.conflicted) DieterCoral else DieterShell
-    Row(
+    Surface(
         modifier = modifier
             .testTag("workspace-badge-${card.id}")
             .semantics { contentDescription = badge.accessibilityLabel },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        shape = RoundedCornerShape(50),
+        color = tint.copy(alpha = 0.13f),
+        contentColor = tint,
     ) {
-        Icon(
-            Icons.Outlined.AccountTree,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(13.dp),
-        )
-        Text(
-            badge.title,
-            color = tint,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(
+                Icons.Outlined.AccountTree,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                badge.title,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -4418,13 +4595,51 @@ internal fun boardCardActivityText(
 @Composable
 private fun LabelPill(name: String, color: String) {
     val tint = runCatching { Color(color.toColorInt()) }.getOrDefault(DieterShell)
+    val tintContrast = colorContrastRatio(tint, DieterSurfaceHigh)
+    val contentTint = if (tintContrast < 3f) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f) else tint
+    val backgroundTint = if (tintContrast < 1.5f) DieterOutline.copy(alpha = 0.3f) else tint.copy(alpha = 0.18f)
     Row(
-        Modifier.clip(RoundedCornerShape(20.dp)).background(tint.copy(alpha = 0.18f)).padding(horizontal = 9.dp, vertical = 4.dp),
+        Modifier.widthIn(max = 134.dp).clip(RoundedCornerShape(20.dp))
+            .background(backgroundTint).padding(horizontal = 9.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(tint))
+        Box(
+            Modifier.size(7.dp).clip(CircleShape).background(tint).then(
+                if (tintContrast < 1.5f) Modifier.border(1.dp, contentTint.copy(alpha = 0.5f), CircleShape)
+                else Modifier,
+            ),
+        )
         Spacer(Modifier.width(5.dp))
-        Text(name, color = tint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            name,
+            color = contentTint,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private fun colorContrastRatio(first: Color, second: Color): Float {
+    val lighter = maxOf(first.luminance(), second.luminance())
+    val darker = minOf(first.luminance(), second.luminance())
+    return (lighter + 0.05f) / (darker + 0.05f)
+}
+
+@Composable
+private fun MoreLabelsPill(count: Int) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = DieterOutline.copy(alpha = 0.24f),
+        contentColor = DieterMuted,
+    ) {
+        Text(
+            "+$count",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+        )
     }
 }
 

@@ -1263,6 +1263,12 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(ConversationPaneSizing.resolvedWidth(680, workspaceWidth: 1_200) == 504)
 }
 
+@Test func sidebarWidthIsClampedToItsSupportedRange() {
+    #expect(SidebarSizing.clamped(180) == SidebarSizing.minimumWidth)
+    #expect(SidebarSizing.clamped(300) == 300)
+    #expect(SidebarSizing.clamped(500) == SidebarSizing.maximumWidth)
+}
+
 @Test func kanbanLanesFillTheBoardBeforeFallingBackToHorizontalScrolling() {
     #expect(KanbanLaneSizing.laneWidth(availableWidth: 1_255, laneCount: 4) == 300)
     #expect(KanbanLaneSizing.contentWidth(availableWidth: 1_255, laneCount: 4) == 1_255)

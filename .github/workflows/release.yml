@@ -99,6 +99,9 @@ jobs:
           go build -trimpath -ldflags "${ldflags}" \
             -o "stage/${ASSET}/${BINARY}" "${TARGET}"
           cp LICENSE "stage/${ASSET}/LICENSE"
+          if [ "${BINARY}" = "dieter" ]; then
+            cp scripts/install.sh "stage/${ASSET}/install.sh"
+          fi
           tar -C stage -czf "dist/${ASSET}.tar.gz" "${ASSET}"
       - uses: actions/upload-artifact@v4
         with:
@@ -133,6 +136,7 @@ jobs:
             -o "${package}/dieter" ./cmd/dieter
           native/macos-capture/build.sh "${package}/dieter-capture"
           cp LICENSE "${package}/LICENSE"
+          cp scripts/install.sh "${package}/install.sh"
       - name: Check signing configuration
         id: signing
         env:

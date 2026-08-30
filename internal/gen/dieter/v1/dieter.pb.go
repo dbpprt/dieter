@@ -5173,6 +5173,7 @@ type UpdateProjectRequest struct {
 	Name          *string                `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
 	Summary       *string                `protobuf:"bytes,3,opt,name=summary,proto3,oneof" json:"summary,omitempty"`
 	Prompt        *string                `protobuf:"bytes,4,opt,name=prompt,proto3,oneof" json:"prompt,omitempty"`
+	Path          *string                `protobuf:"bytes,5,opt,name=path,proto3,oneof" json:"path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5231,6 +5232,13 @@ func (x *UpdateProjectRequest) GetSummary() string {
 func (x *UpdateProjectRequest) GetPrompt() string {
 	if x != nil && x.Prompt != nil {
 		return *x.Prompt
+	}
+	return ""
+}
+
+func (x *UpdateProjectRequest) GetPath() string {
+	if x != nil && x.Path != nil {
+		return *x.Path
 	}
 	return ""
 }
@@ -14319,17 +14327,19 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x13validation_commands\x18\v \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommandsJ\x04\b\b\x10\tR\x16default_workspace_mode\"m\n" +
 	"\x15CreateProjectResponse\x12,\n" +
 	"\aproject\x18\x01 \x01(\v2\x12.dieter.v1.ProjectR\aproject\x12&\n" +
-	"\x05board\x18\x02 \x01(\v2\x10.dieter.v1.BoardR\x05board\"\xaa\x01\n" +
+	"\x05board\x18\x02 \x01(\v2\x10.dieter.v1.BoardR\x05board\"\xcc\x01\n" +
 	"\x14UpdateProjectRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x17\n" +
 	"\x04name\x18\x02 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x1d\n" +
 	"\asummary\x18\x03 \x01(\tH\x01R\asummary\x88\x01\x01\x12\x1b\n" +
-	"\x06prompt\x18\x04 \x01(\tH\x02R\x06prompt\x88\x01\x01B\a\n" +
+	"\x06prompt\x18\x04 \x01(\tH\x02R\x06prompt\x88\x01\x01\x12\x17\n" +
+	"\x04path\x18\x05 \x01(\tH\x03R\x04path\x88\x01\x01B\a\n" +
 	"\x05_nameB\n" +
 	"\n" +
 	"\b_summaryB\t\n" +
-	"\a_prompt\"\xcc\x02\n" +
+	"\a_promptB\a\n" +
+	"\x05_path\"\xcc\x02\n" +
 	"\x11ValidationCommand\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1e\n" +
 	"\n" +

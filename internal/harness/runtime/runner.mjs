@@ -14,6 +14,7 @@ import { createLocalSandboxProvider } from './local-sandbox.mjs';
 import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
 import { ompACPArgs } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
+import { createMessageMetadataTracker } from './usage-metadata.mjs';
 import {
   createClaudeDiagnosticTracker,
   createClaudeTurnSummary,
@@ -121,7 +122,8 @@ if (request.harness === 'mock') {
     { type: 'text-start', id: 'text-1' },
     { type: 'text-delta', id: 'text-1', delta: `Mock harness received: ${runtimePrompt}` },
     { type: 'text-end', id: 'text-1' },
-    { type: 'finish-step' },
+    { type: 'finish-step', usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 } },
+    { type: 'message-metadata', messageMetadata: { createdAt, usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 }, contextWindowTokens: 1000 } },
     { type: 'finish', finishReason: 'stop', messageMetadata: { createdAt, usage: { inputTokens: 120, outputTokens: 30, totalTokens: 150 }, contextWindowTokens: 1000 } },
   ]) send({ type: 'chunk', chunk });
   capabilityCollector.consumeBoardTaskPlan({ tasks: [
@@ -267,15 +269,12 @@ try {
   let claudeDelegationSeen = false;
   let claudeFinalTextSeen = false;
   async function streamResult(result, summary, diagnosticTurn) {
+    const messageMetadata = createMessageMetadataTracker({ createdAt, contextWindowTokens });
     const stream = toUIMessageStream({
       stream: result.stream,
       onError: harnessErrorMessage,
       generateMessageId: () => request.responseMessageId,
-      messageMetadata: ({ part }) => {
-        if (part.type === 'start') return { createdAt };
-        if (part.type === 'finish') return { createdAt, usage: part.totalUsage, contextWindowTokens };
-        return undefined;
-      },
+      messageMetadata,
     });
     for await (const chunk of stream) {
       // The Go host owns the semantic distinction between a user interrupt

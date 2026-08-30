@@ -701,6 +701,7 @@ message UpdateProjectRequest {
   optional string name = 2;
   optional string summary = 3;
   optional string prompt = 4;
+  optional string path = 5;
 }
 
 message ValidationCommand {

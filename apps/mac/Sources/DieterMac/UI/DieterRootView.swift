@@ -24,9 +24,57 @@ enum WorkspaceSurfaceTreatment: Equatable {
     var blocksInteraction: Bool { self == .unavailable }
 }
 
+enum SidebarSizing {
+    static let storageKey = "DieterSidebarWidth"
+    static let minimumWidth: CGFloat = 210
+    static let defaultWidth = DieterMetrics.sidebarExpandedWidth
+    static let maximumWidth: CGFloat = 420
+    static let dividerWidth: CGFloat = 7
+
+    static func clamped(_ width: CGFloat) -> CGFloat {
+        min(max(width, minimumWidth), maximumWidth)
+    }
+}
+
+private struct SidebarResizeDivider: View {
+    let onChanged: (CGFloat) -> Void
+    let onEnded: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color.clear)
+            Rectangle()
+                .fill(hovering ? DieterTheme.shell.opacity(0.62) : DieterTheme.paneSeparator)
+                .frame(width: hovering ? 2 : 1)
+        }
+        .frame(width: SidebarSizing.dividerWidth)
+        .ignoresSafeArea(.container, edges: .top)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { onChanged($0.translation.width) }
+                .onEnded { _ in onEnded() }
+        )
+        .onHover { isHovering in
+            if isHovering, !hovering { NSCursor.resizeLeftRight.push() }
+            if !isHovering, hovering { NSCursor.pop() }
+            hovering = isHovering
+        }
+        .onDisappear {
+            if hovering { NSCursor.pop() }
+        }
+        .accessibilityLabel("Resize sidebar")
+        .accessibilityIdentifier("sidebar.resize-divider")
+    }
+}
+
 struct DieterRootView: View {
     @Environment(DieterStore.self) private var store
+    @AppStorage(SidebarSizing.storageKey, store: SidebarProjectNavigationPreferences.applicationDefaults())
+    private var navigationWidth = Double(SidebarSizing.defaultWidth)
     @State private var navigationCollapsed = false
+    @State private var navigationDragStartWidth: CGFloat?
 
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
@@ -45,13 +93,33 @@ struct DieterRootView: View {
 
     var body: some View {
         @Bindable var store = store
+        let sidebarWidth = navigationCollapsed
+            ? DieterMetrics.sidebarCollapsedWidth
+            : SidebarSizing.clamped(CGFloat(navigationWidth))
+        let sidebarDividerWidth = navigationCollapsed ? 1 : SidebarSizing.dividerWidth
+
         HStack(spacing: 0) {
             AppSidebar(collapsed: $navigationCollapsed)
-                .frame(width: navigationCollapsed ? DieterMetrics.sidebarCollapsedWidth : DieterMetrics.sidebarExpandedWidth)
-            Rectangle()
-                .fill(DieterTheme.paneSeparator)
-                .frame(width: 1)
-                .ignoresSafeArea(.container, edges: .top)
+                .frame(width: sidebarWidth)
+            if navigationCollapsed {
+                Rectangle()
+                    .fill(DieterTheme.paneSeparator)
+                    .frame(width: sidebarDividerWidth)
+                    .ignoresSafeArea(.container, edges: .top)
+                    .accessibilityHidden(true)
+            } else {
+                SidebarResizeDivider(
+                    onChanged: { translation in
+                        let startWidth = navigationDragStartWidth ?? sidebarWidth
+                        if navigationDragStartWidth == nil { navigationDragStartWidth = startWidth }
+                        let next = SidebarSizing.clamped(startWidth + translation)
+                        if abs(Double(next) - navigationWidth) > 0.5 {
+                            navigationWidth = Double(next)
+                        }
+                    },
+                    onEnded: { navigationDragStartWidth = nil }
+                )
+            }
             VStack(spacing: 0) {
                 if workspaceSurfaceTreatment.showsNotice {
                     WorkspaceFreshnessBanner(
@@ -87,10 +155,8 @@ struct DieterRootView: View {
         .overlay {
             if store.selectedMachineID != nil {
                 GeometryReader { geometry in
-                    let sidebarWidth = navigationCollapsed
-                        ? DieterMetrics.sidebarCollapsedWidth
-                        : DieterMetrics.sidebarExpandedWidth
-                    let popupWidth = min(820, max(560, geometry.size.width - sidebarWidth - 32))
+                    let workspaceLeadingEdge = sidebarWidth + sidebarDividerWidth
+                    let popupWidth = min(820, max(560, geometry.size.width - workspaceLeadingEdge - 32))
                     let processCount = store.selectedMachineID
                         .flatMap { store.machineInformation[$0]?.processes.count } ?? 1
                     let desiredPopupHeight = 420 + CGFloat(min(max(processCount, 1), 4) * 54)
@@ -104,7 +170,7 @@ struct DieterRootView: View {
                             .accessibilityHidden(true)
                         MachinePopover()
                             .frame(width: popupWidth, height: popupHeight)
-                            .offset(x: sidebarWidth + 14, y: popupTop)
+                            .offset(x: workspaceLeadingEdge + 14, y: popupTop)
                     }
                 }
             }
@@ -635,12 +701,13 @@ private struct SidebarProjectRow: View {
                             .font(.system(size: 12, weight: selected ? .semibold : .medium))
                             .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
                             .lineLimit(1)
+                        Spacer(minLength: 6)
                         if let projectMachine {
                             ProjectMachineBadge(machine: projectMachine, online: projectMachineOnline == true)
                                 .accessibilityIdentifier("sidebar.project.\(project.id).machine")
                         }
-                        Spacer(minLength: 2)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -726,7 +793,7 @@ private struct ProjectMachineBadge: View {
             Text(machine.name)
                 .font(.system(size: 8.5, weight: .semibold))
                 .lineLimit(1)
-                .frame(maxWidth: 68)
+                .truncationMode(.middle)
         }
         .foregroundStyle(online ? DieterTheme.subtle : DieterTheme.tertiary)
         .padding(.horizontal, 6)

@@ -182,7 +182,7 @@ func Listen(addr string, data *store.Store, runner harness.Runner, logger *slog.
 	return run(ctx, addr, data, application, logger)
 }
 
-// ListenDaemon runs Board's machine-local data plane without public OAuth.
+// ListenDaemon runs Dieter's machine-local data plane without public OAuth.
 // Authentication for remote clients is enforced by the gateway or the
 // daemon's direct TLS listener, never by this loopback-only endpoint.
 func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop ...*remotedesktop.Manager) error {
@@ -222,7 +222,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 	}()
 	application.schedules.Start(ctx)
 	httpServer := &http.Server{Addr: addr, Handler: application.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
-	logger.Info("board is ready", "url", fmt.Sprintf("http://%s", addr), "store", data.Root)
+	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", data.Root)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- httpServer.ListenAndServe() }()
 	select {

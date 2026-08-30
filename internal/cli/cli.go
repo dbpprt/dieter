@@ -42,6 +42,13 @@ type CLI struct {
 	In       io.Reader
 	Store    *store.Store
 	Runner   harness.Runner
+
+	DaemonMode bool
+	GatewayURL string
+	Machine    string
+	Timeout    time.Duration
+	transport  *dieterTransport
+	gateway    *gatewayTransport
 }
 
 func New(data *store.Store) *CLI {
@@ -52,9 +59,12 @@ func (c *CLI) service() *app.Service { return app.New(c.Store, c.Runner) }
 func Main(args []string) int {
 	global := flag.NewFlagSet("dieter", flag.ContinueOnError)
 	global.SetOutput(io.Discard)
-	root := global.String("store", store.DefaultRoot(), "central Markdown store")
-	short := global.String("s", "", "central Markdown store")
+	root := global.String("store", store.DefaultRoot(), "DIETER_HOME data directory")
+	short := global.String("s", "", "DIETER_HOME data directory")
 	harnessConfig := global.String("harness-config", "", "harness registry YAML")
+	gatewayURL := global.String("gateway", "", "gateway URL for authenticated remote commands")
+	machine := global.String("machine", "", "target enrolled daemon ID or exact name")
+	timeout := global.Duration("timeout", 15*time.Second, "command timeout")
 	help := global.Bool("help", false, "help")
 	global.BoolVar(help, "h", false, "help")
 	version := global.Bool("version", false, "version")
@@ -66,6 +76,8 @@ func Main(args []string) int {
 		*root = *short
 	}
 	client := New(store.New(*root))
+	client.DaemonMode, client.GatewayURL, client.Machine, client.Timeout = true, *gatewayURL, *machine, *timeout
+	defer client.Close()
 	if *help {
 		client.rootHelp()
 		return 0
@@ -86,12 +98,24 @@ func Main(args []string) int {
 }
 
 func (c *CLI) Run(args []string) error {
-	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		c.rootHelp()
 		return nil
 	}
+	if args[0] == "help" {
+		if len(args) == 1 {
+			c.rootHelp()
+			return nil
+		}
+		args = append(append([]string(nil), args[1:]...), "--help")
+	}
 	if err := c.Store.Ensure(); err != nil {
 		return err
+	}
+	if c.DaemonMode {
+		if handled, err := c.runDaemonCommand(args); handled {
+			return err
+		}
 	}
 	switch args[0] {
 	case "setup":
@@ -126,29 +150,48 @@ func (c *CLI) Run(args []string) error {
 }
 
 func (c *CLI) rootHelp() {
-	fmt.Fprint(c.Out, `Dieter — local AI harness conversations
+	fmt.Fprint(c.Out, `Dieter — control local or enrolled Dieter daemon machines
 
 Usage:
-  dieter [--store PATH] [--harness-config PATH] <command> [options]
+  dieter [global options] <command> [options]
+
+Global options:
+  --store PATH             DIETER_HOME (default ~/.dieter)
+  --gateway URL            Gateway origin for account and remote commands
+  --machine ID|NAME        Target an enrolled daemon; omit for the local daemon
+  --timeout DURATION       Unary command and connection timeout (default 15s)
+  --harness-config PATH    Local daemon harness registry YAML
+  --help, -h               Show this help
+  --version                Print the version
 
 Commands:
-  setup       Authorize GitHub, register projects, and start the daemon
-  daemon      Run, enroll, and inspect this machine's Dieter daemon
-  serve       Alias for "dieter daemon start"
-  status      Show Dieter and local harness readiness
-  project     Create, open, list, and update Git projects
-  board       Create and list fixed workflow boards
-  card        Create, find, chat, comment, and move conversation cards
-  workspace   Inspect and operate card/chat workspaces and changesets
-  schedule    Create, inspect, run, pause, and update project schedules
-  settings    Inspect and update global parallel-session limits
-  storage     Print the central Markdown store path
-  version     Print the version
+  auth         Sign in to a gateway and manage the CLI session
+  machine      List, route, rename, revoke, inspect, or control machines
+  status       Show target daemon health, runtime, route, and state counts
+  harness      List target daemon harnesses, models, and options
+  project      Create, browse, open, relocate, archive, and restore projects
+  board        Manage boards, retention, workflows, and board labels
+  card         Fully manage durable board conversations
+  chat         Fully manage standalone durable conversations
+  workspace    Inspect changes and run durable Git/SCM operations
+  file         Browse and edit project/workspace files with revision checks
+  terminal     Create, attach, control, and close daemon-host PTYs
+  screen       Inspect policy and drive authenticated WebRTC signaling
+  schedule     Create, preview, dispatch, pause, and inspect schedules
+  settings     Inspect and update parallel-session admission limits
+  prompt       Inspect, update, scope, and preview prompt templates
+  watch        Stream daemon state or sync frames as JSON Lines
+  storage      Print the target daemon's central storage path
+  setup        Authorize, enroll, and install this local daemon service
+  daemon       Start, enroll, inspect, or manage this local daemon service
+  serve        Alias for "dieter daemon start"
+  version      Print the version
 
-Every card is one durable Dieter conversation backed by a local AI SDK harness.
-All Dieter and conversation data stays under DIETER_HOME.
+Without --machine, operational commands use the running local daemon API. With
+--machine, the CLI authenticates to the gateway, prefers direct TLS, and falls
+back to the bounded gateway relay. It never reads a remote machine's storage.
 
-Run "dieter <command> --help" for discoverable subcommands and examples.
+Run "dieter help <command> [action]" or append --help at any command depth.
 `)
 }
 
