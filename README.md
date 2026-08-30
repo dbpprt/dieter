@@ -4,6 +4,8 @@
 
 <h1 align="center">Dieter</h1>
 
+This is a test to test worktrees. TODO: Remove this line again.
+
 <p align="center">
   <strong>Many agents, many machines, one interface.</strong><br>
   Run coding agents wherever the code lives, and control them from macOS or Android.
