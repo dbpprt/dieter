@@ -183,6 +183,9 @@ func (c *CLI) dialDieter(ctx context.Context) (*dieterTransport, error) {
 	if strings.TrimSpace(c.Machine) == "" {
 		statusValue, err := dieterdaemon.LoadRuntimeStatus(c.Store.Root)
 		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, errors.New("the local Dieter daemon is not running; start it with `dieter daemon start`")
+			}
 			return nil, fmt.Errorf("read local Dieter daemon status: %w", err)
 		}
 		if !dieterdaemon.RuntimeStatusCurrent(statusValue, time.Now().UTC()) || strings.TrimSpace(statusValue.ListenAddress) == "" {
