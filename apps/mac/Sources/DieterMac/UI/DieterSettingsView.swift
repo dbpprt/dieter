@@ -277,7 +277,7 @@ struct PromptSettingsEditor: View {
     private func load() async {
         loading = true
         do {
-            if let rpc = store.rpc { settings = try await rpc.promptSettings() }
+            if let value = try await store.loadPromptSettings() { settings = value }
             syncScopedTemplates()
             await loadPreview()
         } catch { store.show(error) }
@@ -294,60 +294,49 @@ struct PromptSettingsEditor: View {
     }
 
     private func saveGlobal() async {
-        guard let rpc = store.rpc else { return }
         saving = true; defer { saving = false }
-        var request = Dieter_V1_UpdatePromptSettingsRequest()
-        request.promptTemplate = settings.promptTemplate
-        request.boardSkillTemplate = settings.boardSkillTemplate
-        request.chatSkillTemplate = settings.chatSkillTemplate
-        do { settings = try await rpc.updatePromptSettings(request); await loadPreview() } catch { store.show(error) }
+        do {
+            if let value = try await store.updatePromptSettings(settings) { settings = value }
+            await loadPreview()
+        } catch { store.show(error) }
     }
 
     private func saveProject() async {
-        guard let rpc = store.rpc, let project = store.selectedProject else { return }
+        guard store.selectedProject != nil else { return }
         saving = true; defer { saving = false }
-        var request = Dieter_V1_SetScopedPromptTemplateRequest()
-        request.scopeID = project.id; request.inherit = projectInherits; request.promptTemplate = projectTemplate
         do {
-            store.acceptProject(try await rpc.setProjectPromptTemplate(request))
+            _ = try await store.setSelectedProjectPromptTemplate(inherit: projectInherits, template: projectTemplate)
             syncScopedTemplates()
             await loadPreview()
         } catch { store.show(error) }
     }
 
     private func saveBoard() async {
-        guard let rpc = store.rpc, let board = store.selectedBoard else { return }
+        guard store.selectedBoard != nil else { return }
         saving = true; defer { saving = false }
-        var request = Dieter_V1_SetScopedPromptTemplateRequest()
-        request.scopeID = board.id; request.inherit = boardInherits; request.promptTemplate = boardTemplate
         do {
-            store.acceptBoard(try await rpc.setBoardPromptTemplate(request))
+            _ = try await store.setSelectedBoardPromptTemplate(inherit: boardInherits, template: boardTemplate)
             syncScopedTemplates()
             await loadPreview()
         } catch { store.show(error) }
     }
 
     private func saveLabel(_ label: Dieter_V1_Label) async {
-        guard let rpc = store.rpc, let board = store.selectedBoard else { return }
+        guard store.selectedBoard != nil else { return }
         saving = true; defer { saving = false }
-        var request = Dieter_V1_UpdateBoardLabelRequest()
-        request.boardID = board.id; request.labelID = label.id
-        request.name = label.name; request.color = label.color
-        request.instructions = labelInstructions[label.id, default: label.instructions]
         do {
-            store.acceptBoard(try await rpc.updateBoardLabel(request))
+            _ = try await store.updatePromptInstructions(
+                for: label,
+                instructions: labelInstructions[label.id, default: label.instructions]
+            )
             syncScopedTemplates()
             await loadPreview()
         } catch { store.show(error) }
     }
 
     private func loadPreview() async {
-        guard let rpc = store.rpc, let project = store.selectedProject else { preview = nil; return }
-        var request = Dieter_V1_PreviewPromptRequest()
-        request.projectID = project.id; request.boardID = store.selectedBoard?.id ?? ""
-        request.scope = request.boardID.isEmpty ? "chat" : "board"
-        request.labelIds = Array(previewLabelIDs)
-        do { preview = try await rpc.previewPrompt(request) } catch { store.show(error) }
+        guard store.selectedProject != nil else { preview = nil; return }
+        do { preview = try await store.previewPrompt(labelIDs: previewLabelIDs) } catch { store.show(error) }
     }
 
     private func togglePreviewLabel(_ id: String) {

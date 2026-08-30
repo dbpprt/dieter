@@ -65,6 +65,7 @@ fi
 pkill -x DieterMac 2>/dev/null || true
 open -n -W "$APP_BUNDLE" --args --dieter-endpoint "$ENDPOINT" \
     --dieter-access-token-file "$TOKEN_FILE" \
+    --dieter-state-root "$CAPTURE_DIR/state" \
     --ui-smoke --ui-smoke-output "$CAPTURE_DIR" \
     --ui-smoke-offline-trigger "$OFFLINE_TRIGGER" \
     $EXTRA_SMOKE_ARGUMENT \

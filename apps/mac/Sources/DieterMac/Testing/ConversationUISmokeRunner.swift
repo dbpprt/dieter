@@ -526,7 +526,7 @@ enum ConversationUISmokeRunner {
         card.projectID = project.id
         card.title = "Conversation renderer fixture"
         card.runtime = "idle"
-        card.updatedAt = ISO8601DateFormatter().string(from: Date())
+        card.updatedAt = DieterTimestamp.string(from: Date())
         card.workspaceMode = "worktree"
         card.workspace.mode = "worktree"
         card.workspace.state = "ready"

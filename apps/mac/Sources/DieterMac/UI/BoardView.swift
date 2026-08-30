@@ -100,9 +100,7 @@ enum BoardCardOrdering {
     }
 
     private static func createdAt(_ value: String) -> Date? {
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        DieterTimestamp.date(from: value)
     }
 }
 
@@ -333,7 +331,6 @@ struct BoardHeader: View {
                 HStack(spacing: 7) {
                 Button {
                     store.labelFilter = ""
-                    Task { await store.refreshState() }
                 } label: {
                     HStack(spacing: 6) {
                         if store.labelFilter.isEmpty { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
@@ -353,11 +350,10 @@ struct BoardHeader: View {
                                 BoardLabelShelfChip(
                                     label: label,
                                     boardID: board.id,
-                                    count: store.boardCards.filter { $0.labelIds.contains(label.id) }.count,
+                                    count: store.boardProjection.labelCounts[label.id, default: 0],
                                     selected: store.labelFilter == label.id
                                 ) {
                                     store.labelFilter = store.labelFilter == label.id ? "" : label.id
-                                    Task { await store.refreshState() }
                                 }
                             }
                         }
@@ -366,9 +362,9 @@ struct BoardHeader: View {
                 }
 
                 Menu {
-                    Button("All states") { store.runtimeFilter = ""; Task { await store.refreshState() } }
+                    Button("All states") { store.runtimeFilter = "" }
                     ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
-                        Button(runtime.capitalized) { store.runtimeFilter = runtime; Task { await store.refreshState() } }
+                        Button(runtime.capitalized) { store.runtimeFilter = runtime }
                     }
                 } label: { DieterChipLabel(title: store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
@@ -400,7 +396,6 @@ struct BoardHeader: View {
                 HStack(spacing: 7) {
                     Button {
                         store.labelFilter = ""
-                        Task { await store.refreshState() }
                     } label: {
                         HStack(spacing: 6) {
                             if store.labelFilter.isEmpty { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
@@ -420,11 +415,10 @@ struct BoardHeader: View {
                                     BoardLabelShelfChip(
                                         label: label,
                                         boardID: board.id,
-                                        count: store.boardCards.filter { $0.labelIds.contains(label.id) }.count,
+                                        count: store.boardProjection.labelCounts[label.id, default: 0],
                                         selected: store.labelFilter == label.id
                                     ) {
                                         store.labelFilter = store.labelFilter == label.id ? "" : label.id
-                                        Task { await store.refreshState() }
                                     }
                                 }
                             }
@@ -433,9 +427,9 @@ struct BoardHeader: View {
                     }
 
                     Menu {
-                        Button("All states") { store.runtimeFilter = ""; Task { await store.refreshState() } }
+                        Button("All states") { store.runtimeFilter = "" }
                         ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
-                            Button(runtime.capitalized) { store.runtimeFilter = runtime; Task { await store.refreshState() } }
+                            Button(runtime.capitalized) { store.runtimeFilter = runtime }
                         }
                         Divider()
                         Button(retentionTitle) { store.archivePolicyPresented = true }
@@ -534,7 +528,7 @@ struct KanbanView: View {
                         LaneColumn(
                             lane: lane,
                             cards: BoardCardOrdering.sorted(
-                                store.displayedCards.filter { $0.lane == lane.id },
+                                store.boardProjection.displayedCardsByLane[lane.id] ?? [],
                                 direction: direction
                             ),
                             sortDirection: direction,
@@ -846,9 +840,7 @@ enum BoardCardActivityText {
     }
 
     private static func parse(_ value: String) -> Date? {
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        DieterTimestamp.date(from: value)
     }
 }
 

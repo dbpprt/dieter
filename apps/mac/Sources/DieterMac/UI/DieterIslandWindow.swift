@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import QuartzCore
 import SwiftUI
 
@@ -136,6 +137,7 @@ final class DieterIslandController: NSObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in self?.screenConfigurationChanged() }
         }
+        observeActivityProjection()
         updateVisibility()
     }
 
@@ -204,6 +206,22 @@ final class DieterIslandController: NSObject {
         configurePanelIfNeeded(forceLayout: true)
     }
 
+    private func observeActivityProjection() {
+        guard started else { return }
+        withObservationTracking {
+            _ = store.islandActivity.items.count
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in self?.activityProjectionChanged() }
+        }
+    }
+
+    private func activityProjectionChanged() {
+        defer { observeActivityProjection() }
+        guard enabled, presentation.expanded, let panel, let geometry else { return }
+        let frame = targetFrame(expanded: true, geometry: geometry)
+        if panel.frame != frame { panel.setFrame(frame, display: true) }
+    }
+
     private func configurePanelIfNeeded(forceLayout: Bool = false) {
         guard let screen = selectedScreen() else { return }
         let newGeometry = DieterIslandDisplayGeometry.resolve(
@@ -245,7 +263,7 @@ final class DieterIslandController: NSObject {
     private func targetFrame(expanded: Bool, geometry: DieterIslandDisplayGeometry) -> CGRect {
         geometry.windowFrame(
             expanded: expanded,
-            activityItemCount: DieterIslandActivity.resolve(cards: store.synchronizedCards).items.count
+            activityItemCount: store.islandActivity.items.count
         )
     }
 

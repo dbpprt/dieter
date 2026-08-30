@@ -1494,6 +1494,7 @@ class DieterConnectionManager(
         provider: String,
         model: String,
         effort: String,
+        providerOptions: Map<String, String> = emptyMap(),
     ): String {
         val commandId = UUID.randomUUID().toString().lowercase()
         val messageId = "msg_${UUID.randomUUID().toString().replace("-", "").lowercase()}"
@@ -1503,6 +1504,7 @@ class DieterConnectionManager(
             .setProvider(provider)
             .setModel(model)
             .setEffort(effort)
+            .putAllProviderOptions(providerOptions)
             .setClientId(syncStore.clientId)
             .setCommandId(commandId)
             .setMessageId(messageId)

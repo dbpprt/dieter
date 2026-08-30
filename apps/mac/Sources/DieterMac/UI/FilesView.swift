@@ -10,6 +10,7 @@ struct FilesView: View {
     @State private var newDirectory = false
     @State private var movingEntry: Dieter_V1_FileEntry?
     @State private var moveDestination = ""
+    @State private var editorSession = FileEditorSession()
 
     var body: some View {
         @Bindable var store = store
@@ -115,12 +116,15 @@ struct FilesView: View {
                     FluidPaneChrome(background: DieterTheme.sidebar, spacing: 8) {
                         HStack(spacing: 9) {
                             PaneTitleBlock(title: document.name, subtitle: document.path, symbol: symbol(document.name))
-                            if store.fileEditorText != document.content { StatusPill(text: "Edited", color: DieterTheme.amber) }
+                            if editorSession.isDirty { StatusPill(text: "Edited", color: DieterTheme.amber) }
                             Button { download(document) } label: { Image(systemName: "arrow.down.to.line") }
                                 .buttonStyle(DieterIconButtonStyle())
                                 .help("Download (document.name)")
                                 .accessibilityIdentifier("files.download")
-                            Button("Save") { Task { await store.saveFile() } }.buttonStyle(DieterPrimaryButtonStyle()).keyboardShortcut("s", modifiers: .command).disabled(document.binary || store.fileEditorText == document.content)
+                            Button("Save") { Task { await save(document) } }
+                                .buttonStyle(DieterPrimaryButtonStyle())
+                                .keyboardShortcut("s", modifiers: .command)
+                                .disabled(document.binary || !editorSession.isDirty)
                         }
                     } secondary: {
                         HStack(spacing: 8) {
@@ -138,13 +142,19 @@ struct FilesView: View {
                         ContentUnavailableView("Binary file", systemImage: "doc.badge.ellipsis", description: Text("\(ByteCountFormatter.string(fromByteCount: document.size, countStyle: .file)) • \(document.mimeType)"))
                     } else {
                         VStack(spacing: 0) {
-                            SyntaxHighlightedEditor(text: $store.fileEditorText, filename: document.name)
+                            SyntaxHighlightedEditor(
+                                session: editorSession,
+                                documentKey: "\(document.path):\(document.revision)",
+                                text: document.content,
+                                filename: document.name
+                            )
+                                .id("\(document.path):\(document.revision)")
                                 .accessibilityIdentifier("files.editor")
                             HStack(spacing: 12) {
                                 Text(ProjectFileLanguage.detect(filename: document.name).displayName)
                                 Text("UTF-8")
                                 Spacer()
-                                Text("\(store.fileEditorText.components(separatedBy: .newlines).count) lines")
+                                Text("\(editorSession.lineCount) lines")
                             }
                             .font(.system(size: 10))
                             .foregroundStyle(DieterTheme.tertiary)
@@ -165,6 +175,13 @@ struct FilesView: View {
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await store.loadFiles() }
+        .onChange(of: store.fileDocument?.revision) { _, _ in
+            guard let document = store.fileDocument else { return }
+            editorSession.prepare(
+                documentKey: "\(document.path):\(document.revision)",
+                text: document.content
+            )
+        }
         .onChange(of: store.showHiddenFiles) { _, _ in Task { await store.loadFiles() } }
         .sheet(isPresented: $createPresented) {
             VStack(alignment: .leading, spacing: 14) { Text(newDirectory ? "New folder" : "New file").font(.title2.weight(.bold)); TextField(newDirectory ? "Folder path" : "File path", text: $newPath); HStack { Spacer(); Button("Cancel") { createPresented = false }; Button("Create") { Task { await store.createFile(path: joined(store.filePath, newPath), directory: newDirectory); newPath = ""; createPresented = false } }.buttonStyle(.borderedProminent).disabled(newPath.isEmpty) } }.padding(22).frame(width: 430)
@@ -179,6 +196,15 @@ struct FilesView: View {
     private func symbol(_ name: String) -> String {
         let ext = (name as NSString).pathExtension.lowercased()
         return ["png", "jpg", "jpeg", "gif", "webp"].contains(ext) ? "photo" : ["swift", "go", "kt", "js", "ts", "tsx", "json", "md", "yml", "yaml"].contains(ext) ? "chevron.left.forwardslash.chevron.right" : "doc"
+    }
+
+    @MainActor
+    private func save(_ document: Dieter_V1_FileDocument) async {
+        guard let saved = await store.saveFile(content: editorSession.currentText()) else { return }
+        editorSession.markSaved(
+            documentKey: "\(saved.path):\(saved.revision)",
+            text: saved.content
+        )
     }
 
     private func previewImage(_ document: Dieter_V1_FileDocument) -> NSImage? {

@@ -87,7 +87,7 @@ enum ProjectFileLanguage: String, CaseIterable, Sendable {
         }
     }
 
-    fileprivate var keywords: [String] {
+    var keywords: [String] {
         switch self {
         case .swift:
             ["actor", "any", "as", "associatedtype", "async", "await", "break", "case", "catch", "class", "continue", "default", "defer", "deinit", "do", "else", "enum", "extension", "fallthrough", "false", "fileprivate", "for", "func", "guard", "if", "import", "in", "init", "inout", "internal", "is", "isolated", "let", "nil", "nonisolated", "open", "private", "protocol", "public", "repeat", "rethrows", "return", "self", "some", "static", "struct", "subscript", "super", "switch", "throw", "throws", "true", "try", "typealias", "var", "where", "while"]
@@ -115,7 +115,7 @@ enum ProjectFileLanguage: String, CaseIterable, Sendable {
         }
     }
 
-    fileprivate var commentPattern: String? {
+    var commentPattern: String? {
         switch self {
         case .python, .ruby, .shell, .yaml, .toml: "#[^\\n]*"
         case .sql: "--[^\\n]*|/\\*[\\s\\S]*?\\*/"
@@ -141,7 +141,9 @@ enum ProjectFilePresentation {
 }
 
 struct SyntaxHighlightedEditor: NSViewRepresentable {
-    @Binding var text: String
+    let session: FileEditorSession
+    let documentKey: String
+    let text: String
     let filename: String
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -164,19 +166,21 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.isContinuousSpellCheckingEnabled = false
         textView.smartInsertDeleteEnabled = false
-        textView.string = text
+        textView.font = FileSyntaxHighlighter.baseFont
+        textView.textColor = FileSyntaxHighlighter.foreground
         context.coordinator.textView = textView
         context.coordinator.container = container
+        session.attach(textView, documentKey: documentKey, initialText: text)
         context.coordinator.highlight(force: true)
         return container
     }
 
     func updateNSView(_ container: SyntaxEditorContainer, context: Context) {
         context.coordinator.parent = self
-        guard let textView = context.coordinator.textView else { return }
-        if textView.string != text {
+        guard context.coordinator.textView != nil else { return }
+        if session.documentKey != documentKey {
             context.coordinator.isApplyingUpdate = true
-            textView.string = text
+            session.prepare(documentKey: documentKey, text: text)
             context.coordinator.isApplyingUpdate = false
             context.coordinator.highlight(force: true)
         } else {
@@ -192,13 +196,34 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         weak var container: SyntaxEditorContainer?
         var isApplyingUpdate = false
         private var highlightedLanguage: ProjectFileLanguage?
+        private var pendingEditedRange: NSRange?
+        private var pendingLineDelta = 0
+        private var fullHighlightTask: Task<Void, Never>?
 
         init(parent: SyntaxHighlightedEditor) { self.parent = parent }
 
+        func textView(
+            _ textView: NSTextView,
+            shouldChangeTextIn affectedCharRange: NSRange,
+            replacementString: String?
+        ) -> Bool {
+            let current = textView.string as NSString
+            let removed = current.substring(with: affectedCharRange)
+            let replacement = replacementString ?? ""
+            pendingLineDelta = replacement.utf8.filter { $0 == 0x0A }.count - removed.utf8.filter { $0 == 0x0A }.count
+            pendingEditedRange = NSRange(
+                location: affectedCharRange.location,
+                length: (replacement as NSString).length
+            )
+            return true
+        }
+
         func textDidChange(_ notification: Notification) {
-            guard !isApplyingUpdate, let textView else { return }
-            parent.text = textView.string
-            highlight(force: true)
+            guard !isApplyingUpdate, textView != nil else { return }
+            parent.session.didEdit(lineDelta: pendingLineDelta)
+            highlightEditedRange(pendingEditedRange)
+            pendingEditedRange = nil
+            pendingLineDelta = 0
             container?.needsLayout = true
         }
 
@@ -207,10 +232,48 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             let language = ProjectFileLanguage.detect(filename: parent.filename)
             guard force || highlightedLanguage != language else { return }
             highlightedLanguage = language
-            let selectedRanges = textView.selectedRanges
-            FileSyntaxHighlighter.apply(to: storage, language: language)
             textView.typingAttributes = FileSyntaxHighlighter.baseAttributes
-            textView.selectedRanges = selectedRanges
+            guard storage.length <= FileSyntaxHighlighter.backgroundFullHighlightLimit else { return }
+            scheduleFullHighlight(language: language, delayNanoseconds: 0)
+        }
+
+        private func highlightEditedRange(_ editedRange: NSRange?) {
+            guard let textView, let storage = textView.textStorage, let editedRange else { return }
+            let source = storage.string as NSString
+            let safeLocation = min(editedRange.location, source.length)
+            let safeLength = min(editedRange.length, source.length - safeLocation)
+            let lineRange = source.lineRange(for: NSRange(location: safeLocation, length: safeLength))
+            let language = ProjectFileLanguage.detect(filename: parent.filename)
+            FileSyntaxHighlighter.apply(
+                FileSyntaxHighlightPlanner.build(source: storage.string, language: language, requestedRange: lineRange),
+                to: storage
+            )
+            guard storage.length <= FileSyntaxHighlighter.backgroundFullHighlightLimit else { return }
+            scheduleFullHighlight(language: language, delayNanoseconds: 550_000_000)
+        }
+
+        private func scheduleFullHighlight(language: ProjectFileLanguage, delayNanoseconds: UInt64) {
+            guard let storage = textView?.textStorage else { return }
+            fullHighlightTask?.cancel()
+            let source = storage.string
+            let revision = parent.session.revision
+            fullHighlightTask = Task { @MainActor [weak self] in
+                if delayNanoseconds > 0 {
+                    try? await Task.sleep(nanoseconds: delayNanoseconds)
+                }
+                guard !Task.isCancelled else { return }
+                let plan = await Task.detached(priority: .userInitiated) {
+                    FileSyntaxHighlightPlanner.build(source: source, language: language)
+                }.value
+                guard !Task.isCancelled,
+                      let self,
+                      self.parent.session.revision == revision,
+                      let textView = self.textView,
+                      let storage = textView.textStorage else { return }
+                let selectedRanges = textView.selectedRanges
+                FileSyntaxHighlighter.apply(plan, to: storage)
+                textView.selectedRanges = selectedRanges
+            }
         }
     }
 }
@@ -240,6 +303,9 @@ final class SyntaxEditorContainer: NSView {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
+        textView.layoutManager?.allowsNonContiguousLayout = true
+        textView.minSize = scrollView.contentSize
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         scrollView.documentView = textView
     }
 
@@ -259,15 +325,12 @@ final class SyntaxEditorContainer: NSView {
     override func layout() {
         super.layout()
         let viewport = scrollView.contentSize
-        guard viewport.width > 0, let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else { return }
+        guard viewport.width > 0, let textContainer = textView.textContainer else { return }
         textContainer.containerSize = NSSize(width: viewport.width, height: CGFloat.greatestFiniteMagnitude)
-        layoutManager.ensureLayout(for: textContainer)
-        let usedHeight = layoutManager.usedRect(for: textContainer).height
-        textView.frame = NSRect(
-            origin: .zero,
-            size: NSSize(width: viewport.width, height: max(viewport.height, ceil(usedHeight) + 24))
-        )
+        textView.minSize = viewport
+        if textView.frame.width != viewport.width {
+            textView.frame.size.width = viewport.width
+        }
     }
 }
 
@@ -283,6 +346,7 @@ final class SyntaxEditorTextView: NSTextView {
 
 @MainActor
 private enum FileSyntaxHighlighter {
+    static let backgroundFullHighlightLimit = 180_000
     static let baseFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
     static let boldFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
     static let foreground = NSColor(calibratedWhite: 0.87, alpha: 1)
@@ -293,7 +357,6 @@ private enum FileSyntaxHighlighter {
     static let function = NSColor(calibratedRed: 0.43, green: 0.76, blue: 0.98, alpha: 1)
     static let type = NSColor(calibratedRed: 0.48, green: 0.83, blue: 0.80, alpha: 1)
     static let property = NSColor(calibratedRed: 0.90, green: 0.58, blue: 0.76, alpha: 1)
-    static let regexCache = NSCache<NSString, NSRegularExpression>()
 
     static var baseAttributes: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
@@ -303,86 +366,32 @@ private enum FileSyntaxHighlighter {
         return [.font: baseFont, .foregroundColor: foreground, .paragraphStyle: paragraph]
     }
 
-    static func apply(to storage: NSTextStorage, language: ProjectFileLanguage) {
+    static func apply(_ plan: FileSyntaxHighlightPlan, to storage: NSTextStorage) {
         let fullRange = NSRange(location: 0, length: storage.length)
+        let range = NSIntersectionRange(NSRange(location: plan.location, length: plan.length), fullRange)
         storage.beginEditing()
-        storage.setAttributes(baseAttributes, range: fullRange)
-        guard storage.length > 0 else { storage.endEditing(); return }
-
-        apply(#"(?<![\w.])(?:0x[\da-fA-F]+|\d+(?:\.\d+)?)(?![\w.])"#, color: number, to: storage)
-        apply(#"\b[A-Z][A-Za-z0-9_]*\b"#, color: type, to: storage)
-        apply(#"\b[A-Za-z_][A-Za-z0-9_]*(?=\s*\()"#, color: function, to: storage)
-
-        if !language.keywords.isEmpty {
-            let escaped = language.keywords.map(NSRegularExpression.escapedPattern).joined(separator: "|")
-            let options: NSRegularExpression.Options = language == .sql ? [.caseInsensitive] : []
-            apply("\\b(?:\(escaped))\\b", color: keyword, font: boldFont, options: options, to: storage)
-        }
-
-        switch language {
-        case .json:
-            apply(#""(?:\\.|[^"\\])*"(?=\s*:)"#, color: property, to: storage)
-        case .yaml, .toml:
-            apply(#"(?m)^[\t ]*(?:-\s*)?[A-Za-z_][\w.-]*(?=\s*[=:])"#, color: property, to: storage)
-        case .html, .xml:
-            apply(#"</?[A-Za-z][^>]*>"#, color: keyword, to: storage)
-            apply(#"\b[A-Za-z_:][-A-Za-z0-9_:.]*(?=\s*=)"#, color: property, to: storage)
-        case .css:
-            apply(#"(?m)(?:^|[;{])\s*[-A-Za-z]+(?=\s*:)"#, color: property, to: storage)
-            apply(#"(?:#[\da-fA-F]{3,8})\b"#, color: number, to: storage)
-        case .markdown:
-            apply(#"(?m)^#{1,6}\s+.*$"#, color: keyword, font: boldFont, to: storage)
-            apply(#"(?m)^\s*(?:[-*+] |\d+\. )"#, color: number, to: storage)
-            apply(#"\[[^\]]+\]\([^\)]+\)"#, color: function, to: storage)
-            apply(#"(?s)```.*?```"#, color: string, to: storage)
-        default: break
-        }
-
-        let basicStrings = "\"(?:\\\\.|[^\"\\\\])*\"|'(?:\\\\.|[^'\\\\])*'|`(?:\\\\.|[^`\\\\])*`"
-        let stringPattern = language == .python || language == .ruby
-            ? "\"\"\"[\\s\\S]*?\"\"\"|'''[\\s\\S]*?'''|\(basicStrings)"
-            : basicStrings
-        if let commentPattern = language.commentPattern {
-            applyLexical("(\(stringPattern))|(\(commentPattern))", to: storage)
-        } else {
-            apply(stringPattern, color: string, to: storage)
+        storage.setAttributes(baseAttributes, range: range)
+        guard range.length > 0 else { storage.endEditing(); return }
+        for run in plan.runs {
+            let runRange = NSIntersectionRange(NSRange(location: run.location, length: run.length), fullRange)
+            guard runRange.length > 0 else { continue }
+            storage.addAttribute(.foregroundColor, value: color(for: run.style), range: runRange)
+            if run.style == .keywordBold {
+                storage.addAttribute(.font, value: boldFont, range: runRange)
+            }
         }
         storage.endEditing()
     }
 
-    private static func applyLexical(_ pattern: String, to storage: NSTextStorage) {
-        guard let expression = expression(pattern) else { return }
-        let range = NSRange(location: 0, length: storage.length)
-        expression.enumerateMatches(in: storage.string, range: range) { result, _, _ in
-            guard let result else { return }
-            let stringRange = result.range(at: 1)
-            let commentRange = result.range(at: 2)
-            if stringRange.location != NSNotFound { storage.addAttribute(.foregroundColor, value: string, range: stringRange) }
-            if commentRange.location != NSNotFound { storage.addAttribute(.foregroundColor, value: comment, range: commentRange) }
+    private static func color(for style: FileSyntaxHighlightStyle) -> NSColor {
+        switch style {
+        case .number: number
+        case .type: type
+        case .function: function
+        case .keyword, .keywordBold: keyword
+        case .property: property
+        case .string: string
+        case .comment: comment
         }
-    }
-
-    private static func apply(
-        _ pattern: String,
-        color: NSColor,
-        font: NSFont? = nil,
-        options: NSRegularExpression.Options = [],
-        to storage: NSTextStorage
-    ) {
-        guard let expression = expression(pattern, options: options) else { return }
-        let range = NSRange(location: 0, length: storage.length)
-        expression.enumerateMatches(in: storage.string, range: range) { result, _, _ in
-            guard let matchRange = result?.range, matchRange.location != NSNotFound else { return }
-            storage.addAttribute(.foregroundColor, value: color, range: matchRange)
-            if let font { storage.addAttribute(.font, value: font, range: matchRange) }
-        }
-    }
-
-    private static func expression(_ pattern: String, options: NSRegularExpression.Options = []) -> NSRegularExpression? {
-        let key = "\(options.rawValue):\(pattern)" as NSString
-        if let cached = regexCache.object(forKey: key) { return cached }
-        guard let created = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
-        regexCache.setObject(created, forKey: key)
-        return created
     }
 }

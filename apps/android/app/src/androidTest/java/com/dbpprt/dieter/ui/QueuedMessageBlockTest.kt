@@ -29,7 +29,7 @@ class QueuedMessageBlockTest {
                 QueuedMessageBlock(
                     queued = queued,
                     showInterrupt = true,
-                    working = false,
+                    interrupting = false,
                     onInterrupt = { interrupts += 1 },
                 )
             }

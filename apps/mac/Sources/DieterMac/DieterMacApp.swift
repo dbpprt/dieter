@@ -130,7 +130,11 @@ struct DieterMacApp: App {
                     islandController.setEnabled(enabled)
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { store.applicationDidBecomeActive() }
+                    if phase == .active {
+                        store.applicationDidBecomeActive()
+                    } else {
+                        store.applicationDidResignActive()
+                    }
                 }
                 .task {
                     let arguments = ProcessInfo.processInfo.arguments
@@ -421,10 +425,7 @@ private struct MenuBarEvent: Identifiable {
     }
 
     static func parse(_ value: String) -> Date? {
-        guard !value.isEmpty else { return nil }
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        DieterTimestamp.date(from: value)
     }
 }
 

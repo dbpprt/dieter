@@ -26,6 +26,7 @@ defaults write "$PREFERENCES_SUITE" DieterAppearance -string dark
 open -n -W "$APP_BUNDLE" --args \
     --island-ui-smoke \
     --island-ui-smoke-output "$CAPTURE_DIR" \
+    --dieter-state-root "$CAPTURE_DIR/state" \
     --appearance-defaults-suite "$PREFERENCES_SUITE" >"$CAPTURE_DIR/app.log" 2>&1 &
 APP_PID=$!
 

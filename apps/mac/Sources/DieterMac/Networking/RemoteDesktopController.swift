@@ -121,9 +121,7 @@ enum RemoteDesktopSessionTrust {
   }
 
   private static func timestamp(_ value: String) -> Date? {
-    let precise = ISO8601DateFormatter()
-    precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    DieterTimestamp.date(from: value)
   }
 
   private static func certificate(fromPEM pem: Data) -> SecCertificate? {

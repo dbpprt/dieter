@@ -200,11 +200,11 @@ enum NativeUISmokeRunner {
         // (x≈211 for the 234pt sidebar; the first row sits just below the PROJECTS
         // header). This reveals the same boards/files/schedules rows the quick-nav
         // popover shows, so it doubles as the popover's row-design verification.
-        click(window: window, x: 211, distanceFromTop: 240)
+        click(window: window, x: 211, distanceFromTop: 272)
         try? await DieterTaskSleep.milliseconds(600)
         await captureAppearances(window, named: "01c-project-expanded.png", in: output)
         results["01c-project-expanded"] = "passed"
-        click(window: window, x: 211, distanceFromTop: 240) // collapse back
+        click(window: window, x: 211, distanceFromTop: 272) // collapse back
         try? await DieterTaskSleep.milliseconds(450)
 
         // Note: the row-body quick-nav popover is verified by hand — driving it
@@ -517,7 +517,7 @@ enum NativeUISmokeRunner {
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
             await captureAppearances(sheet, named: "14-new-project.png", in: output)
             results["14-new-project"] = "passed"
-            click(window: sheet, x: 605, distanceFromTop: 281)
+            click(window: sheet, x: 605, distanceFromTop: 260)
             try? await DieterTaskSleep.seconds(1.5)
             if let browser = NSApp.windows.first(where: {
                 $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
@@ -576,14 +576,19 @@ enum NativeUISmokeRunner {
             ? "passed"
             : "failed: light appearance did not persist"
 
-        if let rpc = store.rpc {
-            var request = Dieter_V1_CreateBoardRequest()
-            request.projectID = project.id
-            request.name = "Offline navigation smoke \(UUID().uuidString.lowercased())"
-            request.workflow = "review"
-            request.doneArchivePolicy = "never"
-            do {
-                let cachedBoard = try await rpc.createBoard(request)
+        do {
+            guard let cachedBoard = try await store.createBoard(
+                projectID: project.id,
+                name: "Offline navigation smoke \(UUID().uuidString.lowercased())",
+                workflow: "review",
+                doneArchivePolicy: "never"
+            ) else {
+                throw NSError(
+                    domain: "NativeUISmokeRunner",
+                    code: 17,
+                    userInfo: [NSLocalizedDescriptionKey: "RPC client missing"]
+                )
+            }
                 await store.refreshState()
                 try? await DieterTaskSleep.seconds(1)
                 await store.openBoard(board.id, projectID: project.id)
@@ -678,11 +683,8 @@ enum NativeUISmokeRunner {
                 } else {
                     results["17c-reconnected-message-delivered"] = "failed: reconnect trigger or live card missing"
                 }
-            } catch {
-                results["17-offline-cached-board-navigation"] = "failed: could not prepare cached board: \(error.localizedDescription)"
-            }
-        } else {
-            results["17-offline-cached-board-navigation"] = "failed: RPC client missing"
+        } catch {
+            results["17-offline-cached-board-navigation"] = "failed: could not prepare cached board: \(error.localizedDescription)"
         }
 
         writeReport(results, to: output)
@@ -713,24 +715,7 @@ enum NativeUISmokeRunner {
     }
 
     private static func click(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
-        guard let content = window.contentView else { return }
-        let location = NSPoint(x: x, y: content.bounds.height - distanceFromTop)
-        let timestamp = ProcessInfo.processInfo.systemUptime
-        let types: [NSEvent.EventType] = [.mouseMoved, .leftMouseDown, .leftMouseUp]
-        for type in types {
-            let event = NSEvent.mouseEvent(
-                with: type,
-                location: location,
-                modifierFlags: [],
-                timestamp: timestamp,
-                windowNumber: window.windowNumber,
-                context: nil,
-                eventNumber: 0,
-                clickCount: type == .mouseMoved ? 0 : 1,
-                pressure: type == .leftMouseDown ? 1 : 0
-            )
-            if let event { window.sendEvent(event) }
-        }
+        NativeUIEventDispatcher.click(window: window, x: x, distanceFromTop: distanceFromTop)
     }
 
     private static func doubleClickTitleBar(of window: NSWindow) {
@@ -786,5 +771,35 @@ enum NativeUISmokeRunner {
     private static func writeReport(_ values: [String: String], to directory: URL) {
         let data = try? JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
         try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
+    }
+}
+
+@MainActor
+enum NativeUIEventDispatcher {
+    static func click(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
+        guard let content = window.contentView else { return }
+        let contentLocation = NSPoint(
+            x: x,
+            y: content.isFlipped ? distanceFromTop : content.bounds.height - distanceFromTop
+        )
+        let location = content.convert(contentLocation, to: nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        let timestamp = ProcessInfo.processInfo.systemUptime
+        let types: [NSEvent.EventType] = [.mouseMoved, .leftMouseDown, .leftMouseUp]
+        for type in types {
+            let event = NSEvent.mouseEvent(
+                with: type,
+                location: location,
+                modifierFlags: [],
+                timestamp: timestamp,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: type == .mouseMoved ? 0 : 1,
+                pressure: type == .leftMouseDown ? 1 : 0
+            )
+            if let event { window.sendEvent(event) }
+        }
     }
 }

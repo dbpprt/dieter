@@ -672,9 +672,9 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     ) == "Last refreshed 5m ago")
 }
 
-@Test func syncProjectionPersistenceIsThrottledForCursorAndDeltaFrames() {
+@Test func syncProjectionPersistenceSkipsHeartbeatsAndCheckpointsChangedProjections() {
     let initial = Date(timeIntervalSince1970: 1_000)
-    #expect(SyncCursorPersistencePolicy.shouldPersist(
+    #expect(!SyncCursorPersistencePolicy.shouldPersist(
         projectionChanged: false,
         lastPersistedAt: nil,
         now: initial
@@ -682,22 +682,22 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(!SyncCursorPersistencePolicy.shouldPersist(
         projectionChanged: false,
         lastPersistedAt: initial,
-        now: initial.addingTimeInterval(14)
+        now: initial.addingTimeInterval(600)
     ))
     #expect(SyncCursorPersistencePolicy.shouldPersist(
-        projectionChanged: false,
-        lastPersistedAt: initial,
-        now: initial.addingTimeInterval(15)
+        projectionChanged: true,
+        lastPersistedAt: nil,
+        now: initial
     ))
     #expect(!SyncCursorPersistencePolicy.shouldPersist(
         projectionChanged: true,
         lastPersistedAt: initial,
-        now: initial.addingTimeInterval(1)
+        now: initial.addingTimeInterval(299)
     ))
     #expect(SyncCursorPersistencePolicy.shouldPersist(
         projectionChanged: true,
         lastPersistedAt: initial,
-        now: initial.addingTimeInterval(15)
+        now: initial.addingTimeInterval(300)
     ))
 }
 
@@ -1901,7 +1901,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(!ConversationQueuePresentation.canInterrupt(messageID: first.id, queue: queue, agentIsWorking: false))
 }
 
-@Test @MainActor func macAttachmentSelectionPreservesBytesAndEnforcesTheSharedLimit() throws {
+@Test @MainActor func macAttachmentSelectionPreservesBytesAndEnforcesTheSharedLimit() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "dieter-mac-attachments-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -1911,7 +1911,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     try Data("hello".utf8).write(to: document)
 
     let store = DieterStore()
-    let parts = try store.attachmentParts([image, document])
+    let parts = try await store.attachmentParts([image, document])
     #expect(parts.count == 2)
     #expect(parts[0].filename == "fixture.png")
     #expect(parts[0].mediaType == "image/png")
@@ -1920,7 +1920,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 
     var rejected = false
     do {
-        _ = try store.attachmentParts([image], appendingTo: Array(repeating: parts[0], count: 4))
+        _ = try await store.attachmentParts([image], appendingTo: Array(repeating: parts[0], count: 4))
     } catch {
         rejected = true
     }
@@ -1958,7 +1958,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(NSImage(data: parts[0].data) != nil)
 }
 
-@Test @MainActor func pasteboardImageDataBecomesAComposerAttachment() throws {
+@Test @MainActor func pasteboardImageDataBecomesAComposerAttachment() async throws {
     let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("dieter-test-\(UUID().uuidString)"))
     defer { pasteboard.releaseGlobally() }
@@ -1966,7 +1966,8 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     pasteboard.setData(png, forType: NSPasteboard.PasteboardType(UTType.png.identifier))
     let store = DieterStore()
 
-    let parts = try #require(try store.pasteboardAttachmentParts(pasteboard))
+    let input = try #require(store.pasteboardAttachmentInput(pasteboard))
+    let parts = try await store.attachmentParts(input)
 
     #expect(parts.count == 1)
     #expect(parts[0].type == "image")
@@ -1975,14 +1976,14 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(parts[0].data == png)
 }
 
-@Test @MainActor func pasteboardWithOnlyTextIsLeftForTheFocusedTextView() throws {
+@Test @MainActor func pasteboardWithOnlyTextIsLeftForTheFocusedTextView() async throws {
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("dieter-test-\(UUID().uuidString)"))
     defer { pasteboard.releaseGlobally() }
     pasteboard.clearContents()
     pasteboard.setString("plain text", forType: .string)
     let store = DieterStore()
 
-    #expect(try store.pasteboardAttachmentParts(pasteboard) == nil)
+    #expect(store.pasteboardAttachmentInput(pasteboard) == nil)
     #expect(!store.attachPasteboard(pasteboard))
     #expect(store.composerAttachments.isEmpty)
 }
@@ -2041,7 +2042,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(AttachmentImagePayload.image(from: dataURLPart) != nil)
 }
 
-@Test @MainActor func pasteboardFileURLsAttachTheUnderlyingFiles() throws {
+@Test @MainActor func pasteboardFileURLsAttachTheUnderlyingFiles() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "dieter-mac-pasteboard-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -2054,9 +2055,13 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     let store = DieterStore()
 
     #expect(store.attachPasteboard(pasteboard))
-    #expect(store.composerAttachments.count == 1)
-    #expect(store.composerAttachments[0].filename == "diagram.png")
-    #expect(store.composerAttachments[0].data == Data("png fixture".utf8))
+    let deadline = Date().addingTimeInterval(1)
+    while store.composerAttachments.isEmpty, Date() < deadline {
+        try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    let attachment = try #require(store.composerAttachments.first)
+    #expect(attachment.filename == "diagram.png")
+    #expect(attachment.data == Data("png fixture".utf8))
 }
 
 @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_LIVE_ATTACHMENT_PORT"] != nil))

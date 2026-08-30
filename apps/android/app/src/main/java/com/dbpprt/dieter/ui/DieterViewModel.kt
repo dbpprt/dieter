@@ -1254,6 +1254,7 @@ class DieterViewModel(
         provider: String,
         model: String,
         effort: String,
+        providerOptions: Map<String, String>,
         lane: String,
         labelIds: List<String>,
         deferStart: Boolean,
@@ -1274,6 +1275,7 @@ class DieterViewModel(
             .setProvider(provider)
             .setModel(model)
             .setEffort(effort)
+            .putAllProviderOptions(providerOptions)
             .setWorkspaceMode(selectedWorkspaceMode.wire)
             .setWorkspaceBranch(workspaceBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
             .setWorkspaceBaseBranch(workspaceBaseBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
@@ -1294,6 +1296,7 @@ class DieterViewModel(
         provider: String,
         model: String,
         effort: String,
+        providerOptions: Map<String, String>,
         onSent: () -> Unit = {},
     ) = action(ensureProjectRoute = false) {
         val id = _state.value.selectedCardId ?: return@action
@@ -1301,7 +1304,7 @@ class DieterViewModel(
             if (text.isNotBlank()) add(textPart(text))
             addAll(attachments)
         }
-        connectionManager.enqueueMessage(id, parts, provider, model, effort)
+        connectionManager.enqueueMessage(id, parts, provider, model, effort, providerOptions)
         onSent()
         ensureConversationRecovery(id)
     }
@@ -1311,7 +1314,7 @@ class DieterViewModel(
         val id = current.selectedCardId ?: return@action
         val card = current.conversation?.detail?.card ?: current.selectedCard ?: return@action
         if (parts.isEmpty()) return@action
-        connectionManager.enqueueMessage(id, parts, card.provider, card.model, card.effort)
+        connectionManager.enqueueMessage(id, parts, card.provider, card.model, card.effort, card.providerOptionsMap)
         ensureConversationRecovery(id)
     }
 
@@ -2234,7 +2237,14 @@ class DieterViewModel(
         val card = _state.value.selectedCard ?: return
         viewModelScope.launch {
             try {
-                connectionManager.enqueueMessage(cardId, listOf(textPart(text)), card.provider, card.model, card.effort)
+                connectionManager.enqueueMessage(
+                    cardId,
+                    listOf(textPart(text)),
+                    card.provider,
+                    card.model,
+                    card.effort,
+                    card.providerOptionsMap,
+                )
                 ensureConversationRecovery(cardId)
                 selectDetailTab(0)
             } catch (error: Throwable) {

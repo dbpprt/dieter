@@ -4,6 +4,34 @@ import Observation
 import SwiftUI
 
 struct DieterIslandActivity: Equatable {
+    struct SourceCard: Equatable {
+        let id: String
+        let runtime: String
+        let lane: String
+        let runtimeUpdatedAt: String
+        let lastActivityAt: String
+        let updatedAt: String
+        let title: String
+        let summary: String
+        let provider: String
+        let chat: Bool
+        let activeSubagentCount: Int
+
+        init(_ card: Dieter_V1_Card) {
+            id = card.id
+            runtime = card.runtime.lowercased()
+            lane = card.lane.lowercased()
+            runtimeUpdatedAt = card.runtimeUpdatedAt
+            lastActivityAt = card.lastActivityAt
+            updatedAt = card.updatedAt
+            title = card.title
+            summary = card.summary
+            provider = card.provider
+            chat = card.scope.caseInsensitiveCompare("chat") == .orderedSame || card.boardID.isEmpty
+            activeSubagentCount = card.activeSubagents.count
+        }
+    }
+
     struct Item: Identifiable, Equatable {
         enum Kind: Int, Equatable {
             case running
@@ -28,42 +56,72 @@ struct DieterIslandActivity: Equatable {
     let subagentCount: Int
     let items: [Item]
 
+    static let empty = Self(
+        runningCount: 0,
+        reviewCount: 0,
+        doneTodayCount: 0,
+        subagentCount: 0,
+        items: []
+    )
+
     static func resolve(
         cards: [Dieter_V1_Card],
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> Self {
-        let cards = deduplicated(cards)
-        let running = cards.filter { runningRuntimes.contains($0.runtime.lowercased()) }
-        let reviews = cards.filter { $0.lane.caseInsensitiveCompare("review") == .orderedSame }
-        let doneToday = cards.filter { card in
-            guard card.lane.caseInsensitiveCompare("done") == .orderedSame ||
-                    completedRuntimes.contains(card.runtime.lowercased()),
-                  let date = timestamp(card.runtimeUpdatedAt) ?? timestamp(card.updatedAt) else { return false }
-            return calendar.isDate(date, inSameDayAs: now)
-        }
+        resolve(source: source(cards: cards), now: now, calendar: calendar)
+    }
+
+    static func source(cards: [Dieter_V1_Card]) -> [SourceCard] {
+        var byID: [String: Dieter_V1_Card] = [:]
+        for card in cards where !card.id.isEmpty { byID[card.id] = card }
+        return byID.values.map(SourceCard.init).sorted { $0.id < $1.id }
+    }
+
+    static func resolve(
+        source cards: [SourceCard],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Self {
+        var runningCount = 0
+        var reviewCount = 0
+        var doneTodayCount = 0
+        var subagentCount = 0
 
         var rows: [Item] = []
         for card in cards {
+            let running = runningRuntimes.contains(card.runtime)
+            let review = card.lane == "review"
+            let completed = completedRuntimes.contains(card.runtime) || card.lane == "done"
+            if running { runningCount += 1 }
+            if review { reviewCount += 1 }
+            subagentCount += card.activeSubagentCount
+
+            let runtimeDate = DieterTimestamp.date(from: card.runtimeUpdatedAt)
+            let updatedDate = DieterTimestamp.date(from: card.updatedAt)
+            if completed, let date = runtimeDate ?? updatedDate,
+               calendar.isDate(date, inSameDayAs: now) {
+                doneTodayCount += 1
+            }
+
             let kind: Item.Kind
-            if runningRuntimes.contains(card.runtime.lowercased()) {
+            if running {
                 kind = .running
-            } else if card.lane.caseInsensitiveCompare("review") == .orderedSame {
+            } else if review {
                 kind = .review
-            } else if needsInputRuntimes.contains(card.runtime.lowercased()) {
+            } else if needsInputRuntimes.contains(card.runtime) {
                 kind = .needsInput
-            } else if completedRuntimes.contains(card.runtime.lowercased()) ||
-                        card.lane.caseInsensitiveCompare("done") == .orderedSame {
+            } else if completed {
                 kind = .completed
             } else {
                 continue
             }
-            let date = timestamp(card.runtimeUpdatedAt) ?? timestamp(card.lastActivityAt) ?? timestamp(card.updatedAt)
+            let date = runtimeDate ?? DieterTimestamp.date(from: card.lastActivityAt) ?? updatedDate
             if kind == .completed, let date, !calendar.isDate(date, inSameDayAs: now) { continue }
             rows.append(Item(
                 id: "\(kind.rawValue)-\(card.id)",
                 cardID: card.id,
-                chat: card.scope.caseInsensitiveCompare("chat") == .orderedSame || card.boardID.isEmpty,
+                chat: card.chat,
                 kind: kind,
                 title: card.title.isEmpty ? "Untitled conversation" : card.title,
                 detail: detail(for: card, kind: kind),
@@ -73,13 +131,16 @@ struct DieterIslandActivity: Equatable {
         }
         rows.sort {
             if $0.kind.rawValue != $1.kind.rawValue { return $0.kind.rawValue < $1.kind.rawValue }
-            return ($0.timestamp ?? .distantPast) > ($1.timestamp ?? .distantPast)
+            let lhsTimestamp = $0.timestamp ?? .distantPast
+            let rhsTimestamp = $1.timestamp ?? .distantPast
+            if lhsTimestamp == rhsTimestamp { return $0.id < $1.id }
+            return lhsTimestamp > rhsTimestamp
         }
         return Self(
-            runningCount: running.count,
-            reviewCount: reviews.count,
-            doneTodayCount: doneToday.count,
-            subagentCount: cards.reduce(0) { $0 + $1.activeSubagents.count },
+            runningCount: runningCount,
+            reviewCount: reviewCount,
+            doneTodayCount: doneTodayCount,
+            subagentCount: subagentCount,
             items: Array(rows.prefix(4))
         )
     }
@@ -88,27 +149,14 @@ struct DieterIslandActivity: Equatable {
     private static let needsInputRuntimes = Set(["waiting_for_user", "needs_input"])
     private static let completedRuntimes = Set(["completed", "done"])
 
-    private static func deduplicated(_ cards: [Dieter_V1_Card]) -> [Dieter_V1_Card] {
-        var byID: [String: Dieter_V1_Card] = [:]
-        for card in cards where !card.id.isEmpty { byID[card.id] = card }
-        return Array(byID.values)
-    }
-
-    private static func detail(for card: Dieter_V1_Card, kind: Item.Kind) -> String {
+    private static func detail(for card: SourceCard, kind: Item.Kind) -> String {
         if !card.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return card.summary }
         switch kind {
-        case .running: return card.activeSubagents.isEmpty ? "Agent turn in progress" : "\(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s") working"
+        case .running: return card.activeSubagentCount == 0 ? "Agent turn in progress" : "\(card.activeSubagentCount) subagent\(card.activeSubagentCount == 1 ? "" : "s") working"
         case .review: return "Ready for your review"
         case .needsInput: return "Waiting for your reply"
         case .completed: return "Completed today"
         }
-    }
-
-    private static func timestamp(_ value: String) -> Date? {
-        guard !value.isEmpty else { return nil }
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 }
 
@@ -165,9 +213,7 @@ struct DieterIslandView: View {
     @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
     private var paletteValue = DieterPalette.defaultValue.rawValue
 
-    private var activity: DieterIslandActivity {
-        DieterIslandActivity.resolve(cards: store.synchronizedCards)
-    }
+    private var activity: DieterIslandActivity { store.islandActivity }
 
     var body: some View {
         Group {

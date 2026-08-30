@@ -1,5 +1,11 @@
 import DieterAPI
 import Foundation
+import OSLog
+
+private let syncPersistenceLog = OSLog(
+    subsystem: "com.dbpprt.dieter.mac",
+    category: "SyncPersistence"
+)
 
 struct DieterOutboxEntry: Codable, Identifiable, Sendable {
     enum Kind: String, Codable, Sendable { case createCard, createChat, sendMessage }
@@ -149,6 +155,35 @@ struct DieterSyncDiskState: Codable, Sendable {
     static let empty = DieterSyncDiskState()
 }
 
+/// A persistence input that keeps the active protobuf projection in its
+/// in-memory form until it reaches the persistence executor. This prevents the
+/// main actor from serializing a multi-megabyte snapshot for every streamed
+/// conversation update.
+struct DieterSyncCheckpoint: Sendable {
+    var diskState: DieterSyncDiskState
+    let activeEndpointID: String
+    let activeSnapshot: Dieter_V1_GlobalSnapshot?
+
+    init(
+        diskState: DieterSyncDiskState,
+        activeEndpointID: String = "",
+        activeSnapshot: Dieter_V1_GlobalSnapshot? = nil
+    ) {
+        self.diskState = diskState
+        self.activeEndpointID = activeEndpointID
+        self.activeSnapshot = activeSnapshot
+    }
+
+    func materialized() throws -> DieterSyncDiskState {
+        guard !activeEndpointID.isEmpty, let activeSnapshot else { return diskState }
+        var value = diskState
+        var projection = value.projections[activeEndpointID] ?? .empty
+        projection.snapshot = try activeSnapshot.serializedData()
+        value.projections[activeEndpointID] = projection
+        return value
+    }
+}
+
 enum DieterSyncProjectionCache {
     /// A directory poll is a fresh full metadata read, not a continuation of
     /// the machine's WatchSync stream. Its snapshot must therefore never keep
@@ -173,6 +208,25 @@ enum DieterSyncProjectionCache {
             refreshedAt: projection.refreshedAt
         )
     }
+
+    static func cachingConversation(
+        _ conversation: Dieter_V1_ConversationSnapshot,
+        in projection: DieterSyncProjection,
+        limit: Int
+    ) -> (projection: DieterSyncProjection, retainedCardIDs: Set<String>) {
+        let cardID = conversation.detail.card.id
+        var snapshot = projection.snapshot
+            .flatMap { try? Dieter_V1_GlobalSnapshot(serializedBytes: $0) }
+            ?? Dieter_V1_GlobalSnapshot()
+        snapshot.conversations.removeAll { $0.detail.card.id == cardID }
+        snapshot.conversations.append(conversation)
+        if snapshot.conversations.count > limit {
+            snapshot.conversations.removeFirst(snapshot.conversations.count - limit)
+        }
+        var result = projection
+        result.snapshot = try? snapshot.serializedData()
+        return (result, Set(snapshot.conversations.map { $0.detail.card.id }))
+    }
 }
 
 enum GlobalProjectionReducer {
@@ -192,50 +246,79 @@ enum GlobalProjectionReducer {
         to snapshot: Dieter_V1_GlobalSnapshot
     ) -> Dieter_V1_GlobalSnapshot {
         var next = snapshot
-        next.state.projects = merge(
-            next.state.projects,
-            changed: delta.projects,
-            removed: Set(delta.removedProjectIds),
-            id: { $0.id }
-        )
-        next.state.boards = merge(
-            next.state.boards,
-            changed: delta.boards,
-            removed: Set(delta.removedBoardIds),
-            id: { $0.id }
-        )
-        next.state.cards = merge(
-            next.state.cards,
-            changed: delta.cards,
-            removed: Set(delta.removedCardIds),
-            id: { $0.id }
-        )
-        next.state.chats = merge(
-            next.state.chats,
-            changed: delta.chats,
-            removed: Set(delta.removedChatIds),
-            id: { $0.id }
-        )
-        next.schedules = merge(
-            next.schedules,
-            changed: delta.schedules,
-            removed: Set(delta.removedScheduleIds),
-            id: { $0.id }
-        )
-        next.scheduleRuns = merge(
-            next.scheduleRuns,
-            changed: delta.scheduleRuns,
-            removed: Set(delta.removedScheduleRunIds),
-            id: { $0.id }
-        )
-        next.conversations = merge(
-            next.conversations,
-            changed: delta.conversations,
-            removed: Set(delta.removedConversationIds),
-            id: { $0.detail.card.id }
-        )
+        if !delta.projects.isEmpty || !delta.removedProjectIds.isEmpty {
+            next.state.projects = merge(
+                next.state.projects,
+                changed: delta.projects,
+                removed: Set(delta.removedProjectIds),
+                id: { $0.id }
+            )
+        }
+        if !delta.boards.isEmpty || !delta.removedBoardIds.isEmpty {
+            next.state.boards = merge(
+                next.state.boards,
+                changed: delta.boards,
+                removed: Set(delta.removedBoardIds),
+                id: { $0.id }
+            )
+        }
+        if !delta.cards.isEmpty || !delta.removedCardIds.isEmpty {
+            next.state.cards = merge(
+                next.state.cards,
+                changed: delta.cards,
+                removed: Set(delta.removedCardIds),
+                id: { $0.id }
+            )
+        }
+        if !delta.chats.isEmpty || !delta.removedChatIds.isEmpty {
+            next.state.chats = merge(
+                next.state.chats,
+                changed: delta.chats,
+                removed: Set(delta.removedChatIds),
+                id: { $0.id }
+            )
+        }
+        if !delta.schedules.isEmpty || !delta.removedScheduleIds.isEmpty {
+            next.schedules = merge(
+                next.schedules,
+                changed: delta.schedules,
+                removed: Set(delta.removedScheduleIds),
+                id: { $0.id }
+            )
+        }
+        if !delta.scheduleRuns.isEmpty || !delta.removedScheduleRunIds.isEmpty {
+            next.scheduleRuns = merge(
+                next.scheduleRuns,
+                changed: delta.scheduleRuns,
+                removed: Set(delta.removedScheduleRunIds),
+                id: { $0.id }
+            )
+        }
+        if !delta.conversations.isEmpty || !delta.removedConversationIds.isEmpty {
+            next.conversations = merge(
+                next.conversations,
+                changed: delta.conversations,
+                removed: Set(delta.removedConversationIds),
+                id: { $0.detail.card.id }
+            )
+        }
         if delta.hasSettings { next.settings = delta.settings }
         return next
+    }
+
+    static func changesWorkspace(_ delta: Dieter_V1_GlobalDelta) -> Bool {
+        !delta.projects.isEmpty || !delta.removedProjectIds.isEmpty ||
+            !delta.boards.isEmpty || !delta.removedBoardIds.isEmpty ||
+            !delta.cards.isEmpty || !delta.removedCardIds.isEmpty ||
+            !delta.chats.isEmpty || !delta.removedChatIds.isEmpty ||
+            !delta.schedules.isEmpty || !delta.removedScheduleIds.isEmpty ||
+            !delta.scheduleRuns.isEmpty || !delta.removedScheduleRunIds.isEmpty ||
+            delta.hasSettings
+    }
+
+    static func changesConversationDirectory(_ delta: Dieter_V1_GlobalDelta) -> Bool {
+        !delta.cards.isEmpty || !delta.removedCardIds.isEmpty ||
+            !delta.chats.isEmpty || !delta.removedChatIds.isEmpty
     }
 
     private static func merge<Value>(
@@ -262,11 +345,36 @@ enum GlobalProjectionReducer {
 /// file is only a disposable native-client projection; Dieter domain data stays
 /// authoritative under DIETER_HOME on the daemon.
 actor DieterSyncPersistence {
-    private let fileURL: URL
+    typealias Writer = @Sendable (DieterSyncDiskState, URL) throws -> Int
 
-    init(root: URL? = nil) {
+    struct Metrics: Equatable, Sendable {
+        let acceptedSaveCount: Int
+        let writeCount: Int
+        let logicalBytesWritten: Int
+    }
+
+    private let fileURL: URL
+    private let writer: Writer
+    private let checkpointDelayNanoseconds: UInt64
+    private var pending: (revision: UInt64, value: DieterSyncCheckpoint)?
+    private var writerTask: Task<Void, Never>?
+    private var checkpointTask: Task<Void, Never>?
+    private var waiters: [UInt64: [CheckedContinuation<Void, Error>]] = [:]
+    private var nextRevision: UInt64 = 0
+    private var completedRevision: UInt64 = 0
+    private var acceptedSaveCount = 0
+    private var writeCount = 0
+    private var logicalBytesWritten = 0
+
+    init(
+        root: URL? = nil,
+        writer: Writer? = nil,
+        checkpointDelayNanoseconds: UInt64 = 2_000_000_000
+    ) {
         let base = root ?? Self.overrideRoot() ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         fileURL = base.appending(path: "Dieter", directoryHint: .isDirectory).appending(path: "sync-state.json")
+        self.writer = writer ?? Self.write
+        self.checkpointDelayNanoseconds = checkpointDelayNanoseconds
     }
 
     /// Smoke runs point the projection at a throwaway directory so isolated
@@ -290,10 +398,119 @@ actor DieterSyncPersistence {
         return value
     }
 
-    func save(_ value: DieterSyncDiskState) throws {
+    /// Replaces any not-yet-started write with the newest snapshot. Callers
+    /// that only need eventual persistence avoid waiting for JSON encoding and
+    /// disk I/O on the main actor.
+    func scheduleSave(_ value: DieterSyncDiskState) {
+        _ = enqueue(.init(diskState: value))
+        startWriterIfNeeded()
+    }
+
+    /// Debounces disposable projection checkpoints while always retaining the
+    /// newest revision. Durability-sensitive callers use `saveCheckpoint`.
+    func scheduleCheckpoint(_ value: DieterSyncCheckpoint) {
+        _ = enqueue(value)
+        checkpointTask?.cancel()
+        let delay = checkpointDelayNanoseconds
+        checkpointTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: delay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.beginScheduledCheckpoint()
+        }
+    }
+
+    /// Persists this state (or a newer state that supersedes it) before
+    /// returning. Used for durability boundaries such as outbox changes.
+    func save(_ value: DieterSyncDiskState) async throws {
+        try await saveCheckpoint(.init(diskState: value))
+    }
+
+    /// Persists this checkpoint (or a newer checkpoint that supersedes it)
+    /// before returning.
+    func saveCheckpoint(_ value: DieterSyncCheckpoint) async throws {
+        checkpointTask?.cancel()
+        checkpointTask = nil
+        let revision = enqueue(value)
+        startWriterIfNeeded()
+        try await withCheckedThrowingContinuation { continuation in
+            if completedRevision >= revision {
+                continuation.resume()
+            } else {
+                waiters[revision, default: []].append(continuation)
+            }
+        }
+    }
+
+    func metrics() -> Metrics {
+        Metrics(
+            acceptedSaveCount: acceptedSaveCount,
+            writeCount: writeCount,
+            logicalBytesWritten: logicalBytesWritten
+        )
+    }
+
+    private func enqueue(_ value: DieterSyncCheckpoint) -> UInt64 {
+        nextRevision &+= 1
+        acceptedSaveCount += 1
+        pending = (nextRevision, value)
+        return nextRevision
+    }
+
+    private func beginScheduledCheckpoint() {
+        checkpointTask = nil
+        startWriterIfNeeded()
+    }
+
+    private func startWriterIfNeeded() {
+        guard writerTask == nil else { return }
+        writerTask = Task { await drainWrites() }
+    }
+
+    private func drainWrites() async {
+        while let write = pending {
+            pending = nil
+            do {
+                let writer = writer
+                let fileURL = fileURL
+                let bytes = try await Task.detached(priority: .utility) {
+                    try writer(write.value.materialized(), fileURL)
+                }.value
+                writeCount += 1
+                logicalBytesWritten += bytes
+                completedRevision = max(completedRevision, write.revision)
+                resumeWaiters(through: write.revision, error: nil)
+            } catch {
+                completedRevision = max(completedRevision, write.revision)
+                resumeWaiters(through: write.revision, error: error)
+                Logger(subsystem: "com.dbpprt.dieter.mac", category: "SyncPersistence")
+                    .error("Failed to persist sync projection: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        writerTask = nil
+    }
+
+    private func resumeWaiters(through revision: UInt64, error: Error?) {
+        let completed = waiters.keys.filter { $0 <= revision }
+        for key in completed {
+            let continuations = waiters.removeValue(forKey: key) ?? []
+            for continuation in continuations {
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            }
+        }
+    }
+
+    nonisolated private static func write(_ value: DieterSyncDiskState, to fileURL: URL) throws -> Int {
+        os_signpost(.begin, log: syncPersistenceLog, name: "Encode and write sync state")
+        defer { os_signpost(.end, log: syncPersistenceLog, name: "Encode and write sync state") }
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(value)
         try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        return data.count
     }
 }

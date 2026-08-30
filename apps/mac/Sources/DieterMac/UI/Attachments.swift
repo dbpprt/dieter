@@ -29,6 +29,54 @@ extension View {
             return true
         }
     }
+
+    /// Reuses one importer/paste pipeline across every composer. Loading,
+    /// normalization, limits, and errors all stay centralized in DieterStore.
+    func attachmentIntake(
+        store: DieterStore,
+        importerPresented: Binding<Bool>,
+        attachments: Binding<[Dieter_V1_MessagePart]>
+    ) -> some View {
+        modifier(AttachmentIntakeModifier(
+            store: store,
+            importerPresented: importerPresented,
+            attachments: attachments
+        ))
+    }
+}
+
+private struct AttachmentIntakeModifier: ViewModifier {
+    let store: DieterStore
+    @Binding var importerPresented: Bool
+    @Binding var attachments: [Dieter_V1_MessagePart]
+
+    func body(content: Content) -> some View {
+        content
+            .fileImporter(
+                isPresented: $importerPresented,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: true
+            ) { result in
+                Task {
+                    do { attachments = try await store.attachmentParts(try result.get(), appendingTo: attachments) }
+                    catch { store.show(error) }
+                }
+            }
+            .onPasteCommand(of: [.image, .fileURL]) { providers in
+                Task {
+                    do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
+                    catch { store.show(error) }
+                }
+            }
+            .attachmentPasteCatcher { pasteboard in
+                guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
+                Task {
+                    do { attachments = try await store.attachmentParts(input, appendingTo: attachments) }
+                    catch { store.show(error) }
+                }
+                return true
+            }
+    }
 }
 
 private struct AttachmentPasteMonitor: NSViewRepresentable {
@@ -99,7 +147,6 @@ struct AttachmentPreviewTile: View {
     @State private var hovering = false
     @State private var previewPresented = false
 
-    private static let thumbnails = NSCache<NSString, NSImage>()
     private static let tileHeight: CGFloat = 68
 
     var body: some View {
@@ -217,19 +264,41 @@ struct AttachmentPreviewTile: View {
 
     private var thumbnail: NSImage? {
         guard part.mediaType.hasPrefix("image/") || part.type.caseInsensitiveCompare("image") == .orderedSame else { return nil }
-        let key = "\(part.filename):\(part.data.count):\(part.data.hashValue)" as NSString
-        if let cached = Self.thumbnails.object(forKey: key) { return cached }
-        guard let image = AttachmentImagePayload.image(from: part) else { return nil }
-        Self.thumbnails.setObject(image, forKey: key)
-        return image
+        return AttachmentImagePayload.image(from: part)
     }
 }
 
 enum AttachmentImagePayload {
+    private final class ImageCache: @unchecked Sendable {
+        let values: NSCache<NSString, NSImage> = {
+            let cache = NSCache<NSString, NSImage>()
+            cache.countLimit = 128
+            cache.totalCostLimit = 64 * 1_024 * 1_024
+            return cache
+        }()
+    }
+
+    private static let cache = ImageCache()
+
     static func image(from part: Dieter_V1_MessagePart) -> NSImage? {
-        if !part.data.isEmpty { return NSImage(data: part.data) }
-        guard let marker = part.url.range(of: ";base64,") else { return nil }
-        return Data(base64Encoded: String(part.url[marker.upperBound...])).flatMap(NSImage.init(data:))
+        let key = cacheKey(for: part)
+        if let cached = cache.values.object(forKey: key) { return cached }
+        let image: NSImage?
+        if !part.data.isEmpty {
+            image = NSImage(data: part.data)
+        } else if let marker = part.url.range(of: ";base64,") {
+            image = Data(base64Encoded: String(part.url[marker.upperBound...])).flatMap(NSImage.init(data:))
+        } else {
+            image = nil
+        }
+        if let image { cache.values.setObject(image, forKey: key, cost: max(1, part.data.count)) }
+        return image
+    }
+
+    private static func cacheKey(for part: Dieter_V1_MessagePart) -> NSString {
+        let prefix = part.data.prefix(16).base64EncodedString()
+        let suffix = part.data.suffix(16).base64EncodedString()
+        return "\(part.filename)|\(part.payloadRevision)|\(part.data.count)|\(prefix)|\(suffix)|\(part.url)" as NSString
     }
 }
 

@@ -2130,11 +2130,11 @@ private fun SubagentsBody(state: DieterUiState, model: DieterViewModel, modifier
             card = state.selectedCard,
             contextUsage = latestContextUsage(state.conversationMessages),
             onValueChange = { text = it },
-            onSend = { provider, selectedModel, effort ->
+            onSend = { provider, selectedModel, effort, providerOptions ->
                 val message = text.trim()
                 if (message.isNotBlank()) {
                     text = ""
-                    model.sendMessage(message, emptyList(), provider, selectedModel, effort)
+                    model.sendMessage(message, emptyList(), provider, selectedModel, effort, providerOptions)
                 }
             },
         )
@@ -2622,14 +2622,14 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
             onValueChange = { text = it },
             onAttach = { attachmentPickerVisible = true },
             onRemoveAttachment = { attachments.removeAt(it) },
-            onSend = { provider, selectedModel, effort ->
+            onSend = { provider, selectedModel, effort, providerOptions ->
                 val message = text.trim()
                 if (message.isNotBlank() || attachments.isNotEmpty()) {
                     assistantCountAtSend = assistantCount
                     observedActiveTurn = false
                     awaitingAgent = true
                     val parts = attachments.toList()
-                    model.sendMessage(message, parts, provider, selectedModel, effort) {
+                    model.sendMessage(message, parts, provider, selectedModel, effort, providerOptions) {
                         if (text.trim() == message) text = ""
                         if (attachments.toList() == parts) attachments.clear()
                     }
@@ -3676,7 +3676,7 @@ private fun CommentsBody(state: DieterUiState, model: DieterViewModel, modifier:
             placeholder = "Add a comment…",
             enabled = !state.working,
             onValueChange = { text = it },
-            onSend = { _, _, _ ->
+            onSend = { _, _, _, _ ->
                 val message = text.trim()
                 if (message.isNotBlank()) {
                     text = ""
@@ -3846,7 +3846,7 @@ private fun MessageComposer(
     onValueChange: (String) -> Unit,
     onAttach: (() -> Unit)? = null,
     onRemoveAttachment: (Int) -> Unit = {},
-    onSend: (String, String, String) -> Unit,
+    onSend: (String, String, String, Map<String, String>) -> Unit,
 ) {
     val locked = card?.initialPromptSentAt?.isNotBlank() == true
     var provider by remember(card?.id, harnesses) {
@@ -3857,6 +3857,14 @@ private fun MessageComposer(
         mutableStateOf(card?.model?.takeIf { it.isNotBlank() } ?: selectedHarness?.defaultModel.orEmpty())
     }
     var effort by remember(card?.id, provider, selectedModel) { mutableStateOf(card?.effort.orEmpty()) }
+    var providerOptions by remember(card?.id, provider, selectedHarness, card?.providerOptionsMap) {
+        mutableStateOf(
+            providerOptionValues(
+                selectedHarness,
+                card?.providerOptionsMap?.takeIf { card.provider == provider }.orEmpty(),
+            ),
+        )
+    }
     val selectedHarnessModel = selectedHarness?.modelsList?.firstOrNull { it.id == selectedModel }
     val effortOptions = selectedHarness?.effortOptionsFor(selectedModel).orEmpty()
     val displayedEffort = effort.ifBlank { selectedHarnessModel?.defaultEffort.orEmpty() }
@@ -3930,6 +3938,14 @@ private fun MessageComposer(
                             }
                         }
                     }
+                    selectedHarness?.optionsList.orEmpty().forEach { option ->
+                        ProviderOptionControl(
+                            option = option,
+                            values = providerOptions,
+                            enabled = !locked,
+                            onValueChange = { id, next -> providerOptions = providerOptions + (id to next) },
+                        )
+                    }
                 }
                 if (contextUsage != null) {
                     Spacer(Modifier.width(8.dp))
@@ -3989,7 +4005,7 @@ private fun MessageComposer(
             Box(
                 Modifier.size(54.dp).clip(RoundedCornerShape(20.dp))
                     .background(DieterPane)
-                    .clickable(enabled = canSend) { onSend(provider, selectedModel, effort) }
+                    .clickable(enabled = canSend) { onSend(provider, selectedModel, effort, providerOptions) }
                     .testTag("send-message"),
                 contentAlignment = Alignment.Center,
             ) {

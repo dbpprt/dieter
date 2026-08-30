@@ -274,19 +274,6 @@ private struct ConversationTimelineRow: View {
     }
 }
 
-private struct ConversationTimelineMessageDetails: Identifiable {
-    let id: String
-    let plans: [Dieter_V1_TaskPlan]
-    let subagents: [Dieter_V1_Subagent]
-}
-
-private struct ConversationTimelineRowContent: Identifiable {
-    let item: ConversationTimelineItem
-    let details: [ConversationTimelineMessageDetails]
-
-    var id: String { item.id }
-}
-
 struct ConversationTimeline: View {
     @Environment(DieterStore.self) private var store
     @State private var historyLoadInFlight = false
@@ -294,41 +281,25 @@ struct ConversationTimeline: View {
     @State private var isAtLatest = true
     @State private var presentedFailureLog: String?
     @State private var retryingFailureLog: String?
+    @State private var projection = ConversationTimelineProjection.empty
+    @State private var renderWindowStart: Int?
 
     private var messages: [Dieter_V1_UiMessage] { store.conversationMessages }
-    private var timelineItems: [ConversationTimelineItem] {
-        let structuredMessageIDs = Set(plans.map(\.messageID) + subagents.map(\.messageID))
-        let visibleMessages = ConversationQueuePresentation.deliveredMessages(
-            messages,
-            whileQueued: store.conversation?.conversation.queue ?? []
-        ).filter { message in
-            ["user", "human"].contains(message.role.lowercased())
-                || structuredMessageIDs.contains(message.id)
-                || message.parts.contains { !ConversationMessagePartGroup.isHidden($0, showReasoning: store.showReasoning) }
-        }
-        return ConversationTimelineItem.group(
-            visibleMessages,
-            showReasoning: store.showReasoning
-        )
-    }
+    private var timelineItems: [ConversationTimelineItem] { projection.items }
     private var plans: [Dieter_V1_TaskPlan] { store.conversation?.conversation.taskPlans ?? [] }
     private var subagents: [Dieter_V1_Subagent] { store.conversation?.conversation.subagents ?? [] }
     private var queuedMessages: [Dieter_V1_QueuedMessage] { store.conversation?.conversation.queue ?? [] }
-    private var timelineRows: [ConversationTimelineRowContent] {
-        let plansByMessage = Dictionary(grouping: plans, by: \.messageID)
-        let subagentsByMessage = Dictionary(grouping: subagents, by: \.messageID)
-        return timelineItems.map { item in
-            ConversationTimelineRowContent(
-                item: item,
-                details: item.messages.enumerated().map { index, message in
-                    ConversationTimelineMessageDetails(
-                        id: message.id.isEmpty ? "\(item.id):\(index)" : message.id,
-                        plans: plansByMessage[message.id] ?? [],
-                        subagents: subagentsByMessage[message.id] ?? []
-                    )
-                }
-            )
-        }
+    private var timelineRows: [ConversationTimelineRowContent] { projection.rows }
+    private var renderRange: Range<Int> {
+        ConversationRenderWindow.range(messageCount: messages.count, requestedStart: renderWindowStart)
+    }
+    private var projectionKey: ConversationPresentationKey {
+        ConversationPresentationKey(
+            revision: store.conversationPresentationRevision,
+            showReasoning: store.showReasoning,
+            renderStart: renderRange.lowerBound,
+            renderCount: renderRange.count
+        )
     }
     private var conversationID: String { store.selectedCardID ?? store.selectedChatID ?? "" }
     private var draftPrompt: String {
@@ -415,7 +386,7 @@ struct ConversationTimeline: View {
                             .id("queued:\(message.id)")
                     }
 
-                    ForEach(plans.filter { plan in !plan.messageID.isEmpty && messages.contains(where: { $0.id == plan.messageID }) == false }, id: \.id) {
+                    ForEach(projection.unattachedPlans, id: \.id) {
                         TaskPlanView(plan: $0)
                     }
 
@@ -484,6 +455,7 @@ struct ConversationTimeline: View {
                 if log == nil { retryingFailureLog = nil }
             }
             .task(id: conversationID) {
+                renderWindowStart = nil
                 historyLoadInFlight = false
                 initialScrollComplete = false
                 isAtLatest = true
@@ -491,6 +463,27 @@ struct ConversationTimeline: View {
                 scrollToLatest(proxy)
                 await Task.yield()
                 initialScrollComplete = true
+            }
+            .task(id: projectionKey) {
+                let range = renderRange
+                let source = Array(messages[range])
+                let allMessageIDs = Set(messages.lazy.map(\.id).filter { !$0.isEmpty })
+                let plans = plans
+                let subagents = subagents
+                let queue = queuedMessages
+                let showReasoning = store.showReasoning
+                let next = await Task.detached(priority: .userInitiated) {
+                    ConversationTimelineProjection.build(
+                        messages: source,
+                        allMessageIDs: allMessageIDs,
+                        plans: plans,
+                        subagents: subagents,
+                        queue: queue,
+                        showReasoning: showReasoning
+                    )
+                }.value
+                guard !Task.isCancelled else { return }
+                projection = next
             }
         }
         .sheet(isPresented: Binding(
@@ -502,6 +495,7 @@ struct ConversationTimeline: View {
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
+        renderWindowStart = nil
         proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom)
     }
 
@@ -516,8 +510,19 @@ struct ConversationTimeline: View {
         Task { @MainActor in
             let loaded = await store.loadEarlierMessages()
             if loaded {
+                if let anchorMessageID,
+                   let anchorIndex = messages.firstIndex(where: { $0.id == anchorMessageID }) {
+                    renderWindowStart = max(0, anchorIndex - 30)
+                } else {
+                    renderWindowStart = 0
+                }
                 await Task.yield()
-                if let anchor = ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: timelineItems) {
+                let range = renderRange
+                let items = ConversationTimelineItem.group(
+                    Array(messages[range]),
+                    showReasoning: store.showReasoning
+                )
+                if let anchor = ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: items) {
                     proxy.scrollTo(anchor, anchor: .top)
                 }
             }
@@ -957,57 +962,6 @@ extension Dieter_V1_MessagePart {
     }
 }
 
-struct ConversationToolCall: Identifiable {
-    let messageID: String
-    let part: Dieter_V1_MessagePart
-
-    var id: String {
-        if !part.toolCallID.isEmpty { return "\(messageID):\(part.toolCallID)" }
-        return "\(messageID):\(part.toolName):\(part.payloadRevision)"
-    }
-}
-
-struct ConversationTimelineItem: Identifiable {
-    var messages: [Dieter_V1_UiMessage]
-    let isToolCallGroup: Bool
-    let id: String
-
-    var toolCalls: [ConversationToolCall] {
-        messages.flatMap { message in
-            message.parts.filter(ConversationMessagePartGroup.isToolCall).map {
-                ConversationToolCall(messageID: message.id, part: $0)
-            }
-        }
-    }
-
-    static func group(_ messages: [Dieter_V1_UiMessage], showReasoning: Bool = true) -> [ConversationTimelineItem] {
-        var result: [ConversationTimelineItem] = []
-        for (position, message) in messages.enumerated() {
-            let toolOnly = message.role.lowercased() != "user" &&
-                message.parts.contains(where: ConversationMessagePartGroup.isToolCall) &&
-                message.parts.allSatisfy { part in
-                    ConversationMessagePartGroup.isToolCall(part) ||
-                        ConversationMessagePartGroup.isHidden(part, showReasoning: showReasoning) ||
-                        (part.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                            part.data.isEmpty && part.url.isEmpty && part.filename.isEmpty)
-                }
-            if toolOnly, result.last?.isToolCallGroup == true {
-                result[result.count - 1].messages.append(message)
-            } else {
-                let prefix = toolOnly ? "tools" : "message"
-                let sourceID = message.id.isEmpty ? "position:\(position)" : message.id
-                let itemID = "\(prefix):\(sourceID)"
-                result.append(.init(
-                    messages: [message],
-                    isToolCallGroup: toolOnly,
-                    id: itemID
-                ))
-            }
-        }
-        return result
-    }
-}
-
 struct ToolCallGroupSummary: Equatable {
     let edits: Int
     let commands: Int
@@ -1103,16 +1057,12 @@ struct MessagePartView: View {
             }
         default:
             if !part.text.isEmpty {
-                Text(markdown(part.text))
+                Text(ConversationRenderCache.markdown(part.text))
                     .font(.system(size: 13))
                     .foregroundStyle(inUserBubble ? Color.white : DieterTheme.text)
                     .lineSpacing(4)
             }
         }
-    }
-
-    private func markdown(_ string: String) -> AttributedString {
-        (try? AttributedString(markdown: string, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(string)
     }
 
     private var attachmentImage: NSImage? {
@@ -1194,11 +1144,15 @@ struct ToolCallView: View {
     }
 
     private func load() async {
-        guard !part.toolCallID.isEmpty, let cardID = store.selectedCardID ?? store.selectedChatID, let rpc = store.rpc else { return }
+        guard !part.toolCallID.isEmpty else { return }
         loading = true
-        var request = Dieter_V1_GetToolOutputRequest()
-        request.cardID = cardID; request.messageID = messageID; request.toolCallID = part.toolCallID; request.revision = part.payloadRevision
-        do { output = try await rpc.toolOutput(request) } catch { store.show(error) }
+        do {
+            output = try await store.toolOutput(
+                messageID: messageID,
+                toolCallID: part.toolCallID,
+                revision: part.payloadRevision
+            )
+        } catch { store.show(error) }
         loading = false
     }
 }
@@ -1703,14 +1657,50 @@ struct ConversationContextUsage: Equatable {
     var percentage: Int { Int((fraction * 100).rounded()) }
 
     static func latest(messages: [Dieter_V1_UiMessage], fallbackWindow: Int64) -> ConversationContextUsage? {
-        for message in messages.reversed() where !message.metadataJson.isEmpty {
-            guard let root = try? JSONSerialization.jsonObject(with: message.metadataJson) as? [String: Any] else { continue }
-            let usage = root["usage"] as? [String: Any]
-            let used = integer(usage?["totalTokens"]) ?? integer(usage?["inputTokens"])
-            let window = integer(root["contextWindowTokens"]) ?? (fallbackWindow > 0 ? fallbackWindow : nil)
-            if let used, let window, window > 0 { return .init(used: used, window: window) }
+        guard let metadata = messages.reversed().lazy.map(\.metadataJson).first(where: { !$0.isEmpty }) else {
+            return nil
         }
+        return ConversationContextUsageCache.value(metadata: metadata, fallbackWindow: fallbackWindow)
+    }
+
+    private static func integer(_ value: Any?) -> Int64? {
+        if let number = value as? NSNumber { return number.int64Value }
+        if let text = value as? String { return Int64(text) }
         return nil
+    }
+}
+
+private enum ConversationContextUsageCache {
+    private final class Box: NSObject {
+        let value: ConversationContextUsage?
+        init(_ value: ConversationContextUsage?) { self.value = value }
+    }
+
+    private final class Cache: @unchecked Sendable {
+        let values: NSCache<NSString, Box> = {
+            let cache = NSCache<NSString, Box>()
+            cache.countLimit = 128
+            return cache
+        }()
+    }
+
+    private static let cache = Cache()
+
+    static func value(metadata: Data, fallbackWindow: Int64) -> ConversationContextUsage? {
+        let key = "\(fallbackWindow):\(metadata.base64EncodedString())" as NSString
+        if let cached = cache.values.object(forKey: key) { return cached.value }
+        guard let root = try? JSONSerialization.jsonObject(with: metadata) as? [String: Any] else {
+            cache.values.setObject(Box(nil), forKey: key)
+            return nil
+        }
+        let usage = root["usage"] as? [String: Any]
+        let used = integer(usage?["totalTokens"]) ?? integer(usage?["inputTokens"])
+        let window = integer(root["contextWindowTokens"]) ?? (fallbackWindow > 0 ? fallbackWindow : nil)
+        let result = used.flatMap { used in
+            window.flatMap { $0 > 0 ? ConversationContextUsage(used: used, window: $0) : nil }
+        }
+        cache.values.setObject(Box(result), forKey: key)
+        return result
     }
 
     private static func integer(_ value: Any?) -> Int64? {

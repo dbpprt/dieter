@@ -112,6 +112,7 @@ fun NewConversationScreen(
     val harness = state.harnesses.firstOrNull { it.id == provider } ?: state.harnesses.firstOrNull()
     var selectedModel by remember(provider, harness) { mutableStateOf(harness?.defaultModel.orEmpty()) }
     var effort by remember(provider, selectedModel) { mutableStateOf("") }
+    var providerOptions by remember(provider, harness) { mutableStateOf(providerOptionValues(harness)) }
     var lane by remember(state.selectedLane) {
         mutableStateOf(state.selectedLane.ifBlank { state.board?.lanesList?.firstOrNull()?.id.orEmpty() })
     }
@@ -172,6 +173,7 @@ fun NewConversationScreen(
                                 provider = provider,
                                 model = selectedModel,
                                 effort = effort,
+                                providerOptions = providerOptions,
                                 lane = lane,
                                 labelIds = labelIds.toList(),
                                 deferStart = shouldDeferConversationStart(chat = false, lane = lane),
@@ -206,6 +208,8 @@ fun NewConversationScreen(
                 onModelChange = { selectedModel = it; effort = "" },
                 effort = effort,
                 onEffortChange = { effort = it },
+                providerOptions = providerOptions,
+                onProviderOptionChange = { id, value -> providerOptions = providerOptions + (id to value) },
                 canSubmit = canSubmit && !state.working,
                 workspaceMode = workspaceMode,
                 onWorkspaceModeChange = { workspaceMode = it },
@@ -221,6 +225,7 @@ fun NewConversationScreen(
                         provider = provider,
                         model = selectedModel,
                         effort = effort,
+                        providerOptions = providerOptions,
                         lane = "",
                         labelIds = emptyList(),
                         deferStart = shouldDeferConversationStart(chat = true, lane = ""),
@@ -243,6 +248,8 @@ fun NewConversationScreen(
                 onModelChange = { selectedModel = it; effort = "" },
                 effort = effort,
                 onEffortChange = { effort = it },
+                providerOptions = providerOptions,
+                onProviderOptionChange = { id, value -> providerOptions = providerOptions + (id to value) },
                 lane = lane,
                 onLaneChange = { lane = it },
                 labelIds = labelIds,
@@ -282,6 +289,8 @@ private fun NewChatBody(
     onModelChange: (String) -> Unit,
     effort: String,
     onEffortChange: (String) -> Unit,
+    providerOptions: Map<String, String>,
+    onProviderOptionChange: (String, String) -> Unit,
     canSubmit: Boolean,
     workspaceMode: ConversationWorkspaceMode,
     onWorkspaceModeChange: (ConversationWorkspaceMode) -> Unit,
@@ -348,7 +357,10 @@ private fun NewChatBody(
             modifier = Modifier.fillMaxWidth().testTag("chat-project-selector"),
         )
         Spacer(Modifier.height(8.dp))
-        ModelSelectors(state, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange)
+        ModelSelectors(
+            state, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
+            providerOptions, onProviderOptionChange,
+        )
         Spacer(Modifier.height(8.dp))
         WorkspaceModeChips(workspaceMode, onWorkspaceModeChange)
         Spacer(Modifier.height(8.dp))
@@ -407,6 +419,8 @@ private fun NewCardBody(
     onModelChange: (String) -> Unit,
     effort: String,
     onEffortChange: (String) -> Unit,
+    providerOptions: Map<String, String>,
+    onProviderOptionChange: (String, String) -> Unit,
     lane: String,
     onLaneChange: (String) -> Unit,
     labelIds: MutableList<String>,
@@ -465,7 +479,10 @@ private fun NewCardBody(
             Text(workspaceMode.detail, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
         }
         FormSection(Icons.Outlined.Bolt, "Agent") {
-            ModelSelectors(state, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange)
+            ModelSelectors(
+                state, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
+                providerOptions, onProviderOptionChange,
+            )
         }
         Text(
             if (lane == "running") "The first message starts immediately." else "The card is saved as a draft in Todo.",
@@ -588,6 +605,14 @@ fun ScheduleEditorScreen(
     val harness = state.harnesses.firstOrNull { it.id == provider } ?: state.harnesses.firstOrNull()
     var selectedModel by remember(schedule?.id, provider, harness) { mutableStateOf(schedule?.model?.ifBlank { null } ?: harness?.defaultModel.orEmpty()) }
     var effort by remember(schedule?.id, provider, selectedModel) { mutableStateOf(schedule?.effort.orEmpty()) }
+    var providerOptions by remember(schedule?.id, provider, harness) {
+        mutableStateOf(
+            providerOptionValues(
+                harness,
+                schedule?.providerOptionsMap?.takeIf { schedule.provider == provider }.orEmpty(),
+            ),
+        )
+    }
     val labelIds = remember(schedule?.id) { mutableStateListOf<String>().also { it += schedule?.labelIdsList.orEmpty() } }
     var openPolicy by remember(schedule?.id) { mutableStateOf(schedule?.openCardPolicy ?: "skip_if_open") }
     var busyPolicy by remember(schedule?.id) { mutableStateOf(schedule?.busyPolicy ?: "queue") }
@@ -620,6 +645,7 @@ fun ScheduleEditorScreen(
                 .setProvider(provider)
                 .setModel(selectedModel)
                 .setEffort(effort)
+                .putAllProviderOptions(providerOptions)
                 .setOpenCardPolicy(openPolicy)
                 .setMisfirePolicy("latest")
                 .setBusyPolicy(busyPolicy)
@@ -799,6 +825,7 @@ fun ScheduleEditorScreen(
                     state, provider,
                     { next -> provider = next; selectedModel = state.harnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
                     harness, selectedModel, { selectedModel = it; effort = "" }, effort, { effort = it },
+                    providerOptions, { id, value -> providerOptions = providerOptions + (id to value) },
                 )
             }
             FormSection(Icons.Outlined.CalendarMonth, "Delivery & safety") {
@@ -876,6 +903,8 @@ private fun ModelSelectors(
     onModelChange: (String) -> Unit,
     effort: String,
     onEffortChange: (String) -> Unit,
+    providerOptions: Map<String, String>,
+    onProviderOptionChange: (String, String) -> Unit,
 ) {
     val effortOptions = harness?.effortOptionsFor(model).orEmpty()
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -894,6 +923,14 @@ private fun ModelSelectors(
                 value = effortOptions.firstOrNull { it.id == effort }?.name ?: effort.ifBlank { "Default effort" },
                 options = listOf("" to "Default effort") + effortOptions.map { it.id to it.name },
                 onSelect = onEffortChange,
+            )
+        }
+        harness?.optionsList.orEmpty().forEach { option ->
+            ProviderOptionControl(
+                option = option,
+                values = providerOptions,
+                enabled = true,
+                onValueChange = onProviderOptionChange,
             )
         }
     }

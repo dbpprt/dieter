@@ -15,6 +15,7 @@ private let cachedConversationLimit = 24
 private let terminalClientBufferLimit = 2 * 1_024 * 1_024
 private let outboxLogger = Logger(subsystem: "com.dbpprt.dieter.mac", category: "Outbox")
 private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", category: "Connection")
+private let syncPerformanceLog = OSLog(subsystem: "com.dbpprt.dieter.mac", category: "SyncPerformance")
 
 struct TerminalScreenState: Equatable, Sendable {
     var data = Data()
@@ -265,14 +266,18 @@ enum WorkspaceFreshnessState: Equatable {
 }
 
 enum SyncCursorPersistencePolicy {
-    static let interval: TimeInterval = 15
+    // A five-minute checkpoint keeps a 4 MiB projection below 50 MiB of
+    // logical writes per hour. Deactivation and durability-sensitive outbox
+    // mutations explicitly flush sooner.
+    static let interval: TimeInterval = 5 * 60
 
     static func shouldPersist(projectionChanged: Bool, lastPersistedAt: Date?, now: Date) -> Bool {
         // The in-memory snapshot and cursor advance together. Persisting an
         // older pair is safe because WatchSync will replay the later delta, so
         // high-frequency conversation frames do not need a multi-megabyte
         // atomic disk write each time.
-        lastPersistedAt.map { now.timeIntervalSince($0) >= interval } ?? true
+        guard projectionChanged else { return false }
+        return lastPersistedAt.map { now.timeIntervalSince($0) >= interval } ?? true
     }
 }
 
@@ -501,14 +506,23 @@ final class DieterStore {
     var endpoints: [DieterEndpoint]
     var health = Dieter_V1_HealthResponse()
     var runtime = Dieter_V1_RuntimeStatus()
-    var state = Dieter_V1_State()
+    var state = Dieter_V1_State() {
+        didSet {
+            refreshIslandActivityProjection()
+            refreshBoardProjection()
+        }
+    }
     var harnessCatalog = Dieter_V1_HarnessCatalog()
     var boardSettings = Dieter_V1_Settings()
     var settingsOptions = Dieter_V1_SettingsOptions()
-    var chats: [Dieter_V1_Card] = []
+    var chats: [Dieter_V1_Card] = [] {
+        didSet { refreshIslandActivityProjection() }
+    }
     var chatProjects: [Dieter_V1_Project] = []
     var navigationBoards: [String: [Dieter_V1_Board]] = [:]
-    var navigationCards: [String: [Dieter_V1_Card]] = [:]
+    var navigationCards: [String: [Dieter_V1_Card]] = [:] {
+        didSet { refreshIslandActivityProjection() }
+    }
     var projectDirectory: [String: Dieter_V1_Project] = [:]
     var projectEndpointIDs: [String: String] = [:]
     var machineConnectionStatuses: [String: MachineConnectionStatus] = [:]
@@ -522,11 +536,25 @@ final class DieterStore {
     var archivedCards: [Dieter_V1_Card] = []
 
     var selectedProjectID = ""
-    var selectedBoardID = ""
+    var selectedBoardID = "" {
+        didSet { if selectedBoardID != oldValue { refreshBoardProjection() } }
+    }
     var selectedCardID: String?
     var selectedChatID: String?
-    var conversation: Dieter_V1_ConversationSnapshot?
-    var olderConversationMessages: [Dieter_V1_UiMessage] = []
+    var conversation: Dieter_V1_ConversationSnapshot? {
+        didSet {
+            guard conversation != oldValue else { return }
+            refreshConversationPresentationState()
+        }
+    }
+    var olderConversationMessages: [Dieter_V1_UiMessage] = [] {
+        didSet {
+            guard olderConversationMessages != oldValue else { return }
+            refreshConversationPresentationState()
+        }
+    }
+    private(set) var conversationMessages: [Dieter_V1_UiMessage] = []
+    private(set) var conversationPresentationRevision = 0
     var conversationHistoryStart = 0
     var conversationHistoryTotal = 0
     var conversationHistoryHasMore = false
@@ -564,9 +592,15 @@ final class DieterStore {
         }
     }
     var commentText = ""
-    var query = ""
-    var runtimeFilter = ""
-    var labelFilter = ""
+    var query = "" {
+        didSet { if query != oldValue { refreshBoardProjection() } }
+    }
+    var runtimeFilter = "" {
+        didSet { if runtimeFilter != oldValue { refreshBoardProjection() } }
+    }
+    var labelFilter = "" {
+        didSet { if labelFilter != oldValue { refreshBoardProjection() } }
+    }
     var movingCardIDs: Set<String> = []
     var labelUpdatingCardIDs: Set<String> = []
     private(set) var pendingCardIDs: Set<String> = []
@@ -576,6 +610,12 @@ final class DieterStore {
     private(set) var machineOutboxSummaries: [String: MachineOutboxSummary] = [:]
     private(set) var globalSyncing = false
     private(set) var lastSyncedAt: Date?
+    private(set) var islandActivity = DieterIslandActivity.empty
+    private(set) var boardProjection = BoardProjection.empty
+    @ObservationIgnored private(set) var islandActivityProjectionRevision = 0
+    @ObservationIgnored private var islandActivitySource: [DieterIslandActivity.SourceCard] = []
+    @ObservationIgnored private var islandActivityDay = Calendar.current.startOfDay(for: Date())
+    @ObservationIgnored private var suppressIslandActivityRefresh = false
 
     var workspaceFreshness: WorkspaceFreshnessState {
         WorkspaceFreshnessState.resolve(
@@ -589,14 +629,16 @@ final class DieterStore {
         workspaceFreshness.isLive
     }
 
-    var conversationMessages: [Dieter_V1_UiMessage] {
+    private func refreshConversationPresentationState() {
         let live = conversation?.conversation.messages ?? []
         let liveIDs = Set(live.lazy.map(\.id).filter { !$0.isEmpty })
         var seen = Set<String>()
         let history = olderConversationMessages.filter { $0.id.isEmpty || !liveIDs.contains($0.id) }
-        return (history + live).filter { message in
+        let next = (history + live).filter { message in
             message.id.isEmpty || seen.insert(message.id).inserted
         }
+        if conversationMessages != next { conversationMessages = next }
+        conversationPresentationRevision &+= 1
     }
 
     var files: [Dieter_V1_FileEntry] = []
@@ -604,7 +646,6 @@ final class DieterStore {
     var fileNavigation = ProjectFileNavigation()
     private(set) var fileNavigationLoading = false
     var fileDocument: Dieter_V1_FileDocument?
-    var fileEditorText = ""
     var showHiddenFiles = false
 
     var terminals: [Dieter_V1_Terminal] = []
@@ -635,7 +676,7 @@ final class DieterStore {
     var archivePolicyPresented = false
     var errorMessage: String?
 
-    private(set) var rpc: DieterRPC?
+    private var rpc: DieterRPC?
     private let scheduleRPCOverride: (any DieterScheduleRPC)?
     private let chatPinRPCOverride: (any DieterChatPinRPC)?
     private var connectionTask: Task<Void, Never>?
@@ -668,23 +709,30 @@ final class DieterStore {
     private var gatewayOrigins: [DieterEndpoint]
     private var readChatActivity: [String: String]
     private let authentication = DieterAuthentication()
-    private let syncPersistence = DieterSyncPersistence()
+    private let syncPersistence: DieterSyncPersistence
+    private let attachmentLoader = AttachmentLoader()
     private let syncClientID = DieterSyncPersistence.installationID()
     private let terminalInputForwarder = TerminalInputForwarder()
-    private var terminalSequences: [String: UInt64] = [:]
+    private let terminalOutputAccumulator = TerminalOutputAccumulator()
+    @ObservationIgnored private var terminalSequences: [String: UInt64] = [:]
     private var pendingChatPins: [String: PendingChatPin] = [:]
     private var schedulesLoadedEndpointID = ""
     private var schedulesRequestGeneration: UInt64 = 0
     private var scheduleRunsRequestGeneration: UInt64 = 0
     private var syncDiskState = DieterSyncDiskState.empty
     private var syncProjection = DieterSyncProjection.empty
+    private var syncSnapshot: Dieter_V1_GlobalSnapshot?
+    @ObservationIgnored private var syncStateDirty = false
 
     init(
         scheduleRPCOverride: (any DieterScheduleRPC)? = nil,
-        chatPinRPCOverride: (any DieterChatPinRPC)? = nil
+        chatPinRPCOverride: (any DieterChatPinRPC)? = nil,
+        syncPersistenceOverride: DieterSyncPersistence? = nil,
+        restoreSync: Bool = true
     ) {
         self.scheduleRPCOverride = scheduleRPCOverride
         self.chatPinRPCOverride = chatPinRPCOverride
+        syncPersistence = syncPersistenceOverride ?? DieterSyncPersistence()
         let arguments = ProcessInfo.processInfo.arguments
         if let flag = arguments.firstIndex(of: "--dieter-access-token-file"), arguments.indices.contains(flag + 1),
            let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)
@@ -700,7 +748,9 @@ final class DieterStore {
             endpoint = override
             gatewayOrigins = [override]
             persistConnectionSelection = false
-            syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
+            if restoreSync {
+                syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
+            }
             return
         }
 
@@ -718,7 +768,9 @@ final class DieterStore {
             endpoint = loadedEndpoints[0]
         }
         if loadedEndpoints != storedEndpoints { persistEndpoints() }
-        syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
+        if restoreSync {
+            syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
+        }
     }
 
     private func accessToken(for endpoint: DieterEndpoint) async -> String? {
@@ -750,6 +802,15 @@ final class DieterStore {
     /// Island. `state.cards` intentionally contains only the selected project,
     /// while `navigationCards` is kept current by WatchSync in the background.
     var synchronizedCards: [Dieter_V1_Card] {
+        synchronizedCardValues().sorted {
+            let lhsActivity = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
+            let rhsActivity = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
+            if lhsActivity == rhsActivity { return $0.id < $1.id }
+            return lhsActivity > rhsActivity
+        }
+    }
+
+    private func synchronizedCardValues() -> [Dieter_V1_Card] {
         var byID: [String: Dieter_V1_Card] = [:]
         for card in navigationCards.values.joined() where !card.id.isEmpty {
             byID[card.id] = card
@@ -762,12 +823,36 @@ final class DieterStore {
         for card in state.cards + state.chats where !card.id.isEmpty {
             byID[card.id] = card
         }
-        return byID.values.sorted {
-            let lhsActivity = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
-            let rhsActivity = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
-            if lhsActivity == rhsActivity { return $0.id < $1.id }
-            return lhsActivity > rhsActivity
-        }
+        return Array(byID.values)
+    }
+
+    private func refreshIslandActivityProjection(now: Date = Date()) {
+        guard !suppressIslandActivityRefresh else { return }
+        let source = DieterIslandActivity.source(cards: synchronizedCardValues())
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: now)
+        guard source != islandActivitySource || day != islandActivityDay else { return }
+        islandActivitySource = source
+        islandActivityDay = day
+        os_signpost(.begin, log: syncPerformanceLog, name: "Derive Island activity")
+        islandActivity = DieterIslandActivity.resolve(source: source, now: now, calendar: calendar)
+        os_signpost(.end, log: syncPerformanceLog, name: "Derive Island activity")
+        islandActivityProjectionRevision += 1
+    }
+
+    private func refreshIslandActivityDateBoundaryIfNeeded(now: Date) {
+        let calendar = Calendar.current
+        let day = calendar.startOfDay(for: now)
+        guard day != islandActivityDay else { return }
+        islandActivityDay = day
+        os_signpost(.begin, log: syncPerformanceLog, name: "Derive Island activity")
+        islandActivity = DieterIslandActivity.resolve(
+            source: islandActivitySource,
+            now: now,
+            calendar: calendar
+        )
+        os_signpost(.end, log: syncPerformanceLog, name: "Derive Island activity")
+        islandActivityProjectionRevision += 1
     }
 
     var machines: [DieterEndpoint] {
@@ -866,15 +951,22 @@ final class DieterStore {
     }
 
     var displayedCards: [Dieter_V1_Card] {
-        boardCards.filter { card in
-            (runtimeFilter.isEmpty || card.runtime == runtimeFilter) &&
-            (labelFilter.isEmpty || card.labelIds.contains(labelFilter)) &&
-            (query.isEmpty || card.title.localizedCaseInsensitiveContains(query) || card.summary.localizedCaseInsensitiveContains(query))
-        }
+        boardProjection.displayedCards
     }
 
     var boardCards: [Dieter_V1_Card] {
-        state.cards.filter { selectedBoardID.isEmpty || $0.boardID == selectedBoardID }
+        boardProjection.cards
+    }
+
+    private func refreshBoardProjection() {
+        let next = BoardProjection.resolve(
+            cards: state.cards,
+            boardID: selectedBoardID,
+            runtimeFilter: runtimeFilter,
+            labelFilter: labelFilter,
+            query: query
+        )
+        if next != boardProjection { boardProjection = next }
     }
 
     func boards(for projectID: String) -> [Dieter_V1_Board] {
@@ -969,6 +1061,7 @@ final class DieterStore {
             rpc = dataPlane.rpc
             connectionTask = dataPlane.task
             machineConnectionStatuses[target.id] = dataPlane.connection
+            try? await saveSyncPersistence()
             endpoint = target
             activateSyncProjection(for: target)
             persistEndpoints()
@@ -1206,9 +1299,7 @@ final class DieterStore {
     }
 
     private func scheduleDirectRefresh(expiresAt: String, target: DieterEndpoint) {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let expires = formatter.date(from: expiresAt) ?? ISO8601DateFormatter().date(from: expiresAt)
+        let expires = DieterTimestamp.date(from: expiresAt)
         guard let expires else { return }
         let delay = max(1, expires.timeIntervalSinceNow - 30)
         directRefreshTask?.cancel()
@@ -1304,6 +1395,8 @@ final class DieterStore {
         disconnect()
         syncDiskState.clearProjections()
         syncProjection = .empty
+        syncSnapshot = nil
+        syncStateDirty = false
         clearDeploymentWorkspace()
         do {
             try await syncPersistence.save(syncDiskState)
@@ -1320,6 +1413,7 @@ final class DieterStore {
             gatewayOrigins.append(gateway)
         }
         if gateway.credentialID != activeGateway.credentialID {
+            if syncStateDirty { try? await saveSyncPersistence() }
             clearDeploymentWorkspace()
         }
         endpoint = gateway
@@ -1333,6 +1427,7 @@ final class DieterStore {
             gatewayOrigins.append(endpoint)
         }
         if endpoint.credentialID != activeGateway.credentialID {
+            if syncStateDirty { try? await saveSyncPersistence() }
             clearDeploymentWorkspace()
         }
         persistEndpoints()
@@ -1359,6 +1454,8 @@ final class DieterStore {
         selectedBoardID = ""
         closeConversation()
         syncProjection = .empty
+        syncSnapshot = nil
+        syncStateDirty = false
     }
 
     func deleteEndpoint(_ endpoint: DieterEndpoint) {
@@ -1438,7 +1535,7 @@ final class DieterStore {
             if machineConnectionStatuses[snapshot.endpoint.id] != snapshot.connection {
                 machineConnectionStatuses[snapshot.endpoint.id] = snapshot.connection
             }
-            persistenceChanged = persistInactiveMachineSnapshot(snapshot) || persistenceChanged
+            persistenceChanged = await persistInactiveMachineSnapshot(snapshot) || persistenceChanged
         }
 
         let current = MachineDirectoryProjection(
@@ -1460,22 +1557,25 @@ final class DieterStore {
         if let selectedChatID, let selected = chats.first(where: { $0.id == selectedChatID }) {
             markChatRead(selected)
         }
-        if persistenceChanged { try? await syncPersistence.save(syncDiskState) }
+        if persistenceChanged { await scheduleSyncPersistence() }
     }
 
     @discardableResult
-    private func persistInactiveMachineSnapshot(_ machine: MachineSnapshot) -> Bool {
+    private func persistInactiveMachineSnapshot(_ machine: MachineSnapshot) async -> Bool {
         guard machine.endpoint.id != endpoint.id else { return false }
         let current = syncDiskState.projections[machine.endpoint.id] ?? .empty
-        let next = DieterSyncProjectionCache.replacingMetadata(
-            in: current,
-            projects: machine.projects,
-            boards: machine.boards,
-            cards: machine.cards,
-            chats: machine.chats
-        )
+        let next = await Task.detached(priority: .utility) {
+            DieterSyncProjectionCache.replacingMetadata(
+                in: current,
+                projects: machine.projects,
+                boards: machine.boards,
+                cards: machine.cards,
+                chats: machine.chats
+            )
+        }.value
         guard current.cursor != next.cursor || current.snapshot != next.snapshot else { return false }
         syncDiskState.projections[machine.endpoint.id] = next
+        syncStateDirty = true
         return true
     }
 
@@ -1499,20 +1599,19 @@ final class DieterStore {
         machinePresenceLeaseTask?.cancel()
         machinePresenceLeaseTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await DieterTaskSleep.seconds(1)
                 guard !Task.isCancelled, let self else { return }
-                var changed = false
-                self.endpoints = self.endpoints.map { machine in
-                    guard machine.daemonID != nil, machine.online, !machine.lastSeenAt.isEmpty,
-                          !MachinePresenceText.isFresh(machine.lastSeenAt) else { return machine }
-                    var expired = machine
-                    expired.online = false
-                    changed = true
-                    return expired
+                let now = Date()
+                let next = MachinePresenceText.applyingExpirations(to: self.endpoints, relativeTo: now)
+                if next != self.endpoints {
+                    self.endpoints = next
                 }
-                if changed, let active = self.endpoints.first(where: { $0.id == self.endpoint.id }) {
+                if let active = next.first(where: { $0.id == self.endpoint.id }), active != self.endpoint {
                     self.endpoint = active
                 }
+                let delay = MachinePresenceText.nextExpiration(in: next, relativeTo: now)
+                    .map { max(0.05, min(5, $0.timeIntervalSince(now) + 0.05)) }
+                    ?? 5
+                try? await DieterTaskSleep.seconds(delay)
             }
         }
     }
@@ -1671,9 +1770,7 @@ final class DieterStore {
     }
 
     private nonisolated static func parseTimestamp(_ value: String) -> Date? {
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        DieterTimestamp.date(from: value)
     }
 
     func selectProject(_ id: String) async {
@@ -1934,6 +2031,7 @@ final class DieterStore {
             let liveIDs = Set(values.map(\.id))
             terminalScreens = terminalScreens.filter { liveIDs.contains($0.key) }
             terminalSequences = terminalSequences.filter { liveIDs.contains($0.key) }
+            await terminalOutputAccumulator.retain(terminalIDs: liveIDs)
             if selectedTerminalID.flatMap({ id in values.first(where: { $0.id == id }) }) == nil {
                 selectedTerminalID = values.first?.id
             }
@@ -1966,6 +2064,7 @@ final class DieterStore {
             selectedTerminalID = value.id
             terminalSequences[value.id] = 0
             terminalScreens[value.id] = TerminalScreenState()
+            await terminalOutputAccumulator.seed(terminalID: value.id)
             createTerminalPresented = false
             section = .terminals
             startTerminalWatch()
@@ -2017,6 +2116,7 @@ final class DieterStore {
             terminals.removeAll { $0.id == id }
             terminalScreens.removeValue(forKey: id)
             terminalSequences.removeValue(forKey: id)
+            await terminalOutputAccumulator.remove(terminalID: id)
             if selectedTerminalID == id {
                 selectedTerminalID = terminals.first?.id
                 startTerminalWatch()
@@ -2060,21 +2160,26 @@ final class DieterStore {
         }
     }
 
-    private func acceptTerminalFrame(_ frame: Dieter_V1_TerminalFrame, terminalID: String) {
+    private func acceptTerminalFrame(_ frame: Dieter_V1_TerminalFrame, terminalID: String) async {
         guard frame.hasTerminal, frame.terminal.id == terminalID else { return }
         upsertTerminal(frame.terminal)
-        terminalStreamConnected = true
+        if !terminalStreamConnected { terminalStreamConnected = true }
         terminalSequences[terminalID] = max(terminalSequences[terminalID] ?? 0, frame.sequence)
         guard frame.screenReset || !frame.data.isEmpty else { return }
-        terminalScreens[terminalID] = TerminalScreenReducer.applying(
+        await terminalOutputAccumulator.enqueue(
+            terminalID: terminalID,
             data: frame.data,
             screenReset: frame.screenReset,
-            to: terminalScreens[terminalID] ?? TerminalScreenState()
-        )
+            current: terminalScreens[terminalID] ?? TerminalScreenState()
+        ) { [weak self] id, screen in
+            guard let self, self.terminals.contains(where: { $0.id == id }) else { return }
+            self.terminalScreens[id] = screen
+        }
     }
 
     private func upsertTerminal(_ value: Dieter_V1_Terminal) {
         if let index = terminals.firstIndex(where: { $0.id == value.id }) {
+            guard terminals[index] != value else { return }
             terminals[index] = value
         } else {
             terminals.append(value)
@@ -2172,23 +2277,62 @@ final class DieterStore {
             syncDiskState.cursor = nil
             syncDiskState.snapshot = nil
         }
+        syncSnapshot = syncProjection.snapshot.flatMap {
+            try? Dieter_V1_GlobalSnapshot(serializedBytes: $0)
+        }
         lastSyncedAt = syncProjection.refreshedAt
+        if lastSyncPersistenceAt[endpoint.id] == nil {
+            lastSyncPersistenceAt[endpoint.id] = syncProjection.refreshedAt
+        }
         if let daemonID = endpoint.daemonID {
             for index in syncDiskState.outbox.indices where syncDiskState.outbox[index].endpointID == daemonID {
                 syncDiskState.outbox[index].endpointID = endpoint.id
             }
         }
-        if let raw = syncProjection.snapshot,
-           let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) {
+        if let snapshot = syncSnapshot {
             applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
         } else {
             updateSelectedState()
         }
     }
 
-    private func persistActiveProjection(endpointID: String) {
-        guard endpoint.id == endpointID else { return }
-        syncDiskState.projections[endpointID] = syncProjection
+    private func persistenceCheckpoint() -> DieterSyncCheckpoint {
+        var diskState = syncDiskState
+        if !endpoint.id.isEmpty,
+           syncSnapshot != nil || syncProjection.cursor != nil || syncProjection.snapshot != nil {
+            diskState.projections[endpoint.id] = syncProjection
+        }
+        return DieterSyncCheckpoint(
+            diskState: diskState,
+            activeEndpointID: endpoint.id,
+            activeSnapshot: syncSnapshot
+        )
+    }
+
+    private func scheduleSyncPersistence() async {
+        let checkpoint = persistenceCheckpoint()
+        // Clear before the actor hop so a newer frame that arrives while the
+        // writer is accepting this state marks the store dirty again.
+        syncStateDirty = false
+        await syncPersistence.scheduleCheckpoint(checkpoint)
+    }
+
+    private func saveSyncPersistence() async throws {
+        let checkpoint = persistenceCheckpoint()
+        syncStateDirty = false
+        do {
+            try await syncPersistence.saveCheckpoint(checkpoint)
+        } catch {
+            syncStateDirty = true
+            throw error
+        }
+    }
+
+    func applicationDidResignActive() {
+        guard syncStateDirty else { return }
+        Task { @MainActor [weak self] in
+            try? await self?.saveSyncPersistence()
+        }
     }
 
     private func startGlobalSync() {
@@ -2201,7 +2345,7 @@ final class DieterStore {
         request.conversationLimit = syncConversationMessageLimit
         request.recentConversationLimit = syncRecentConversationLimit
         request.heartbeatMs = 15_000
-        if syncProjection.snapshot != nil,
+        if syncSnapshot != nil,
            let raw = syncProjection.cursor, let cursor = try? Dieter_V1_SyncCursor(serializedBytes: raw) {
             request.after = cursor
         }
@@ -2217,42 +2361,47 @@ final class DieterStore {
         }
     }
 
-    private func applySyncFrame(_ frame: Dieter_V1_SyncFrame, endpointID: String) async {
+    func applySyncFrame(_ frame: Dieter_V1_SyncFrame, endpointID: String) async {
         guard endpoint.id == endpointID else { return }
+        os_signpost(.begin, log: syncPerformanceLog, name: "Apply sync frame")
+        defer { os_signpost(.end, log: syncPerformanceLog, name: "Apply sync frame") }
         let receivedAt = Date()
         lastSyncFrameAt = receivedAt
         lastSyncedAt = receivedAt
         globalSyncing = false
         syncProjection.refreshedAt = receivedAt
+        refreshIslandActivityDateBoundaryIfNeeded(now: receivedAt)
         var projectionChanged = false
+        var conversationDirectoryChanged = false
         if frame.hasSnapshot {
             markConversationsRefreshed(frame.snapshot.conversations, endpointID: endpointID, at: receivedAt)
-            let current = syncProjection.snapshot.flatMap {
-                try? Dieter_V1_GlobalSnapshot(serializedBytes: $0)
-            }
-            let serialized = try? frame.snapshot.serializedData()
-            if current != frame.snapshot {
-                syncProjection.snapshot = serialized
+            if syncSnapshot != frame.snapshot {
+                syncSnapshot = frame.snapshot
                 applyGlobalSnapshot(frame.snapshot, endpointID: endpointID)
                 projectionChanged = true
+                conversationDirectoryChanged = true
             }
         } else if frame.hasDelta,
                   GlobalProjectionReducer.changesProjection(frame.delta),
-                  let raw = syncProjection.snapshot,
-                  let current = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) {
+                  let current = syncSnapshot {
             markConversationsRefreshed(frame.delta.conversations, endpointID: endpointID, at: receivedAt)
             let next = GlobalProjectionReducer.applying(frame.delta, to: current)
             if next != current {
-                syncProjection.snapshot = try? next.serializedData()
-                applyGlobalSnapshot(next, endpointID: endpointID)
+                syncSnapshot = next
+                if GlobalProjectionReducer.changesWorkspace(frame.delta) {
+                    applyGlobalSnapshot(next, endpointID: endpointID)
+                } else {
+                    applySelectedConversationProjection(next, endpointID: endpointID)
+                }
                 projectionChanged = true
+                conversationDirectoryChanged = GlobalProjectionReducer.changesConversationDirectory(frame.delta)
             }
         }
         if frame.hasCursor {
             syncProjection.cursor = try? frame.cursor.serializedData()
         }
-        persistActiveProjection(endpointID: endpointID)
-        if projectionChanged {
+        if projectionChanged { syncStateDirty = true }
+        if conversationDirectoryChanged {
             reconcileOutboxWithProjection()
         }
         if SyncCursorPersistencePolicy.shouldPersist(
@@ -2260,12 +2409,19 @@ final class DieterStore {
             lastPersistedAt: lastSyncPersistenceAt[endpointID],
             now: receivedAt
         ) {
-            try? await syncPersistence.save(syncDiskState)
+            await scheduleSyncPersistence()
             lastSyncPersistenceAt[endpointID] = receivedAt
         }
     }
 
     private func applyGlobalSnapshot(_ snapshot: Dieter_V1_GlobalSnapshot, endpointID: String) {
+        os_signpost(.begin, log: syncPerformanceLog, name: "Apply global snapshot")
+        defer { os_signpost(.end, log: syncPerformanceLog, name: "Apply global snapshot") }
+        suppressIslandActivityRefresh = true
+        defer {
+            suppressIslandActivityRefresh = false
+            refreshIslandActivityProjection()
+        }
         var global = snapshot.state
         global.chats = reconcilePendingChatPins(global.chats)
         let boardProjection = OptimisticWorkspaceProjection.reconcileBoards(global.boards, pending: pendingBoards)
@@ -2343,13 +2499,22 @@ final class DieterStore {
             boardSettings = snapshot.settings
         }
         if let selectedID = selectedCardID ?? selectedChatID,
-           let projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID }) {
-            if conversation != projected { conversation = projected }
-            if selectedDetail != projected.detail { selectedDetail = projected.detail }
-            conversationLoading = false
-            conversationLastRefreshedAt = conversationRefreshDate(cardID: selectedID, endpointID: endpointID)
+           snapshot.conversations.contains(where: { $0.detail.card.id == selectedID }) {
+            applySelectedConversationProjection(snapshot, endpointID: endpointID)
         }
         rebuildOutboxOverlays()
+    }
+
+    private func applySelectedConversationProjection(
+        _ snapshot: Dieter_V1_GlobalSnapshot,
+        endpointID: String
+    ) {
+        guard let selectedID = selectedCardID ?? selectedChatID,
+              let projected = snapshot.conversations.first(where: { $0.detail.card.id == selectedID }) else { return }
+        if conversation != projected { conversation = projected }
+        if selectedDetail != projected.detail { selectedDetail = projected.detail }
+        conversationLoading = false
+        conversationLastRefreshedAt = conversationRefreshDate(cardID: selectedID, endpointID: endpointID)
     }
 
     private func updateSelectedState(base: Dieter_V1_State? = nil) {
@@ -2368,7 +2533,10 @@ final class DieterStore {
     }
 
     private func projectedConversation(cardID: String, endpointID: String) -> Dieter_V1_ConversationSnapshot? {
-        let projection = endpointID == endpoint.id ? syncProjection : syncDiskState.projections[endpointID]
+        if endpointID == endpoint.id, let syncSnapshot {
+            return syncSnapshot.conversations.first { $0.detail.card.id == cardID }
+        }
+        let projection = syncDiskState.projections[endpointID]
         guard let raw = projection?.snapshot,
               let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) else { return nil }
         return snapshot.conversations.first { $0.detail.card.id == cardID }
@@ -2401,30 +2569,37 @@ final class DieterStore {
         _ conversation: Dieter_V1_ConversationSnapshot,
         endpointID: String,
         refreshedAt: Date
-    ) {
+    ) async {
         let cardID = conversation.detail.card.id
         guard !cardID.isEmpty else { return }
-        var projection = endpointID == endpoint.id
-            ? syncProjection
-            : (syncDiskState.projections[endpointID] ?? .empty)
-        var snapshot = projection.snapshot
-            .flatMap { try? Dieter_V1_GlobalSnapshot(serializedBytes: $0) }
-            ?? Dieter_V1_GlobalSnapshot()
-        snapshot.conversations.removeAll { $0.detail.card.id == cardID }
-        snapshot.conversations.append(conversation)
-        if snapshot.conversations.count > cachedConversationLimit {
-            snapshot.conversations.removeFirst(snapshot.conversations.count - cachedConversationLimit)
+        let retainedIDs: Set<String>
+        if endpointID == endpoint.id {
+            var snapshot = syncSnapshot ?? Dieter_V1_GlobalSnapshot()
+            snapshot.conversations.removeAll { $0.detail.card.id == cardID }
+            snapshot.conversations.append(conversation)
+            if snapshot.conversations.count > cachedConversationLimit {
+                snapshot.conversations.removeFirst(snapshot.conversations.count - cachedConversationLimit)
+            }
+            syncSnapshot = snapshot
+            retainedIDs = Set(snapshot.conversations.map { $0.detail.card.id })
+        } else {
+            let projection = syncDiskState.projections[endpointID] ?? .empty
+            let result = await Task.detached(priority: .utility) {
+                DieterSyncProjectionCache.cachingConversation(
+                    conversation,
+                    in: projection,
+                    limit: cachedConversationLimit
+                )
+            }.value
+            syncDiskState.projections[endpointID] = result.projection
+            retainedIDs = result.retainedCardIDs
         }
-        projection.snapshot = try? snapshot.serializedData()
-        syncDiskState.projections[endpointID] = projection
-        if endpointID == endpoint.id { syncProjection = projection }
+        syncStateDirty = true
         markConversationsRefreshed([conversation], endpointID: endpointID, at: refreshedAt)
 
-        let retainedIDs = Set(snapshot.conversations.map { $0.detail.card.id })
         syncDiskState.conversationRefreshedAt[endpointID] =
             syncDiskState.conversationRefreshedAt[endpointID]?.filter { retainedIDs.contains($0.key) }
-        let diskState = syncDiskState
-        Task { [syncPersistence] in try? await syncPersistence.save(diskState) }
+        await scheduleSyncPersistence()
     }
 
     private func rebuildOutboxOverlays() {
@@ -2452,7 +2627,7 @@ final class DieterStore {
                 card.workspaceBranch = request.workspaceBranch
                 card.workspaceBaseBranch = request.workspaceBaseBranch
                 card.runtime = entry.state == .failed ? "failed" : "pending"
-                card.createdAt = ISO8601DateFormatter().string(from: entry.createdAt)
+                card.createdAt = DieterTimestamp.string(from: entry.createdAt)
                 card.updatedAt = card.createdAt
                 if entry.kind == .createChat {
                     if !chats.contains(where: { $0.id == card.id }) { chats.insert(card, at: 0) }
@@ -2476,8 +2651,7 @@ final class DieterStore {
     }
 
     private func reconcileOutboxWithProjection() {
-        guard let raw = syncProjection.snapshot,
-              let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) else { return }
+        guard let snapshot = syncSnapshot else { return }
         let cardIDs = Set((snapshot.state.cards + snapshot.state.chats).map(\.id))
         syncDiskState.outbox.removeAll { entry in
             guard let serverID = entry.serverID else { return false }
@@ -2488,7 +2662,7 @@ final class DieterStore {
 
     private func persistAndDrainOutbox() async {
         rebuildOutboxOverlays()
-        try? await syncPersistence.save(syncDiskState)
+        try? await saveSyncPersistence()
         startOutboxWorker()
     }
 
@@ -2571,7 +2745,7 @@ final class DieterStore {
                         }
                     }
                     self.reconcileOutboxWithProjection()
-                    try? await self.syncPersistence.save(self.syncDiskState)
+                    try? await self.saveSyncPersistence()
                     if shouldOpenCreatedConversation, let serverID = entry.serverID {
                         self.scheduleCreatedConversationOpen(
                             cardID: serverID,
@@ -2599,7 +2773,7 @@ final class DieterStore {
                         )
                     }
                     self.rebuildOutboxOverlays()
-                    try? await self.syncPersistence.save(self.syncDiskState)
+                    try? await self.saveSyncPersistence()
                     let route = self.machineConnectionStatuses[entry.endpointID]?.route.rawValue ?? "Unknown"
                     outboxLogger.error(
                         "operation=\(entry.kind.rawValue, privacy: .public) card=\(entry.serverID ?? entry.optimisticID, privacy: .public) endpoint=\(entry.endpointID, privacy: .public) route=\(route, privacy: .public) status=\((error as? RPCError)?.code.description ?? "non-rpc", privacy: .public) message=\(DieterRPCFailure.message(for: error), privacy: .public) terminal=\(entry.state == .failed, privacy: .public)"
@@ -2636,7 +2810,7 @@ final class DieterStore {
         }
         if changed {
             rebuildOutboxOverlays()
-            try? await syncPersistence.save(syncDiskState)
+            try? await saveSyncPersistence()
         }
         await refreshDaemonPresence()
         startOutboxWorker()
@@ -2652,7 +2826,7 @@ final class DieterStore {
         let entry = syncDiskState.outbox.remove(at: index)
         removeOptimisticOutboxArtifacts(for: [entry])
         rebuildOutboxOverlays()
-        try? await syncPersistence.save(syncDiskState)
+        try? await saveSyncPersistence()
         startOutboxWorker()
     }
 
@@ -2665,7 +2839,7 @@ final class DieterStore {
         guard !removed.isEmpty else { return 0 }
         removeOptimisticOutboxArtifacts(for: removed)
         rebuildOutboxOverlays()
-        try? await syncPersistence.save(syncDiskState)
+        try? await saveSyncPersistence()
         startOutboxWorker()
         return removed.count
     }
@@ -2760,8 +2934,7 @@ final class DieterStore {
 
     func refreshState() async {
         guard let rpc else {
-            if let raw = syncProjection.snapshot,
-               let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) {
+            if let snapshot = syncSnapshot {
                 applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
             }
             return
@@ -2913,7 +3086,7 @@ final class DieterStore {
         }
 
         if let cached = projectedConversation(cardID: cardID, endpointID: endpointID) {
-            acceptConversation(
+            await acceptConversation(
                 cached,
                 chat: opensChat,
                 refreshedAt: conversationRefreshDate(cardID: cardID, endpointID: endpointID),
@@ -2948,7 +3121,7 @@ final class DieterStore {
         do {
             let snapshot = try await rpc.conversation(cardID: cardID, limit: conversationPageSize)
             guard (selectedCardID ?? selectedChatID) == cardID else { return }
-            acceptConversation(snapshot, chat: chat)
+            await acceptConversation(snapshot, chat: chat)
             let after = snapshot.conversation.lastSeq
             conversationTask = Task { [weak self] in
                 do {
@@ -3008,7 +3181,7 @@ final class DieterStore {
         chat: Bool,
         refreshedAt: Date? = Date(),
         cache: Bool = true
-    ) {
+    ) async {
         if conversation != snapshot {
             resetConversationHistory(from: snapshot)
             conversation = snapshot
@@ -3025,7 +3198,7 @@ final class DieterStore {
         composerProviderOptions.merge(snapshot.detail.card.providerOptions) { _, saved in saved }
         if chat, let card = chats.first(where: { $0.id == snapshot.detail.card.id }) { markChatRead(card) }
         if cache, let refreshedAt {
-            cacheConversation(snapshot, endpointID: endpoint.id, refreshedAt: refreshedAt)
+            await cacheConversation(snapshot, endpointID: endpoint.id, refreshedAt: refreshedAt)
         }
     }
 
@@ -3084,12 +3257,12 @@ final class DieterStore {
         conversationHistoryLoading = false
     }
 
-    private func applyConversationUpdate(_ update: Dieter_V1_ConversationUpdate, cardID: String) {
+    private func applyConversationUpdate(_ update: Dieter_V1_ConversationUpdate, cardID: String) async {
         guard (selectedCardID ?? selectedChatID) == cardID else { return }
         apply(update)
         conversationSyncing = false
         if let conversation {
-            cacheConversation(conversation, endpointID: endpoint.id, refreshedAt: Date())
+            await cacheConversation(conversation, endpointID: endpoint.id, refreshedAt: Date())
         }
     }
 
@@ -3262,9 +3435,28 @@ final class DieterStore {
         }
     }
 
+    func toolOutput(
+        messageID: String,
+        toolCallID: String,
+        revision: String
+    ) async throws -> Dieter_V1_ToolOutput? {
+        guard !toolCallID.isEmpty,
+              let cardID = selectedCardID ?? selectedChatID,
+              let rpc else { return nil }
+        var request = Dieter_V1_GetToolOutputRequest()
+        request.cardID = cardID
+        request.messageID = messageID
+        request.toolCallID = toolCallID
+        request.revision = revision
+        return try await rpc.toolOutput(request)
+    }
+
     func addAttachments(_ urls: [URL]) {
-        do { composerAttachments = try attachmentParts(urls, appendingTo: composerAttachments) }
-        catch { show(error) }
+        let existing = composerAttachments
+        Task {
+            do { composerAttachments = try await attachmentParts(urls, appendingTo: existing) }
+            catch { show(error) }
+        }
     }
 
     func addPastedAttachments(_ providers: [NSItemProvider]) {
@@ -3274,71 +3466,38 @@ final class DieterStore {
         }
     }
 
-    func attachmentParts(_ urls: [URL], appendingTo existing: [Dieter_V1_MessagePart] = []) throws -> [Dieter_V1_MessagePart] {
-        guard existing.count + urls.count <= Self.maximumAttachmentCount else {
-            throw DieterAttachmentError.tooMany
-        }
-        var parts = existing
-        for url in urls {
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            let values = try url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey, .isRegularFileKey])
-            guard values.isRegularFile != false else { throw DieterAttachmentError.notAFile(url.lastPathComponent) }
-            if let size = values.fileSize, size > Self.maximumAttachmentBytes { throw DieterAttachmentError.fileTooLarge(url.lastPathComponent) }
-            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-            parts = try appendingAttachment(
-                data: data,
-                filename: url.lastPathComponent,
-                contentType: values.contentType,
-                to: parts
-            )
-        }
-        return parts
+    func attachmentParts(
+        _ urls: [URL],
+        appendingTo existing: [Dieter_V1_MessagePart] = []
+    ) async throws -> [Dieter_V1_MessagePart] {
+        try await attachmentLoader.parts(urls: urls, appendingTo: existing)
     }
 
     func attachmentParts(_ providers: [NSItemProvider], appendingTo existing: [Dieter_V1_MessagePart] = []) async throws -> [Dieter_V1_MessagePart] {
-        guard existing.count + providers.count <= Self.maximumAttachmentCount else {
+        guard existing.count + providers.count <= AttachmentLoader.maximumCount else {
             throw DieterAttachmentError.tooMany
         }
         var parts = existing
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
                let url = try await Self.loadFileURL(provider) {
-                parts = try attachmentParts([url], appendingTo: parts)
+                parts = try await attachmentLoader.parts(urls: [url], appendingTo: parts)
                 continue
             }
             guard let identifier = Self.preferredImageTypeIdentifier(for: provider) else {
                 throw DieterAttachmentError.unsupportedPaste
             }
             let sourceData = try await Self.loadData(provider, typeIdentifier: identifier)
-            let normalized = try Self.normalizedImage(data: sourceData, type: UTType(identifier))
-            let baseName = provider.suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let fallbackName = "Pasted Image \(parts.count + 1)"
-            let resolvedName = baseName.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackName
-            let filename = Self.filename(resolvedName, for: normalized.type)
-            parts = try appendingAttachment(data: normalized.data, filename: filename, contentType: normalized.type, to: parts)
+            parts = try await attachmentLoader.parts(
+                images: [.init(
+                    data: sourceData,
+                    typeIdentifier: identifier,
+                    suggestedName: provider.suggestedName
+                )],
+                appendingTo: parts
+            )
         }
         return parts
-    }
-
-    func appendingAttachment(
-        data: Data,
-        filename: String,
-        contentType: UTType?,
-        to existing: [Dieter_V1_MessagePart] = []
-    ) throws -> [Dieter_V1_MessagePart] {
-        guard existing.count < Self.maximumAttachmentCount else { throw DieterAttachmentError.tooMany }
-        guard !data.isEmpty else { throw DieterAttachmentError.empty(filename) }
-        guard data.count <= Self.maximumAttachmentBytes else { throw DieterAttachmentError.fileTooLarge(filename) }
-        guard existing.reduce(0, { $0 + $1.data.count }) + data.count <= Self.maximumAttachmentTotalBytes else {
-            throw DieterAttachmentError.totalTooLarge
-        }
-        var part = Dieter_V1_MessagePart()
-        part.type = contentType?.conforms(to: .image) == true ? "image" : "file"
-        part.mediaType = contentType?.preferredMIMEType ?? "application/octet-stream"
-        part.filename = filename
-        part.data = data
-        return existing + [part]
     }
 
     /// Attaches whatever attachable content is on the pasteboard to the composer.
@@ -3346,48 +3505,38 @@ final class DieterStore {
     /// so the caller can let the focused text view handle ⌘V normally.
     @discardableResult
     func attachPasteboard(_ pasteboard: NSPasteboard = .general) -> Bool {
-        do {
-            guard let parts = try pasteboardAttachmentParts(pasteboard, appendingTo: composerAttachments) else { return false }
-            composerAttachments = parts
-            return true
-        } catch {
-            show(error)
-            return true
+        guard let input = pasteboardAttachmentInput(pasteboard) else { return false }
+        let existing = composerAttachments
+        Task {
+            do { composerAttachments = try await attachmentParts(input, appendingTo: existing) }
+            catch { show(error) }
         }
+        return true
     }
 
     /// Returns nil when the pasteboard has no files or images to attach.
-    func pasteboardAttachmentParts(
+    func pasteboardAttachmentInput(
         _ pasteboard: NSPasteboard,
-        appendingTo existing: [Dieter_V1_MessagePart] = []
-    ) throws -> [Dieter_V1_MessagePart]? {
+    ) -> AttachmentPasteboardInput? {
         let urls = (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
-        if !urls.isEmpty { return try attachmentParts(urls, appendingTo: existing) }
+        if !urls.isEmpty { return .urls(urls) }
         let payloads = Self.pasteboardImagePayloads(pasteboard)
         guard !payloads.isEmpty else { return nil }
-        guard existing.count + payloads.count <= Self.maximumAttachmentCount else {
-            throw DieterAttachmentError.tooMany
-        }
-        var parts = existing
-        for payload in payloads {
-            let normalized = try Self.normalizedImage(data: payload.data, type: payload.type)
-            let filename = Self.filename("Pasted Image \(parts.count + 1)", for: normalized.type)
-            parts = try appendingAttachment(data: normalized.data, filename: filename, contentType: normalized.type, to: parts)
-        }
-        return parts
+        return .images(payloads.map {
+            AttachmentImageInput(data: $0.data, typeIdentifier: $0.type.identifier, suggestedName: nil)
+        })
     }
 
-    static func normalizedImage(data: Data, type: UTType?) throws -> (data: Data, type: UTType) {
-        if type == .png || type == .jpeg || type == .gif || type == .heic {
-            return (data, type ?? .png)
+    func attachmentParts(
+        _ input: AttachmentPasteboardInput,
+        appendingTo existing: [Dieter_V1_MessagePart] = []
+    ) async throws -> [Dieter_V1_MessagePart] {
+        switch input {
+        case .urls(let urls):
+            try await attachmentLoader.parts(urls: urls, appendingTo: existing)
+        case .images(let images):
+            try await attachmentLoader.parts(images: images, appendingTo: existing)
         }
-        guard let image = NSImage(data: data),
-              let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let png = bitmap.representation(using: .png, properties: [:]) else {
-            throw DieterAttachmentError.invalidImage
-        }
-        return (png, .png)
     }
 
     private static func pasteboardImagePayloads(_ pasteboard: NSPasteboard) -> [(data: Data, type: UTType)] {
@@ -3399,10 +3548,6 @@ final class DieterStore {
             return (data, type)
         }
     }
-
-    private static let maximumAttachmentCount = 4
-    private static let maximumAttachmentBytes = 5 * 1_024 * 1_024
-    private static let maximumAttachmentTotalBytes = 6 * 1_024 * 1_024
 
     private static func preferredImageTypeIdentifier(for provider: NSItemProvider) -> String? {
         let preferred = [UTType.png, .jpeg, .gif, .heic, .tiff]
@@ -4241,10 +4386,37 @@ final class DieterStore {
     }
 
     func createBoard(name: String, workflow: String, description: String, doneArchivePolicy: String) async {
-        guard let rpc else { return }
-        var request = Dieter_V1_CreateBoardRequest(); request.projectID = selectedProjectID
-        request.name = name; request.workflow = workflow; request.description_p = description; request.doneArchivePolicy = doneArchivePolicy
-        do { let board = try await rpc.createBoard(request); createBoardPresented = false; selectedBoardID = board.id; section = .board; await refreshState(); await refreshNavigation() } catch { show(error) }
+        do {
+            guard let board = try await createBoard(
+                projectID: selectedProjectID,
+                name: name,
+                workflow: workflow,
+                description: description,
+                doneArchivePolicy: doneArchivePolicy
+            ) else { return }
+            createBoardPresented = false
+            selectedBoardID = board.id
+            section = .board
+            await refreshState()
+            await refreshNavigation()
+        } catch { show(error) }
+    }
+
+    func createBoard(
+        projectID: String,
+        name: String,
+        workflow: String,
+        description: String = "",
+        doneArchivePolicy: String
+    ) async throws -> Dieter_V1_Board? {
+        guard let rpc else { return nil }
+        var request = Dieter_V1_CreateBoardRequest()
+        request.projectID = projectID
+        request.name = name
+        request.workflow = workflow
+        request.description_p = description
+        request.doneArchivePolicy = doneArchivePolicy
+        return try await rpc.createBoard(request)
     }
 
     func renameBoard(id: String, name: String) async {
@@ -4364,19 +4536,23 @@ final class DieterStore {
     func openFile(path: String) async {
         guard let rpc else { return }
         var request = Dieter_V1_ReadFileRequest(); request.projectID = selectedProjectID; request.path = path; request.cardID = fileScopeCardID ?? ""
-        do { let doc = try await rpc.readFile(request); fileDocument = doc; fileEditorText = doc.content } catch { show(error) }
+        do { fileDocument = try await rpc.readFile(request) } catch { show(error) }
     }
 
-    func saveFile() async {
-        guard let rpc, let doc = fileDocument else { return }
+    @discardableResult
+    func saveFile(content: String) async -> Dieter_V1_FileDocument? {
+        guard let rpc, let doc = fileDocument else { return nil }
         var request = Dieter_V1_SaveFileRequest(); request.projectID = selectedProjectID; request.path = doc.path; request.cardID = fileScopeCardID ?? ""
-        request.content = fileEditorText; request.revision = doc.revision
+        request.content = content; request.revision = doc.revision
         do {
             var saved = try await rpc.saveFile(request)
             if saved.mimeType.isEmpty { saved.mimeType = doc.mimeType }
             fileDocument = saved
-            fileEditorText = saved.content
-        } catch { show(error) }
+            return saved
+        } catch {
+            show(error)
+            return nil
+        }
     }
 
     func createFile(path: String, directory: Bool) async {
@@ -4492,6 +4668,74 @@ final class DieterStore {
 
     func deleteSchedule(_ schedule: Dieter_V1_Schedule) async {
         do { try await rpc?.deleteSchedule(id: schedule.id); selectedScheduleID = nil; await loadSchedules() } catch { show(error) }
+    }
+
+    func previewSchedule(cron: String, timezone: String, count: Int32 = 5) async throws -> [String]? {
+        guard let rpc, !cron.isEmpty, !timezone.isEmpty else { return nil }
+        var request = Dieter_V1_PreviewScheduleRequest()
+        request.cron = cron
+        request.timezone = timezone
+        request.count = count
+        return try await rpc.previewSchedule(request).times
+    }
+
+    func loadPromptSettings() async throws -> Dieter_V1_PromptSettings? {
+        guard let rpc else { return nil }
+        return try await rpc.promptSettings()
+    }
+
+    func updatePromptSettings(_ value: Dieter_V1_PromptSettings) async throws -> Dieter_V1_PromptSettings? {
+        guard let rpc else { return nil }
+        var request = Dieter_V1_UpdatePromptSettingsRequest()
+        request.promptTemplate = value.promptTemplate
+        request.boardSkillTemplate = value.boardSkillTemplate
+        request.chatSkillTemplate = value.chatSkillTemplate
+        return try await rpc.updatePromptSettings(request)
+    }
+
+    @discardableResult
+    func setSelectedProjectPromptTemplate(inherit: Bool, template: String) async throws -> Bool {
+        guard let rpc, let project = selectedProject else { return false }
+        var request = Dieter_V1_SetScopedPromptTemplateRequest()
+        request.scopeID = project.id
+        request.inherit = inherit
+        request.promptTemplate = template
+        acceptProject(try await rpc.setProjectPromptTemplate(request))
+        return true
+    }
+
+    @discardableResult
+    func setSelectedBoardPromptTemplate(inherit: Bool, template: String) async throws -> Bool {
+        guard let rpc, let board = selectedBoard else { return false }
+        var request = Dieter_V1_SetScopedPromptTemplateRequest()
+        request.scopeID = board.id
+        request.inherit = inherit
+        request.promptTemplate = template
+        acceptBoard(try await rpc.setBoardPromptTemplate(request))
+        return true
+    }
+
+    @discardableResult
+    func updatePromptInstructions(for label: Dieter_V1_Label, instructions: String) async throws -> Bool {
+        guard let rpc, let board = selectedBoard else { return false }
+        var request = Dieter_V1_UpdateBoardLabelRequest()
+        request.boardID = board.id
+        request.labelID = label.id
+        request.name = label.name
+        request.color = label.color
+        request.instructions = instructions
+        acceptBoard(try await rpc.updateBoardLabel(request))
+        return true
+    }
+
+    func previewPrompt(labelIDs: Set<String>) async throws -> Dieter_V1_PromptPreview? {
+        guard let rpc, let project = selectedProject else { return nil }
+        var request = Dieter_V1_PreviewPromptRequest()
+        request.projectID = project.id
+        request.boardID = selectedBoard?.id ?? ""
+        request.scope = request.boardID.isEmpty ? "chat" : "board"
+        request.labelIds = Array(labelIDs)
+        return try await rpc.previewPrompt(request)
     }
 
     func updateLimits(global: Int, agents: [String: Int], boards: [String: Int]) async {

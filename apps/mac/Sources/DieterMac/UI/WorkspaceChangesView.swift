@@ -849,17 +849,20 @@ private struct WorkspaceDiffContent: View {
     let addComment: (UnifiedDiffLine) -> Void
     let loadMore: () -> Void
 
-    @State private var rows: [WorkspaceDiffRow] = []
+    @State private var projection = WorkspaceDiffProjection()
     @State private var builtKey = ""
     @State private var expandedFolds: Set<Int> = []
 
-    private var buildKey: String { "\(diff.path)|\(diff.commitSha)|\(split)|\(diff.patch.count)" }
+    private var buildKey: String {
+        let commentRevision = comments.map { "\($0.id):\($0.revision)" }.joined(separator: ",")
+        return "\(diff.path)|\(diff.commitSha)|\(diff.revision)|\(split)|\(diff.nextOffset)|\(diff.totalBytes)|\(commentRevision)"
+    }
 
     var body: some View {
         GeometryReader { viewport in
             ScrollView(split ? .vertical : [.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(rows) { row in
+                    ForEach(projection.rows) { row in
                         diffRow(row, viewportWidth: max(0, viewport.size.width))
                     }
                     if diff.truncated {
@@ -877,12 +880,22 @@ private struct WorkspaceDiffContent: View {
         }
         .task(id: buildKey) {
             guard builtKey != buildKey else { return }
-            let lines = UnifiedDiffParser.parse(diff.patch)
-            // Whole-commit patches span files; keep their boundaries visible.
-            let fileRows = diff.path.isEmpty && !diff.commitSha.isEmpty
-            rows = split
-                ? WorkspaceDiffDisplay.splitRows(lines, fileRows: fileRows)
-                : WorkspaceDiffDisplay.inlineRows(lines, fileRows: fileRows)
+            let patch = diff.patch
+            let path = diff.path
+            let commitSHA = diff.commitSha
+            let split = split
+            let comments = comments
+            let next = await Task.detached(priority: .userInitiated) {
+                WorkspaceDiffProjection.build(
+                    patch: patch,
+                    path: path,
+                    commitSHA: commitSHA,
+                    split: split,
+                    comments: comments
+                )
+            }.value
+            guard !Task.isCancelled else { return }
+            projection = next
             builtKey = buildKey
             expandedFolds = []
         }
@@ -973,9 +986,7 @@ private struct WorkspaceDiffContent: View {
     }
 
     private func commentsFor(_ line: UnifiedDiffLine) -> [Dieter_V1_ChangeComment] {
-        let side = line.kind == .deletion ? "old" : "new"
-        let number = line.kind == .deletion ? line.oldLine : line.newLine
-        return comments.filter { $0.side == side && $0.line == Int32(number ?? -1) }
+        projection.commentsByLine[WorkspaceDiffCommentKey(line)] ?? []
     }
 }
 

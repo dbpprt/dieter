@@ -330,8 +330,7 @@ struct ChatRow: View {
 
 enum ChatActivityText {
     static func compact(_ value: String, relativeTo now: Date = Date()) -> String {
-        let precise = ISO8601DateFormatter(); precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let date = precise.date(from: value) ?? ISO8601DateFormatter().date(from: value) else { return "" }
+        guard let date = DieterTimestamp.date(from: value) else { return "" }
         let seconds = max(0, Int(now.timeIntervalSince(date)))
         switch seconds {
         case ..<60: return "now"
@@ -493,26 +492,11 @@ private struct StandaloneChatStartView: View {
             .padding(16).background(DieterTheme.sidebar)
         }
         .background(DieterTheme.background)
-        .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-            do { attachments = try store.attachmentParts(try result.get(), appendingTo: attachments) }
-            catch { store.show(error) }
-        }
-        .onPasteCommand(of: [.image, .fileURL]) { providers in
-            Task {
-                do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
-                catch { store.show(error) }
-            }
-        }
-        .attachmentPasteCatcher { pasteboard in
-            do {
-                guard let parts = try store.pasteboardAttachmentParts(pasteboard, appendingTo: attachments) else { return false }
-                attachments = parts
-                return true
-            } catch {
-                store.show(error)
-                return true
-            }
-        }
+        .attachmentIntake(
+            store: store,
+            importerPresented: $fileImporterPresented,
+            attachments: $attachments
+        )
         .onAppear { chooseDefaults() }
         .onChange(of: store.newChatProjectID) { _, value in if !value.isEmpty { projectID = value } }
     }

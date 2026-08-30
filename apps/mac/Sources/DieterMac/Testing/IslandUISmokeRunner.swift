@@ -25,9 +25,7 @@ enum IslandUISmokeRunner {
             capture(window, to: output.appending(path: "island-expanded.png"))
         }
 
-        controller.setExpanded(false, animated: false)
         store.state.cards = Array(store.state.cards.prefix(1))
-        controller.setExpanded(true, animated: false)
         try? await DieterTaskSleep.milliseconds(600)
         let singleItemSize = controller.islandWindow?.frame.size ?? .zero
         let singleItemExpanded = controller.isExpanded && singleItemSize == CGSize(width: 600, height: 302)
@@ -35,9 +33,7 @@ enum IslandUISmokeRunner {
             capture(window, to: output.appending(path: "island-expanded-single.png"))
         }
 
-        controller.setExpanded(false, animated: false)
         store.state.cards = []
-        controller.setExpanded(true, animated: false)
         try? await DieterTaskSleep.milliseconds(600)
         let emptySize = controller.islandWindow?.frame.size ?? .zero
         let emptyExpanded = controller.isExpanded && emptySize == CGSize(width: 600, height: 324)
@@ -89,7 +85,7 @@ enum IslandUISmokeRunner {
     }
 
     private static func installFixture(in store: DieterStore) {
-        let now = ISO8601DateFormatter().string(from: Date())
+        let now = DieterTimestamp.string(from: Date())
         var board = Dieter_V1_Board(); board.id = "island-board"; board.name = "Mac polish"
         var running = Dieter_V1_Card()
         running.id = "island-running"; running.boardID = board.id; running.title = "Polish the Dieter Island"

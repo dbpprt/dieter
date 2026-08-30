@@ -39,6 +39,49 @@ struct WorkspaceSplitPair: Identifiable, Equatable, Sendable {
     let new: UnifiedDiffLine?
 }
 
+struct WorkspaceDiffCommentKey: Hashable, Sendable {
+    let side: String
+    let line: Int32
+
+    init(side: String, line: Int32) {
+        self.side = side
+        self.line = line
+    }
+
+    init(_ line: UnifiedDiffLine) {
+        side = line.kind == .deletion ? "old" : "new"
+        self.line = Int32((line.kind == .deletion ? line.oldLine : line.newLine) ?? -1)
+    }
+}
+
+/// Immutable work product for the diff surface. Parsing, folding, pairing, and
+/// comment indexing can all happen away from the main actor, leaving SwiftUI
+/// with a single projection assignment per revision.
+struct WorkspaceDiffProjection: Sendable {
+    var rows: [WorkspaceDiffRow] = []
+    var commentsByLine: [WorkspaceDiffCommentKey: [Dieter_V1_ChangeComment]] = [:]
+
+    static func build(
+        patch: String,
+        path: String,
+        commitSHA: String,
+        split: Bool,
+        comments: [Dieter_V1_ChangeComment]
+    ) -> WorkspaceDiffProjection {
+        MacPerformanceSignposts.measure("Diff projection", log: MacPerformanceSignposts.projection) {
+        let lines = UnifiedDiffParser.parse(patch)
+        let fileRows = path.isEmpty && !commitSHA.isEmpty
+        let rows = split
+            ? WorkspaceDiffDisplay.splitRows(lines, fileRows: fileRows)
+            : WorkspaceDiffDisplay.inlineRows(lines, fileRows: fileRows)
+        let commentsByLine = Dictionary(grouping: comments) {
+            WorkspaceDiffCommentKey(side: $0.side, line: $0.line)
+        }
+        return WorkspaceDiffProjection(rows: rows, commentsByLine: commentsByLine)
+        }
+    }
+}
+
 enum WorkspaceDiffDisplay {
     /// Context runs longer than this fold down to their edges.
     static let foldThreshold = 16
@@ -345,10 +388,7 @@ struct PullRequestPresentation: Equatable, Sendable {
 
 enum WorkspaceRelativeTime {
     static func parse(_ value: String) -> Date? {
-        guard !value.isEmpty else { return nil }
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        DieterTimestamp.date(from: value)
     }
 
     /// Compact "41s ago" / "2m ago" / "1h ago" / "3d ago" stamps for rows.

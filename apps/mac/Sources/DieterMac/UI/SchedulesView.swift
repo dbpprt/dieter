@@ -490,10 +490,9 @@ struct ScheduleEditor: View {
     }
 
     private func previewRuns() async {
-        guard let rpc = store.rpc, !cron.isEmpty, !draft.timezone.isEmpty else { return }
-        var request = Dieter_V1_PreviewScheduleRequest(); request.cron = cron; request.timezone = draft.timezone; request.count = 5
+        guard !cron.isEmpty, !draft.timezone.isEmpty else { return }
         do {
-            preview = try await rpc.previewSchedule(request).times
+            preview = try await store.previewSchedule(cron: cron, timezone: draft.timezone) ?? []
             previewError = ""
         } catch {
             preview = []
@@ -696,7 +695,7 @@ enum ScheduleDateFormatting {
     }
 
     private static func format(_ value: String, timezone: String, pattern: String) -> String {
-        guard let date = ISO8601DateFormatter().date(from: value) else { return value }
+        guard let date = DieterTimestamp.date(from: value) else { return value }
         let formatter = DateFormatter(); formatter.dateFormat = pattern
         formatter.timeZone = TimeZone(identifier: timezone) ?? .current
         return formatter.string(from: date)
@@ -716,9 +715,9 @@ enum ScheduleTemplateRenderer {
     }
 
     static func variables(scheduledAt: String?, timezone: String, project: String, board: String, schedule: String) -> [String: String] {
-        let instant = scheduledAt.flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date()
+        let instant = scheduledAt.flatMap { DieterTimestamp.date(from: $0) } ?? Date()
         let dateFormatter = DateFormatter(); dateFormatter.dateFormat = "yyyy-MM-dd"; dateFormatter.timeZone = TimeZone(identifier: timezone) ?? .current
-        let exact = scheduledAt ?? ISO8601DateFormatter().string(from: instant)
+        let exact = scheduledAt ?? DieterTimestamp.string(from: instant)
         return ["date": dateFormatter.string(from: instant), "scheduled_at": exact, "project": project, "board": board, "schedule": schedule]
     }
 

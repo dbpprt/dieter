@@ -238,6 +238,7 @@ interface DieterRepository {
         provider: String = "",
         model: String = "",
         effort: String = "",
+        providerOptions: Map<String, String> = emptyMap(),
     ): SendMessageResponse
     suspend fun sendMessage(request: SendMessageRequest): SendMessageResponse
     suspend fun addComment(cardId: String, text: String, name: String = "You"): Comment
@@ -630,6 +631,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         provider: String,
         model: String,
         effort: String,
+        providerOptions: Map<String, String>,
     ): SendMessageResponse = sendMessage(
         SendMessageRequest.newBuilder()
             .setCardId(cardId)
@@ -637,6 +639,7 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
             .setProvider(provider)
             .setModel(model)
             .setEffort(effort)
+            .putAllProviderOptions(providerOptions)
             .build(),
     )
 

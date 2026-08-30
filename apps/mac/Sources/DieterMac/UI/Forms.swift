@@ -198,26 +198,11 @@ struct NewConversationSheet: View {
                 draft: $workspaceDraft
             )
         }
-        .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
-            do { attachments = try store.attachmentParts(try result.get(), appendingTo: attachments) }
-            catch { store.show(error) }
-        }
-        .onPasteCommand(of: [.image, .fileURL]) { providers in
-            Task {
-                do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
-                catch { store.show(error) }
-            }
-        }
-        .attachmentPasteCatcher { pasteboard in
-            do {
-                guard let parts = try store.pasteboardAttachmentParts(pasteboard, appendingTo: attachments) else { return false }
-                attachments = parts
-                return true
-            } catch {
-                store.show(error)
-                return true
-            }
-        }
+        .attachmentIntake(
+            store: store,
+            importerPresented: $fileImporterPresented,
+            attachments: $attachments
+        )
         .task {
             chooseDefaults()
             await Task.yield()

@@ -137,6 +137,36 @@ enum MachinePresenceText {
         return age >= 0 && age < offlineAfter
     }
 
+    static func expirationDate(_ value: String) -> Date? {
+        parse(value)?.addingTimeInterval(offlineAfter)
+    }
+
+    static func applyingExpirations(
+        to endpoints: [DieterEndpoint],
+        relativeTo now: Date = Date()
+    ) -> [DieterEndpoint] {
+        endpoints.map { machine in
+            guard machine.daemonID != nil,
+                  machine.online,
+                  !machine.lastSeenAt.isEmpty,
+                  !isFresh(machine.lastSeenAt, relativeTo: now) else { return machine }
+            var expired = machine
+            expired.online = false
+            return expired
+        }
+    }
+
+    static func nextExpiration(
+        in endpoints: [DieterEndpoint],
+        relativeTo now: Date = Date()
+    ) -> Date? {
+        endpoints.lazy
+            .filter { $0.daemonID != nil && $0.online }
+            .compactMap { expirationDate($0.lastSeenAt) }
+            .filter { $0 > now }
+            .min()
+    }
+
     static func freshestAge(_ values: [String], relativeTo now: Date = Date()) -> String? {
         guard let date = values.compactMap(parse).max() else { return nil }
         let seconds = max(0, Int(now.timeIntervalSince(date)))
@@ -160,8 +190,6 @@ enum MachinePresenceText {
     }
 
     private static func parse(_ value: String) -> Date? {
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        DieterTimestamp.date(from: value)
     }
 }
