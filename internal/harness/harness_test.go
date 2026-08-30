@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -32,7 +35,15 @@ func TestEmbeddedRuntimeAssets(t *testing.T) {
 	if err := stageRuntimeAssets(destination); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"runtime/package.json", "runtime/package-lock.json", "runtime/runner.mjs", "runtime/claude-resilience.mjs", "runtime/local-attachments.mjs", "runtime/local-sandbox.mjs", "runtime/capabilities.mjs", "runtime/stream-reconciliation.mjs", "runtime/omp-capabilities-hook.mjs", "runtime/provider-options.mjs"} {
+	entries, err := runtimeAssets.ReadDir("runtime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := "runtime/" + entry.Name()
 		data, err := runtimeAssets.ReadFile(name)
 		if err != nil || len(data) == 0 {
 			t.Fatalf("asset %s: %v", name, err)
@@ -49,6 +60,35 @@ func TestEmbeddedRuntimeAssets(t *testing.T) {
 	data, _ := runtimeAssets.ReadFile("runtime/package.json")
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEmbeddedRuntimeContainsLocalModuleClosure(t *testing.T) {
+	imports := regexp.MustCompile(`(?:from\s+|import\s*\()\s*['"](\./[^'"]+)['"]`)
+	queue := []string{"runtime/runner.mjs"}
+	seen := map[string]bool{}
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		data, err := runtimeAssets.ReadFile(name)
+		if err != nil {
+			t.Fatalf("embedded runtime dependency %s: %v", name, err)
+		}
+		for _, match := range imports.FindAllSubmatch(data, -1) {
+			dependency := path.Clean(path.Join(path.Dir(name), string(match[1])))
+			if path.Ext(dependency) == "" {
+				dependency += ".mjs"
+			}
+			if _, err := fs.Stat(runtimeAssets, dependency); err != nil {
+				t.Errorf("%s imports unstaged local module %s: %v", name, dependency, err)
+				continue
+			}
+			queue = append(queue, dependency)
+		}
 	}
 }
 
@@ -296,7 +336,14 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(runtimeDir, "node_modules")); err != nil {
 		t.Skip("local harness dependencies are not installed")
 	}
-	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
+	stagedRuntime := t.TempDir()
+	if err := stageRuntimeAssets(stagedRuntime); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(runtimeDir, "node_modules"), filepath.Join(stagedRuntime, "node_modules")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", stagedRuntime)
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)

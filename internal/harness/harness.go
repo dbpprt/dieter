@@ -486,7 +486,7 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/provider-options.mjs
+//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {
@@ -634,7 +634,16 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	if _, err := stdin.Write(append(encoded, '\n')); err != nil {
 		_ = stdin.Close()
 		_ = command.Process.Kill()
-		return err
+		waitErr := command.Wait()
+		waited = true
+		message := strings.TrimSpace(stderr.String())
+		if message == "" && waitErr != nil {
+			message = waitErr.Error()
+		}
+		if message == "" {
+			message = err.Error()
+		}
+		return fmt.Errorf("start harness worker: %s", message)
 	}
 	_ = stdin.Close()
 	scanner := bufio.NewScanner(stdout)
