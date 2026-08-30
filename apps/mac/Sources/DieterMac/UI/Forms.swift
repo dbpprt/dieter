@@ -20,7 +20,6 @@ struct NewConversationSheet: View {
     @State private var attachmentDropTargeted = false
     @State private var submitting = false
     @State private var workspaceDraft = ConversationWorkspaceDraft()
-    @State private var workspaceAdvanced = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case title, prompt }
@@ -122,70 +121,37 @@ struct NewConversationSheet: View {
                         }
                     }
 
-                    HStack(alignment: .top, spacing: 11) {
-                        newCardMenu(title: "Start in", value: laneTitle, symbol: "arrow.right.circle") {
-                            ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { item in
-                                Button(item.name) { lane = item.id }
-                            }
-                        }
-                        newCardWorkspaceButton
-                        newCardMenu(title: "Provider", value: harness?.name ?? "Server default", symbol: "cpu") {
-                            ForEach(store.harnessCatalog.harnesses, id: \.id) { item in
-                                Button(item.name) {
-                                    provider = item.id; model = item.defaultModel
-                                    effort = item.models.first(where: { $0.id == item.defaultModel })?.defaultEffort ?? ""
-                                    providerOptions = ProviderOptionValues.defaults(for: item)
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(alignment: .top, spacing: 11) {
+                            newCardMenu(title: "Start in", value: laneTitle, symbol: "arrow.right.circle") {
+                                ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { item in
+                                    Button(item.name) { lane = item.id }
                                 }
                             }
-                        }
-                        newCardMenu(title: "Model", value: selectedModel?.name ?? "Agent default", symbol: "terminal") {
-                            ForEach(harness?.models ?? [], id: \.id) { item in
-                                Button(item.name) { model = item.id; effort = item.defaultEffort }
-                            }
-                        }
-                        newCardMenu(title: "Reasoning", value: effort.isEmpty ? "Default" : effort.capitalized, symbol: "sparkles") {
-                            ForEach(selectedModel?.efforts ?? [], id: \.self) { value in
-                                Button(value.capitalized) { effort = value }
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 9) {
-                        HStack(alignment: .bottom, spacing: 11) {
-                            newCardMenu(
-                                title: "Workspace",
-                                value: workspaceDraft.mode.title,
-                                symbol: workspaceDraft.mode.symbol
-                            ) {
-                                ForEach(ConversationWorkspaceMode.allCases) { mode in
-                                    Button(mode.title) { workspaceDraft.mode = mode }
+                            newCardWorkspaceButton
+                            newCardMenu(title: "Provider", value: harness?.name ?? "Server default", symbol: "cpu") {
+                                ForEach(store.harnessCatalog.harnesses, id: \.id) { item in
+                                    Button(item.name) {
+                                        provider = item.id; model = item.defaultModel
+                                        effort = item.models.first(where: { $0.id == item.defaultModel })?.defaultEffort ?? ""
+                                        providerOptions = ProviderOptionValues.defaults(for: item)
+                                    }
                                 }
                             }
-                            if workspaceDraft.mode == .worktree {
-                                Button(workspaceAdvanced ? "Hide details" : "Worktree details…") {
-                                    workspaceAdvanced.toggle()
+                            newCardMenu(title: "Model", value: selectedModel?.name ?? "Agent default", symbol: "terminal") {
+                                ForEach(harness?.models ?? [], id: \.id) { item in
+                                    Button(item.name) { model = item.id; effort = item.defaultEffort }
                                 }
-                                .buttonStyle(DieterSecondaryButtonStyle())
+                            }
+                            newCardMenu(title: "Reasoning", value: effort.isEmpty ? "Default" : effort.capitalized, symbol: "sparkles") {
+                                ForEach(selectedModel?.efforts ?? [], id: \.self) { value in
+                                    Button(value.capitalized) { effort = value }
+                                }
                             }
                         }
                         Text(workspaceDraft.mode.detail)
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                        if workspaceAdvanced && workspaceDraft.mode == .worktree {
-                            HStack(spacing: 11) {
-                                TextField("Generated branch name", text: $workspaceDraft.branch)
-                                    .textFieldStyle(.plain).padding(.horizontal, 11).frame(height: 36)
-                                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
-                                    .accessibilityIdentifier("new-card.workspace-branch")
-                                TextField("Project base branch", text: $workspaceDraft.baseBranch)
-                                    .textFieldStyle(.plain).padding(.horizontal, 11).frame(height: 36)
-                                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
-                                    .accessibilityIdentifier("new-card.workspace-base-branch")
-                            }
-                        }
                     }
-                    .accessibilityIdentifier("new-card.workspace")
 
                     if !(harness?.options ?? []).isEmpty {
                         HStack(spacing: 7) {
@@ -224,7 +190,7 @@ struct NewConversationSheet: View {
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
-        .frame(width: 700, height: 820)
+        .frame(width: 700, height: 660)
         .background(DieterTheme.background)
         .sheet(isPresented: $workspacePickerPresented) {
             ConversationWorkspacePickerSheet(
@@ -284,9 +250,11 @@ struct NewConversationSheet: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 7, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
                 }
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(DieterTheme.text)
-                .padding(.horizontal, 1).frame(height: 38)
-                .contentShape(Rectangle())
+                .font(.system(size: 11, weight: .semibold)).foregroundStyle(DieterTheme.text)
+                .padding(.horizontal, 10).frame(height: 38)
+                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("new-card.workspace")
@@ -312,6 +280,8 @@ struct NewConversationSheet: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+            // The borderless menu style strips background/overlay chrome from its
+            // label, so the field chrome has to live on the Menu itself.
             Menu(content: content) {
                 HStack(spacing: 7) {
                     Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.shell)
@@ -320,11 +290,14 @@ struct NewConversationSheet: View {
                     Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
                 }
                 .font(.system(size: 11, weight: .medium)).foregroundStyle(DieterTheme.subtle)
-                .padding(.horizontal, 10).frame(height: 38)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
         }
         .frame(maxWidth: .infinity)
     }

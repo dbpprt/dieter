@@ -339,6 +339,10 @@ enum NativeUISmokeRunner {
         results["11-settings-prompts"] = "passed"
 
         store.section = .board
+        // A pending error alert from an earlier step blocks any further sheet
+        // presentation on the same window; dismiss it before opening sheets.
+        store.errorMessage = nil
+        try? await DieterTaskSleep.milliseconds(350)
         store.labelsPresented = true
         try? await DieterTaskSleep.milliseconds(700)
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
@@ -358,12 +362,14 @@ enum NativeUISmokeRunner {
         store.phase = connectedPhase
         try? await DieterTaskSleep.milliseconds(350)
 
+        store.errorMessage = nil
+        try? await DieterTaskSleep.milliseconds(350)
         store.createConversationPresented = true
         try? await DieterTaskSleep.milliseconds(700)
         if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
             await captureAppearances(sheet, named: "13-new-card.png", in: output)
             results["13-new-card"] = "passed"
-            click(window: sheet, x: 190, distanceFromTop: 400)
+            click(window: sheet, x: 217, distanceFromTop: 425)
             try? await DieterTaskSleep.milliseconds(700)
             if let picker = NSApp.windows.first(where: {
                 $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
