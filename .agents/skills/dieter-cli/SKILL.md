@@ -169,12 +169,16 @@ dieter terminal close <terminal-id>
 
 Schedule occurrence records are authoritative. Running a schedule creates a
 real occurrence and may start an agent, so inspect the definition and recent
-runs first:
+runs first. Schedule definitions and occurrence history are returned as
+bounded pages (50 by default, 100 maximum); pass the opaque `NEXT PAGE` token
+back with `--page-token` to continue:
 
 ```sh
-dieter schedule list --project <project-id> --format jsonl
+dieter schedule list --project <project-id> --page-size 50 --format json
+dieter schedule list --project <project-id> --page-token <token> --format json
 dieter schedule show <schedule-id>
-dieter schedule runs <schedule-id>
+dieter schedule runs <schedule-id> --page-size 50
+dieter schedule runs <schedule-id> --page-token <token>
 dieter schedule run <schedule-id>
 dieter schedule pause <schedule-id>
 dieter schedule resume <schedule-id>

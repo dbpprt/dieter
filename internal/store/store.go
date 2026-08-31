@@ -2,6 +2,7 @@ package store
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -22,6 +23,9 @@ var (
 
 type Store struct {
 	Root string
+
+	scheduleDBMu sync.Mutex
+	scheduleDB   *sql.DB
 }
 
 func DefaultRoot() string {
@@ -120,20 +124,22 @@ func (s *Store) beginWrite() (func(), error) {
 	return release, nil
 }
 
-func (s *Store) projectDir() string       { return filepath.Join(s.Root, "projects") }
-func (s *Store) boardDir() string         { return filepath.Join(s.Root, "boards") }
-func (s *Store) cardDir() string          { return filepath.Join(s.Root, "cards") }
-func (s *Store) commentDir() string       { return filepath.Join(s.Root, "comments") }
-func (s *Store) conversationDir() string  { return filepath.Join(s.Root, "conversations") }
-func (s *Store) runtimeDir() string       { return filepath.Join(s.Root, "runtime") }
-func (s *Store) scheduleDir() string      { return filepath.Join(s.Root, "schedules") }
-func (s *Store) scheduleRunDir() string   { return filepath.Join(s.Root, "schedule-runs") }
-func (s *Store) authDir() string          { return filepath.Join(s.Root, "auth") }
-func (s *Store) workspaceDir() string     { return filepath.Join(s.Root, "workspaces") }
-func (s *Store) gitOperationDir() string  { return filepath.Join(s.Root, "git-operations") }
-func (s *Store) pullRequestDir() string   { return filepath.Join(s.Root, "pull-requests") }
-func (s *Store) changeCommentDir() string { return filepath.Join(s.Root, "change-comments") }
-func (s *Store) recoveryDir() string      { return filepath.Join(s.Root, "recovery") }
+func (s *Store) projectDir() string      { return filepath.Join(s.Root, "projects") }
+func (s *Store) boardDir() string        { return filepath.Join(s.Root, "boards") }
+func (s *Store) cardDir() string         { return filepath.Join(s.Root, "cards") }
+func (s *Store) commentDir() string      { return filepath.Join(s.Root, "comments") }
+func (s *Store) conversationDir() string { return filepath.Join(s.Root, "conversations") }
+func (s *Store) runtimeDir() string      { return filepath.Join(s.Root, "runtime") }
+func (s *Store) scheduleDir() string     { return filepath.Join(s.Root, "schedules") }
+func (s *Store) scheduleRunDir() string  { return filepath.Join(s.Root, "schedule-runs") }
+
+func (s *Store) scheduleDatabasePath() string { return filepath.Join(s.Root, "schedules.db") }
+func (s *Store) authDir() string              { return filepath.Join(s.Root, "auth") }
+func (s *Store) workspaceDir() string         { return filepath.Join(s.Root, "workspaces") }
+func (s *Store) gitOperationDir() string      { return filepath.Join(s.Root, "git-operations") }
+func (s *Store) pullRequestDir() string       { return filepath.Join(s.Root, "pull-requests") }
+func (s *Store) changeCommentDir() string     { return filepath.Join(s.Root, "change-comments") }
+func (s *Store) recoveryDir() string          { return filepath.Join(s.Root, "recovery") }
 
 func (s *Store) settingsPath() string { return filepath.Join(s.Root, "settings.yaml") }
 

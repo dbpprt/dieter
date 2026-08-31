@@ -74,16 +74,12 @@ func (api *grpcAPI) globalSnapshot(limit, recent int, previous *syncProjection) 
 	// The four independent roots are loaded concurrently. GlobalState itself
 	// scans each workspace directory once, instead of once per project.
 	var state model.State
-	var schedules []model.Schedule
-	var runs []model.ScheduleRun
 	var settings model.Settings
-	errs := make([]error, 4)
+	errs := make([]error, 2)
 	var roots sync.WaitGroup
-	roots.Add(4)
+	roots.Add(2)
 	go func() { defer roots.Done(); state, errs[0] = api.server.store.GlobalState() }()
-	go func() { defer roots.Done(); schedules, errs[1] = api.server.store.ListSchedules("") }()
-	go func() { defer roots.Done(); runs, errs[2] = api.server.store.ListScheduleRuns("", 0) }()
-	go func() { defer roots.Done(); settings, errs[3] = api.server.store.Settings() }()
+	go func() { defer roots.Done(); settings, errs[1] = api.server.store.Settings() }()
 	roots.Wait()
 	for _, err := range errs {
 		if err != nil {
@@ -93,19 +89,6 @@ func (api *grpcAPI) globalSnapshot(limit, recent int, previous *syncProjection) 
 
 	protoState := protoState(state)
 	snapshot := &dieterv1.GlobalSnapshot{State: protoState, Settings: protoSettings(settings)}
-	runsBySchedule := make(map[string][]model.ScheduleRun, len(schedules))
-	for _, run := range runs {
-		if len(runsBySchedule[run.ScheduleID]) < 20 {
-			runsBySchedule[run.ScheduleID] = append(runsBySchedule[run.ScheduleID], run)
-		}
-	}
-	for _, schedule := range schedules {
-		snapshot.Schedules = append(snapshot.Schedules, protoSchedule(schedule))
-		for _, run := range runsBySchedule[schedule.ID] {
-			snapshot.ScheduleRuns = append(snapshot.ScheduleRuns, protoScheduleRun(run))
-		}
-	}
-
 	projection := &syncProjection{snapshot: snapshot, conversationRevisions: make(map[string]string)}
 	if limit <= 0 {
 		return projection, nil

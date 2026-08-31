@@ -103,7 +103,16 @@ Run `dieter --help` for the complete surface and
 `dieter help <group> <action>` for command-specific flags. Projects, cards and
 chats, files, terminals, workspaces and Git operations, schedules, prompts,
 admission settings, screen signaling, and machine control all use the same
-daemon API as the native apps.
+daemon API as the native apps. Schedule lists and occurrence history use
+bounded, cursor-paginated queries so high-frequency schedules do not make
+native views or CLI calls grow with all retained history:
+
+```sh
+dieter schedule list --project <project-id> --page-size 50
+dieter schedule runs <schedule-id> --page-size 50
+# Continue either command with the opaque NEXT PAGE value it returned:
+dieter schedule runs <schedule-id> --page-token <token>
+```
 
 ## How it works
 

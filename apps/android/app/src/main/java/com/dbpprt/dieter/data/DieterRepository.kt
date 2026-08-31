@@ -135,7 +135,7 @@ import javax.net.ssl.TrustManagerFactory
 const val DIETER_LOCAL_HOST = "127.0.0.1"
 const val DIETER_LOCAL_PORT = 4242
 const val DIETER_LOCAL_ENDPOINT = "$DIETER_LOCAL_HOST:$DIETER_LOCAL_PORT"
-const val DIETER_API_VERSION = "2"
+const val DIETER_API_VERSION = "3"
 
 data class DieterEndpoint(
     val id: String,
@@ -280,12 +280,12 @@ interface DieterRepository {
     suspend fun renameTerminal(terminalId: String, name: String): Terminal
     suspend fun closeTerminal(terminalId: String)
 
-    suspend fun schedules(projectId: String): SchedulesResponse
+    suspend fun schedules(projectId: String, pageSize: Int = 50, pageToken: String = ""): SchedulesResponse
     suspend fun previewSchedule(cron: String, timezone: String, count: Int = 5): SchedulePreview
     suspend fun saveSchedule(scheduleId: String = "", request: SaveScheduleRequest): Schedule
     suspend fun runSchedule(scheduleId: String): ScheduleRun
     suspend fun setScheduleEnabled(scheduleId: String, enabled: Boolean): Schedule
-    suspend fun scheduleRuns(scheduleId: String, limit: Int = 10): ScheduleRunsResponse
+    suspend fun scheduleRuns(scheduleId: String, pageSize: Int = 50, pageToken: String = ""): ScheduleRunsResponse
     suspend fun deleteSchedule(scheduleId: String)
 
     fun reconnect()
@@ -855,8 +855,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         unary().closeTerminal(TerminalRef.newBuilder().setTerminalId(terminalId).build())
     }
 
-    override suspend fun schedules(projectId: String): SchedulesResponse = unary().listSchedules(
-        ListSchedulesRequest.newBuilder().setProjectId(projectId).build(),
+    override suspend fun schedules(projectId: String, pageSize: Int, pageToken: String): SchedulesResponse = unary().listSchedules(
+        ListSchedulesRequest.newBuilder().setProjectId(projectId).setPageSize(pageSize).setPageToken(pageToken).build(),
     )
 
     override suspend fun previewSchedule(cron: String, timezone: String, count: Int): SchedulePreview =
@@ -875,8 +875,8 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         SetScheduleEnabledRequest.newBuilder().setScheduleId(scheduleId).setEnabled(enabled).build(),
     )
 
-    override suspend fun scheduleRuns(scheduleId: String, limit: Int): ScheduleRunsResponse = unary().listScheduleRuns(
-        ListScheduleRunsRequest.newBuilder().setScheduleId(scheduleId).setLimit(limit).build(),
+    override suspend fun scheduleRuns(scheduleId: String, pageSize: Int, pageToken: String): ScheduleRunsResponse = unary().listScheduleRuns(
+        ListScheduleRunsRequest.newBuilder().setScheduleId(scheduleId).setPageSize(pageSize).setPageToken(pageToken).build(),
     )
 
     override suspend fun deleteSchedule(scheduleId: String) {

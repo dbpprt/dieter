@@ -7,8 +7,9 @@ import OSLog
 import UniformTypeIdentifiers
 import UserNotifications
 
-private let dieterExpectedAPIVersion = "2"
+private let dieterExpectedAPIVersion = "3"
 private let conversationPageSize: Int32 = 30
+private let schedulePageSize: Int32 = 50
 private let syncConversationMessageLimit: Int32 = 30
 private let syncRecentConversationLimit: Int32 = 8
 private let cachedConversationLimit = 24
@@ -666,7 +667,12 @@ final class DieterStore {
     var scheduleRuns: [Dieter_V1_ScheduleRun] = []
     var selectedScheduleID: String?
     private(set) var schedulesLoading = false
+    private(set) var schedulesLoadingMore = false
     private(set) var scheduleRunsLoading = false
+    private(set) var scheduleRunsLoadingMore = false
+    private(set) var schedulesTotalCount = 0
+    private(set) var schedulesNextPageToken = ""
+    private(set) var scheduleRunsNextPageToken = ""
     private(set) var schedulesLoadedProjectID = ""
     var newChatProjectID = ""
 
@@ -1482,7 +1488,12 @@ final class DieterStore {
         schedules.removeAll()
         scheduleRuns.removeAll()
         schedulesLoading = false
+        schedulesLoadingMore = false
         scheduleRunsLoading = false
+        scheduleRunsLoadingMore = false
+        schedulesTotalCount = 0
+        schedulesNextPageToken = ""
+        scheduleRunsNextPageToken = ""
         schedulesLoadedProjectID = ""
         schedulesLoadedEndpointID = ""
         schedulesRequestGeneration &+= 1
@@ -2316,6 +2327,11 @@ final class DieterStore {
         }
         syncSnapshot = syncProjection.snapshot.flatMap {
             try? Dieter_V1_GlobalSnapshot(serializedBytes: $0)
+        }.map { snapshot in
+            var next = snapshot
+            next.schedules = []
+            next.scheduleRuns = []
+            return next
         }
         lastSyncedAt = syncProjection.refreshedAt
         if lastSyncPersistenceAt[endpoint.id] == nil {
@@ -2411,10 +2427,13 @@ final class DieterStore {
         var projectionChanged = false
         var conversationDirectoryChanged = false
         if frame.hasSnapshot {
-            markConversationsRefreshed(frame.snapshot.conversations, endpointID: endpointID, at: receivedAt)
-            if syncSnapshot != frame.snapshot {
-                syncSnapshot = frame.snapshot
-                applyGlobalSnapshot(frame.snapshot, endpointID: endpointID)
+            var snapshot = frame.snapshot
+            snapshot.schedules = []
+            snapshot.scheduleRuns = []
+            markConversationsRefreshed(snapshot.conversations, endpointID: endpointID, at: receivedAt)
+            if syncSnapshot != snapshot {
+                syncSnapshot = snapshot
+                applyGlobalSnapshot(snapshot, endpointID: endpointID)
                 projectionChanged = true
                 conversationDirectoryChanged = true
             }
@@ -2518,21 +2537,6 @@ final class DieterStore {
         if chatProjects != nextChatProjects { chatProjects = nextChatProjects }
         updateSelectedState(base: global)
         if projectEndpointIDs[selectedProjectID] == endpointID {
-            schedulesRequestGeneration &+= 1
-            scheduleRunsRequestGeneration &+= 1
-            schedules = snapshot.schedules.filter { $0.projectID == selectedProjectID }
-            schedulesLoadedProjectID = selectedProjectID
-            schedulesLoadedEndpointID = endpointID
-            schedulesLoading = false
-            scheduleRunsLoading = false
-            if selectedScheduleID == nil || !schedules.contains(where: { $0.id == selectedScheduleID }) {
-                selectedScheduleID = schedules.first?.id
-            }
-            if let selectedScheduleID {
-                scheduleRuns = snapshot.scheduleRuns.filter { $0.scheduleID == selectedScheduleID }
-            } else {
-                scheduleRuns = []
-            }
             boardSettings = snapshot.settings
         }
         if let selectedID = selectedCardID ?? selectedChatID,
@@ -4642,6 +4646,8 @@ final class DieterStore {
         schedulesRequestGeneration &+= 1
         let generation = schedulesRequestGeneration
         schedulesLoading = true
+        schedulesLoadingMore = false
+        schedulesNextPageToken = ""
         if !schedulesAreLoaded {
             schedules = []
             scheduleRuns = []
@@ -4649,10 +4655,12 @@ final class DieterStore {
         }
 
         do {
-            let response = try await client.schedules(projectID: projectID)
+            let response = try await client.schedules(projectID: projectID, pageSize: schedulePageSize, pageToken: "")
             guard generation == schedulesRequestGeneration,
                   selectedProjectID == projectID, endpoint.id == endpointID else { return }
             schedules = response.schedules
+            schedulesTotalCount = Int(response.totalCount)
+            schedulesNextPageToken = response.nextPageToken
             schedulesLoadedProjectID = projectID
             schedulesLoadedEndpointID = endpointID
             schedulesLoading = false
@@ -4674,33 +4682,94 @@ final class DieterStore {
         }
     }
 
+    func loadMoreSchedules() async {
+        guard schedulesAreLoaded, !schedulesLoading, !schedulesLoadingMore,
+              !schedulesNextPageToken.isEmpty,
+              let client = scheduleRPCOverride ?? rpc else { return }
+        let projectID = selectedProjectID
+        let endpointID = endpoint.id
+        let pageToken = schedulesNextPageToken
+        let generation = schedulesRequestGeneration
+        schedulesLoadingMore = true
+        do {
+            let response = try await client.schedules(projectID: projectID, pageSize: schedulePageSize, pageToken: pageToken)
+            guard generation == schedulesRequestGeneration,
+                  selectedProjectID == projectID, endpoint.id == endpointID else { return }
+            let existing = Set(schedules.map(\.id))
+            schedules.append(contentsOf: response.schedules.filter { !existing.contains($0.id) })
+            schedulesTotalCount = Int(response.totalCount)
+            schedulesNextPageToken = response.nextPageToken
+            schedulesLoadingMore = false
+        } catch {
+            guard generation == schedulesRequestGeneration,
+                  selectedProjectID == projectID, endpoint.id == endpointID else { return }
+            schedulesLoadingMore = false
+            show(error)
+        }
+    }
+
     func selectSchedule(_ id: String) async {
         guard schedulesAreLoaded, schedules.contains(where: { $0.id == id }) else { return }
         selectedScheduleID = id
         await loadScheduleRuns(for: id)
     }
 
-    private func loadScheduleRuns(for scheduleID: String) async {
+    private func loadScheduleRuns(for scheduleID: String, appending: Bool = false) async {
         guard let client = scheduleRPCOverride ?? rpc else { return }
         let projectID = selectedProjectID
         let endpointID = endpoint.id
-        scheduleRunsRequestGeneration &+= 1
+        if !appending { scheduleRunsRequestGeneration &+= 1 }
         let generation = scheduleRunsRequestGeneration
-        scheduleRuns.removeAll { $0.scheduleID != scheduleID }
-        scheduleRunsLoading = true
+        let pageToken = appending ? scheduleRunsNextPageToken : ""
+        if appending {
+            guard !scheduleRunsLoading, !scheduleRunsLoadingMore, !pageToken.isEmpty else { return }
+            scheduleRunsLoadingMore = true
+        } else {
+            scheduleRuns.removeAll()
+            scheduleRunsNextPageToken = ""
+            scheduleRunsLoading = true
+            scheduleRunsLoadingMore = false
+        }
         do {
-            let response = try await client.scheduleRuns(id: scheduleID, limit: 50)
+            let response = try await client.scheduleRuns(id: scheduleID, pageSize: schedulePageSize, pageToken: pageToken)
             guard generation == scheduleRunsRequestGeneration,
                   selectedProjectID == projectID, endpoint.id == endpointID,
                   selectedScheduleID == scheduleID else { return }
-            scheduleRuns = response.runs
+            if appending {
+                let existing = Set(scheduleRuns.map(\.id))
+                scheduleRuns.append(contentsOf: response.runs.filter { !existing.contains($0.id) })
+            } else {
+                scheduleRuns = response.runs
+            }
+            scheduleRunsNextPageToken = response.nextPageToken
             scheduleRunsLoading = false
+            scheduleRunsLoadingMore = false
         } catch {
             guard generation == scheduleRunsRequestGeneration,
                   selectedProjectID == projectID, endpoint.id == endpointID,
                   selectedScheduleID == scheduleID else { return }
             scheduleRunsLoading = false
+            scheduleRunsLoadingMore = false
             show(error)
+        }
+    }
+
+    func loadMoreScheduleRuns() async {
+        guard let selectedScheduleID else { return }
+        await loadScheduleRuns(for: selectedScheduleID, appending: true)
+    }
+
+    private func upsertLoadedSchedule(_ schedule: Dieter_V1_Schedule) {
+        let existingIndex = schedules.firstIndex(where: { $0.id == schedule.id })
+        if let existingIndex {
+            schedules[existingIndex] = schedule
+        } else {
+            schedules.append(schedule)
+            schedulesTotalCount += 1
+        }
+        schedules.sort {
+            let nameOrder = $0.name.localizedCaseInsensitiveCompare($1.name)
+            return nameOrder == .orderedSame ? $0.id < $1.id : nameOrder == .orderedAscending
         }
     }
 
@@ -4710,7 +4779,9 @@ final class DieterStore {
         var request = Dieter_V1_SaveScheduleRequest(); request.scheduleID = id ?? ""; request.schedule = draft
         do {
             let saved = try await (id == nil ? rpc.createSchedule(request) : rpc.updateSchedule(request))
-            selectedScheduleID = saved.id; await loadSchedules()
+            upsertLoadedSchedule(saved)
+            selectedScheduleID = saved.id
+            await loadScheduleRuns(for: saved.id)
             return true
         } catch {
             show(error)
@@ -4719,15 +4790,39 @@ final class DieterStore {
     }
 
     func toggleSchedule(_ schedule: Dieter_V1_Schedule) async {
-        do { _ = try await rpc?.setScheduleEnabled(id: schedule.id, enabled: !schedule.enabled); await loadSchedules() } catch { show(error) }
+        guard let rpc else { return }
+        do { upsertLoadedSchedule(try await rpc.setScheduleEnabled(id: schedule.id, enabled: !schedule.enabled)) } catch { show(error) }
     }
 
     func runSchedule(_ schedule: Dieter_V1_Schedule) async {
-        do { _ = try await rpc?.runSchedule(id: schedule.id); await loadSchedules() } catch { show(error) }
+        guard let rpc else { return }
+        do {
+            _ = try await rpc.runSchedule(id: schedule.id)
+            selectedScheduleID = schedule.id
+            await loadScheduleRuns(for: schedule.id)
+        } catch { show(error) }
     }
 
     func deleteSchedule(_ schedule: Dieter_V1_Schedule) async {
-        do { try await rpc?.deleteSchedule(id: schedule.id); selectedScheduleID = nil; await loadSchedules() } catch { show(error) }
+        guard let rpc else { return }
+        do {
+            try await rpc.deleteSchedule(id: schedule.id)
+            let removed = schedules.contains { $0.id == schedule.id }
+            schedules.removeAll { $0.id == schedule.id }
+            if removed { schedulesTotalCount = max(0, schedulesTotalCount - 1) }
+            if selectedScheduleID == schedule.id {
+                selectedScheduleID = schedules.first?.id
+                scheduleRuns = []
+                scheduleRunsNextPageToken = ""
+            }
+            if schedules.isEmpty && !schedulesNextPageToken.isEmpty {
+                await loadMoreSchedules()
+                selectedScheduleID = schedules.first?.id
+            }
+            if let selectedScheduleID, scheduleRuns.isEmpty {
+                await loadScheduleRuns(for: selectedScheduleID)
+            }
+        } catch { show(error) }
     }
 
     func previewSchedule(cron: String, timezone: String, count: Int32 = 5) async throws -> [String]? {

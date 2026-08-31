@@ -202,6 +202,8 @@ enum DieterSyncProjectionCache {
         snapshot.state.boards = boards
         snapshot.state.cards = cards
         snapshot.state.chats = chats
+        snapshot.schedules = []
+        snapshot.scheduleRuns = []
         return DieterSyncProjection(
             cursor: nil,
             snapshot: try? snapshot.serializedData(),
@@ -218,6 +220,8 @@ enum DieterSyncProjectionCache {
         var snapshot = projection.snapshot
             .flatMap { try? Dieter_V1_GlobalSnapshot(serializedBytes: $0) }
             ?? Dieter_V1_GlobalSnapshot()
+        snapshot.schedules = []
+        snapshot.scheduleRuns = []
         snapshot.conversations.removeAll { $0.detail.card.id == cardID }
         snapshot.conversations.append(conversation)
         if snapshot.conversations.count > limit {
@@ -235,8 +239,6 @@ enum GlobalProjectionReducer {
             !delta.boards.isEmpty || !delta.removedBoardIds.isEmpty ||
             !delta.cards.isEmpty || !delta.removedCardIds.isEmpty ||
             !delta.chats.isEmpty || !delta.removedChatIds.isEmpty ||
-            !delta.schedules.isEmpty || !delta.removedScheduleIds.isEmpty ||
-            !delta.scheduleRuns.isEmpty || !delta.removedScheduleRunIds.isEmpty ||
             delta.hasSettings ||
             !delta.conversations.isEmpty || !delta.removedConversationIds.isEmpty
     }
@@ -246,6 +248,8 @@ enum GlobalProjectionReducer {
         to snapshot: Dieter_V1_GlobalSnapshot
     ) -> Dieter_V1_GlobalSnapshot {
         var next = snapshot
+        next.schedules = []
+        next.scheduleRuns = []
         if !delta.projects.isEmpty || !delta.removedProjectIds.isEmpty {
             next.state.projects = merge(
                 next.state.projects,
@@ -278,22 +282,6 @@ enum GlobalProjectionReducer {
                 id: { $0.id }
             )
         }
-        if !delta.schedules.isEmpty || !delta.removedScheduleIds.isEmpty {
-            next.schedules = merge(
-                next.schedules,
-                changed: delta.schedules,
-                removed: Set(delta.removedScheduleIds),
-                id: { $0.id }
-            )
-        }
-        if !delta.scheduleRuns.isEmpty || !delta.removedScheduleRunIds.isEmpty {
-            next.scheduleRuns = merge(
-                next.scheduleRuns,
-                changed: delta.scheduleRuns,
-                removed: Set(delta.removedScheduleRunIds),
-                id: { $0.id }
-            )
-        }
         if !delta.conversations.isEmpty || !delta.removedConversationIds.isEmpty {
             next.conversations = merge(
                 next.conversations,
@@ -311,8 +299,6 @@ enum GlobalProjectionReducer {
             !delta.boards.isEmpty || !delta.removedBoardIds.isEmpty ||
             !delta.cards.isEmpty || !delta.removedCardIds.isEmpty ||
             !delta.chats.isEmpty || !delta.removedChatIds.isEmpty ||
-            !delta.schedules.isEmpty || !delta.removedScheduleIds.isEmpty ||
-            !delta.scheduleRuns.isEmpty || !delta.removedScheduleRunIds.isEmpty ||
             delta.hasSettings
     }
 

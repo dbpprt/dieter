@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const SyncProjectionVersion = 3
+const SyncProjectionVersion = 4
 
 const (
 	maxSyncJournalBytes   = 16 << 20

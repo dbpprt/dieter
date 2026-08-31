@@ -1143,9 +1143,16 @@ type GlobalSnapshot struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	State         *State                  `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
 	Conversations []*ConversationSnapshot `protobuf:"bytes,2,rep,name=conversations,proto3" json:"conversations,omitempty"`
-	Schedules     []*Schedule             `protobuf:"bytes,3,rep,name=schedules,proto3" json:"schedules,omitempty"`
-	ScheduleRuns  []*ScheduleRun          `protobuf:"bytes,4,rep,name=schedule_runs,json=scheduleRuns,proto3" json:"schedule_runs,omitempty"`
-	Settings      *Settings               `protobuf:"bytes,5,opt,name=settings,proto3" json:"settings,omitempty"`
+	// Deprecated: schedule definitions are queried in bounded project pages.
+	//
+	// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
+	Schedules []*Schedule `protobuf:"bytes,3,rep,name=schedules,proto3" json:"schedules,omitempty"`
+	// Deprecated: occurrence history is queried in bounded pages and is never
+	// part of the daemon-wide native projection.
+	//
+	// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
+	ScheduleRuns  []*ScheduleRun `protobuf:"bytes,4,rep,name=schedule_runs,json=scheduleRuns,proto3" json:"schedule_runs,omitempty"`
+	Settings      *Settings      `protobuf:"bytes,5,opt,name=settings,proto3" json:"settings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1194,6 +1201,7 @@ func (x *GlobalSnapshot) GetConversations() []*ConversationSnapshot {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
 func (x *GlobalSnapshot) GetSchedules() []*Schedule {
 	if x != nil {
 		return x.Schedules
@@ -1201,6 +1209,7 @@ func (x *GlobalSnapshot) GetSchedules() []*Schedule {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
 func (x *GlobalSnapshot) GetScheduleRuns() []*ScheduleRun {
 	if x != nil {
 		return x.ScheduleRuns
@@ -1220,18 +1229,24 @@ func (x *GlobalSnapshot) GetSettings() *Settings {
 // projection. Conversation content appears here only for clients that opt in
 // via recent_conversation_limit; everyone else uses WatchConversation.
 type GlobalDelta struct {
-	state                  protoimpl.MessageState  `protogen:"open.v1"`
-	Projects               []*Project              `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
-	RemovedProjectIds      []string                `protobuf:"bytes,2,rep,name=removed_project_ids,json=removedProjectIds,proto3" json:"removed_project_ids,omitempty"`
-	Boards                 []*Board                `protobuf:"bytes,3,rep,name=boards,proto3" json:"boards,omitempty"`
-	RemovedBoardIds        []string                `protobuf:"bytes,4,rep,name=removed_board_ids,json=removedBoardIds,proto3" json:"removed_board_ids,omitempty"`
-	Cards                  []*Card                 `protobuf:"bytes,5,rep,name=cards,proto3" json:"cards,omitempty"`
-	RemovedCardIds         []string                `protobuf:"bytes,6,rep,name=removed_card_ids,json=removedCardIds,proto3" json:"removed_card_ids,omitempty"`
-	Chats                  []*Card                 `protobuf:"bytes,7,rep,name=chats,proto3" json:"chats,omitempty"`
-	RemovedChatIds         []string                `protobuf:"bytes,8,rep,name=removed_chat_ids,json=removedChatIds,proto3" json:"removed_chat_ids,omitempty"`
-	Schedules              []*Schedule             `protobuf:"bytes,9,rep,name=schedules,proto3" json:"schedules,omitempty"`
-	RemovedScheduleIds     []string                `protobuf:"bytes,10,rep,name=removed_schedule_ids,json=removedScheduleIds,proto3" json:"removed_schedule_ids,omitempty"`
-	ScheduleRuns           []*ScheduleRun          `protobuf:"bytes,11,rep,name=schedule_runs,json=scheduleRuns,proto3" json:"schedule_runs,omitempty"`
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Projects          []*Project             `protobuf:"bytes,1,rep,name=projects,proto3" json:"projects,omitempty"`
+	RemovedProjectIds []string               `protobuf:"bytes,2,rep,name=removed_project_ids,json=removedProjectIds,proto3" json:"removed_project_ids,omitempty"`
+	Boards            []*Board               `protobuf:"bytes,3,rep,name=boards,proto3" json:"boards,omitempty"`
+	RemovedBoardIds   []string               `protobuf:"bytes,4,rep,name=removed_board_ids,json=removedBoardIds,proto3" json:"removed_board_ids,omitempty"`
+	Cards             []*Card                `protobuf:"bytes,5,rep,name=cards,proto3" json:"cards,omitempty"`
+	RemovedCardIds    []string               `protobuf:"bytes,6,rep,name=removed_card_ids,json=removedCardIds,proto3" json:"removed_card_ids,omitempty"`
+	Chats             []*Card                `protobuf:"bytes,7,rep,name=chats,proto3" json:"chats,omitempty"`
+	RemovedChatIds    []string               `protobuf:"bytes,8,rep,name=removed_chat_ids,json=removedChatIds,proto3" json:"removed_chat_ids,omitempty"`
+	// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
+	Schedules []*Schedule `protobuf:"bytes,9,rep,name=schedules,proto3" json:"schedules,omitempty"`
+	// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
+	RemovedScheduleIds []string `protobuf:"bytes,10,rep,name=removed_schedule_ids,json=removedScheduleIds,proto3" json:"removed_schedule_ids,omitempty"`
+	// Deprecated: native clients refresh only the visible schedule history.
+	//
+	// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
+	ScheduleRuns []*ScheduleRun `protobuf:"bytes,11,rep,name=schedule_runs,json=scheduleRuns,proto3" json:"schedule_runs,omitempty"`
+	// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
 	RemovedScheduleRunIds  []string                `protobuf:"bytes,12,rep,name=removed_schedule_run_ids,json=removedScheduleRunIds,proto3" json:"removed_schedule_run_ids,omitempty"`
 	Settings               *Settings               `protobuf:"bytes,13,opt,name=settings,proto3" json:"settings,omitempty"`
 	Conversations          []*ConversationSnapshot `protobuf:"bytes,14,rep,name=conversations,proto3" json:"conversations,omitempty"`
@@ -1326,6 +1341,7 @@ func (x *GlobalDelta) GetRemovedChatIds() []string {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
 func (x *GlobalDelta) GetSchedules() []*Schedule {
 	if x != nil {
 		return x.Schedules
@@ -1333,6 +1349,7 @@ func (x *GlobalDelta) GetSchedules() []*Schedule {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
 func (x *GlobalDelta) GetRemovedScheduleIds() []string {
 	if x != nil {
 		return x.RemovedScheduleIds
@@ -1340,6 +1357,7 @@ func (x *GlobalDelta) GetRemovedScheduleIds() []string {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
 func (x *GlobalDelta) GetScheduleRuns() []*ScheduleRun {
 	if x != nil {
 		return x.ScheduleRuns
@@ -1347,6 +1365,7 @@ func (x *GlobalDelta) GetScheduleRuns() []*ScheduleRun {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in dieter/v1/dieter.proto.
 func (x *GlobalDelta) GetRemovedScheduleRunIds() []string {
 	if x != nil {
 		return x.RemovedScheduleRunIds
@@ -12808,6 +12827,8 @@ func (x *DeleteFileRequest) GetCardId() string {
 type ListSchedulesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -12849,9 +12870,25 @@ func (x *ListSchedulesRequest) GetProjectId() string {
 	return ""
 }
 
+func (x *ListSchedulesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListSchedulesRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type SchedulesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Schedules     []*Schedule            `protobuf:"bytes,1,rep,name=schedules,proto3" json:"schedules,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	TotalCount    int32                  `protobuf:"varint,3,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -12891,6 +12928,20 @@ func (x *SchedulesResponse) GetSchedules() []*Schedule {
 		return x.Schedules
 	}
 	return nil
+}
+
+func (x *SchedulesResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
+}
+
+func (x *SchedulesResponse) GetTotalCount() int32 {
+	if x != nil {
+		return x.TotalCount
+	}
+	return 0
 }
 
 type Schedule struct {
@@ -13572,7 +13623,8 @@ func (x *SetScheduleEnabledRequest) GetEnabled() bool {
 type ListScheduleRunsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ScheduleId    string                 `protobuf:"bytes,1,opt,name=schedule_id,json=scheduleId,proto3" json:"schedule_id,omitempty"`
-	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -13614,11 +13666,18 @@ func (x *ListScheduleRunsRequest) GetScheduleId() string {
 	return ""
 }
 
-func (x *ListScheduleRunsRequest) GetLimit() int32 {
+func (x *ListScheduleRunsRequest) GetPageSize() int32 {
 	if x != nil {
-		return x.Limit
+		return x.PageSize
 	}
 	return 0
+}
+
+func (x *ListScheduleRunsRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
 }
 
 type ScheduleRun struct {
@@ -13780,6 +13839,7 @@ func (x *ScheduleRun) GetFinishedAt() string {
 type ScheduleRunsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Runs          []*ScheduleRun         `protobuf:"bytes,1,rep,name=runs,proto3" json:"runs,omitempty"`
+	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -13819,6 +13879,13 @@ func (x *ScheduleRunsResponse) GetRuns() []*ScheduleRun {
 		return x.Runs
 	}
 	return nil
+}
+
+func (x *ScheduleRunsResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 var File_dieter_v1_dieter_proto protoreflect.FileDescriptor
@@ -13918,13 +13985,13 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x03 \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x04 \x01(\tR\tcommandId\"\xa0\x02\n" +
+	"command_id\x18\x04 \x01(\tR\tcommandId\"\xa8\x02\n" +
 	"\x0eGlobalSnapshot\x12&\n" +
 	"\x05state\x18\x01 \x01(\v2\x10.dieter.v1.StateR\x05state\x12E\n" +
-	"\rconversations\x18\x02 \x03(\v2\x1f.dieter.v1.ConversationSnapshotR\rconversations\x121\n" +
-	"\tschedules\x18\x03 \x03(\v2\x13.dieter.v1.ScheduleR\tschedules\x12;\n" +
-	"\rschedule_runs\x18\x04 \x03(\v2\x16.dieter.v1.ScheduleRunR\fscheduleRuns\x12/\n" +
-	"\bsettings\x18\x05 \x01(\v2\x13.dieter.v1.SettingsR\bsettings\"\xf2\x05\n" +
+	"\rconversations\x18\x02 \x03(\v2\x1f.dieter.v1.ConversationSnapshotR\rconversations\x125\n" +
+	"\tschedules\x18\x03 \x03(\v2\x13.dieter.v1.ScheduleB\x02\x18\x01R\tschedules\x12?\n" +
+	"\rschedule_runs\x18\x04 \x03(\v2\x16.dieter.v1.ScheduleRunB\x02\x18\x01R\fscheduleRuns\x12/\n" +
+	"\bsettings\x18\x05 \x01(\v2\x13.dieter.v1.SettingsR\bsettings\"\x82\x06\n" +
 	"\vGlobalDelta\x12.\n" +
 	"\bprojects\x18\x01 \x03(\v2\x12.dieter.v1.ProjectR\bprojects\x12.\n" +
 	"\x13removed_project_ids\x18\x02 \x03(\tR\x11removedProjectIds\x12(\n" +
@@ -13933,12 +14000,12 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x05cards\x18\x05 \x03(\v2\x0f.dieter.v1.CardR\x05cards\x12(\n" +
 	"\x10removed_card_ids\x18\x06 \x03(\tR\x0eremovedCardIds\x12%\n" +
 	"\x05chats\x18\a \x03(\v2\x0f.dieter.v1.CardR\x05chats\x12(\n" +
-	"\x10removed_chat_ids\x18\b \x03(\tR\x0eremovedChatIds\x121\n" +
-	"\tschedules\x18\t \x03(\v2\x13.dieter.v1.ScheduleR\tschedules\x120\n" +
+	"\x10removed_chat_ids\x18\b \x03(\tR\x0eremovedChatIds\x125\n" +
+	"\tschedules\x18\t \x03(\v2\x13.dieter.v1.ScheduleB\x02\x18\x01R\tschedules\x124\n" +
 	"\x14removed_schedule_ids\x18\n" +
-	" \x03(\tR\x12removedScheduleIds\x12;\n" +
-	"\rschedule_runs\x18\v \x03(\v2\x16.dieter.v1.ScheduleRunR\fscheduleRuns\x127\n" +
-	"\x18removed_schedule_run_ids\x18\f \x03(\tR\x15removedScheduleRunIds\x12/\n" +
+	" \x03(\tB\x02\x18\x01R\x12removedScheduleIds\x12?\n" +
+	"\rschedule_runs\x18\v \x03(\v2\x16.dieter.v1.ScheduleRunB\x02\x18\x01R\fscheduleRuns\x12;\n" +
+	"\x18removed_schedule_run_ids\x18\f \x03(\tB\x02\x18\x01R\x15removedScheduleRunIds\x12/\n" +
 	"\bsettings\x18\r \x01(\v2\x13.dieter.v1.SettingsR\bsettings\x12E\n" +
 	"\rconversations\x18\x0e \x03(\v2\x1f.dieter.v1.ConversationSnapshotR\rconversations\x128\n" +
 	"\x18removed_conversation_ids\x18\x0f \x03(\tR\x16removedConversationIds\"\xad\x02\n" +
@@ -15066,12 +15133,18 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1c\n" +
 	"\trecursive\x18\x03 \x01(\bR\trecursive\x12\x17\n" +
-	"\acard_id\x18\x04 \x01(\tR\x06cardId\"5\n" +
+	"\acard_id\x18\x04 \x01(\tR\x06cardId\"q\n" +
 	"\x14ListSchedulesRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"F\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x8f\x01\n" +
 	"\x11SchedulesResponse\x121\n" +
-	"\tschedules\x18\x01 \x03(\v2\x13.dieter.v1.ScheduleR\tschedules\"\xf0\x06\n" +
+	"\tschedules\x18\x01 \x03(\v2\x13.dieter.v1.ScheduleR\tschedules\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x1f\n" +
+	"\vtotal_count\x18\x03 \x01(\x05R\n" +
+	"totalCount\"\xf0\x06\n" +
 	"\bSchedule\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -15148,11 +15221,13 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x19SetScheduleEnabledRequest\x12\x1f\n" +
 	"\vschedule_id\x18\x01 \x01(\tR\n" +
 	"scheduleId\x12\x18\n" +
-	"\aenabled\x18\x02 \x01(\bR\aenabled\"P\n" +
+	"\aenabled\x18\x02 \x01(\bR\aenabled\"v\n" +
 	"\x17ListScheduleRunsRequest\x12\x1f\n" +
 	"\vschedule_id\x18\x01 \x01(\tR\n" +
-	"scheduleId\x12\x14\n" +
-	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\xb0\x03\n" +
+	"scheduleId\x12\x1b\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\xb0\x03\n" +
 	"\vScheduleRun\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vschedule_id\x18\x02 \x01(\tR\n" +
@@ -15175,9 +15250,10 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\x0e \x01(\tR\tstartedAt\x12\x1f\n" +
 	"\vfinished_at\x18\x0f \x01(\tR\n" +
-	"finishedAt\"B\n" +
+	"finishedAt\"j\n" +
 	"\x14ScheduleRunsResponse\x12*\n" +
-	"\x04runs\x18\x01 \x03(\v2\x16.dieter.v1.ScheduleRunR\x04runs*\x8f\x01\n" +
+	"\x04runs\x18\x01 \x03(\v2\x16.dieter.v1.ScheduleRunR\x04runs\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\x8f\x01\n" +
 	"\x16MachineOperationAction\x12(\n" +
 	"$MACHINE_OPERATION_ACTION_UNSPECIFIED\x10\x00\x12$\n" +
 	" MACHINE_OPERATION_ACTION_RESTART\x10\x01\x12%\n" +

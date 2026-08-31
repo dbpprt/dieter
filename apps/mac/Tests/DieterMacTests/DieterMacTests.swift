@@ -123,32 +123,44 @@ import UniformTypeIdentifiers
 }
 
 private actor ScheduleRPCStub: DieterScheduleRPC {
-    let schedulesResponse: Dieter_V1_SchedulesResponse
-    let runsResponse: Dieter_V1_ScheduleRunsResponse
+    let schedulesResponses: [String: Dieter_V1_SchedulesResponse]
+    let runsResponses: [String: Dieter_V1_ScheduleRunsResponse]
     private var requestedProjectIDs: [String] = []
     private var requestedScheduleIDs: [String] = []
+    private var requestedScheduleTokens: [String] = []
+    private var requestedRunTokens: [String] = []
+    private var requestedPageSizes: [Int32] = []
 
     init(schedules: [Dieter_V1_Schedule], runs: [Dieter_V1_ScheduleRun]) {
         var schedulesResponse = Dieter_V1_SchedulesResponse()
         schedulesResponse.schedules = schedules
-        self.schedulesResponse = schedulesResponse
+        self.schedulesResponses = ["": schedulesResponse]
         var runsResponse = Dieter_V1_ScheduleRunsResponse()
         runsResponse.runs = runs
-        self.runsResponse = runsResponse
+        self.runsResponses = ["": runsResponse]
     }
 
-    func schedules(projectID: String) async throws -> Dieter_V1_SchedulesResponse {
+    init(schedulePages: [String: Dieter_V1_SchedulesResponse], runPages: [String: Dieter_V1_ScheduleRunsResponse]) {
+        schedulesResponses = schedulePages
+        runsResponses = runPages
+    }
+
+    func schedules(projectID: String, pageSize: Int32, pageToken: String) async throws -> Dieter_V1_SchedulesResponse {
         requestedProjectIDs.append(projectID)
-        return schedulesResponse
+        requestedScheduleTokens.append(pageToken)
+        requestedPageSizes.append(pageSize)
+        return schedulesResponses[pageToken] ?? Dieter_V1_SchedulesResponse()
     }
 
-    func scheduleRuns(id: String, limit _: Int32) async throws -> Dieter_V1_ScheduleRunsResponse {
+    func scheduleRuns(id: String, pageSize: Int32, pageToken: String) async throws -> Dieter_V1_ScheduleRunsResponse {
         requestedScheduleIDs.append(id)
-        return runsResponse
+        requestedRunTokens.append(pageToken)
+        requestedPageSizes.append(pageSize)
+        return runsResponses[pageToken] ?? Dieter_V1_ScheduleRunsResponse()
     }
 
-    func requests() -> (projects: [String], schedules: [String]) {
-        (requestedProjectIDs, requestedScheduleIDs)
+    func requests() -> (projects: [String], schedules: [String], scheduleTokens: [String], runTokens: [String], pageSizes: [Int32]) {
+        (requestedProjectIDs, requestedScheduleIDs, requestedScheduleTokens, requestedRunTokens, requestedPageSizes)
     }
 }
 
@@ -222,6 +234,42 @@ private actor ChatPinRPCStub: DieterChatPinRPC {
     let requests = await rpc.requests()
     #expect(requests.projects == [schedule.projectID])
     #expect(requests.schedules == [schedule.id])
+}
+
+@Test @MainActor func schedulesAndOccurrenceHistoryAppendCursorPages() async {
+    var morning = Dieter_V1_Schedule(); morning.id = "s_morning"; morning.projectID = "p_dieter"; morning.name = "Morning"
+    var nightly = Dieter_V1_Schedule(); nightly.id = "s_nightly"; nightly.projectID = morning.projectID; nightly.name = "Nightly"
+    var firstSchedules = Dieter_V1_SchedulesResponse()
+    firstSchedules.schedules = [morning]; firstSchedules.nextPageToken = "s-next"; firstSchedules.totalCount = 2
+    var secondSchedules = Dieter_V1_SchedulesResponse()
+    secondSchedules.schedules = [nightly]; secondSchedules.totalCount = 2
+
+    var newest = Dieter_V1_ScheduleRun(); newest.id = "sr_new"; newest.scheduleID = morning.id
+    var older = Dieter_V1_ScheduleRun(); older.id = "sr_old"; older.scheduleID = morning.id
+    var firstRuns = Dieter_V1_ScheduleRunsResponse()
+    firstRuns.runs = [newest]; firstRuns.nextPageToken = "r-next"
+    var secondRuns = Dieter_V1_ScheduleRunsResponse(); secondRuns.runs = [older]
+
+    let rpc = ScheduleRPCStub(
+        schedulePages: ["": firstSchedules, "s-next": secondSchedules],
+        runPages: ["": firstRuns, "r-next": secondRuns]
+    )
+    let store = DieterStore(scheduleRPCOverride: rpc)
+    store.selectedProjectID = morning.projectID
+
+    await store.loadSchedules()
+    await store.loadMoreSchedules()
+    await store.loadMoreScheduleRuns()
+
+    #expect(store.schedules.map(\.id) == [morning.id, nightly.id])
+    #expect(store.schedulesTotalCount == 2)
+    #expect(store.schedulesNextPageToken.isEmpty)
+    #expect(store.scheduleRuns.map(\.id) == [newest.id, older.id])
+    #expect(store.scheduleRunsNextPageToken.isEmpty)
+    let requests = await rpc.requests()
+    #expect(requests.scheduleTokens == ["", "s-next"])
+    #expect(requests.runTokens == ["", "r-next"])
+    #expect(requests.pageSizes == [50, 50, 50, 50])
 }
 
 @Test func schedulesDoNotPresentAnAuthoritativeEmptyStateBeforeLoadingCompletes() {
@@ -481,7 +529,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         daemonID: "daemon-1",
         online: false,
         lastSeenAt: "2026-08-18T12:00:00Z",
-        version: "2"
+        version: "3"
     )
     #expect(endpoint.id == "https://dieter.example:443#daemon-1")
     #expect(endpoint.credentialID == "https://dieter.example:443")

@@ -255,8 +255,11 @@ message SyncEvent {
 message GlobalSnapshot {
   State state = 1;
   repeated ConversationSnapshot conversations = 2;
-  repeated Schedule schedules = 3;
-  repeated ScheduleRun schedule_runs = 4;
+  // Deprecated: schedule definitions are queried in bounded project pages.
+  repeated Schedule schedules = 3 [deprecated = true];
+  // Deprecated: occurrence history is queried in bounded pages and is never
+  // part of the daemon-wide native projection.
+  repeated ScheduleRun schedule_runs = 4 [deprecated = true];
   Settings settings = 5;
 }
 
@@ -273,10 +276,11 @@ message GlobalDelta {
   repeated string removed_card_ids = 6;
   repeated Card chats = 7;
   repeated string removed_chat_ids = 8;
-  repeated Schedule schedules = 9;
-  repeated string removed_schedule_ids = 10;
-  repeated ScheduleRun schedule_runs = 11;
-  repeated string removed_schedule_run_ids = 12;
+  repeated Schedule schedules = 9 [deprecated = true];
+  repeated string removed_schedule_ids = 10 [deprecated = true];
+  // Deprecated: native clients refresh only the visible schedule history.
+  repeated ScheduleRun schedule_runs = 11 [deprecated = true];
+  repeated string removed_schedule_run_ids = 12 [deprecated = true];
   Settings settings = 13;
   repeated ConversationSnapshot conversations = 14;
   repeated string removed_conversation_ids = 15;
@@ -1514,10 +1518,14 @@ message DeleteFileRequest {
 
 message ListSchedulesRequest {
   string project_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
 }
 
 message SchedulesResponse {
   repeated Schedule schedules = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
 }
 
 message Schedule {
@@ -1596,7 +1604,8 @@ message SetScheduleEnabledRequest {
 
 message ListScheduleRunsRequest {
   string schedule_id = 1;
-  int32 limit = 2;
+  int32 page_size = 2;
+  string page_token = 3;
 }
 
 message ScheduleRun {
@@ -1619,4 +1628,5 @@ message ScheduleRun {
 
 message ScheduleRunsResponse {
   repeated ScheduleRun runs = 1;
+  string next_page_token = 2;
 }

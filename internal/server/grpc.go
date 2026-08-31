@@ -64,7 +64,7 @@ type snapshotHistory struct {
 const maxSnapshotsPerConversation = 8
 
 func (api *grpcAPI) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthResponse, error) {
-	return &dieterv1.HealthResponse{Status: "ok", Version: "2", StorePath: api.server.store.Root}, nil
+	return &dieterv1.HealthResponse{Status: "ok", Version: "3", StorePath: api.server.store.Root}, nil
 }
 
 func (api *grpcAPI) GetRuntimeStatus(context.Context, *emptypb.Empty) (*dieterv1.RuntimeStatus, error) {
@@ -1358,12 +1358,12 @@ func (api *grpcAPI) DeleteFile(ctx context.Context, request *dieterv1.DeleteFile
 }
 
 func (api *grpcAPI) ListSchedules(_ context.Context, request *dieterv1.ListSchedulesRequest) (*dieterv1.SchedulesResponse, error) {
-	values, err := api.server.schedules.List(request.GetProjectId())
+	page, err := api.server.schedules.ListPage(request.GetProjectId(), int(request.GetPageSize()), request.GetPageToken())
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	result := &dieterv1.SchedulesResponse{}
-	for _, value := range values {
+	result := &dieterv1.SchedulesResponse{NextPageToken: page.NextPageToken, TotalCount: int32(page.TotalCount)}
+	for _, value := range page.Items {
 		result.Schedules = append(result.Schedules, protoSchedule(value))
 	}
 	return result, nil
@@ -1448,12 +1448,12 @@ func (api *grpcAPI) SetScheduleEnabled(_ context.Context, request *dieterv1.SetS
 }
 
 func (api *grpcAPI) ListScheduleRuns(_ context.Context, request *dieterv1.ListScheduleRunsRequest) (*dieterv1.ScheduleRunsResponse, error) {
-	values, err := api.server.store.ListScheduleRuns(request.GetScheduleId(), int(request.GetLimit()))
+	page, err := api.server.store.ListScheduleRunsPage(request.GetScheduleId(), int(request.GetPageSize()), request.GetPageToken())
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	result := &dieterv1.ScheduleRunsResponse{}
-	for _, value := range values {
+	result := &dieterv1.ScheduleRunsResponse{NextPageToken: page.NextPageToken}
+	for _, value := range page.Items {
 		result.Runs = append(result.Runs, protoScheduleRun(value))
 	}
 	return result, nil

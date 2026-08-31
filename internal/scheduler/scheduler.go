@@ -130,6 +130,17 @@ func (m *Manager) List(projectRef string) ([]model.Schedule, error) {
 	return items, nil
 }
 
+func (m *Manager) ListPage(projectRef string, pageSize int, pageToken string) (store.SchedulePage, error) {
+	page, err := m.store.ListSchedulesPage(projectRef, pageSize, pageToken)
+	if err != nil {
+		return store.SchedulePage{}, err
+	}
+	for index := range page.Items {
+		page.Items[index].NextRuns, _ = m.Preview(page.Items[index].Cron, page.Items[index].Timezone, 5)
+	}
+	return page, nil
+}
+
 func (m *Manager) Preview(expression, timezone string, count int) ([]string, error) {
 	location, err := time.LoadLocation(strings.TrimSpace(timezone))
 	if err != nil {
@@ -168,12 +179,9 @@ func (m *Manager) RunNow(ref string) (model.ScheduleRun, error) {
 func (m *Manager) Tick() {
 	now := m.now().UTC()
 	_, _ = m.store.ArchiveDoneCards(now)
-	schedules, err := m.store.ListSchedules("")
+	schedules, err := m.store.ListDueSchedules(now, 100)
 	if err == nil {
 		for _, schedule := range schedules {
-			if !schedule.Enabled || schedule.NextRunAt == "" {
-				continue
-			}
 			due, parseErr := time.Parse(time.RFC3339Nano, schedule.NextRunAt)
 			if parseErr != nil || due.After(now) {
 				continue
@@ -188,7 +196,7 @@ func (m *Manager) Tick() {
 			_, _ = m.store.ClaimScheduleRun(schedule.ID, latest.UTC().Format(time.RFC3339Nano), next, false)
 		}
 	}
-	runs, err := m.store.ListScheduleRuns("", 0)
+	runs, err := m.store.ListRunnableScheduleRuns(now, 100)
 	if err != nil {
 		return
 	}

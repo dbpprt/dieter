@@ -134,8 +134,42 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	if err := json.Unmarshal([]byte(scheduleJSON), &schedule); err != nil || schedule.ID == "" {
 		t.Fatalf("created schedule JSON=%q err=%v", scheduleJSON, err)
 	}
+	runDaemonCLI(t, client, output, "schedule", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--name", "CLI hourly", "--cron", "0 * * * *", "--timezone", "UTC", "--title", "Hourly CLI", "--prompt", "Check pagination", "--provider", "mock", "--model", "mock")
+	var schedulePage struct {
+		Schedules []struct {
+			ID string `json:"id"`
+		} `json:"schedules"`
+		NextPageToken string `json:"nextPageToken"`
+		TotalCount    int    `json:"totalCount"`
+	}
+	pageJSON := runDaemonCLI(t, client, output, "schedule", "list", "--project", created.Project.ID, "--page-size", "1", "--format", "json")
+	if err := json.Unmarshal([]byte(pageJSON), &schedulePage); err != nil || len(schedulePage.Schedules) != 1 || schedulePage.TotalCount != 2 || schedulePage.NextPageToken == "" {
+		t.Fatalf("first schedule page=%q parsed=%#v err=%v", pageJSON, schedulePage, err)
+	}
+	pageJSON = runDaemonCLI(t, client, output, "schedule", "list", "--project", created.Project.ID, "--page-size", "1", "--page-token", schedulePage.NextPageToken, "--format", "json")
+	schedulePage.NextPageToken = ""
+	if err := json.Unmarshal([]byte(pageJSON), &schedulePage); err != nil || len(schedulePage.Schedules) != 1 || schedulePage.NextPageToken != "" {
+		t.Fatalf("second schedule page=%q parsed=%#v err=%v", pageJSON, schedulePage, err)
+	}
 	runDaemonCLI(t, client, output, "schedule", "pause", schedule.ID)
-	runDaemonCLI(t, client, output, "schedule", "runs", schedule.ID)
+	runDaemonCLI(t, client, output, "schedule", "run", schedule.ID)
+	runDaemonCLI(t, client, output, "schedule", "run", schedule.ID)
+	runDaemonCLI(t, client, output, "schedule", "delete", schedule.ID)
+	var runPage struct {
+		Runs []struct {
+			ID string `json:"id"`
+		} `json:"runs"`
+		NextPageToken string `json:"nextPageToken"`
+	}
+	runsJSON := runDaemonCLI(t, client, output, "schedule", "runs", "--page-size", "1", schedule.ID)
+	if err := json.Unmarshal([]byte(runsJSON), &runPage); err != nil || len(runPage.Runs) != 1 || runPage.NextPageToken == "" {
+		t.Fatalf("first run page=%q parsed=%#v err=%v", runsJSON, runPage, err)
+	}
+	runsJSON = runDaemonCLI(t, client, output, "schedule", "runs", "--page-size", "1", "--page-token", runPage.NextPageToken, schedule.ID)
+	runPage.NextPageToken = ""
+	if err := json.Unmarshal([]byte(runsJSON), &runPage); err != nil || len(runPage.Runs) != 1 || runPage.NextPageToken != "" {
+		t.Fatalf("second run page=%q parsed=%#v err=%v", runsJSON, runPage, err)
+	}
 
 	terminalJSON := runDaemonCLI(t, client, output, "terminal", "create", "--project", created.Project.ID, "--name", "CLI shell", "--shell", "sh")
 	var terminal struct {

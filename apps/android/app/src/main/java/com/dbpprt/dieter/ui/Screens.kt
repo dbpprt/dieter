@@ -1742,9 +1742,9 @@ fun SchedulesScreen(state: DieterUiState, model: DieterViewModel, contentPadding
         Column(Modifier.fillMaxSize()) {
             SimpleScreenHeader(
                 "Schedules",
-                "${state.project?.name?.lowercase() ?: "project"} · ${state.schedules.count { it.enabled }} active · ${state.schedules.size} configured",
+                "${state.project?.name?.lowercase() ?: "project"} · ${state.schedulesTotalCount} configured",
             ) {
-                IconButton(onClick = model::refresh) { Icon(Icons.Outlined.Refresh, "Refresh schedules") }
+                IconButton(onClick = model::refreshSchedules) { Icon(Icons.Outlined.Refresh, "Refresh schedules") }
                 IconButton(onClick = { model.openSurface(AppSurface.APP_SETTINGS) }) {
                     Icon(Icons.Outlined.Settings, "App settings", tint = DieterMuted)
                 }
@@ -1752,6 +1752,8 @@ fun SchedulesScreen(state: DieterUiState, model: DieterViewModel, contentPadding
             SurfaceErrorBanner(state.error, model::clearError)
             if (!state.connected && state.projects.isEmpty()) {
                 ConnectionEmptyState(state, model)
+            } else if (state.schedulesLoading && state.schedules.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else if (state.schedules.isEmpty()) {
                 ScheduleEmptyState { model.openSurface(AppSurface.SCHEDULE_EDITOR) }
             } else {
@@ -1759,8 +1761,58 @@ fun SchedulesScreen(state: DieterUiState, model: DieterViewModel, contentPadding
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(state.schedules, key = { it.id }) { schedule ->
-                        ScheduleCard(schedule, state, model, onEdit = { model.openSurface(AppSurface.SCHEDULE_EDITOR, schedule) })
+                    state.schedules.forEach { schedule ->
+                        item(key = schedule.id) {
+                            ScheduleCard(schedule, state, model, onEdit = { model.openSurface(AppSurface.SCHEDULE_EDITOR, schedule) })
+                        }
+                        if (state.selectedScheduleId == schedule.id) {
+                            item(key = "${schedule.id}-runs-heading") {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Text("Recent runs", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                    if (state.scheduleRunsLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                }
+                            }
+                            if (!state.scheduleRunsLoading && state.scheduleRuns.isEmpty()) {
+                                item(key = "${schedule.id}-runs-empty") {
+                                    Text("No occurrences yet", color = DieterMuted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp))
+                                }
+                            }
+                            items(state.scheduleRuns, key = { it.id }) { run -> ScheduleRunRow(run) }
+                            if (state.scheduleRunsNextPageToken.isNotBlank()) {
+                                item(key = "${schedule.id}-runs-more") {
+                                    OutlinedButton(
+                                        onClick = model::loadMoreScheduleRuns,
+                                        enabled = !state.scheduleRunsLoadingMore,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        if (state.scheduleRunsLoadingMore) {
+                                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Text(if (state.scheduleRunsLoadingMore) "Loading older runs…" else "Load older runs")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (state.schedulesNextPageToken.isNotBlank()) {
+                        item(key = "schedules-load-more") {
+                            OutlinedButton(
+                                onClick = model::loadMoreSchedules,
+                                enabled = !state.schedulesLoadingMore,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                if (state.schedulesLoadingMore) {
+                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(if (state.schedulesLoadingMore) "Loading schedules…" else "Load more schedules")
+                            }
+                        }
                     }
                 }
             }
@@ -1859,23 +1911,6 @@ private fun ScheduleCard(
             if (schedule.nextRunAt.isNotBlank()) {
                 Text("Next · ${shortTimestamp(schedule.nextRunAt)}", color = DieterShell, fontSize = 12.sp)
             }
-            if (state.selectedScheduleId == schedule.id) {
-                HorizontalDivider(color = DieterOutline)
-                Text("Recent runs", fontWeight = FontWeight.SemiBold)
-                if (state.scheduleRuns.isEmpty()) {
-                    Text("No occurrences yet", color = DieterMuted, fontSize = 12.sp)
-                } else {
-                    state.scheduleRuns.forEach { run ->
-                        Text(
-                            "${run.status.ifBlank { "unknown" }} · ${shortTimestamp(run.scheduledFor.ifBlank { run.createdAt })}${run.message.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}",
-                            color = if (run.status == "failed") MaterialTheme.colorScheme.error else DieterMuted,
-                            fontSize = 12.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
         }
     }
     if (confirmDelete) {
@@ -1883,6 +1918,20 @@ private fun ScheduleCard(
             confirmDelete = false
             model.deleteSchedule(schedule)
         }
+    }
+}
+
+@Composable
+private fun ScheduleRunRow(run: com.dbpprt.dieter.v1.ScheduleRun) {
+    Surface(color = DieterSurfaceHigh, shape = RoundedCornerShape(14.dp)) {
+        Text(
+            "${run.status.ifBlank { "unknown" }} · ${shortTimestamp(run.scheduledFor.ifBlank { run.createdAt })}${run.message.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}",
+            color = if (run.status == "failed") MaterialTheme.colorScheme.error else DieterMuted,
+            fontSize = 12.sp,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+        )
     }
 }
 

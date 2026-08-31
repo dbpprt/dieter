@@ -24,7 +24,7 @@ struct SchedulesView: View {
                         PaneTitleBlock(
                             title: "Schedules",
                             subtitle: store.schedulesAreLoaded
-                                ? "\(store.schedules.count) automation\(store.schedules.count == 1 ? "" : "s")"
+                                ? "\(store.schedulesTotalCount) automation\(store.schedulesTotalCount == 1 ? "" : "s")"
                                 : "Loading automations…",
                             symbol: "calendar.badge.clock",
                             prominent: true
@@ -71,6 +71,20 @@ struct SchedulesView: View {
                                 ScheduleRow(schedule: schedule, selected: store.selectedScheduleID == schedule.id)
                             }
                             .buttonStyle(.plain)
+                        }
+                        if !store.schedulesNextPageToken.isEmpty {
+                            Button {
+                                Task { await store.loadMoreSchedules() }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if store.schedulesLoadingMore { ProgressView().controlSize(.small) }
+                                    Text(store.schedulesLoadingMore ? "Loading…" : "Load more schedules")
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(DieterSecondaryButtonStyle())
+                            .disabled(store.schedulesLoadingMore)
+                            .accessibilityIdentifier("schedules.load-more")
                         }
                         }
                         .padding(10)
@@ -153,7 +167,7 @@ struct ScheduleDetail: View {
             }
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 10) {
                     ScheduleMetric(title: "Cron", value: schedule.cron, symbol: "clock")
                     ScheduleMetric(title: "Timezone", value: schedule.timezone, symbol: "globe")
@@ -179,6 +193,20 @@ struct ScheduleDetail: View {
                     ForEach(store.scheduleRuns, id: \.id) { run in
                         HStack { StatusPill(text: run.status, color: runtimeColor(run.status)); VStack(alignment: .leading) { Text(run.scheduledFor); if !run.message.isEmpty { Text(run.message).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Text(run.manual ? "Manual" : "Scheduled").font(.caption).foregroundStyle(.secondary); if !run.cardID.isEmpty { Button("Open card") { store.section = .board; Task { await store.openConversation(cardID: run.cardID) } } } }
                             .padding(10).dieterSurface(radius: 8)
+                    }
+                    if !store.scheduleRunsNextPageToken.isEmpty {
+                        Button {
+                            Task { await store.loadMoreScheduleRuns() }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if store.scheduleRunsLoadingMore { ProgressView().controlSize(.small) }
+                                Text(store.scheduleRunsLoadingMore ? "Loading older runs…" : "Load older runs")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(DieterSecondaryButtonStyle())
+                        .disabled(store.scheduleRunsLoadingMore)
+                        .accessibilityIdentifier("schedule-runs.load-more")
                     }
                 }
                 }.padding(20)

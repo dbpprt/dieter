@@ -15,14 +15,14 @@ const scheduleHelp = `Usage: dieter schedule <action>
 
 Actions:
   create                 Create a recurring project schedule
-  list                   List schedules
+  list                   List one bounded page of schedules
   show SCHEDULE          Show a schedule and recent occurrences
   preview                Preview cron occurrence times
   update SCHEDULE        Replace a schedule definition
   run SCHEDULE           Dispatch one manual occurrence
   pause SCHEDULE         Disable automatic occurrences
   resume SCHEDULE        Enable automatic occurrences
-  runs SCHEDULE          List authoritative occurrence history
+  runs SCHEDULE          List one bounded page of occurrence history
   delete SCHEDULE        Delete the definition; cards and history remain
 `
 
@@ -72,17 +72,41 @@ func resolveProtoSchedule(items []*dieterv1.Schedule, reference string) (*dieter
 }
 
 func (c *CLI) resolveSchedule(rpcCtx context.Context, client dieterv1.DieterServiceClient, reference string) (*dieterv1.Schedule, error) {
-	value, err := client.ListSchedules(rpcCtx, &dieterv1.ListSchedulesRequest{})
-	if err != nil {
-		return nil, err
+	pageToken := ""
+	var matches []*dieterv1.Schedule
+	for {
+		value, err := client.ListSchedules(rpcCtx, &dieterv1.ListSchedulesRequest{PageSize: 100, PageToken: pageToken})
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range value.GetSchedules() {
+			if item.GetId() == reference {
+				return item, nil
+			}
+			if strings.EqualFold(item.GetName(), reference) {
+				matches = append(matches, item)
+			}
+		}
+		pageToken = value.GetNextPageToken()
+		if pageToken == "" {
+			break
+		}
 	}
-	return resolveProtoSchedule(value.GetSchedules(), reference)
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
+		return nil, fmt.Errorf("schedule name %q is ambiguous; use its exact ID", reference)
+	}
+	return nil, fmt.Errorf("schedule %q was not found on the target daemon", reference)
 }
 
 func (c *CLI) rpcScheduleList(args []string) error {
-	const usage = "Usage: dieter schedule list [--project PROJECT] [--format table|json|jsonl|ids]\n"
+	const usage = "Usage: dieter schedule list [--project PROJECT] [--page-size N] [--page-token TOKEN] [--format table|json|jsonl|ids]\n"
 	set := flags("schedule list")
 	projectRef := set.String("project", "", "project ID or unique name")
+	pageSize := set.Int("page-size", 50, "schedules per page (maximum 100)")
+	pageToken := set.String("page-token", "", "opaque token returned by the preceding page")
 	format := set.String("format", "table", "table, json, jsonl, or ids")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -109,7 +133,7 @@ func (c *CLI) rpcScheduleList(args []string) error {
 		}
 		projectID = project.GetId()
 	}
-	value, err := client.ListSchedules(rpcCtx, &dieterv1.ListSchedulesRequest{ProjectId: projectID})
+	value, err := client.ListSchedules(rpcCtx, &dieterv1.ListSchedulesRequest{ProjectId: projectID, PageSize: int32(*pageSize), PageToken: *pageToken})
 	if err != nil {
 		return err
 	}
@@ -136,6 +160,9 @@ func (c *CLI) rpcScheduleList(args []string) error {
 			fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", item.GetId(), state, item.GetNextRunAt(), item.GetName())
 		}
 	}
+	if *format == "table" && value.GetNextPageToken() != "" {
+		fmt.Fprintf(writer, "\nNEXT PAGE\t%s\t\t\n", value.GetNextPageToken())
+	}
 	return writer.Flush()
 }
 
@@ -160,7 +187,7 @@ func (c *CLI) rpcScheduleShow(args []string) error {
 	if err != nil {
 		return err
 	}
-	runs, err := client.ListScheduleRuns(rpcCtx, &dieterv1.ListScheduleRunsRequest{ScheduleId: item.GetId(), Limit: int32(*runLimit)})
+	runs, err := client.ListScheduleRuns(rpcCtx, &dieterv1.ListScheduleRunsRequest{ScheduleId: item.GetId(), PageSize: int32(*runLimit)})
 	if err != nil {
 		return err
 	}
@@ -356,9 +383,10 @@ func (c *CLI) rpcScheduleRefAction(action string, args []string) error {
 }
 
 func (c *CLI) rpcScheduleRuns(args []string) error {
-	const usage = "Usage: dieter schedule runs [--limit N] SCHEDULE\n"
+	const usage = "Usage: dieter schedule runs [--page-size N] [--page-token TOKEN] SCHEDULE\n"
 	set := flags("schedule runs")
-	limit := set.Int("limit", 0, "maximum occurrences; zero means daemon default/all")
+	pageSize := set.Int("page-size", 50, "occurrences per page (maximum 100)")
+	pageToken := set.String("page-token", "", "opaque token returned by the preceding page")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -372,11 +400,15 @@ func (c *CLI) rpcScheduleRuns(args []string) error {
 	if err != nil {
 		return err
 	}
-	item, err := c.resolveSchedule(rpcCtx, client, set.Arg(0))
-	if err != nil {
-		return err
+	scheduleID := set.Arg(0)
+	if !strings.HasPrefix(scheduleID, "sch_") {
+		item, resolveErr := c.resolveSchedule(rpcCtx, client, scheduleID)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		scheduleID = item.GetId()
 	}
-	value, err := client.ListScheduleRuns(rpcCtx, &dieterv1.ListScheduleRunsRequest{ScheduleId: item.GetId(), Limit: int32(*limit)})
+	value, err := client.ListScheduleRuns(rpcCtx, &dieterv1.ListScheduleRunsRequest{ScheduleId: scheduleID, PageSize: int32(*pageSize), PageToken: *pageToken})
 	if err != nil {
 		return err
 	}

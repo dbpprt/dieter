@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -61,7 +62,7 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	deadline := time.Now().Add(3 * time.Second)
 	for status != model.ScheduleRunCompleted && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
-		runs, listErr := client.ListScheduleRuns(ctx, connect.NewRequest(&dieterv1.ListScheduleRunsRequest{ScheduleId: schedule.Msg.GetId(), Limit: 5}))
+		runs, listErr := client.ListScheduleRuns(ctx, connect.NewRequest(&dieterv1.ListScheduleRunsRequest{ScheduleId: schedule.Msg.GetId(), PageSize: 5}))
 		if listErr != nil {
 			t.Fatal(listErr)
 		}
@@ -82,5 +83,95 @@ func TestScheduleAndSettingsConnectEndToEnd(t *testing.T) {
 	}
 	if _, err := client.DeleteSchedule(ctx, connect.NewRequest(&dieterv1.ScheduleRef{ScheduleId: schedule.Msg.GetId()})); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSchedulePagesConnectEndToEnd(t *testing.T) {
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	data := store.New(t.TempDir())
+	client, _ := newConnectTestClient(t, data, &fakeRunner{})
+	workspace, err := client.CreateProject(ctx, connect.NewRequest(&dieterv1.CreateProjectRequest{
+		Mode: "open", Path: testRepository(t), BoardName: "Main", Workflow: model.WorkflowReview,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, board := workspace.Msg.GetProject(), workspace.Msg.GetBoard()
+	created := make([]string, 0, 5)
+	for index := range 5 {
+		response, createErr := client.CreateSchedule(ctx, connect.NewRequest(&dieterv1.SaveScheduleRequest{Schedule: &dieterv1.ScheduleDraft{
+			ProjectId: project.GetId(), BoardId: board.GetId(), Name: fmt.Sprintf("Schedule %d", index),
+			Cron: "* * * * *", Timezone: "UTC", Enabled: true, Action: model.ScheduleActionDraft,
+			TitleTemplate: "Run {{date}}", PromptTemplate: "Do work", Provider: "mock", Model: "mock",
+			OpenCardPolicy: "always", MisfirePolicy: "latest", BusyPolicy: "queue", WorkspaceMode: model.WorkspaceModeProject,
+		}}))
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		created = append(created, response.Msg.GetId())
+	}
+
+	seenSchedules := map[string]bool{}
+	pageToken := ""
+	for {
+		page, pageErr := client.ListSchedules(ctx, connect.NewRequest(&dieterv1.ListSchedulesRequest{
+			ProjectId: project.GetId(), PageSize: 2, PageToken: pageToken,
+		}))
+		if pageErr != nil {
+			t.Fatal(pageErr)
+		}
+		if page.Msg.GetTotalCount() != 5 || len(page.Msg.GetSchedules()) > 2 {
+			t.Fatalf("schedule page=%#v", page.Msg)
+		}
+		for _, schedule := range page.Msg.GetSchedules() {
+			if seenSchedules[schedule.GetId()] {
+				t.Fatalf("duplicate schedule %s", schedule.GetId())
+			}
+			seenSchedules[schedule.GetId()] = true
+		}
+		pageToken = page.Msg.GetNextPageToken()
+		if pageToken == "" {
+			break
+		}
+	}
+	if len(seenSchedules) != 5 {
+		t.Fatalf("visited %d schedules", len(seenSchedules))
+	}
+
+	for range 5 {
+		if _, err := client.RunSchedule(ctx, connect.NewRequest(&dieterv1.ScheduleRef{ScheduleId: created[0]})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := client.DeleteSchedule(ctx, connect.NewRequest(&dieterv1.ScheduleRef{ScheduleId: created[0]})); err != nil {
+		t.Fatal(err)
+	}
+	seenRuns := map[string]bool{}
+	pageToken = ""
+	for {
+		page, pageErr := client.ListScheduleRuns(ctx, connect.NewRequest(&dieterv1.ListScheduleRunsRequest{
+			ScheduleId: created[0], PageSize: 2, PageToken: pageToken,
+		}))
+		if pageErr != nil {
+			t.Fatal(pageErr)
+		}
+		if len(page.Msg.GetRuns()) > 2 {
+			t.Fatalf("run page=%#v", page.Msg)
+		}
+		for _, run := range page.Msg.GetRuns() {
+			if seenRuns[run.GetId()] {
+				t.Fatalf("duplicate run %s", run.GetId())
+			}
+			seenRuns[run.GetId()] = true
+		}
+		pageToken = page.Msg.GetNextPageToken()
+		if pageToken == "" {
+			break
+		}
+	}
+	if len(seenRuns) != 5 {
+		t.Fatalf("visited %d runs after schedule deletion", len(seenRuns))
 	}
 }

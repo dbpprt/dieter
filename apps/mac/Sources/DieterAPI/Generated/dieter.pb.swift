@@ -475,8 +475,15 @@ public nonisolated struct Dieter_V1_GlobalSnapshot: Sendable {
 
   public var conversations: [Dieter_V1_ConversationSnapshot] = []
 
+  /// Deprecated: schedule definitions are queried in bounded project pages.
+  ///
+  /// NOTE: This field was marked as deprecated in the .proto file.
   public var schedules: [Dieter_V1_Schedule] = []
 
+  /// Deprecated: occurrence history is queried in bounded pages and is never
+  /// part of the daemon-wide native projection.
+  ///
+  /// NOTE: This field was marked as deprecated in the .proto file.
   public var scheduleRuns: [Dieter_V1_ScheduleRun] = []
 
   public var settings: Dieter_V1_Settings {
@@ -545,21 +552,27 @@ public nonisolated struct Dieter_V1_GlobalDelta: @unchecked Sendable {
     set {_uniqueStorage()._removedChatIds = newValue}
   }
 
+  /// NOTE: This field was marked as deprecated in the .proto file.
   public var schedules: [Dieter_V1_Schedule] {
     get {_storage._schedules}
     set {_uniqueStorage()._schedules = newValue}
   }
 
+  /// NOTE: This field was marked as deprecated in the .proto file.
   public var removedScheduleIds: [String] {
     get {_storage._removedScheduleIds}
     set {_uniqueStorage()._removedScheduleIds = newValue}
   }
 
+  /// Deprecated: native clients refresh only the visible schedule history.
+  ///
+  /// NOTE: This field was marked as deprecated in the .proto file.
   public var scheduleRuns: [Dieter_V1_ScheduleRun] {
     get {_storage._scheduleRuns}
     set {_uniqueStorage()._scheduleRuns = newValue}
   }
 
+  /// NOTE: This field was marked as deprecated in the .proto file.
   public var removedScheduleRunIds: [String] {
     get {_storage._removedScheduleRunIds}
     set {_uniqueStorage()._removedScheduleRunIds = newValue}
@@ -4523,6 +4536,10 @@ public nonisolated struct Dieter_V1_ListSchedulesRequest: Sendable {
 
   public var projectID: String = String()
 
+  public var pageSize: Int32 = 0
+
+  public var pageToken: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -4534,6 +4551,10 @@ public nonisolated struct Dieter_V1_SchedulesResponse: Sendable {
   // methods supported on all messages.
 
   public var schedules: [Dieter_V1_Schedule] = []
+
+  public var nextPageToken: String = String()
+
+  public var totalCount: Int32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -4868,7 +4889,9 @@ public nonisolated struct Dieter_V1_ListScheduleRunsRequest: Sendable {
 
   public var scheduleID: String = String()
 
-  public var limit: Int32 = 0
+  public var pageSize: Int32 = 0
+
+  public var pageToken: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -4921,6 +4944,8 @@ public nonisolated struct Dieter_V1_ScheduleRunsResponse: Sendable {
   // methods supported on all messages.
 
   public var runs: [Dieter_V1_ScheduleRun] = []
+
+  public var nextPageToken: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -14386,7 +14411,7 @@ nonisolated extension Dieter_V1_DeleteFileRequest: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_V1_ListSchedulesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ListSchedulesRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}page_size\0\u{3}page_token\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -14395,6 +14420,8 @@ nonisolated extension Dieter_V1_ListSchedulesRequest: SwiftProtobuf.Message, Swi
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.pageSize) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.pageToken) }()
       default: break
       }
     }
@@ -14404,11 +14431,19 @@ nonisolated extension Dieter_V1_ListSchedulesRequest: SwiftProtobuf.Message, Swi
     if !self.projectID.isEmpty {
       try visitor.visitSingularStringField(value: self.projectID, fieldNumber: 1)
     }
+    if self.pageSize != 0 {
+      try visitor.visitSingularInt32Field(value: self.pageSize, fieldNumber: 2)
+    }
+    if !self.pageToken.isEmpty {
+      try visitor.visitSingularStringField(value: self.pageToken, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_ListSchedulesRequest, rhs: Dieter_V1_ListSchedulesRequest) -> Bool {
     if lhs.projectID != rhs.projectID {return false}
+    if lhs.pageSize != rhs.pageSize {return false}
+    if lhs.pageToken != rhs.pageToken {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -14416,7 +14451,7 @@ nonisolated extension Dieter_V1_ListSchedulesRequest: SwiftProtobuf.Message, Swi
 
 nonisolated extension Dieter_V1_SchedulesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SchedulesResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}schedules\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}schedules\0\u{3}next_page_token\0\u{3}total_count\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -14425,6 +14460,8 @@ nonisolated extension Dieter_V1_SchedulesResponse: SwiftProtobuf.Message, SwiftP
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedMessageField(value: &self.schedules) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.nextPageToken) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.totalCount) }()
       default: break
       }
     }
@@ -14434,11 +14471,19 @@ nonisolated extension Dieter_V1_SchedulesResponse: SwiftProtobuf.Message, SwiftP
     if !self.schedules.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.schedules, fieldNumber: 1)
     }
+    if !self.nextPageToken.isEmpty {
+      try visitor.visitSingularStringField(value: self.nextPageToken, fieldNumber: 2)
+    }
+    if self.totalCount != 0 {
+      try visitor.visitSingularInt32Field(value: self.totalCount, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_SchedulesResponse, rhs: Dieter_V1_SchedulesResponse) -> Bool {
     if lhs.schedules != rhs.schedules {return false}
+    if lhs.nextPageToken != rhs.nextPageToken {return false}
+    if lhs.totalCount != rhs.totalCount {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -15046,7 +15091,7 @@ nonisolated extension Dieter_V1_SetScheduleEnabledRequest: SwiftProtobuf.Message
 
 nonisolated extension Dieter_V1_ListScheduleRunsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ListScheduleRunsRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}schedule_id\0\u{1}limit\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}schedule_id\0\u{3}page_size\0\u{3}page_token\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -15055,7 +15100,8 @@ nonisolated extension Dieter_V1_ListScheduleRunsRequest: SwiftProtobuf.Message, 
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.scheduleID) }()
-      case 2: try { try decoder.decodeSingularInt32Field(value: &self.limit) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.pageSize) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.pageToken) }()
       default: break
       }
     }
@@ -15065,15 +15111,19 @@ nonisolated extension Dieter_V1_ListScheduleRunsRequest: SwiftProtobuf.Message, 
     if !self.scheduleID.isEmpty {
       try visitor.visitSingularStringField(value: self.scheduleID, fieldNumber: 1)
     }
-    if self.limit != 0 {
-      try visitor.visitSingularInt32Field(value: self.limit, fieldNumber: 2)
+    if self.pageSize != 0 {
+      try visitor.visitSingularInt32Field(value: self.pageSize, fieldNumber: 2)
+    }
+    if !self.pageToken.isEmpty {
+      try visitor.visitSingularStringField(value: self.pageToken, fieldNumber: 3)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_ListScheduleRunsRequest, rhs: Dieter_V1_ListScheduleRunsRequest) -> Bool {
     if lhs.scheduleID != rhs.scheduleID {return false}
-    if lhs.limit != rhs.limit {return false}
+    if lhs.pageSize != rhs.pageSize {return false}
+    if lhs.pageToken != rhs.pageToken {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -15181,7 +15231,7 @@ nonisolated extension Dieter_V1_ScheduleRun: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Dieter_V1_ScheduleRunsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ScheduleRunsResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runs\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runs\0\u{3}next_page_token\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -15190,6 +15240,7 @@ nonisolated extension Dieter_V1_ScheduleRunsResponse: SwiftProtobuf.Message, Swi
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedMessageField(value: &self.runs) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.nextPageToken) }()
       default: break
       }
     }
@@ -15199,11 +15250,15 @@ nonisolated extension Dieter_V1_ScheduleRunsResponse: SwiftProtobuf.Message, Swi
     if !self.runs.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.runs, fieldNumber: 1)
     }
+    if !self.nextPageToken.isEmpty {
+      try visitor.visitSingularStringField(value: self.nextPageToken, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_ScheduleRunsResponse, rhs: Dieter_V1_ScheduleRunsResponse) -> Bool {
     if lhs.runs != rhs.runs {return false}
+    if lhs.nextPageToken != rhs.nextPageToken {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

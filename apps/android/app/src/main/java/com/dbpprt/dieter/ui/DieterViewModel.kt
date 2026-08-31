@@ -43,6 +43,8 @@ import com.dbpprt.dieter.v1.SaveScheduleRequest
 import com.dbpprt.dieter.v1.Schedule
 import com.dbpprt.dieter.v1.ScheduleDraft
 import com.dbpprt.dieter.v1.ScheduleRun
+import com.dbpprt.dieter.v1.ScheduleRunsResponse
+import com.dbpprt.dieter.v1.SchedulesResponse
 import com.dbpprt.dieter.v1.Settings
 import com.dbpprt.dieter.v1.SettingsOptions
 import com.dbpprt.dieter.v1.State
@@ -70,6 +72,7 @@ import kotlinx.coroutines.withTimeout
 import java.time.ZoneId
 
 private const val CONVERSATION_PAGE_SIZE = 30
+private const val SCHEDULE_PAGE_SIZE = 50
 private const val HEDGE_FETCH_TIMEOUT_MS = 3_500L
 private const val FIRST_FRAME_DEADLINE_MS = 4_500L
 private const val POST_SEND_INITIAL_REFRESH_DELAY_MS = 750L
@@ -189,8 +192,15 @@ data class DieterUiState(
     val terminalStreamConnected: Boolean = false,
     val terminalCreateVisible: Boolean = false,
     val schedules: List<Schedule> = emptyList(),
+    val schedulesTotalCount: Int = 0,
+    val schedulesNextPageToken: String = "",
+    val schedulesLoading: Boolean = false,
+    val schedulesLoadingMore: Boolean = false,
     val selectedScheduleId: String? = null,
     val scheduleRuns: List<ScheduleRun> = emptyList(),
+    val scheduleRunsNextPageToken: String = "",
+    val scheduleRunsLoading: Boolean = false,
+    val scheduleRunsLoadingMore: Boolean = false,
     val schedulePreview: List<String> = emptyList(),
     val settings: Settings? = null,
     val settingsOptions: SettingsOptions? = null,
@@ -261,6 +271,42 @@ data class DieterUiState(
         }
 }
 
+internal fun DieterUiState.applyingSchedulePage(response: SchedulesResponse, appending: Boolean): DieterUiState {
+    val nextSchedules = if (appending) {
+        val existing = schedules.mapTo(hashSetOf()) { it.id }
+        schedules + response.schedulesList.filter { it.id !in existing }
+    } else {
+        response.schedulesList
+    }
+    val nextSelection = if (appending) selectedScheduleId
+    else selectedScheduleId?.takeIf { id -> nextSchedules.any { it.id == id } }
+    return copy(
+        schedules = nextSchedules,
+        schedulesTotalCount = response.totalCount,
+        schedulesNextPageToken = response.nextPageToken,
+        schedulesLoading = false,
+        schedulesLoadingMore = false,
+        selectedScheduleId = nextSelection,
+        scheduleRuns = if (nextSelection == null) emptyList() else scheduleRuns,
+        scheduleRunsNextPageToken = if (nextSelection == null) "" else scheduleRunsNextPageToken,
+    )
+}
+
+internal fun DieterUiState.applyingScheduleRunPage(response: ScheduleRunsResponse, appending: Boolean): DieterUiState {
+    val nextRuns = if (appending) {
+        val existing = scheduleRuns.mapTo(hashSetOf()) { it.id }
+        scheduleRuns + response.runsList.filter { it.id !in existing }
+    } else {
+        response.runsList
+    }
+    return copy(
+        scheduleRuns = nextRuns,
+        scheduleRunsNextPageToken = response.nextPageToken,
+        scheduleRunsLoading = false,
+        scheduleRunsLoadingMore = false,
+    )
+}
+
 internal fun conversationStreamNeedsRestart(activeCardId: String?, selectedCardId: String?): Boolean =
     selectedCardId != null && activeCardId != selectedCardId
 
@@ -289,6 +335,8 @@ class DieterViewModel(
     private val terminalInputJobs = mutableMapOf<String, Job>()
     private val terminalResizeJobs = mutableMapOf<String, Job>()
     private var conversationHistoryRequestGeneration = 0L
+    private var schedulesRequestGeneration = 0L
+    private var scheduleRunsRequestGeneration = 0L
     private var workspaceSurfaceJob: Job? = null
     private var workspaceDiffJob: Job? = null
     private var gitOperationJob: Job? = null
@@ -583,8 +631,6 @@ class DieterViewModel(
                 conversationLastRefreshedAtMillis = selectedCardId
                     ?.let(connection.conversationRefreshedAtMillis::get)
                     ?: current.conversationLastRefreshedAtMillis,
-                schedules = connection.schedules.filter { it.projectId == current.selectedProjectId },
-                scheduleRuns = current.selectedScheduleId?.let { id -> connection.scheduleRuns.filter { it.scheduleId == id } }.orEmpty(),
                 pendingCardIds = connection.pendingCardIds,
                 pendingMessageIds = connection.pendingMessageIds,
                 acceptedOutboxIds = connection.acceptedOutboxIds,
@@ -807,6 +853,15 @@ class DieterViewModel(
                 filePath = "",
                 fileDocument = null,
                 schedules = emptyList(),
+                schedulesTotalCount = 0,
+                schedulesNextPageToken = "",
+                schedulesLoading = false,
+                schedulesLoadingMore = false,
+                selectedScheduleId = null,
+                scheduleRuns = emptyList(),
+                scheduleRunsNextPageToken = "",
+                scheduleRunsLoading = false,
+                scheduleRunsLoadingMore = false,
                 loading = true,
             )
         }
@@ -855,6 +910,11 @@ class DieterViewModel(
                 filePath = if (changingProject) "" else it.filePath,
                 fileDocument = null,
                 schedules = if (changingProject) emptyList() else it.schedules,
+                schedulesTotalCount = if (changingProject) 0 else it.schedulesTotalCount,
+                schedulesNextPageToken = if (changingProject) "" else it.schedulesNextPageToken,
+                selectedScheduleId = if (changingProject) null else it.selectedScheduleId,
+                scheduleRuns = if (changingProject) emptyList() else it.scheduleRuns,
+                scheduleRunsNextPageToken = if (changingProject) "" else it.scheduleRunsNextPageToken,
                 loading = changingProject,
             )
         }
@@ -1776,7 +1836,54 @@ class DieterViewModel(
     private suspend fun loadSchedules() {
         val projectId = _state.value.selectedProjectId
         if (projectId.isBlank()) return
-        _state.update { it.copy(schedules = connectionManager.state.value.schedules.filter { schedule -> schedule.projectId == projectId }) }
+        val generation = ++schedulesRequestGeneration
+        _state.update {
+            it.copy(
+                schedulesLoading = true,
+                schedulesLoadingMore = false,
+                schedulesNextPageToken = "",
+                error = null,
+            )
+        }
+        try {
+            connectionManager.ensureProjectRoute(projectId)
+            val response = repository.schedules(projectId, SCHEDULE_PAGE_SIZE)
+            if (generation != schedulesRequestGeneration || _state.value.selectedProjectId != projectId) return
+            _state.update { it.applyingSchedulePage(response, appending = false) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            if (generation == schedulesRequestGeneration && _state.value.selectedProjectId == projectId) {
+                _state.update { it.copy(schedulesLoading = false, error = readableError(error)) }
+            }
+        }
+    }
+
+    fun refreshSchedules() {
+        viewModelScope.launch { loadSchedules() }
+    }
+
+    fun loadMoreSchedules() {
+        val current = _state.value
+        val projectId = current.selectedProjectId
+        val pageToken = current.schedulesNextPageToken
+        if (projectId.isBlank() || pageToken.isBlank() || current.schedulesLoading || current.schedulesLoadingMore) return
+        val generation = schedulesRequestGeneration
+        viewModelScope.launch {
+            _state.update { it.copy(schedulesLoadingMore = true, error = null) }
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+                val response = repository.schedules(projectId, SCHEDULE_PAGE_SIZE, pageToken)
+                if (generation != schedulesRequestGeneration || _state.value.selectedProjectId != projectId) return@launch
+                _state.update { it.applyingSchedulePage(response, appending = true) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (generation == schedulesRequestGeneration && _state.value.selectedProjectId == projectId) {
+                    _state.update { it.copy(schedulesLoadingMore = false, error = readableError(error)) }
+                }
+            }
+        }
     }
 
     fun previewSchedule(cron: String, timezone: String) {
@@ -1791,39 +1898,112 @@ class DieterViewModel(
         }
     }
 
-    fun saveSchedule(scheduleId: String, draft: ScheduleDraft) = action {
-        repository.saveSchedule(
-            scheduleId,
-            SaveScheduleRequest.newBuilder().setScheduleId(scheduleId).setSchedule(draft).build(),
-        )
-        loadSchedules()
-        _state.update { it.copy(appSurface = null, editingScheduleId = null, schedulePreview = emptyList()) }
-    }
-
-    fun selectSchedule(schedule: Schedule?) {
-        _state.update {
-            it.copy(
-                selectedScheduleId = schedule?.id,
-                scheduleRuns = schedule?.let { selected -> connectionManager.state.value.scheduleRuns.filter { run -> run.scheduleId == selected.id } }.orEmpty(),
+    private fun upsertLoadedSchedule(schedule: Schedule, select: Boolean = false) {
+        _state.update { current ->
+            val existed = current.schedules.any { it.id == schedule.id }
+            val nextSchedules = (current.schedules.filterNot { it.id == schedule.id } + schedule)
+                .sortedWith(compareBy<Schedule> { it.name.lowercase() }.thenBy { it.id })
+            val selectionChanged = select && current.selectedScheduleId != schedule.id
+            current.copy(
+                schedules = nextSchedules,
+                schedulesTotalCount = if (existed) current.schedulesTotalCount else current.schedulesTotalCount + 1,
+                selectedScheduleId = if (select) schedule.id else current.selectedScheduleId,
+                scheduleRuns = if (selectionChanged) emptyList() else current.scheduleRuns,
+                scheduleRunsNextPageToken = if (selectionChanged) "" else current.scheduleRunsNextPageToken,
             )
         }
     }
 
+    fun saveSchedule(scheduleId: String, draft: ScheduleDraft) = action {
+        val saved = repository.saveSchedule(
+            scheduleId,
+            SaveScheduleRequest.newBuilder().setScheduleId(scheduleId).setSchedule(draft).build(),
+        )
+        upsertLoadedSchedule(saved, select = true)
+        _state.update { it.copy(appSurface = null, editingScheduleId = null, schedulePreview = emptyList()) }
+    }
+
+    fun selectSchedule(schedule: Schedule?) {
+        val generation = ++scheduleRunsRequestGeneration
+        _state.update {
+            it.copy(
+                selectedScheduleId = schedule?.id,
+                scheduleRuns = emptyList(),
+                scheduleRunsNextPageToken = "",
+                scheduleRunsLoading = schedule != null,
+                scheduleRunsLoadingMore = false,
+                error = null,
+            )
+        }
+        if (schedule == null) return
+        val projectId = _state.value.selectedProjectId
+        viewModelScope.launch {
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+                val response = repository.scheduleRuns(schedule.id, SCHEDULE_PAGE_SIZE)
+                if (generation != scheduleRunsRequestGeneration || _state.value.selectedScheduleId != schedule.id) return@launch
+                _state.update { it.applyingScheduleRunPage(response, appending = false) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (generation == scheduleRunsRequestGeneration && _state.value.selectedScheduleId == schedule.id) {
+                    _state.update { it.copy(scheduleRunsLoading = false, error = readableError(error)) }
+                }
+            }
+        }
+    }
+
+    fun loadMoreScheduleRuns() {
+        val current = _state.value
+        val scheduleId = current.selectedScheduleId ?: return
+        val pageToken = current.scheduleRunsNextPageToken
+        if (pageToken.isBlank() || current.scheduleRunsLoading || current.scheduleRunsLoadingMore) return
+        val projectId = current.selectedProjectId
+        val generation = scheduleRunsRequestGeneration
+        viewModelScope.launch {
+            _state.update { it.copy(scheduleRunsLoadingMore = true, error = null) }
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+                val response = repository.scheduleRuns(scheduleId, SCHEDULE_PAGE_SIZE, pageToken)
+                if (generation != scheduleRunsRequestGeneration || _state.value.selectedScheduleId != scheduleId) return@launch
+                _state.update { it.applyingScheduleRunPage(response, appending = true) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (generation == scheduleRunsRequestGeneration && _state.value.selectedScheduleId == scheduleId) {
+                    _state.update { it.copy(scheduleRunsLoadingMore = false, error = readableError(error)) }
+                }
+            }
+        }
+    }
+
     fun toggleSchedule(schedule: Schedule) = action {
-        repository.setScheduleEnabled(schedule.id, !schedule.enabled)
-        loadSchedules()
+        upsertLoadedSchedule(repository.setScheduleEnabled(schedule.id, !schedule.enabled))
     }
 
     fun runSchedule(schedule: Schedule) = action {
         repository.runSchedule(schedule.id)
-        loadSchedules()
         selectSchedule(schedule)
     }
 
     fun deleteSchedule(schedule: Schedule) = action {
         repository.deleteSchedule(schedule.id)
-        if (_state.value.selectedScheduleId == schedule.id) selectSchedule(null)
-        loadSchedules()
+        ++schedulesRequestGeneration
+        if (_state.value.selectedScheduleId == schedule.id) ++scheduleRunsRequestGeneration
+        _state.update { current ->
+            val removed = current.schedules.any { it.id == schedule.id }
+            val selected = current.selectedScheduleId == schedule.id
+            current.copy(
+                schedules = current.schedules.filterNot { it.id == schedule.id },
+                schedulesTotalCount = if (removed) maxOf(0, current.schedulesTotalCount - 1) else current.schedulesTotalCount,
+                selectedScheduleId = if (selected) null else current.selectedScheduleId,
+                scheduleRuns = if (selected) emptyList() else current.scheduleRuns,
+                scheduleRunsNextPageToken = if (selected) "" else current.scheduleRunsNextPageToken,
+                scheduleRunsLoading = if (selected) false else current.scheduleRunsLoading,
+                scheduleRunsLoadingMore = if (selected) false else current.scheduleRunsLoadingMore,
+            )
+        }
+        if (_state.value.schedules.isEmpty() && _state.value.schedulesNextPageToken.isNotBlank()) loadMoreSchedules()
     }
 
     // MARK: Conversation workspace review surface

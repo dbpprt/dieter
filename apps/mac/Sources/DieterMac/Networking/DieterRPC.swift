@@ -8,8 +8,8 @@ import Security
 import SwiftProtobuf
 
 protocol DieterScheduleRPC: Sendable {
-    func schedules(projectID: String) async throws -> Dieter_V1_SchedulesResponse
-    func scheduleRuns(id: String, limit: Int32) async throws -> Dieter_V1_ScheduleRunsResponse
+    func schedules(projectID: String, pageSize: Int32, pageToken: String) async throws -> Dieter_V1_SchedulesResponse
+    func scheduleRuns(id: String, pageSize: Int32, pageToken: String) async throws -> Dieter_V1_ScheduleRunsResponse
 }
 
 protocol DieterChatPinRPC: Sendable {
@@ -625,8 +625,8 @@ final class DieterRPC: Sendable {
 		) as Google_Protobuf_Empty
 	}
 
-    func schedules(projectID: String) async throws -> Dieter_V1_SchedulesResponse {
-        var request = Dieter_V1_ListSchedulesRequest(); request.projectID = projectID
+    func schedules(projectID: String, pageSize: Int32 = 50, pageToken: String = "") async throws -> Dieter_V1_SchedulesResponse {
+        var request = Dieter_V1_ListSchedulesRequest(); request.projectID = projectID; request.pageSize = pageSize; request.pageToken = pageToken
         return try await service.listSchedules(request: .init(message: request))
     }
 
@@ -657,8 +657,8 @@ final class DieterRPC: Sendable {
         return try await service.setScheduleEnabled(request: .init(message: request))
     }
 
-    func scheduleRuns(id: String, limit: Int32 = 50) async throws -> Dieter_V1_ScheduleRunsResponse {
-        var request = Dieter_V1_ListScheduleRunsRequest(); request.scheduleID = id; request.limit = limit
+    func scheduleRuns(id: String, pageSize: Int32 = 50, pageToken: String = "") async throws -> Dieter_V1_ScheduleRunsResponse {
+        var request = Dieter_V1_ListScheduleRunsRequest(); request.scheduleID = id; request.pageSize = pageSize; request.pageToken = pageToken
         return try await service.listScheduleRuns(request: .init(message: request))
     }
 }
