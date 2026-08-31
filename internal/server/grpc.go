@@ -1477,7 +1477,7 @@ func grpcFailure(err error) error {
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
 		return status.Error(codes.NotFound, err.Error())
 	}
-	if errors.Is(err, store.ErrCapacity) {
+	if errors.Is(err, store.ErrCapacity) || errors.Is(err, app.ErrInsufficientStorage) {
 		return status.Error(codes.ResourceExhausted, err.Error())
 	}
 	if errors.Is(err, store.ErrCardActive) {

@@ -336,9 +336,70 @@ const codexTodoForwarder = `    if (item.type === "todo_list") {
 ${codexTodoNeedle}`;
 
 function patchCodexBridge(content) {
-  if (content.includes('send({ type: "raw", rawValue: event });')) return content;
-  if (!content.includes(codexTodoNeedle)) throw new Error('Dieter could not find the Codex todo bridge insertion point');
-  return content.replace(codexTodoNeedle, codexTodoForwarder);
+  if (!content.includes('send({ type: "raw", rawValue: event });')) {
+    if (!content.includes(codexTodoNeedle)) throw new Error('Dieter could not find the Codex todo bridge insertion point');
+    content = content.replace(codexTodoNeedle, codexTodoForwarder);
+  }
+  return patchDurableBridge(content);
+}
+
+function patchDurableBridge(content) {
+  // The upstream bridge deliberately treats its disk replay mirror as
+  // best-effort. Dieter cannot: a missing sequence followed by a provider
+  // process exit leaves the durable conversation behind the actual work. Make
+  // persistence failures terminate the bridge so the worker and daemon can
+  // surface a recoverable failed turn instead of a ghost-running one.
+  content = content.replace(
+    /await appendFile\(eventLogPath, buf\)\.catch\(\(\) => \{\s*\}\);/,
+    'await appendFile(eventLogPath, buf);',
+  );
+  content = content.replace(
+    'void flushEventsToDisk().finally(resolve);',
+    `void flushEventsToDisk().then(resolve, error => {
+          process.stderr.write(\`[harness:\${bridgeType}:error] failed to persist bridge replay events: \${error?.message || error}\\n\`);
+          process.exitCode = 1;
+          resolve();
+          setImmediate(() => process.exit(1));
+        });`,
+  );
+  content = content.replace(
+    /void writeFile\(eventLogPath, (["'])\1\)\.catch\(\(\) => \{\s*\}\);/,
+    'await writeFile(eventLogPath, "");',
+  );
+
+  const replayAssignment = `      eventLog = lines.map((line) => ({
+        seq: JSON.parse(line).seq,
+        line
+      }));`;
+  const replayValidation = `${replayAssignment}
+      for (let index = 0; index < eventLog.length; index += 1) {
+        const seq = eventLog[index].seq;
+        if (!Number.isSafeInteger(seq) || seq <= 0 || (index > 0 && seq !== eventLog[index - 1].seq + 1)) {
+          throw new Error(\`non-contiguous bridge replay sequence at entry \${index}\`);
+        }
+      }`;
+  if (!content.includes('non-contiguous bridge replay sequence') && content.includes(replayAssignment)) {
+    content = content.replace(replayAssignment, replayValidation);
+  }
+  content = content.replace(
+    /    \} catch \{\s*eventLog = \[\];\s*seqCounter = 0;\s*\}/,
+    `    } catch (error) {
+      throw new Error('bridge replay log is corrupt; refusing to rerun an in-flight turn', { cause: error });
+    }`,
+  );
+  if (content.includes('appendFile(eventLogPath') && /appendFile\(eventLogPath, buf\)\.catch/.test(content)) {
+    throw new Error('Dieter could not make bridge event persistence fail closed');
+  }
+  if (content.includes('flushEventsToDisk') && content.includes('finally(resolve)')) {
+    throw new Error('Dieter could not attach bridge persistence failure handling');
+  }
+  if (content.includes('BRIDGE_REPLAY_FROM_DISK') && !content.includes('non-contiguous bridge replay sequence')) {
+    throw new Error('Dieter could not add bridge replay sequence validation');
+  }
+  if (content.includes('BRIDGE_REPLAY_FROM_DISK') && !content.includes('refusing to rerun an in-flight turn')) {
+    throw new Error('Dieter could not disable unsafe bridge reruns after replay corruption');
+  }
+  return content;
 }
 
 /** Observe native harness events before HarnessAgent converts them to AI SDK UI chunks. */
@@ -364,12 +425,14 @@ export function observeHarnessCapabilities(harness, collector) {
       });
     },
   };
-  if (harness.harnessId === 'codex' && harness.getBootstrap) {
+  if (harness.getBootstrap) {
     observed.getBootstrap = async options => {
       const recipe = await harness.getBootstrap(options);
       return {
         ...recipe,
-        files: recipe.files.map(file => file.path.endsWith('/bridge.mjs') ? { ...file, content: patchCodexBridge(file.content) } : file),
+        files: recipe.files.map(file => file.path.endsWith('/bridge.mjs')
+          ? { ...file, content: harness.harnessId === 'codex' ? patchCodexBridge(file.content) : patchDurableBridge(file.content) }
+          : file),
       };
     };
   }

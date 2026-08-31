@@ -397,6 +397,30 @@ func TestInterruptConversationReconcilesOrphanedRuntime(t *testing.T) {
 	}
 }
 
+func TestInterruptConversationPreservesFailedRuntime(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "card_failed_orphan", Title: "Failed orphan", Prompt: "Work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.StartConversationTurn(card.ID, "turn_failed", "user_failed", "Start working"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.AppendUIChunk(card.ID, "turn_failed", json.RawMessage(`{"type":"error","errorText":"disk write failed"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateCardCache(card.ID, CardCacheInput{Runtime: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	if reconciled, err := s.InterruptConversation(card.ID); err != nil || !reconciled {
+		t.Fatalf("reconciled=%v err=%v", reconciled, err)
+	}
+	stored, err := s.ResolveCard(card.ID)
+	if err != nil || stored.Runtime != "failed" {
+		t.Fatalf("card=%#v err=%v", stored, err)
+	}
+}
+
 func TestProjectRemovalHidesResourcesAndCanBeRestored(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
 	marker := filepath.Join(project.Path, "keep-me.txt")

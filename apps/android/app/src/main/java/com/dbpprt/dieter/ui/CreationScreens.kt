@@ -108,15 +108,18 @@ fun NewConversationScreen(
 ) {
     var title by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
-    var provider by remember(state.harnesses) { mutableStateOf(state.harnesses.firstOrNull()?.id.orEmpty()) }
+    val creationDefaults = remember(state.harnesses) {
+        resolveConversationCreationPreferences(model.conversationCreationPreferences, state.harnesses)
+    }
+    var provider by remember(creationDefaults) { mutableStateOf(creationDefaults.provider) }
     val harness = state.harnesses.firstOrNull { it.id == provider } ?: state.harnesses.firstOrNull()
-    var selectedModel by remember(provider, harness) { mutableStateOf(harness?.defaultModel.orEmpty()) }
-    var effort by remember(provider, selectedModel) { mutableStateOf("") }
-    var providerOptions by remember(provider, harness) { mutableStateOf(providerOptionValues(harness)) }
+    var selectedModel by remember(creationDefaults) { mutableStateOf(creationDefaults.model) }
+    var effort by remember(creationDefaults) { mutableStateOf(creationDefaults.effort) }
+    var providerOptions by remember(provider, harness, creationDefaults) { mutableStateOf(providerOptionValues(harness)) }
     var lane by remember(state.selectedLane) {
         mutableStateOf(state.selectedLane.ifBlank { state.board?.lanesList?.firstOrNull()?.id.orEmpty() })
     }
-    var workspaceMode by remember { mutableStateOf(ConversationWorkspaceMode.WORKTREE) }
+    var workspaceMode by remember(creationDefaults) { mutableStateOf(creationDefaults.workspaceMode) }
     val labelIds = remember { mutableStateListOf<String>() }
     val attachments = remember { mutableStateListOf<MessagePart>() }
     var attachmentPickerVisible by remember { mutableStateOf(false) }
@@ -457,7 +460,12 @@ private fun NewCardBody(
         FormSection(Icons.Outlined.ViewKanban, "Start in") {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.board?.lanesList.orEmpty().filter { it.id == "todo" || it.id == "running" }.forEach { boardLane ->
-                    FilterChip(selected = lane == boardLane.id, onClick = { onLaneChange(boardLane.id) }, label = { Text(boardLane.name) })
+                    FilterChip(
+                        selected = lane == boardLane.id,
+                        onClick = { onLaneChange(boardLane.id) },
+                        label = { Text(boardLane.name) },
+                        modifier = Modifier.testTag("create-lane-${boardLane.id}"),
+                    )
                 }
             }
         }
@@ -912,17 +920,20 @@ private fun ModelSelectors(
             value = harness?.name ?: "Agent",
             options = state.harnesses.map { it.id to it.name },
             onSelect = onProviderChange,
+            modifier = Modifier.testTag("creation-provider"),
         )
         SelectorChip(
             value = harness?.modelsList?.firstOrNull { it.id == model }?.name ?: model.ifBlank { "Model" },
             options = harness?.modelsList.orEmpty().map { it.id to it.name },
             onSelect = onModelChange,
+            modifier = Modifier.testTag("creation-model"),
         )
         if (effortOptions.isNotEmpty()) {
             SelectorChip(
                 value = effortOptions.firstOrNull { it.id == effort }?.name ?: effort.ifBlank { "Default effort" },
                 options = listOf("" to "Default effort") + effortOptions.map { it.id to it.name },
                 onSelect = onEffortChange,
+                modifier = Modifier.testTag("creation-effort"),
             )
         }
         harness?.optionsList.orEmpty().forEach { option ->
@@ -937,10 +948,15 @@ private fun ModelSelectors(
 }
 
 @Composable
-private fun SelectorChip(value: String, options: List<Pair<String, String>>, onSelect: (String) -> Unit) {
+private fun SelectorChip(
+    value: String,
+    options: List<Pair<String, String>>,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        AssistChip(onClick = { expanded = true }, label = { Text(value) })
+        AssistChip(onClick = { expanded = true }, label = { Text(value) }, modifier = modifier)
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (id, name) ->
                 DropdownMenuItem(text = { Text(name) }, onClick = { expanded = false; onSelect(id) })

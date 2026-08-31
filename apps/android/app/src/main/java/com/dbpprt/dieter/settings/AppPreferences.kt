@@ -9,6 +9,13 @@ import org.json.JSONArray
 
 enum class NavigationStyle { CLASSIC, GLASS }
 
+data class ConversationCreationPreferences(
+    val provider: String = "",
+    val model: String = "",
+    val effort: String = "",
+    val workspaceMode: String = "worktree",
+)
+
 class AppPreferences(context: Context) {
     private val appContext = context.applicationContext
     private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -28,6 +35,8 @@ class AppPreferences(context: Context) {
     val projectOrder: StateFlow<List<String>> = _projectOrder.asStateFlow()
     private val _pinnedChatOrder = MutableStateFlow(readPinnedChatOrder())
     val pinnedChatOrder: StateFlow<List<String>> = _pinnedChatOrder.asStateFlow()
+    private val _conversationCreation = MutableStateFlow(readConversationCreationPreferences())
+    val conversationCreation: StateFlow<ConversationCreationPreferences> = _conversationCreation.asStateFlow()
 
     init {
         DieterLauncherIcon.apply(appContext, _palette.value)
@@ -93,6 +102,16 @@ class AppPreferences(context: Context) {
         _pinnedChatOrder.value = updated
     }
 
+    fun setConversationCreationPreferences(value: ConversationCreationPreferences) {
+        preferences.edit()
+            .putString(KEY_CONVERSATION_CREATION_PROVIDER, value.provider)
+            .putString(KEY_CONVERSATION_CREATION_MODEL, value.model)
+            .putString(KEY_CONVERSATION_CREATION_EFFORT, value.effort)
+            .putString(KEY_CONVERSATION_CREATION_WORKSPACE_MODE, value.workspaceMode)
+            .apply()
+        _conversationCreation.value = value
+    }
+
     private fun readNavigationStyle(): NavigationStyle = runCatching {
         NavigationStyle.valueOf(
             preferences.getString(KEY_NAVIGATION_STYLE, NavigationStyle.CLASSIC.name)
@@ -141,6 +160,14 @@ class AppPreferences(context: Context) {
         }.distinct()
     }.getOrDefault(emptyList())
 
+    private fun readConversationCreationPreferences() = ConversationCreationPreferences(
+        provider = preferences.getString(KEY_CONVERSATION_CREATION_PROVIDER, "").orEmpty(),
+        model = preferences.getString(KEY_CONVERSATION_CREATION_MODEL, "").orEmpty(),
+        effort = preferences.getString(KEY_CONVERSATION_CREATION_EFFORT, "").orEmpty(),
+        workspaceMode = preferences.getString(KEY_CONVERSATION_CREATION_WORKSPACE_MODE, "worktree")
+            .orEmpty().ifBlank { "worktree" },
+    )
+
     companion object {
         private const val PREFERENCES = "dieter_app_settings"
         private const val KEY_NAVIGATION_STYLE = "navigation_style"
@@ -157,6 +184,10 @@ class AppPreferences(context: Context) {
         private const val KEY_LIVE_STATUS_ACTIVITY_ENABLED = "live_status_activity_enabled"
         private const val KEY_PROJECT_ORDER = "project_order"
         private const val KEY_PINNED_CHAT_ORDER = "pinned_chat_order"
+        private const val KEY_CONVERSATION_CREATION_PROVIDER = "conversation_creation_provider"
+        private const val KEY_CONVERSATION_CREATION_MODEL = "conversation_creation_model"
+        private const val KEY_CONVERSATION_CREATION_EFFORT = "conversation_creation_effort"
+        private const val KEY_CONVERSATION_CREATION_WORKSPACE_MODE = "conversation_creation_workspace_mode"
 
         fun selectedPalette(context: Context): DieterPalette = DieterPalette.resolve(
             context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)

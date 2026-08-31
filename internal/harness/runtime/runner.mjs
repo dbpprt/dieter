@@ -69,6 +69,9 @@ const actualWorkspace = workspaceProbe.stdout.trim();
 if (workspaceProbe.exitCode !== 0 || actualWorkspace !== expectedWorkspace) {
   throw new Error(`harness workspace mismatch: expected ${expectedWorkspace}, resolved ${actualWorkspace || '<empty>'}`);
 }
+const heartbeatTimer = setInterval(() => send({ type: 'heartbeat' }), 5_000);
+heartbeatTimer.unref?.();
+send({ type: 'heartbeat' });
 
 const runtimePrompt = await promptWithLocalAttachments(request);
 const capabilityCollector = createSubagentCapabilityCollector({
@@ -360,5 +363,13 @@ try {
   process.exitCode = controller.signal.aborted ? interruptExitCode ?? 130 : 1;
 } finally {
   if (forcedExitTimer != null) clearTimeout(forcedExitTimer);
+  clearInterval(heartbeatTimer);
+  if (!suspending) {
+    try {
+      await sandbox.stopAll();
+    } catch (error) {
+      console.error(`failed to stop harness child processes: ${harnessErrorMessage(error)}`);
+    }
+  }
   settleWorker();
 }

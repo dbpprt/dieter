@@ -413,7 +413,11 @@ func (s *Store) InterruptConversation(cardRef string) (bool, error) {
 		}
 	}
 	if activeCard {
-		if _, err := s.UpdateCardCache(card.ID, CardCacheInput{Runtime: "idle"}); err != nil {
+		runtime := "idle"
+		if conversation.Status == "failed" {
+			runtime = "failed"
+		}
+		if _, err := s.UpdateCardCache(card.ID, CardCacheInput{Runtime: runtime}); err != nil {
 			return false, err
 		}
 	}

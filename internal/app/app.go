@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,18 +28,24 @@ type Service struct {
 	Runner     harness.Runner
 	Workspaces *workspace.Manager
 
-	mu           sync.Mutex
-	active       map[string]*activeTurn
-	shuttingDown bool
+	mu               sync.Mutex
+	active           map[string]*activeTurn
+	shuttingDown     bool
+	minimumFreeBytes uint64
+	diskAvailable    func(string) (uint64, error)
 }
 
 type activeTurn struct {
-	cancel  context.CancelFunc
-	cardID  string
-	turnID  string
-	lease   store.RuntimeLease
-	done    chan struct{}
-	suspend bool
+	cancel         context.CancelFunc
+	cardID         string
+	turnID         string
+	lease          store.RuntimeLease
+	done           chan struct{}
+	suspend        bool
+	startedAt      time.Time
+	lastProgress   time.Time
+	workerObserved bool
+	recoveryErr    error
 }
 
 type TurnUpdate struct {
@@ -51,7 +58,45 @@ func New(data *store.Store, runner harness.Runner) *Service {
 	if runner == nil {
 		runner = harness.NewSubprocessRunner(data.Root)
 	}
-	return &Service{Store: data, Runner: runner, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}}
+	minimumFreeBytes := uint64(2 << 30)
+	if raw := strings.TrimSpace(os.Getenv("DIETER_MIN_FREE_BYTES")); raw != "" {
+		if configured, err := strconv.ParseUint(raw, 10, 64); err == nil {
+			minimumFreeBytes = configured
+		}
+	}
+	return &Service{
+		Store: data, Runner: runner, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{},
+		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes,
+	}
+}
+
+var ErrInsufficientStorage = errors.New("insufficient free disk space to start an agent turn")
+
+const (
+	workerStartupTimeout   = 5 * time.Minute
+	workerHeartbeatTimeout = 30 * time.Second
+)
+
+func (s *Service) ensureStartStorage(paths ...string) error {
+	if s.minimumFreeBytes == 0 || s.diskAvailable == nil {
+		return nil
+	}
+	checked := map[string]bool{}
+	for _, path := range paths {
+		path = filepath.Clean(path)
+		if path == "." || checked[path] {
+			continue
+		}
+		checked[path] = true
+		available, err := s.diskAvailable(path)
+		if err != nil {
+			return fmt.Errorf("check free disk space for %s: %w", path, err)
+		}
+		if available < s.minimumFreeBytes {
+			return fmt.Errorf("%w: %s has %d MiB available; %d MiB required", ErrInsufficientStorage, path, available>>20, s.minimumFreeBytes>>20)
+		}
+	}
+	return nil
 }
 
 // ReconcileOrphanedTurns resumes turns that were cleanly suspended by a
@@ -66,6 +111,12 @@ func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
 	recovered := make([]string, 0, len(cards))
 	var recoveryErrors []error
 	for _, card := range cards {
+		s.mu.Lock()
+		ownedHere := s.active[card.ID] != nil
+		s.mu.Unlock()
+		if ownedHere {
+			continue
+		}
 		if resumeErr := s.resumeOrphanedTurn(card.ID); resumeErr == nil {
 			recovered = append(recovered, card.ID)
 			continue
@@ -103,6 +154,9 @@ func hasTurnContinuation(state json.RawMessage) bool {
 func (s *Service) resumeOrphanedTurn(ref string) error {
 	detail, err := s.Store.CardDetail(ref)
 	if err != nil {
+		return err
+	}
+	if err := s.ensureStartStorage(s.Store.Root, detail.Project.Path); err != nil {
 		return err
 	}
 	conversation, err := s.Store.Conversation(detail.Card.ID)
@@ -159,7 +213,8 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		_ = s.Store.ReleaseRuntimeLease(lease)
 		return store.ErrCardActive
 	}
-	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done}
+	now := time.Now()
+	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
 	s.mu.Unlock()
 	updates := make(chan TurnUpdate, 1024)
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
@@ -512,6 +567,9 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 			return nil, errors.New("conversation provider options are locked")
 		}
 	}
+	if err := s.ensureStartStorage(s.Store.Root, detail.Project.Path); err != nil {
+		return nil, err
+	}
 	s.mu.Lock()
 	if s.shuttingDown {
 		s.mu.Unlock()
@@ -530,7 +588,8 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	s.mu.Lock()
-	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done}
+	now := time.Now()
+	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
 	s.mu.Unlock()
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
 	if err != nil {
@@ -762,6 +821,65 @@ func (filter *capabilityProgressFilter) shouldPersist(capability json.RawMessage
 	return true
 }
 
+func (s *Service) noteTurnProgress(cardID, turnID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current := s.active[cardID]
+	if current == nil || current.turnID != turnID || current.recoveryErr != nil {
+		return false
+	}
+	current.workerObserved = true
+	current.lastProgress = time.Now()
+	return true
+}
+
+func (s *Service) turnRecoveryFailure(cardID, turnID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current := s.active[cardID]
+	if current == nil || current.turnID != turnID {
+		return nil
+	}
+	return current.recoveryErr
+}
+
+// ReconcileStalledTurns cancels workers whose independent protocol heartbeat
+// has stopped. The owning runTurn goroutine durably records the failure before
+// releasing the runtime lease, so a new message can resume the same
+// conversation without replaying the prompt or losing its worktree.
+func (s *Service) ReconcileStalledTurns(now time.Time) []string {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	s.mu.Lock()
+	stalled := make([]*activeTurn, 0)
+	for _, turn := range s.active {
+		if turn.suspend || turn.recoveryErr != nil {
+			continue
+		}
+		limit := workerStartupTimeout
+		last := turn.startedAt
+		message := "agent worker did not start reporting progress"
+		if turn.workerObserved {
+			limit = workerHeartbeatTimeout
+			last = turn.lastProgress
+			message = "agent worker stopped reporting progress"
+		}
+		if last.IsZero() || now.Sub(last) <= limit {
+			continue
+		}
+		turn.recoveryErr = errors.New(message + "; its workspace and durable conversation were preserved and can be resumed")
+		stalled = append(stalled, turn)
+	}
+	s.mu.Unlock()
+	result := make([]string, 0, len(stalled))
+	for _, turn := range stalled {
+		result = append(result, turn.cardID)
+		turn.cancel()
+	}
+	return result
+}
+
 func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID string, request harness.Request, updates chan TurnUpdate, done chan struct{}) {
 	defer close(updates)
 	defer close(done)
@@ -775,7 +893,12 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	var reportedFailure error
 	capabilityFilter := newCapabilityProgressFilter()
 	err := s.Runner.Run(ctx, request, func(output harness.Output) error {
+		if !s.noteTurnProgress(detail.Card.ID, turnID) {
+			return context.Canceled
+		}
 		switch output.Type {
+		case "heartbeat":
+			return nil
 		case "chunk":
 			_, conversation, err := s.Store.AppendUIChunk(detail.Card.ID, turnID, output.Chunk)
 			if err != nil {
@@ -822,6 +945,22 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	})
 	if err == nil && reportedFailure != nil {
 		err = reportedFailure
+	}
+	if recoveryErr := s.turnRecoveryFailure(detail.Card.ID, turnID); recoveryErr != nil {
+		chunk, _ := json.Marshal(map[string]any{"type": "error", "errorText": recoveryErr.Error()})
+		if _, _, appendErr := s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk); appendErr != nil {
+			recoveryErr = errors.Join(recoveryErr, appendErr)
+		}
+		if _, updateErr := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Runtime: "failed"}); updateErr != nil {
+			recoveryErr = errors.Join(recoveryErr, updateErr)
+		}
+		s.clearActive(detail.Card.ID, turnID)
+		s.startNextQueued(detail.Card.ID)
+		select {
+		case updates <- TurnUpdate{Chunk: chunk, Err: recoveryErr, Done: true}:
+		default:
+		}
+		return
 	}
 	if s.turnIsSuspending(detail.Card.ID, turnID) {
 		conversation, conversationErr := s.Store.Conversation(detail.Card.ID)

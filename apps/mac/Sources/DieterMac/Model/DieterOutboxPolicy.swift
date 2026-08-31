@@ -61,6 +61,37 @@ enum DieterConversationOpenFailurePolicy {
 }
 
 enum DieterOutboxPolicy {
+    static func retargetedCards(
+        _ cards: [Dieter_V1_Card],
+        from optimisticID: String,
+        to serverID: String,
+        authoritative: Dieter_V1_Card? = nil
+    ) -> [Dieter_V1_Card] {
+        guard optimisticID != serverID else { return cards }
+
+        if cards.contains(where: { $0.id == serverID }) {
+            var keptServer = false
+            return cards.compactMap { card in
+                if card.id == optimisticID { return nil }
+                guard card.id == serverID else { return card }
+                guard !keptServer else { return nil }
+                keptServer = true
+                return card
+            }
+        }
+
+        var retargeted = false
+        return cards.compactMap { card in
+            guard card.id == optimisticID else { return card }
+            guard !retargeted else { return nil }
+            retargeted = true
+            if let authoritative, authoritative.id == serverID { return authoritative }
+            var card = card
+            card.id = serverID
+            return card
+        }
+    }
+
     static func removeUndelivered(
         from entries: inout [DieterOutboxEntry],
         endpointID: String

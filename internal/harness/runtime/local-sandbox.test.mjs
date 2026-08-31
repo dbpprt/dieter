@@ -75,6 +75,29 @@ test('stopping a local session terminates the entire spawned process group', { s
   }
 });
 
+test('stopping a local session terminates descendants after the group leader exits', { skip: process.platform === 'win32' }, async () => {
+  const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
+  try {
+    const projectPath = join(base, 'project');
+    const childPIDFile = join(base, 'orphan-child.pid');
+    await mkdir(projectPath);
+    const provider = await createLocalSandboxProvider({ root: join(base, 'runtime'), projectPath });
+    const session = await provider.createSession();
+    const processHandle = await session.spawn({
+      command: `node -e "const{spawn}=require('child_process');const{writeFileSync}=require('fs');const c=spawn(process.execPath,['-e','process.on(\\\"SIGTERM\\\",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync('${childPIDFile}',String(c.pid));c.unref()"`,
+    });
+    assert.equal((await processHandle.wait()).exitCode, 0);
+    const descendantPID = Number((await readFile(childPIDFile, 'utf8')).trim());
+    assert.doesNotThrow(() => process.kill(descendantPID, 0));
+
+    await session.stop();
+
+    assert.throws(() => process.kill(descendantPID, 0), error => error?.code === 'ESRCH');
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
 test('keeps concurrent workspaces isolated under one runtime root', async () => {
   const base = await mkdtemp(join(tmpdir(), 'board-local-sandbox-'));
   try {

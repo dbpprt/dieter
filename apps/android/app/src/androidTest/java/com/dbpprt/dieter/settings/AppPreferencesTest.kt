@@ -8,6 +8,28 @@ import org.junit.Test
 
 class AppPreferencesTest {
     @Test
+    fun conversationCreationPreferencesPersistTogether() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = AppPreferences(context)
+        val original = preferences.conversationCreation.value
+        val expected = ConversationCreationPreferences(
+            provider = "codex",
+            model = "sol",
+            effort = "xhigh",
+            workspaceMode = "project",
+        )
+
+        try {
+            preferences.setConversationCreationPreferences(expected)
+
+            assertEquals(expected, preferences.conversationCreation.value)
+            assertEquals(expected, AppPreferences(context).conversationCreation.value)
+        } finally {
+            preferences.setConversationCreationPreferences(original)
+        }
+    }
+
+    @Test
     fun projectOrderPersistsInSequence() {
         val preferences = AppPreferences(InstrumentationRegistry.getInstrumentation().targetContext)
         val originalOrder = preferences.projectOrder.value

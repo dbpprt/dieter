@@ -17,6 +17,7 @@ import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.settings.AppPreferences
+import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.DieterNotificationSettings
 import com.dbpprt.dieter.settings.NavigationStyle
@@ -270,6 +271,8 @@ class DieterViewModel(
     private val repository: DieterRepository = connectionManager.repository
     private val _state = MutableStateFlow(DieterUiState())
     val state: StateFlow<DieterUiState> = _state.asStateFlow()
+    internal val conversationCreationPreferences: ConversationCreationPreferences
+        get() = appPreferences.conversationCreation.value
 
     private val mutationMutex = Mutex()
     private var foreground = false
@@ -1283,6 +1286,14 @@ class DieterViewModel(
             .setDeferStart(deferStart)
             .addAllAttachments(attachments)
             .build()
+        appPreferences.setConversationCreationPreferences(
+            ConversationCreationPreferences(
+                provider = provider,
+                model = model,
+                effort = effort,
+                workspaceMode = selectedWorkspaceMode.wire,
+            ),
+        )
         val card = connectionManager.enqueueConversation(request, chat)
         _state.update { it.copy(appSurface = null, editingScheduleId = null) }
         if (shouldOpenCreatedConversation(chat, lane)) {
@@ -1392,15 +1403,23 @@ class DieterViewModel(
 
     fun archiveSelected() = action {
         val card = _state.value.selectedCard ?: return@action
-        repository.archiveCard(card.id, !card.archived)
+        applyCardMutation(repository.archiveCard(card.id, !card.archived))
         closeDetail()
-        refreshStateOnce()
     }
 
     fun archiveBoardCard(cardId: String) = action {
-        repository.archiveCard(cardId, true)
-        _state.update { current -> current.copy(cards = current.cards.filterNot { it.id == cardId }) }
+        applyCardMutation(repository.archiveCard(cardId, true))
         refreshStateOnce()
+    }
+
+    fun archiveChat(chat: Card) = action {
+        applyCardMutation(repository.archiveCard(chat.id, true))
+        if (_state.value.selectedCardId == chat.id) closeDetail()
+    }
+
+    fun renameChat(chat: Card, title: String) = action {
+        if (title.isBlank() || title == chat.title) return@action
+        applyCardMutation(repository.renameCard(chat.id, title))
     }
 
     private fun startCard(card: Card, board: Board?) {
@@ -1423,8 +1442,22 @@ class DieterViewModel(
     }
 
     fun togglePin(card: Card) = action {
-        updateCard(repository.pinChat(card.id, !card.pinned))
-        loadChats()
+        applyCardMutation(repository.pinChat(card.id, !card.pinned))
+    }
+
+    private fun applyCardMutation(card: Card) {
+        connectionManager.acceptCardMutation(card)
+        if (card.archived) {
+            _state.update { current ->
+                current.copy(
+                    cards = current.cards.filterNot { it.id == card.id },
+                    spaceCards = current.spaceCards.filterNot { it.id == card.id },
+                    chats = current.chats.filterNot { it.id == card.id },
+                )
+            }
+        } else {
+            updateCard(card)
+        }
     }
 
     private fun updateCard(card: Card) {

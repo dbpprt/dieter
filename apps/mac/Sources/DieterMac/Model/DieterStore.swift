@@ -172,6 +172,7 @@ struct DataPlaneConnection {
     let rpc: DieterRPC
     let task: Task<Void, Never>
     let connection: MachineConnectionStatus
+    let directTokenExpiresAt: String?
 }
 
 enum DirectCandidateScope: Equatable {
@@ -208,6 +209,12 @@ enum SyncStreamLiveness {
     static func requiresConnectionRecovery(lastFrameAt: Date?, now: Date = Date()) -> Bool {
         guard let lastFrameAt else { return true }
         return now.timeIntervalSince(lastFrameAt) >= timeout
+    }
+}
+
+enum ConnectionAttemptOwnership {
+    static func mayMutateSharedState(attemptGeneration: UInt64, currentGeneration: UInt64) -> Bool {
+        attemptGeneration == currentGeneration
     }
 }
 
@@ -1008,7 +1015,10 @@ final class DieterStore {
             gatewayRPC = control
             gatewayTask = Task { try? await control.run() }
             let daemonDirectory = try await control.daemons()
-            guard generation == connectionGeneration else {
+            guard ConnectionAttemptOwnership.mayMutateSharedState(
+                attemptGeneration: generation,
+                currentGeneration: connectionGeneration
+            ) else {
                 gatewayTask?.cancel()
                 control.shutdown()
                 return
@@ -1046,7 +1056,10 @@ final class DieterStore {
                 target: target,
                 gatewayAccessToken: accessToken
             )
-            guard generation == connectionGeneration else {
+            guard ConnectionAttemptOwnership.mayMutateSharedState(
+                attemptGeneration: generation,
+                currentGeneration: connectionGeneration
+            ) else {
                 dataPlane.task.cancel()
                 dataPlane.rpc.shutdown()
                 gatewayTask?.cancel()
@@ -1061,7 +1074,18 @@ final class DieterStore {
             rpc = dataPlane.rpc
             connectionTask = dataPlane.task
             machineConnectionStatuses[target.id] = dataPlane.connection
+            if let expiresAt = dataPlane.directTokenExpiresAt {
+                scheduleDirectRefresh(expiresAt: expiresAt, target: target)
+            }
             try? await saveSyncPersistence()
+            guard ConnectionAttemptOwnership.mayMutateSharedState(
+                attemptGeneration: generation,
+                currentGeneration: connectionGeneration
+            ) else {
+                dataPlane.task.cancel()
+                dataPlane.rpc.shutdown()
+                return
+            }
             endpoint = target
             activateSyncProjection(for: target)
             persistEndpoints()
@@ -1092,6 +1116,14 @@ final class DieterStore {
             let initialHarnesses = try await harnessesTask.value
             let initialSettings = try await settingsTask.value
             let initialOptions = try await optionsTask.value
+            guard ConnectionAttemptOwnership.mayMutateSharedState(
+                attemptGeneration: generation,
+                currentGeneration: connectionGeneration
+            ) else {
+                dataPlane.task.cancel()
+                dataPlane.rpc.shutdown()
+                return
+            }
             self.health = initialHealth
             self.runtime = initialRuntime
             acceptState(initialState)
@@ -1110,11 +1142,17 @@ final class DieterStore {
         } catch {
             gatewayTask?.cancel()
             gatewayRPC?.shutdown()
+            guard ConnectionAttemptOwnership.mayMutateSharedState(
+                attemptGeneration: generation,
+                currentGeneration: connectionGeneration
+            ) else {
+                connectionLogger.debug("Ignoring failed stale connection attempt generation \(generation, privacy: .public)")
+                return
+            }
             connectionTask?.cancel()
             connectionTask = nil
             rpc?.shutdown()
             rpc = nil
-            guard generation == connectionGeneration else { return }
             if let connectionError = error as? DieterStoreConnectionError,
                case let .incompatible(found) = connectionError {
                 phase = .incompatible(found: found)
@@ -1171,13 +1209,11 @@ final class DieterStore {
                     let started = Date()
                     do {
                         _ = try await direct.health(timeout: .seconds(2))
-                        if refreshDirectToken {
-                            scheduleDirectRefresh(expiresAt: token.expiresAt, target: target)
-                        }
                         return DataPlaneConnection(
                             rpc: direct,
                             task: directTask,
-                            connection: .init(route: .local, latencyMilliseconds: Self.latencyMilliseconds(since: started))
+                            connection: .init(route: .local, latencyMilliseconds: Self.latencyMilliseconds(since: started)),
+                            directTokenExpiresAt: refreshDirectToken ? token.expiresAt : nil
                         )
                     } catch {
                         connectionLogger.debug(
@@ -1205,7 +1241,8 @@ final class DieterStore {
             return DataPlaneConnection(
                 rpc: relay,
                 task: relayTask,
-                connection: .init(route: .gateway, latencyMilliseconds: Self.latencyMilliseconds(since: started))
+                connection: .init(route: .gateway, latencyMilliseconds: Self.latencyMilliseconds(since: started)),
+                directTokenExpiresAt: nil
             )
         } catch {
             relayTask.cancel()
@@ -2871,16 +2908,39 @@ final class DieterStore {
     @discardableResult
     private func retargetOptimisticConversation(from optimisticID: String, to serverID: String) -> Bool {
         let selected = (selectedCardID ?? selectedChatID) == optimisticID
+        let authoritative = state.cards.first(where: { $0.id == serverID })
+            ?? state.chats.first(where: { $0.id == serverID })
+            ?? chats.first(where: { $0.id == serverID })
+            ?? navigationCards.values.lazy.compactMap({ cards in
+                cards.first(where: { $0.id == serverID })
+            }).first
         if selectedCardID == optimisticID { selectedCardID = serverID }
         if selectedChatID == optimisticID { selectedChatID = serverID }
-        state.cards = state.cards.map { card in var card = card; if card.id == optimisticID { card.id = serverID }; return card }
-        chats = chats.map { card in var card = card; if card.id == optimisticID { card.id = serverID }; return card }
+        state.cards = DieterOutboxPolicy.retargetedCards(
+            state.cards,
+            from: optimisticID,
+            to: serverID,
+            authoritative: authoritative
+        )
+        state.chats = DieterOutboxPolicy.retargetedCards(
+            state.chats,
+            from: optimisticID,
+            to: serverID,
+            authoritative: authoritative
+        )
+        chats = DieterOutboxPolicy.retargetedCards(
+            chats,
+            from: optimisticID,
+            to: serverID,
+            authoritative: authoritative
+        )
         for projectID in Array(navigationCards.keys) {
-            navigationCards[projectID] = navigationCards[projectID]?.map { card in
-                var card = card
-                if card.id == optimisticID { card.id = serverID }
-                return card
-            }
+            navigationCards[projectID] = DieterOutboxPolicy.retargetedCards(
+                navigationCards[projectID] ?? [],
+                from: optimisticID,
+                to: serverID,
+                authoritative: authoritative
+            )
         }
         if var snapshot = conversation, snapshot.detail.card.id == optimisticID || snapshot.conversation.cardID == optimisticID {
             snapshot.detail.card.id = serverID

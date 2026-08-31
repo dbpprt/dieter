@@ -351,7 +351,11 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	runner := NewSubprocessRunner(t.TempDir())
 	var chunks []string
 	var capabilities []string
+	heartbeats := 0
 	err := runner.Run(context.Background(), Request{Harness: "mock", Prompt: "hello", SessionID: "card", ResponseMessageID: "assistant_1", ProjectPath: repo, RuntimeRoot: filepath.Join(t.TempDir(), "runtime")}, func(output Output) error {
+		if output.Type == "heartbeat" {
+			heartbeats++
+		}
 		if output.Type == "chunk" {
 			chunks = append(chunks, string(output.Chunk))
 		}
@@ -362,8 +366,8 @@ func TestSubprocessRunnerMockIntegration(t *testing.T) {
 	})
 	stream := strings.Join(chunks, "")
 	capabilityStream := strings.Join(capabilities, "")
-	if err != nil || !strings.Contains(stream, "Mock harness received: hello") || !strings.Contains(stream, `"messageId":"assistant_1"`) || !strings.Contains(stream, `"type":"message-metadata"`) || !strings.Contains(stream, `"messageMetadata":{"createdAt":`) || !strings.Contains(stream, `"totalTokens":150`) || !strings.Contains(stream, `"contextWindowTokens":1000`) || !strings.Contains(capabilityStream, `"id":"task-plan"`) || !strings.Contains(capabilityStream, `"state":"completed"`) {
-		t.Fatalf("chunks=%q capabilities=%q err=%v", chunks, capabilities, err)
+	if err != nil || heartbeats == 0 || !strings.Contains(stream, "Mock harness received: hello") || !strings.Contains(stream, `"messageId":"assistant_1"`) || !strings.Contains(stream, `"type":"message-metadata"`) || !strings.Contains(stream, `"messageMetadata":{"createdAt":`) || !strings.Contains(stream, `"totalTokens":150`) || !strings.Contains(stream, `"contextWindowTokens":1000`) || !strings.Contains(capabilityStream, `"id":"task-plan"`) || !strings.Contains(capabilityStream, `"state":"completed"`) {
+		t.Fatalf("chunks=%q capabilities=%q heartbeats=%d err=%v", chunks, capabilities, heartbeats, err)
 	}
 }
 

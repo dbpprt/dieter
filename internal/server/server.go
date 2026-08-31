@@ -220,6 +220,25 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 			reconcile()
 		}
 	}()
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				if stalled := application.app.ReconcileStalledTurns(now); len(stalled) > 0 {
+					logger.Warn("reconciling stalled agent workers", "cards", stalled)
+				}
+				// A storage failure can prevent runTurn from persisting its final
+				// card status even though the worker and lease were released. Retry
+				// orphan reconciliation in-process so freeing disk repairs the card
+				// without requiring a daemon restart.
+				reconcile()
+			}
+		}
+	}()
 	application.schedules.Start(ctx)
 	httpServer := &http.Server{Addr: addr, Handler: application.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", data.Root)

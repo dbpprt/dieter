@@ -13,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.draggable
@@ -1238,7 +1239,7 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
                         item { ListSectionLabel("Pinned") }
                         items(pinned, key = { it.id }) { chat ->
                             val dragged = pinnedChatDragState.chatId == chat.id
-                            var originInRoot by remember(chat.id) { mutableStateOf(Offset.Zero) }
+                            var dragHandleOriginInRoot by remember(chat.id) { mutableStateOf(Offset.Zero) }
                             DisposableEffect(pinnedChatDragState, chat.id) {
                                 onDispose { pinnedChatDragState.unregister(chat.id) }
                             }
@@ -1249,15 +1250,16 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
                                 dragged = dragged,
                                 modifier = Modifier
                                     .onGloballyPositioned {
-                                        originInRoot = it.positionInRoot()
                                         pinnedChatDragState.register(chat.id, it.boundsInRoot())
                                     }
                                     .offset { IntOffset(0, if (dragged) pinnedChatDragState.offsetY.toInt() else 0) }
-                                    .zIndex(if (dragged) 2f else 0f)
+                                    .zIndex(if (dragged) 2f else 0f),
+                                dragHandleModifier = Modifier
+                                    .onGloballyPositioned { dragHandleOriginInRoot = it.positionInRoot() }
                                     .pointerInput(chat.id, pinnedChatDragState) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = { offset ->
-                                                pinnedChatDragState.start(chat.id, originInRoot + offset)
+                                                pinnedChatDragState.start(chat.id, dragHandleOriginInRoot + offset)
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             },
                                             onDrag = { change, dragAmount ->
@@ -1345,7 +1347,7 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
             onClick = { model.openSurface(AppSurface.NEW_CHAT) },
             icon = { Icon(Icons.Default.Add, null) },
             text = { Text("New chat", fontWeight = FontWeight.SemiBold) },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).height(52.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp).height(52.dp).testTag("new-chat"),
             containerColor = DieterPane,
             contentColor = DieterAbyss,
             shape = RoundedCornerShape(50),
@@ -1360,7 +1362,11 @@ private fun ChatRow(
     modifier: Modifier = Modifier,
     dropTarget: Boolean = false,
     dragged: Boolean = false,
+    dragHandleModifier: Modifier = Modifier,
 ) {
+    var actionsOpen by remember(chat.id) { mutableStateOf(false) }
+    var renameOpen by remember(chat.id) { mutableStateOf(false) }
+    var renameText by remember(chat.id, chat.title) { mutableStateOf(chat.title) }
     Surface(
         color = if (chat.pinned) DieterSurface else Color.Transparent,
         shape = RoundedCornerShape(16.dp),
@@ -1368,52 +1374,107 @@ private fun ChatRow(
         shadowElevation = if (dragged) 8.dp else 0.dp,
         modifier = modifier.fillMaxWidth().padding(vertical = 2.dp)
             .alpha(if (model.isPendingCard(chat.id)) 0.52f else 1f)
-            .then(
+            .testTag("chat-${chat.id}")
+            .semantics {
+                contentDescription = buildString {
+                    append(chat.title.ifBlank { "Untitled chat" })
+                    append("; long press for actions")
+                    if (chat.pinned) append("; use the drag handle to reorder")
+                }
+            },
+    ) {
+        Box {
+            Row(
+                Modifier.fillMaxWidth()
+                    .combinedClickable(
+                        onClick = { model.openCard(chat, Destination.CHATS) },
+                        onLongClick = { actionsOpen = true },
+                    )
+                    .padding(horizontal = 12.dp, vertical = if (chat.pinned) 13.dp else 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 if (chat.pinned) {
-                    Modifier.testTag("pinned-chat-${chat.id}").semantics {
-                        contentDescription = "${chat.title.ifBlank { "Untitled chat" }}; long press and drag to reorder"
+                    Surface(shape = CircleShape, color = DieterShellTint, modifier = Modifier.size(36.dp)) {
+                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PushPin, null, tint = DieterShell, modifier = Modifier.size(17.dp)) }
                     }
                 } else {
-                    Modifier
-                },
-            ),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().clickable { model.openCard(chat, Destination.CHATS) }
-                .padding(horizontal = 12.dp, vertical = if (chat.pinned) 13.dp else 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (chat.pinned) {
-                Surface(shape = CircleShape, color = DieterShellTint, modifier = Modifier.size(36.dp)) {
-                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PushPin, null, tint = DieterShell, modifier = Modifier.size(17.dp)) }
+                    Box(
+                        Modifier.size(10.dp).border(1.dp, if (chat.runtime.contains("running", true)) DieterShell else DieterMuted, CircleShape)
+                            .then(if (chat.runtime.contains("running", true)) Modifier.background(DieterShell, CircleShape) else Modifier),
+                    )
                 }
-            } else {
-                Box(
-                    Modifier.size(10.dp).border(1.dp, if (chat.runtime.contains("running", true)) DieterShell else DieterMuted, CircleShape)
-                        .then(if (chat.runtime.contains("running", true)) Modifier.background(DieterShell, CircleShape) else Modifier),
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    chat.title.ifBlank { "Untitled chat" },
+                    fontSize = 14.sp,
+                    fontWeight = if (chat.runtime.contains("running", true)) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
+                Spacer(Modifier.width(if (chat.pinned) 12.dp else 8.dp))
+                Text(shortTimestamp(chat.lastActivityAt.ifBlank { chat.updatedAt }), color = DieterMuted, fontSize = 11.sp)
+                if (chat.pinned) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        Icons.Outlined.DragHandle,
+                        contentDescription = "Drag pinned chat to reorder",
+                        tint = DieterMuted,
+                        modifier = dragHandleModifier.size(32.dp).padding(6.dp),
+                    )
+                }
             }
-            Spacer(Modifier.width(14.dp))
-            Text(
-                chat.title.ifBlank { "Untitled chat" },
-                fontSize = 14.sp,
-                fontWeight = if (chat.runtime.contains("running", true)) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(if (chat.pinned) 12.dp else 8.dp))
-            Text(shortTimestamp(chat.lastActivityAt.ifBlank { chat.updatedAt }), color = DieterMuted, fontSize = 11.sp)
-            if (chat.pinned) {
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    Icons.Outlined.DragHandle,
-                    contentDescription = "Drag pinned chat to reorder",
-                    tint = DieterMuted,
-                    modifier = Modifier.size(19.dp),
+            DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(if (chat.pinned) "Unpin" else "Pin") },
+                    leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
+                    modifier = Modifier.testTag("chat-pin-${chat.id}"),
+                    onClick = { actionsOpen = false; model.togglePin(chat) },
+                )
+                DropdownMenuItem(
+                    text = { Text("Rename") },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                    modifier = Modifier.testTag("chat-rename-${chat.id}"),
+                    onClick = {
+                        actionsOpen = false
+                        renameText = chat.title
+                        renameOpen = true
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Archive") },
+                    leadingIcon = { Icon(Icons.Outlined.Archive, null) },
+                    modifier = Modifier.testTag("chat-archive-${chat.id}"),
+                    onClick = { actionsOpen = false; model.archiveChat(chat) },
                 )
             }
         }
+    }
+    if (renameOpen) {
+        AlertDialog(
+            onDismissRequest = { renameOpen = false },
+            title = { Text("Rename chat") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("chat-rename-title-${chat.id}"),
+                )
+            },
+            dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancel") } },
+            confirmButton = {
+                TextButton(
+                    enabled = renameText.isNotBlank(),
+                    modifier = Modifier.testTag("chat-rename-confirm-${chat.id}"),
+                    onClick = {
+                        model.renameChat(chat, renameText.trim())
+                        renameOpen = false
+                    },
+                ) { Text("Rename") }
+            },
+        )
     }
 }
 

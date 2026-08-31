@@ -8,6 +8,9 @@ struct ChatsView: View {
     @State private var showArchived = false
     @State private var expandedProjects: Set<String> = []
     @State private var collapsedProjects: Set<String> = []
+    @State private var pinnedChatNavigation = PinnedChatNavigationPreferences.load(
+        from: DieterAppearance.applicationDefaults()
+    )
 
     private var visibleChats: [Dieter_V1_Card] {
         store.chats
@@ -16,6 +19,16 @@ struct ChatsView: View {
                     (search.isEmpty || chat.title.localizedCaseInsensitiveContains(search) || chat.summary.localizedCaseInsensitiveContains(search))
             }
             .sorted { ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt) }
+    }
+
+    private var activePinnedChats: [Dieter_V1_Card] {
+        store.chats
+            .filter { $0.scope == "chat" && $0.boardID.isEmpty && !$0.archived && $0.pinned }
+            .sorted { ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt) }
+    }
+
+    private var pinnedChatMembership: [String] {
+        activePinnedChats.map(\.id).sorted()
     }
 
     var body: some View {
@@ -43,11 +56,14 @@ struct ChatsView: View {
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        let pinned = showArchived ? [] : visibleChats.filter(\.pinned)
+                        let pinned = showArchived ? [] : PinnedChatOrdering.ordered(
+                            visibleChats.filter(\.pinned),
+                            preferredOrder: pinnedChatNavigation.chatOrder
+                        )
                         if !pinned.isEmpty {
                             VStack(alignment: .leading, spacing: 5) {
                                 Label("PINNED", systemImage: "pin.fill").font(DieterFont.sectionLabel).foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 8)
-                                ChatGroupCard(chats: pinned).padding(.leading, 14)
+                                ChatGroupCard(chats: pinned, movePinnedChat: movePinnedChat).padding(.leading, 14)
                             }
                         }
 
@@ -101,10 +117,21 @@ struct ChatsView: View {
             }
         }
         .task { await store.refreshChats() }
+        .task(id: pinnedChatMembership) { initializePinnedChatOrderIfNeeded() }
     }
 
     private func toggle(_ id: String, in values: inout Set<String>) {
         if values.contains(id) { values.remove(id) } else { values.insert(id) }
+    }
+
+    private func initializePinnedChatOrderIfNeeded() {
+        guard pinnedChatNavigation.initializeIfNeeded(with: activePinnedChats.map(\.id)) else { return }
+        pinnedChatNavigation.save(to: DieterAppearance.applicationDefaults())
+    }
+
+    private func movePinnedChat(_ chatID: String, to targetChatID: String) {
+        guard pinnedChatNavigation.move(chatID, to: targetChatID, among: activePinnedChats) else { return }
+        pinnedChatNavigation.save(to: DieterAppearance.applicationDefaults())
     }
 }
 
@@ -171,22 +198,37 @@ private struct ChatProjectGroup: View {
 private struct ChatGroupCard<Footer: View>: View {
     let chats: [Dieter_V1_Card]
     let footer: Footer
+    let movePinnedChat: ((String, String) -> Void)?
 
     init(chats: [Dieter_V1_Card], @ViewBuilder footer: () -> Footer) {
         self.chats = chats
         self.footer = footer()
+        movePinnedChat = nil
     }
 
     init(chats: [Dieter_V1_Card]) where Footer == EmptyView {
         self.chats = chats
         footer = EmptyView()
+        movePinnedChat = nil
+    }
+
+    init(chats: [Dieter_V1_Card], movePinnedChat: @escaping (String, String) -> Void) where Footer == EmptyView {
+        self.chats = chats
+        footer = EmptyView()
+        self.movePinnedChat = movePinnedChat
     }
 
     var body: some View {
         VStack(spacing: 0) {
             ForEach(Array(chats.enumerated()), id: \.element.id) { index, chat in
                 if index > 0 { ChatRowSeparator() }
-                ChatRow(card: chat)
+                if let movePinnedChat {
+                    PinnedChatRow(card: chat) { draggedChatID in
+                        movePinnedChat(draggedChatID, chat.id)
+                    }
+                } else {
+                    ChatRow(card: chat)
+                }
             }
             footer
         }
@@ -204,11 +246,17 @@ private struct ChatRowSeparator: View {
 struct ChatRow: View {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
+    let showsPinnedDragHandle: Bool
     @State private var hovering = false
     @State private var renamePresented = false
     @State private var renameText = ""
 
     private var unread: Bool { store.isChatUnread(card) }
+
+    init(card: Dieter_V1_Card, showsPinnedDragHandle: Bool = false) {
+        self.card = card
+        self.showsPinnedDragHandle = showsPinnedDragHandle
+    }
 
     var body: some View {
         Button {
@@ -248,6 +296,11 @@ struct ChatRow: View {
                                 relativeTo: .now
                             ))
                             .fixedSize()
+                            if showsPinnedDragHandle {
+                                Image(systemName: "line.3.horizontal")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .help("Drag to reorder pinned chats")
+                            }
                         }
                         .font(.system(size: 10, weight: unread ? .semibold : .medium))
                         .foregroundStyle(unread ? DieterTheme.primary : DieterTheme.tertiary)
@@ -326,6 +379,68 @@ struct ChatRow: View {
         Task { await store.rename(card, title: title) }
         renamePresented = false
     }
+}
+
+private struct PinnedChatRow: View {
+    let card: Dieter_V1_Card
+    let moveDraggedChat: (String) -> Void
+    @State private var dropTargeted = false
+
+    var body: some View {
+        ChatRow(card: card, showsPinnedDragHandle: true)
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(dropTargeted ? DieterTheme.shell : .clear, lineWidth: 1.5)
+                    .padding(.horizontal, 1)
+                    .allowsHitTesting(false)
+            }
+            .draggable(PinnedChatDragPayload(chatID: card.id).encoded) {
+                PinnedChatDragPreview(card: card)
+            }
+            .dropDestination(for: String.self) { values, _ in
+                guard let value = values.first,
+                      let payload = PinnedChatDragPayload(value),
+                      payload.chatID != card.id else { return false }
+                moveDraggedChat(payload.chatID)
+                return true
+            } isTargeted: { dropTargeted = $0 }
+            .animation(.easeOut(duration: 0.12), value: dropTargeted)
+            .accessibilityHint("Drag to reorder pinned chats")
+    }
+}
+
+private struct PinnedChatDragPreview: View {
+    let card: Dieter_V1_Card
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pin.fill").foregroundStyle(DieterTheme.shell)
+            Text(card.title.isEmpty ? "Untitled chat" : card.title)
+                .font(.system(size: 12, weight: .semibold)).lineLimit(1)
+        }
+        .padding(.horizontal, 12).frame(width: 220, height: 40, alignment: .leading)
+        .background(DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.shell.opacity(0.4)))
+        .shadow(color: Color.black.opacity(0.4), radius: 14, y: 7)
+    }
+}
+
+struct PinnedChatDragPayload: Equatable {
+    private static let prefix = "dieter:pinned-chat:"
+    let chatID: String
+
+    init(chatID: String) {
+        self.chatID = chatID
+    }
+
+    init?(_ encoded: String) {
+        guard encoded.hasPrefix(Self.prefix) else { return nil }
+        let chatID = String(encoded.dropFirst(Self.prefix.count))
+        guard !chatID.isEmpty else { return nil }
+        self.chatID = chatID
+    }
+
+    var encoded: String { Self.prefix + chatID }
 }
 
 enum ChatActivityText {
@@ -505,17 +620,27 @@ private struct StandaloneChatStartView: View {
         if projectID.isEmpty {
             projectID = store.newChatProjectID.isEmpty ? (store.selectedProjectID.isEmpty ? (store.projects.first?.id ?? "") : store.selectedProjectID) : store.newChatProjectID
         }
-        guard provider.isEmpty, let item = store.harnessCatalog.harnesses.first else { return }
-        provider = item.id
-        model = item.defaultModel
-        effort = item.models.first(where: { $0.id == model })?.defaultEffort ?? item.effort.options.first?.id ?? ""
-        providerOptions = ProviderOptionValues.defaults(for: item)
+        let preferences = ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
+        guard provider.isEmpty,
+              let selection = preferences.resolved(in: store.harnessCatalog.harnesses),
+              let harness = store.harnessCatalog.harnesses.first(where: { $0.id == selection.provider }) else { return }
+        provider = selection.provider
+        model = selection.model
+        effort = selection.effort
+        workspaceDraft.mode = selection.workspaceMode
+        providerOptions = ProviderOptionValues.defaults(for: harness)
     }
 
     private func submit() async {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!text.isEmpty || !attachments.isEmpty), !projectID.isEmpty else { return }
         submitting = true
+        ConversationCreationPreferences(
+            provider: provider,
+            model: model,
+            effort: effort,
+            workspaceMode: workspaceDraft.mode
+        ).save(to: DieterAppearance.applicationDefaults())
         let firstLine = text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
             ?? attachments.first?.filename ?? "New chat"
         let title = firstLine.count > 72 ? String(firstLine.prefix(69)) + "…" : firstLine

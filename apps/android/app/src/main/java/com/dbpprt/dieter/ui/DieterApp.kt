@@ -991,6 +991,7 @@ private fun DieterBottomBar(
                     unselectedIconColor = DieterMuted,
                     unselectedTextColor = DieterMuted,
                 ),
+                modifier = Modifier.testTag("nav-${item.destination.name.lowercase()}"),
             )
         }
     }
@@ -1023,6 +1024,7 @@ private fun DieterNavigationRail(
                 onClick = { onSelect(item.destination) },
                 icon = { Icon(item.icon, contentDescription = null) },
                 label = { Text(item.label) },
+                modifier = Modifier.testTag("nav-${item.destination.name.lowercase()}"),
             )
         }
         NavigationRailItem(

@@ -1343,6 +1343,76 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(defaults.object(forKey: ReasoningTracePreferences.storageKey) != nil)
 }
 
+@Test func conversationCreationPreferencesPersistAndResolveTheLastValidSelection() throws {
+    let suite = "dieter-conversation-creation-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    var low = Dieter_V1_EffortOption()
+    low.id = "low"
+    low.name = "Low"
+    var xhigh = Dieter_V1_EffortOption()
+    xhigh.id = "xhigh"
+    xhigh.name = "Extra high"
+    var codexModel = Dieter_V1_HarnessModel()
+    codexModel.id = "sol"
+    codexModel.name = "Sol"
+    codexModel.defaultEffort = "low"
+    codexModel.efforts = ["low", "xhigh"]
+    var codex = Dieter_V1_Harness()
+    codex.id = "codex"
+    codex.name = "Codex"
+    codex.defaultModel = "sol"
+    codex.models = [codexModel]
+    codex.effort.options = [low, xhigh]
+
+    let saved = ConversationCreationPreferences(
+        provider: "codex",
+        model: "sol",
+        effort: "xhigh",
+        workspaceMode: .project
+    )
+    saved.save(to: defaults)
+
+    let restored = ConversationCreationPreferences.load(from: defaults)
+    #expect(restored == saved)
+    #expect(restored.resolved(in: [codex]) == ConversationCreationSelection(
+        provider: "codex",
+        model: "sol",
+        effort: "xhigh",
+        workspaceMode: .project
+    ))
+}
+
+@Test func conversationCreationPreferencesFallBackWhenTheCatalogChanges() {
+    var medium = Dieter_V1_EffortOption()
+    medium.id = "medium"
+    medium.name = "Medium"
+    var currentModel = Dieter_V1_HarnessModel()
+    currentModel.id = "current"
+    currentModel.defaultEffort = "medium"
+    currentModel.efforts = ["medium"]
+    var harness = Dieter_V1_Harness()
+    harness.id = "available"
+    harness.defaultModel = "current"
+    harness.models = [currentModel]
+    harness.effort.options = [medium]
+
+    let stale = ConversationCreationPreferences(
+        provider: "removed",
+        model: "retired",
+        effort: "xhigh",
+        workspaceMode: .project
+    )
+
+    #expect(stale.resolved(in: [harness]) == ConversationCreationSelection(
+        provider: "available",
+        model: "current",
+        effort: "medium",
+        workspaceMode: .project
+    ))
+}
+
 @Test func appearancePreferenceDefaultsToSystemAndRecognizesEveryStoredMode() {
     #expect(DieterAppearance.resolve(nil) == .system)
     #expect(DieterAppearance.resolve("unknown") == .system)
@@ -1423,6 +1493,17 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(DieterRPCFailure.isTransient(RPCError(code: .unavailable, message: "stream unexpectedly closed")))
     #expect(DieterRPCFailure.isTransient(RPCError(code: .deadlineExceeded, message: "timed out")))
     #expect(!DieterRPCFailure.isTransient(RPCError(code: .notFound, message: "board missing")))
+}
+
+@Test func staleConnectionAttemptsCannotMutateTheActiveTransport() {
+    #expect(ConnectionAttemptOwnership.mayMutateSharedState(
+        attemptGeneration: 8,
+        currentGeneration: 8
+    ))
+    #expect(!ConnectionAttemptOwnership.mayMutateSharedState(
+        attemptGeneration: 7,
+        currentGeneration: 8
+    ))
 }
 
 @Test @MainActor func transientRPCFailuresStaySilentAfterTheClientIsReleased() {
@@ -1736,6 +1817,38 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     try DieterOutboxPolicy.retargetDependencies(in: &entries, from: "local_chat", to: "c_server")
 
     #expect(try Dieter_V1_SendMessageRequest(serializedBytes: entries[0].request).cardID == "c_server")
+}
+
+@Test func createSuccessMergesAnOptimisticChatWithAnAlreadySynchronizedChat() {
+    var synchronized = Dieter_V1_Card()
+    synchronized.id = "c_server"
+    synchronized.title = "Synchronized title"
+    synchronized.runtime = "running"
+    var optimistic = Dieter_V1_Card()
+    optimistic.id = "local_chat"
+    optimistic.title = "Optimistic title"
+    optimistic.runtime = "pending"
+
+    let serverFirst = DieterOutboxPolicy.retargetedCards(
+        [synchronized, optimistic],
+        from: optimistic.id,
+        to: synchronized.id
+    )
+    let optimisticFirst = DieterOutboxPolicy.retargetedCards(
+        [optimistic, synchronized],
+        from: optimistic.id,
+        to: synchronized.id
+    )
+    let synchronizedInAnotherProjection = DieterOutboxPolicy.retargetedCards(
+        [optimistic],
+        from: optimistic.id,
+        to: synchronized.id,
+        authoritative: synchronized
+    )
+
+    #expect(serverFirst == [synchronized])
+    #expect(optimisticFirst == [synchronized])
+    #expect(synchronizedInAnotherProjection == [synchronized])
 }
 
 @Test func localConversationIDsNeverQualifyForServerFetch() {
@@ -2165,6 +2278,66 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(SidebarProjectDragPayload(payload.encoded) == payload)
     #expect(SidebarProjectDragPayload("not-a-sidebar-project") == nil)
     #expect(SidebarProjectDragPayload("dieter:sidebar-project:") == nil)
+}
+
+@Test func pinnedChatsKeepSavedLocationsAndAppendNewPinsDeterministically() {
+    var first = Dieter_V1_Card()
+    first.id = "c_first"
+    first.position = 30
+    var second = Dieter_V1_Card()
+    second.id = "c_second"
+    second.position = 10
+    var newPin = Dieter_V1_Card()
+    newPin.id = "c_new"
+    newPin.position = 20
+
+    let ordered = PinnedChatOrdering.ordered(
+        [newPin, first, second],
+        preferredOrder: [first.id, second.id]
+    )
+    #expect(ordered.map(\.id) == [first.id, second.id, newPin.id])
+
+    let activityChanged = PinnedChatOrdering.ordered(
+        [second, first, newPin],
+        preferredOrder: ordered.map(\.id)
+    )
+    #expect(activityChanged.map(\.id) == [first.id, second.id, newPin.id])
+}
+
+@Test func pinnedChatPreferencesMatchAndroidDropTargetMovementAndPersist() throws {
+    let suite = "dieter-pinned-chat-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    var first = Dieter_V1_Card()
+    first.id = "c_first"
+    var second = Dieter_V1_Card()
+    second.id = "c_second"
+    var third = Dieter_V1_Card()
+    third.id = "c_third"
+
+    var preferences = PinnedChatNavigationPreferences()
+    let initialized = preferences.initializeIfNeeded(with: [first.id, second.id, third.id])
+    #expect(initialized)
+    let movedFirst = preferences.move(first.id, to: second.id, among: [first, second, third])
+    #expect(movedFirst)
+    #expect(preferences.chatOrder == [second.id, first.id, third.id])
+    let movedThird = preferences.move(third.id, to: second.id, among: [first, second, third])
+    #expect(movedThird)
+    #expect(preferences.chatOrder == [third.id, second.id, first.id])
+    preferences.save(to: defaults)
+
+    var restored = PinnedChatNavigationPreferences.load(from: defaults)
+    #expect(restored.chatOrder == [third.id, second.id, first.id])
+    let reinitialized = restored.initializeIfNeeded(with: [first.id])
+    #expect(!reinitialized)
+}
+
+@Test func pinnedChatDragPayloadRejectsOtherStringDrops() {
+    let payload = PinnedChatDragPayload(chatID: "c_first")
+    #expect(PinnedChatDragPayload(payload.encoded) == payload)
+    #expect(PinnedChatDragPayload("not-a-pinned-chat") == nil)
+    #expect(PinnedChatDragPayload("dieter:pinned-chat:") == nil)
 }
 
 @Test @MainActor func openingAConversationRoutesToItsChatOrBoardWorkspace() async {

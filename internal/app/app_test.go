@@ -30,9 +30,25 @@ type diagnosticErrorRunner struct{}
 
 type capabilityStormRunner struct{}
 
+type stalledHeartbeatRunner struct {
+	started chan string
+}
+
 type failOnceRunner struct {
 	mu       sync.Mutex
 	requests []harness.Request
+}
+
+func (runner *stalledHeartbeatRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	if err := os.WriteFile(filepath.Join(request.ProjectPath, "stalled-worker-sentinel"), []byte("preserved\n"), 0o600); err != nil {
+		return err
+	}
+	if err := emit(harness.Output{Type: "heartbeat"}); err != nil {
+		return err
+	}
+	runner.started <- request.ProjectPath
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func (streamErrorRunner) Run(_ context.Context, _ harness.Request, emit func(harness.Output) error) error {
@@ -613,6 +629,106 @@ func TestCreateRunningCardCanDeferStartToStreamingClient(t *testing.T) {
 	conversation, err = service.Store.Conversation(card.ID)
 	if err != nil || len(conversation.Messages) != 2 || !strings.Contains(string(conversation.Messages[1].Metadata), `"totalTokens"`) || !strings.Contains(string(conversation.Messages[1].Metadata), `"contextWindowTokens"`) {
 		t.Fatalf("conversation metadata=%#v err=%v", conversation.Messages, err)
+	}
+}
+
+func TestStalledWorkerHeartbeatFailsDurablyAndCanResume(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	stalled := &stalledHeartbeatRunner{started: make(chan string, 1)}
+	service.Runner = stalled
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Stall", Prompt: "write then stall", Provider: "codex", Model: "gpt-5.5", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspacePath := <-stalled.started
+	service.mu.Lock()
+	active := service.active[card.ID]
+	if active == nil || !active.workerObserved {
+		service.mu.Unlock()
+		t.Fatalf("worker heartbeat was not observed: %#v", active)
+	}
+	active.lastProgress = time.Now().Add(-workerHeartbeatTimeout - time.Second)
+	service.mu.Unlock()
+	if reconciled := service.ReconcileStalledTurns(time.Now()); len(reconciled) != 1 || reconciled[0] != card.ID {
+		t.Fatalf("reconciled=%v", reconciled)
+	}
+	var terminal TurnUpdate
+	for update := range updates {
+		if update.Done {
+			terminal = update
+		}
+	}
+	if terminal.Err == nil || !strings.Contains(terminal.Err.Error(), "stopped reporting progress") {
+		t.Fatalf("terminal update=%#v", terminal)
+	}
+	conversation, err := service.Store.Conversation(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := service.Store.ResolveCard(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := service.Store.CardHasRuntimeLease(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Status != "failed" || conversation.ActiveTurn != nil || stored.Runtime != "failed" || leased {
+		t.Fatalf("conversation=%#v card=%#v leased=%v", conversation, stored, leased)
+	}
+	if contents, err := os.ReadFile(filepath.Join(workspacePath, "stalled-worker-sentinel")); err != nil || string(contents) != "preserved\n" {
+		t.Fatalf("workspace changes were not preserved: contents=%q err=%v", contents, err)
+	}
+
+	resumed := &fakeRunner{}
+	service.Runner = resumed
+	updates, err = service.StartCard(card.ID, "continue safely", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range updates {
+	}
+	conversation, err = service.Store.Conversation(card.ID)
+	if err != nil || conversation.Status != "idle" || resumed.count() != 1 {
+		t.Fatalf("resumed conversation=%#v requests=%d err=%v", conversation, resumed.count(), err)
+	}
+}
+
+func TestStartCardRejectsLowDiskBeforeMutatingConversation(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	service.minimumFreeBytes = 1024
+	service.diskAvailable = func(string) (uint64, error) { return 1023, nil }
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Low disk", Prompt: "do work", Provider: "codex", Model: "gpt-5.5", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort); !errors.Is(err, ErrInsufficientStorage) {
+		t.Fatalf("StartCard error=%v", err)
+	}
+	conversation, err := service.Store.Conversation(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := service.Store.ResolveCard(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leased, err := service.Store.CardHasRuntimeLease(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conversation.Messages) != 0 || stored.InitialPromptSentAt != "" || leased {
+		t.Fatalf("conversation=%#v card=%#v leased=%v", conversation, stored, leased)
 	}
 }
 

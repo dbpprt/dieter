@@ -111,13 +111,27 @@ export async function createLocalSandboxProvider({ root, projectPath, workDir = 
     // calls wait(); attaching the listener lazily would leave that wait pending
     // forever and make Node terminate with an unsettled top-level await.
     let processHandle;
+    const treeAlive = () => {
+      if (child.pid == null) return false;
+      if (process.platform === 'win32') return child.exitCode == null;
+      try {
+        process.kill(-child.pid, 0);
+        return true;
+      } catch (error) {
+        if (error?.code === 'ESRCH') return false;
+        throw error;
+      }
+    };
     const waitPromise = new Promise((resolveWait, reject) => {
       child.once('error', error => {
         activeProcesses.delete(processHandle);
         reject(error);
       });
       child.once('exit', (code, signal) => {
-        activeProcesses.delete(processHandle);
+        // On Unix the process-group leader can exit while a compiler or model
+        // CLI it launched keeps running. Retain the handle until session stop
+        // has checked and terminated the whole group.
+        if (process.platform === 'win32' || !treeAlive()) activeProcesses.delete(processHandle);
         resolveWait({ exitCode: code ?? (signal ? 128 : 1) });
       });
     });
@@ -130,14 +144,30 @@ export async function createLocalSandboxProvider({ root, projectPath, workDir = 
         if (error?.code !== 'ESRCH') throw error;
       }
     };
-    const kill = async () => {
-      if (child.exitCode != null) return;
-      signalTree('SIGTERM');
-      await Promise.race([waitPromise, new Promise(resolveWait => setTimeout(resolveWait, 1000))]);
-      if (child.exitCode == null) {
-        signalTree('SIGKILL');
-        await waitPromise;
+    const waitForTreeExit = async timeout => {
+      const deadline = Date.now() + timeout;
+      while (treeAlive() && Date.now() < deadline) {
+        await new Promise(resolveWait => setTimeout(resolveWait, 25));
       }
+      return !treeAlive();
+    };
+    let killPromise;
+    const kill = async () => {
+      if (killPromise) return killPromise;
+      killPromise = (async () => {
+        try {
+          if (!treeAlive()) return;
+          signalTree('SIGTERM');
+          if (!await waitForTreeExit(1000)) {
+            signalTree('SIGKILL');
+            if (!await waitForTreeExit(1000)) throw new Error(`process group ${child.pid} did not exit after SIGKILL`);
+          }
+          await waitPromise;
+        } finally {
+          activeProcesses.delete(processHandle);
+        }
+      })();
+      return killPromise;
     };
     if (abortSignal) {
       if (abortSignal.aborted) void kill();

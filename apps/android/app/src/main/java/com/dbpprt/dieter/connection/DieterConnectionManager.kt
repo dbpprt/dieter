@@ -1391,6 +1391,62 @@ class DieterConnectionManager(
         persistMachineDirectory()
     }
 
+    fun acceptCardMutation(card: Card) {
+        fun update(cards: List<Card>, targetScope: Boolean): List<Card> {
+            if (!targetScope) return cards
+            if (card.archived) return cards.filterNot { it.id == card.id }
+            return if (cards.any { it.id == card.id }) {
+                cards.map { if (it.id == card.id) card else it }
+            } else {
+                cards + card
+            }
+        }
+
+        fun updateConversation(snapshot: ConversationSnapshot): ConversationSnapshot =
+            snapshot.toBuilder()
+                .setDetail(snapshot.detail.toBuilder().setCard(card))
+                .build()
+
+        val isChat = card.scope == "chat"
+        globalSnapshot = globalSnapshot?.let { snapshot ->
+            snapshot.toBuilder()
+                .setState(
+                    snapshot.state.toBuilder()
+                        .clearCards()
+                        .addAllCards(update(snapshot.state.cardsList, !isChat))
+                        .clearChats()
+                        .addAllChats(update(snapshot.state.chatsList, isChat)),
+                )
+                .clearConversations()
+                .addAllConversations(
+                    if (card.archived) {
+                        snapshot.conversationsList.filterNot { it.detail.card.id == card.id }
+                    } else {
+                        snapshot.conversationsList.map {
+                            if (it.detail.card.id == card.id) updateConversation(it) else it
+                        }
+                    },
+                )
+                .build()
+        }
+        _state.update { current ->
+            val activeConversations = if (card.archived) {
+                current.activeConversations - card.id
+            } else {
+                current.activeConversations.mapValues { (cardId, snapshot) ->
+                    if (cardId == card.id) updateConversation(snapshot) else snapshot
+                }
+            }
+            val combined = current.copy(
+                cards = update(current.cards, !isChat),
+                chats = update(current.chats, isChat),
+                activeConversations = activeConversations,
+            )
+            combined.copy(selectedState = selectedState(combined))
+        }
+        persistMachineDirectory()
+    }
+
     fun acceptConversation(snapshot: ConversationSnapshot): ConversationSnapshot {
         val cardId = snapshot.detail.card.id
         if (cardId.isBlank()) return snapshot

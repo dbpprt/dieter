@@ -141,6 +141,21 @@ enum NativeUISmokeRunner {
         if let fixtureNote { results["fixture"] = fixtureNote }
         if let scheduleFixtureError { results["schedule-fixture"] = "failed: \(scheduleFixtureError)" }
 
+        // Rapid project/conversation navigation can overlap an explicit route
+        // change with an automatic reconnect. A completed stale attempt must
+        // never tear down or publish state over the newest connection.
+        let overlappingConnections = (0..<6).map { _ in
+            Task { @MainActor in await store.connect() }
+        }
+        for attempt in overlappingConnections { await attempt.value }
+        let newestConnectionSurvived = store.phase.isConnected
+        results["connection-overlap-ownership"] = newestConnectionSurvived
+            ? "passed"
+            : "failed: stale attempt displaced the newest connection (\(store.phase.label))"
+        if !newestConnectionSurvived {
+            _ = await waitUntil(timeout: 25) { store.workspaceIsLive }
+        }
+
         if schedulesOnly {
             await store.openProject(project.id, section: .schedules)
             let scheduleReady = await waitUntil(timeout: 10) {
@@ -462,13 +477,19 @@ enum NativeUISmokeRunner {
             deferred: false,
             projectID: project.id
         )
-        let openedChat = await waitUntil(timeout: 10) {
+        var chatIDsStayedUnique = true
+        let openedChat = await waitUntil(timeout: 10, intervalMilliseconds: 25) {
+            let ids = store.chats.map(\.id)
+            chatIDsStayedUnique = chatIDsStayedUnique && Set(ids).count == ids.count
             guard let chatID = store.selectedChatID, DieterConversationID.isServerBacked(chatID) else { return false }
             return store.conversation?.detail.card.id == chatID && !store.conversationLoading
         }
         results["13c-standalone-chat-opens"] = openedChat && store.errorMessage == nil
             ? "passed"
             : "failed: selected=\(store.selectedChatID ?? "none"), loading=\(store.conversationLoading), error=\(store.errorMessage ?? "none")"
+        results["13c-standalone-chat-single-row"] = chatIDsStayedUnique
+            ? "passed"
+            : "failed: optimistic and synchronized chat rows were visible together"
         if openedChat,
            let chatID = store.selectedChatID,
            let chat = store.chats.first(where: { $0.id == chatID }) {
@@ -489,6 +510,15 @@ enum NativeUISmokeRunner {
                 results["13e-standalone-chat-pin"] = pinned
                     ? "passed"
                     : "failed: packaged Mac PinChat did not update the chat projection"
+
+                if pinned {
+                    store.closeConversation()
+                    try? await DieterTaskSleep.milliseconds(500)
+                    await captureAppearances(window, named: "13e-standalone-chat-pinned.png", in: output)
+                    results["13e-pinned-chat-ui"] = "passed"
+                } else {
+                    results["13e-pinned-chat-ui"] = "failed: pinned chat was unavailable for rendered verification"
+                }
 
                 if let pinnedChat = store.chats.first(where: { $0.id == chatID }) {
                     await store.pin(pinnedChat, pinned: false)
@@ -690,11 +720,15 @@ enum NativeUISmokeRunner {
         writeReport(results, to: output)
     }
 
-    private static func waitUntil(timeout: TimeInterval, condition: @escaping @MainActor () -> Bool) async -> Bool {
+    private static func waitUntil(
+        timeout: TimeInterval,
+        intervalMilliseconds: Int = 200,
+        condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if condition() { return true }
-            try? await DieterTaskSleep.milliseconds(200)
+            try? await DieterTaskSleep.milliseconds(intervalMilliseconds)
         }
         return condition()
     }

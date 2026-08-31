@@ -127,6 +127,52 @@ test('observes Codex todo_list before UI conversion and patches its bootstrap br
   assert.equal(capabilities[0].plan.phases[0].tasks[1].status, 'pending');
 });
 
+test('makes bridge replay persistence fail closed and rejects sequence gaps', async () => {
+  const source = `
+  let eventLog = [];
+  let seqCounter = 0;
+  const flushEventsToDisk = async () => {
+    const buf = diskBuffer;
+    await appendFile(eventLogPath, buf).catch(() => {
+    });
+  };
+  const scheduleEventFlush = () => {
+    setImmediate(() => {
+      void flushEventsToDisk().finally(resolve);
+    });
+  };
+  try {
+      eventLog = lines.map((line) => ({
+        seq: JSON.parse(line).seq,
+        line
+      }));
+      seqCounter = eventLog.at(-1)?.seq ?? 0;
+    } catch {
+      eventLog = [];
+      seqCounter = 0;
+    }
+  async function start() {
+    void writeFile(eventLogPath, "").catch(() => {
+    });
+  }
+    if (item.type === "agent_message" && typeof item.text === "string") {
+  `;
+  const harness = observeHarnessCapabilities({
+    harnessId: 'codex',
+    async getBootstrap() { return { files: [{ path: '.bootstrap/bridge.mjs', content: source }] }; },
+    async doStart() { return {}; },
+  }, createSubagentCapabilityCollector({ provider: 'codex', emit() {} }));
+  const recipe = await harness.getBootstrap();
+  const patched = recipe.files[0].content;
+  assert.match(patched, /item\.type === "todo_list"/);
+  assert.match(patched, /await appendFile\(eventLogPath, buf\);/);
+  assert.doesNotMatch(patched, /appendFile\(eventLogPath, buf\)\.catch/);
+  assert.match(patched, /failed to persist bridge replay events/);
+  assert.match(patched, /await writeFile\(eventLogPath, ""\);/);
+  assert.match(patched, /non-contiguous bridge replay sequence/);
+  assert.match(patched, /refusing to rerun an in-flight turn/);
+});
+
 test('supports the Pi host task-plan tool without duplicate snapshots', () => {
   const events = [];
   const collector = createSubagentCapabilityCollector({ provider: 'pi', messageId: 'm6', emit: event => events.push(event), now: () => '2026-08-15T10:00:00Z' });
