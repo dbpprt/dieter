@@ -36,14 +36,15 @@ func main() {
 	address := flag.String("addr", "127.0.0.1:14243", "loopback listen address for the gateway copy")
 	home := flag.String("home", "", "state root (default: a fresh temporary directory)")
 	offlineTrigger := flag.String("offline-trigger", "", "optional file whose creation disconnects the enrolled daemon while leaving the gateway online")
+	boardStressFixture := flag.Bool("board-stress-fixture", false, "seed a 78-card board with 65 variable-height cards in one lane")
 	flag.Parse()
-	if err := run(*address, *home, *offlineTrigger); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *boardStressFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger string) error {
+func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	// The mock harness answers every prompt deterministically, so end-to-end
 	// turns complete without real provider credentials.
 	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
@@ -149,6 +150,12 @@ func run(address, home, offlineTrigger string) error {
 	if err != nil {
 		return err
 	}
+	if boardStressFixture {
+		board, err = seedBoardStressFixture(data, project, board)
+		if err != nil {
+			return err
+		}
+	}
 
 	boardListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -242,4 +249,71 @@ func run(address, home, offlineTrigger string) error {
 
 	<-ctx.Done()
 	return nil
+}
+
+func seedBoardStressFixture(data *boardstore.Store, project model.Project, board model.Board) (model.Board, error) {
+	for _, fixtureLabel := range []struct {
+		name  string
+		color string
+	}{
+		{name: "Mac", color: "#6558df"},
+		{name: "Performance", color: "#3b82f6"},
+		{name: "Gateway", color: "#16a34a"},
+	} {
+		var err error
+		board, err = data.CreateBoardLabel(board.ID, fixtureLabel.name, fixtureLabel.color)
+		if err != nil {
+			return model.Board{}, fmt.Errorf("create board stress label %q: %w", fixtureLabel.name, err)
+		}
+	}
+
+	laneCounts := []struct {
+		lane  string
+		count int
+	}{
+		{lane: model.LaneTodo, count: 65},
+		{lane: model.LaneRunning, count: 5},
+		{lane: model.LaneReview, count: 4},
+		{lane: model.LaneDone, count: 4},
+	}
+	cardIndex := 0
+	for _, laneFixture := range laneCounts {
+		for laneIndex := 0; laneIndex < laneFixture.count; laneIndex++ {
+			labelIDs := []string(nil)
+			if cardIndex%3 == 0 {
+				labelIDs = []string{board.Labels[cardIndex%len(board.Labels)].ID}
+			}
+			title := fmt.Sprintf("Board stress card %02d", cardIndex+1)
+			if cardIndex%3 == 0 {
+				title += " with a variable-height title that wraps across multiple lines"
+			}
+			workspaceMode := model.WorkspaceModeProject
+			if cardIndex%5 == 0 {
+				workspaceMode = model.WorkspaceModeWorktree
+			}
+			card, err := data.CreateCard(boardstore.CreateCardInput{
+				Project: project.ID, Board: board.ID, Lane: laneFixture.lane,
+				Title: title, Prompt: "Exercise the packaged Mac board renderer.",
+				Provider: "mock", Model: "mock", WorkspaceMode: workspaceMode,
+				LabelIDs: labelIDs,
+			})
+			if err != nil {
+				return model.Board{}, fmt.Errorf("create board stress card %d: %w", cardIndex+1, err)
+			}
+			if cardIndex%2 == 0 {
+				if _, err = data.UpdateCardCache(card.ID, boardstore.CardCacheInput{
+					Summary: "Mixed card content exercises variable-height text, labels, menus, sheets, help, and drop targets.",
+				}); err != nil {
+					return model.Board{}, fmt.Errorf("update board stress card %d: %w", cardIndex+1, err)
+				}
+			}
+			if cardIndex%6 == 0 {
+				if _, err = data.AddComment(card.ID, "Board stress fixture comment.", model.Author{Kind: "human", Name: "Fixture"}); err != nil {
+					return model.Board{}, fmt.Errorf("comment on board stress card %d: %w", cardIndex+1, err)
+				}
+			}
+			cardIndex++
+		}
+	}
+	return board, nil
 }

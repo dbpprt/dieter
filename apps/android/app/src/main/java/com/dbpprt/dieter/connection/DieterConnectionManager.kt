@@ -3,9 +3,6 @@ package com.dbpprt.dieter.connection
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.os.PowerManager
-import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import com.dbpprt.dieter.data.DIETER_API_VERSION
@@ -13,6 +10,7 @@ import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.data.AndroidOutboxEntry
+import com.dbpprt.dieter.data.CachedMachineDirectory
 import com.dbpprt.dieter.data.CachedProjectHost
 import com.dbpprt.dieter.data.DieterSyncStore
 import com.dbpprt.dieter.data.OutboxKind
@@ -32,6 +30,7 @@ import com.dbpprt.dieter.v1.SendMessageRequest
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.State
 import com.dbpprt.dieter.v1.StartCardRequest
+import com.dbpprt.dieter.v1.SyncCursor
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +55,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -146,16 +146,15 @@ class DieterConnectionManager(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
     private val appContext = context.applicationContext
-    private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val preferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    }
     private val syncStore = DieterSyncStore(appContext)
     private val lock = Any()
-    private var configuredEndpoints = loadEndpoints().also(repository::replaceEndpoints)
-    private var activeGatewayId = preferences.getString(KEY_ACTIVE_GATEWAY, null)
-        ?.takeIf { saved -> configuredEndpoints.any { it.id == saved } }
-        ?: configuredEndpoints.first().id
-    private var cachedDirectory = syncStore.loadMachineDirectory(activeGatewayId)
-    private var preferredEndpointId = preferences.getString(KEY_PREFERRED_ENDPOINT, null)
-        ?: preferences.getString(KEY_PREFERRED_DAEMON, null)
+    private var configuredEndpoints = DIETER_ENDPOINTS.also(repository::replaceEndpoints)
+    private var activeGatewayId = configuredEndpoints.first().id
+    private var cachedDirectory: CachedMachineDirectory? = null
+    private var preferredEndpointId: String? = null
     private var activeProjectionKey = preferredEndpointId.orEmpty()
     private var globalSnapshot = activeProjectionKey.takeIf(String::isNotBlank)
         ?.let(syncStore::loadSnapshot)?.withoutScheduleProjection()
@@ -166,16 +165,12 @@ class DieterConnectionManager(
         ?.let(syncStore::projectionPersistedAtMillis)
     private var projectionSnapshotDirty = false
     private var projectionCursorDirty = false
-    private val outbox = syncStore.loadOutbox()
-    private val conversationIdResolutions = linkedMapOf<String, String>().apply {
-        outbox.forEach { entry ->
-            if (entry.kind in setOf(OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT) && entry.serverId != null) {
-                put(entry.optimisticId, entry.serverId)
-            }
-        }
-    }
+    private val outbox = mutableListOf<AndroidOutboxEntry>()
+    private val conversationIdResolutions = linkedMapOf<String, String>()
+    private var hydrationJob: Job? = null
     private var connectionJob: Job? = null
     private var generation = 0L
+    private var configurationGeneration = 0L
 
     @Volatile
     private var lastSyncFrameAtMs = 0L
@@ -187,36 +182,103 @@ class DieterConnectionManager(
 
     private val _state = MutableStateFlow(
         DieterConnectionState(
-            desiredConnected = preferences.getBoolean(KEY_DESIRED_CONNECTED, true),
-            backgroundSyncEnabled = preferences.getBoolean(KEY_BACKGROUND_SYNC, true),
+            desiredConnected = true,
+            backgroundSyncEnabled = true,
             activeGatewayId = activeGatewayId,
             configuredConnections = configuredEndpointRows(),
             endpointConnections = configuredEndpointRows(),
-            lastConnectedAtMs = DieterWidgetPrefs.lastSyncAtMs(appContext).takeIf { it > 0L },
-            projects = cachedDirectory?.state?.projectsList.orEmpty(),
-            projectHosts = cachedDirectory?.hosts.orEmpty().mapValues { (_, host) ->
-                ProjectHost(host.endpointId, host.daemonId, host.hostname, online = false)
-            },
-            boards = cachedDirectory?.state?.boardsList.orEmpty(),
-            cards = cachedDirectory?.state?.cardsList.orEmpty(),
-            chats = cachedDirectory?.state?.chatsList.orEmpty(),
         ),
     )
     val state: StateFlow<DieterConnectionState> = _state.asStateFlow()
 
     init {
-        if (_state.value.projects.isNotEmpty()) {
-            synchronized(lock) { selectedProjectId = _state.value.projects.first().id }
-            updateSelectedState()
+        hydrationJob = scope.launch { hydratePersistedState(configurationGeneration) }
+    }
+
+    /** Loads disposable projections and the durable outbox without blocking Activity creation. */
+    private fun hydratePersistedState(expectedConfigurationGeneration: Long) {
+        val endpoints = loadEndpoints()
+        val gatewayId = preferences.getString(KEY_ACTIVE_GATEWAY, null)
+            ?.takeIf { saved -> endpoints.any { it.id == saved } }
+            ?: endpoints.first().id
+        val projectionKey = preferences.getString(KEY_PREFERRED_ENDPOINT, null)
+            ?: preferences.getString(KEY_PREFERRED_DAEMON, null)
+            ?: ""
+        val desiredConnected = preferences.getBoolean(KEY_DESIRED_CONNECTED, true)
+        val backgroundSyncEnabled = preferences.getBoolean(KEY_BACKGROUND_SYNC, true)
+        val lastConnectedAtMs = DieterWidgetPrefs.lastSyncAtMs(appContext).takeIf { it > 0L }
+        val configurationApplied = synchronized(lock) {
+            if (configurationGeneration != expectedConfigurationGeneration) return@synchronized false
+            configuredEndpoints = endpoints
+            activeGatewayId = gatewayId
+            preferredEndpointId = projectionKey.takeIf(String::isNotBlank)
+            activeProjectionKey = projectionKey
+            true
         }
-        globalSnapshot?.let { snapshot ->
+        if (configurationApplied) {
+            repository.replaceEndpoints(endpoints)
+            _state.update { current ->
+                current.copy(
+                    desiredConnected = desiredConnected,
+                    backgroundSyncEnabled = backgroundSyncEnabled,
+                    activeGatewayId = gatewayId,
+                    configuredConnections = configuredEndpointRows(),
+                    endpointConnections = configuredEndpointRows(),
+                    lastConnectedAtMs = lastConnectedAtMs,
+                )
+            }
+        }
+        val directory = syncStore.loadMachineDirectory(gatewayId)
+        val snapshot = projectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadSnapshot)
+        val cursor = projectionKey.takeIf(String::isNotBlank)?.let(syncStore::loadCursor)
+            .takeIf { snapshot != null }
+        val refreshedAt = projectionKey.takeIf(String::isNotBlank)
+            ?.let(syncStore::projectionRefreshedAtMillis)
+        val persistedAt = projectionKey.takeIf(String::isNotBlank)
+            ?.let(syncStore::projectionPersistedAtMillis)
+        val persistedOutbox = syncStore.loadOutbox()
+
+        synchronized(outbox) {
+            val existingIds = outbox.mapTo(hashSetOf(), AndroidOutboxEntry::commandId)
+            outbox.addAll(persistedOutbox.filterNot { it.commandId in existingIds })
+            persistedOutbox.forEach { entry ->
+                if (entry.kind in setOf(OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT) && entry.serverId != null) {
+                    conversationIdResolutions[entry.optimisticId] = entry.serverId
+                }
+            }
+        }
+        val projectionStillSelected = synchronized(lock) {
+            if (!configurationApplied || configurationGeneration != expectedConfigurationGeneration || activeGatewayId != gatewayId) {
+                return@synchronized false
+            }
+            cachedDirectory = directory
+            if (selectedProjectId.isBlank()) {
+                selectedProjectId = directory?.state?.projectsList?.firstOrNull()?.id.orEmpty()
+            }
+            if (activeProjectionKey == projectionKey) {
+                globalSnapshot = snapshot
+                syncCursor = cursor
+                activeProjectionRefreshedAtMillis = refreshedAt
+                lastProjectionPersistedAtMillis = persistedAt
+                true
+            } else {
+                false
+            }
+        }
+        val gatewayStillSelected = synchronized(lock) {
+            configurationApplied && configurationGeneration == expectedConfigurationGeneration && activeGatewayId == gatewayId
+        }
+        if (gatewayStillSelected && _state.value.projects.isEmpty()) {
+            applyCachedDirectory(gatewayId, directory)
+        }
+        if (projectionStillSelected && snapshot != null) {
             applyGlobalSnapshot(
                 snapshot,
                 refreshedConversationIds = snapshot.conversationsList.mapTo(hashSetOf()) { it.detail.card.id },
-                refreshedAtMillis = activeProjectionRefreshedAtMillis,
+                refreshedAtMillis = refreshedAt,
             )
         }
-        if (outbox.isNotEmpty()) refreshOutboxPresentation()
+        if (persistedOutbox.isNotEmpty()) refreshOutboxPresentation()
     }
 
     fun onAppForegrounded(projectId: String = selectedProjectId) {
@@ -284,9 +346,8 @@ class DieterConnectionManager(
             preferredEndpointId = nextEndpoint
             preferences.edit().putString(KEY_PREFERRED_ENDPOINT, preferredEndpointId).apply()
         }
-        if (!endpointChanged) globalSnapshot?.let(::applyGlobalSnapshot)
         if (endpointChanged && shouldRun()) restart()
-        else if (projectChanged) globalSnapshot?.let(::applyGlobalSnapshot)
+        else if (projectChanged) updateSelectedState()
     }
 
     suspend fun ensureProjectRoute(projectId: String) {
@@ -331,6 +392,7 @@ class DieterConnectionManager(
             repository.reconnect()
             syncStore.clearProjections()
             synchronized(lock) {
+                configurationGeneration++
                 cachedDirectory = null
                 preferredEndpointId = null
                 activeProjectionKey = ""
@@ -421,15 +483,15 @@ class DieterConnectionManager(
             ?: activeGatewayId.takeIf { id -> endpoints.any { it.id == id } }
             ?: endpoints.first().id
         val gatewayChanged = nextActive != activeGatewayId
-        val nextDirectory = if (gatewayChanged) syncStore.loadMachineDirectory(nextActive) else cachedDirectory
         synchronized(lock) {
+            configurationGeneration++
             configuredEndpoints = endpoints.toList()
             activeGatewayId = nextActive
             if (gatewayChanged) {
                 preferredEndpointId = null
                 discoveredEndpoints = emptyList()
-                cachedDirectory = nextDirectory
-                selectedProjectId = nextDirectory?.state?.projectsList?.firstOrNull()?.id.orEmpty()
+                cachedDirectory = null
+                selectedProjectId = ""
             }
         }
         preferences.edit().putString(KEY_ACTIVE_GATEWAY, nextActive).also {
@@ -453,20 +515,18 @@ class DieterConnectionManager(
                 configuredConnections = rows,
                 endpointConnections = rows,
                 endpoint = if (gatewayChanged) endpoints.first { endpoint -> endpoint.id == nextActive } else it.endpoint,
-                selectedState = if (gatewayChanged) nextDirectory?.state else it.selectedState,
-                projects = if (gatewayChanged) nextDirectory?.state?.projectsList.orEmpty() else it.projects,
-                projectHosts = if (gatewayChanged) nextDirectory?.hosts.orEmpty().mapValues { (_, host) ->
-                    ProjectHost(host.endpointId, host.daemonId, host.hostname, online = false)
-                } else it.projectHosts,
-                boards = if (gatewayChanged) nextDirectory?.state?.boardsList.orEmpty() else it.boards,
-                cards = if (gatewayChanged) nextDirectory?.state?.cardsList.orEmpty() else it.cards,
-                chats = if (gatewayChanged) nextDirectory?.state?.chatsList.orEmpty() else it.chats,
+                selectedState = if (gatewayChanged) null else it.selectedState,
+                projects = if (gatewayChanged) emptyList() else it.projects,
+                projectHosts = if (gatewayChanged) emptyMap() else it.projectHosts,
+                boards = if (gatewayChanged) emptyList() else it.boards,
+                cards = if (gatewayChanged) emptyList() else it.cards,
+                chats = if (gatewayChanged) emptyList() else it.chats,
                 activeConversations = if (gatewayChanged) emptyMap() else it.activeConversations,
                 conversationRefreshedAtMillis = if (gatewayChanged) emptyMap() else it.conversationRefreshedAtMillis,
                 error = null,
             )
         }
-        if (gatewayChanged) updateSelectedState()
+        if (gatewayChanged) scope.launch { loadCachedDirectory(nextActive) }
         if (_state.value.desiredConnected && shouldRun()) restart()
     }
 
@@ -475,13 +535,13 @@ class DieterConnectionManager(
     fun selectGateway(id: String) {
         val gateway = synchronized(lock) { configuredEndpoints.firstOrNull { it.id == id } } ?: return
         if (gateway.id == activeGatewayId) return
-        val nextDirectory = syncStore.loadMachineDirectory(gateway.id)
         synchronized(lock) {
+            configurationGeneration++
             activeGatewayId = gateway.id
             preferredEndpointId = null
             discoveredEndpoints = emptyList()
-            cachedDirectory = nextDirectory
-            selectedProjectId = nextDirectory?.state?.projectsList?.firstOrNull()?.id.orEmpty()
+            cachedDirectory = null
+            selectedProjectId = ""
         }
         preferences.edit()
             .putString(KEY_ACTIVE_GATEWAY, gateway.id)
@@ -500,21 +560,52 @@ class DieterConnectionManager(
                 activeGatewayId = gateway.id,
                 endpoint = gateway,
                 endpointConnections = listOf(endpointRow(gateway)),
-                selectedState = nextDirectory?.state,
-                projects = nextDirectory?.state?.projectsList.orEmpty(),
-                projectHosts = nextDirectory?.hosts.orEmpty().mapValues { (_, host) ->
-                    ProjectHost(host.endpointId, host.daemonId, host.hostname, online = false)
-                },
-                boards = nextDirectory?.state?.boardsList.orEmpty(),
-                cards = nextDirectory?.state?.cardsList.orEmpty(),
-                chats = nextDirectory?.state?.chatsList.orEmpty(),
+                selectedState = null,
+                projects = emptyList(),
+                projectHosts = emptyMap(),
+                boards = emptyList(),
+                cards = emptyList(),
+                chats = emptyList(),
                 activeConversations = emptyMap(),
                 conversationRefreshedAtMillis = emptyMap(),
                 error = null,
             )
         }
-        updateSelectedState()
+        scope.launch { loadCachedDirectory(gateway.id) }
         if (_state.value.desiredConnected && shouldRun()) restart()
+    }
+
+    private fun loadCachedDirectory(gatewayId: String) {
+        applyCachedDirectory(gatewayId, syncStore.loadMachineDirectory(gatewayId))
+    }
+
+    private fun applyCachedDirectory(
+        gatewayId: String,
+        directory: CachedMachineDirectory?,
+    ) {
+        val shouldApply = synchronized(lock) {
+            if (activeGatewayId != gatewayId || _state.value.projects.isNotEmpty()) return@synchronized false
+            cachedDirectory = directory
+            if (selectedProjectId.isBlank()) {
+                selectedProjectId = directory?.state?.projectsList?.firstOrNull()?.id.orEmpty()
+            }
+            true
+        }
+        if (!shouldApply || directory == null) return
+        _state.update { current ->
+            if (current.activeGatewayId != gatewayId || current.projects.isNotEmpty()) return@update current
+            current.copy(
+                selectedState = directory.state,
+                projects = directory.state.projectsList,
+                projectHosts = directory.hosts.mapValues { (_, host) ->
+                    ProjectHost(host.endpointId, host.daemonId, host.hostname, online = false)
+                },
+                boards = directory.state.boardsList,
+                cards = directory.state.cardsList,
+                chats = directory.state.chatsList,
+            )
+        }
+        updateSelectedState()
     }
 
     fun disconnect(stopService: Boolean = true) {
@@ -548,19 +639,6 @@ class DieterConnectionManager(
         reconcile()
     }
 
-    fun requestBatteryOptimizationExemption() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        val power = appContext.getSystemService(PowerManager::class.java)
-        if (power.isIgnoringBatteryOptimizations(appContext.packageName)) return
-        runCatching {
-            appContext.startActivity(
-                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                    .setData(Uri.parse("package:${appContext.packageName}"))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        }
-    }
-
     private fun reconcile() {
         if (shouldRun()) ensureStarted() else pause()
     }
@@ -573,7 +651,10 @@ class DieterConnectionManager(
         synchronized(lock) {
             if (connectionJob?.isActive == true) return
             val currentGeneration = ++generation
-            connectionJob = scope.launch { connectionLoop(currentGeneration) }
+            connectionJob = scope.launch {
+                hydrationJob?.join()
+                connectionLoop(currentGeneration)
+            }
         }
     }
 
@@ -1289,7 +1370,7 @@ class DieterConnectionManager(
         return changed
     }
 
-    suspend fun enqueueCardStart(cardId: String): Card {
+    suspend fun enqueueCardStart(cardId: String): Card = withContext(Dispatchers.IO) {
         val current = _state.value
         val card = current.cards.firstOrNull { it.id == cardId }
             ?: error("Card is no longer available")
@@ -1333,7 +1414,7 @@ class DieterConnectionManager(
             }
         }
         refreshOutboxPresentation()
-        return _state.value.cards.firstOrNull { it.id == cardId } ?: card
+        _state.value.cards.firstOrNull { it.id == cardId } ?: card
     }
 
     private fun refreshOutboxPresentation() {
@@ -1434,9 +1515,9 @@ class DieterConnectionManager(
         persistMachineDirectory()
     }
 
-    fun acceptConversation(snapshot: ConversationSnapshot): ConversationSnapshot {
+    suspend fun acceptConversation(snapshot: ConversationSnapshot): ConversationSnapshot = withContext(Dispatchers.IO) {
         val cardId = snapshot.detail.card.id
-        if (cardId.isBlank()) return snapshot
+        if (cardId.isBlank()) return@withContext snapshot
         reconcileOutbox(snapshot)
         var accepted = snapshot
         _state.update { current ->
@@ -1464,7 +1545,7 @@ class DieterConnectionManager(
                 machineOutboxSummaries = machineOutboxSummaries(entries),
             )
         }
-        return accepted
+        accepted
     }
 
     private fun retargetConversation(snapshot: ConversationSnapshot, card: Card?, cardId: String): ConversationSnapshot {
@@ -1506,7 +1587,7 @@ class DieterConnectionManager(
         optimisticInitialMessageId(entry)?.let(::add)
     }
 
-    suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean): Card {
+    suspend fun enqueueConversation(request: CreateConversationRequest, chat: Boolean): Card = withContext(Dispatchers.IO) {
         val commandId = UUID.randomUUID().toString().lowercase()
         val stable = request.toBuilder().setClientId(syncStore.clientId).setCommandId(commandId).build()
         val optimisticId = "local_${UUID.randomUUID().toString().replace("-", "").lowercase()}"
@@ -1524,7 +1605,7 @@ class DieterConnectionManager(
         }
         globalSnapshot?.let(::applyGlobalSnapshot)
         val resolvedId = synchronized(outbox) { conversationIdResolutions[optimisticId] }
-        return _state.value.let { state ->
+        _state.value.let { state ->
             (if (chat) state.chats else state.cards).first { card ->
                 card.id == resolvedId || card.id == optimisticId
             }
@@ -1538,7 +1619,7 @@ class DieterConnectionManager(
         model: String,
         effort: String,
         providerOptions: Map<String, String> = emptyMap(),
-    ): String {
+    ): String = withContext(Dispatchers.IO) {
         val commandId = UUID.randomUUID().toString().lowercase()
         val messageId = "msg_${UUID.randomUUID().toString().replace("-", "").lowercase()}"
         val request = SendMessageRequest.newBuilder()
@@ -1567,7 +1648,7 @@ class DieterConnectionManager(
             syncStore.saveOutbox(outbox)
         }
         globalSnapshot?.let(::applyGlobalSnapshot)
-        return messageId
+        messageId
     }
 
     private suspend fun drainOutbox(currentGeneration: Long) {
@@ -1704,42 +1785,46 @@ class DieterConnectionManager(
     }
 
     fun retryOutboxItem(id: String) {
-        synchronized(outbox) {
-            val index = outbox.indexOfFirst {
-                (it.optimisticId == id || it.serverId == id) && it.state == OutboxState.FAILED
+        scope.launch {
+            synchronized(outbox) {
+                val index = outbox.indexOfFirst {
+                    (it.optimisticId == id || it.serverId == id) && it.state == OutboxState.FAILED
+                }
+                if (index < 0) return@launch
+                outbox[index] = outbox[index].copy(
+                    attempts = 0,
+                    lastError = null,
+                    state = OutboxState.QUEUED,
+                    nextAttemptAtMillis = null,
+                )
+                syncStore.saveOutbox(outbox)
             }
-            if (index < 0) return
-            outbox[index] = outbox[index].copy(
-                attempts = 0,
-                lastError = null,
-                state = OutboxState.QUEUED,
-                nextAttemptAtMillis = null,
-            )
-            syncStore.saveOutbox(outbox)
+            refreshOutboxPresentation()
         }
-        refreshOutboxPresentation()
     }
 
     fun retryOutboxForEndpoint(endpointId: String) {
-        var changed = false
-        synchronized(outbox) {
-            outbox.indices
-                .filter { outbox[it].endpointId == endpointId && outbox[it].serverId == null }
-                .forEach { index ->
-                    outbox[index] = outbox[index].copy(
-                        attempts = 0,
-                        lastError = null,
-                        state = OutboxState.QUEUED,
-                        nextAttemptAtMillis = null,
-                    )
-                    changed = true
-                }
-            if (changed) syncStore.saveOutbox(outbox)
+        scope.launch {
+            var changed = false
+            synchronized(outbox) {
+                outbox.indices
+                    .filter { outbox[it].endpointId == endpointId && outbox[it].serverId == null }
+                    .forEach { index ->
+                        outbox[index] = outbox[index].copy(
+                            attempts = 0,
+                            lastError = null,
+                            state = OutboxState.QUEUED,
+                            nextAttemptAtMillis = null,
+                        )
+                        changed = true
+                    }
+                if (changed) syncStore.saveOutbox(outbox)
+            }
+            if (changed) refreshOutboxPresentation()
+            preferredEndpointId = endpointId
+            preferences.edit().putString(KEY_PREFERRED_ENDPOINT, endpointId).apply()
+            if (_state.value.desiredConnected) restart()
         }
-        if (changed) refreshOutboxPresentation()
-        preferredEndpointId = endpointId
-        preferences.edit().putString(KEY_PREFERRED_ENDPOINT, endpointId).apply()
-        if (_state.value.desiredConnected) restart()
     }
 
     fun outboxFailure(id: String): String? = synchronized(outbox) {
@@ -1749,40 +1834,42 @@ class DieterConnectionManager(
     }
 
     fun discardOutboxItem(id: String) {
-        val removed = synchronized(outbox) {
-            val index = outbox.indexOfFirst {
-                (it.optimisticId == id || it.serverId == id) && it.state == OutboxState.FAILED
-            }
-            if (index < 0) return
-            outbox.removeAt(index).also { syncStore.saveOutbox(outbox) }
-        }
-        _state.update { current ->
-            val ids = buildSet {
-                add(removed.optimisticId)
-                removed.serverId?.let(::add)
-            }
-            val conversations = current.activeConversations.toMutableMap()
-            when (removed.kind) {
-                OutboxKind.SEND_MESSAGE -> {
-                    conversations.replaceAll { _, snapshot ->
-                        snapshot.toBuilder()
-                            .setConversation(
-                                snapshot.conversation.toBuilder()
-                                    .clearMessages()
-                                    .addAllMessages(snapshot.conversation.messagesList.filterNot { it.id == removed.optimisticId }),
-                            )
-                            .build()
-                    }
+        scope.launch {
+            val removed = synchronized(outbox) {
+                val index = outbox.indexOfFirst {
+                    (it.optimisticId == id || it.serverId == id) && it.state == OutboxState.FAILED
                 }
-                OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT -> ids.forEach(conversations::remove)
-                OutboxKind.START_CARD -> Unit
+                if (index < 0) return@launch
+                outbox.removeAt(index).also { syncStore.saveOutbox(outbox) }
             }
-            current.copy(
-                activeConversations = conversations,
-                conversationRefreshedAtMillis = current.conversationRefreshedAtMillis.filterKeys(conversations::containsKey),
-            )
+            _state.update { current ->
+                val ids = buildSet {
+                    add(removed.optimisticId)
+                    removed.serverId?.let(::add)
+                }
+                val conversations = current.activeConversations.toMutableMap()
+                when (removed.kind) {
+                    OutboxKind.SEND_MESSAGE -> {
+                        conversations.replaceAll { _, snapshot ->
+                            snapshot.toBuilder()
+                                .setConversation(
+                                    snapshot.conversation.toBuilder()
+                                        .clearMessages()
+                                        .addAllMessages(snapshot.conversation.messagesList.filterNot { it.id == removed.optimisticId }),
+                                )
+                                .build()
+                        }
+                    }
+                    OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT -> ids.forEach(conversations::remove)
+                    OutboxKind.START_CARD -> Unit
+                }
+                current.copy(
+                    activeConversations = conversations,
+                    conversationRefreshedAtMillis = current.conversationRefreshedAtMillis.filterKeys(conversations::containsKey),
+                )
+            }
+            refreshOutboxPresentation()
         }
-        refreshOutboxPresentation()
     }
 
     private fun updateEndpoint(endpoint: DieterEndpoint, phase: EndpointPhase, detail: String, latencyMs: Long?) {

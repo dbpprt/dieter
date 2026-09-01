@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 
 enum DieterAppearance: String, CaseIterable, Identifiable {
@@ -108,6 +109,27 @@ enum DieterPalette: String, CaseIterable, Identifiable {
         case .coralSignal:
             PaletteSpec(0x28101F, 0x4A1D33, 0xFF8A7A, 0xE44568, 0xFFD0C7, 0xFF6B8A, 0xFFD6CC, 0xFFF5F3, 0x190A13, 0x361527)
         }
+    }
+}
+
+struct DieterThemeSelection: Equatable, Hashable {
+    var appearance: DieterAppearance
+    var palette: DieterPalette
+
+    static func load(
+        from defaults: UserDefaults = DieterAppearance.applicationDefaults()
+    ) -> Self {
+        Self(
+            appearance: DieterAppearance.resolve(defaults.string(forKey: DieterAppearance.storageKey)),
+            palette: DieterPalette.resolve(defaults.string(forKey: DieterPalette.storageKey))
+        )
+    }
+
+    var identity: String { "\(appearance.rawValue):\(palette.rawValue)" }
+
+    func save(to defaults: UserDefaults = DieterAppearance.applicationDefaults()) {
+        defaults.set(appearance.rawValue, forKey: DieterAppearance.storageKey)
+        defaults.set(palette.rawValue, forKey: DieterPalette.storageKey)
     }
 }
 
@@ -249,6 +271,31 @@ private struct DieterThemeKey: Hashable {
     let dark: Bool
 }
 
+@MainActor
+@Observable
+private final class DieterThemeState {
+    private(set) var colors: DieterThemeTokens
+    @ObservationIgnored private(set) var systemColorScheme: ColorScheme
+    private var installedKey: DieterThemeKey
+
+    init(key: DieterThemeKey, colors: DieterThemeTokens, systemColorScheme: ColorScheme) {
+        installedKey = key
+        self.colors = colors
+        self.systemColorScheme = systemColorScheme
+    }
+
+    func install(
+        key: DieterThemeKey,
+        colors: DieterThemeTokens,
+        systemColorScheme: ColorScheme? = nil
+    ) {
+        if let systemColorScheme { self.systemColorScheme = systemColorScheme }
+        guard key != installedKey else { return }
+        installedKey = key
+        self.colors = colors
+    }
+}
+
 /// Palette-backed surfaces adapted for native Aqua and Dark Aqua while retaining
 /// a consistent contrast hierarchy across every supplied Dieter palette.
 @MainActor
@@ -260,43 +307,62 @@ enum DieterTheme {
         }
     })
     private static let fallbackKey = DieterThemeKey(palette: .monochrome, dark: false)
-    private static var installedKey = fallbackKey
-    private static var colors = palettes[fallbackKey]!
+    private static let state = DieterThemeState(
+        key: fallbackKey,
+        colors: palettes[fallbackKey]!,
+        systemColorScheme: .light
+    )
 
     static func install(palette: DieterPalette, colorScheme: ColorScheme) {
         let key = DieterThemeKey(palette: palette, dark: colorScheme == .dark)
-        guard key != installedKey else { return }
-        installedKey = key
-        colors = palettes[key] ?? palettes[fallbackKey]!
+        state.install(
+            key: key,
+            colors: palettes[key] ?? palettes[fallbackKey]!,
+            systemColorScheme: colorScheme
+        )
     }
 
-    static var background: Color { colors.background }
-    static var sidebar: Color { colors.sidebar }
-    static var surface: Color { colors.surface }
-    static var raised: Color { colors.raised }
-    static var elevated: Color { colors.elevated }
-    static var input: Color { colors.input }
-    static var border: Color { colors.border }
-    static var strongBorder: Color { colors.strongBorder }
+    static func install(
+        selection: DieterThemeSelection,
+        systemColorScheme: ColorScheme? = nil
+    ) {
+        let systemColorScheme = systemColorScheme ?? state.systemColorScheme
+        let effectiveColorScheme = selection.appearance.colorScheme ?? systemColorScheme
+        let key = DieterThemeKey(palette: selection.palette, dark: effectiveColorScheme == .dark)
+        state.install(
+            key: key,
+            colors: palettes[key] ?? palettes[fallbackKey]!,
+            systemColorScheme: systemColorScheme
+        )
+    }
+
+    static var background: Color { state.colors.background }
+    static var sidebar: Color { state.colors.sidebar }
+    static var surface: Color { state.colors.surface }
+    static var raised: Color { state.colors.raised }
+    static var elevated: Color { state.colors.elevated }
+    static var input: Color { state.colors.input }
+    static var border: Color { state.colors.border }
+    static var strongBorder: Color { state.colors.strongBorder }
     /// Crisp 1px seam separating the three primary panes (nav · workspace · conversation).
-    static var paneSeparator: Color { colors.paneSeparator }
-    static var text: Color { colors.text }
-    static var subtle: Color { colors.subtle }
-    static var tertiary: Color { colors.tertiary }
-    static var shellDeep: Color { colors.shellDeep }
-    static var shell: Color { colors.shell }
-    static var primary: Color { colors.primary }
-    static var eyes: Color { colors.eyes }
-    static var amber: Color { colors.amber }
-    static var coral: Color { colors.coral }
+    static var paneSeparator: Color { state.colors.paneSeparator }
+    static var text: Color { state.colors.text }
+    static var subtle: Color { state.colors.subtle }
+    static var tertiary: Color { state.colors.tertiary }
+    static var shellDeep: Color { state.colors.shellDeep }
+    static var shell: Color { state.colors.shell }
+    static var primary: Color { state.colors.primary }
+    static var eyes: Color { state.colors.eyes }
+    static var amber: Color { state.colors.amber }
+    static var coral: Color { state.colors.coral }
 
     /// Background for the selected navigation or list row.
-    static var selection: Color { colors.selection }
+    static var selection: Color { state.colors.selection }
 
-    static var terminalBackground: Color { colors.terminalBackground }
-    static var terminalBackgroundColor: NSColor { colors.terminalBackgroundColor }
-    static var terminalForegroundColor: NSColor { colors.terminalForegroundColor }
-    static var terminalCaretColor: NSColor { colors.terminalCaretColor }
+    static var terminalBackground: Color { state.colors.terminalBackground }
+    static var terminalBackgroundColor: NSColor { state.colors.terminalBackgroundColor }
+    static var terminalForegroundColor: NSColor { state.colors.terminalForegroundColor }
+    static var terminalCaretColor: NSColor { state.colors.terminalCaretColor }
 }
 
 private struct DieterStaticProgressViewStyle: ProgressViewStyle {
@@ -306,18 +372,24 @@ private struct DieterStaticProgressViewStyle: ProgressViewStyle {
 }
 
 private struct DieterThemeRootModifier: ViewModifier {
-    let palette: DieterPalette
+    let selection: DieterThemeSelection
     @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
-        DieterTheme.install(palette: palette, colorScheme: colorScheme)
+        DieterTheme.install(selection: selection, systemColorScheme: colorScheme)
         return content.progressViewStyle(DieterStaticProgressViewStyle())
     }
 }
 
 extension View {
-    func dieterThemeRoot(palette: DieterPalette) -> some View {
-        modifier(DieterThemeRootModifier(palette: palette))
+    func dieterThemeRoot(
+        palette: DieterPalette,
+        appearance: DieterAppearance = .system
+    ) -> some View {
+        modifier(DieterThemeRootModifier(selection: DieterThemeSelection(
+            appearance: appearance,
+            palette: palette
+        )))
     }
 }
 

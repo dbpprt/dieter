@@ -11,6 +11,7 @@ import DieterAPI
 @MainActor
 enum SidebarNavigationUISmokeRunner {
     private static let projectIDs = ["p_sidebar_one", "p_sidebar_two", "p_sidebar_three"]
+    private static let expectedMachineNames = ["alpha", "Beta", "Zulu"]
 
     static func run(store: DieterStore) async {
         let output = outputDirectory()
@@ -34,6 +35,14 @@ enum SidebarNavigationUISmokeRunner {
 
         let phase = argument(after: "--sidebar-ui-smoke") ?? "prepare"
         var results: [String: String] = [:]
+        let sourceMachineNames = store.machines.map(\.name)
+        results["machine-source-order"] = sourceMachineNames == ["Beta", "Zulu", "alpha"]
+            ? "passed"
+            : "failed: \(sourceMachineNames.joined(separator: ","))"
+        let sidebarMachineNames = SidebarMachineOrdering.sorted(store.machines).map(\.name)
+        results["machine-sidebar-order"] = sidebarMachineNames == expectedMachineNames
+            ? "passed"
+            : "failed: \(sidebarMachineNames.joined(separator: ","))"
         switch phase {
         case "prepare":
             await prepare(window: window, results: &results)
@@ -121,14 +130,33 @@ enum SidebarNavigationUISmokeRunner {
 
     private static func seed(_ store: DieterStore) {
         let names = ["Alpha", "Beta", "Gamma"]
-        let machine = DieterEndpoint(
-            name: "studio-mini",
-            host: "127.0.0.1",
-            port: 4242,
-            daemonID: "sidebar-smoke-machine",
-            online: true,
-            version: "smoke"
-        )
+        let machines = [
+            DieterEndpoint(
+                name: "Zulu",
+                host: "127.0.0.1",
+                port: 4242,
+                daemonID: "sidebar-smoke-zulu",
+                online: true,
+                version: "smoke"
+            ),
+            DieterEndpoint(
+                name: "alpha",
+                host: "127.0.0.1",
+                port: 4243,
+                daemonID: "sidebar-smoke-alpha",
+                online: false,
+                version: "smoke"
+            ),
+            DieterEndpoint(
+                name: "Beta",
+                host: "127.0.0.1",
+                port: 4244,
+                daemonID: "sidebar-smoke-beta",
+                online: true,
+                version: "smoke"
+            ),
+        ]
+        let machine = machines[0]
         var projects: [Dieter_V1_Project] = []
         var boardsByProject: [String: [Dieter_V1_Board]] = [:]
         for (index, id) in projectIDs.enumerated() {
@@ -149,9 +177,11 @@ enum SidebarNavigationUISmokeRunner {
         store.navigationBoards = boardsByProject
         store.navigationCards = Dictionary(uniqueKeysWithValues: projectIDs.map { ($0, []) })
         store.endpoint = machine
-        store.endpoints = [machine]
+        store.endpoints = machines
         store.projectEndpointIDs = Dictionary(uniqueKeysWithValues: projectIDs.map { ($0, machine.id) })
-        store.machineConnectionStatuses = [machine.id: MachineConnectionStatus(route: .local, latencyMilliseconds: 3)]
+        store.machineConnectionStatuses = Dictionary(uniqueKeysWithValues: machines.map {
+            ($0.id, MachineConnectionStatus(route: .local, latencyMilliseconds: 3))
+        })
         store.chats = []
         store.chatProjects = []
         store.state.project = projects[0]

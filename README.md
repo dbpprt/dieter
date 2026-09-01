@@ -96,12 +96,33 @@ dieter auth login
 dieter machine list --format jsonl
 dieter --machine <machine-id> status
 dieter --machine <machine-id> project list --format jsonl
+dieter --machine <machine-id> remote exec --project <project-id> -- uname -a
 dieter --machine <machine-id> terminal list --format jsonl
 ```
 
+`dieter status` reports daemon-wide active project, board, card, and chat
+counts in one snapshot, including when the selected machine is remote.
+
+For agent automation, `dieter remote` is the SSH-like secondary interface. It
+runs exact argv on the selected daemon, keeps stdout and stderr distinct,
+propagates the remote exit code, supports idempotent admission, and allows
+bounded output to resume by sequence after a disconnect. `remote shell` adds a
+native PTY when one is actually needed:
+
+```sh
+dieter --machine <machine-id> remote exec --project <project-id> \
+  --idempotency-key build-42 --format jsonl -- go test ./...
+dieter --machine <machine-id> remote wait <execution-id>
+dieter --machine <machine-id> remote shell --project <project-id>
+```
+
+The gateway only transports these authenticated RPCs. Execution state and
+output remain on the daemon host, and dropping a watch does not stop its
+process; cancellation is always explicit.
+
 Run `dieter --help` for the complete surface and
 `dieter help <group> <action>` for command-specific flags. Projects, cards and
-chats, files, terminals, workspaces and Git operations, schedules, prompts,
+chats, files, remote executions, terminals, workspaces and Git operations, schedules, prompts,
 admission settings, screen signaling, and machine control all use the same
 daemon API as the native apps. Schedule lists and occurrence history use
 bounded, cursor-paginated queries so high-frequency schedules do not make

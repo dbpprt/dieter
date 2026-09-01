@@ -94,6 +94,15 @@ const (
 	DieterService_ResizeTerminal_FullMethodName                 = "/dieter.v1.DieterService/ResizeTerminal"
 	DieterService_RenameTerminal_FullMethodName                 = "/dieter.v1.DieterService/RenameTerminal"
 	DieterService_CloseTerminal_FullMethodName                  = "/dieter.v1.DieterService/CloseTerminal"
+	DieterService_ListExecutions_FullMethodName                 = "/dieter.v1.DieterService/ListExecutions"
+	DieterService_StartExecution_FullMethodName                 = "/dieter.v1.DieterService/StartExecution"
+	DieterService_GetExecution_FullMethodName                   = "/dieter.v1.DieterService/GetExecution"
+	DieterService_WatchExecution_FullMethodName                 = "/dieter.v1.DieterService/WatchExecution"
+	DieterService_WriteExecutionInput_FullMethodName            = "/dieter.v1.DieterService/WriteExecutionInput"
+	DieterService_SignalExecution_FullMethodName                = "/dieter.v1.DieterService/SignalExecution"
+	DieterService_ResizeExecution_FullMethodName                = "/dieter.v1.DieterService/ResizeExecution"
+	DieterService_CancelExecution_FullMethodName                = "/dieter.v1.DieterService/CancelExecution"
+	DieterService_CloseExecution_FullMethodName                 = "/dieter.v1.DieterService/CloseExecution"
 	DieterService_GetRemoteDesktopCapabilities_FullMethodName   = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
 	DieterService_GetRemoteDesktopSettings_FullMethodName       = "/dieter.v1.DieterService/GetRemoteDesktopSettings"
 	DieterService_UpdateRemoteDesktopSettings_FullMethodName    = "/dieter.v1.DieterService/UpdateRemoteDesktopSettings"
@@ -200,6 +209,18 @@ type DieterServiceClient interface {
 	ResizeTerminal(ctx context.Context, in *ResizeTerminalRequest, opts ...grpc.CallOption) (*Terminal, error)
 	RenameTerminal(ctx context.Context, in *RenameTerminalRequest, opts ...grpc.CallOption) (*Terminal, error)
 	CloseTerminal(ctx context.Context, in *TerminalRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Remote executions are agent-oriented command sessions. They preserve
+	// stdout/stderr boundaries, explicit exit state, idempotent admission, and
+	// resumable output independently from any client watch stream.
+	ListExecutions(ctx context.Context, in *ListExecutionsRequest, opts ...grpc.CallOption) (*ExecutionsResponse, error)
+	StartExecution(ctx context.Context, in *StartExecutionRequest, opts ...grpc.CallOption) (*Execution, error)
+	GetExecution(ctx context.Context, in *ExecutionRef, opts ...grpc.CallOption) (*Execution, error)
+	WatchExecution(ctx context.Context, in *WatchExecutionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExecutionEvent], error)
+	WriteExecutionInput(ctx context.Context, in *ExecutionInputRequest, opts ...grpc.CallOption) (*Execution, error)
+	SignalExecution(ctx context.Context, in *SignalExecutionRequest, opts ...grpc.CallOption) (*Execution, error)
+	ResizeExecution(ctx context.Context, in *ResizeExecutionRequest, opts ...grpc.CallOption) (*Execution, error)
+	CancelExecution(ctx context.Context, in *ExecutionRef, opts ...grpc.CallOption) (*Execution, error)
+	CloseExecution(ctx context.Context, in *ExecutionRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	GetRemoteDesktopCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoteDesktopCapabilities, error)
 	GetRemoteDesktopSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoteDesktopSettings, error)
 	UpdateRemoteDesktopSettings(ctx context.Context, in *UpdateRemoteDesktopSettingsRequest, opts ...grpc.CallOption) (*RemoteDesktopSettings, error)
@@ -1009,6 +1030,105 @@ func (c *dieterServiceClient) CloseTerminal(ctx context.Context, in *TerminalRef
 	return out, nil
 }
 
+func (c *dieterServiceClient) ListExecutions(ctx context.Context, in *ListExecutionsRequest, opts ...grpc.CallOption) (*ExecutionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecutionsResponse)
+	err := c.cc.Invoke(ctx, DieterService_ListExecutions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) StartExecution(ctx context.Context, in *StartExecutionRequest, opts ...grpc.CallOption) (*Execution, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Execution)
+	err := c.cc.Invoke(ctx, DieterService_StartExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) GetExecution(ctx context.Context, in *ExecutionRef, opts ...grpc.CallOption) (*Execution, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Execution)
+	err := c.cc.Invoke(ctx, DieterService_GetExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) WatchExecution(ctx context.Context, in *WatchExecutionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExecutionEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchExecution_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchExecutionRequest, ExecutionEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DieterService_WatchExecutionClient = grpc.ServerStreamingClient[ExecutionEvent]
+
+func (c *dieterServiceClient) WriteExecutionInput(ctx context.Context, in *ExecutionInputRequest, opts ...grpc.CallOption) (*Execution, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Execution)
+	err := c.cc.Invoke(ctx, DieterService_WriteExecutionInput_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) SignalExecution(ctx context.Context, in *SignalExecutionRequest, opts ...grpc.CallOption) (*Execution, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Execution)
+	err := c.cc.Invoke(ctx, DieterService_SignalExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ResizeExecution(ctx context.Context, in *ResizeExecutionRequest, opts ...grpc.CallOption) (*Execution, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Execution)
+	err := c.cc.Invoke(ctx, DieterService_ResizeExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) CancelExecution(ctx context.Context, in *ExecutionRef, opts ...grpc.CallOption) (*Execution, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Execution)
+	err := c.cc.Invoke(ctx, DieterService_CancelExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) CloseExecution(ctx context.Context, in *ExecutionRef, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DieterService_CloseExecution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dieterServiceClient) GetRemoteDesktopCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoteDesktopCapabilities, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemoteDesktopCapabilities)
@@ -1041,7 +1161,7 @@ func (c *dieterServiceClient) UpdateRemoteDesktopSettings(ctx context.Context, i
 
 func (c *dieterServiceClient) StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1248,6 +1368,18 @@ type DieterServiceServer interface {
 	ResizeTerminal(context.Context, *ResizeTerminalRequest) (*Terminal, error)
 	RenameTerminal(context.Context, *RenameTerminalRequest) (*Terminal, error)
 	CloseTerminal(context.Context, *TerminalRef) (*emptypb.Empty, error)
+	// Remote executions are agent-oriented command sessions. They preserve
+	// stdout/stderr boundaries, explicit exit state, idempotent admission, and
+	// resumable output independently from any client watch stream.
+	ListExecutions(context.Context, *ListExecutionsRequest) (*ExecutionsResponse, error)
+	StartExecution(context.Context, *StartExecutionRequest) (*Execution, error)
+	GetExecution(context.Context, *ExecutionRef) (*Execution, error)
+	WatchExecution(*WatchExecutionRequest, grpc.ServerStreamingServer[ExecutionEvent]) error
+	WriteExecutionInput(context.Context, *ExecutionInputRequest) (*Execution, error)
+	SignalExecution(context.Context, *SignalExecutionRequest) (*Execution, error)
+	ResizeExecution(context.Context, *ResizeExecutionRequest) (*Execution, error)
+	CancelExecution(context.Context, *ExecutionRef) (*Execution, error)
+	CloseExecution(context.Context, *ExecutionRef) (*emptypb.Empty, error)
 	GetRemoteDesktopCapabilities(context.Context, *emptypb.Empty) (*RemoteDesktopCapabilities, error)
 	GetRemoteDesktopSettings(context.Context, *emptypb.Empty) (*RemoteDesktopSettings, error)
 	UpdateRemoteDesktopSettings(context.Context, *UpdateRemoteDesktopSettingsRequest) (*RemoteDesktopSettings, error)
@@ -1493,6 +1625,33 @@ func (UnimplementedDieterServiceServer) RenameTerminal(context.Context, *RenameT
 }
 func (UnimplementedDieterServiceServer) CloseTerminal(context.Context, *TerminalRef) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CloseTerminal not implemented")
+}
+func (UnimplementedDieterServiceServer) ListExecutions(context.Context, *ListExecutionsRequest) (*ExecutionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListExecutions not implemented")
+}
+func (UnimplementedDieterServiceServer) StartExecution(context.Context, *StartExecutionRequest) (*Execution, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartExecution not implemented")
+}
+func (UnimplementedDieterServiceServer) GetExecution(context.Context, *ExecutionRef) (*Execution, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetExecution not implemented")
+}
+func (UnimplementedDieterServiceServer) WatchExecution(*WatchExecutionRequest, grpc.ServerStreamingServer[ExecutionEvent]) error {
+	return status.Error(codes.Unimplemented, "method WatchExecution not implemented")
+}
+func (UnimplementedDieterServiceServer) WriteExecutionInput(context.Context, *ExecutionInputRequest) (*Execution, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteExecutionInput not implemented")
+}
+func (UnimplementedDieterServiceServer) SignalExecution(context.Context, *SignalExecutionRequest) (*Execution, error) {
+	return nil, status.Error(codes.Unimplemented, "method SignalExecution not implemented")
+}
+func (UnimplementedDieterServiceServer) ResizeExecution(context.Context, *ResizeExecutionRequest) (*Execution, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResizeExecution not implemented")
+}
+func (UnimplementedDieterServiceServer) CancelExecution(context.Context, *ExecutionRef) (*Execution, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelExecution not implemented")
+}
+func (UnimplementedDieterServiceServer) CloseExecution(context.Context, *ExecutionRef) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CloseExecution not implemented")
 }
 func (UnimplementedDieterServiceServer) GetRemoteDesktopCapabilities(context.Context, *emptypb.Empty) (*RemoteDesktopCapabilities, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRemoteDesktopCapabilities not implemented")
@@ -2854,6 +3013,161 @@ func _DieterService_CloseTerminal_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DieterService_ListExecutions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListExecutionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ListExecutions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ListExecutions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ListExecutions(ctx, req.(*ListExecutionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_StartExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).StartExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_StartExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).StartExecution(ctx, req.(*StartExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecutionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetExecution(ctx, req.(*ExecutionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_WatchExecution_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchExecutionRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DieterServiceServer).WatchExecution(m, &grpc.GenericServerStream[WatchExecutionRequest, ExecutionEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DieterService_WatchExecutionServer = grpc.ServerStreamingServer[ExecutionEvent]
+
+func _DieterService_WriteExecutionInput_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecutionInputRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).WriteExecutionInput(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_WriteExecutionInput_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).WriteExecutionInput(ctx, req.(*ExecutionInputRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_SignalExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SignalExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).SignalExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_SignalExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).SignalExecution(ctx, req.(*SignalExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ResizeExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResizeExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ResizeExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ResizeExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ResizeExecution(ctx, req.(*ResizeExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_CancelExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecutionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).CancelExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_CancelExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).CancelExecution(ctx, req.(*ExecutionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_CloseExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecutionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).CloseExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_CloseExecution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).CloseExecution(ctx, req.(*ExecutionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DieterService_GetRemoteDesktopCapabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -3383,6 +3697,38 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DieterService_CloseTerminal_Handler,
 		},
 		{
+			MethodName: "ListExecutions",
+			Handler:    _DieterService_ListExecutions_Handler,
+		},
+		{
+			MethodName: "StartExecution",
+			Handler:    _DieterService_StartExecution_Handler,
+		},
+		{
+			MethodName: "GetExecution",
+			Handler:    _DieterService_GetExecution_Handler,
+		},
+		{
+			MethodName: "WriteExecutionInput",
+			Handler:    _DieterService_WriteExecutionInput_Handler,
+		},
+		{
+			MethodName: "SignalExecution",
+			Handler:    _DieterService_SignalExecution_Handler,
+		},
+		{
+			MethodName: "ResizeExecution",
+			Handler:    _DieterService_ResizeExecution_Handler,
+		},
+		{
+			MethodName: "CancelExecution",
+			Handler:    _DieterService_CancelExecution_Handler,
+		},
+		{
+			MethodName: "CloseExecution",
+			Handler:    _DieterService_CloseExecution_Handler,
+		},
+		{
 			MethodName: "GetRemoteDesktopCapabilities",
 			Handler:    _DieterService_GetRemoteDesktopCapabilities_Handler,
 		},
@@ -3459,6 +3805,11 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchTerminal",
 			Handler:       _DieterService_WatchTerminal_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WatchExecution",
+			Handler:       _DieterService_WatchExecution_Handler,
 			ServerStreams: true,
 		},
 		{

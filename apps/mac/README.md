@@ -118,6 +118,7 @@ reproducibly packaged artifact.
 ```sh
 swift test --disable-keychain --package-path apps/mac
 apps/mac/scripts/ui-smoke.sh
+apps/mac/scripts/board-stress-ui-smoke.sh
 apps/mac/scripts/machine-ui-smoke.sh
 apps/mac/scripts/conversation-ui-smoke.sh
 apps/mac/scripts/sidebar-ui-smoke.sh
@@ -134,6 +135,13 @@ Screen Recording permission. It also creates a new Git repository through the
 Mac client and registers a linked worktree fixture through the same routed RPC
 path.
 
+`board-stress-ui-smoke.sh` runs the same packaged-app flow against a dedicated
+78-card remote projection with 65 mixed-height cards in one lane. It protects
+the eager board-lane layout workaround from the macOS lazy-stack anchor
+livelock by opening and sorting that board through the isolated gateway; the
+general UI smoke continues to exercise the longer navigation, card-operation,
+sync-recovery, and offline/reconnect flow.
+
 `machine-ui-smoke.sh` is the focused authenticated machine path. It packages
 the Mac app, routes it through an isolated local gateway, opens the live machine
 dashboard, validates host telemetry and operation availability without invoking
@@ -148,8 +156,9 @@ conversation, files, schedules, and a real card conversation.
 `conversation-ui-smoke.sh` opens a real conversation that carries reasoning and
 tool parts, verifies that hiding reasoning consolidates adjacent tool calls into
 one collapsed group, verifies queued follow-ups remain visible beside separate
-Stop and Queue composer actions, grows a model answer to verify the explicit
-jump-to-latest control without viewport snapping, and toggles the composer's
+Stop and Queue composer actions, verifies cards and chats open at the tail,
+tails streamed growth until a native upward scroll exposes Jump to latest,
+then verifies that action resumes tailing. It also toggles the composer's
 reasoning switch repeatedly to prove the transcript survives it. Captures land under
 `apps/mac/.build/conversation-ui-smoke`.
 
@@ -158,7 +167,9 @@ preferences. The first launch clicks a project collapse control and records an
 accepted project drop; the second launch verifies through native clicks that
 both states were restored in the rendered sidebar. It attempts the drop with
 in-process mouse events and uses the same accepted-drop state transition when
-macOS does not admit synthetic events to its system drag manager.
+macOS does not admit synthetic events to its system drag manager. The fixture
+also mixes online and offline machines to verify their sidebar order remains
+alphabetical when presence changes.
 
 `terminal-ui-smoke.sh` builds and starts a throwaway gateway on
 `127.0.0.1:14244` by default, leaving the normal local ports untouched. It

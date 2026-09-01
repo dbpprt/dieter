@@ -62,12 +62,9 @@ private struct AttachmentIntakeModifier: ViewModifier {
                     catch { store.show(error) }
                 }
             }
-            .onPasteCommand(of: [.image, .fileURL]) { providers in
-                Task {
-                    do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
-                    catch { store.show(error) }
-                }
-            }
+            // Keep keyboard paste on the AppKit monitor below. Installing a
+            // SwiftUI paste command here as well can dispatch the same ⌘V to
+            // both handlers and append one clipboard image twice.
             .attachmentPasteCatcher { pasteboard in
                 guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
                 Task {

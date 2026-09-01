@@ -1,6 +1,6 @@
 ---
 name: dieter-cli
-description: Operate Dieter conversations, projects, workspaces, files, terminals, schedules, prompts, and enrolled daemon machines through the authenticated daemon CLI.
+description: Operate Dieter conversations, projects, workspaces, files, structured remote executions, terminals, schedules, prompts, and enrolled daemon machines through the authenticated daemon CLI.
 ---
 
 # Use Dieter CLI
@@ -18,6 +18,9 @@ Omit `--machine` to use the running daemon on this machine:
 dieter status
 dieter project list --format jsonl
 ```
+
+`dieter status` returns daemon-wide active project, board, card, and chat
+counts; it is the cheapest bounded directory overview for one machine.
 
 For another enrolled machine, authenticate once and pass its exact ID or unique
 name as a global option before the command:
@@ -155,6 +158,45 @@ Kinds include `commit`, `update`, `continue_conflict`, `abort_conflict`,
 `validate`, `merge_local`, `push`, `cleanup`, `discard`, `adopt`, `create_pr`,
 `refresh_pr`, and `merge_pr`. Inspect help and current state before destructive
 or externally visible Git operations.
+
+## Run commands on a daemon host
+
+Prefer `remote exec` for agent automation. It submits exact argv values without
+an implicit shell, preserves stdout and stderr separately, reports the remote
+exit code, and retains bounded output by sequence so a disconnected client can
+resume without stopping the process:
+
+```sh
+dieter --machine <machine-id> remote exec --card <card-id> \
+  --idempotency-key validation-<stable-input-digest> \
+  --format jsonl -- go test ./...
+dieter --machine <machine-id> remote list --card <card-id> --format jsonl
+dieter --machine <machine-id> remote show <execution-id>
+dieter --machine <machine-id> remote watch --after <sequence> \
+  --format jsonl <execution-id>
+```
+
+Put every command and argument after the required `--`. Dieter does not parse
+shell syntax there. If pipes, redirects, expansion, or compound commands are
+actually required, request the shell explicitly as argv:
+
+```sh
+dieter remote exec --project <project-id> -- /bin/sh -c \
+  'go test ./... && go vet ./...'
+```
+
+Use `--detach --format id` for asynchronous admission and then `remote wait`
+to propagate the remote exit code. Supply a stable `--idempotency-key` when a
+network retry must not launch a second process. The same key with different
+argv, environment, directory, input, timeout, PTY, or output limits is rejected.
+Use `remote input`, `remote signal`, `remote resize`, `remote cancel`, and
+`remote close` with an exact execution ID. Canceling a watch never cancels the
+process; `remote cancel` is explicit.
+
+Use `remote shell` only when a program genuinely needs a PTY. It opens and
+attaches a native shell on the daemon host; disconnecting leaves it available
+for `remote attach`. The older `terminal` group remains the screen-oriented,
+durable PTY interface and is often better for human interaction.
 
 ## Terminals, schedules, and policy
 

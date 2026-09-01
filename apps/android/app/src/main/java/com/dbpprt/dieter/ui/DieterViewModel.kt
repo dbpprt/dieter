@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.ui
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -55,6 +56,7 @@ import com.dbpprt.dieter.v1.Terminal
 import com.dbpprt.dieter.v1.TerminalFrame
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -69,6 +71,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 import java.time.ZoneId
 
 private const val CONVERSATION_PAGE_SIZE = 30
@@ -124,6 +127,7 @@ enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPAC
 
 enum class CardOperation { STARTING, MOVING, CANCELLING }
 
+@Immutable
 data class DieterUiState(
     val destination: Destination = Destination.BOARD,
     val appSurface: AppSurface? = null,
@@ -259,16 +263,17 @@ data class DieterUiState(
     val selectedSchedule: Schedule? get() = schedules.firstOrNull { it.id == selectedScheduleId }
     val selectedTerminal: Terminal? get() = terminals.firstOrNull { it.id == selectedTerminalId }
     val conversationMessages: List<UiMessage>
-        get() {
-            val live = conversation?.conversation?.messagesList.orEmpty()
-            val liveIds = live.mapNotNullTo(mutableSetOf()) { it.id.takeIf(String::isNotBlank) }
-            val seen = mutableSetOf<String>()
-            val history = olderMessages.filter { it.id.isBlank() || it.id !in liveIds }
-            return (history + live).filter { message ->
-                val key = message.id.ifBlank { "anonymous:${message.hashCode()}" }
-                seen.add(key)
-            }
-        }
+        get() = mergedConversationMessages(olderMessages, conversation?.conversation?.messagesList.orEmpty())
+}
+
+internal fun mergedConversationMessages(older: List<UiMessage>, live: List<UiMessage>): List<UiMessage> {
+    val liveIds = live.mapNotNullTo(mutableSetOf()) { it.id.takeIf(String::isNotBlank) }
+    val seen = mutableSetOf<String>()
+    val history = older.filter { it.id.isBlank() || it.id !in liveIds }
+    return (history + live).filter { message ->
+        val key = message.id.ifBlank { "anonymous:${message.hashCode()}" }
+        seen.add(key)
+    }
 }
 
 internal fun DieterUiState.applyingSchedulePage(response: SchedulesResponse, appending: Boolean): DieterUiState {
@@ -433,7 +438,6 @@ class DieterViewModel(
         connectionDialogManuallyRequested = false
         connectionDialogDismissedInterruptionKey = null
         connectionManager.connect()
-        if (_state.value.backgroundSyncEnabled) connectionManager.requestBatteryOptimizationExemption()
     }
 
     fun signIn() = connectionManager.signIn()
@@ -457,7 +461,6 @@ class DieterViewModel(
 
     fun setBackgroundSyncEnabled(enabled: Boolean) {
         connectionManager.setBackgroundSyncEnabled(enabled)
-        if (enabled) connectionManager.requestBatteryOptimizationExemption()
     }
 
     fun setNavigationStyle(style: NavigationStyle) {
@@ -1102,7 +1105,7 @@ class DieterViewModel(
         }
     }
 
-    private fun applyLiveConversation(cardId: String, snapshot: ConversationSnapshot) {
+    private suspend fun applyLiveConversation(cardId: String, snapshot: ConversationSnapshot) {
         if (_state.value.selectedCardId != cardId) return
         val accepted = connectionManager.acceptConversation(snapshot)
         val connection = connectionManager.state.value
@@ -2130,18 +2133,23 @@ class DieterViewModel(
                 val page = if (commitSha.isEmpty()) repository.fileDiff(request) else repository.commitDiff(request)
                 val current = _state.value.workspaceReview
                 if (current.selectedPath != path || current.selectedCommitSha != commitSha) return@launch
-                val merged = if (append && current.diff != null) {
-                    current.diff.toBuilder()
-                        .setPatch(current.diff.patch + page.patch)
-                        .setTruncated(page.truncated)
-                        .setNextOffset(page.nextOffset)
-                        .setTotalBytes(page.totalBytes)
-                        .build()
-                } else {
-                    page
+                val (merged, parsedLines) = withContext(Dispatchers.Default) {
+                    val mergedPage = if (append && current.diff != null) {
+                        current.diff.toBuilder()
+                            .setPatch(current.diff.patch + page.patch)
+                            .setTruncated(page.truncated)
+                            .setNextOffset(page.nextOffset)
+                            .setTotalBytes(page.totalBytes)
+                            .build()
+                    } else {
+                        page
+                    }
+                    mergedPage to UnifiedDiffParser.parse(mergedPage.patch)
                 }
+                val latest = _state.value.workspaceReview
+                if (latest.selectedPath != path || latest.selectedCommitSha != commitSha) return@launch
                 updateWorkspaceReview(cardId) {
-                    it.copy(diff = merged, diffLines = UnifiedDiffParser.parse(merged.patch), diffLoading = false)
+                    it.copy(diff = merged, diffLines = parsedLines, diffLoading = false)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled

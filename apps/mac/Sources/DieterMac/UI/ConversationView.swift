@@ -66,6 +66,7 @@ struct ConversationView: View {
                     WorkspaceChangesView()
                 } else {
                     ConversationTimeline()
+                        .id(store.selectedCardID ?? store.selectedChatID ?? "")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -93,9 +94,8 @@ struct ConversationView: View {
             if case let .success(urls) = result { store.addAttachments(urls) }
             else if case let .failure(error) = result { store.show(error) }
         }
-        .onPasteCommand(of: [.image, .fileURL]) { providers in
-            store.addPastedAttachments(providers)
-        }
+        // AttachmentPasteMonitor is the single owner of ⌘V. Registering an
+        // onPasteCommand here too can append the same clipboard image twice.
         .attachmentPasteCatcher { pasteboard in
             store.attachPasteboard(pasteboard)
         }
@@ -277,12 +277,15 @@ private struct ConversationTimelineRow: View {
 struct ConversationTimeline: View {
     @Environment(DieterStore.self) private var store
     @State private var historyLoadInFlight = false
-    @State private var initialScrollComplete = false
     @State private var isAtLatest = true
+    @State private var userScrollInProgress = false
+    @State private var viewportMode = ConversationViewportMode.awaitingInitial(conversationID: "")
     @State private var presentedFailureLog: String?
     @State private var retryingFailureLog: String?
     @State private var projection = ConversationTimelineProjection.empty
+    @State private var projectionConversationID = ""
     @State private var renderWindowStart: Int?
+    @State private var tailScrollRequest = 0
 
     private var messages: [Dieter_V1_UiMessage] { store.conversationMessages }
     private var timelineItems: [ConversationTimelineItem] { projection.items }
@@ -295,6 +298,7 @@ struct ConversationTimeline: View {
     }
     private var projectionKey: ConversationPresentationKey {
         ConversationPresentationKey(
+            conversationID: conversationID,
             revision: store.conversationPresentationRevision,
             showReasoning: store.showReasoning,
             renderStart: renderRange.lowerBound,
@@ -328,9 +332,14 @@ struct ConversationTimeline: View {
         )
     }
     private var showsJumpToLatest: Bool {
-        ConversationScrollBehavior.showsJumpToLatest(
-            initialScrollComplete: initialScrollComplete,
-            isAtLatest: isAtLatest
+        ConversationScrollBehavior.showsJumpToLatest(viewportMode: viewportMode)
+    }
+    private var viewportObservation: ConversationViewportObservation {
+        ConversationViewportObservation(
+            conversationID: conversationID,
+            isAtLatest: isAtLatest,
+            followsLatest: ConversationScrollBehavior.followsLatest(viewportMode),
+            initialPositionComplete: viewportMode != .awaitingInitial(conversationID: conversationID)
         )
     }
 
@@ -414,26 +423,41 @@ struct ConversationTimeline: View {
                         )
                         .id("conversation.turn-failure")
                     }
-                    Color.clear.frame(height: 1).id(ConversationScrollBehavior.bottomID)
+                    Color.clear.frame(height: 17).id(ConversationScrollBehavior.bottomID)
                 }
-                .padding(.horizontal, 18).padding(.vertical, 17)
+                .padding(.horizontal, 18).padding(.top, 17)
             }
             .textSelection(.enabled)
             .background(DieterTheme.background)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 ConversationScrollBehavior.isAtLatest(
-                    contentOffsetY: geometry.contentOffset.y,
-                    containerHeight: geometry.containerSize.height,
+                    visibleMaxY: geometry.visibleRect.maxY,
                     contentHeight: geometry.contentSize.height
                 )
             } action: { _, atLatest in
                 isAtLatest = atLatest
+                if userScrollInProgress {
+                    viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: atLatest)
+                } else if !atLatest, ConversationScrollBehavior.followsLatest(viewportMode) {
+                    requestTailScroll()
+                }
+            }
+            .onScrollPhaseChange { oldPhase, newPhase in
+                let wasUserDriven = ConversationScrollBehavior.isUserDriven(oldPhase)
+                let isUserDriven = ConversationScrollBehavior.isUserDriven(newPhase)
+                userScrollInProgress = isUserDriven
+                if isUserDriven, !isAtLatest {
+                    viewportMode = .detached
+                } else if wasUserDriven, !isUserDriven {
+                    viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: isAtLatest)
+                }
             }
             .overlay(alignment: .bottom) {
                 if showsJumpToLatest {
                     Button {
+                        viewportMode = .followingLatest
                         scrollToLatest(proxy)
-                        isAtLatest = true
+                        requestTailScroll()
                     } label: {
                         Label("Jump to latest", systemImage: "arrow.down")
                             .font(.caption.weight(.semibold))
@@ -451,20 +475,28 @@ struct ConversationTimeline: View {
             .onChange(of: showsJumpToLatest) { _, visible in
                 ConversationUISmokeRunner.recordJumpToLatestVisibility(visible)
             }
+            .onChange(of: viewportObservation, initial: true) { _, observation in
+                ConversationUISmokeRunner.recordViewportObservation(
+                    conversationID: observation.conversationID,
+                    isAtLatest: observation.isAtLatest,
+                    followsLatest: observation.followsLatest,
+                    initialPositionComplete: observation.initialPositionComplete
+                )
+            }
             .onChange(of: turnFailure?.log) { _, log in
                 if log == nil { retryingFailureLog = nil }
             }
-            .task(id: conversationID) {
+            .onChange(of: conversationID, initial: true) { _, selectedID in
                 renderWindowStart = nil
                 historyLoadInFlight = false
-                initialScrollComplete = false
-                isAtLatest = true
-                await Task.yield()
-                scrollToLatest(proxy)
-                await Task.yield()
-                initialScrollComplete = true
+                projection = .empty
+                projectionConversationID = ""
+                viewportMode = .awaitingInitial(conversationID: selectedID)
+                isAtLatest = false
+                userScrollInProgress = false
             }
             .task(id: projectionKey) {
+                let key = projectionKey
                 let range = renderRange
                 let source = Array(messages[range])
                 let allMessageIDs = Set(messages.lazy.map(\.id).filter { !$0.isEmpty })
@@ -482,8 +514,30 @@ struct ConversationTimeline: View {
                         showReasoning: showReasoning
                     )
                 }.value
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled,
+                      key == projectionKey,
+                      key.conversationID == conversationID else { return }
                 projection = next
+                projectionConversationID = key.conversationID
+                if ConversationScrollBehavior.followsLatest(viewportMode) {
+                    requestTailScroll()
+                }
+            }
+            .task(id: ConversationTailScrollKey(
+                conversationID: conversationID,
+                request: tailScrollRequest
+            )) {
+                guard tailScrollRequest > 0,
+                      projectionConversationID == conversationID,
+                      ConversationScrollBehavior.followsLatest(viewportMode) else { return }
+                await Task.yield()
+                guard projectionConversationID == conversationID,
+                      ConversationScrollBehavior.followsLatest(viewportMode),
+                      !userScrollInProgress else { return }
+                scrollToLatest(proxy)
+                if viewportMode == .awaitingInitial(conversationID: conversationID) {
+                    viewportMode = .followingLatest
+                }
             }
         }
         .sheet(isPresented: Binding(
@@ -499,9 +553,14 @@ struct ConversationTimeline: View {
         proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom)
     }
 
+    private func requestTailScroll() {
+        tailScrollRequest &+= 1
+    }
+
     private func loadEarlierHistory(proxy: ScrollViewProxy) {
         guard !historyLoadInFlight else { return }
         historyLoadInFlight = true
+        viewportMode = .detached
         // Anchor by message id, not timeline-item id: prepending a page can
         // merge the current first item into a differently-identified tool
         // group, and a missed scroll restore leaves the viewport at offset
@@ -678,18 +737,53 @@ enum ConversationScrollBehavior {
     static let bottomID = "conversation.bottom"
     private static let latestTolerance: CGFloat = 2
 
-    static func isAtLatest(contentOffsetY: CGFloat, containerHeight: CGFloat, contentHeight: CGFloat) -> Bool {
-        contentOffsetY + containerHeight >= contentHeight - latestTolerance
+    static func isAtLatest(visibleMaxY: CGFloat, contentHeight: CGFloat) -> Bool {
+        visibleMaxY >= contentHeight - latestTolerance
     }
 
-    static func showsJumpToLatest(initialScrollComplete: Bool, isAtLatest: Bool) -> Bool {
-        initialScrollComplete && !isAtLatest
+    static func followsLatest(_ viewportMode: ConversationViewportMode) -> Bool {
+        switch viewportMode {
+        case .awaitingInitial, .followingLatest:
+            true
+        case .detached:
+            false
+        }
+    }
+
+    static func showsJumpToLatest(viewportMode: ConversationViewportMode) -> Bool {
+        viewportMode == .detached
+    }
+
+    static func afterUserScroll(isAtLatest: Bool) -> ConversationViewportMode {
+        isAtLatest ? .followingLatest : .detached
+    }
+
+    static func isUserDriven(_ phase: ScrollPhase) -> Bool {
+        phase.isScrolling && phase != .animating
     }
 
     static func anchorItem(containing messageID: String?, in items: [ConversationTimelineItem]) -> String? {
         guard let messageID, !messageID.isEmpty else { return nil }
         return items.first { item in item.messages.contains { $0.id == messageID } }?.id
     }
+}
+
+enum ConversationViewportMode: Equatable {
+    case awaitingInitial(conversationID: String)
+    case followingLatest
+    case detached
+}
+
+private struct ConversationViewportObservation: Equatable {
+    let conversationID: String
+    let isAtLatest: Bool
+    let followsLatest: Bool
+    let initialPositionComplete: Bool
+}
+
+private struct ConversationTailScrollKey: Equatable {
+    let conversationID: String
+    let request: Int
 }
 
 private struct EmptyConversationView: View {

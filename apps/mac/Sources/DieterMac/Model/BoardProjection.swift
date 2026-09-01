@@ -43,3 +43,38 @@ struct BoardProjection: Equatable, Sendable {
         )
     }
 }
+
+/// Bounds the number of heavyweight card views mounted in a lane while keeping
+/// every card reachable. This is deliberately page-based because macOS lazy
+/// stacks can loop while resolving anchors for variable-height drop targets.
+struct LaneCardPage: Equatable, Sendable {
+    static let defaultSize = 40
+
+    let page: Int
+    let pageCount: Int
+    let lowerBound: Int
+    let upperBound: Int
+    let total: Int
+
+    var canGoBackward: Bool { page > 0 }
+    var canGoForward: Bool { page + 1 < pageCount }
+    var rangeLabel: String {
+        total == 0 ? "0 of 0" : "\(lowerBound + 1)–\(upperBound) of \(total)"
+    }
+
+    static func resolve(total: Int, requestedPage: Int, pageSize: Int = defaultSize) -> LaneCardPage {
+        let safeTotal = max(0, total)
+        let safeSize = max(1, pageSize)
+        let pageCount = max(1, (safeTotal + safeSize - 1) / safeSize)
+        let page = min(max(0, requestedPage), pageCount - 1)
+        let lowerBound = min(safeTotal, page * safeSize)
+        let upperBound = min(safeTotal, lowerBound + safeSize)
+        return LaneCardPage(
+            page: page,
+            pageCount: pageCount,
+            lowerBound: lowerBound,
+            upperBound: upperBound,
+            total: safeTotal
+        )
+    }
+}

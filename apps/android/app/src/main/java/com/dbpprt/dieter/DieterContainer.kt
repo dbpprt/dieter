@@ -23,7 +23,7 @@ data class DieterOpenRequest(val cardId: String = "", val showConnection: Boolea
 class DieterContainer(context: Context) {
     val repository: DieterRepository = GrpcDieterRepository(context)
     val connectionManager = DieterConnectionManager(context, repository)
-    val appPreferences = AppPreferences(context)
+    val appPreferences = AppPreferences(context, loadAsync = true)
     val appUpdateManager = AppUpdateManager(context)
     private val widgetScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

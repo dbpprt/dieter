@@ -5,6 +5,7 @@ import CryptoKit
 import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
+import Observation
 import SwiftUI
 import SwiftTerm
 import UniformTypeIdentifiers
@@ -842,6 +843,33 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(next.chats == [otherChat])
 }
 
+@Test func unchangedInactiveMachineSnapshotPreservesItsDirectoryProjection() {
+    let endpoint = DieterEndpoint(
+        name: "Other Mac",
+        host: "dieter.example",
+        port: 443,
+        secure: true,
+        daemonID: "daemon-other"
+    )
+    var project = Dieter_V1_Project()
+    project.id = "project-other"
+    let current = MachineDirectoryProjection(
+        projects: [project.id: project],
+        projectEndpointIDs: [project.id: endpoint.id],
+        boards: [project.id: []],
+        cards: [project.id: []],
+        chats: []
+    )
+    let unchanged = MachineSnapshot(
+        endpoint: endpoint,
+        connection: MachineConnectionStatus(route: .local, latencyMilliseconds: 3),
+        projects: [], boards: [], cards: [], chats: [],
+        unchanged: true
+    )
+
+    #expect(MachineDirectoryReducer.merging(current, snapshots: [unchanged]) == current)
+}
+
 private func historyToolMessage(_ id: String) -> Dieter_V1_UiMessage {
     var part = Dieter_V1_MessagePart()
     part.type = "dynamic-tool"
@@ -889,13 +917,43 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(ConversationScrollBehavior.anchorItem(containing: nil, in: merged) == nil)
 }
 
-@Test func conversationUpdatesOfferJumpToLatestWithoutForcingTheViewport() {
-    #expect(!ConversationScrollBehavior.showsJumpToLatest(initialScrollComplete: false, isAtLatest: false))
-    #expect(!ConversationScrollBehavior.showsJumpToLatest(initialScrollComplete: true, isAtLatest: true))
-    #expect(ConversationScrollBehavior.showsJumpToLatest(initialScrollComplete: true, isAtLatest: false))
+@Test func conversationViewportTailsUntilTheUserDetaches() {
+    let awaiting = ConversationViewportMode.awaitingInitial(conversationID: "chat-one")
+    #expect(ConversationScrollBehavior.followsLatest(awaiting))
+    #expect(!ConversationScrollBehavior.showsJumpToLatest(viewportMode: awaiting))
 
-    #expect(ConversationScrollBehavior.isAtLatest(contentOffsetY: 700, containerHeight: 300, contentHeight: 1_000))
-    #expect(!ConversationScrollBehavior.isAtLatest(contentOffsetY: 650, containerHeight: 300, contentHeight: 1_000))
+    let following = ConversationScrollBehavior.afterUserScroll(isAtLatest: true)
+    #expect(following == .followingLatest)
+    #expect(ConversationScrollBehavior.followsLatest(following))
+    #expect(!ConversationScrollBehavior.showsJumpToLatest(viewportMode: following))
+
+    let detached = ConversationScrollBehavior.afterUserScroll(isAtLatest: false)
+    #expect(detached == .detached)
+    #expect(!ConversationScrollBehavior.followsLatest(detached))
+    #expect(ConversationScrollBehavior.showsJumpToLatest(viewportMode: detached))
+
+    #expect(ConversationScrollBehavior.isAtLatest(visibleMaxY: 1_000, contentHeight: 1_000))
+    #expect(ConversationScrollBehavior.isAtLatest(visibleMaxY: 999, contentHeight: 1_000))
+    #expect(!ConversationScrollBehavior.isAtLatest(visibleMaxY: 950, contentHeight: 1_000))
+}
+
+@Test func conversationProjectionIdentityIncludesTheSelectedConversation() {
+    let chat = ConversationPresentationKey(
+        conversationID: "chat-one",
+        revision: 7,
+        showReasoning: true,
+        renderStart: 0,
+        renderCount: 30
+    )
+    let card = ConversationPresentationKey(
+        conversationID: "card-one",
+        revision: 7,
+        showReasoning: true,
+        renderStart: 0,
+        renderCount: 30
+    )
+
+    #expect(chat != card)
 }
 
 @Test @MainActor func watchDeltaWindowSlidesKeepMessagesAsLocalHistory() {
@@ -1358,6 +1416,51 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(BoardCardOrdering.sorted(cards, direction: .ascending).map(\.id) == ["b", "c", "a"])
 }
 
+@Test func laneCardPagesBoundTenThousandCardsAndClampAfterDeletion() {
+    let first = LaneCardPage.resolve(total: 10_000, requestedPage: 0)
+    #expect(first.lowerBound == 0)
+    #expect(first.upperBound == LaneCardPage.defaultSize)
+    #expect(first.pageCount == 250)
+    #expect(first.rangeLabel == "1–40 of 10000")
+
+    let last = LaneCardPage.resolve(total: 10_000, requestedPage: 249)
+    #expect(last.lowerBound == 9_960)
+    #expect(last.upperBound == 10_000)
+    #expect(!last.canGoForward)
+
+    let clamped = LaneCardPage.resolve(total: 3, requestedPage: 249)
+    #expect(clamped.page == 0)
+    #expect(clamped.lowerBound == 0)
+    #expect(clamped.upperBound == 3)
+}
+
+@Test func chatListProjectionIndexesProjectsInOnePass() {
+    func chat(_ id: String, project: String, pinned: Bool = false) -> Dieter_V1_Card {
+        var value = Dieter_V1_Card()
+        value.id = id
+        value.projectID = project
+        value.scope = "chat"
+        value.title = id
+        value.pinned = pinned
+        value.updatedAt = id
+        return value
+    }
+    let pinned = chat("pinned", project: "alpha", pinned: true)
+    let alpha = chat("alpha", project: "alpha")
+    let beta = chat("beta", project: "beta")
+    let projection = ChatListProjection.resolve(
+        chats: [alpha, beta, pinned],
+        showArchived: false,
+        search: "",
+        pinnedOrder: [pinned.id]
+    )
+
+    #expect(projection.visible.count == 3)
+    #expect(projection.pinned.map(\.id) == [pinned.id])
+    #expect(projection.byProject["alpha"]?.map(\.id) == [alpha.id])
+    #expect(projection.byProject["beta"]?.map(\.id) == [beta.id])
+}
+
 @Test func boardCreationOptionsMatchTheServerContract() {
     #expect(BoardWorkflow.allCases.map(\.rawValue) == ["review", "direct"])
     #expect(DoneArchivePolicy.allCases.map(\.rawValue) == [
@@ -1481,6 +1584,34 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     ])
     #expect(Set(DieterPalette.allCases.map(\.title)).count == 8)
     #expect(DieterPalette.allCases.allSatisfy { DieterPalette.resolve($0.rawValue) == $0 })
+}
+
+@Test @MainActor func liveThemeSelectionInvalidatesObserversAndPersistsImmediately() async throws {
+    let suiteName = "DieterMacTests.theme.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defaults.set(DieterAppearance.light.rawValue, forKey: DieterAppearance.storageKey)
+    defaults.set(DieterPalette.monochrome.rawValue, forKey: DieterPalette.storageKey)
+    let store = DieterStore(themeDefaultsOverride: defaults, restoreSync: false)
+    let (changes, continuation) = AsyncStream<Void>.makeStream()
+
+    withObservationTracking {
+        _ = store.themeSelection.identity
+    } onChange: {
+        continuation.yield()
+    }
+    store.themeSelection = DieterThemeSelection(
+        appearance: .dark,
+        palette: .coralSignal
+    )
+
+    var iterator = changes.makeAsyncIterator()
+    #expect(await iterator.next() != nil)
+    continuation.finish()
+    #expect(store.themeSelection.identity == "dark:coral-signal")
+    #expect(defaults.string(forKey: DieterAppearance.storageKey) == "dark")
+    #expect(defaults.string(forKey: DieterPalette.storageKey) == "coral-signal")
+    #expect(DieterThemeSelection.load(from: defaults) == store.themeSelection)
 }
 
 @Test func onlyAuthenticationRequiresAConnectionOverlay() {
@@ -1988,7 +2119,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(reduced.conversations.first?.conversation.lastSeq == 9)
 }
 
-@Test func directorySnapshotInvalidatesItsPreviousSyncCursor() throws {
+@Test func directorySnapshotStoresItsFreshConditionalCursor() throws {
     var cursor = Dieter_V1_SyncCursor()
     cursor.epoch = "epoch-one"
     cursor.sequence = 42
@@ -2002,15 +2133,17 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 
     var fresh = Dieter_V1_Card()
     fresh.id = "fresh-card"
+    let freshCursorData = try cursor.serializedData()
     let replaced = DieterSyncProjectionCache.replacingMetadata(
         in: .init(cursor: try cursor.serializedData(), snapshot: try previous.serializedData()),
         projects: [],
         boards: [],
         cards: [fresh],
-        chats: []
+        chats: [],
+        cursor: freshCursorData
     )
 
-    #expect(replaced.cursor == nil)
+    #expect(replaced.cursor == freshCursorData)
     let data = try #require(replaced.snapshot)
     let snapshot = try Dieter_V1_GlobalSnapshot(serializedBytes: data)
     #expect(snapshot.state.cards.map(\.id) == ["fresh-card"])
@@ -2286,6 +2419,16 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     card.id = id
     card.position = position
     return card
+}
+
+@Test func sidebarMachinesAreAlwaysOrderedAlphabetically() {
+    let zulu = DieterEndpoint(name: "Zulu", host: "zulu.example", port: 443, daemonID: "zulu")
+    let alpha = DieterEndpoint(name: "alpha", host: "alpha.example", port: 443, daemonID: "alpha")
+    let alphaLater = DieterEndpoint(name: "Alpha", host: "later.example", port: 443, daemonID: "alpha-later")
+    let beta = DieterEndpoint(name: "Beta", host: "beta.example", port: 443, daemonID: "beta")
+
+    let ordered = SidebarMachineOrdering.sorted([zulu, alphaLater, beta, alpha])
+    #expect(ordered.map(\.id) == [alpha.id, alphaLater.id, beta.id, zulu.id])
 }
 
 @Test func sidebarProjectPreferencesReorderAndReconcileAvailableProjects() {

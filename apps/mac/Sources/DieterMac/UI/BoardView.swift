@@ -552,6 +552,15 @@ struct LaneColumn: View {
     let sortDirection: BoardCardSortDirection
     let onToggleSort: () -> Void
     @State private var isDropTargeted = false
+    @State private var pageIndex = 0
+
+    private var page: LaneCardPage {
+        LaneCardPage.resolve(total: cards.count, requestedPage: pageIndex)
+    }
+
+    private var visibleCards: ArraySlice<Dieter_V1_Card> {
+        cards[page.lowerBound..<page.upperBound]
+    }
 
     private var laneTint: Color {
         switch lane.id.lowercased() {
@@ -584,8 +593,11 @@ struct LaneColumn: View {
                 Button { store.createConversationPresented = true } label: { Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary) }.buttonStyle(.plain)
             }.padding(.horizontal, 6).padding(.top, 2)
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(cards, id: \.id) { card in
+                // Board lanes are intentionally bounded and use an eager stack.
+                // On macOS, lazy placement can enter an anchor-translation loop
+                // when variable-height cards carry menus, sheets, and drop targets.
+                VStack(spacing: 0) {
+                    ForEach(visibleCards, id: \.id) { card in
                         LaneInsertionTarget(laneID: lane.id, beforeCardID: card.id, cards: cards)
                         BoardCardView(card: card)
                             .opacity(store.movingCardIDs.contains(card.id) ? 0.48 : 1)
@@ -603,6 +615,26 @@ struct LaneColumn: View {
                     }
                 }
             }
+            if page.pageCount > 1 {
+                HStack(spacing: 8) {
+                    Button { pageIndex = max(0, page.page - 1) } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(!page.canGoBackward)
+                    .accessibilityLabel("Previous \(lane.name) cards")
+                    Text(page.rangeLabel)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .frame(maxWidth: .infinity)
+                    Button { pageIndex = min(page.pageCount - 1, page.page + 1) } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(!page.canGoForward)
+                    .accessibilityLabel("Next \(lane.name) cards")
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 6)
+            }
         }
         .padding(10)
         .background(isDropTargeted ? DieterTheme.shellDeep.opacity(0.08) : DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -616,6 +648,8 @@ struct LaneColumn: View {
             Task { await store.move(card, lane: lane.id) }
             return true
         } isTargeted: { isDropTargeted = $0 }
+        .onChange(of: cards.count) { _, _ in pageIndex = page.page }
+        .onChange(of: sortDirection) { _, _ in pageIndex = 0 }
     }
 }
 

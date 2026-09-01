@@ -109,6 +109,28 @@ struct MachineSnapshot {
     let boards: [Dieter_V1_Board]
     let cards: [Dieter_V1_Card]
     let chats: [Dieter_V1_Card]
+    let cursor: Data?
+    let unchanged: Bool
+
+    init(
+        endpoint: DieterEndpoint,
+        connection: MachineConnectionStatus,
+        projects: [Dieter_V1_Project],
+        boards: [Dieter_V1_Board],
+        cards: [Dieter_V1_Card],
+        chats: [Dieter_V1_Card],
+        cursor: Data? = nil,
+        unchanged: Bool = false
+    ) {
+        self.endpoint = endpoint
+        self.connection = connection
+        self.projects = projects
+        self.boards = boards
+        self.cards = cards
+        self.chats = chats
+        self.cursor = cursor
+        self.unchanged = unchanged
+    }
 }
 
 struct MachineDirectoryProjection: Equatable {
@@ -131,7 +153,8 @@ enum MachineDirectoryReducer {
         _ current: MachineDirectoryProjection,
         snapshots: [MachineSnapshot]
     ) -> MachineDirectoryProjection {
-        let refreshedEndpointIDs = Set(snapshots.map(\.endpoint.id))
+        let changedSnapshots = snapshots.filter { !$0.unchanged }
+        let refreshedEndpointIDs = Set(changedSnapshots.map(\.endpoint.id))
         var nextProjects = current.projects.filter {
             current.projectEndpointIDs[$0.key].map { !refreshedEndpointIDs.contains($0) } ?? false
         }
@@ -140,12 +163,14 @@ enum MachineDirectoryReducer {
         var nextCards = current.cards.filter { projectID, _ in nextProjectEndpoints[projectID] != nil }
         var nextChats = current.chats.filter { chat in nextProjectEndpoints[chat.projectID] != nil }
 
-        for snapshot in snapshots {
+        for snapshot in changedSnapshots {
+            let boardsByProject = Dictionary(grouping: snapshot.boards, by: \.projectID)
+            let cardsByProject = Dictionary(grouping: snapshot.cards, by: \.projectID)
             for project in snapshot.projects {
                 nextProjects[project.id] = project
                 nextProjectEndpoints[project.id] = snapshot.endpoint.id
-                nextBoards[project.id] = snapshot.boards.filter { $0.projectID == project.id }
-                nextCards[project.id] = snapshot.cards.filter { $0.projectID == project.id }
+                nextBoards[project.id] = boardsByProject[project.id] ?? []
+                nextCards[project.id] = cardsByProject[project.id] ?? []
             }
             nextChats.append(contentsOf: snapshot.chats)
         }
@@ -599,6 +624,13 @@ final class DieterStore {
             ReasoningTracePreferences.save(showReasoning)
         }
     }
+    var themeSelection: DieterThemeSelection {
+        didSet {
+            guard themeSelection != oldValue else { return }
+            themeSelection.save(to: themeDefaults)
+            DieterTheme.install(selection: themeSelection)
+        }
+    }
     var commentText = ""
     var query = "" {
         didSet { if query != oldValue { refreshBoardProjection() } }
@@ -719,6 +751,7 @@ final class DieterStore {
     @ObservationIgnored private var lastSyncPersistenceAt: [String: Date] = [:]
     private var persistConnectionSelection = true
     private let accessTokenOverride: String?
+    @ObservationIgnored private let themeDefaults: UserDefaults
     private var gatewayOrigins: [DieterEndpoint]
     private var readChatActivity: [String: String]
     private let authentication = DieterAuthentication()
@@ -741,11 +774,15 @@ final class DieterStore {
         scheduleRPCOverride: (any DieterScheduleRPC)? = nil,
         chatPinRPCOverride: (any DieterChatPinRPC)? = nil,
         syncPersistenceOverride: DieterSyncPersistence? = nil,
+        themeDefaultsOverride: UserDefaults? = nil,
         restoreSync: Bool = true
     ) {
         self.scheduleRPCOverride = scheduleRPCOverride
         self.chatPinRPCOverride = chatPinRPCOverride
         syncPersistence = syncPersistenceOverride ?? DieterSyncPersistence()
+        let themeDefaults = themeDefaultsOverride ?? DieterAppearance.applicationDefaults()
+        self.themeDefaults = themeDefaults
+        themeSelection = DieterThemeSelection.load(from: themeDefaults)
         let arguments = ProcessInfo.processInfo.arguments
         if let flag = arguments.firstIndex(of: "--dieter-access-token-file"), arguments.indices.contains(flag + 1),
            let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)
@@ -1583,8 +1620,13 @@ final class DieterStore {
             if machineConnectionStatuses[snapshot.endpoint.id] != snapshot.connection {
                 machineConnectionStatuses[snapshot.endpoint.id] = snapshot.connection
             }
-            persistenceChanged = await persistInactiveMachineSnapshot(snapshot) || persistenceChanged
+            if !snapshot.unchanged {
+                persistenceChanged = await persistInactiveMachineSnapshot(snapshot) || persistenceChanged
+            }
         }
+
+        let changedSnapshots = snapshots.filter { !$0.unchanged }
+        guard !changedSnapshots.isEmpty else { return }
 
         let current = MachineDirectoryProjection(
             projects: projectDirectory,
@@ -1593,7 +1635,7 @@ final class DieterStore {
             cards: navigationCards,
             chats: chats
         )
-        let next = MachineDirectoryReducer.merging(current, snapshots: snapshots)
+        let next = MachineDirectoryReducer.merging(current, snapshots: changedSnapshots)
         if projectDirectory != next.projects { projectDirectory = next.projects }
         if projectEndpointIDs != next.projectEndpointIDs { projectEndpointIDs = next.projectEndpointIDs }
         if navigationBoards != next.boards { navigationBoards = next.boards }
@@ -1618,7 +1660,8 @@ final class DieterStore {
                 projects: machine.projects,
                 boards: machine.boards,
                 cards: machine.cards,
-                chats: machine.chats
+                chats: machine.chats,
+                cursor: machine.cursor
             )
         }.value
         guard current.cursor != next.cursor || current.snapshot != next.snapshot else { return false }
@@ -1763,32 +1806,61 @@ final class DieterStore {
         }
 
         let started = Date()
-        let root = try await client.state()
+        var request = Dieter_V1_GetStateRequest()
+        request.allProjects = true
+        if let cursorData = syncDiskState.projections[machine.id]?.cursor,
+           let cursor = try? Dieter_V1_SyncCursor(serializedBytes: cursorData) {
+            request.ifNotModified = cursor
+        }
+        let root = try await client.state(request)
         let connection = MachineConnectionStatus(
             route: selectedConnection?.route
                 ?? machineConnectionStatuses[machine.id]?.route
                 ?? (ownsClient ? .gateway : .local),
             latencyMilliseconds: Self.latencyMilliseconds(since: started)
         )
-        let projects = root.projects.filter { !$0.archived }
-        var boards: [Dieter_V1_Board] = []
-        var cards: [Dieter_V1_Card] = []
-        for project in projects {
-            var request = Dieter_V1_GetStateRequest()
-            request.projectID = project.id
-            request.limit = 500
-            let snapshot = try await client.state(request)
-            boards.append(contentsOf: snapshot.boards)
-            cards.append(contentsOf: snapshot.cards)
+        let cursor = root.cursor.epoch.isEmpty ? nil : try? root.cursor.serializedData()
+        if root.notModified {
+            return MachineSnapshot(
+                endpoint: machine,
+                connection: connection,
+                projects: [], boards: [], cards: [], chats: [],
+                cursor: cursor,
+                unchanged: true
+            )
         }
-        let chatResponse = try await client.chats(includeArchived: includeArchivedChats)
+
+        let projects = root.projects.filter { !$0.archived }
+        var boards = root.boards
+        var cards = root.cards
+        var chats = root.chats
+        // Older remote daemons ignore all_projects. Retain a bounded
+        // compatibility path until every enrolled machine has upgraded.
+        if root.cursor.epoch.isEmpty {
+            boards = []
+            cards = []
+            for project in projects {
+                var legacy = Dieter_V1_GetStateRequest()
+                legacy.projectID = project.id
+                legacy.limit = 500
+                let snapshot = try await client.state(legacy)
+                boards.append(contentsOf: snapshot.boards)
+                cards.append(contentsOf: snapshot.cards)
+            }
+            let chatResponse = try await client.chats(includeArchived: includeArchivedChats)
+            chats = chatResponse.chats
+        } else if includeArchivedChats {
+            let chatResponse = try await client.chats(includeArchived: true)
+            chats = chatResponse.chats
+        }
         return MachineSnapshot(
             endpoint: machine,
             connection: connection,
             projects: projects,
             boards: Array(boards.reduce(into: [String: Dieter_V1_Board]()) { $0[$1.id] = $1 }.values),
             cards: Array(cards.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values),
-            chats: chatResponse.chats
+            chats: chats,
+            cursor: cursor
         )
     }
 
@@ -2514,11 +2586,13 @@ final class DieterStore {
             nextNavigationBoards.removeValue(forKey: projectID)
             nextNavigationCards.removeValue(forKey: projectID)
         }
+        let boardsByProject = Dictionary(grouping: global.boards, by: \.projectID)
+        let cardsByProject = Dictionary(grouping: global.cards, by: \.projectID)
         for project in global.projects {
             nextProjectDirectory[project.id] = project
             nextProjectEndpointIDs[project.id] = endpointID
-            nextNavigationBoards[project.id] = global.boards.filter { $0.projectID == project.id }
-            nextNavigationCards[project.id] = global.cards.filter { $0.projectID == project.id }
+            nextNavigationBoards[project.id] = boardsByProject[project.id] ?? []
+            nextNavigationCards[project.id] = cardsByProject[project.id] ?? []
         }
         var nextChats = chats.filter { !previousProjectIDs.contains($0.projectID) }
         nextChats.append(contentsOf: global.chats)

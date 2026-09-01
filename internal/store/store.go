@@ -14,6 +14,7 @@ import (
 	"time"
 
 	md "github.com/dbpprt/dieter/internal/markdown"
+	"github.com/dbpprt/dieter/internal/model"
 )
 
 var (
@@ -24,8 +25,11 @@ var (
 type Store struct {
 	Root string
 
-	scheduleDBMu sync.Mutex
-	scheduleDB   *sql.DB
+	scheduleDBMu        sync.Mutex
+	scheduleDB          *sql.DB
+	globalStateMu       sync.Mutex
+	globalStateCursor   SyncCursor
+	globalStateSnapshot *model.State
 }
 
 func DefaultRoot() string {
@@ -53,7 +57,7 @@ func New(root string) *Store {
 
 func (s *Store) Ensure() error {
 	for _, dir := range []string{
-		s.projectDir(), s.boardDir(), s.cardDir(), s.commentDir(), s.conversationDir(), s.runtimeDir(), s.scheduleDir(), s.scheduleRunDir(), s.authDir(), s.syncDir(),
+		s.projectDir(), s.boardDir(), s.cardDir(), s.archivedCardDir(), s.commentDir(), s.conversationDir(), s.runtimeDir(), s.scheduleDir(), s.scheduleRunDir(), s.authDir(), s.syncDir(),
 		s.workspaceDir(), s.gitOperationDir(), s.pullRequestDir(), s.changeCommentDir(), s.recoveryDir(),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -66,7 +70,7 @@ func (s *Store) Ensure() error {
 	if _, err := s.ensureSyncEpoch(); err != nil {
 		return err
 	}
-	return nil
+	return s.migrateArchivedCards()
 }
 
 // beginWriteLock serializes access both within the process and across CLI/server
@@ -113,26 +117,30 @@ func (s *Store) beginWriteLock() (func(), error) {
 // beginWrite acquires the central writer lock and publishes a durable sync
 // invalidation before the caller changes domain files.
 func (s *Store) beginWrite() (func(), error) {
+	return s.beginWriteKind("store_changed")
+}
+
+func (s *Store) beginWriteKind(kind string) (func(), error) {
 	release, err := s.beginWriteLock()
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.prepareSyncMutation(); err != nil {
+	if _, err := s.prepareSyncMutation(kind); err != nil {
 		release()
 		return nil, err
 	}
 	return release, nil
 }
 
-func (s *Store) projectDir() string      { return filepath.Join(s.Root, "projects") }
-func (s *Store) boardDir() string        { return filepath.Join(s.Root, "boards") }
-func (s *Store) cardDir() string         { return filepath.Join(s.Root, "cards") }
-func (s *Store) commentDir() string      { return filepath.Join(s.Root, "comments") }
-func (s *Store) conversationDir() string { return filepath.Join(s.Root, "conversations") }
-func (s *Store) runtimeDir() string      { return filepath.Join(s.Root, "runtime") }
-func (s *Store) scheduleDir() string     { return filepath.Join(s.Root, "schedules") }
-func (s *Store) scheduleRunDir() string  { return filepath.Join(s.Root, "schedule-runs") }
-
+func (s *Store) projectDir() string           { return filepath.Join(s.Root, "projects") }
+func (s *Store) boardDir() string             { return filepath.Join(s.Root, "boards") }
+func (s *Store) cardDir() string              { return filepath.Join(s.Root, "cards") }
+func (s *Store) archivedCardDir() string      { return filepath.Join(s.Root, "archived-cards") }
+func (s *Store) commentDir() string           { return filepath.Join(s.Root, "comments") }
+func (s *Store) conversationDir() string      { return filepath.Join(s.Root, "conversations") }
+func (s *Store) runtimeDir() string           { return filepath.Join(s.Root, "runtime") }
+func (s *Store) scheduleDir() string          { return filepath.Join(s.Root, "schedules") }
+func (s *Store) scheduleRunDir() string       { return filepath.Join(s.Root, "schedule-runs") }
 func (s *Store) scheduleDatabasePath() string { return filepath.Join(s.Root, "schedules.db") }
 func (s *Store) authDir() string              { return filepath.Join(s.Root, "auth") }
 func (s *Store) workspaceDir() string         { return filepath.Join(s.Root, "workspaces") }

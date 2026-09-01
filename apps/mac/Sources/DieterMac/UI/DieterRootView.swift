@@ -43,7 +43,7 @@ private struct SidebarResizeDivider: View {
 
     var body: some View {
         ZStack {
-            Rectangle().fill(Color.clear)
+            Rectangle().fill(DieterTheme.sidebar)
             Rectangle()
                 .fill(hovering ? DieterTheme.shell.opacity(0.62) : DieterTheme.paneSeparator)
                 .frame(width: hovering ? 2 : 1)
@@ -323,6 +323,16 @@ private struct SidebarConnectionStatus: View {
     }
 }
 
+enum SidebarMachineOrdering {
+    static func sorted(_ machines: [DieterEndpoint]) -> [DieterEndpoint] {
+        machines.sorted { left, right in
+            let comparison = left.name.localizedCaseInsensitiveCompare(right.name)
+            if comparison == .orderedSame { return left.id < right.id }
+            return comparison == .orderedAscending
+        }
+    }
+}
+
 struct AppSidebar: View {
     @Environment(DieterStore.self) private var store
     @Binding var collapsed: Bool
@@ -332,6 +342,10 @@ struct AppSidebar: View {
         let projects = store.projects.filter { !$0.archived }
         let byID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
         return projectNavigation.orderedIDs(from: projects.map(\.id)).compactMap { byID[$0] }
+    }
+
+    private var visibleMachines: [DieterEndpoint] {
+        SidebarMachineOrdering.sorted(store.machines)
     }
 
     var body: some View {
@@ -502,7 +516,7 @@ struct AppSidebar: View {
         if collapsed {
             VStack(spacing: 6) {
                 SidebarConnectionStatus(compact: true)
-                ForEach(store.machines) { machine in
+                ForEach(visibleMachines) { machine in
                     Button { Task { await store.openMachine(machine) } } label: {
                         ZStack(alignment: .bottomTrailing) {
                             Text(machine.name.prefix(1).uppercased())
@@ -540,7 +554,7 @@ struct AppSidebar: View {
                         Spacer()
                         SidebarConnectionStatus()
                     }
-                    ForEach(store.machines) { machine in
+                    ForEach(visibleMachines) { machine in
                         VStack(alignment: .leading, spacing: 5) {
                             Button { Task { await store.openMachine(machine) } } label: {
                                 HStack(spacing: 8) {
@@ -591,7 +605,7 @@ struct AppSidebar: View {
     }
 
     private func machineDetail(_ machine: DieterEndpoint) -> String {
-        guard store.workspaceIsLive else {
+        if machine.id == store.endpoint.id && !store.workspaceIsLive {
             if store.workspaceFreshness == .syncing { return "Waiting for live sync…" }
             return "Unavailable · \(MachinePresenceText.lastSeen(machine.lastSeenAt))"
         }
@@ -606,7 +620,7 @@ struct AppSidebar: View {
     }
 
     private func machineIsPresentedOnline(_ machine: DieterEndpoint) -> Bool {
-        store.workspaceIsLive && machine.online
+        machine.online && (machine.id != store.endpoint.id || store.workspaceIsLive)
     }
 
 }

@@ -50,6 +50,7 @@ func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
 		"/dieter.v1.DieterService/WatchConversation",
 		"/dieter.v1.DieterService/WatchState",
 		"/dieter.v1.DieterService/WatchTerminal",
+		"/dieter.v1.DieterService/WatchExecution",
 	} {
 		if relayMethodPriority(method) {
 			t.Fatalf("%s should use the bounded streaming relay queue", method)

@@ -407,10 +407,6 @@ private struct SettingsValueRow: View {
 
 struct GeneralSettings: View {
     @Environment(DieterStore.self) private var store
-    @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
-    private var appearanceValue = DieterAppearance.defaultValue.rawValue
-    @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
-    private var paletteValue = DieterPalette.defaultValue.rawValue
     @State private var archiveConfirmation = false
 
     var body: some View {
@@ -442,9 +438,9 @@ struct GeneralSettings: View {
                         ForEach(DieterAppearance.allCases) { appearance in
                             AppearanceOption(
                                 appearance: appearance,
-                                selected: appearance.rawValue == appearanceValue
+                                selected: appearance == store.themeSelection.appearance
                             ) {
-                                appearanceValue = appearance.rawValue
+                                store.themeSelection.appearance = appearance
                             }
                         }
                     }
@@ -454,9 +450,9 @@ struct GeneralSettings: View {
                         ForEach(DieterPalette.allCases) { palette in
                             PaletteOption(
                                 palette: palette,
-                                selected: palette == DieterPalette.resolve(paletteValue)
+                                selected: palette == store.themeSelection.palette
                             ) {
-                                paletteValue = palette.rawValue
+                                store.themeSelection.palette = palette
                             }
                         }
                     }

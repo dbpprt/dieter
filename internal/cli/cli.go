@@ -91,6 +91,10 @@ func Main(args []string) int {
 		return 1
 	}
 	if err := client.Run(global.Args()); err != nil {
+		var remoteExit *remoteExitError
+		if errors.As(err, &remoteExit) {
+			return remoteExit.Code()
+		}
 		fmt.Fprintln(client.Err, "error:", err)
 		return 1
 	}
@@ -176,6 +180,7 @@ Commands:
   workspace    Inspect changes and run durable Git/SCM operations
   file         Browse and edit project/workspace files with revision checks
   terminal     Create, attach, control, and close daemon-host PTYs
+  remote       Run resumable commands and native shells on a daemon host
   screen       Inspect policy and drive authenticated WebRTC signaling
   schedule     Create, preview, dispatch, pause, and inspect schedules
   settings     Inspect and update parallel-session admission limits

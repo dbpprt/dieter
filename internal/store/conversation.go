@@ -39,11 +39,8 @@ func (s *Store) ConversationByID(cardID string) (model.Conversation, error) {
 	if !validFileID(cardID) {
 		return model.Conversation{}, fmt.Errorf("card %q: %w", cardID, ErrNotFound)
 	}
-	if _, err := os.Stat(filepath.Join(s.cardDir(), cardID+".md")); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return model.Conversation{}, fmt.Errorf("card %q: %w", cardID, ErrNotFound)
-		}
-		return model.Conversation{}, err
+	if !s.cardExists(cardID) {
+		return model.Conversation{}, fmt.Errorf("card %q: %w", cardID, ErrNotFound)
 	}
 	return s.loadConversation(cardID)
 }
@@ -240,7 +237,11 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 }
 
 func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID string, data any) (model.ConversationEvent, model.Conversation, error) {
-	release, err := s.beginWrite()
+	writeKind := "store_changed"
+	if eventType == "ui-chunk" || eventType == "capability" {
+		writeKind = "conversation_changed"
+	}
+	release, err := s.beginWriteKind(writeKind)
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}

@@ -2,10 +2,16 @@ package com.dbpprt.dieter.settings
 
 import android.content.Context
 import com.dbpprt.dieter.widget.DieterActivityWidgetProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import org.json.JSONArray
+import java.util.concurrent.atomic.AtomicLong
 
 enum class NavigationStyle { CLASSIC, GLASS }
 
@@ -16,51 +22,101 @@ data class ConversationCreationPreferences(
     val workspaceMode: String = "worktree",
 )
 
-class AppPreferences(context: Context) {
+class AppPreferences(
+    context: Context,
+    loadAsync: Boolean = false,
+) {
     private val appContext = context.applicationContext
-    private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-    private val _navigationStyle = MutableStateFlow(readNavigationStyle())
+    private val asyncLoading = loadAsync
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val mutationVersion = AtomicLong()
+    private val preferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    }
+    private val _navigationStyle = MutableStateFlow(if (loadAsync) NavigationStyle.CLASSIC else readNavigationStyle())
     val navigationStyle: StateFlow<NavigationStyle> = _navigationStyle.asStateFlow()
-    private val _palette = MutableStateFlow(readPalette())
+    private val _palette = MutableStateFlow(if (loadAsync) DieterPalette.DEFAULT else readPalette())
     val palette: StateFlow<DieterPalette> = _palette.asStateFlow()
     private val _showReasoningTraces = MutableStateFlow(
-        preferences.getBoolean(KEY_SHOW_REASONING_TRACES, false),
+        if (loadAsync) false else preferences.getBoolean(KEY_SHOW_REASONING_TRACES, false),
     )
     val showReasoningTraces: StateFlow<Boolean> = _showReasoningTraces.asStateFlow()
-    private val _notificationBoardIds = MutableStateFlow(readNotificationBoardIds())
+    private val _notificationBoardIds = MutableStateFlow(if (loadAsync) emptySet() else readNotificationBoardIds())
     val notificationBoardIds: StateFlow<Set<String>> = _notificationBoardIds.asStateFlow()
-    private val _notificationSettings = MutableStateFlow(readNotificationSettings())
+    private val _notificationSettings = MutableStateFlow(if (loadAsync) DieterNotificationSettings() else readNotificationSettings())
     val notificationSettings: StateFlow<DieterNotificationSettings> = _notificationSettings.asStateFlow()
-    private val _projectOrder = MutableStateFlow(readProjectOrder())
+    private val _projectOrder = MutableStateFlow(if (loadAsync) emptyList() else readProjectOrder())
     val projectOrder: StateFlow<List<String>> = _projectOrder.asStateFlow()
-    private val _pinnedChatOrder = MutableStateFlow(readPinnedChatOrder())
+    private val _pinnedChatOrder = MutableStateFlow(if (loadAsync) emptyList() else readPinnedChatOrder())
     val pinnedChatOrder: StateFlow<List<String>> = _pinnedChatOrder.asStateFlow()
-    private val _conversationCreation = MutableStateFlow(readConversationCreationPreferences())
+    private val _conversationCreation = MutableStateFlow(
+        if (loadAsync) ConversationCreationPreferences() else readConversationCreationPreferences(),
+    )
     val conversationCreation: StateFlow<ConversationCreationPreferences> = _conversationCreation.asStateFlow()
 
     init {
+        if (loadAsync) {
+            scope.launch { hydrate() }
+        } else {
+            DieterLauncherIcon.apply(appContext, _palette.value)
+        }
+    }
+
+    private fun hydrate() {
+        val expectedVersion = mutationVersion.get()
+        val navigationStyle = readNavigationStyle()
+        val palette = readPalette()
+        val showReasoningTraces = preferences.getBoolean(KEY_SHOW_REASONING_TRACES, false)
+        val notificationBoardIds = readNotificationBoardIds()
+        val notificationSettings = readNotificationSettings()
+        val projectOrder = readProjectOrder()
+        val pinnedChatOrder = readPinnedChatOrder()
+        val conversationCreation = readConversationCreationPreferences()
+        if (mutationVersion.get() != expectedVersion) return
+        _navigationStyle.value = navigationStyle
+        _palette.value = palette
+        _showReasoningTraces.value = showReasoningTraces
+        _notificationBoardIds.value = notificationBoardIds
+        _notificationSettings.value = notificationSettings
+        _projectOrder.value = projectOrder
+        _pinnedChatOrder.value = pinnedChatOrder
+        _conversationCreation.value = conversationCreation
         DieterLauncherIcon.apply(appContext, _palette.value)
     }
 
+    private fun markMutation() {
+        mutationVersion.incrementAndGet()
+        if (asyncLoading) scope.launch {
+            delay(25)
+            hydrate()
+        }
+    }
+
     fun setNavigationStyle(style: NavigationStyle) {
+        markMutation()
         preferences.edit().putString(KEY_NAVIGATION_STYLE, style.name).apply()
         _navigationStyle.value = style
     }
 
     fun setPalette(palette: DieterPalette) {
+        markMutation()
         preferences.edit().putString(KEY_PALETTE, palette.slug).apply()
         _palette.value = palette
-        DieterLauncherIcon.apply(appContext, palette)
-        DieterActivityWidgetProvider.updateAll(appContext)
+        scope.launch {
+            DieterLauncherIcon.apply(appContext, palette)
+            DieterActivityWidgetProvider.updateAll(appContext)
+        }
     }
 
     fun setShowReasoningTraces(show: Boolean) {
+        markMutation()
         preferences.edit().putBoolean(KEY_SHOW_REASONING_TRACES, show).apply()
         _showReasoningTraces.value = show
     }
 
     fun setBoardNotificationsEnabled(boardId: String, enabled: Boolean) {
         if (boardId.isBlank()) return
+        markMutation()
         val updated = _notificationBoardIds.value.toMutableSet().apply {
             if (enabled) add(boardId) else remove(boardId)
         }.toSet()
@@ -69,12 +125,14 @@ class AppPreferences(context: Context) {
     }
 
     fun setNotificationBoardIds(boardIds: Set<String>) {
+        markMutation()
         val updated = boardIds.filterTo(mutableSetOf(), String::isNotBlank).toSet()
         preferences.edit().putStringSet(KEY_NOTIFICATION_BOARD_IDS, updated).apply()
         _notificationBoardIds.value = updated
     }
 
     fun setNotificationSettings(settings: DieterNotificationSettings) {
+        markMutation()
         preferences.edit()
             .putBoolean(KEY_ACTIVITY_NOTIFICATIONS_ENABLED, settings.activityNotificationsEnabled)
             .putBoolean(KEY_RUNNING_CHATS_ENABLED, settings.runningChatsEnabled)
@@ -89,6 +147,7 @@ class AppPreferences(context: Context) {
     }
 
     fun setProjectOrder(projectIds: List<String>) {
+        markMutation()
         val updated = projectIds.filter(String::isNotBlank).distinct()
         val encoded = JSONArray().apply { updated.forEach { put(it) } }.toString()
         preferences.edit().putString(KEY_PROJECT_ORDER, encoded).apply()
@@ -96,6 +155,7 @@ class AppPreferences(context: Context) {
     }
 
     fun setPinnedChatOrder(chatIds: List<String>) {
+        markMutation()
         val updated = chatIds.filter(String::isNotBlank).distinct()
         val encoded = JSONArray().apply { updated.forEach { put(it) } }.toString()
         preferences.edit().putString(KEY_PINNED_CHAT_ORDER, encoded).apply()
@@ -103,6 +163,7 @@ class AppPreferences(context: Context) {
     }
 
     fun setConversationCreationPreferences(value: ConversationCreationPreferences) {
+        markMutation()
         preferences.edit()
             .putString(KEY_CONVERSATION_CREATION_PROVIDER, value.provider)
             .putString(KEY_CONVERSATION_CREATION_MODEL, value.model)
@@ -119,7 +180,9 @@ class AppPreferences(context: Context) {
         )
     }.getOrDefault(NavigationStyle.CLASSIC)
 
-    private fun readPalette(): DieterPalette = selectedPalette(appContext)
+    private fun readPalette(): DieterPalette = DieterPalette.resolve(
+        preferences.getString(KEY_PALETTE, DieterPalette.DEFAULT.slug),
+    )
 
     private fun readNotificationBoardIds(): Set<String> =
         preferences.getStringSet(KEY_NOTIFICATION_BOARD_IDS, emptySet()).orEmpty().toSet()

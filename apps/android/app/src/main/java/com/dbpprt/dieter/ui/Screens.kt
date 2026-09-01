@@ -122,6 +122,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -138,6 +139,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
@@ -325,11 +327,15 @@ private fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifie
     var query by remember { mutableStateOf("") }
     val projectDragState = remember { ProjectDragState() }
     val haptic = LocalHapticFeedback.current
-    val visibleProjects = state.projects.filter { project ->
-        query.isBlank() || project.name.contains(query, true) || project.path.contains(query, true) ||
-            state.spaceBoards.any { it.projectId == project.id && it.name.contains(query, true) }
+    val boardsByProject = remember(state.spaceBoards) { state.spaceBoards.groupBy(Board::getProjectId) }
+    val cardsByProject = remember(state.spaceCards) { state.spaceCards.groupBy(BoardCard::getProjectId) }
+    val visibleProjects = remember(state.projects, boardsByProject, query) {
+        state.projects.filter { project ->
+            query.isBlank() || project.name.contains(query, true) || project.path.contains(query, true) ||
+                boardsByProject[project.id].orEmpty().any { it.name.contains(query, true) }
+        }
     }
-    val reviewCount = state.spaceCards.count { it.lane.contains("review", true) }
+    val reviewCount = remember(state.spaceCards) { state.spaceCards.count { it.lane.contains("review", true) } }
 
     Column(modifier) {
         Row(
@@ -372,8 +378,8 @@ private fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifie
                     ProjectSpaceCard(
                         project = project,
                         host = state.presentedProjectHosts[project.id]?.takeIf { showProjectHosts },
-                        boards = state.spaceBoards.filter { it.projectId == project.id },
-                        cards = state.spaceCards.filter { it.projectId == project.id },
+                        boards = boardsByProject[project.id].orEmpty(),
+                        cards = cardsByProject[project.id].orEmpty(),
                         dragged = dragged,
                         dropTarget = projectDragState.targetProjectId == project.id,
                         onOpenBoard = { board -> model.openBoard(project.id, board.id) },
@@ -936,10 +942,12 @@ private fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: Mo
     val labelDragState = remember(state.selectedBoardId) { BoardLabelDragState() }
     var boardListOrigin by remember { mutableStateOf(Offset.Zero) }
     val dragPreviewOffsetPx = with(LocalDensity.current) { 18.dp.roundToPx() }
-    val boardCards = state.cards.filter { card ->
-        card.boardId == state.selectedBoardId &&
-            (selectedLabelId.isBlank() || selectedLabelId in card.labelIdsList) &&
-            (query.isBlank() || card.title.contains(query, ignoreCase = true) || card.summary.contains(query, ignoreCase = true))
+    val boardCards = remember(state.cards, state.selectedBoardId, selectedLabelId, query) {
+        state.cards.filter { card ->
+            card.boardId == state.selectedBoardId &&
+                (selectedLabelId.isBlank() || selectedLabelId in card.labelIdsList) &&
+                (query.isBlank() || card.title.contains(query, ignoreCase = true) || card.summary.contains(query, ignoreCase = true))
+        }
     }
     Box(modifier.onGloballyPositioned { boardListOrigin = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize()) {
@@ -1063,10 +1071,12 @@ private fun BoardLanePager(
     ) { page ->
         val lane = lanes[page]
         val sortDirection = laneSortDirections[lane.id] ?: CardCreationSortDirection.DESCENDING
-        val visible = cardsByCreationTime(
-            boardCards.filter { card -> card.lane == lane.id },
-            direction = sortDirection,
-        )
+        val visible = remember(boardCards, lane.id, sortDirection) {
+            cardsByCreationTime(
+                boardCards.filter { card -> card.lane == lane.id },
+                direction = sortDirection,
+            )
+        }
         Column(Modifier.fillMaxSize()) {
             LaneSortButton(
                 laneName = lane.name,
@@ -1209,6 +1219,20 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
     var expandedProjects by remember { mutableStateOf(emptySet<String>()) }
     val pinnedChatDragState = remember { PinnedChatDragState() }
     val haptic = LocalHapticFeedback.current
+    val chats = remember(state.chats, query) {
+        state.chats
+            .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
+            .sortedWith(compareByDescending<BoardCard> { it.pinned }.thenByDescending { it.lastActivityAt })
+    }
+    val pinned = remember(chats, state.pinnedChatOrder) {
+        orderedPinnedChats(chats.filter { it.pinned }, state.pinnedChatOrder)
+    }
+    val unpinnedByProject = remember(chats) { chats.filterNot { it.pinned }.groupBy(BoardCard::getProjectId) }
+    val chatProjects = remember(state.projects, chats, query) { chatProjectsForQuery(state.projects, chats, query) }
+    val projectIds = remember(state.projects) { state.projects.mapTo(hashSetOf(), Project::getId) }
+    val otherChats = remember(chats, projectIds) {
+        chats.filter { chat -> !chat.pinned && chat.projectId !in projectIds }
+    }
     LaunchedEffect(state.chats, state.pinnedChatOrder) {
         if (state.pinnedChatOrder.isEmpty()) {
             model.initializePinnedChatOrderIfNeeded(state.chats.filter { it.pinned }.map { it.id })
@@ -1223,9 +1247,6 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
             }
             SurfaceErrorBanner(state.error, model::clearError)
             CompactSearchField(query, { query = it }, "Search chats")
-            val chats = state.chats
-                .filter { query.isBlank() || it.title.contains(query, ignoreCase = true) }
-                .sortedWith(compareByDescending<BoardCard> { it.pinned }.thenByDescending { it.lastActivityAt })
             if (!state.connected && state.projects.isEmpty()) {
                 ConnectionEmptyState(state, model)
             } else if (chats.isEmpty() && state.projects.isEmpty()) {
@@ -1234,7 +1255,6 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
                 LazyColumn(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
                 ) {
-                    val pinned = orderedPinnedChats(chats.filter { it.pinned }, state.pinnedChatOrder)
                     if (pinned.isNotEmpty()) {
                         item { ListSectionLabel("Pinned") }
                         items(pinned, key = { it.id }) { chat ->
@@ -1277,8 +1297,8 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
                             )
                         }
                     }
-                    chatProjectsForQuery(state.projects, chats, query).forEach { project ->
-                        val projectChats = chats.filter { !it.pinned && it.projectId == project.id }
+                    chatProjects.forEach { project ->
+                        val projectChats = unpinnedByProject[project.id].orEmpty()
                         val expanded = project.id in expandedProjects
                         val visibleProjectChats = if (expanded) projectChats else projectChats.take(PROJECT_CHAT_PREVIEW_COUNT)
                         item(key = "project-chat-header-${project.id}") {
@@ -1336,7 +1356,6 @@ private fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Mo
                             }
                         }
                     }
-                    val otherChats = chats.filter { chat -> !chat.pinned && state.projects.none { it.id == chat.projectId } }
                     items(otherChats, key = { it.id }) { chat ->
                         ChatRow(chat, model)
                     }
@@ -1659,7 +1678,9 @@ private fun FilePreview(
     showBack: Boolean = true,
 ) {
     val document = state.fileDocument ?: return
-    val syntaxTransformation = remember(document.path) { CodeSyntaxVisualTransformation(document.path) }
+    val syntaxTransformation = remember(document.path) {
+        CodeSyntaxVisualTransformation(document.path, MaxEditableSyntaxHighlightCharacters)
+    }
     var confirmClose by remember { mutableStateOf(false) }
     var showMove by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -1695,7 +1716,7 @@ private fun FilePreview(
                 visualTransformation = syntaxTransformation,
                 enabled = !state.working,
                 label = {
-                    val suffix = if (state.fileDraft.length > MaxSyntaxHighlightCharacters) " · first 200k highlighted" else ""
+                    val suffix = if (state.fileDraft.length > MaxEditableSyntaxHighlightCharacters) " · first 20k highlighted" else ""
                     Text("${syntaxTransformation.language.displayName}$suffix")
                 },
             )
@@ -2187,6 +2208,10 @@ private fun DetailTabLabel(label: String, count: Int = 0, selected: Boolean) {
 private fun SubagentsBody(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
     val subagents = state.conversation?.conversation?.subagentsList.orEmpty()
     val active = subagents.count { it.status == "running" || it.status == "pending" }
+    val conversationMessages = remember(state.olderMessages, state.conversation) {
+        mergedConversationMessages(state.olderMessages, state.conversation?.conversation?.messagesList.orEmpty())
+    }
+    val contextUsage = remember(conversationMessages) { latestContextUsage(conversationMessages) }
     var text by remember(state.selectedCardId) { mutableStateOf("") }
     Column(modifier) {
         Row(
@@ -2238,7 +2263,7 @@ private fun SubagentsBody(state: DieterUiState, model: DieterViewModel, modifier
             enabled = !state.working,
             harnesses = state.harnesses,
             card = state.selectedCard,
-            contextUsage = latestContextUsage(state.conversationMessages),
+            contextUsage = contextUsage,
             onValueChange = { text = it },
             onSend = { provider, selectedModel, effort, providerOptions ->
                 val message = text.trim()
@@ -2366,7 +2391,9 @@ private fun subagentElapsed(subagent: Subagent): String {
 
 @Composable
 private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
-    val allMessages = state.conversationMessages
+    val allMessages = remember(state.olderMessages, state.conversation) {
+        mergedConversationMessages(state.olderMessages, state.conversation?.conversation?.messagesList.orEmpty())
+    }
     val listState = remember(state.selectedCardId) { LazyListState() }
     var initialScrollComplete by remember(state.selectedCardId) { mutableStateOf(false) }
     var followingLatest by remember(state.selectedCardId) { mutableStateOf(true) }
@@ -2391,16 +2418,22 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
     val draftAttachments = conversation?.draftAttachmentsList.orEmpty()
     val hasUnsentDraft = card?.initialPromptSentAt?.isBlank() == true &&
         (unsentTask != null || draftAttachments.isNotEmpty())
-    val plansByMessage = conversation?.taskPlansList.orEmpty()
-        .groupBy(TaskPlan::getMessageId)
-        .mapValues { (_, plans) -> plans.maxBy(TaskPlan::getRevision) }
-    val subagentsByMessage = conversation?.subagentsList.orEmpty().groupBy(Subagent::getMessageId)
-    val messages = allMessages.filter { message ->
-        message.hasRenderableConversationContent(
-            taskPlan = plansByMessage[message.id],
-            subagents = subagentsByMessage[message.id].orEmpty(),
-            includeReasoning = state.showReasoningTraces,
-        )
+    val plansByMessage = remember(conversation) {
+        conversation?.taskPlansList.orEmpty()
+            .groupBy(TaskPlan::getMessageId)
+            .mapValues { (_, plans) -> plans.maxBy(TaskPlan::getRevision) }
+    }
+    val subagentsByMessage = remember(conversation) {
+        conversation?.subagentsList.orEmpty().groupBy(Subagent::getMessageId)
+    }
+    val messages = remember(allMessages, plansByMessage, subagentsByMessage, state.showReasoningTraces) {
+        allMessages.filter { message ->
+            message.hasRenderableConversationContent(
+                taskPlan = plansByMessage[message.id],
+                subagents = subagentsByMessage[message.id].orEmpty(),
+                includeReasoning = state.showReasoningTraces,
+            )
+        }
     }
     val runtime = resolvedCardRuntime(
         card?.runtime.orEmpty(),
@@ -2409,14 +2442,19 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
     )
     val activeTurn = isActiveCardRuntime(runtime)
     val interrupting = card != null && state.cardOperations[card.id] == CardOperation.CANCELLING
-    val turnFailure = resolveConversationTurnFailure(
-        messages = allMessages,
-        conversationStatus = conversation?.status.orEmpty(),
-        cardRuntime = card?.runtime.orEmpty(),
-    )
+    val turnFailure = remember(allMessages, conversation?.status, card?.runtime) {
+        resolveConversationTurnFailure(
+            messages = allMessages,
+            conversationStatus = conversation?.status.orEmpty(),
+            cardRuntime = card?.runtime.orEmpty(),
+        )
+    }
     var presentedFailureLog by remember(card?.id, turnFailure?.log) { mutableStateOf<String?>(null) }
     var failureRetryQueued by remember(card?.id, turnFailure?.log) { mutableStateOf(false) }
-    val assistantCount = messages.count { it.role.equals("assistant", true) || it.role.equals("agent", true) }
+    val assistantCount = remember(messages) {
+        messages.count { it.role.equals("assistant", true) || it.role.equals("agent", true) }
+    }
+    val contextUsage = remember(allMessages) { latestContextUsage(allMessages) }
     // Keep the live cue at the transcript tail for the whole turn. Partial
     // assistant text must not make the agent appear idle while it is still
     // generating more text or running tools.
@@ -2726,7 +2764,7 @@ private fun ConversationBody(state: DieterUiState, model: DieterViewModel, modif
             enabled = !state.working,
             harnesses = state.harnesses,
             card = state.selectedCard,
-            contextUsage = latestContextUsage(allMessages),
+            contextUsage = contextUsage,
             attachments = attachments,
             error = composerError,
             onValueChange = { text = it },
@@ -3152,12 +3190,14 @@ private fun MessageParts(
     plan: TaskPlan? = null,
     subagents: List<Subagent> = emptyList(),
 ) {
-    val timeline = buildConversationTimeline(
-        parts = message.partsList,
-        subagents = subagents,
-        hasTaskPlan = plan != null,
-        showReasoning = showReasoningTraces,
-    )
+    val timeline = remember(message, subagents, plan, showReasoningTraces) {
+        buildConversationTimeline(
+            parts = message.partsList,
+            subagents = subagents,
+            hasTaskPlan = plan != null,
+            showReasoning = showReasoningTraces,
+        )
+    }
     if (plan != null) TaskPlanBlock(plan)
     timeline.forEachIndexed { index, item ->
         when (item) {
@@ -3239,8 +3279,9 @@ private fun MessageMarkdown(value: String, compact: Boolean) {
                     )
                 }
             } else {
+                val inline = remember(block.text) { markdownInlineText(block.text) }
                 Text(
-                    markdownInlineText(block.text),
+                    inline,
                     fontSize = if (block.headingLevel > 0) 15.sp else 14.sp,
                     fontWeight = if (block.headingLevel > 0) FontWeight.SemiBold else FontWeight.Normal,
                     lineHeight = if (compact) 20.sp else 21.sp,
@@ -3489,8 +3530,23 @@ private fun AgentWorkingIndicator(toolName: String) {
 }
 
 @Composable
+private fun rememberAttachmentBitmap(
+    part: MessagePart,
+    maxDimension: Int = 900,
+): ImageBitmap? = produceState<ImageBitmap?>(
+    initialValue = null,
+    key1 = part.url,
+    key2 = part.data,
+    key3 = maxDimension,
+) {
+    value = withContext(Dispatchers.Default) {
+        decodeAttachmentBitmap(part, maxDimension)?.asImageBitmap()
+    }
+}.value
+
+@Composable
 private fun AttachmentPart(part: MessagePart) {
-    val bitmap = remember(part.url, part.data) { decodeAttachmentBitmap(part)?.asImageBitmap() }
+    val bitmap = rememberAttachmentBitmap(part)
     if (bitmap != null) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Image(
@@ -3876,7 +3932,7 @@ internal fun ComposerAttachmentPreview(
     enabled: Boolean,
     onRemove: () -> Unit,
 ) {
-    val bitmap = remember(part.url, part.data) { decodeAttachmentBitmap(part, maxDimension = 360)?.asImageBitmap() }
+    val bitmap = rememberAttachmentBitmap(part, maxDimension = 360)
     if (bitmap != null) {
         Box(
             Modifier.width(116.dp).height(88.dp).clip(RoundedCornerShape(12.dp))

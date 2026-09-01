@@ -23,6 +23,7 @@ var rpcCommand = map[string]string{
 	"UpdateConversationWorkspace": "card workspace", "GetWorkspace": "workspace show", "ListProjectWorkspaces": "workspace list", "GetChangeset": "workspace changes", "GetFileDiff": "workspace diff", "GetCommitDiff": "workspace diff", "AddChangeComment": "workspace comment", "ListChangeComments": "workspace comments", "GetSCMCapabilities": "workspace scm", "StartGitOperation": "workspace run", "GetGitOperation": "workspace operation", "WatchGitOperation": "workspace watch", "CancelGitOperation": "workspace cancel",
 	"ListFiles": "file list", "ReadFile": "file read", "SaveFile": "file save", "CreateFile": "file create", "MoveFile": "file move", "DeleteFile": "file delete",
 	"ListTerminals": "terminal list", "CreateTerminal": "terminal create", "WatchTerminal": "terminal watch", "WriteTerminal": "terminal write", "ResizeTerminal": "terminal resize", "RenameTerminal": "terminal rename", "CloseTerminal": "terminal close",
+	"ListExecutions": "remote list", "StartExecution": "remote exec", "GetExecution": "remote show", "WatchExecution": "remote watch", "WriteExecutionInput": "remote input", "SignalExecution": "remote signal", "ResizeExecution": "remote resize", "CancelExecution": "remote cancel", "CloseExecution": "remote close",
 	"GetRemoteDesktopCapabilities": "screen capabilities", "GetRemoteDesktopSettings": "screen settings", "UpdateRemoteDesktopSettings": "screen update", "StartRemoteDesktop": "screen start", "SendRemoteDesktopSignal": "screen signal", "CloseRemoteDesktop": "screen close",
 	"ListSchedules": "schedule list", "PreviewSchedule": "schedule preview", "CreateSchedule": "schedule create", "UpdateSchedule": "schedule update", "DeleteSchedule": "schedule delete", "RunSchedule": "schedule run", "SetScheduleEnabled": "schedule pause", "ListScheduleRuns": "schedule runs",
 }
@@ -59,6 +60,7 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"workspace", "workspace show", "workspace list", "workspace changes", "workspace diff", "workspace comments", "workspace comment", "workspace scm", "workspace operation", "workspace watch", "workspace run", "workspace cancel",
 		"file", "file list", "file read", "file save", "file create", "file move", "file delete",
 		"terminal", "terminal list", "terminal create", "terminal attach", "terminal watch", "terminal write", "terminal resize", "terminal rename", "terminal close",
+		"remote", "remote exec", "remote shell", "remote list", "remote show", "remote watch", "remote wait", "remote attach", "remote input", "remote signal", "remote resize", "remote cancel", "remote close",
 		"screen", "screen capabilities", "screen settings", "screen update", "screen start", "screen signal", "screen close",
 		"schedule", "schedule create", "schedule list", "schedule show", "schedule preview", "schedule update", "schedule run", "schedule pause", "schedule resume", "schedule runs", "schedule delete",
 		"settings", "settings show", "settings options", "settings update",

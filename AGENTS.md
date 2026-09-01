@@ -94,6 +94,15 @@ daemon during tests. Use temporary `DIETER_HOME` roots, random loopback
 listeners, isolated in-process gateways/daemons, and disposable credentials.
 Verify local, direct-TLS, and relay CLI routes without touching the live service.
 
+Remote execution is a separate agent-oriented interface from screen terminals.
+Keep it exact-argv and shell-free by default, retain stdout/stderr boundaries,
+propagate explicit exit state, and make admission idempotent when a key is
+provided. A watch disconnect must never stop an execution. Keep process count,
+input frames, output frames/bytes, retained sessions, timeouts, and relay
+streams bounded. New execution lifecycle operations require proto, core server,
+Connect adapter, CLI/help, skill/docs, manager, local, direct-TLS, and relay
+coverage in the same change.
+
 ## Use Dieter as an agent
 
 Read `.agents/skills/dieter-cli/SKILL.md`. Prefer bounded context:

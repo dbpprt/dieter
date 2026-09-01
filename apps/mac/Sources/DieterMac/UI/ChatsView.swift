@@ -2,24 +2,50 @@ import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct ChatListProjection: Equatable, Sendable {
+    let visible: [Dieter_V1_Card]
+    let pinned: [Dieter_V1_Card]
+    let byProject: [String: [Dieter_V1_Card]]
+
+    static func resolve(
+        chats: [Dieter_V1_Card],
+        showArchived: Bool,
+        search: String,
+        pinnedOrder: [String]
+    ) -> ChatListProjection {
+        let visible = chats
+            .filter { chat in
+                chat.scope == "chat" && chat.boardID.isEmpty && chat.archived == showArchived &&
+                    (search.isEmpty || chat.title.localizedCaseInsensitiveContains(search) || chat.summary.localizedCaseInsensitiveContains(search))
+            }
+            .sorted {
+                let left = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
+                let right = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
+                return left == right ? $0.id < $1.id : left > right
+            }
+        let pinned = showArchived ? [] : PinnedChatOrdering.ordered(
+            visible.filter(\.pinned),
+            preferredOrder: pinnedOrder
+        )
+        let projectChats = showArchived ? visible : visible.filter { !$0.pinned }
+        return ChatListProjection(
+            visible: visible,
+            pinned: pinned,
+            byProject: Dictionary(grouping: projectChats, by: \.projectID)
+        )
+    }
+}
+
 struct ChatsView: View {
     @Environment(DieterStore.self) private var store
     @State private var search = ""
     @State private var showArchived = false
     @State private var expandedProjects: Set<String> = []
     @State private var collapsedProjects: Set<String> = []
+    @State private var pinnedPageIndex = 0
     @State private var pinnedChatNavigation = PinnedChatNavigationPreferences.load(
         from: DieterAppearance.applicationDefaults()
     )
-
-    private var visibleChats: [Dieter_V1_Card] {
-        store.chats
-            .filter { chat in
-                chat.scope == "chat" && chat.boardID.isEmpty && chat.archived == showArchived &&
-                    (search.isEmpty || chat.title.localizedCaseInsensitiveContains(search) || chat.summary.localizedCaseInsensitiveContains(search))
-            }
-            .sorted { ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt) }
-    }
 
     private var activePinnedChats: [Dieter_V1_Card] {
         store.chats
@@ -32,13 +58,21 @@ struct ChatsView: View {
     }
 
     var body: some View {
+        let projection = ChatListProjection.resolve(
+            chats: store.chats,
+            showArchived: showArchived,
+            search: search,
+            pinnedOrder: pinnedChatNavigation.chatOrder
+        )
+        let pinnedPage = LaneCardPage.resolve(total: projection.pinned.count, requestedPage: pinnedPageIndex)
+        let displayedPinned = Array(projection.pinned[pinnedPage.lowerBound..<pinnedPage.upperBound])
         HSplitView {
             VStack(spacing: 0) {
                 FluidPaneChrome(background: DieterTheme.sidebar, spacing: 9) {
                     HStack(spacing: 8) {
                         PaneTitleBlock(
                             title: showArchived ? "Archived chats" : "Chats",
-                            subtitle: "\(visibleChats.count) conversation\(visibleChats.count == 1 ? "" : "s")",
+                            subtitle: "\(projection.visible.count) conversation\(projection.visible.count == 1 ? "" : "s")",
                             prominent: true
                         )
                         Button {
@@ -56,14 +90,19 @@ struct ChatsView: View {
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        let pinned = showArchived ? [] : PinnedChatOrdering.ordered(
-                            visibleChats.filter(\.pinned),
-                            preferredOrder: pinnedChatNavigation.chatOrder
-                        )
+                        let pinned = projection.pinned
                         if !pinned.isEmpty {
                             VStack(alignment: .leading, spacing: 5) {
                                 Label("PINNED", systemImage: "pin.fill").font(DieterFont.sectionLabel).foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 8)
-                                ChatGroupCard(chats: pinned, movePinnedChat: movePinnedChat).padding(.leading, 14)
+                                ChatGroupCard(chats: displayedPinned, movePinnedChat: movePinnedChat).padding(.leading, 14)
+                                if pinnedPage.pageCount > 1 {
+                                    ChatPageControls(
+                                        page: pinnedPage,
+                                        previous: { pinnedPageIndex = max(0, pinnedPage.page - 1) },
+                                        next: { pinnedPageIndex = min(pinnedPage.pageCount - 1, pinnedPage.page + 1) }
+                                    )
+                                    .padding(.leading, 14)
+                                }
                             }
                         }
 
@@ -71,7 +110,7 @@ struct ChatsView: View {
                             .font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 8).padding(.top, 3)
 
                         ForEach(store.projects.filter { !$0.archived }, id: \.id) { project in
-                            let projectChats = visibleChats.filter { $0.projectID == project.id && (showArchived || !$0.pinned) }
+                            let projectChats = projection.byProject[project.id] ?? []
                             if search.isEmpty || !projectChats.isEmpty {
                                 ChatProjectGroup(
                                     project: project,
@@ -85,7 +124,7 @@ struct ChatsView: View {
                             }
                         }
 
-                        if visibleChats.isEmpty {
+                        if projection.visible.isEmpty {
                             ContentUnavailableView(
                                 search.isEmpty ? (showArchived ? "No archived chats" : "No chats yet") : "No matching chats",
                                 systemImage: showArchived ? "archivebox" : "bubble.left.and.bubble.right",
@@ -118,6 +157,7 @@ struct ChatsView: View {
         }
         .task { await store.refreshChats() }
         .task(id: pinnedChatMembership) { initializePinnedChatOrderIfNeeded() }
+        .onChange(of: projection.pinned.count) { _, _ in pinnedPageIndex = pinnedPage.page }
     }
 
     private func toggle(_ id: String, in values: inout Set<String>) {
@@ -144,9 +184,16 @@ private struct ChatProjectGroup: View {
     let collapsed: Bool
     let toggleExpanded: () -> Void
     let toggleCollapsed: () -> Void
+    @State private var pageIndex = 0
 
     private var displayed: [Dieter_V1_Card] {
-        expanded ? chats : Array(chats.prefix(5))
+        guard expanded else { return Array(chats.prefix(5)) }
+        let page = LaneCardPage.resolve(total: chats.count, requestedPage: pageIndex)
+        return Array(chats[page.lowerBound..<page.upperBound])
+    }
+
+    private var page: LaneCardPage {
+        LaneCardPage.resolve(total: chats.count, requestedPage: pageIndex)
     }
 
     var body: some View {
@@ -174,22 +221,69 @@ private struct ChatProjectGroup: View {
                     ChatGroupCard(chats: displayed) {
                         if chats.count > 5 {
                             ChatRowSeparator()
-                            Button(action: toggleExpanded) {
-                                HStack(spacing: 5) {
-                                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 7, weight: .bold))
-                                    Text(expanded ? "Show fewer" : "Show \(chats.count - 5) more")
+                            if expanded {
+                                VStack(spacing: 4) {
+                                    if page.pageCount > 1 {
+                                        ChatPageControls(
+                                            page: page,
+                                            previous: { pageIndex = max(0, page.page - 1) },
+                                            next: { pageIndex = min(page.pageCount - 1, page.page + 1) }
+                                        )
+                                    }
+                                    Button {
+                                        pageIndex = 0
+                                        toggleExpanded()
+                                    } label: {
+                                        Label("Show fewer", systemImage: "chevron.up")
+                                            .font(.system(size: 10.5, weight: .medium))
+                                            .foregroundStyle(DieterTheme.subtle)
+                                            .padding(.leading, 24).padding(.vertical, 5)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .font(.system(size: 10.5, weight: .medium)).foregroundStyle(DieterTheme.subtle)
-                                .padding(.leading, 27).padding(.vertical, 6)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                            }.buttonStyle(.plain)
+                            } else {
+                                Button(action: toggleExpanded) {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
+                                        Text("Show \(chats.count - 5) more")
+                                    }
+                                    .font(.system(size: 10.5, weight: .medium)).foregroundStyle(DieterTheme.subtle)
+                                    .padding(.leading, 27).padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                }.buttonStyle(.plain)
+                            }
                         }
                     }
                     .padding(.leading, 14)
                 }
             }
         }
+        .onChange(of: chats.count) { _, _ in pageIndex = page.page }
+    }
+}
+
+private struct ChatPageControls: View {
+    let page: LaneCardPage
+    let previous: () -> Void
+    let next: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: previous) { Image(systemName: "chevron.left") }
+                .disabled(!page.canGoBackward)
+                .accessibilityLabel("Previous chats")
+            Text(page.rangeLabel)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(DieterTheme.tertiary)
+                .frame(maxWidth: .infinity)
+            Button(action: next) { Image(systemName: "chevron.right") }
+                .disabled(!page.canGoForward)
+                .accessibilityLabel("Next chats")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8).padding(.vertical, 4)
     }
 }
 

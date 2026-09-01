@@ -63,33 +63,46 @@ func syncActivityKey(card *dieterv1.Card) string {
 
 type syncProjection struct {
 	snapshot              *dieterv1.GlobalSnapshot
+	state                 model.State
 	conversationRevisions map[string]string
 }
 
 func (api *grpcAPI) globalSnapshot(limit, recent int, previous *syncProjection) (*syncProjection, error) {
+	return api.globalSnapshotReusingMetadata(limit, recent, previous, false)
+}
+
+func (api *grpcAPI) globalSnapshotReusingMetadata(limit, recent int, previous *syncProjection, reuseMetadata bool) (*syncProjection, error) {
 	if limit > 100 {
 		limit = 100
 	}
 
-	// The four independent roots are loaded concurrently. GlobalState itself
-	// scans each workspace directory once, instead of once per project.
 	var state model.State
-	var settings model.Settings
-	errs := make([]error, 2)
-	var roots sync.WaitGroup
-	roots.Add(2)
-	go func() { defer roots.Done(); state, errs[0] = api.server.store.GlobalState() }()
-	go func() { defer roots.Done(); settings, errs[1] = api.server.store.Settings() }()
-	roots.Wait()
-	for _, err := range errs {
-		if err != nil {
-			return nil, err
+	var snapshot *dieterv1.GlobalSnapshot
+	if reuseMetadata && previous != nil {
+		state = previous.state
+		snapshot = proto.Clone(previous.snapshot).(*dieterv1.GlobalSnapshot)
+		snapshot.Conversations = nil
+	} else {
+		// The independent roots are loaded concurrently. GlobalState itself
+		// scans each workspace directory once, instead of once per project.
+		var settings model.Settings
+		errs := make([]error, 2)
+		var roots sync.WaitGroup
+		roots.Add(2)
+		go func() { defer roots.Done(); state, errs[0] = api.server.store.GlobalState() }()
+		go func() { defer roots.Done(); settings, errs[1] = api.server.store.Settings() }()
+		roots.Wait()
+		for _, err := range errs {
+			if err != nil {
+				return nil, err
+			}
 		}
+
+		snapshot = &dieterv1.GlobalSnapshot{State: protoState(state), Settings: protoSettings(settings)}
 	}
 
-	protoState := protoState(state)
-	snapshot := &dieterv1.GlobalSnapshot{State: protoState, Settings: protoSettings(settings)}
-	projection := &syncProjection{snapshot: snapshot, conversationRevisions: make(map[string]string)}
+	protoState := snapshot.GetState()
+	projection := &syncProjection{snapshot: snapshot, state: state, conversationRevisions: make(map[string]string)}
 	if limit <= 0 {
 		return projection, nil
 	}
@@ -391,7 +404,19 @@ func (api *grpcAPI) watchSync(ctx context.Context, request *dieterv1.SyncRequest
 		if waitErr := api.server.store.WaitForWriter(ctx); waitErr != nil {
 			return waitErr
 		}
-		snapshot, snapshotErr := api.globalSnapshot(int(request.GetConversationLimit()), int(request.GetRecentConversationLimit()), projection)
+		reuseMetadata := projection != nil
+		for _, event := range events {
+			if event.Kind != "conversation_changed" {
+				reuseMetadata = false
+				break
+			}
+		}
+		snapshot, snapshotErr := api.globalSnapshotReusingMetadata(
+			int(request.GetConversationLimit()),
+			int(request.GetRecentConversationLimit()),
+			projection,
+			reuseMetadata,
+		)
 		if snapshotErr != nil {
 			return snapshotErr
 		}

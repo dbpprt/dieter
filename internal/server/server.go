@@ -22,6 +22,7 @@ import (
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
+	"github.com/dbpprt/dieter/internal/remoteexec"
 	"github.com/dbpprt/dieter/internal/scheduler"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/terminal"
@@ -42,6 +43,7 @@ type Server struct {
 	filesMu       sync.RWMutex
 	auth          *authManager
 	terminals     *terminal.Manager
+	executions    *remoteexec.Manager
 	remoteDesktop *remotedesktop.Manager
 	machine       *machine.Collector
 	machineAction func(context.Context, machine.Operation) error
@@ -73,7 +75,7 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 	service := app.New(data, runner)
 	s := &Server{
 		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
-		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(),
+		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(), executions: remoteexec.New(),
 		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
 		machine:       machine.NewCollector(data.Root), machineAction: machine.ExecuteOperation,
 		machineDelay: 750 * time.Millisecond,
@@ -105,6 +107,20 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 			}
 			if session.Status == terminal.StatusRunning && (session.CardID == cardID || insideWorkspace) {
 				return true
+			}
+		}
+		for _, execution := range s.executions.List("", "", remoteexec.StatusRunning) {
+			if execution.CardID == cardID {
+				return true
+			}
+			workingDirectory := execution.WorkingDirectory
+			if resolved, resolveErr := filepath.EvalSymlinks(workingDirectory); resolveErr == nil {
+				workingDirectory = resolved
+			}
+			if workspacePath != "" {
+				if relative, err := filepath.Rel(workspacePath, workingDirectory); err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+					return true
+				}
 			}
 		}
 		return false
@@ -255,6 +271,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 		logger.Warn("some active agent turns could not be suspended for restart", "error", err)
 	}
 	application.terminals.Shutdown(shutdownCtx)
+	application.executions.Shutdown(shutdownCtx)
 	application.remoteDesktop.Shutdown(shutdownCtx)
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		_ = httpServer.Close()

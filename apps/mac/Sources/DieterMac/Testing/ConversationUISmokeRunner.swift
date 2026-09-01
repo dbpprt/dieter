@@ -13,11 +13,30 @@ import UniformTypeIdentifiers
 @MainActor
 enum ConversationUISmokeRunner {
     private static let syntheticFixtureID = "c_conversation_ui_smoke"
+    private static let syntheticTailChatFixtureID = "c_conversation_chat_tail_ui_smoke"
+    private static let syntheticCardFixtureID = "c_conversation_card_ui_smoke"
     private static var jumpToLatestVisible = false
+    private static var viewportConversationID = ""
+    private static var viewportIsAtLatest = false
+    private static var viewportFollowsLatest = false
+    private static var viewportInitialPositionComplete = false
 
     static func recordJumpToLatestVisibility(_ visible: Bool) {
         guard ProcessInfo.processInfo.arguments.contains("--conversation-ui-smoke") else { return }
         jumpToLatestVisible = visible
+    }
+
+    static func recordViewportObservation(
+        conversationID: String,
+        isAtLatest: Bool,
+        followsLatest: Bool,
+        initialPositionComplete: Bool
+    ) {
+        guard ProcessInfo.processInfo.arguments.contains("--conversation-ui-smoke") else { return }
+        viewportConversationID = conversationID
+        viewportIsAtLatest = isAtLatest
+        viewportFollowsLatest = followsLatest
+        viewportInitialPositionComplete = initialPositionComplete
     }
 
     static func run(store: DieterStore) async {
@@ -102,7 +121,7 @@ enum ConversationUISmokeRunner {
         }
         await runActivityIndicatorCheck(store: store, window: window, results: &results, output: output)
         await runQueuedMessageCheck(store: store, window: window, results: &results, output: output)
-        await runJumpToLatestCheck(store: store, window: window, results: &results, output: output)
+        await runViewportChecks(store: store, window: window, results: &results, output: output)
         await runTurnFailureCheck(store: store, window: window, results: &results, output: output)
 
         writeReport(results, to: output)
@@ -165,38 +184,131 @@ enum ConversationUISmokeRunner {
         }
     }
 
-    /// Grows a model answer after the short fixture has settled at its tail.
-    /// The transcript must keep its viewport and expose the explicit jump
-    /// control instead of snapping to the newly rendered bottom.
-    private static func runJumpToLatestCheck(
+    /// Proves both navigation scopes open at the tail, live output keeps
+    /// following while attached, a real wheel gesture detaches the reader,
+    /// and the visible jump action restores live following.
+    private static func runViewportChecks(
         store: DieterStore,
         window: NSWindow,
         results: inout [String: String],
         output: URL
     ) async {
-        guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
-            results["jump-to-latest"] = "failed: renderer fixture unavailable"
+        for (scope, id, chat) in [
+            ("chat", syntheticTailChatFixtureID, true),
+            ("card", syntheticCardFixtureID, false),
+        ] {
+            resetViewportObservation()
+            guard installLongViewportFixture(store, id: id, chat: chat) != nil else {
+                results["\(scope)-opens-at-latest"] = "failed: renderer fixture unavailable"
+                continue
+            }
+            let positioned = await waitForViewport(
+                conversationID: id,
+                isAtLatest: true,
+                followsLatest: true,
+                initialPositionComplete: true
+            )
+            capture(window, to: output.appending(path: "07-\(scope)-opens-at-latest.png"))
+            results["\(scope)-opens-at-latest"] = positioned
+                ? "passed"
+                : "failed: initial projection did not settle at the transcript tail"
+        }
+
+        resetViewportObservation()
+        guard installLongViewportFixture(
+            store,
+            id: syntheticTailChatFixtureID,
+            chat: true
+        ) != nil, var snapshot = store.conversation else {
+            results["live-tail"] = "failed: renderer fixture unavailable"
             return
         }
-        jumpToLatestVisible = false
-        try? await DieterTaskSleep.milliseconds(500)
+        _ = await waitForViewport(
+            conversationID: syntheticTailChatFixtureID,
+            isAtLatest: true,
+            followsLatest: true,
+            initialPositionComplete: true
+        )
 
-        var text = Dieter_V1_MessagePart()
-        text.type = "text"
-        text.text = (1...80).map { "Streamed model answer line \($0) stays below the reading position." }.joined(separator: "\n")
-        var answer = Dieter_V1_UiMessage()
-        answer.id = "message_streamed_growth"
-        answer.role = "assistant"
-        answer.parts = [text]
-        snapshot.conversation.messages.append(answer)
+        snapshot.conversation.messages.append(longTextMessage(
+            id: "message_streamed_growth_one",
+            prefix: "First streamed model answer"
+        ))
         snapshot.conversation.lastSeq += 1
         store.conversation = snapshot
-
-        try? await DieterTaskSleep.seconds(1)
-        capture(window, to: output.appending(path: "07-jump-to-latest.png"))
-        results["jump-to-latest"] = jumpToLatestVisible
+        let tailedFirstGrowth = await waitForViewport(
+            conversationID: syntheticTailChatFixtureID,
+            isAtLatest: true,
+            followsLatest: true,
+            initialPositionComplete: true
+        )
+        capture(window, to: output.appending(path: "07c-live-tail.png"))
+        results["live-tail"] = tailedFirstGrowth && !jumpToLatestVisible
             ? "passed"
-            : "failed: model answer growth did not expose the jump control"
+            : "failed: streamed growth detached a viewport that was following the tail"
+
+        await postScrollUp(window)
+        let detached = await waitForViewport(
+            conversationID: syntheticTailChatFixtureID,
+            isAtLatest: false,
+            followsLatest: false,
+            initialPositionComplete: true
+        )
+        capture(window, to: output.appending(path: "07d-manual-scroll-detached.png"))
+        results["manual-scroll-detaches"] = detached && jumpToLatestVisible
+            ? "passed"
+            : "failed: manual upward scrolling did not expose Jump to latest"
+
+        snapshot = store.conversation ?? snapshot
+        snapshot.conversation.messages.append(longTextMessage(
+            id: "message_streamed_growth_two",
+            prefix: "Second streamed model answer"
+        ))
+        snapshot.conversation.lastSeq += 1
+        store.conversation = snapshot
+        try? await DieterTaskSleep.milliseconds(800)
+        let preservedReadingPosition = viewportConversationID == syntheticTailChatFixtureID
+            && !viewportIsAtLatest
+            && !viewportFollowsLatest
+            && jumpToLatestVisible
+        capture(window, to: output.appending(path: "07e-detached-stream-growth.png"))
+        results["detached-stream-preserves-position"] = preservedReadingPosition
+            ? "passed"
+            : "failed: streamed growth forced a detached viewport back to the tail"
+        progress("viewport: detached stream growth recorded", in: output)
+
+        click(window: window, x: 985, distanceFromTop: 626)
+        progress("viewport: posted Jump to latest click", in: output)
+        let jumped = await waitForViewport(
+            conversationID: syntheticTailChatFixtureID,
+            isAtLatest: true,
+            followsLatest: true,
+            initialPositionComplete: true
+        )
+        progress("viewport: jump wait finished (jumped=\(jumped))", in: output)
+        results["jump-resumes-tail"] = jumped && !jumpToLatestVisible
+            ? "passed"
+            : "failed: Jump to latest did not restore live following"
+
+        snapshot = store.conversation ?? snapshot
+        snapshot.conversation.messages.append(longTextMessage(
+            id: "message_streamed_growth_three",
+            prefix: "Third streamed model answer"
+        ))
+        snapshot.conversation.lastSeq += 1
+        store.conversation = snapshot
+        progress("viewport: appended post-jump stream growth", in: output)
+        let resumedTail = await waitForViewport(
+            conversationID: syntheticTailChatFixtureID,
+            isAtLatest: true,
+            followsLatest: true,
+            initialPositionComplete: true
+        )
+        progress("viewport: post-jump tail wait finished (tailed=\(resumedTail))", in: output)
+        capture(window, to: output.appending(path: "07f-jump-resumed-tail.png"))
+        results["jump-resumed-stream-tail"] = resumedTail && !jumpToLatestVisible
+            ? "passed"
+            : "failed: streaming did not continue to tail after the jump action"
     }
 
     /// Leaves a deterministic active conversation at the transcript tail so
@@ -596,6 +708,129 @@ enum ConversationUISmokeRunner {
         store.conversation = snapshot
         store.section = .chats
         return card.id
+    }
+
+    private static func installLongViewportFixture(
+        _ store: DieterStore,
+        id: String,
+        chat: Bool
+    ) -> String? {
+        guard installSyntheticFixture(store) != nil,
+              var snapshot = store.conversation else { return nil }
+        let project = snapshot.detail.project
+        var card = snapshot.detail.card
+        card.id = id
+        card.scope = chat ? "chat" : "card"
+        card.title = chat ? "Long standalone chat" : "Long board card"
+        card.runtime = "running"
+        card.updatedAt = DieterTimestamp.string(from: Date())
+
+        if chat {
+            card.boardID = ""
+            if let index = store.chats.firstIndex(where: { $0.id == id }) {
+                store.chats[index] = card
+            } else {
+                store.chats.append(card)
+            }
+            store.chatProjects = store.projects
+        } else {
+            var board = store.state.boards.first(where: { $0.projectID == project.id }) ?? Dieter_V1_Board()
+            if board.id.isEmpty {
+                board.id = "b_conversation_ui_smoke"
+                board.projectID = project.id
+                board.name = "Conversation UI smoke"
+                store.state.boards.append(board)
+            }
+            card.boardID = board.id
+            snapshot.detail.board = board
+            if let index = store.state.cards.firstIndex(where: { $0.id == id }) {
+                store.state.cards[index] = card
+            } else {
+                store.state.cards.append(card)
+            }
+            store.selectedBoardID = board.id
+        }
+
+        snapshot.detail.card = card
+        snapshot.conversation.cardID = id
+        snapshot.conversation.status = "running"
+        snapshot.conversation.messages.append(longTextMessage(
+            id: "message_long_baseline_\(chat ? "chat" : "card")",
+            prefix: chat ? "Standalone chat history" : "Board card history"
+        ))
+
+        store.selectedProjectID = project.id
+        store.selectedCardID = chat ? nil : id
+        store.selectedChatID = chat ? id : nil
+        store.selectedDetail = snapshot.detail
+        store.conversation = snapshot
+        store.section = chat ? .chats : .board
+        return id
+    }
+
+    private static func longTextMessage(id: String, prefix: String) -> Dieter_V1_UiMessage {
+        var text = Dieter_V1_MessagePart()
+        text.type = "text"
+        text.text = (1...72).map { "\(prefix) line \($0) keeps the transcript taller than its viewport." }
+            .joined(separator: "\n")
+        var message = Dieter_V1_UiMessage()
+        message.id = id
+        message.role = "assistant"
+        message.parts = [text]
+        return message
+    }
+
+    private static func resetViewportObservation() {
+        jumpToLatestVisible = false
+        viewportConversationID = ""
+        viewportIsAtLatest = false
+        viewportFollowsLatest = false
+        viewportInitialPositionComplete = false
+    }
+
+    private static func waitForViewport(
+        conversationID: String,
+        isAtLatest: Bool,
+        followsLatest: Bool,
+        initialPositionComplete: Bool
+    ) async -> Bool {
+        for _ in 0..<50 {
+            if viewportConversationID == conversationID,
+               viewportIsAtLatest == isAtLatest,
+               viewportFollowsLatest == followsLatest,
+               viewportInitialPositionComplete == initialPositionComplete {
+                return true
+            }
+            try? await DieterTaskSleep.milliseconds(100)
+        }
+        return false
+    }
+
+    private static func postScrollUp(_ window: NSWindow) async {
+        guard let content = window.contentView else { return }
+        window.makeKeyAndOrderFront(nil)
+        let location = NSPoint(x: content.bounds.width - 260, y: content.bounds.height * 0.55)
+        let screenLocation = window.convertPoint(toScreen: location)
+        for index in 0..<10 {
+            guard let cgEvent = CGEvent(
+                scrollWheelEvent2Source: nil,
+                units: .pixel,
+                wheelCount: 1,
+                wheel1: 18,
+                wheel2: 0,
+                wheel3: 0
+            ) else { continue }
+            cgEvent.location = screenLocation
+            cgEvent.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            cgEvent.setIntegerValueField(
+                .scrollWheelEventScrollPhase,
+                value: index == 0 ? 1 : (index == 9 ? 4 : 2)
+            )
+            if let event = NSEvent(cgEvent: cgEvent) {
+                window.sendEvent(event)
+            }
+            try? await DieterTaskSleep.milliseconds(20)
+        }
     }
 
     static func progress(_ message: String, in directory: URL) {

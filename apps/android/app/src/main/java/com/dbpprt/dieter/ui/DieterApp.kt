@@ -340,6 +340,9 @@ fun DieterApp(container: DieterContainer) {
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
                     userScrollEnabled = !detailVisible && !boardLanePagerVisible,
+                    // Keep the two neighboring primary surfaces composed so the first tab switch
+                    // does not pay their full composition/JIT cost during the navigation gesture.
+                    beyondViewportPageCount = 1,
                     key = { navigationItems[it].destination },
                 ) { page ->
                     DestinationContent(

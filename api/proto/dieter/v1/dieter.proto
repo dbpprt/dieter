@@ -103,6 +103,19 @@ service DieterService {
   rpc RenameTerminal(RenameTerminalRequest) returns (Terminal);
   rpc CloseTerminal(TerminalRef) returns (google.protobuf.Empty);
 
+  // Remote executions are agent-oriented command sessions. They preserve
+  // stdout/stderr boundaries, explicit exit state, idempotent admission, and
+  // resumable output independently from any client watch stream.
+  rpc ListExecutions(ListExecutionsRequest) returns (ExecutionsResponse);
+  rpc StartExecution(StartExecutionRequest) returns (Execution);
+  rpc GetExecution(ExecutionRef) returns (Execution);
+  rpc WatchExecution(WatchExecutionRequest) returns (stream ExecutionEvent);
+  rpc WriteExecutionInput(ExecutionInputRequest) returns (Execution);
+  rpc SignalExecution(SignalExecutionRequest) returns (Execution);
+  rpc ResizeExecution(ResizeExecutionRequest) returns (Execution);
+  rpc CancelExecution(ExecutionRef) returns (Execution);
+  rpc CloseExecution(ExecutionRef) returns (google.protobuf.Empty);
+
   rpc GetRemoteDesktopCapabilities(google.protobuf.Empty)
       returns (RemoteDesktopCapabilities);
   rpc GetRemoteDesktopSettings(google.protobuf.Empty)
@@ -209,6 +222,14 @@ message GetStateRequest {
   string query = 5;
   string label_id = 6;
   int32 limit = 7;
+  // all_projects requests the daemon-wide active metadata directory in one
+  // bounded RPC. Native clients use it for inactive machines instead of
+  // issuing one GetState request per project.
+  bool all_projects = 8;
+  // When this cursor still matches the daemon, an all_projects response may
+  // omit metadata and set not_modified. The epoch prevents a compacted sync
+  // journal from making an old sequence look current.
+  SyncCursor if_not_modified = 9;
 }
 
 message WatchStateRequest {
@@ -223,6 +244,8 @@ message State {
   repeated Board boards = 4;
   repeated Card cards = 5;
   repeated Card chats = 6;
+  SyncCursor cursor = 7;
+  bool not_modified = 8;
 }
 
 message SyncCursor {
@@ -1315,6 +1338,114 @@ message ResizeTerminalRequest {
 message RenameTerminalRequest {
   string terminal_id = 1;
   string name = 2;
+}
+
+enum ExecutionStream {
+  EXECUTION_STREAM_UNSPECIFIED = 0;
+  EXECUTION_STREAM_STDOUT = 1;
+  EXECUTION_STREAM_STDERR = 2;
+  EXECUTION_STREAM_PTY = 3;
+  EXECUTION_STREAM_STATE = 4;
+}
+
+enum ExecutionSignal {
+  EXECUTION_SIGNAL_UNSPECIFIED = 0;
+  EXECUTION_SIGNAL_INTERRUPT = 1;
+  EXECUTION_SIGNAL_TERMINATE = 2;
+  EXECUTION_SIGNAL_KILL = 3;
+  EXECUTION_SIGNAL_HANGUP = 4;
+}
+
+message Execution {
+  string id = 1;
+  string project_id = 2;
+  string card_id = 3;
+  string name = 4;
+  repeated string argv = 5;
+  string working_directory = 6;
+  string status = 7;
+  int64 pid = 8;
+  bool pty = 9;
+  int32 columns = 10;
+  int32 rows = 11;
+  uint64 sequence = 12;
+  string created_at = 13;
+  string started_at = 14;
+  string updated_at = 15;
+  string completed_at = 16;
+  optional int32 exit_code = 17;
+  string exit_signal = 18;
+  string error = 19;
+  string idempotency_key = 20;
+  uint64 stdout_bytes = 21;
+  uint64 stderr_bytes = 22;
+  bool output_truncated = 23;
+  uint64 truncated_before_sequence = 24;
+  int64 timeout_ms = 25;
+}
+
+message ExecutionRef {
+  string execution_id = 1;
+}
+
+message ListExecutionsRequest {
+  string project_id = 1;
+  string card_id = 2;
+  string status = 3;
+}
+
+message ExecutionsResponse {
+  repeated Execution executions = 1;
+}
+
+message StartExecutionRequest {
+  string project_id = 1;
+  string card_id = 2;
+  string name = 3;
+  repeated string argv = 4;
+  string working_directory = 5;
+  map<string, string> environment = 6;
+  bytes stdin = 7;
+  bool stdin_eof = 8;
+  int64 timeout_ms = 9;
+  string idempotency_key = 10;
+  bool pty = 11;
+  int32 columns = 12;
+  int32 rows = 13;
+  int64 max_output_bytes = 14;
+}
+
+message WatchExecutionRequest {
+  string execution_id = 1;
+  uint64 after_sequence = 2;
+  int32 heartbeat_ms = 3;
+}
+
+message ExecutionEvent {
+  Execution execution = 1;
+  uint64 sequence = 2;
+  ExecutionStream stream = 3;
+  bytes data = 4;
+  bool reset = 5;
+  bool heartbeat = 6;
+  bool eof = 7;
+}
+
+message ExecutionInputRequest {
+  string execution_id = 1;
+  bytes data = 2;
+  bool eof = 3;
+}
+
+message SignalExecutionRequest {
+  string execution_id = 1;
+  ExecutionSignal signal = 2;
+}
+
+message ResizeExecutionRequest {
+  string execution_id = 1;
+  int32 columns = 2;
+  int32 rows = 3;
 }
 
 message RemoteDesktopCapabilities {

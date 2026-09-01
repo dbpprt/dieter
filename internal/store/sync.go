@@ -119,7 +119,7 @@ func (s *Store) appendSyncEvent(event SyncEvent) error {
 // lock is held. A pending record is durable before any domain write begins.
 // On a process crash readers treat it as an invalidation, and the next writer
 // commits it before allocating another sequence.
-func (s *Store) prepareSyncMutation() (*SyncEvent, error) {
+func (s *Store) prepareSyncMutation(kind ...string) (*SyncEvent, error) {
 	if _, err := s.ensureSyncEpoch(); err != nil {
 		return nil, err
 	}
@@ -143,7 +143,11 @@ func (s *Store) prepareSyncMutation() (*SyncEvent, error) {
 			return nil, err
 		}
 	}
-	event := &SyncEvent{Sequence: highwater + 1, Kind: "store_changed", CreatedAt: timestamp()}
+	eventKind := "store_changed"
+	if len(kind) > 0 && strings.TrimSpace(kind[0]) != "" {
+		eventKind = strings.TrimSpace(kind[0])
+	}
+	event := &SyncEvent{Sequence: highwater + 1, Kind: eventKind, CreatedAt: timestamp()}
 	// Publish the invalidation before changing domain files. This removes the
 	// post-mutation crash window. WatchSync waits for the writer lock to clear
 	// before materializing the corresponding projection.

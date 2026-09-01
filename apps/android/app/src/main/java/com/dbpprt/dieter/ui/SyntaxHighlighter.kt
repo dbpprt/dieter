@@ -15,6 +15,7 @@ import com.dbpprt.dieter.ui.theme.DieterCoral
 import com.dbpprt.dieter.ui.theme.DieterRunning
 
 internal const val MaxSyntaxHighlightCharacters = 200_000
+internal const val MaxEditableSyntaxHighlightCharacters = 20_000
 
 internal enum class CodeLanguage(val displayName: String) {
     PLAIN_TEXT("Plain text"),
@@ -112,7 +113,10 @@ internal fun syntaxRanges(
     }
 }
 
-internal class CodeSyntaxVisualTransformation(path: String) : VisualTransformation {
+internal class CodeSyntaxVisualTransformation(
+    path: String,
+    private val characterLimit: Int = MaxSyntaxHighlightCharacters,
+) : VisualTransformation {
     val language: CodeLanguage = codeLanguageForPath(path)
     private var cachedSource: String? = null
     private var cachedResult = AnnotatedString("")
@@ -120,7 +124,7 @@ internal class CodeSyntaxVisualTransformation(path: String) : VisualTransformati
     override fun filter(text: AnnotatedString): TransformedText {
         if (cachedSource != text.text) {
             cachedSource = text.text
-            cachedResult = highlightedText(text.text, language)
+            cachedResult = highlightedText(text.text, language, characterLimit)
         }
         return TransformedText(cachedResult, OffsetMapping.Identity)
     }
@@ -435,9 +439,9 @@ private fun inlineMarkdownRanges(source: String, start: Int, end: Int, ranges: M
     }
 }
 
-private fun highlightedText(source: String, language: CodeLanguage): AnnotatedString {
+private fun highlightedText(source: String, language: CodeLanguage, characterLimit: Int): AnnotatedString {
     val builder = AnnotatedString.Builder(source)
-    syntaxRanges(source, language).forEach { range ->
+    syntaxRanges(source, language, characterLimit).forEach { range ->
         builder.addStyle(styleFor(range.kind), range.start, range.end)
     }
     return builder.toAnnotatedString()

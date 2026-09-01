@@ -983,6 +983,123 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ListExecutions" metadata.
+        public enum ListExecutions: Sendable {
+            /// Request type for "ListExecutions".
+            public typealias Input = Dieter_V1_ListExecutionsRequest
+            /// Response type for "ListExecutions".
+            public typealias Output = Dieter_V1_ExecutionsResponse
+            /// Descriptor for "ListExecutions".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ListExecutions",
+                type: .unary
+            )
+        }
+        /// Namespace for "StartExecution" metadata.
+        public enum StartExecution: Sendable {
+            /// Request type for "StartExecution".
+            public typealias Input = Dieter_V1_StartExecutionRequest
+            /// Response type for "StartExecution".
+            public typealias Output = Dieter_V1_Execution
+            /// Descriptor for "StartExecution".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "StartExecution",
+                type: .unary
+            )
+        }
+        /// Namespace for "GetExecution" metadata.
+        public enum GetExecution: Sendable {
+            /// Request type for "GetExecution".
+            public typealias Input = Dieter_V1_ExecutionRef
+            /// Response type for "GetExecution".
+            public typealias Output = Dieter_V1_Execution
+            /// Descriptor for "GetExecution".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetExecution",
+                type: .unary
+            )
+        }
+        /// Namespace for "WatchExecution" metadata.
+        public enum WatchExecution: Sendable {
+            /// Request type for "WatchExecution".
+            public typealias Input = Dieter_V1_WatchExecutionRequest
+            /// Response type for "WatchExecution".
+            public typealias Output = Dieter_V1_ExecutionEvent
+            /// Descriptor for "WatchExecution".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "WatchExecution",
+                type: .serverStreaming
+            )
+        }
+        /// Namespace for "WriteExecutionInput" metadata.
+        public enum WriteExecutionInput: Sendable {
+            /// Request type for "WriteExecutionInput".
+            public typealias Input = Dieter_V1_ExecutionInputRequest
+            /// Response type for "WriteExecutionInput".
+            public typealias Output = Dieter_V1_Execution
+            /// Descriptor for "WriteExecutionInput".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "WriteExecutionInput",
+                type: .unary
+            )
+        }
+        /// Namespace for "SignalExecution" metadata.
+        public enum SignalExecution: Sendable {
+            /// Request type for "SignalExecution".
+            public typealias Input = Dieter_V1_SignalExecutionRequest
+            /// Response type for "SignalExecution".
+            public typealias Output = Dieter_V1_Execution
+            /// Descriptor for "SignalExecution".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "SignalExecution",
+                type: .unary
+            )
+        }
+        /// Namespace for "ResizeExecution" metadata.
+        public enum ResizeExecution: Sendable {
+            /// Request type for "ResizeExecution".
+            public typealias Input = Dieter_V1_ResizeExecutionRequest
+            /// Response type for "ResizeExecution".
+            public typealias Output = Dieter_V1_Execution
+            /// Descriptor for "ResizeExecution".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ResizeExecution",
+                type: .unary
+            )
+        }
+        /// Namespace for "CancelExecution" metadata.
+        public enum CancelExecution: Sendable {
+            /// Request type for "CancelExecution".
+            public typealias Input = Dieter_V1_ExecutionRef
+            /// Response type for "CancelExecution".
+            public typealias Output = Dieter_V1_Execution
+            /// Descriptor for "CancelExecution".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "CancelExecution",
+                type: .unary
+            )
+        }
+        /// Namespace for "CloseExecution" metadata.
+        public enum CloseExecution: Sendable {
+            /// Request type for "CloseExecution".
+            public typealias Input = Dieter_V1_ExecutionRef
+            /// Response type for "CloseExecution".
+            public typealias Output = SwiftProtobuf.Google_Protobuf_Empty
+            /// Descriptor for "CloseExecution".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "CloseExecution",
+                type: .unary
+            )
+        }
         /// Namespace for "GetRemoteDesktopCapabilities" metadata.
         public enum GetRemoteDesktopCapabilities: Sendable {
             /// Request type for "GetRemoteDesktopCapabilities".
@@ -1241,6 +1358,15 @@ public enum Dieter_V1_DieterService: Sendable {
             ResizeTerminal.descriptor,
             RenameTerminal.descriptor,
             CloseTerminal.descriptor,
+            ListExecutions.descriptor,
+            StartExecution.descriptor,
+            GetExecution.descriptor,
+            WatchExecution.descriptor,
+            WriteExecutionInput.descriptor,
+            SignalExecution.descriptor,
+            ResizeExecution.descriptor,
+            CancelExecution.descriptor,
+            CloseExecution.descriptor,
             GetRemoteDesktopCapabilities.descriptor,
             GetRemoteDesktopSettings.descriptor,
             UpdateRemoteDesktopSettings.descriptor,
@@ -2702,6 +2828,183 @@ extension Dieter_V1_DieterService {
         func closeTerminal<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_TerminalRef>,
             serializer: some GRPCCore.MessageSerializer<Dieter_V1_TerminalRef>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ListExecutions" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Remote executions are agent-oriented command sessions. They preserve
+        /// > stdout/stderr boundaries, explicit exit state, idempotent admission, and
+        /// > resumable output independently from any client watch stream.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListExecutionsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListExecutionsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ExecutionsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func listExecutions<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListExecutionsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListExecutionsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ExecutionsResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ExecutionsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "StartExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_StartExecutionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_StartExecutionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func startExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_StartExecutionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_StartExecutionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "GetExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ExecutionRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ExecutionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WatchExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_WatchExecutionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_WatchExecutionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ExecutionEvent` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func watchExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_WatchExecutionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchExecutionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ExecutionEvent>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ExecutionEvent>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "WriteExecutionInput" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ExecutionInputRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ExecutionInputRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func writeExecutionInput<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ExecutionInputRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ExecutionInputRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SignalExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SignalExecutionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SignalExecutionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func signalExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SignalExecutionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SignalExecutionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ResizeExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ResizeExecutionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ResizeExecutionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func resizeExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ResizeExecutionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ResizeExecutionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CancelExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ExecutionRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func cancelExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ExecutionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "CloseExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ExecutionRef` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func closeExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ExecutionRef>,
             deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result
@@ -5227,6 +5530,280 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "ListExecutions" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Remote executions are agent-oriented command sessions. They preserve
+        /// > stdout/stderr boundaries, explicit exit state, idempotent admission, and
+        /// > resumable output independently from any client watch stream.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ListExecutionsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ListExecutionsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ExecutionsResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func listExecutions<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ListExecutionsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ListExecutionsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ExecutionsResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ExecutionsResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ListExecutions.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "StartExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_StartExecutionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_StartExecutionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func startExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_StartExecutionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_StartExecutionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.StartExecution.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "GetExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ExecutionRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ExecutionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetExecution.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WatchExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_WatchExecutionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_WatchExecutionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ExecutionEvent` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func watchExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_WatchExecutionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchExecutionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ExecutionEvent>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ExecutionEvent>) async throws -> Result
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.serverStreaming(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.WatchExecution.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "WriteExecutionInput" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ExecutionInputRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ExecutionInputRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func writeExecutionInput<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ExecutionInputRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ExecutionInputRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.WriteExecutionInput.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SignalExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SignalExecutionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SignalExecutionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func signalExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SignalExecutionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SignalExecutionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.SignalExecution.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ResizeExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ResizeExecutionRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ResizeExecutionRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func resizeExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ResizeExecutionRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ResizeExecutionRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ResizeExecution.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CancelExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ExecutionRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Execution` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func cancelExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ExecutionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Execution>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.CancelExecution.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "CloseExecution" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_ExecutionRef` messages.
+        ///   - deserializer: A deserializer for `SwiftProtobuf.Google_Protobuf_Empty` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func closeExecution<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ExecutionRef>,
+            deserializer: some GRPCCore.MessageDeserializer<SwiftProtobuf.Google_Protobuf_Empty>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.CloseExecution.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "GetRemoteDesktopCapabilities" method.
         ///
         /// - Parameters:
@@ -7511,6 +8088,235 @@ extension Dieter_V1_DieterService.ClientProtocol {
         try await self.closeTerminal(
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_TerminalRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListExecutions" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Remote executions are agent-oriented command sessions. They preserve
+    /// > stdout/stderr boundaries, explicit exit state, idempotent admission, and
+    /// > resumable output independently from any client watch stream.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ListExecutionsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listExecutions<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ListExecutionsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ExecutionsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.listExecutions(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ListExecutionsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ExecutionsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartExecution" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_StartExecutionRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startExecution<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_StartExecutionRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.startExecution(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_StartExecutionRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Execution>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetExecution" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getExecution<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getExecution(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ExecutionRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Execution>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchExecution" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_WatchExecutionRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchExecution<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_WatchExecutionRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ExecutionEvent>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        try await self.watchExecution(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_WatchExecutionRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ExecutionEvent>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WriteExecutionInput" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ExecutionInputRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func writeExecutionInput<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ExecutionInputRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.writeExecutionInput(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ExecutionInputRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Execution>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SignalExecution" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_SignalExecutionRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func signalExecution<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_SignalExecutionRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.signalExecution(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SignalExecutionRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Execution>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResizeExecution" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ResizeExecutionRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resizeExecution<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ResizeExecutionRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.resizeExecution(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ResizeExecutionRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Execution>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CancelExecution" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func cancelExecution<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.cancelExecution(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ExecutionRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Execution>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CloseExecution" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ExecutionRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func closeExecution<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.closeExecution(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ExecutionRef>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<SwiftProtobuf.Google_Protobuf_Empty>(),
             options: options,
             onResponse: handleResponse
@@ -10026,6 +10832,271 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.closeTerminal(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ListExecutions" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Remote executions are agent-oriented command sessions. They preserve
+    /// > stdout/stderr boundaries, explicit exit state, idempotent admission, and
+    /// > resumable output independently from any client watch stream.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func listExecutions<Result>(
+        _ message: Dieter_V1_ListExecutionsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ExecutionsResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ListExecutionsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.listExecutions(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "StartExecution" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func startExecution<Result>(
+        _ message: Dieter_V1_StartExecutionRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_StartExecutionRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.startExecution(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetExecution" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getExecution<Result>(
+        _ message: Dieter_V1_ExecutionRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getExecution(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WatchExecution" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func watchExecution<Result>(
+        _ message: Dieter_V1_WatchExecutionRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ExecutionEvent>) async throws -> Result
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_WatchExecutionRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.watchExecution(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "WriteExecutionInput" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func writeExecutionInput<Result>(
+        _ message: Dieter_V1_ExecutionInputRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ExecutionInputRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.writeExecutionInput(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SignalExecution" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func signalExecution<Result>(
+        _ message: Dieter_V1_SignalExecutionRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_SignalExecutionRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.signalExecution(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResizeExecution" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resizeExecution<Result>(
+        _ message: Dieter_V1_ResizeExecutionRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ResizeExecutionRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.resizeExecution(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CancelExecution" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func cancelExecution<Result>(
+        _ message: Dieter_V1_ExecutionRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Execution>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.cancelExecution(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "CloseExecution" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func closeExecution<Result>(
+        _ message: Dieter_V1_ExecutionRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<SwiftProtobuf.Google_Protobuf_Empty>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ExecutionRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.closeExecution(
             request: request,
             options: options,
             onResponse: handleResponse

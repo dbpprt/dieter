@@ -89,6 +89,8 @@ func (c *CLI) runDaemonCommand(args []string) (bool, error) {
 		return true, c.rpcFile(args[1:])
 	case "terminal", "terminals":
 		return true, c.rpcTerminal(args[1:])
+	case "remote":
+		return true, c.rpcRemote(args[1:])
 	case "screen", "screens":
 		return true, c.rpcScreen(args[1:])
 	case "watch":
@@ -123,7 +125,7 @@ func (c *CLI) daemonBackedStatus(args []string) error {
 	if err != nil {
 		return err
 	}
-	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{})
+	state, err := client.GetState(rpcCtx, &dieterv1.GetStateRequest{AllProjects: true})
 	if err != nil {
 		return err
 	}

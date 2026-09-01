@@ -185,15 +185,15 @@ struct DieterSyncCheckpoint: Sendable {
 }
 
 enum DieterSyncProjectionCache {
-    /// A directory poll is a fresh full metadata read, not a continuation of
-    /// the machine's WatchSync stream. Its snapshot must therefore never keep
-    /// the old stream cursor.
+    /// A directory poll is a fresh daemon-wide metadata read. Its response
+    /// cursor can be reused for conditional inactive-machine refreshes.
     static func replacingMetadata(
         in projection: DieterSyncProjection,
         projects: [Dieter_V1_Project],
         boards: [Dieter_V1_Board],
         cards: [Dieter_V1_Card],
-        chats: [Dieter_V1_Card]
+        chats: [Dieter_V1_Card],
+        cursor: Data? = nil
     ) -> DieterSyncProjection {
         var snapshot = projection.snapshot
             .flatMap { try? Dieter_V1_GlobalSnapshot(serializedBytes: $0) }
@@ -205,7 +205,7 @@ enum DieterSyncProjectionCache {
         snapshot.schedules = []
         snapshot.scheduleRuns = []
         return DieterSyncProjection(
-            cursor: nil,
+            cursor: cursor,
             snapshot: try? snapshot.serializedData(),
             refreshedAt: projection.refreshedAt
         )

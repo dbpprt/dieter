@@ -45,16 +45,30 @@ data class CachedMachineDirectory(
 /** Atomic, disposable native projection plus the durable client outbox. */
 class DieterSyncStore(
     context: Context,
-    root: File = File(context.filesDir, "global-sync"),
+    root: File? = null,
 ) {
-    private val root = root.apply { mkdirs() }
-    private val outboxFile = AtomicFile(File(root, "outbox.json"))
-    private val preferences = context.getSharedPreferences("dieter_sync", Context.MODE_PRIVATE)
+    // Construction happens while the application graph is being created on the UI thread.
+    // Directory creation and SharedPreferences reads are intentionally deferred until the
+    // connection manager's IO dispatcher first needs them.
+    private val appContext = context.applicationContext
+    private val root by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        root ?: File(appContext.filesDir, "global-sync")
+    }
+    private val outboxFile by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AtomicFile(File(this.root, "outbox.json"))
+    }
+    private val preferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        appContext.getSharedPreferences("dieter_sync", Context.MODE_PRIVATE)
+    }
 
-    val clientId: String = preferences.getString("client_id", null)?.takeIf(String::isNotBlank)
-        ?: "android_${UUID.randomUUID().toString().lowercase()}".also {
-            preferences.edit().putString("client_id", it).commit()
-        }
+    val clientId: String by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        preferences.getString("client_id", null)?.takeIf(String::isNotBlank)
+            ?: "android_${UUID.randomUUID().toString().lowercase()}".also {
+                check(preferences.edit().putString("client_id", it).commit()) {
+                    "Unable to persist the Android sync client ID"
+                }
+            }
+    }
 
     @Synchronized
     fun loadSnapshot(scope: String): GlobalSnapshot? = read(projectionFile(scope, "snapshot.pb"))
@@ -192,6 +206,9 @@ class DieterSyncStore(
     }
 
     private fun write(file: AtomicFile, data: ByteArray) {
+        check(file.baseFile.parentFile?.let { it.isDirectory || it.mkdirs() } != false) {
+            "Unable to create sync storage directory"
+        }
         val output = file.startWrite()
         try {
             output.write(data)

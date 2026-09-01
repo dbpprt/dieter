@@ -13,9 +13,6 @@ struct DieterMacApp: App {
     @AppStorage(DieterIslandPreferences.enabledKey, store: DieterAppearance.applicationDefaults())
     private var islandEnabled = DieterIslandPreferences.defaultEnabled
 
-    private var appearance: DieterAppearance { DieterAppearance.resolve(appearanceValue) }
-    private var palette: DieterPalette { DieterPalette.resolve(paletteValue) }
-
     init() {
         let store = DieterStore()
         _store = State(initialValue: store)
@@ -27,17 +24,29 @@ struct DieterMacApp: App {
         WindowGroup("Dieter") {
             DieterRootView()
                 .environment(store)
-                .id(paletteValue)
-                .dieterThemeRoot(palette: palette)
-                .preferredColorScheme(appearance.colorScheme)
+                .dieterThemeRoot(
+                    palette: store.themeSelection.palette,
+                    appearance: store.themeSelection.appearance
+                )
+                .preferredColorScheme(store.themeSelection.appearance.colorScheme)
                 .onAppear {
+                    store.themeSelection = DieterThemeSelection(
+                        appearance: DieterAppearance.resolve(appearanceValue),
+                        palette: DieterPalette.resolve(paletteValue)
+                    )
                     let selected = DieterPalette.resolve(paletteValue)
                     if paletteValue != selected.rawValue { paletteValue = selected.rawValue }
                     DieterAppIcon.apply(selected)
                     islandController.start(enabled: islandEnabled)
                 }
+                .onChange(of: appearanceValue) { _, value in
+                    store.themeSelection.appearance = DieterAppearance.resolve(value)
+                }
                 .onChange(of: paletteValue) { _, value in
-                    DieterAppIcon.apply(DieterPalette.resolve(value))
+                    store.themeSelection.palette = DieterPalette.resolve(value)
+                }
+                .onChange(of: store.themeSelection.palette) { _, palette in
+                    DieterAppIcon.apply(palette)
                 }
                 .onChange(of: islandEnabled) { _, enabled in
                     islandController.setEnabled(enabled)
@@ -189,10 +198,6 @@ enum MenuBarIcon {
 
 struct MenuBarContent: View {
     @Environment(DieterStore.self) private var store
-    @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
-    private var appearanceValue = DieterAppearance.defaultValue.rawValue
-    @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
-    private var paletteValue = DieterPalette.defaultValue.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -223,9 +228,11 @@ struct MenuBarContent: View {
         .padding(16)
         .frame(width: 384)
         .background(DieterTheme.background)
-        .id(paletteValue)
-        .dieterThemeRoot(palette: DieterPalette.resolve(paletteValue))
-        .preferredColorScheme(DieterAppearance.resolve(appearanceValue).colorScheme)
+        .dieterThemeRoot(
+            palette: store.themeSelection.palette,
+            appearance: store.themeSelection.appearance
+        )
+        .preferredColorScheme(store.themeSelection.appearance.colorScheme)
     }
 
     private var header: some View {

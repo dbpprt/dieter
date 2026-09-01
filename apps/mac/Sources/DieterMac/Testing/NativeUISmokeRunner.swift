@@ -196,6 +196,16 @@ enum NativeUISmokeRunner {
         try? await DieterTaskSleep.milliseconds(500)
         capture(window, to: output.appending(path: "01-board-oldest-first.png"))
         results["board-lane-sort-toggle"] = "dispatched for visual verification"
+        if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
+            let boardCards = store.state.cards.filter { $0.boardID == board.id }
+            let largestLane = Dictionary(grouping: boardCards, by: \.lane).values.map(\.count).max() ?? 0
+            results["board-stress-total-cards"] = boardCards.count == 78
+                ? "passed"
+                : "failed: expected 78 cards, received \(boardCards.count)"
+            results["board-stress-largest-lane"] = largestLane == 65
+                ? "passed"
+                : "failed: expected 65 cards, received \(largestLane)"
+        }
         if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
             writeReport(results, to: output)
             NSApp.terminate(nil)
@@ -326,14 +336,31 @@ enum NativeUISmokeRunner {
         results["09-settings-general"] = store.section == .settings ? "passed" : "failed: settings did not open"
         await captureAppearances(window, named: "09-settings-general.png", in: output)
 
-        appearanceDefaults.set(DieterAppearance.light.rawValue, forKey: DieterAppearance.storageKey)
+        click(window: window, x: 920, distanceFromTop: 196)
         try? await DieterTaskSleep.milliseconds(700)
         let storedAppearance = DieterAppearance.resolve(appearanceDefaults.string(forKey: DieterAppearance.storageKey))
         let effectiveAppearance = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
-        results["09b-settings-light-appearance"] = storedAppearance == .light && effectiveAppearance == .aqua
+        results["09b-settings-light-appearance"] = storedAppearance == .light
+            && store.themeSelection.appearance == .light
+            && effectiveAppearance == .aqua
             ? "passed"
-            : "failed: stored=\(storedAppearance.rawValue), effective=\(effectiveAppearance?.rawValue ?? "unknown")"
+            : "failed: stored=\(storedAppearance.rawValue), live=\(store.themeSelection.appearance.rawValue), effective=\(effectiveAppearance?.rawValue ?? "unknown")"
         await captureAppearances(window, named: "09b-settings-light-appearance.png", in: output)
+
+        click(window: window, x: 1_230, distanceFromTop: 376)
+        try? await DieterTaskSleep.milliseconds(700)
+        let storedPalette = DieterPalette.resolve(appearanceDefaults.string(forKey: DieterPalette.storageKey))
+        results["09c-settings-coral-design"] = storedPalette == .coralSignal
+            && store.themeSelection.palette == .coralSignal
+            ? "passed"
+            : "failed: stored=\(storedPalette.rawValue), live=\(store.themeSelection.palette.rawValue)"
+        await captureAppearances(window, named: "09c-settings-coral-design.png", in: output)
+
+        click(window: window, x: 600, distanceFromTop: 324)
+        try? await DieterTaskSleep.milliseconds(700)
+        results["09d-settings-monochrome-design"] = store.themeSelection.palette == .monochrome
+            ? "passed"
+            : "failed: live=\(store.themeSelection.palette.rawValue)"
 
         click(window: window, x: 320, distanceFromTop: 151)
         try? await DieterTaskSleep.milliseconds(700)

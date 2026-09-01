@@ -327,6 +327,7 @@ func relayMethodPriority(method string) bool {
 		!strings.HasSuffix(method, "/WatchGitOperation") &&
 		!strings.HasSuffix(method, "/WatchState") &&
 		!strings.HasSuffix(method, "/WatchTerminal") &&
+		!strings.HasSuffix(method, "/WatchExecution") &&
 		!strings.HasSuffix(method, "/StartRemoteDesktop")
 }
 

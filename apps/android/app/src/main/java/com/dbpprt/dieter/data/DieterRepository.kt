@@ -301,7 +301,11 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     private var directRefreshAt: Long? = null
     private var configuredEndpoints = DIETER_ENDPOINTS
     private var selectedEndpoint = DIETER_ENDPOINTS.first()
-    private val credentials = DieterCredentialStore(appContext)
+    // AndroidKeyStore.load() may touch disk. Do it on first authenticated RPC, which all run
+    // on the connection manager's IO dispatcher, instead of during Activity construction.
+    private val credentials by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        DieterCredentialStore(appContext)
+    }
 
     override val endpoints: List<DieterEndpoint>
         get() = synchronized(lock) { configuredEndpoints }

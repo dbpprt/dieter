@@ -7,6 +7,7 @@ REPO_ROOT=$(CDPATH= cd -- "$APP_ROOT/../.." && pwd)
 CAPTURE_DIR="$APP_ROOT/.build/ui-smoke"
 APPEARANCE_SUITE="io.dieter.ui-smoke.$$.appearance"
 EXTRA_SMOKE_ARGUMENT=${DIETER_UI_SMOKE_EXTRA_ARGUMENT:-}
+GATEWAY_SMOKE_ARGUMENT=${DIETER_UI_SMOKE_GATEWAY_ARGUMENT:-}
 PORT=${DIETER_UI_SMOKE_PORT:-14245}
 ADDRESS="127.0.0.1:$PORT"
 ENDPOINT="http://$ADDRESS"
@@ -32,7 +33,7 @@ fi
 rm -rf "$CAPTURE_DIR"
 mkdir -p "$CAPTURE_DIR"
 (cd "$REPO_ROOT" && go build -o "$CAPTURE_DIR/isolated-gateway" ./scripts/isolated-gateway)
-"$CAPTURE_DIR/isolated-gateway" --addr "$ADDRESS" --home "$CAPTURE_DIR/fixture-home" --offline-trigger "$OFFLINE_TRIGGER" >"$CAPTURE_DIR/gateway.env" 2>"$CAPTURE_DIR/gateway.log" &
+"$CAPTURE_DIR/isolated-gateway" --addr "$ADDRESS" --home "$CAPTURE_DIR/fixture-home" --offline-trigger "$OFFLINE_TRIGGER" $GATEWAY_SMOKE_ARGUMENT >"$CAPTURE_DIR/gateway.env" 2>"$CAPTURE_DIR/gateway.log" &
 GATEWAY_PID=$!
 
 COUNT=0

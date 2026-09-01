@@ -79,7 +79,39 @@ func (api *grpcAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoard
 	return protoBoard(value), nil
 }
 
-func (api *grpcAPI) GetState(_ context.Context, request *dieterv1.GetStateRequest) (*dieterv1.State, error) {
+func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequest) (*dieterv1.State, error) {
+	if request.GetAllProjects() {
+		for {
+			if err := api.server.store.WaitForWriter(ctx); err != nil {
+				return nil, grpcFailure(err)
+			}
+			cursor, _, err := api.server.store.SyncEvents(0, 1)
+			if err != nil {
+				return nil, grpcFailure(err)
+			}
+			protoCursor := protoSyncCursor(cursor)
+			if unchanged := request.GetIfNotModified(); unchanged != nil &&
+				unchanged.GetEpoch() == protoCursor.GetEpoch() &&
+				unchanged.GetSequence() == protoCursor.GetSequence() &&
+				unchanged.GetProjectionVersion() == protoCursor.GetProjectionVersion() {
+				return &dieterv1.State{Cursor: protoCursor, NotModified: true}, nil
+			}
+			value, err := api.server.store.GlobalState()
+			if err != nil {
+				return nil, grpcFailure(err)
+			}
+			after, _, err := api.server.store.SyncEvents(0, 1)
+			if err != nil {
+				return nil, grpcFailure(err)
+			}
+			if after != cursor {
+				continue
+			}
+			result := protoState(value)
+			result.Cursor = protoCursor
+			return result, nil
+		}
+	}
 	value, err := api.server.store.State(request.GetProjectId(), store.CardFilter{
 		Board: request.GetBoardId(), Lane: request.GetLane(), Runtime: request.GetRuntime(),
 		Query: request.GetQuery(), Label: request.GetLabelId(), Limit: int(request.GetLimit()),

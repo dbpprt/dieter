@@ -120,7 +120,7 @@ func (s *Store) enrichProjects(projects []model.Project) ([]model.Project, error
 	if boardErr != nil {
 		return nil, boardErr
 	}
-	cards, cardErr := s.listCards()
+	cards, cardErr := s.listCards(false)
 	if cardErr != nil {
 		return nil, cardErr
 	}
@@ -631,7 +631,7 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, err
 	}
 	defer release()
-	if _, err := os.Stat(filepath.Join(s.cardDir(), input.ID+".md")); err == nil {
+	if s.cardExists(input.ID) {
 		return model.Card{}, fmt.Errorf("card already exists")
 	}
 	existing, _ := s.ListCards(CardFilter{Board: board.ID, Lane: canonicalLane(board, lane)})
@@ -667,7 +667,7 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 		return model.Card{}, err
 	}
 	defer release()
-	if _, err := os.Stat(filepath.Join(s.cardDir(), input.ID+".md")); err == nil {
+	if s.cardExists(input.ID) {
 		return model.Card{}, errors.New("chat already exists")
 	}
 	existing, _ := s.ListCards(CardFilter{Project: project.ID, Scope: model.ConversationScopeChat})
@@ -683,10 +683,48 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
 }
 
-func (s *Store) listCards() ([]model.Card, error) {
+func (s *Store) cardExists(id string) bool {
+	for _, dir := range []string{s.cardDir(), s.archivedCardDir()} {
+		if _, err := os.Stat(filepath.Join(dir, id+".md")); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Store) migrateArchivedCards() error {
+	paths, err := listMarkdown(s.cardDir())
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		var item model.Card
+		_, readErr := readMarkdown(path, &item)
+		if readErr != nil {
+			return readErr
+		}
+		if !item.Archived {
+			continue
+		}
+		target := filepath.Join(s.archivedCardDir(), filepath.Base(path))
+		if err := os.Rename(path, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) listCards(includeArchived bool) ([]model.Card, error) {
 	paths, err := listMarkdown(s.cardDir())
 	if err != nil {
 		return nil, err
+	}
+	if includeArchived {
+		archived, archivedErr := listMarkdown(s.archivedCardDir())
+		if archivedErr != nil {
+			return nil, archivedErr
+		}
+		paths = append(paths, archived...)
 	}
 	result := make([]model.Card, 0, len(paths))
 	for _, path := range paths {
@@ -727,7 +765,9 @@ func (s *Store) listCards() ([]model.Card, error) {
 				BaseSHA: pullRequest.BaseSHA, UpdatedAt: pullRequest.LastSyncedAt,
 			}
 		}
-		comments, _ := s.ListComments(item.ID, 0)
+		// Directory projections need only the badge count. Avoid decoding every
+		// comment body on every sync mutation as histories grow.
+		comments, _ := listMarkdown(filepath.Join(s.commentDir(), item.ID))
 		item.CommentCount = len(comments)
 		result = append(result, item)
 	}
@@ -762,7 +802,7 @@ func (s *Store) ListCards(filter CardFilter) ([]model.Card, error) {
 			}
 		}
 	}
-	items, err := s.listCards()
+	items, err := s.listCards(filter.IncludeArchived)
 	if err != nil {
 		return nil, err
 	}
@@ -974,7 +1014,7 @@ func (s *Store) SetCardLabels(cardRef string, requested []string) (model.Card, e
 }
 
 func (s *Store) ResolveCard(ref string) (model.Card, error) {
-	items, err := s.listCards()
+	items, err := s.listCards(true)
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -987,7 +1027,18 @@ func (s *Store) ResolveCard(ref string) (model.Card, error) {
 }
 
 func (s *Store) writeCard(item model.Card) error {
-	return writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
+	targetDir, staleDir := s.cardDir(), s.archivedCardDir()
+	if item.Archived {
+		targetDir, staleDir = staleDir, targetDir
+	}
+	if err := writeMarkdown(filepath.Join(targetDir, item.ID+".md"), item, item.InitialPrompt); err != nil {
+		return err
+	}
+	err := os.Remove(filepath.Join(staleDir, item.ID+".md"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (s *Store) MoveCard(ref, lane string, position *int64) (model.Card, error) {
@@ -1292,7 +1343,7 @@ func (s *Store) doneCardsEligibleForArchive(now time.Time, activeCards map[strin
 	if len(delays) == 0 {
 		return []model.Card{}, nil
 	}
-	cards, err := s.listCards()
+	cards, err := s.listCards(false)
 	if err != nil {
 		return nil, err
 	}
@@ -1423,6 +1474,60 @@ func (s *Store) State(projectRef string, filter CardFilter) (model.State, error)
 // every call rescanned every project, board, card, and comment, making one
 // daemon-wide delta quadratic in the number of projects.
 func (s *Store) GlobalState() (model.State, error) {
+	// A single Store backs every daemon client. Serialize projection builds so
+	// simultaneous watchers share the same O(P+B+C) directory scan instead of
+	// multiplying it by the number of connected clients.
+	for {
+		s.globalStateMu.Lock()
+		cursor, cacheable, err := s.globalStateCacheCursor()
+		if err != nil {
+			s.globalStateMu.Unlock()
+			return model.State{}, err
+		}
+		if cacheable && s.globalStateSnapshot != nil && s.globalStateCursor == cursor {
+			result := cloneState(*s.globalStateSnapshot)
+			s.globalStateMu.Unlock()
+			return result, nil
+		}
+		result, err := s.materializeGlobalState()
+		if err != nil {
+			s.globalStateMu.Unlock()
+			return model.State{}, err
+		}
+		after, stable, err := s.globalStateCacheCursor()
+		if err != nil {
+			s.globalStateMu.Unlock()
+			return model.State{}, err
+		}
+		if cacheable && stable && cursor == after {
+			cached := cloneState(result)
+			s.globalStateCursor = cursor
+			s.globalStateSnapshot = &cached
+			s.globalStateMu.Unlock()
+			return result, nil
+		}
+		s.globalStateMu.Unlock()
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
+func (s *Store) globalStateCacheCursor() (SyncCursor, bool, error) {
+	epoch, err := s.ensureSyncEpoch()
+	if err != nil {
+		return SyncCursor{}, false, err
+	}
+	highwater, err := s.syncHighwater()
+	if err != nil {
+		return SyncCursor{}, false, err
+	}
+	pending, err := s.readPendingSyncEvent()
+	if err != nil {
+		return SyncCursor{}, false, err
+	}
+	return SyncCursor{Epoch: epoch, Sequence: highwater}, pending == nil, nil
+}
+
+func (s *Store) materializeGlobalState() (model.State, error) {
 	projects, err := s.listProjects()
 	if err != nil {
 		return model.State{}, err
@@ -1431,7 +1536,7 @@ func (s *Store) GlobalState() (model.State, error) {
 	if err != nil {
 		return model.State{}, err
 	}
-	cards, err := s.listCards()
+	cards, err := s.listCards(false)
 	if err != nil {
 		return model.State{}, err
 	}
@@ -1489,4 +1594,17 @@ func (s *Store) GlobalState() (model.State, error) {
 		result.Chats = append(result.Chats, projectChats...)
 	}
 	return result, nil
+}
+
+func cloneState(value model.State) model.State {
+	result := value
+	result.Projects = append([]model.Project(nil), value.Projects...)
+	result.Boards = append([]model.Board(nil), value.Boards...)
+	result.Cards = append([]model.Card(nil), value.Cards...)
+	result.Chats = append([]model.Card(nil), value.Chats...)
+	if value.Project != nil {
+		project := *value.Project
+		result.Project = &project
+	}
+	return result
 }

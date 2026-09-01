@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import DieterAPI
 import Foundation
+import Observation
 import SwiftUI
 import Testing
 @testable import DieterMac
@@ -67,6 +68,23 @@ struct DieterThemePerformanceTests {
         }
     }
 
+    @Test @MainActor func installingANewThemeInvalidatesExistingColorConsumers() async {
+        defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+        DieterTheme.install(palette: .monochrome, colorScheme: .light)
+        let (changes, continuation) = AsyncStream<Void>.makeStream()
+
+        withObservationTracking {
+            _ = DieterTheme.background
+        } onChange: {
+            continuation.yield()
+        }
+        DieterTheme.install(palette: .coralSignal, colorScheme: .dark)
+
+        var iterator = changes.makeAsyncIterator()
+        #expect(await iterator.next() != nil)
+        continuation.finish()
+    }
+
     @Test @MainActor func productionChatListWithManyRunningRowsSettlesInAHostedView() throws {
         let fixture = makeProductionChatListFixture()
         let view = NSHostingView(rootView: productionChatList(store: fixture.store))
@@ -86,6 +104,41 @@ struct DieterThemePerformanceTests {
         let accessibilityStart = ContinuousClock.now
         _ = view.accessibilityChildren()
         #expect(accessibilityStart.duration(to: .now) < .seconds(2))
+    }
+
+    @Test @MainActor func productionBoardWithSixtyFiveCardLaneSettlesInAHostedView() throws {
+        let fixture = makeProductionBoardFixture()
+        let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
+        view.frame = NSRect(x: 0, y: 0, width: 1_380, height: 870)
+        defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+
+        let start = ContinuousClock.now
+        for _ in 0..<20 {
+            view.needsLayout = true
+            view.layoutSubtreeIfNeeded()
+        }
+        let elapsed = start.duration(to: .now)
+
+        #expect(fixture.total == 78)
+        #expect(fixture.largestLane == 65)
+        #expect(elapsed < .seconds(5))
+        let accessibilityStart = ContinuousClock.now
+        _ = view.accessibilityChildren()
+        #expect(accessibilityStart.duration(to: .now) < .seconds(2))
+    }
+
+    @Test func productionBoardLaneRetainsTheEagerStackWorkaround() throws {
+        let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/BoardView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let start = try #require(source.range(of: "struct LaneColumn: View"))
+        let end = try #require(source.range(
+            of: "private struct LaneInsertionTarget: View",
+            range: start.upperBound..<source.endIndex
+        ))
+        let implementation = source[start.lowerBound..<end.lowerBound]
+
+        #expect(implementation.contains("VStack(spacing: 0)"))
+        #expect(!implementation.contains("LazyVStack"))
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_RUN_LIVE_WINDOW_SMOKE"] == "1"))
@@ -208,8 +261,97 @@ struct DieterThemePerformanceTests {
     }
 
     @MainActor
+    private func makeProductionBoardFixture() -> (
+        store: DieterStore,
+        board: Dieter_V1_Board,
+        total: Int,
+        largestLane: Int
+    ) {
+        let store = DieterStore(restoreSync: false)
+        var project = Dieter_V1_Project()
+        project.id = "project-board-performance"
+        project.name = "Board performance fixture"
+
+        var board = Dieter_V1_Board()
+        board.id = "board-performance"
+        board.projectID = project.id
+        board.name = "Board performance fixture"
+        let laneCounts = [65, 5, 4, 4]
+        let laneIDs = ["todo", "running", "review", "done"]
+        board.lanes = zip(laneIDs, ["Todo", "Running", "Review", "Done"]).map { id, name in
+            var lane = Dieter_V1_Lane()
+            lane.id = id
+            lane.name = name
+            return lane
+        }
+        board.labels = (0..<3).map { index in
+            var label = Dieter_V1_Label()
+            label.id = "label-\(index)"
+            label.name = ["Mac", "Performance", "Gateway"][index]
+            label.color = ["#6558df", "#3b82f6", "#16a34a"][index]
+            return label
+        }
+
+        var cards: [Dieter_V1_Card] = []
+        for (laneIndex, laneID) in laneIDs.enumerated() {
+            for cardIndex in 0..<laneCounts[laneIndex] {
+                let globalIndex = cards.count
+                var card = Dieter_V1_Card()
+                card.id = "card-board-performance-\(globalIndex)"
+                card.projectID = project.id
+                card.boardID = board.id
+                card.lane = laneID
+                card.position = Int64(cardIndex + 1) * 1_024
+                card.title = globalIndex.isMultiple(of: 3)
+                    ? "Variable-height board card \(globalIndex) with a title that wraps across multiple lines"
+                    : "Board card \(globalIndex)"
+                card.summary = globalIndex.isMultiple(of: 2)
+                    ? "A mixed-content summary exercises the production card's variable-height text and menu graph."
+                    : ""
+                card.runtime = globalIndex.isMultiple(of: 7) ? "running" : "idle"
+                card.model = globalIndex.isMultiple(of: 4) ? "gpt-5" : ""
+                card.workspaceMode = globalIndex.isMultiple(of: 5) ? "worktree" : "project"
+                card.commentCount = globalIndex.isMultiple(of: 6) ? 2 : 0
+                if globalIndex.isMultiple(of: 3) {
+                    card.labelIds = [board.labels[globalIndex % board.labels.count].id]
+                }
+                if globalIndex.isMultiple(of: 11) {
+                    var subagent = Dieter_V1_Subagent()
+                    subagent.id = "subagent-\(globalIndex)"
+                    subagent.status = "running"
+                    subagent.name = "Fixture scout"
+                    card.activeSubagents = [subagent]
+                }
+                cards.append(card)
+            }
+        }
+
+        var state = Dieter_V1_State()
+        state.project = project
+        state.projects = [project]
+        state.boards = [board]
+        state.cards = cards
+        store.state = state
+        store.projectDirectory[project.id] = project
+        store.navigationBoards[project.id] = [board]
+        store.selectedProjectID = project.id
+        store.selectedBoardID = board.id
+        store.phase = .connected(version: "board-performance-fixture")
+        store.section = .board
+        return (store, board, cards.count, laneCounts.max() ?? 0)
+    }
+
+    @MainActor
     private func productionChatList(store: DieterStore) -> some View {
         ChatsView()
+            .environment(store)
+            .dieterThemeRoot(palette: .monochrome)
+            .preferredColorScheme(.dark)
+    }
+
+    @MainActor
+    private func productionBoard(store: DieterStore, board: Dieter_V1_Board) -> some View {
+        KanbanView(board: board)
             .environment(store)
             .dieterThemeRoot(palette: .monochrome)
             .preferredColorScheme(.dark)

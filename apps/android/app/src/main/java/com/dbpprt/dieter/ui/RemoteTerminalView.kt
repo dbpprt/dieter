@@ -3,6 +3,7 @@ package com.dbpprt.dieter.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.annotation.SuppressLint
 import android.graphics.Canvas
 import android.graphics.Typeface
 import android.os.Build
@@ -33,6 +34,7 @@ import kotlin.math.max
  * A native, remote-only terminal surface. Termux supplies the ANSI/VT emulator
  * and glyph renderer; all process ownership and I/O remain in the Dieter daemon.
  */
+@SuppressLint("ViewConstructor")
 class RemoteTerminalView(
     context: Context,
     palette: DieterPalette = DieterPalette.DEFAULT,
@@ -49,6 +51,7 @@ class RemoteTerminalView(
     private var appliedResetRevision = Long.MIN_VALUE
     private var topRow = 0
     private var controlArmed = false
+    private var singleTapDetected = false
     @Volatile private var cursorBlinkVisible = true
     @Volatile private var cursorBlinkTransitions = 0
     private var cursorBlinkRunning = false
@@ -126,8 +129,7 @@ class RemoteTerminalView(
         override fun onDown(event: MotionEvent): Boolean = true
 
         override fun onSingleTapUp(event: MotionEvent): Boolean {
-            requestFocus()
-            showKeyboard()
+            singleTapDetected = true
             return true
         }
 
@@ -257,7 +259,19 @@ class RemoteTerminalView(
         if (isVisible) startCursorBlinking() else stopCursorBlinking()
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean = gestures.onTouchEvent(event) || super.onTouchEvent(event)
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) singleTapDetected = false
+        val handled = gestures.onTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_UP && singleTapDetected) performClick()
+        return handled || super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        requestFocus()
+        showKeyboard()
+        return true
+    }
 
     override fun onCheckIsTextEditor(): Boolean = true
 

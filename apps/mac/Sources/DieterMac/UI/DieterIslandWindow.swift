@@ -86,21 +86,21 @@ final class DieterIslandPanel: NSPanel {
 }
 
 private struct DieterIslandThemeRoot<Content: View>: View {
-    @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
-    private var appearanceValue = DieterAppearance.defaultValue.rawValue
-    @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
-    private var paletteValue = DieterPalette.defaultValue.rawValue
+    let store: DieterStore
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(store: DieterStore, @ViewBuilder content: () -> Content) {
+        self.store = store
         self.content = content()
     }
 
     var body: some View {
         content
-            .id(paletteValue)
-            .dieterThemeRoot(palette: DieterPalette.resolve(paletteValue))
-            .preferredColorScheme(DieterAppearance.resolve(appearanceValue).colorScheme)
+            .dieterThemeRoot(
+                palette: store.themeSelection.palette,
+                appearance: store.themeSelection.appearance
+            )
+            .preferredColorScheme(store.themeSelection.appearance.colorScheme)
     }
 }
 
@@ -236,7 +236,7 @@ final class DieterIslandController: NSObject {
         if panel == nil {
             let panel = DieterIslandPanel(frame: newGeometry.windowFrame(expanded: false))
             panel.contentView = NSHostingView(
-                rootView: DieterIslandThemeRoot {
+                rootView: DieterIslandThemeRoot(store: store) {
                     DieterIslandView(
                         presentation: presentation,
                         onRequestExpansion: { [weak self] expanded in self?.setExpanded(expanded) }

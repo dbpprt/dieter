@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"testing"
@@ -454,6 +455,47 @@ func TestBoundedGlobalSyncReusesUnchangedConversationProjection(t *testing.T) {
 	}
 }
 
+func TestConversationChunkSyncReusesMetadataProjection(t *testing.T) {
+	data := store.New(t.TempDir())
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Streaming", Path: testRepository(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Long stream"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &grpcAPI{server: NewWithRunner(data, nil, &fakeRunner{})}
+	first, err := api.globalSnapshot(30, 8, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursor, _, err := data.SyncEvents(0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := data.AppendUIChunk(chat.ID, "turn", json.RawMessage(`{"type":"text","text":"chunk"}`)); err != nil {
+		t.Fatal(err)
+	}
+	_, events, err := data.SyncEvents(cursor.Sequence, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Kind != "conversation_changed" {
+		t.Fatalf("chunk events = %#v", events)
+	}
+	second, err := api.globalSnapshotReusingMetadata(30, 8, first, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(first.snapshot.GetState(), second.snapshot.GetState()) {
+		t.Fatal("conversation-only refresh rebuilt metadata")
+	}
+	if second.snapshot.GetConversations()[0].GetConversation().GetLastSeq() <= first.snapshot.GetConversations()[0].GetConversation().GetLastSeq() {
+		t.Fatal("conversation-only refresh did not advance the transcript")
+	}
+}
+
 func TestOnePassGlobalStateMatchesPerProjectProjection(t *testing.T) {
 	data := store.New(t.TempDir())
 	for _, name := range []string{"Alpha", "Beta"} {
@@ -501,5 +543,60 @@ func TestOnePassGlobalStateMatchesPerProjectProjection(t *testing.T) {
 	}
 	if !proto.Equal(expected, actual.snapshot.GetState()) {
 		t.Fatalf("one-pass state differs\nexpected=%v\nactual=%v", expected, actual.snapshot.GetState())
+	}
+}
+
+func TestGetStateAllProjectsSupportsConditionalDirectoryRefresh(t *testing.T) {
+	data := store.New(t.TempDir())
+	var firstProject model.Project
+	var firstBoard model.Board
+	for index, name := range []string{"Alpha", "Beta"} {
+		project, err := data.CreateProject(store.CreateProjectInput{Name: name, Path: testRepository(t)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: name + " card"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: name + " chat"}); err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			firstProject, firstBoard = project, board
+		}
+	}
+
+	api := &grpcAPI{server: NewWithRunner(data, nil, &fakeRunner{})}
+	initial, err := api.GetState(context.Background(), &dieterv1.GetStateRequest{AllProjects: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if initial.GetNotModified() || initial.GetCursor().GetEpoch() == "" || len(initial.GetProjects()) != 2 || len(initial.GetBoards()) != 2 || len(initial.GetCards()) != 2 || len(initial.GetChats()) != 2 {
+		t.Fatalf("all-project state = %#v", initial)
+	}
+	unchanged, err := api.GetState(context.Background(), &dieterv1.GetStateRequest{
+		AllProjects: true, IfNotModified: initial.GetCursor(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !unchanged.GetNotModified() || unchanged.GetCursor().GetSequence() != initial.GetCursor().GetSequence() || len(unchanged.GetProjects()) != 0 || len(unchanged.GetCards()) != 0 {
+		t.Fatalf("conditional state = %#v", unchanged)
+	}
+	if _, err := data.CreateCard(store.CreateCardInput{Project: firstProject.ID, Board: firstBoard.ID, Title: "Changed"}); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := api.GetState(context.Background(), &dieterv1.GetStateRequest{
+		AllProjects: true, IfNotModified: initial.GetCursor(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.GetNotModified() || changed.GetCursor().GetSequence() <= initial.GetCursor().GetSequence() || len(changed.GetCards()) != 3 {
+		t.Fatalf("changed conditional state = %#v", changed)
 	}
 }

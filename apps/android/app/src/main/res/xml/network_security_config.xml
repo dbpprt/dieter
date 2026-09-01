@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Dieter ships with three local defaults and lets the user add trusted
-         plaintext gRPC targets. Tailscale encrypts its tailnet hop. -->
-    <base-config cleartextTrafficPermitted="true" />
+    <!-- Remote endpoints are HTTPS-only in DieterConnectionManager. Plaintext is
+         retained solely for an explicitly configured emulator/loopback daemon. -->
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
 </network-security-config>

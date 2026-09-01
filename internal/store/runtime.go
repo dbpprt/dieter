@@ -170,7 +170,7 @@ func (s *Store) OrphanedTurnCards() ([]model.Card, error) {
 	for _, lease := range leases {
 		active[lease.CardID] = true
 	}
-	cards, err := s.listCards()
+	cards, err := s.listCards(false)
 	if err != nil {
 		return nil, err
 	}

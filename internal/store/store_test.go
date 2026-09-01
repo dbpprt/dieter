@@ -958,3 +958,87 @@ func TestForkChatCopiesPrefixWithoutSharingSession(t *testing.T) {
 		t.Fatalf("fork settings = %#v", fork)
 	}
 }
+
+func TestArchivedCardsLeaveTheActiveScanAndRemainResolvable(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	active, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "active-card", Title: "Active"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "archived-card", Title: "Archived"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archived, err = s.ArchiveCard(archived.ID, true); err != nil || !archived.Archived {
+		t.Fatalf("archive = %#v, %v", archived, err)
+	}
+	if _, err := os.Stat(filepath.Join(s.cardDir(), archived.ID+".md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("archived card remained in active directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.archivedCardDir(), archived.ID+".md")); err != nil {
+		t.Fatalf("archived card was not partitioned: %v", err)
+	}
+	visible, err := s.ListCards(CardFilter{Project: project.ID})
+	if err != nil || len(visible) != 1 || visible[0].ID != active.ID {
+		t.Fatalf("visible cards = %#v, %v", visible, err)
+	}
+	all, err := s.ListCards(CardFilter{Project: project.ID, IncludeArchived: true})
+	if err != nil || len(all) != 2 {
+		t.Fatalf("all cards = %#v, %v", all, err)
+	}
+	if resolved, err := s.ResolveCard(archived.ID); err != nil || !resolved.Archived {
+		t.Fatalf("resolve archived = %#v, %v", resolved, err)
+	}
+	if _, err := s.ConversationByID(archived.ID); err != nil {
+		t.Fatalf("archived conversation lookup: %v", err)
+	}
+	if _, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: archived.ID, Title: "Duplicate"}); err == nil {
+		t.Fatal("archived card ID was reused")
+	}
+	if restored, err := s.ArchiveCard(archived.ID, false); err != nil || restored.Archived {
+		t.Fatalf("restore = %#v, %v", restored, err)
+	}
+	if _, err := os.Stat(filepath.Join(s.cardDir(), archived.ID+".md")); err != nil {
+		t.Fatalf("restored card missing from active directory: %v", err)
+	}
+}
+
+func TestEnsureMigratesLegacyArchivedCards(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "legacy-archived", Title: "Legacy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card.Archived = true
+	if err := writeMarkdown(filepath.Join(s.cardDir(), card.ID+".md"), card, card.InitialPrompt); err != nil {
+		t.Fatal(err)
+	}
+	reopened := New(s.Root)
+	if err := reopened.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(reopened.archivedCardDir(), card.ID+".md")); err != nil {
+		t.Fatalf("legacy card was not migrated: %v", err)
+	}
+	if visible, err := reopened.ListCards(CardFilter{Project: project.ID}); err != nil || len(visible) != 0 {
+		t.Fatalf("legacy archived card leaked into active scan: %#v, %v", visible, err)
+	}
+}
+
+func TestGlobalStateCacheAdvancesWithSyncCursor(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	if _, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "First"}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.GlobalState()
+	if err != nil || len(first.Cards) != 1 {
+		t.Fatalf("first global state = %#v, %v", first, err)
+	}
+	if _, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "Second"}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.GlobalState()
+	if err != nil || len(second.Cards) != 2 {
+		t.Fatalf("updated global state = %#v, %v", second, err)
+	}
+}

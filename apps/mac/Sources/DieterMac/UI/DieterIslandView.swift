@@ -208,10 +208,6 @@ struct DieterIslandView: View {
     @Environment(DieterStore.self) private var store
     @Bindable var presentation: DieterIslandPresentation
     let onRequestExpansion: (Bool) -> Void
-    @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
-    private var appearanceValue = DieterAppearance.defaultValue.rawValue
-    @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
-    private var paletteValue = DieterPalette.defaultValue.rawValue
 
     private var activity: DieterIslandActivity { store.islandActivity }
 
@@ -241,7 +237,6 @@ struct DieterIslandView: View {
         .shadow(color: DieterTheme.primary.opacity(presentation.expanded ? 0.12 : 0.05), radius: presentation.expanded ? 38 : 18, y: 8)
         .shadow(color: .black.opacity(presentation.expanded ? 0.52 : 0.30), radius: presentation.expanded ? 30 : 14, y: presentation.expanded ? 16 : 7)
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: presentation.expanded)
-        .id(paletteValue)
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dieter.island")

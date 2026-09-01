@@ -243,6 +243,33 @@ const (
 	// DieterServiceCloseTerminalProcedure is the fully-qualified name of the DieterService's
 	// CloseTerminal RPC.
 	DieterServiceCloseTerminalProcedure = "/dieter.v1.DieterService/CloseTerminal"
+	// DieterServiceListExecutionsProcedure is the fully-qualified name of the DieterService's
+	// ListExecutions RPC.
+	DieterServiceListExecutionsProcedure = "/dieter.v1.DieterService/ListExecutions"
+	// DieterServiceStartExecutionProcedure is the fully-qualified name of the DieterService's
+	// StartExecution RPC.
+	DieterServiceStartExecutionProcedure = "/dieter.v1.DieterService/StartExecution"
+	// DieterServiceGetExecutionProcedure is the fully-qualified name of the DieterService's
+	// GetExecution RPC.
+	DieterServiceGetExecutionProcedure = "/dieter.v1.DieterService/GetExecution"
+	// DieterServiceWatchExecutionProcedure is the fully-qualified name of the DieterService's
+	// WatchExecution RPC.
+	DieterServiceWatchExecutionProcedure = "/dieter.v1.DieterService/WatchExecution"
+	// DieterServiceWriteExecutionInputProcedure is the fully-qualified name of the DieterService's
+	// WriteExecutionInput RPC.
+	DieterServiceWriteExecutionInputProcedure = "/dieter.v1.DieterService/WriteExecutionInput"
+	// DieterServiceSignalExecutionProcedure is the fully-qualified name of the DieterService's
+	// SignalExecution RPC.
+	DieterServiceSignalExecutionProcedure = "/dieter.v1.DieterService/SignalExecution"
+	// DieterServiceResizeExecutionProcedure is the fully-qualified name of the DieterService's
+	// ResizeExecution RPC.
+	DieterServiceResizeExecutionProcedure = "/dieter.v1.DieterService/ResizeExecution"
+	// DieterServiceCancelExecutionProcedure is the fully-qualified name of the DieterService's
+	// CancelExecution RPC.
+	DieterServiceCancelExecutionProcedure = "/dieter.v1.DieterService/CancelExecution"
+	// DieterServiceCloseExecutionProcedure is the fully-qualified name of the DieterService's
+	// CloseExecution RPC.
+	DieterServiceCloseExecutionProcedure = "/dieter.v1.DieterService/CloseExecution"
 	// DieterServiceGetRemoteDesktopCapabilitiesProcedure is the fully-qualified name of the
 	// DieterService's GetRemoteDesktopCapabilities RPC.
 	DieterServiceGetRemoteDesktopCapabilitiesProcedure = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
@@ -375,6 +402,18 @@ type DieterServiceClient interface {
 	ResizeTerminal(context.Context, *connect.Request[v1.ResizeTerminalRequest]) (*connect.Response[v1.Terminal], error)
 	RenameTerminal(context.Context, *connect.Request[v1.RenameTerminalRequest]) (*connect.Response[v1.Terminal], error)
 	CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error)
+	// Remote executions are agent-oriented command sessions. They preserve
+	// stdout/stderr boundaries, explicit exit state, idempotent admission, and
+	// resumable output independently from any client watch stream.
+	ListExecutions(context.Context, *connect.Request[v1.ListExecutionsRequest]) (*connect.Response[v1.ExecutionsResponse], error)
+	StartExecution(context.Context, *connect.Request[v1.StartExecutionRequest]) (*connect.Response[v1.Execution], error)
+	GetExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error)
+	WatchExecution(context.Context, *connect.Request[v1.WatchExecutionRequest]) (*connect.ServerStreamForClient[v1.ExecutionEvent], error)
+	WriteExecutionInput(context.Context, *connect.Request[v1.ExecutionInputRequest]) (*connect.Response[v1.Execution], error)
+	SignalExecution(context.Context, *connect.Request[v1.SignalExecutionRequest]) (*connect.Response[v1.Execution], error)
+	ResizeExecution(context.Context, *connect.Request[v1.ResizeExecutionRequest]) (*connect.Response[v1.Execution], error)
+	CancelExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error)
+	CloseExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[emptypb.Empty], error)
 	GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error)
 	GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
@@ -846,6 +885,60 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("CloseTerminal")),
 			connect.WithClientOptions(opts...),
 		),
+		listExecutions: connect.NewClient[v1.ListExecutionsRequest, v1.ExecutionsResponse](
+			httpClient,
+			baseURL+DieterServiceListExecutionsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ListExecutions")),
+			connect.WithClientOptions(opts...),
+		),
+		startExecution: connect.NewClient[v1.StartExecutionRequest, v1.Execution](
+			httpClient,
+			baseURL+DieterServiceStartExecutionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("StartExecution")),
+			connect.WithClientOptions(opts...),
+		),
+		getExecution: connect.NewClient[v1.ExecutionRef, v1.Execution](
+			httpClient,
+			baseURL+DieterServiceGetExecutionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetExecution")),
+			connect.WithClientOptions(opts...),
+		),
+		watchExecution: connect.NewClient[v1.WatchExecutionRequest, v1.ExecutionEvent](
+			httpClient,
+			baseURL+DieterServiceWatchExecutionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("WatchExecution")),
+			connect.WithClientOptions(opts...),
+		),
+		writeExecutionInput: connect.NewClient[v1.ExecutionInputRequest, v1.Execution](
+			httpClient,
+			baseURL+DieterServiceWriteExecutionInputProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("WriteExecutionInput")),
+			connect.WithClientOptions(opts...),
+		),
+		signalExecution: connect.NewClient[v1.SignalExecutionRequest, v1.Execution](
+			httpClient,
+			baseURL+DieterServiceSignalExecutionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("SignalExecution")),
+			connect.WithClientOptions(opts...),
+		),
+		resizeExecution: connect.NewClient[v1.ResizeExecutionRequest, v1.Execution](
+			httpClient,
+			baseURL+DieterServiceResizeExecutionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ResizeExecution")),
+			connect.WithClientOptions(opts...),
+		),
+		cancelExecution: connect.NewClient[v1.ExecutionRef, v1.Execution](
+			httpClient,
+			baseURL+DieterServiceCancelExecutionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("CancelExecution")),
+			connect.WithClientOptions(opts...),
+		),
+		closeExecution: connect.NewClient[v1.ExecutionRef, emptypb.Empty](
+			httpClient,
+			baseURL+DieterServiceCloseExecutionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("CloseExecution")),
+			connect.WithClientOptions(opts...),
+		),
 		getRemoteDesktopCapabilities: connect.NewClient[emptypb.Empty, v1.RemoteDesktopCapabilities](
 			httpClient,
 			baseURL+DieterServiceGetRemoteDesktopCapabilitiesProcedure,
@@ -1009,6 +1102,15 @@ type dieterServiceClient struct {
 	resizeTerminal                 *connect.Client[v1.ResizeTerminalRequest, v1.Terminal]
 	renameTerminal                 *connect.Client[v1.RenameTerminalRequest, v1.Terminal]
 	closeTerminal                  *connect.Client[v1.TerminalRef, emptypb.Empty]
+	listExecutions                 *connect.Client[v1.ListExecutionsRequest, v1.ExecutionsResponse]
+	startExecution                 *connect.Client[v1.StartExecutionRequest, v1.Execution]
+	getExecution                   *connect.Client[v1.ExecutionRef, v1.Execution]
+	watchExecution                 *connect.Client[v1.WatchExecutionRequest, v1.ExecutionEvent]
+	writeExecutionInput            *connect.Client[v1.ExecutionInputRequest, v1.Execution]
+	signalExecution                *connect.Client[v1.SignalExecutionRequest, v1.Execution]
+	resizeExecution                *connect.Client[v1.ResizeExecutionRequest, v1.Execution]
+	cancelExecution                *connect.Client[v1.ExecutionRef, v1.Execution]
+	closeExecution                 *connect.Client[v1.ExecutionRef, emptypb.Empty]
 	getRemoteDesktopCapabilities   *connect.Client[emptypb.Empty, v1.RemoteDesktopCapabilities]
 	getRemoteDesktopSettings       *connect.Client[emptypb.Empty, v1.RemoteDesktopSettings]
 	updateRemoteDesktopSettings    *connect.Client[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings]
@@ -1395,6 +1497,51 @@ func (c *dieterServiceClient) CloseTerminal(ctx context.Context, req *connect.Re
 	return c.closeTerminal.CallUnary(ctx, req)
 }
 
+// ListExecutions calls dieter.v1.DieterService.ListExecutions.
+func (c *dieterServiceClient) ListExecutions(ctx context.Context, req *connect.Request[v1.ListExecutionsRequest]) (*connect.Response[v1.ExecutionsResponse], error) {
+	return c.listExecutions.CallUnary(ctx, req)
+}
+
+// StartExecution calls dieter.v1.DieterService.StartExecution.
+func (c *dieterServiceClient) StartExecution(ctx context.Context, req *connect.Request[v1.StartExecutionRequest]) (*connect.Response[v1.Execution], error) {
+	return c.startExecution.CallUnary(ctx, req)
+}
+
+// GetExecution calls dieter.v1.DieterService.GetExecution.
+func (c *dieterServiceClient) GetExecution(ctx context.Context, req *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error) {
+	return c.getExecution.CallUnary(ctx, req)
+}
+
+// WatchExecution calls dieter.v1.DieterService.WatchExecution.
+func (c *dieterServiceClient) WatchExecution(ctx context.Context, req *connect.Request[v1.WatchExecutionRequest]) (*connect.ServerStreamForClient[v1.ExecutionEvent], error) {
+	return c.watchExecution.CallServerStream(ctx, req)
+}
+
+// WriteExecutionInput calls dieter.v1.DieterService.WriteExecutionInput.
+func (c *dieterServiceClient) WriteExecutionInput(ctx context.Context, req *connect.Request[v1.ExecutionInputRequest]) (*connect.Response[v1.Execution], error) {
+	return c.writeExecutionInput.CallUnary(ctx, req)
+}
+
+// SignalExecution calls dieter.v1.DieterService.SignalExecution.
+func (c *dieterServiceClient) SignalExecution(ctx context.Context, req *connect.Request[v1.SignalExecutionRequest]) (*connect.Response[v1.Execution], error) {
+	return c.signalExecution.CallUnary(ctx, req)
+}
+
+// ResizeExecution calls dieter.v1.DieterService.ResizeExecution.
+func (c *dieterServiceClient) ResizeExecution(ctx context.Context, req *connect.Request[v1.ResizeExecutionRequest]) (*connect.Response[v1.Execution], error) {
+	return c.resizeExecution.CallUnary(ctx, req)
+}
+
+// CancelExecution calls dieter.v1.DieterService.CancelExecution.
+func (c *dieterServiceClient) CancelExecution(ctx context.Context, req *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error) {
+	return c.cancelExecution.CallUnary(ctx, req)
+}
+
+// CloseExecution calls dieter.v1.DieterService.CloseExecution.
+func (c *dieterServiceClient) CloseExecution(ctx context.Context, req *connect.Request[v1.ExecutionRef]) (*connect.Response[emptypb.Empty], error) {
+	return c.closeExecution.CallUnary(ctx, req)
+}
+
 // GetRemoteDesktopCapabilities calls dieter.v1.DieterService.GetRemoteDesktopCapabilities.
 func (c *dieterServiceClient) GetRemoteDesktopCapabilities(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error) {
 	return c.getRemoteDesktopCapabilities.CallUnary(ctx, req)
@@ -1553,6 +1700,18 @@ type DieterServiceHandler interface {
 	ResizeTerminal(context.Context, *connect.Request[v1.ResizeTerminalRequest]) (*connect.Response[v1.Terminal], error)
 	RenameTerminal(context.Context, *connect.Request[v1.RenameTerminalRequest]) (*connect.Response[v1.Terminal], error)
 	CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error)
+	// Remote executions are agent-oriented command sessions. They preserve
+	// stdout/stderr boundaries, explicit exit state, idempotent admission, and
+	// resumable output independently from any client watch stream.
+	ListExecutions(context.Context, *connect.Request[v1.ListExecutionsRequest]) (*connect.Response[v1.ExecutionsResponse], error)
+	StartExecution(context.Context, *connect.Request[v1.StartExecutionRequest]) (*connect.Response[v1.Execution], error)
+	GetExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error)
+	WatchExecution(context.Context, *connect.Request[v1.WatchExecutionRequest], *connect.ServerStream[v1.ExecutionEvent]) error
+	WriteExecutionInput(context.Context, *connect.Request[v1.ExecutionInputRequest]) (*connect.Response[v1.Execution], error)
+	SignalExecution(context.Context, *connect.Request[v1.SignalExecutionRequest]) (*connect.Response[v1.Execution], error)
+	ResizeExecution(context.Context, *connect.Request[v1.ResizeExecutionRequest]) (*connect.Response[v1.Execution], error)
+	CancelExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error)
+	CloseExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[emptypb.Empty], error)
 	GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error)
 	GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
@@ -2020,6 +2179,60 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("CloseTerminal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceListExecutionsHandler := connect.NewUnaryHandler(
+		DieterServiceListExecutionsProcedure,
+		svc.ListExecutions,
+		connect.WithSchema(dieterServiceMethods.ByName("ListExecutions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceStartExecutionHandler := connect.NewUnaryHandler(
+		DieterServiceStartExecutionProcedure,
+		svc.StartExecution,
+		connect.WithSchema(dieterServiceMethods.ByName("StartExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceGetExecutionHandler := connect.NewUnaryHandler(
+		DieterServiceGetExecutionProcedure,
+		svc.GetExecution,
+		connect.WithSchema(dieterServiceMethods.ByName("GetExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceWatchExecutionHandler := connect.NewServerStreamHandler(
+		DieterServiceWatchExecutionProcedure,
+		svc.WatchExecution,
+		connect.WithSchema(dieterServiceMethods.ByName("WatchExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceWriteExecutionInputHandler := connect.NewUnaryHandler(
+		DieterServiceWriteExecutionInputProcedure,
+		svc.WriteExecutionInput,
+		connect.WithSchema(dieterServiceMethods.ByName("WriteExecutionInput")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceSignalExecutionHandler := connect.NewUnaryHandler(
+		DieterServiceSignalExecutionProcedure,
+		svc.SignalExecution,
+		connect.WithSchema(dieterServiceMethods.ByName("SignalExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceResizeExecutionHandler := connect.NewUnaryHandler(
+		DieterServiceResizeExecutionProcedure,
+		svc.ResizeExecution,
+		connect.WithSchema(dieterServiceMethods.ByName("ResizeExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceCancelExecutionHandler := connect.NewUnaryHandler(
+		DieterServiceCancelExecutionProcedure,
+		svc.CancelExecution,
+		connect.WithSchema(dieterServiceMethods.ByName("CancelExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceCloseExecutionHandler := connect.NewUnaryHandler(
+		DieterServiceCloseExecutionProcedure,
+		svc.CloseExecution,
+		connect.WithSchema(dieterServiceMethods.ByName("CloseExecution")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceGetRemoteDesktopCapabilitiesHandler := connect.NewUnaryHandler(
 		DieterServiceGetRemoteDesktopCapabilitiesProcedure,
 		svc.GetRemoteDesktopCapabilities,
@@ -2254,6 +2467,24 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceRenameTerminalHandler.ServeHTTP(w, r)
 		case DieterServiceCloseTerminalProcedure:
 			dieterServiceCloseTerminalHandler.ServeHTTP(w, r)
+		case DieterServiceListExecutionsProcedure:
+			dieterServiceListExecutionsHandler.ServeHTTP(w, r)
+		case DieterServiceStartExecutionProcedure:
+			dieterServiceStartExecutionHandler.ServeHTTP(w, r)
+		case DieterServiceGetExecutionProcedure:
+			dieterServiceGetExecutionHandler.ServeHTTP(w, r)
+		case DieterServiceWatchExecutionProcedure:
+			dieterServiceWatchExecutionHandler.ServeHTTP(w, r)
+		case DieterServiceWriteExecutionInputProcedure:
+			dieterServiceWriteExecutionInputHandler.ServeHTTP(w, r)
+		case DieterServiceSignalExecutionProcedure:
+			dieterServiceSignalExecutionHandler.ServeHTTP(w, r)
+		case DieterServiceResizeExecutionProcedure:
+			dieterServiceResizeExecutionHandler.ServeHTTP(w, r)
+		case DieterServiceCancelExecutionProcedure:
+			dieterServiceCancelExecutionHandler.ServeHTTP(w, r)
+		case DieterServiceCloseExecutionProcedure:
+			dieterServiceCloseExecutionHandler.ServeHTTP(w, r)
 		case DieterServiceGetRemoteDesktopCapabilitiesProcedure:
 			dieterServiceGetRemoteDesktopCapabilitiesHandler.ServeHTTP(w, r)
 		case DieterServiceGetRemoteDesktopSettingsProcedure:
@@ -2585,6 +2816,42 @@ func (UnimplementedDieterServiceHandler) RenameTerminal(context.Context, *connec
 
 func (UnimplementedDieterServiceHandler) CloseTerminal(context.Context, *connect.Request[v1.TerminalRef]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CloseTerminal is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ListExecutions(context.Context, *connect.Request[v1.ListExecutionsRequest]) (*connect.Response[v1.ExecutionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListExecutions is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) StartExecution(context.Context, *connect.Request[v1.StartExecutionRequest]) (*connect.Response[v1.Execution], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.StartExecution is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetExecution is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) WatchExecution(context.Context, *connect.Request[v1.WatchExecutionRequest], *connect.ServerStream[v1.ExecutionEvent]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchExecution is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) WriteExecutionInput(context.Context, *connect.Request[v1.ExecutionInputRequest]) (*connect.Response[v1.Execution], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WriteExecutionInput is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) SignalExecution(context.Context, *connect.Request[v1.SignalExecutionRequest]) (*connect.Response[v1.Execution], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SignalExecution is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ResizeExecution(context.Context, *connect.Request[v1.ResizeExecutionRequest]) (*connect.Response[v1.Execution], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ResizeExecution is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) CancelExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CancelExecution is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) CloseExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.CloseExecution is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error) {

@@ -35,6 +35,7 @@ import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.R
 import com.dbpprt.dieter.settings.AppPreferences
+import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.DieterNotificationSettings
 import com.dbpprt.dieter.settings.NotificationDisplayStyle
 import com.dbpprt.dieter.v1.Card
@@ -44,12 +45,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
+private data class NotificationInputs(
+    val state: DieterConnectionState,
+    val settings: DieterNotificationSettings,
+    val boardIds: Set<String>,
+    val palette: DieterPalette,
+)
+
 class DieterSyncService : Service() {
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val notificationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var manager: DieterConnectionManager
     private lateinit var notifications: NotificationManagerCompat
     private val transitions = NotificationTransitionTracker()
@@ -60,7 +69,13 @@ class DieterSyncService : Service() {
     private var postedTerminalChatIds: Set<String> = emptySet()
     private var postedReviewCardIds: Set<String> = emptySet()
     private var summarizedResultNotificationIds: Set<Int> = emptySet()
-    private val paletteTokens get() = AppPreferences.selectedPalette(this).tokens
+    private var resultsSummaryReconciled = false
+    private var currentPalette = DieterPalette.DEFAULT
+    private var lastRecoveryPhase: ConnectionPhase? = null
+    private var lastConnectionFingerprint: Int? = null
+    private val runningChatFingerprints = mutableMapOf<String, Int>()
+    private var cachedConnectionBadge: Pair<Pair<Boolean, String>, android.graphics.drawable.Icon>? = null
+    private val paletteTokens get() = currentPalette.tokens
     private val notificationAccent get() = paletteTokens.shellStartInt
     private val reviewAccent get() = Color.rgb(226, 190, 106)
 
@@ -70,10 +85,12 @@ class DieterSyncService : Service() {
         notifications = NotificationManagerCompat.from(this)
         createChannels()
         val appPreferences = (application as DieterApplication).container.appPreferences
-        startInForeground(connectionNotification(manager.state.value, appPreferences.notificationSettings.value))
-        startWakeLockRenewal()
+        currentPalette = appPreferences.palette.value
+        // Foreground services must publish immediately. Keep this first notification tiny; the
+        // fully rendered version is produced on the notification dispatcher below.
+        startInForeground(bootstrapConnectionNotification())
         manager.onServiceStarted()
-        collectionJob = serviceScope.launch {
+        collectionJob = notificationScope.launch {
             manager.state
                 .combine(appPreferences.notificationSettings) { state, settings ->
                     state to settings
@@ -81,8 +98,18 @@ class DieterSyncService : Service() {
                 .combine(appPreferences.notificationBoardIds) { stateAndSettings, boardIds ->
                     Triple(stateAndSettings.first, stateAndSettings.second, boardIds)
                 }
-                .combine(appPreferences.palette) { stateSettingsAndBoards, _ -> stateSettingsAndBoards }
-                .collectLatest { (state, settings, boardIds) -> render(state, settings, boardIds) }
+                .combine(appPreferences.palette) { stateSettingsAndBoards, palette ->
+                    NotificationInputs(
+                        stateSettingsAndBoards.first,
+                        stateSettingsAndBoards.second,
+                        stateSettingsAndBoards.third,
+                        palette,
+                    )
+                }
+                .collect { input ->
+                    currentPalette = input.palette
+                    render(input.state, input.settings, input.boardIds)
+                }
         }
     }
 
@@ -90,12 +117,14 @@ class DieterSyncService : Service() {
         when (intent?.action) {
             ACTION_DISCONNECT -> {
                 manager.disconnect(stopService = false)
+                wakeLockJob?.cancel()
                 releaseWakeLock()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
             ACTION_STOP_BACKGROUND -> {
+                wakeLockJob?.cancel()
                 releaseWakeLock()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -111,6 +140,7 @@ class DieterSyncService : Service() {
         wakeLockJob?.cancel()
         releaseWakeLock()
         serviceScope.cancel()
+        notificationScope.cancel()
         manager.onServiceStopped()
         super.onDestroy()
     }
@@ -135,13 +165,30 @@ class DieterSyncService : Service() {
         lock.acquire(WAKE_LOCK_TIMEOUT_MS)
     }
 
-    private fun startWakeLockRenewal() {
-        acquireWakeLock()
-        wakeLockJob?.cancel()
-        wakeLockJob = serviceScope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(WAKE_LOCK_RENEW_MS)
-                if (manager.state.value.desiredConnected && manager.state.value.backgroundSyncEnabled) acquireWakeLock()
+    private fun updateRecoveryWakeLock(phase: ConnectionPhase) {
+        serviceScope.launch {
+            val recovering = phase in setOf(
+                ConnectionPhase.CONNECTING,
+                ConnectionPhase.SYNCING,
+                ConnectionPhase.RECONNECTING,
+            )
+            if (!recovering) {
+                wakeLockJob?.cancel()
+                wakeLockJob = null
+                releaseWakeLock()
+                return@launch
+            }
+            if (wakeLockJob?.isActive == true) return@launch
+            acquireWakeLock()
+            wakeLockJob = launch {
+                while (true) {
+                    kotlinx.coroutines.delay(WAKE_LOCK_RENEW_MS)
+                    val current = manager.state.value
+                    if (!current.desiredConnected || !current.backgroundSyncEnabled ||
+                        current.phase !in setOf(ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING, ConnectionPhase.RECONNECTING)
+                    ) return@launch
+                    acquireWakeLock()
+                }
             }
         }
     }
@@ -156,12 +203,23 @@ class DieterSyncService : Service() {
         notificationBoardIds: Set<String>,
     ) {
         if (!state.desiredConnected || !state.backgroundSyncEnabled) {
-            releaseWakeLock()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            serviceScope.launch {
+                wakeLockJob?.cancel()
+                releaseWakeLock()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
             return
         }
-        startInForeground(connectionNotification(state, settings))
+        if (state.phase != lastRecoveryPhase) {
+            lastRecoveryPhase = state.phase
+            updateRecoveryWakeLock(state.phase)
+        }
+        val fingerprint = connectionNotificationFingerprint(state, settings, currentPalette.slug)
+        if (fingerprint != lastConnectionFingerprint) {
+            startInForeground(connectionNotification(state, settings))
+            lastConnectionFingerprint = fingerprint
+        }
         val events = transitions.update(
             state.cards,
             state.chats,
@@ -170,17 +228,20 @@ class DieterSyncService : Service() {
             settings,
         )
         renderRunningChats(state.chats, state.activeConversations, settings)
-        cancelDisabledResultNotifications(state.chats, settings)
-        cancelDisabledBoardNotifications(state.cards, notificationBoardIds, settings)
-        events.forEach { postEvent(it, state.boards, settings) }
-        reconcileResultsSummary()
+        var resultsChanged = cancelDisabledResultNotifications(state.chats, settings)
+        resultsChanged = cancelDisabledBoardNotifications(state.cards, notificationBoardIds, settings) || resultsChanged
+        events.forEach { resultsChanged = postEvent(it, state.boards, settings) || resultsChanged }
+        if (!resultsSummaryReconciled || resultsChanged) {
+            reconcileResultsSummary()
+            resultsSummaryReconciled = true
+        }
     }
 
     private fun cancelDisabledBoardNotifications(
         cards: List<Card>,
         notificationBoardIds: Set<String>,
         settings: DieterNotificationSettings,
-    ) {
+    ): Boolean {
         val cardsById = cards.associateBy(Card::getId)
         val disabledCardIds = postedReviewCardIds.filterTo(mutableSetOf()) { cardId ->
             !settings.activityNotificationsEnabled ||
@@ -196,6 +257,7 @@ class DieterSyncService : Service() {
         }.mapTo(disabledCardIds, Card::getId)
         disabledCardIds.forEach { notifications.cancel(reviewNotificationId(it)) }
         postedReviewCardIds -= disabledCardIds
+        return disabledCardIds.isNotEmpty()
     }
 
     private fun renderRunningChats(
@@ -209,22 +271,38 @@ class DieterSyncService : Service() {
         val activeIds = runningChatIds.takeIf {
             settings.activityNotificationsEnabled && settings.runningChatsEnabled
         }.orEmpty()
-        ((postedRunningChatIds + runningChatIds) - activeIds).forEach {
+        val cancelledIds = (postedRunningChatIds + runningChatIds) - activeIds
+        cancelledIds.forEach {
             notifications.cancel(runningChatNotificationId(it))
+            runningChatFingerprints.remove(it)
         }
         postedRunningChatIds = activeIds
         val preferences = getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
         chats.filter { it.id in activeIds }.forEach { chat ->
             val session = chatSession(chat)
-            if (preferences.getString(dismissedChatKey(chat.id), null) == session) return@forEach
-            postNotification(
-                runningChatNotificationId(chat.id),
-                runningChatNotification(chat, conversations[chat.id], session, settings),
+            if (preferences.getString(dismissedChatKey(chat.id), null) == session) {
+                runningChatFingerprints.remove(chat.id)
+                return@forEach
+            }
+            val fingerprint = runningChatNotificationFingerprint(
+                chat,
+                conversations[chat.id],
+                session,
+                settings,
+                currentPalette.slug,
             )
+            if (runningChatFingerprints[chat.id] == fingerprint) return@forEach
+            if (postNotification(
+                    runningChatNotificationId(chat.id),
+                    runningChatNotification(chat, conversations[chat.id], session, settings),
+                )
+            ) {
+                runningChatFingerprints[chat.id] = fingerprint
+            }
         }
     }
 
-    private fun cancelDisabledResultNotifications(chats: List<Card>, settings: DieterNotificationSettings) {
+    private fun cancelDisabledResultNotifications(chats: List<Card>, settings: DieterNotificationSettings): Boolean {
         val chatsById = chats.associateBy(Card::getId)
         val disabledChatIds = postedTerminalChatIds.filterTo(mutableSetOf()) { cardId ->
             chatsById[cardId]?.let { chat ->
@@ -237,30 +315,33 @@ class DieterSyncService : Service() {
             .mapTo(disabledChatIds, Card::getId)
         disabledChatIds.forEach { notifications.cancel(terminalNotificationId(it)) }
         postedTerminalChatIds -= disabledChatIds
+        return disabledChatIds.isNotEmpty()
     }
 
     private fun postEvent(
         event: DieterNotificationEvent,
         boards: List<com.dbpprt.dieter.v1.Board>,
         settings: DieterNotificationSettings,
-    ) {
-        when (event) {
+    ): Boolean = when (event) {
             is DieterNotificationEvent.ChatFinished -> {
                 notifications.cancel(runningChatNotificationId(event.card.id))
                 getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
                     .edit().remove(dismissedChatKey(event.card.id)).apply()
-                if (postNotification(terminalNotificationId(event.card.id), terminalChatNotification(event, settings))) {
+                postNotification(terminalNotificationId(event.card.id), terminalChatNotification(event, settings)).also { posted ->
+                    if (posted) {
                     postedTerminalChatIds += event.card.id
+                    }
                 }
             }
             is DieterNotificationEvent.ReadyForReview -> {
                 val boardName = boards.firstOrNull { it.id == event.card.boardId }?.name.orEmpty()
-                if (postNotification(reviewNotificationId(event.card.id), reviewNotification(event.card, boardName, settings))) {
-                    postedReviewCardIds += event.card.id
+                postNotification(reviewNotificationId(event.card.id), reviewNotification(event.card, boardName, settings)).also { posted ->
+                    if (posted) {
+                        postedReviewCardIds += event.card.id
+                    }
                 }
             }
         }
-    }
 
     private fun reconcileResultsSummary() {
         val activeNotifications = getSystemService(NotificationManager::class.java).activeNotifications
@@ -384,6 +465,18 @@ class DieterSyncService : Service() {
         return builder.build()
     }
 
+    private fun bootstrapConnectionNotification(): Notification = Notification.Builder(this, CONNECTION_CHANNEL_ID)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setContentTitle("Connecting to Dieter")
+        .setContentText("Starting background synchronization")
+        .setColor(notificationAccent)
+        .setCategory(Notification.CATEGORY_SERVICE)
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setShowWhen(false)
+        .setContentIntent(openIntent(showConnection = true))
+        .build()
+
     /** Expanded shade body matching the design reference: stat pills plus live activity rows. */
     private fun connectionExpandedView(
         title: String,
@@ -435,6 +528,8 @@ class DieterSyncService : Service() {
 
     /** Rounded status tile shown as the large icon: green wifi when connected, muted when not. */
     private fun connectionBadge(connected: Boolean): android.graphics.drawable.Icon {
+        val key = connected to currentPalette.slug
+        cachedConnectionBadge?.takeIf { it.first == key }?.second?.let { return it }
         val size = 192
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -454,7 +549,9 @@ class DieterSyncService : Service() {
             canvas.drawArc(RectF(cx - radius, cy - radius, cx + radius, cy + radius), 215f, 110f, false, glyph)
         }
         canvas.drawCircle(cx, cy - 2f, 10f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = glyph.color })
-        return android.graphics.drawable.Icon.createWithBitmap(bitmap)
+        return android.graphics.drawable.Icon.createWithBitmap(bitmap).also {
+            cachedConnectionBadge = key to it
+        }
     }
 
     private fun runningChatNotification(

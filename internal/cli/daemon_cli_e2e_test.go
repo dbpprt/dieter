@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -182,6 +183,67 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	runDaemonCLI(t, client, output, "terminal", "resize", "--columns", "100", "--rows", "30", terminal.ID)
 	runDaemonCLI(t, client, output, "terminal", "rename", "--name", "renamed", terminal.ID)
 	runDaemonCLI(t, client, output, "terminal", "close", terminal.ID)
+
+	remoteOutput := runDaemonCLI(t, client, output, "remote", "exec", "--project", created.Project.ID, "--input", "agent-input\n", "--", "/bin/sh", "-c", "read value; printf 'stdout:%s' \"$value\"; printf ':stderr' >&2")
+	if !strings.Contains(remoteOutput, "stdout:agent-input") || !strings.Contains(remoteOutput, ":stderr") {
+		t.Fatalf("remote execution output=%q", remoteOutput)
+	}
+	remoteID := strings.TrimSpace(runDaemonCLI(t, client, output, "remote", "exec", "--project", created.Project.ID, "--detach", "--format", "id", "--idempotency-key", "cli-e2e", "--", "/bin/sh", "-c", "printf detached"))
+	if !strings.HasPrefix(remoteID, "exec_") {
+		t.Fatalf("remote execution id=%q", remoteID)
+	}
+	repeatedID := strings.TrimSpace(runDaemonCLI(t, client, output, "remote", "exec", "--project", created.Project.ID, "--detach", "--format", "id", "--idempotency-key", "cli-e2e", "--", "/bin/sh", "-c", "printf detached"))
+	if repeatedID != remoteID {
+		t.Fatalf("idempotent remote IDs %q != %q", repeatedID, remoteID)
+	}
+	runDaemonCLI(t, client, output, "remote", "wait", remoteID)
+	shown := runDaemonCLI(t, client, output, "remote", "show", remoteID)
+	var shownExecution struct {
+		ExitCode int32 `json:"exitCode"`
+	}
+	if err := json.Unmarshal([]byte(shown), &shownExecution); err != nil || shownExecution.ExitCode != 0 {
+		t.Fatalf("remote show=%s err=%v", shown, err)
+	}
+	runDaemonCLI(t, client, output, "remote", "close", remoteID)
+	output.Reset()
+	remoteErr := client.Run([]string{"remote", "exec", "--project", created.Project.ID, "--", "/bin/sh", "-c", "exit 23"})
+	var exitErr *remoteExitError
+	if !errors.As(remoteErr, &exitErr) || exitErr.Code() != 23 {
+		t.Fatalf("remote exit error=%v code=%d", remoteErr, exitErr.Code())
+	}
+	watchID := strings.TrimSpace(runDaemonCLI(t, client, output, "remote", "exec", "--project", created.Project.ID, "--detach", "--format", "id", "--", "/usr/bin/printf", "watch-marker"))
+	if watched := runDaemonCLI(t, client, output, "remote", "watch", watchID); watched != "watch-marker" {
+		t.Fatalf("remote watch output=%q", watched)
+	}
+	if listed := runDaemonCLI(t, client, output, "remote", "list", "--project", created.Project.ID, "--format", "ids"); !strings.Contains(listed, watchID) {
+		t.Fatalf("remote list=%q", listed)
+	}
+	runDaemonCLI(t, client, output, "remote", "close", watchID)
+
+	shellID := strings.TrimSpace(runDaemonCLI(t, client, output, "remote", "shell", "--project", created.Project.ID, "--detach", "--format", "id"))
+	runDaemonCLI(t, client, output, "remote", "resize", "--columns", "101", "--rows", "37", shellID)
+	runDaemonCLI(t, client, output, "remote", "input", "--data", "stty size; printf 'shell-marker'; exit\n", shellID)
+	if shellOutput := runDaemonCLI(t, client, output, "remote", "wait", shellID); !strings.Contains(shellOutput, "37 101") || !strings.Contains(shellOutput, "shell-marker") {
+		t.Fatalf("remote shell output=%q", shellOutput)
+	}
+	runDaemonCLI(t, client, output, "remote", "close", shellID)
+
+	attachID := strings.TrimSpace(runDaemonCLI(t, client, output, "remote", "exec", "--project", created.Project.ID, "--keep-input", "--detach", "--format", "id", "--", "/bin/sh", "-c", "read value; printf 'attach:%s' \"$value\""))
+	previousInput := client.In
+	client.In = strings.NewReader("native\n")
+	attached := runDaemonCLI(t, client, output, "remote", "attach", attachID)
+	client.In = previousInput
+	if !strings.Contains(attached, "attach:native") {
+		t.Fatalf("remote attach output=%q", attached)
+	}
+	runDaemonCLI(t, client, output, "remote", "close", attachID)
+
+	signalID := strings.TrimSpace(runDaemonCLI(t, client, output, "remote", "exec", "--project", created.Project.ID, "--keep-input", "--detach", "--format", "id", "--", "/bin/sh", "-c", "sleep 10"))
+	runDaemonCLI(t, client, output, "remote", "signal", "--signal", "kill", signalID)
+	runDaemonCLI(t, client, output, "remote", "close", signalID)
+	cancelID := strings.TrimSpace(runDaemonCLI(t, client, output, "remote", "exec", "--project", created.Project.ID, "--keep-input", "--detach", "--format", "id", "--", "/bin/sh", "-c", "sleep 10"))
+	runDaemonCLI(t, client, output, "remote", "cancel", cancelID)
+	runDaemonCLI(t, client, output, "remote", "close", cancelID)
 
 	runDaemonCLI(t, client, output, "settings", "show")
 	runDaemonCLI(t, client, output, "prompt", "show")
@@ -400,6 +462,11 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := remoteStore.Ensure(); err != nil {
 		t.Fatal(err)
 	}
+	remoteRepository := initTestRepository(t, "remote-route")
+	remoteProject, err := remoteStore.CreateProject(store.CreateProjectInput{Name: "Remote route", Path: remoteRepository})
+	if err != nil {
+		t.Fatal(err)
+	}
 	localListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -447,12 +514,17 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	first := New(cliStore)
 	first.DaemonMode, first.Machine, first.GatewayURL = true, identity.ID, publicURL.String()
 	first.Timeout = 10 * time.Second
-	first.Out, first.Err = io.Discard, io.Discard
+	var firstOutput bytes.Buffer
+	first.Out, first.Err = &firstOutput, &firstOutput
 	if err := first.Run([]string{"status"}); err != nil {
 		t.Fatal(err)
 	}
 	if first.transport == nil || first.transport.route != "direct" {
 		t.Fatalf("route=%#v want direct", first.transport)
+	}
+	firstOutput.Reset()
+	if err := first.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "direct-exec"}); err != nil || firstOutput.String() != "direct-exec" {
+		t.Fatalf("direct remote exec output=%q err=%v", firstOutput.String(), err)
 	}
 	first.Close()
 
@@ -462,12 +534,17 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	second := New(cliStore)
 	second.DaemonMode, second.Machine, second.GatewayURL = true, identity.ID, publicURL.String()
 	second.Timeout = 10 * time.Second
-	second.Out, second.Err = io.Discard, io.Discard
+	var secondOutput bytes.Buffer
+	second.Out, second.Err = &secondOutput, &secondOutput
 	defer second.Close()
 	if err := second.Run([]string{"status"}); err != nil {
 		t.Fatal(err)
 	}
 	if second.transport == nil || second.transport.route != "relay" {
 		t.Fatalf("route=%#v want relay", second.transport)
+	}
+	secondOutput.Reset()
+	if err := second.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "relay-exec"}); err != nil || secondOutput.String() != "relay-exec" {
+		t.Fatalf("relay remote exec output=%q err=%v", secondOutput.String(), err)
 	}
 }

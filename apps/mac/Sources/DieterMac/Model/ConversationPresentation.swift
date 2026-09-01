@@ -118,6 +118,7 @@ struct ConversationTimelineProjection: Sendable {
 }
 
 struct ConversationPresentationKey: Hashable {
+    let conversationID: String
     let revision: Int
     let showReasoning: Bool
     let renderStart: Int
