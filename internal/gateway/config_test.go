@@ -40,6 +40,57 @@ func setMinimumGatewayEnvironment(t *testing.T) {
 	t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "")
 }
 
+func TestGitHubAllowlistSupportsLegacyAndMultipleUserIDs(t *testing.T) {
+	setMinimumGatewayEnvironment(t)
+	t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
+	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
+	t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", "60854672, 42,60854672")
+
+	config, err := ConfigFromEnv(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{42, 60854672} {
+		if !config.AllowsGitHubUser(id) {
+			t.Fatalf("expected GitHub user %d to be allowed", id)
+		}
+	}
+	if config.AllowsGitHubUser(99) {
+		t.Fatal("unexpected GitHub user was allowed")
+	}
+}
+
+func TestGitHubAllowlistAcceptsPluralConfigurationWithoutLegacyID(t *testing.T) {
+	setMinimumGatewayEnvironment(t)
+	t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
+	t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
+	t.Setenv("DIETER_GITHUB_ALLOWED_USER_ID", "")
+	t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", "7000188,60854672")
+
+	config, err := ConfigFromEnv(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.AllowsGitHubUser(7000188) || !config.AllowsGitHubUser(60854672) {
+		t.Fatalf("unexpected GitHub allowlist: %#v", config.AllowedUserIDs)
+	}
+}
+
+func TestGitHubAllowlistRejectsMissingOrMalformedIDs(t *testing.T) {
+	for _, value := range []string{"", "0", "42,", "42,not-an-id", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			setMinimumGatewayEnvironment(t)
+			t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")
+			t.Setenv("DIETER_PUBLIC_URL", "http://127.0.0.1:4243")
+			t.Setenv("DIETER_GITHUB_ALLOWED_USER_ID", "")
+			t.Setenv("DIETER_GITHUB_ALLOWED_USER_IDS", value)
+			if _, err := ConfigFromEnv(t.TempDir()); err == nil {
+				t.Fatalf("accepted malformed allowlist %q", value)
+			}
+		})
+	}
+}
+
 func TestRTCConfigurationRequiresBoundedTURNSettings(t *testing.T) {
 	setMinimumGatewayEnvironment(t)
 	t.Setenv("DIETER_GATEWAY_DEV_INSECURE", "1")

@@ -19,6 +19,7 @@ type Config struct {
 	GitHubClientID  string
 	GitHubSecret    string
 	AllowedUserID   int64
+	AllowedUserIDs  map[int64]struct{}
 	AllowedLogin    string
 	AuthSecret      []byte
 	SessionTTL      time.Duration
@@ -52,9 +53,23 @@ func ConfigFromEnv(root string) (Config, error) {
 	if config.GitHubClientID == "" || config.GitHubSecret == "" {
 		return config, errors.New("DIETER_GITHUB_CLIENT_ID and DIETER_GITHUB_CLIENT_SECRET are required")
 	}
-	config.AllowedUserID, err = strconv.ParseInt(strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_USER_ID")), 10, 64)
-	if err != nil || config.AllowedUserID <= 0 {
-		return config, errors.New("DIETER_GITHUB_ALLOWED_USER_ID must be a positive numeric GitHub ID")
+	config.AllowedUserIDs = map[int64]struct{}{}
+	legacyAllowedUserID := strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_USER_ID"))
+	if legacyAllowedUserID != "" {
+		config.AllowedUserID, err = addAllowedUserID(config.AllowedUserIDs, legacyAllowedUserID)
+		if err != nil {
+			return config, errors.New("DIETER_GITHUB_ALLOWED_USER_ID must be a positive numeric GitHub ID")
+		}
+	}
+	if allowedUserIDs := strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_USER_IDS")); allowedUserIDs != "" {
+		for _, value := range strings.Split(allowedUserIDs, ",") {
+			if _, err := addAllowedUserID(config.AllowedUserIDs, strings.TrimSpace(value)); err != nil {
+				return config, errors.New("DIETER_GITHUB_ALLOWED_USER_IDS must be a comma-separated list of positive numeric GitHub IDs")
+			}
+		}
+	}
+	if len(config.AllowedUserIDs) == 0 {
+		return config, errors.New("DIETER_GITHUB_ALLOWED_USER_ID or DIETER_GITHUB_ALLOWED_USER_IDS must contain at least one positive numeric GitHub ID")
 	}
 	config.AllowedLogin = strings.TrimSpace(os.Getenv("DIETER_GITHUB_ALLOWED_LOGIN"))
 	config.AuthSecret, err = hex.DecodeString(strings.TrimSpace(os.Getenv("DIETER_AUTH_SECRET")))
@@ -115,6 +130,23 @@ func ConfigFromEnv(root string) (Config, error) {
 		return config, errors.New("DIETER_GATEWAY_PROXY_MODE and DIETER_GATEWAY_DEV_INSECURE are mutually exclusive")
 	}
 	return config, nil
+}
+
+func addAllowedUserID(allowed map[int64]struct{}, value string) (int64, error) {
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, errors.New("GitHub user ID must be positive")
+	}
+	allowed[id] = struct{}{}
+	return id, nil
+}
+
+func (c Config) AllowsGitHubUser(id int64) bool {
+	if len(c.AllowedUserIDs) > 0 {
+		_, ok := c.AllowedUserIDs[id]
+		return ok
+	}
+	return id > 0 && id == c.AllowedUserID
 }
 
 func rtcURLs(raw string, prefixes ...string) ([]string, error) {

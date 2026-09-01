@@ -27,11 +27,100 @@ import (
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+func TestGatewayAllowsMultipleAccountsAndIsolatesDaemons(t *testing.T) {
+	ctx := context.Background()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	gatewayListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gatewayListener.Close()
+	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
+	config := gateway.Config{
+		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
+		GitHubClientID: "test", GitHubSecret: "test", AllowedUserID: 7000188, AllowedLogin: "owner",
+		AllowedUserIDs: map[int64]struct{}{7000188: {}, 60854672: {}},
+		AuthSecret:     []byte("0123456789abcdef0123456789abcdef"), SessionTTL: time.Hour,
+		NativeRedirects: map[string]struct{}{}, GitHubBaseURL: "https://github.invalid", GitHubAPIURL: "https://api.github.invalid", DevInsecure: true,
+	}
+	gatewayStore, err := gateway.OpenStore(config.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gatewayStore.Close()
+	gatewayServer, err := gateway.NewServer(config, gatewayStore, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go gatewayServer.Serve(gatewayListener)
+
+	connection, err := grpc.NewClient(gatewayListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+
+	type account struct {
+		githubID int64
+		login    string
+		session  string
+		daemonID string
+	}
+	accounts := []account{
+		{githubID: 7000188, login: "dbpprt", session: "primary-session"},
+		{githubID: 60854672, login: "derzierau", session: "secondary-session"},
+	}
+	for index := range accounts {
+		identity, err := daemon.LoadOrCreateEnrollmentIdentity(t.TempDir(), accounts[index].login+" machine", publicURL.String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		enrollment, err := daemon.BeginEnrollment(ctx, identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), accounts[index].githubID, accounts[index].login); err != nil {
+			t.Fatal(err)
+		}
+		credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+		if err != nil {
+			t.Fatalf("complete enrollment for @%s: %v", accounts[index].login, err)
+		}
+		accounts[index].daemonID = credential.GetDaemonId()
+	}
+	if err := gatewayStore.UpdateAuthState(func(state *gateway.AuthState) error {
+		for _, account := range accounts {
+			state.Sessions = append(state.Sessions, gateway.Session{
+				TokenHash: sessionDigest(config.AuthSecret, account.session), GitHubID: account.githubID, Login: account.login,
+				CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(time.Hour),
+			})
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client := gatewayv1Client(connection)
+	for index, account := range accounts {
+		authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+account.session)
+		list, err := client.ListDaemons(authorized, &emptypb.Empty{})
+		if err != nil || len(list.GetDaemons()) != 1 || list.GetDaemons()[0].GetId() != account.daemonID {
+			t.Fatalf("@%s daemon isolation=%#v err=%v", account.login, list, err)
+		}
+		other := accounts[(index+1)%len(accounts)]
+		if _, err := client.ExchangeDaemonToken(authorized, &gatewayv1.ExchangeDaemonTokenRequest{DaemonId: other.daemonID, ClientKeyThumbprint: "client-key"}); status.Code(err) != codes.NotFound {
+			t.Fatalf("@%s accessed @%s daemon: %v", account.login, other.login, err)
+		}
+	}
+}
 
 func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
@@ -87,7 +176,6 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err := identity.SaveCredential(credential.GetDaemonId(), credential.GetDaemonName(), credential.GetCertificatePem(), credential.GetDaemonCaPem(), credential.GetGatewaySigningPublicKey(), credential.GetExpiresAt(), credential.GetGeneration()); err != nil {
 		t.Fatal(err)
 	}
-
 	boardStore := store.New(t.TempDir())
 	if err := boardStore.Ensure(); err != nil {
 		t.Fatal(err)

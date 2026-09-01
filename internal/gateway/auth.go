@@ -218,7 +218,7 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := a.githubUser(r.Context(), githubToken)
 	githubToken = ""
-	if err != nil || user.ID != a.config.AllowedUserID {
+	if err != nil || !a.config.AllowsGitHubUser(user.ID) {
 		a.completion(w, false, "This GitHub account is not allowed.")
 		return
 	}

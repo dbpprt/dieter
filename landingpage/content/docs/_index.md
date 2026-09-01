@@ -36,7 +36,7 @@ credentials never leave their daemon host.
 | Component | Responsibility |
 | --- | --- |
 | `dieter daemon` | Owns projects, durable conversations, persistent PTY terminals, schedules, files, and local harness workers. |
-| `dieter-gateway` | Authenticates one GitHub account and connects any number of enrolled daemons. |
+| `dieter-gateway` | Authenticates allowlisted GitHub accounts and connects each account to its enrolled daemons. |
 | Native clients | macOS and Android apps that aggregate every daemon and speak the same `dieter.v1.DieterService` API. |
 
 The native clients build their own project directory by querying every online

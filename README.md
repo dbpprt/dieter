@@ -228,8 +228,10 @@ dieter daemon start \
 ### Gateway
 
 Create a GitHub OAuth App, copy [`.env.example`](.env.example) to
-`$DIETER_GATEWAY_HOME/.env`, and set the allowed account to its immutable
-numeric GitHub ID. Then run:
+`$DIETER_GATEWAY_HOME/.env`, and set the allowed account IDs to their immutable
+numeric GitHub IDs. Use `DIETER_GITHUB_ALLOWED_USER_IDS` with a comma-separated
+list for multiple isolated accounts; the singular variable remains supported.
+Then run:
 
 ```sh
 DIETER_GATEWAY_HOME=/var/lib/dieter-gateway bin/dieter-gateway

@@ -7,9 +7,9 @@ weight: 12
 slug: "gateway"
 ---
 
-The gateway authenticates one GitHub account and relays to any number of
-enrolled daemons. It never stores code, transcripts, files, or harness
-credentials; only sessions, identities, presence, and routes.
+The gateway authenticates allowlisted GitHub accounts and relays each account
+only to its own enrolled daemons. It never stores code, transcripts, files, or
+harness credentials; only sessions, identities, presence, and routes.
 
 ## Register a GitHub OAuth App
 
@@ -25,8 +25,11 @@ Copy `.env.example` to `$DIETER_GATEWAY_HOME/.env` (default
 `~/.dieter-gateway/.env`), fill its values, and set mode `0600`.
 
 {{< callout type="warn" title="Match on the numeric GitHub ID" >}}
-`DIETER_GITHUB_ALLOWED_USER_ID` must be the immutable numeric GitHub ID. The
-login is display-only and must never be used for authorization.
+`DIETER_GITHUB_ALLOWED_USER_ID` accepts one immutable numeric GitHub ID.
+`DIETER_GITHUB_ALLOWED_USER_IDS` accepts a comma-separated list and is combined
+with the singular value when both are set. Logins are display-only and must
+never be used for authorization. Accounts cannot see or control one another's
+daemons.
 {{< /callout >}}
 
 ## Behind a reverse proxy

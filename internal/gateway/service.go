@@ -165,7 +165,7 @@ func (s *Service) CompleteDaemonEnrollment(_ context.Context, request *gatewayv1
 		}
 		return s.credential(daemon), nil
 	}
-	if !record.Approved || record.GitHubID != s.config.AllowedUserID {
+	if !record.Approved || !s.config.AllowsGitHubUser(record.GitHubID) {
 		return nil, status.Error(codes.FailedPrecondition, "daemon enrollment is awaiting GitHub authorization")
 	}
 	daemonID := randomID("d_")

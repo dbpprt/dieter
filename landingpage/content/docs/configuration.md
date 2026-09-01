@@ -56,6 +56,7 @@ stores projects, transcripts, schedules, files, or harness credentials.
 | `DIETER_GATEWAY_PROXY_MODE` | `1` behind an HTTPS reverse proxy. |
 | `DIETER_GATEWAY_TLS_CERT` / `_KEY` | Direct TLS termination (TLS 1.3). |
 | `DIETER_GITHUB_ALLOWED_USER_ID` | Immutable numeric GitHub ID allowed to sign in. |
+| `DIETER_GITHUB_ALLOWED_USER_IDS` | Comma-separated immutable numeric GitHub IDs; combined with the singular value. |
 | `DIETER_RTC_STUN_URLS` / `_TURN_URLS` | ICE servers for Screens. |
 | `DIETER_RTC_TURN_SECRET` | Hex secret (≥32 bytes) for coturn REST auth. |
 | `DIETER_RTC_TTL` | Signed ICE config lifetime (default 5 minutes). |
