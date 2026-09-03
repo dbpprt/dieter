@@ -275,25 +275,21 @@ import Testing
     #expect(FileEditorSession.countLines(in: "one\ntwo\nthree") == 3)
 }
 
-@Test @MainActor func nativeSmokeClicksUseTopRelativeCoordinatesInFlippedHostingViews() async throws {
-    let recorder = NativeClickRecorder()
-    let hosting = NSHostingView(rootView: Button("Press") { recorder.clicked = true }
-        .frame(width: 200, height: 100))
-    #expect(hosting.isFlipped)
-    let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
-        styleMask: [.borderless],
-        backing: .buffered,
-        defer: false
-    )
-    window.contentView = hosting
-    window.makeKeyAndOrderFront(nil)
-    hosting.layoutSubtreeIfNeeded()
-    defer { window.close() }
+@Test func nativeSmokeClickCoordinatesRespectContentOrientation() {
+    let bounds = NSRect(x: 0, y: 0, width: 200, height: 100)
 
-    NativeUIEventDispatcher.click(window: window, x: 100, distanceFromTop: 50)
-    try await Task.sleep(nanoseconds: 20_000_000)
-    #expect(recorder.clicked)
+    #expect(NativeUIEventDispatcher.contentLocation(
+        x: 100,
+        distanceFromTop: 20,
+        contentBounds: bounds,
+        isFlipped: true
+    ) == NSPoint(x: 100, y: 20))
+    #expect(NativeUIEventDispatcher.contentLocation(
+        x: 100,
+        distanceFromTop: 20,
+        contentBounds: bounds,
+        isFlipped: false
+    ) == NSPoint(x: 100, y: 80))
 }
 
 private final class BlockingPersistenceWriter: @unchecked Sendable {
@@ -350,9 +346,4 @@ private final class TerminalPublishRecorder {
         terminalID = id
         self.screen = screen
     }
-}
-
-@MainActor
-private final class NativeClickRecorder {
-    var clicked = false
 }

@@ -1144,14 +1144,25 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 	case <-time.After(2 * time.Second):
 		t.Fatal("queued turn did not start after interrupt")
 	}
-	waitFor(t, func() bool {
-		conversation, _ = service.Store.Conversation(card.ID)
-		stored, _ := service.Store.ResolveCard(card.ID)
-		service.mu.Lock()
-		active := service.active[card.ID]
-		service.mu.Unlock()
-		return conversation.Status == "idle" && len(conversation.Queue) == 0 && stored.Runtime == "idle" && active == nil
-	})
+	service.mu.Lock()
+	secondTurn := service.active[card.ID]
+	service.mu.Unlock()
+	if secondTurn == nil {
+		t.Fatal("queued turn was not registered as active")
+	}
+	select {
+	case <-secondTurn.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("queued turn did not finish")
+	}
+	conversation, _ = service.Store.Conversation(card.ID)
+	stored, _ := service.Store.ResolveCard(card.ID)
+	service.mu.Lock()
+	active := service.active[card.ID]
+	service.mu.Unlock()
+	if conversation.Status != "idle" || len(conversation.Queue) != 0 || stored.Runtime != "idle" || active != nil {
+		t.Fatalf("queued turn did not settle: status=%q queue=%d runtime=%q active=%v", conversation.Status, len(conversation.Queue), stored.Runtime, active != nil)
+	}
 	prompts := runner.prompts()
 	if len(prompts) != 2 || prompts[0] != "Keep working" || prompts[1] != "Use this instead" {
 		t.Fatalf("prompts=%#v", prompts)

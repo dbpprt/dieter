@@ -843,9 +843,11 @@ enum NativeUISmokeRunner {
 enum NativeUIEventDispatcher {
     static func click(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
         guard let content = window.contentView else { return }
-        let contentLocation = NSPoint(
+        let contentLocation = contentLocation(
             x: x,
-            y: content.isFlipped ? distanceFromTop : content.bounds.height - distanceFromTop
+            distanceFromTop: distanceFromTop,
+            contentBounds: content.bounds,
+            isFlipped: content.isFlipped
         )
         let location = content.convert(contentLocation, to: nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -866,6 +868,18 @@ enum NativeUIEventDispatcher {
             )
             if let event { window.sendEvent(event) }
         }
+    }
+
+    nonisolated static func contentLocation(
+        x: CGFloat,
+        distanceFromTop: CGFloat,
+        contentBounds: NSRect,
+        isFlipped: Bool
+    ) -> NSPoint {
+        NSPoint(
+            x: x,
+            y: isFlipped ? distanceFromTop : contentBounds.height - distanceFromTop
+        )
     }
 }
 #endif
