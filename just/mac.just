@@ -5,7 +5,8 @@ set working-directory := '..'
 app_root := "apps/mac"
 app_bundle := app_root / "build/Dieter.app"
 app_executable := app_bundle / "Contents/MacOS/DieterMac"
-scratch := app_root / ".build/dieter-local"
+app_scratch := app_root / ".build/dieter-local"
+test_scratch := app_root / ".build/dieter-tests"
 
 # List the macOS commands.
 default:
@@ -41,7 +42,7 @@ status:
 
 # Build and package Dieter.app with the canonical SwiftPM cache.
 build configuration="debug":
-    CONFIGURATION="{{ configuration }}" DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ scratch }}" {{ app_root }}/scripts/build.sh
+    CONFIGURATION="{{ configuration }}" DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ app_scratch }}" {{ app_root }}/scripts/build.sh
 
 # Run Mac unit tests with an optional Swift Testing filter.
 test filter="":
@@ -50,7 +51,7 @@ test filter="":
     arguments=(
         test
         --package-path "{{ app_root }}"
-        --scratch-path "$PWD/{{ scratch }}"
+        --scratch-path "$PWD/{{ test_scratch }}"
         --only-use-versions-from-resolved-file
         --manifest-cache local
         --disable-index-store
@@ -213,11 +214,11 @@ clean-release:
 
 # Check that the checked-in Swift protobuf clients match their inputs.
 proto-check:
-    DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ scratch }}" {{ app_root }}/scripts/generate-swift-proto.sh --check
+    DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ app_scratch }}" {{ app_root }}/scripts/generate-swift-proto.sh --check
 
 # Regenerate the checked-in Swift protobuf clients with the canonical cache.
 proto-generate:
-    DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ scratch }}" {{ app_root }}/scripts/sync-proto.sh
+    DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ app_scratch }}" {{ app_root }}/scripts/sync-proto.sh
 
 # Run one safe packaged-app smoke suite: core, board, conversation, machine, sidebar, terminal, island, or workspace.
 smoke suite="core": build
@@ -235,7 +236,7 @@ smoke-all: build
 _smoke suite:
     swift run \
         --package-path "{{ app_root }}" \
-        --scratch-path "$PWD/{{ scratch }}" \
+        --scratch-path "$PWD/{{ app_scratch }}" \
         --only-use-versions-from-resolved-file \
         --manifest-cache local \
         --disable-index-store \
@@ -249,7 +250,7 @@ _smoke suite:
 prune-smoke-runtimes:
     find "{{ app_root }}/.build/smoke" -type d -path '*/fixture-home/dieter/runtime' -prune -exec rm -rf -- {} +
 
-# Remove only the pre-Just SwiftPM cache; preserve the canonical cache and smoke evidence.
+# Remove only the pre-Just SwiftPM cache; preserve both canonical caches and smoke evidence.
 [confirm]
 clean-legacy-cache:
     rm -rf \

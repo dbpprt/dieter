@@ -59,12 +59,15 @@ configure. Other daemons transparently use the encrypted gateway relay.
 `Package.swift` can also be opened directly in Xcode. `just mac build`
 creates an ad-hoc-signed `apps/mac/build/Dieter.app` that launches like a normal
 macOS app. The underlying packaging script reuses SwiftPM's incremental build directory, disables the
-CLI-only index store, keeps manifest and compiled-artifact caches under
+CLI-only index store, keeps app-build artifacts under
 `apps/mac/.build/dieter-local`, reuses SwiftPM's shared dependency download
-cache, and avoids network version resolution. The dedicated scratch path keeps
-Xcode, direct SwiftPM commands, and concurrent project sessions from
-invalidating the app script's cache. Keep `apps/mac/.build` between builds to
-retain it, or set `DIETER_SWIFT_SCRATCH_PATH` to put it elsewhere.
+cache, and avoids network version resolution. `just mac test` has its own
+`apps/mac/.build/dieter-tests` scratch path because SwiftPM test and product
+builds use incompatible compiler flags that otherwise invalidate one another.
+These dedicated paths also keep Xcode, direct SwiftPM commands, and concurrent
+project sessions from invalidating the canonical caches. Keep `apps/mac/.build`
+between builds to retain them, or set `DIETER_SWIFT_SCRATCH_PATH` when invoking
+the underlying packaging script directly.
 
 General settings include eight Dieter designs, with the native Monochrome
 design first and selected by default. Monochrome follows the Mac's light or dark
@@ -133,4 +136,4 @@ screenshots are retained under `apps/mac/.build/smoke/<run-id>`.
 The app-side smoke hooks compile only in debug builds. A release build has no
 smoke command-line interface. Remove generated smoke evidence with the
 confirmed `just mac clean-smoke` recipe; it never removes the canonical SwiftPM
-compilation cache.
+compilation caches.

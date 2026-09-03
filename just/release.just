@@ -42,7 +42,7 @@ version:
     echo "Releasing v$number from $GITHUB_SHA."
 
 # Select the pinned Xcode version on the GitHub macOS runner.
-select-xcode path="/Applications/Xcode_26.3.app/Contents/Developer":
+select-xcode path="/Applications/Xcode_26.5.app/Contents/Developer":
     [[ "${GITHUB_ACTIONS:-}" == true ]] || { echo "Xcode selection is CI-only." >&2; exit 1; }
     sudo xcode-select -s "{{ path }}"
 

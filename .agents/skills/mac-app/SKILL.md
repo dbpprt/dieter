@@ -16,7 +16,8 @@ Use these canonical paths:
 ```sh
 MAC_APP_BUNDLE="$PWD/apps/mac/build/Dieter.app"
 MAC_APP_EXECUTABLE="$MAC_APP_BUNDLE/Contents/MacOS/DieterMac"
-MAC_SWIFT_SCRATCH="$PWD/apps/mac/.build/dieter-local"
+MAC_APP_SCRATCH="$PWD/apps/mac/.build/dieter-local"
+MAC_TEST_SCRATCH="$PWD/apps/mac/.build/dieter-tests"
 ```
 
 Never stop, restart, replace, or install over the operator's running daemon.
@@ -24,7 +25,9 @@ Use `$dieter-cli` for daemon-side inspection and never edit `DIETER_HOME`.
 
 Do not run `swift run DieterMac`, create alternate scratch paths, delete
 `.build`, or use `swift package clean`. `just mac build` packages the app with
-the one canonical cache. Do not run two builds against it concurrently.
+the canonical app cache, while `just mac test` uses the canonical test cache so
+their incompatible compiler flags cannot invalidate each other. Do not run two
+commands against the same cache concurrently.
 
 ## Inventory first
 
@@ -50,10 +53,11 @@ just mac test '<optional-filter>'
 just mac run
 ```
 
-The first build after a compiler, dependency, generated-schema, configuration,
-or source change can be long. A second unchanged `just mac build` should be
-incremental. If it is not, compare the Xcode version, configuration,
-`Package.resolved`, and canonical scratch path before cleaning anything.
+The first build or test after a compiler, dependency, generated-schema,
+configuration, or source change can be long. A second unchanged command should
+be incremental. If it is not, compare the Xcode version, configuration,
+`Package.resolved`, and the command's canonical scratch path before cleaning
+anything. Never point builds at `dieter-tests` or tests at `dieter-local`.
 
 `just mac run` refuses conflicting processes, launches without `open -n`, and
 requires exactly one canonical executable. For current code, quit before
@@ -114,7 +118,7 @@ Suites are `core`, `board`, `conversation`, `machine`, `sidebar`, `terminal`,
 
 Read every report and inspect relevant PNGs; exit status alone is insufficient.
 The app-side smoke interface exists only in debug builds. Use the confirmed
-`just mac clean-smoke` recipe to remove smoke evidence without removing the
+`just mac clean-smoke` recipe to remove smoke evidence without removing either
 compilation cache.
 
 ## Diagnose before restarting
