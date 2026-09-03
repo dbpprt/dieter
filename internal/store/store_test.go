@@ -397,6 +397,30 @@ func TestInterruptConversationReconcilesOrphanedRuntime(t *testing.T) {
 	}
 }
 
+func TestOrphanedTurnCardsDoesNotPublishSyncMutation(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	before, events, err := s.SyncEvents(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("fresh store events=%#v", events)
+	}
+	if orphans, err := s.OrphanedTurnCards(); err != nil || len(orphans) != 0 {
+		t.Fatalf("orphans=%#v err=%v", orphans, err)
+	}
+	after, events, err := s.SyncEvents(before.Sequence, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before || len(events) != 0 {
+		t.Fatalf("read-only orphan inspection advanced sync from %#v to %#v with events=%#v", before, after, events)
+	}
+}
+
 func TestInterruptConversationPreservesFailedRuntime(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, ID: "card_failed_orphan", Title: "Failed orphan", Prompt: "Work"})

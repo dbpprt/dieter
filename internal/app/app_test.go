@@ -1146,14 +1146,12 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 	}
 	waitFor(t, func() bool {
 		conversation, _ = service.Store.Conversation(card.ID)
+		stored, _ := service.Store.ResolveCard(card.ID)
 		service.mu.Lock()
-		active := service.active[project.ID]
+		active := service.active[card.ID]
 		service.mu.Unlock()
-		return conversation.Status == "idle" && len(conversation.Queue) == 0 && active == nil
+		return conversation.Status == "idle" && len(conversation.Queue) == 0 && stored.Runtime == "idle" && active == nil
 	})
-	// Let the background update-channel drainer observe the close before the
-	// temporary store is removed by testing.T cleanup.
-	time.Sleep(100 * time.Millisecond)
 	prompts := runner.prompts()
 	if len(prompts) != 2 || prompts[0] != "Keep working" || prompts[1] != "Use this instead" {
 		t.Fatalf("prompts=%#v", prompts)

@@ -243,6 +243,10 @@ delete data without explicit authorization.
 
 ## Command discipline
 
+- Inside the Dieter repository, use `just daemon build`, `just daemon test`,
+  and `just gateway build` for component development. `just daemon run` and
+  `just gateway run` stay in the foreground and never manage an installed
+  service.
 - Run `dieter help <group> <action>` or append `--help` before unfamiliar
   mutations. Every command provides offline help.
 - Prefer exact IDs and `--format jsonl`, `--format json`, or `--format ids` for

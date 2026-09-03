@@ -65,5 +65,5 @@ stores projects, transcripts, schedules, files, or harness credentials.
 
 The source contracts are `api/proto/dieter/v1/dieter.proto` and
 `api/proto/dieter/gateway/v1/gateway.proto`. Regenerate Go and native inputs with
-`./scripts/generate-proto.sh`. The application has no REST data API; native
+`just proto`. The application has no REST data API; native
 clients and the raw gateway relay use protobuf gRPC.

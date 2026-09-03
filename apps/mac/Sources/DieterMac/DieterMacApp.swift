@@ -17,7 +17,9 @@ struct DieterMacApp: App {
         let store = DieterStore()
         _store = State(initialValue: store)
         islandController = DieterIslandController(store: store)
+#if DIETER_UI_SMOKE
         NativeUISmokeRunner.prepareWindowIfNeeded()
+#endif
     }
 
     var body: some Scene {
@@ -53,6 +55,7 @@ struct DieterMacApp: App {
                 }
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
+#if DIETER_UI_SMOKE
                     let arguments = ProcessInfo.processInfo.arguments
                     // Normal app startup is owned by the always-present menu
                     // bar label below. Keep this window task only for smoke
@@ -89,6 +92,7 @@ struct DieterMacApp: App {
                     if conversationSmoke {
                         await ConversationUISmokeRunner.run(store: store)
                     }
+#endif
                 }
                 .frame(minWidth: 1_080, minHeight: 680)
         }
@@ -146,8 +150,10 @@ struct DieterMacApp: App {
                     }
                 }
                 .task {
+#if DIETER_UI_SMOKE
                     let arguments = ProcessInfo.processInfo.arguments
                     guard !arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) else { return }
+#endif
                     await store.connect()
                 }
         }

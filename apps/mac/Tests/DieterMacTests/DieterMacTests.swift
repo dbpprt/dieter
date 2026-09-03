@@ -2030,6 +2030,33 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(synchronizedInAnotherProjection == [synchronized])
 }
 
+@Test func synchronizedCreateIsRecognizedBeforeUnaryResponseReturns() {
+    let entry = DieterOutboxEntry(
+        commandID: "create-1",
+        clientID: "mac-installation",
+        endpointID: "endpoint",
+        kind: .createChat,
+        request: Data(),
+        optimisticID: "local_chat",
+        attempts: 0,
+        createdAt: Date()
+    )
+    let expectedID = "c_cf6f9faf64cd8f1ea9c84d28"
+
+    #expect(DieterOutboxPolicy.expectedConversationID(
+        clientID: entry.clientID,
+        commandID: entry.commandID
+    ) == expectedID)
+    #expect(DieterOutboxPolicy.synchronizedConversationID(
+        for: entry,
+        visibleConversationIDs: [expectedID]
+    ) == expectedID)
+    #expect(DieterOutboxPolicy.synchronizedConversationID(
+        for: entry,
+        visibleConversationIDs: ["c_another"]
+    ) == nil)
+}
+
 @Test func localConversationIDsNeverQualifyForServerFetch() {
     #expect(!DieterConversationID.isServerBacked("local_chat"))
     #expect(DieterConversationID.isServerBacked("c_server"))

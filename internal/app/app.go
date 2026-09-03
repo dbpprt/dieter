@@ -46,6 +46,7 @@ type activeTurn struct {
 	lastProgress   time.Time
 	workerObserved bool
 	recoveryErr    error
+	finishing      bool
 }
 
 type TurnUpdate struct {
@@ -881,13 +882,31 @@ func (s *Service) ReconcileStalledTurns(now time.Time) []string {
 }
 
 func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID string, request harness.Request, updates chan TurnUpdate, done chan struct{}) {
-	defer close(updates)
-	defer close(done)
-	defer s.clearActive(detail.Card.ID, turnID)
-	defer func() {
+	finished := false
+	finish := func(startQueued bool, finalCache store.CardCacheInput) error {
+		if finished {
+			return nil
+		}
+		finished = true
 		refreshCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_, _ = s.Workspaces.Refresh(refreshCtx, detail.Card.ID, false)
+		updateErr := s.finishActive(detail.Card.ID, turnID, func() error {
+			if finalCache.Runtime == "" {
+				return nil
+			}
+			_, err := s.Store.UpdateCardCache(detail.Card.ID, finalCache)
+			return err
+		})
+		if startQueued {
+			s.startNextQueued(detail.Card.ID)
+		}
+		return updateErr
+	}
+	defer func() {
+		_ = finish(false, store.CardCacheInput{})
+		close(done)
+		close(updates)
 	}()
 	streamFailed := false
 	var reportedFailure error
@@ -951,11 +970,9 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		if _, _, appendErr := s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk); appendErr != nil {
 			recoveryErr = errors.Join(recoveryErr, appendErr)
 		}
-		if _, updateErr := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Runtime: "failed"}); updateErr != nil {
+		if updateErr := finish(true, store.CardCacheInput{Runtime: "failed"}); updateErr != nil {
 			recoveryErr = errors.Join(recoveryErr, updateErr)
 		}
-		s.clearActive(detail.Card.ID, turnID)
-		s.startNextQueued(detail.Card.ID)
 		select {
 		case updates <- TurnUpdate{Chunk: chunk, Err: recoveryErr, Done: true}:
 		default:
@@ -977,6 +994,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 				conversation, _ = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: userMessageID, ResponseMessageID: request.ResponseMessageID, Instructions: request.Instructions})
 			}
 			_, _ = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "running"})
+			_ = finish(false, store.CardCacheInput{})
 			select {
 			case updates <- TurnUpdate{Done: true}:
 			default:
@@ -1006,9 +1024,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		if request.Adapter == "omp-acp" {
 			_, _ = s.Store.SetConversationSession(detail.Card.ID, turnID, json.RawMessage("null"))
 		}
-		_, _ = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "idle"})
-		s.clearActive(detail.Card.ID, turnID)
-		s.startNextQueued(detail.Card.ID)
+		_ = finish(true, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "idle"})
 		select {
 		case updates <- TurnUpdate{Chunk: chunk, Done: true}:
 		default:
@@ -1018,9 +1034,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if err != nil {
 		chunk, _ := json.Marshal(map[string]any{"type": "error", "errorText": err.Error()})
 		_, _, _ = s.Store.AppendUIChunk(detail.Card.ID, turnID, chunk)
-		_, _ = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Runtime: "failed"})
-		s.clearActive(detail.Card.ID, turnID)
-		s.startNextQueued(detail.Card.ID)
+		_ = finish(true, store.CardCacheInput{Runtime: "failed"})
 		select {
 		case updates <- TurnUpdate{Chunk: chunk, Err: err, Done: true}:
 		case <-ctx.Done():
@@ -1031,9 +1045,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 	if streamFailed {
 		finalRuntime = "failed"
 	}
-	_, _ = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: finalRuntime})
-	s.clearActive(detail.Card.ID, turnID)
-	s.startNextQueued(detail.Card.ID)
+	_ = finish(true, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: finalRuntime})
 	select {
 	case updates <- TurnUpdate{Done: true}:
 	case <-ctx.Done():
@@ -1230,16 +1242,40 @@ func (s *Service) CancelCard(ref string) error {
 }
 
 func (s *Service) clearActive(cardID, turnID string) {
+	_ = s.finishActive(cardID, turnID, nil)
+}
+
+// finishActive keeps the in-process turn visible until its runtime lease is
+// released and its last durable update is complete. Callers can therefore use
+// the active map as a teardown barrier without racing the final store write.
+func (s *Service) finishActive(cardID, turnID string, finalize func() error) error {
 	s.mu.Lock()
 	var lease store.RuntimeLease
-	if current := s.active[cardID]; current != nil && current.cardID == cardID && current.turnID == turnID {
+	claimed := false
+	current := s.active[cardID]
+	if current != nil && current.cardID == cardID && current.turnID == turnID && !current.finishing {
+		current.finishing = true
 		lease = current.lease
+		claimed = true
+	}
+	s.mu.Unlock()
+	if !claimed {
+		return nil
+	}
+	var releaseErr error
+	if lease.Token != "" {
+		releaseErr = s.Store.ReleaseRuntimeLease(lease)
+	}
+	var finalizeErr error
+	if finalize != nil {
+		finalizeErr = finalize()
+	}
+	s.mu.Lock()
+	if s.active[cardID] == current {
 		delete(s.active, cardID)
 	}
 	s.mu.Unlock()
-	if lease.Token != "" {
-		_ = s.Store.ReleaseRuntimeLease(lease)
-	}
+	return errors.Join(releaseErr, finalizeErr)
 }
 
 func newRuntimeID(prefix string) string {

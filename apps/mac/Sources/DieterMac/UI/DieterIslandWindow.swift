@@ -116,7 +116,11 @@ final class DieterIslandController: NSObject {
     private var screenObserver: NSObjectProtocol?
     private var enabled = false
     private var started = false
+#if DIETER_UI_SMOKE
     private let automaticHoverEnabled = !ProcessInfo.processInfo.arguments.contains("--island-ui-smoke")
+#else
+    private let automaticHoverEnabled = true
+#endif
 
     init(store: DieterStore) {
         self.store = store

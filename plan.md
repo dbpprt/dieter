@@ -430,7 +430,7 @@ or a future server endpoint.
 The Swift protobuf and gRPC sources are already regenerated. Verify them with:
 
 ```sh
-./apps/mac/scripts/generate-swift-proto.sh --check
+just mac proto-check
 ```
 
 Recommended integration points:
@@ -573,7 +573,7 @@ For isolated native end-to-end testing, start the throwaway gateway/daemon
 harness in a separate terminal:
 
 ```sh
-go run ./scripts/isolated-gateway --addr 127.0.0.1:14243
+just gateway isolated 127.0.0.1:14243
 ```
 
 It prints `DIETER_ISOLATED_ADDR`, `DIETER_ISOLATED_TOKEN`,
@@ -618,17 +618,10 @@ and a standalone chat:
 Minimum repository checks after native implementation:
 
 ```sh
-./apps/mac/scripts/generate-swift-proto.sh --check
-swift test --package-path apps/mac
-
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-(cd apps/android && ./gradlew test)
-
-go test -race ./...
-go vet ./...
-go build ./cmd/dieter
-go build ./cmd/dieter-gateway
+just harness install
+just check
+just mac test
+just android test
 ```
 
 Do not stop or repoint a developer's running daemon/gateway for end-to-end tests.

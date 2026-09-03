@@ -1,4 +1,5 @@
 import DieterAPI
+import CryptoKit
 import Foundation
 import GRPCCore
 
@@ -61,6 +62,31 @@ enum DieterConversationOpenFailurePolicy {
 }
 
 enum DieterOutboxPolicy {
+    /// Idempotent conversation creates use the same deterministic identifier
+    /// on the daemon. Knowing it lets the sync stream acknowledge a create
+    /// before the unary CreateCard/CreateChat response returns, avoiding a
+    /// transient authoritative row beside its optimistic counterpart.
+    static func expectedConversationID(clientID: String, commandID: String) -> String? {
+        let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let commandID = commandID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clientID.isEmpty, !commandID.isEmpty, clientID.count <= 200, commandID.count <= 200 else {
+            return nil
+        }
+        let digest = SHA256.hash(data: Data("\(clientID)\0\(commandID)".utf8))
+        return "c_" + digest.prefix(12).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func synchronizedConversationID(
+        for entry: DieterOutboxEntry,
+        visibleConversationIDs: Set<String>
+    ) -> String? {
+        guard entry.serverID == nil,
+              entry.kind == .createCard || entry.kind == .createChat,
+              let expected = expectedConversationID(clientID: entry.clientID, commandID: entry.commandID),
+              visibleConversationIDs.contains(expected) else { return nil }
+        return expected
+    }
+
     static func retargetedCards(
         _ cards: [Dieter_V1_Card],
         from optimisticID: String,

@@ -87,9 +87,11 @@ struct ConversationView: View {
         .animation(.spring(duration: 0.3), value: store.workspaceToast)
         .onChange(of: store.selectedCardID) { _, _ in tab = "Conversation" }
         .onChange(of: store.selectedChatID) { _, _ in tab = "Conversation" }
+#if DIETER_UI_SMOKE
         .onReceive(NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.selectTabNotification)) { note in
             if let name = note.object as? String { tab = name }
         }
+#endif
         .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             if case let .success(urls) = result { store.addAttachments(urls) }
             else if case let .failure(error) = result { store.show(error) }
@@ -473,15 +475,19 @@ struct ConversationTimeline: View {
                 }
             }
             .onChange(of: showsJumpToLatest) { _, visible in
+#if DIETER_UI_SMOKE
                 ConversationUISmokeRunner.recordJumpToLatestVisibility(visible)
+#endif
             }
             .onChange(of: viewportObservation, initial: true) { _, observation in
+#if DIETER_UI_SMOKE
                 ConversationUISmokeRunner.recordViewportObservation(
                     conversationID: observation.conversationID,
                     isAtLatest: observation.isAtLatest,
                     followsLatest: observation.followsLatest,
                     initialPositionComplete: observation.initialPositionComplete
                 )
+#endif
             }
             .onChange(of: turnFailure?.log) { _, log in
                 if log == nil { retryingFailureLog = nil }

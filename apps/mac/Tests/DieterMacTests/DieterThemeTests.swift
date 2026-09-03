@@ -141,6 +141,21 @@ struct DieterThemePerformanceTests {
         #expect(!implementation.contains("LazyVStack"))
     }
 
+    @Test func productionProjectSidebarRetainsTheEagerStackWorkaround() throws {
+        let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/DieterRootView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let start = try #require(source.range(of: "struct AppSidebar: View"))
+        let end = try #require(source.range(
+            of: "private struct MachineQueueBanner: View",
+            range: start.upperBound..<source.endIndex
+        ))
+        let implementation = source[start.lowerBound..<end.lowerBound]
+
+        #expect(implementation.contains("VStack(alignment: .leading, spacing: 0)"))
+        #expect(implementation.contains("VStack(spacing: 7)"))
+        #expect(!implementation.contains("LazyVStack"))
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_RUN_LIVE_WINDOW_SMOKE"] == "1"))
     @MainActor func productionChatListLiveWindowSmokeTest() {
         let fixture = makeProductionChatListFixture()

@@ -9,6 +9,8 @@ on:
     branches: [main]
     paths:
       - "landingpage/**"
+      - "justfile"
+      - "just/site.just"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -33,26 +35,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+
       - name: Install Hugo (extended)
-        run: |
-          curl -sSL "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin hugo
-          hugo version
+        run: just site install-ci
 
       - name: Configure Pages
         id: pages
         uses: actions/configure-pages@v5
 
       - name: Build
-        working-directory: landingpage
         env:
-          HUGO_ENVIRONMENT: production
-          TZ: Europe/Berlin
-        run: |
-          hugo \
-            --minify \
-            --gc \
-            --baseURL "${{ steps.pages.outputs.base_url }}/"
+          SITE_BASE_URL: ${{ steps.pages.outputs.base_url }}
+        run: just site build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

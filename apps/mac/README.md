@@ -33,8 +33,8 @@ Requirements: macOS 15+, Xcode 16+ (the current project is verified with Xcode
 26), a Dieter gateway, and at least one enrolled daemon.
 
 ```sh
-go run ./cmd/dieter daemon start
-apps/mac/scripts/run.sh
+dieter daemon start
+just mac run
 ```
 
 For an isolated development server on another port, launch the app with
@@ -56,9 +56,9 @@ For a daemon on the same Mac, the app automatically discovers and uses its
 authenticated loopback TLS route; there is no separate local connection to
 configure. Other daemons transparently use the encrypted gateway relay.
 
-`Package.swift` can also be opened directly in Xcode. `scripts/build.sh`
+`Package.swift` can also be opened directly in Xcode. `just mac build`
 creates an ad-hoc-signed `apps/mac/build/Dieter.app` that launches like a normal
-macOS app. The script reuses SwiftPM's incremental build directory, disables the
+macOS app. The underlying packaging script reuses SwiftPM's incremental build directory, disables the
 CLI-only index store, keeps manifest and compiled-artifact caches under
 `apps/mac/.build/dieter-local`, reuses SwiftPM's shared dependency download
 cache, and avoids network version resolution. The dedicated scratch path keeps
@@ -77,9 +77,9 @@ variants under `Resources/PaletteIcons` support runtime switching.
 Public SwiftProtobuf messages and grpc-swift v2 client stubs are checked in so
 ordinary builds do not compile `protoc` and both Swift generator plugins. The
 build verifies their input and output fingerprints and only regenerates them
-after an authoritative schema changes. Run `scripts/generate-swift-proto.sh`
-directly when upgrading the generator dependencies. `scripts/sync-proto.sh`
-keeps both package inputs in sync with the repository's authoritative schemas.
+after an authoritative schema changes. Run `just mac proto-check` to verify the
+checked-in sources and `just mac proto-generate` to sync both package inputs
+with the repository's authoritative schemas and regenerate their clients.
 
 Navigation follows the desktop reference hierarchy: All chats is global, while
 boards, Files, and Schedules live beneath each project. Creating a chat calls
@@ -109,80 +109,28 @@ daemon's Ed25519 signature over the client offer, DTLS fingerprint, nonce,
 session ID, and lease before accepting the answer. The current slice is
 view-only, VP8-only, and limited to one session per daemon; keyboard, pointer,
 clipboard, audio, file transfer, native capture helpers, and Android viewing
-remain future work. The exactly pinned Google WebRTC 151.0.0 community
-XCFramework is the prototype viewer dependency pending a Dieter-built,
-reproducibly packaged artifact.
+remain future work. The Google WebRTC M151 community XCFramework is pinned
+directly to the byte-verified `151.0.1` release asset. This avoids the upstream
+package manifest's removed `151.0.0` asset while a Dieter-built, reproducibly
+packaged artifact remains future work.
 
 ## Verify
 
 ```sh
-swift test --disable-keychain --package-path apps/mac
-apps/mac/scripts/ui-smoke.sh
-apps/mac/scripts/board-stress-ui-smoke.sh
-apps/mac/scripts/machine-ui-smoke.sh
-apps/mac/scripts/conversation-ui-smoke.sh
-apps/mac/scripts/sidebar-ui-smoke.sh
-apps/mac/scripts/terminal-ui-smoke.sh
-apps/mac/scripts/island-ui-smoke.sh
-apps/mac/scripts/accessibility-smoke.sh
+just mac test
+just mac smoke core
+just mac smoke-all
 ```
 
-The UI smoke test starts an isolated gateway and enrolled daemon, packages and opens the app,
-then delivers native mouse events to its own window to click a board, global
-Chats, a standalone conversation, project Files, and project Schedules. The app captures its own SwiftUI content after each click
-under `apps/mac/.build/ui-smoke`, so the flow does not need Accessibility or
-Screen Recording permission. It also creates a new Git repository through the
-Mac client and registers a linked worktree fixture through the same routed RPC
-path.
+`just mac smoke <suite>` accepts `core`, `board`, `conversation`, `machine`,
+`sidebar`, `terminal`, `island`, or `workspace`. One Swift driver owns the exact
+packaged-app and isolated-gateway PIDs, asks the gateway for an ephemeral
+loopback port, uses unique state and preferences roots, and refuses to run
+beside an existing Dieter app. Multi-phase sidebar and terminal checks wait for
+the first app process to quit before launching the second. Reports, logs, and
+screenshots are retained under `apps/mac/.build/smoke/<run-id>`.
 
-`board-stress-ui-smoke.sh` runs the same packaged-app flow against a dedicated
-78-card remote projection with 65 mixed-height cards in one lane. It protects
-the eager board-lane layout workaround from the macOS lazy-stack anchor
-livelock by opening and sorting that board through the isolated gateway; the
-general UI smoke continues to exercise the longer navigation, card-operation,
-sync-recovery, and offline/reconnect flow.
-
-`machine-ui-smoke.sh` is the focused authenticated machine path. It packages
-the Mac app, routes it through an isolated local gateway, opens the live machine
-dashboard, validates host telemetry and operation availability without invoking
-a power action, and captures the rendered result under
-`apps/mac/.build/machine-ui-smoke`.
-
-`accessibility-smoke.sh` is the independent system-level path. Once the
-invoking terminal has Accessibility and Screen Recording access, it drives the
-packaged app through System Events and captures the board, a real chat
-conversation, files, schedules, and a real card conversation.
-
-`conversation-ui-smoke.sh` opens a real conversation that carries reasoning and
-tool parts, verifies that hiding reasoning consolidates adjacent tool calls into
-one collapsed group, verifies queued follow-ups remain visible beside separate
-Stop and Queue composer actions, verifies cards and chats open at the tail,
-tails streamed growth until a native upward scroll exposes Jump to latest,
-then verifies that action resumes tailing. It also toggles the composer's
-reasoning switch repeatedly to prove the transcript survives it. Captures land under
-`apps/mac/.build/conversation-ui-smoke`.
-
-`sidebar-ui-smoke.sh` launches the packaged app twice against isolated local
-preferences. The first launch clicks a project collapse control and records an
-accepted project drop; the second launch verifies through native clicks that
-both states were restored in the rendered sidebar. It attempts the drop with
-in-process mouse events and uses the same accepted-drop state transition when
-macOS does not admit synthetic events to its system drag manager. The fixture
-also mixes online and offline machines to verify their sidebar order remains
-alphabetical when presence changes.
-
-`terminal-ui-smoke.sh` builds and starts a throwaway gateway on
-`127.0.0.1:14244` by default, leaving the normal local ports untouched. It
-creates and uses a terminal in one packaged app process, terminates that client,
-then launches a second app process and verifies that the daemon-owned terminal
-is still running, its prior output is replayed, and it accepts more input. It
-also fills the terminal scrollback and verifies that SwiftTerm's visible caret
-tracks the emulator cursor while the live viewport follows new output. The report
-and screenshots land under `apps/mac/.build/terminal-ui-smoke`. Override the
-alternate port with `DIETER_TERMINAL_SMOKE_PORT`.
-
-`island-ui-smoke.sh` packages and launches the real app with isolated local
-preferences, captures the compact and expanded Dieter Island plus its Settings
-page, and verifies that disabling and re-enabling the saved preference removes
-and restores the native panel. Captures land under
-`apps/mac/.build/island-ui-smoke`.
+The app-side smoke hooks compile only in debug builds. A release build has no
+smoke command-line interface. Remove generated smoke evidence with the
+confirmed `just mac clean-smoke` recipe; it never removes the canonical SwiftPM
+compilation cache.

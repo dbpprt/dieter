@@ -10,8 +10,7 @@ your machines, behind one interface. Built with [Hugo](https://gohugo.io)
 ## Develop
 
 ```sh
-cd landingpage
-hugo server            # http://localhost:1313
+just site serve        # http://localhost:1313
 ```
 
 Requires Hugo **extended** ≥ 0.164.
@@ -19,7 +18,7 @@ Requires Hugo **extended** ≥ 0.164.
 ## Build
 
 ```sh
-hugo --minify          # outputs to ./public
+just site build        # outputs to ./landingpage/public
 ```
 
 ## Structure

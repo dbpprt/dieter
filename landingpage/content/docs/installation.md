@@ -66,16 +66,16 @@ manual LaunchAgent, `dieter setup` unloads it and preserves its plist with a
 ## Build from source
 
 ```sh
-make build
+just build
 ```
 
 This produces separate `bin/dieter` and `bin/dieter-gateway` executables. A
 normal daemon machine installs only `dieter`; the public host installs only
 `dieter-gateway`.
 
-The macOS app builds via `apps/mac/scripts/build.sh` (producing
-`apps/mac/build/Dieter.app`); Android builds via `apps/android/scripts/build.sh`
-or a Gradle `installDebug`.
+The macOS app builds via `just mac build` (producing
+`apps/mac/build/Dieter.app`); Android builds via `just android build` and
+installs with `just android install`.
 
 ## Android
 

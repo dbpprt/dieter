@@ -15,7 +15,7 @@ Regenerate all committed bindings from the repository root after changing the
 schema:
 
 ```sh
-./scripts/generate-proto.sh
+just proto
 ```
 
 This updates the Go protobuf, gRPC, and Connect handlers under `internal/gen`

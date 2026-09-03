@@ -180,6 +180,13 @@ struct AttachmentPreviewTile: View {
         .accessibilityAction(named: "Preview") {
             if thumbnail != nil { previewPresented = true }
         }
+#if DIETER_UI_SMOKE
+        .onReceive(NotificationCenter.default.publisher(for: ConversationUISmokeRunner.openAttachmentPreviewNotification)) { note in
+            if note.object as? String == part.filename, thumbnail != nil {
+                previewPresented = true
+            }
+        }
+#endif
         .sheet(isPresented: $previewPresented) {
             if let thumbnail {
                 AttachmentImagePreview(part: part, image: thumbnail)

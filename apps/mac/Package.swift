@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .executable(name: "DieterMac", targets: ["DieterMac"]),
+        .executable(name: "DieterMacSmokeDriver", targets: ["DieterMacSmokeDriver"]),
     ],
     dependencies: [
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
@@ -16,10 +17,6 @@ let package = Package(
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.5.1"),
-        // Prototype distribution of Google's WebRTC XCFramework. Keep the
-        // release exact; a Dieter-built artifact can replace it behind the same
-        // viewer boundary before broader distribution.
-        .package(url: "https://github.com/stasel/WebRTC.git", exact: "151.0.0"),
     ],
     targets: [
         .target(
@@ -45,7 +42,10 @@ let package = Package(
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
-                .product(name: "WebRTC", package: "WebRTC"),
+                "WebRTC",
+            ],
+            swiftSettings: [
+                .define("DIETER_UI_SMOKE", .when(configuration: .debug)),
             ],
             linkerSettings: [
                 .unsafeFlags([
@@ -53,6 +53,18 @@ let package = Package(
                     "-Xlinker", "@executable_path/../Frameworks",
                 ]),
             ]
+        ),
+        .executableTarget(
+            name: "DieterMacSmokeDriver",
+            path: "Tools/DieterMacSmokeDriver"
+        ),
+        // The upstream 151.0.0 and 151.0.1 tags share a manifest whose
+        // 151.0.0 asset URL was removed. Pin the surviving, byte-identical
+        // 151.0.1 release asset directly so clean SwiftPM builds stay valid.
+        .binaryTarget(
+            name: "WebRTC",
+            url: "https://github.com/stasel/WebRTC/releases/download/151.0.1/WebRTC-M151.xcframework.zip",
+            checksum: "6f3f5693383ce65763190c46ca9f2c4325c34b83681acb9db30f01488e15f1e0"
         ),
         .testTarget(
             name: "DieterMacTests",

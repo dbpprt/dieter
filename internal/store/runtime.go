@@ -157,7 +157,7 @@ func runtimeLeasePath(dir, cardID string) (string, error) {
 // lease owned by a live Dieter process. It also prunes dead-process leases via
 // activeRuntimeLeases while holding the central mutation lock.
 func (s *Store) OrphanedTurnCards() ([]model.Card, error) {
-	release, err := s.beginWrite()
+	release, err := s.beginWriteLock()
 	if err != nil {
 		return nil, err
 	}

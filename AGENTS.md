@@ -54,11 +54,10 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ```
 
 ```sh
-npm --prefix internal/harness/runtime ci
-go test -race ./...
-go vet ./...
-go build ./cmd/dieter
-go build ./cmd/dieter-gateway
+just harness install
+just check
+just mac test
+just android test
 ```
 
 Use `gofmt` on Go files. Keep both native clients accessible and adaptive.
@@ -84,10 +83,9 @@ When a feature team adds, changes, or removes a native-client operation:
    tests, and cover the CLI path end to end. Keep
    `TestGRPCAPIImplementsEveryDeclaredRPC` passing; it prevents implicit
    `Unimplemented` drift.
-5. Regenerate Go and copied schemas with `./scripts/generate-proto.sh`, then
-   regenerate checked-in Swift clients with
-   `./apps/mac/scripts/generate-swift-proto.sh`. Android generates from the
-   authoritative schema during its build.
+5. Regenerate Go, copied schemas, and checked-in Swift clients with
+   `just proto`. Android generates from the authoritative schema during its
+   build.
 
 Never stop, restart, replace, or install over an operator's currently running
 daemon during tests. Use temporary `DIETER_HOME` roots, random loopback

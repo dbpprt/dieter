@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
@@ -76,5 +77,40 @@ class WorkspaceFreshnessIndicatorTest {
         composeRule.onNodeWithText(
             "Projects, boards, and conversations will appear together as soon as they arrive.",
         ).assertIsDisplayed()
+    }
+
+    @Test
+    fun disconnectedTerminalHeaderClearsTheFloatingConnectionStatus() {
+        composeRule.setContent {
+            DieterTheme {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Box(Modifier.fillMaxSize()) {
+                        TerminalHeader(
+                            terminalCount = 0,
+                            connected = false,
+                            loading = false,
+                            onRefresh = {},
+                            onCreate = {},
+                            modifier = Modifier.statusBarsPadding().padding(
+                                top = terminalConnectionStatusInset(ConnectionPhase.AUTH_REQUIRED),
+                            ),
+                        )
+                        ConnectionStatusIndicator(
+                            phase = ConnectionPhase.AUTH_REQUIRED,
+                            lastConnectedAtMillis = null,
+                            showingCachedData = false,
+                            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding()
+                                .padding(top = 6.dp, end = 10.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        val statusBottom = composeRule.onNodeWithTag("workspace-connection-status")
+            .fetchSemanticsNode().boundsInRoot.bottom
+        val headerTop = composeRule.onNodeWithText("Terminals")
+            .fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Connection status overlaps the terminal header", headerTop >= statusBottom)
     }
 }

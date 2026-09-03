@@ -1,3 +1,4 @@
+#if DIETER_UI_SMOKE
 import AppKit
 import Foundation
 
@@ -95,5 +96,7 @@ enum MachineUISmokeRunner {
     private static func writeReport(_ results: [String: String], to output: URL) {
         guard let data = try? JSONSerialization.data(withJSONObject: results, options: [.prettyPrinted, .sortedKeys]) else { return }
         try? data.write(to: output.appendingPathComponent("report.json"), options: .atomic)
+        DispatchQueue.main.async { NSApp.terminate(nil) }
     }
 }
+#endif

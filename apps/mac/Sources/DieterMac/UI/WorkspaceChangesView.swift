@@ -147,12 +147,14 @@ struct WorkspaceChangesView: View {
             viewedRevision = revision ?? ""
             viewedPaths = []
         }
+#if DIETER_UI_SMOKE
         .onReceive(NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.openMergeSheetNotification)) { _ in
             mergeSheetPresented = true
         }
         .onReceive(NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.closeMergeSheetNotification)) { _ in
             mergeSheetPresented = false
         }
+#endif
         .sheet(item: $operationKind) { kind in
             GitOperationSheet(kind: kind, card: card, operation: store.gitOperation).environment(store)
         }

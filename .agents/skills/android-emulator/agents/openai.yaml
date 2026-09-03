@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Android Emulator"
+  short_description: "Run and test Dieter Android live"
+  default_prompt: "Use $android-emulator to build, install, exercise, troubleshoot, and close Dieter in the visible Android emulator."

@@ -474,11 +474,13 @@ struct AppSidebar: View {
     }
 
     private var expandedProjects: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
+        let projects = visibleProjects
+        let projectIDs = projects.map(\.id)
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text("PROJECTS").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
-                if !visibleProjects.isEmpty {
-                    Text("· \(visibleProjects.count)")
+                if !projects.isEmpty {
+                    Text("· \(projects.count)")
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary.opacity(0.7))
                 }
                 Spacer()
@@ -489,11 +491,11 @@ struct AppSidebar: View {
             }
             .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 4)
 
-            ForEach(visibleProjects, id: \.id) { project in
+            ForEach(projects, id: \.id) { project in
                 SidebarProjectInsertionTarget(beforeProjectID: project.id) { moveProject($0, before: project.id) }
                 SidebarProjectRow(
                     project: project,
-                    projectIDs: visibleProjects.map(\.id),
+                    projectIDs: projectIDs,
                     expanded: projectNavigation.isExpanded(project.id),
                     toggleExpanded: { toggleProject(project.id) },
                     moveProject: moveProject
@@ -505,8 +507,9 @@ struct AppSidebar: View {
     }
 
     private var collapsedProjects: some View {
-        LazyVStack(spacing: 7) {
-            ForEach(visibleProjects, id: \.id) { project in
+        let projects = visibleProjects
+        return VStack(spacing: 7) {
+            ForEach(projects, id: \.id) { project in
                 SidebarProjectRail(project: project)
             }
         }.padding(.vertical, 10)

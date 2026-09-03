@@ -1,3 +1,4 @@
+#if DIETER_UI_SMOKE
 import AppKit
 import Foundation
 import SwiftTerm
@@ -335,3 +336,4 @@ enum TerminalUISmokeRunner {
         try? data.write(to: url, options: .atomic)
     }
 }
+#endif

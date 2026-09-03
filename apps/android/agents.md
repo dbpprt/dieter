@@ -8,7 +8,7 @@ only Dieter AVD; do not create another API-level-specific AVD for routine tests.
 Launch it with its checked, working graphics configuration and saved snapshot:
 
 ```sh
-$ANDROID_HOME/emulator/emulator @Pixel_9_API_37_1
+just android emulator-start
 ```
 
 Do not add `-gpu host`, `-gpu swiftshader*`, `-no-snapshot-load`, `-no-snapshot`,
@@ -22,15 +22,22 @@ daemons before a snapshot repair and make enough host memory available for the
 emulator's host GLES renderer:
 
 ```sh
-./apps/android/gradlew --project-dir apps/android --stop
+just android gradle-stop
 memory_pressure -Q
 ```
+
+The start recipe requires at least 6 GiB of reclaimable memory, leaving
+headroom above the emulator's 5 GiB software-renderer cutoff while graphics
+initialization allocates memory.
 
 The startup log must report `gles_mode_selected:host` and identify the Apple
 GPU. If it instead says that software GL will be used due to system memory
 pressure, free memory and restart the emulator before using or saving its
-state. A software-rendered fallback snapshot is not a healthy replacement for
-the standard AVD snapshot.
+state. Recent emulator builds can still select `lavapipe` for their separate
+Vulkan compatibility path while GLES uses the Apple GPU; treat the
+`gles_mode_selected` line and `SurfaceFlinger`'s `GLES:` renderer as
+authoritative. A software-rendered GLES fallback snapshot is not a healthy
+replacement for the standard AVD snapshot.
 
 Never stop or snapshot the emulator while ADB is offline, boot animation is
 running, or Android has no focused window. A normal emulator shutdown saves
@@ -93,13 +100,12 @@ repeatedly loading or overwriting broken graphics state.
 4. Build, install, and launch the current app:
 
    ```sh
-   ./apps/android/gradlew --project-dir apps/android installDebug
-   adb -s emulator-5554 shell am force-stop com.dbpprt.dieter
-   adb -s emulator-5554 shell am start -n com.dbpprt.dieter/.MainActivity
+   just android install
+   just android launch
    ```
 
-`./apps/android/scripts/build.sh` detects Android Studio's JDK and the local SDK
-when the shell environment does not already expose them.
+The Android Just module detects Android Studio's JDK and the local SDK when the
+shell environment does not already expose them.
 
 ## Reproduce and verify visibly
 
@@ -136,8 +142,8 @@ Run the narrow unit tests while iterating, then the Android unit suite and debug
 build before installing the final APK:
 
 ```sh
-./apps/android/gradlew --project-dir apps/android testDebugUnitTest
-./apps/android/gradlew --project-dir apps/android assembleDebug
+just android test
+just android build
 ```
 
 When the change touches transport behavior, also run the real-process
@@ -145,8 +151,7 @@ instrumentation check through the configured gateway while the enrolled daemon
 is active:
 
 ```sh
-ANDROID_SERIAL=emulator-5554 ./apps/android/gradlew \
-  --project-dir apps/android connectedDebugAndroidTest
+just android connected-test
 ```
 
 After reinstalling, repeat the original interaction in the visible emulator,

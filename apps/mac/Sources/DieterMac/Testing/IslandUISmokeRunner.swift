@@ -1,3 +1,4 @@
+#if DIETER_UI_SMOKE
 import AppKit
 import DieterAPI
 import Foundation
@@ -160,3 +161,4 @@ enum IslandUISmokeRunner {
         try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
     }
 }
+#endif

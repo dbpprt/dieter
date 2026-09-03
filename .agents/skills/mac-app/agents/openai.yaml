@@ -1,0 +1,4 @@
+interface:
+  display_name: "Use Dieter Mac App"
+  short_description: "Build, inspect, and close Dieter on macOS"
+  default_prompt: "Use $mac-app to build, launch, inspect, exercise, troubleshoot, and close the native Dieter Mac app safely."

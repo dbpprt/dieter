@@ -75,10 +75,11 @@ available under App Settings > Updates.
 
 ## Build
 
-Android Studio's bundled JDK and the default macOS Android SDK are detected by:
+Android Studio's bundled JDK and the default macOS Android SDK are detected by
+the Android Just module:
 
 ```sh
-./apps/android/scripts/build.sh
+just android build
 ```
 
 The project targets Android 37.1 and supports API 26+. Open `apps/android` in
@@ -97,7 +98,7 @@ The canonical fallback artwork and font assets are still derived from the
 bitmap derivatives on macOS with:
 
 ```sh
-./apps/android/scripts/sync-brand-assets.sh
+just android sync-brand
 ```
 
 ## Connect
@@ -112,8 +113,9 @@ dieter daemon start
 Install and open the debug application:
 
 ```sh
-./apps/android/gradlew --project-dir apps/android installDebug
-adb shell am start -n com.dbpprt.dieter/.MainActivity
+just android emulator-start
+just android install
+just android launch
 ```
 
 When more than one device is attached, add `-s <serial>` to each `adb` command.
@@ -124,10 +126,13 @@ authenticated route or the gateway relay as documented in the root README.
 
 ## Visible emulator verification
 
-Start `Pixel_9_API_37_1` from Android Studio's Device Manager so the emulator
-window remains visible. Run a real enrolled daemon, install the app, and
-exercise it through the gateway. There is intentionally no mock server or
-coordinate-driven shell smoke test.
+`just android emulator-start` launches `Pixel_9_API_37_1` in a detached owner
+session while keeping its emulator window visible. It refuses to launch when
+host memory would force software rendering, and it accepts the AVD only after
+renderer, snapshot, focus, accessibility, and screenshot health checks pass.
+Run a real enrolled daemon, install the app, and exercise it through the
+gateway. There is intentionally no mock server or coordinate-driven shell
+smoke test.
 
 The conversation and terminal replay reducers are covered by Kotlin unit tests.
 Real-process instrumentation verifies health, runtime, state streaming,
@@ -136,8 +141,7 @@ across a complete Android gRPC channel teardown and cursor-based reconnect,
 all through the configured gateway and automatically routed real daemon:
 
 ```sh
-ANDROID_SERIAL=emulator-5554 ./apps/android/gradlew \
-  --project-dir apps/android connectedDebugAndroidTest
+just android connected-test
 ```
 
 End-to-end UI checks use semantic inspection and active interaction on the

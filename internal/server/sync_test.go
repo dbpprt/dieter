@@ -4,15 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
 	"sync"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func TestGlobalSyncAndOutboxCommandsEndToEnd(t *testing.T) {
@@ -245,6 +251,112 @@ func TestMetadataSyncSuppressesSemanticallyEmptyDelta(t *testing.T) {
 		return
 	}
 	t.Fatalf("projection-neutral event was not streamed: %v", stream.Err())
+}
+
+func TestIdleDaemonReconciliationDoesNotPublishSyncEvents(t *testing.T) {
+	data := store.New(t.TempDir())
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	daemonCtx, stopDaemon := context.WithCancel(context.Background())
+	daemonDone := make(chan error, 1)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	go func() {
+		daemonDone <- ListenDaemon(daemonCtx, address, data, &fakeRunner{}, logger)
+	}()
+	defer func() {
+		stopDaemon()
+		select {
+		case <-daemonDone:
+		case <-time.After(5 * time.Second):
+			t.Error("idle daemon did not stop")
+		}
+	}()
+
+	client := dieterv1connect.NewDieterServiceClient(&http.Client{}, "http://"+address)
+	readyDeadline := time.Now().Add(5 * time.Second)
+	for {
+		readyCtx, cancelReady := context.WithTimeout(context.Background(), 250*time.Millisecond)
+		_, healthErr := client.Health(readyCtx, connect.NewRequest(&emptypb.Empty{}))
+		cancelReady()
+		if healthErr == nil {
+			break
+		}
+		if time.Now().After(readyDeadline) {
+			t.Fatalf("idle daemon did not become ready: %v", healthErr)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	before, existing, err := data.SyncEvents(0, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(existing) != 0 {
+		t.Fatalf("empty daemon started with sync events: %#v", existing)
+	}
+
+	watchCtx, stopWatch := context.WithCancel(context.Background())
+	stream, err := client.WatchSync(watchCtx, connect.NewRequest(&dieterv1.SyncRequest{
+		ConversationLimit: 0,
+		HeartbeatMs:       1_000,
+	}))
+	if err != nil {
+		stopWatch()
+		t.Fatal(err)
+	}
+	if !stream.Receive() {
+		stopWatch()
+		t.Fatalf("initial idle sync: %v", stream.Err())
+	}
+	initial := stream.Msg()
+	if initial.GetSnapshot() == nil || initial.GetCursor().GetSequence() != before.Sequence {
+		stopWatch()
+		t.Fatalf("initial idle frame=%#v, high-water=%#v", initial, before)
+	}
+
+	started := time.Now()
+	timer := time.AfterFunc(25*time.Second, stopWatch)
+	heartbeats := 0
+	violations := make([]string, 0)
+	for stream.Receive() {
+		frame := stream.Msg()
+		if !frame.GetHeartbeat() || frame.GetEvent() != nil || len(frame.GetEvents()) != 0 || frame.GetDelta() != nil || frame.GetSnapshot() != nil {
+			violations = append(violations, fmt.Sprintf("non-heartbeat frame: %#v", frame))
+			continue
+		}
+		if frame.GetCursor().GetSequence() != before.Sequence {
+			violations = append(violations, fmt.Sprintf("heartbeat cursor advanced to %d", frame.GetCursor().GetSequence()))
+		}
+		heartbeats++
+	}
+	timer.Stop()
+	if elapsed := time.Since(started); elapsed < 25*time.Second {
+		t.Fatalf("idle reconciliation observation ended early after %s: %v", elapsed, stream.Err())
+	}
+	if heartbeats < 20 {
+		t.Errorf("idle WatchSync heartbeats=%d, want at least 20", heartbeats)
+	}
+
+	after, events, err := data.SyncEvents(before.Sequence, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before || len(events) != 0 {
+		violations = append(violations, fmt.Sprintf("sync advanced from %#v to %#v with events=%#v", before, after, events))
+	}
+	if len(violations) != 0 {
+		t.Fatalf("idle reconciliation published sync changes: %v", violations)
+	}
 }
 
 func TestBoundedConversationSyncStreamsTranscriptDeltas(t *testing.T) {

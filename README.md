@@ -4,8 +4,6 @@
 
 <h1 align="center">Dieter</h1>
 
-This is a test to test worktrees. TODO: Remove this line again.
-
 <p align="center">
   <strong>Many agents, many machines, one interface.</strong><br>
   Run coding agents wherever the code lives, and control them from macOS or Android.
@@ -184,6 +182,7 @@ user prompt.
 
 - Go 1.26.5 or newer
 - Node.js 22.19 or newer on daemon hosts
+- [just](https://just.systems/) 1.58 or newer for development commands
 - Git working trees for registered projects
 - a configured Codex, Claude Code, Pi, or Oh My Pi installation
 - macOS 15+ or Android 8+ for the official clients
@@ -191,7 +190,10 @@ user prompt.
 Build the CLI/daemon and gateway:
 
 ```sh
-make build
+just build
+# Or independently:
+just daemon build
+just gateway build
 ```
 
 The binaries are written to `bin/dieter` and `bin/dieter-gateway`. A normal
@@ -202,7 +204,7 @@ Install a source build into a directory already on `PATH` (override `PREFIX` or
 `DESTDIR` for packaging):
 
 ```sh
-make install PREFIX="$HOME/.local"
+just install "$HOME/.local"
 ```
 
 Published macOS and Linux archives also contain `install.sh`. For a one-command
@@ -255,7 +257,7 @@ list for multiple isolated accounts; the singular variable remains supported.
 Then run:
 
 ```sh
-DIETER_GATEWAY_HOME=/var/lib/dieter-gateway bin/dieter-gateway
+DIETER_GATEWAY_HOME=/var/lib/dieter-gateway just gateway run
 ```
 
 The gateway can sit behind a same-host HTTPS reverse proxy or terminate TLS
@@ -282,16 +284,33 @@ Supported models and provider options live in
 Install the pinned JavaScript harness runtime and run the full Go checks:
 
 ```sh
-npm --prefix internal/harness/runtime ci
-make check
+just harness install
+just check
 ```
 
 Run the native client test suites separately:
 
 ```sh
-swift test --package-path apps/mac
-zsh -lic 'cd apps/android && ./gradlew testDebugUnitTest'
+just mac test
+just android test
 ```
+
+Every component has a discoverable command module:
+
+```sh
+just daemon
+just gateway
+just harness
+just mac
+just android
+just site
+just release
+```
+
+GitHub Actions keeps orchestration, permissions, caches, secrets, and artifact
+transfer in YAML. Every executable repository step enters through one of these
+Just modules, so the same build and packaging commands can be exercised
+locally without copying workflow shell blocks.
 
 Android builds use Android Studio's bundled JBR. If needed, set:
 
@@ -302,7 +321,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 The protobuf contracts are
 [`dieter.proto`](api/proto/dieter/v1/dieter.proto) and
 [`gateway.proto`](api/proto/dieter/gateway/v1/gateway.proto). Regenerate checked-in
-outputs with `./scripts/generate-proto.sh`.
+outputs with `just proto`.
 
 Daemon RPC and CLI feature parity is enforced by descriptor-driven contract
 tests in `internal/server/rpc_parity_test.go` and
@@ -316,7 +335,7 @@ Repository hooks for `gofmt` and secret scanning are available with:
 
 ```sh
 brew install pre-commit
-make hooks
+just hooks
 ```
 
 Bug reports, design discussions, and contributions are welcome in

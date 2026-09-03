@@ -1,3 +1,4 @@
+#if DIETER_UI_SMOKE
 import AppKit
 import DieterAPI
 import Foundation
@@ -125,7 +126,7 @@ enum NativeUISmokeRunner {
 
         guard let window = NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil && $0.title == "Dieter" })
             ?? NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil }) else {
-            writeReport(["error": "Dieter window not found"], to: output)
+            writeReport(["error": "failed: Dieter window not found"], to: output)
             return
         }
 
@@ -504,17 +505,19 @@ enum NativeUISmokeRunner {
             deferred: false,
             projectID: project.id
         )
-        var chatIDsStayedUnique = true
+        var chatRowStayedSingle = true
         let openedChat = await waitUntil(timeout: 10, intervalMilliseconds: 25) {
             let ids = store.chats.map(\.id)
-            chatIDsStayedUnique = chatIDsStayedUnique && Set(ids).count == ids.count
+            chatRowStayedSingle = chatRowStayedSingle &&
+                Set(ids).count == ids.count &&
+                store.chats.count { $0.title == chatTitle } <= 1
             guard let chatID = store.selectedChatID, DieterConversationID.isServerBacked(chatID) else { return false }
             return store.conversation?.detail.card.id == chatID && !store.conversationLoading
         }
         results["13c-standalone-chat-opens"] = openedChat && store.errorMessage == nil
             ? "passed"
             : "failed: selected=\(store.selectedChatID ?? "none"), loading=\(store.conversationLoading), error=\(store.errorMessage ?? "none")"
-        results["13c-standalone-chat-single-row"] = chatIDsStayedUnique
+        results["13c-standalone-chat-single-row"] = chatRowStayedSingle
             ? "passed"
             : "failed: optimistic and synchronized chat rows were visible together"
         if openedChat,
@@ -832,6 +835,7 @@ enum NativeUISmokeRunner {
     private static func writeReport(_ values: [String: String], to directory: URL) {
         let data = try? JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
         try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
+        DispatchQueue.main.async { NSApp.terminate(nil) }
     }
 }
 
@@ -864,3 +868,4 @@ enum NativeUIEventDispatcher {
         }
     }
 }
+#endif

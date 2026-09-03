@@ -1,3 +1,4 @@
+#if DIETER_UI_SMOKE
 import AppKit
 import DieterAPI
 import Foundation
@@ -386,5 +387,7 @@ enum WorkspaceUISmokeRunner {
     private static func writeReport(_ values: [String: String], to directory: URL) {
         let data = try? JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
         try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
+        DispatchQueue.main.async { NSApp.terminate(nil) }
     }
 }
+#endif

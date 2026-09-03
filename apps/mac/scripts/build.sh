@@ -14,7 +14,14 @@ BUNDLE_MANIFEST="$OUTPUT_ROOT/.Dieter.bundle-inputs"
 BUNDLE_OUTPUT_MANIFEST="$OUTPUT_ROOT/.Dieter.bundle-outputs"
 
 "$SCRIPT_DIR/sync-proto.sh" >&2
-"$SCRIPT_DIR/swiftpm.sh" build -c "$CONFIGURATION" >&2
+swift build \
+    --package-path "$APP_ROOT" \
+    --scratch-path "$SWIFT_SCRATCH_PATH" \
+    --only-use-versions-from-resolved-file \
+    --manifest-cache local \
+    --disable-index-store \
+    --product DieterMac \
+    -c "$CONFIGURATION" >&2
 DIETER_BINARY="$SWIFT_SCRATCH_PATH/$CONFIGURATION/DieterMac"
 if [ ! -x "$DIETER_BINARY" ]; then
     echo "DieterMac binary was not produced" >&2

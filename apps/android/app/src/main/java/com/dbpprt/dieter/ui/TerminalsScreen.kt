@@ -67,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterCoral
@@ -109,6 +110,7 @@ fun TerminalsScreen(
             loading = state.terminalLoading,
             onRefresh = model::loadTerminals,
             onCreate = model::showTerminalCreate,
+            modifier = Modifier.padding(top = terminalConnectionStatusInset(state.connectionPhase)),
         )
         if (state.terminals.isNotEmpty()) {
             TerminalTabs(
@@ -222,16 +224,20 @@ fun TerminalsScreen(
     }
 }
 
+internal fun terminalConnectionStatusInset(phase: ConnectionPhase) =
+    if (phase == ConnectionPhase.CONNECTED) 0.dp else 64.dp
+
 @Composable
-private fun TerminalHeader(
+internal fun TerminalHeader(
     terminalCount: Int,
     connected: Boolean,
     loading: Boolean,
     onRefresh: () -> Unit,
     onCreate: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 18.dp, top = 12.dp, end = 10.dp, bottom = 9.dp),
+        modifier.fillMaxWidth().padding(start = 18.dp, top = 12.dp, end = 10.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(color = DieterShell.copy(alpha = 0.12f), shape = RoundedCornerShape(13.dp), modifier = Modifier.size(42.dp)) {

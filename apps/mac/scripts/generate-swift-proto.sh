@@ -5,6 +5,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 GENERATED_DIR="$APP_ROOT/Sources/DieterAPI/Generated"
 MANIFEST="$GENERATED_DIR/.inputs.sha256"
+SWIFT_SCRATCH_PATH=${DIETER_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/dieter-local}
 
 generated_files_exist() {
     [ -f "$GENERATED_DIR/gateway.grpc.swift" ] &&
@@ -57,7 +58,9 @@ rm -f \
     cd "$APP_ROOT/Sources/DieterAPI"
     swift package \
         --package-path "$APP_ROOT" \
+        --scratch-path "$SWIFT_SCRATCH_PATH" \
         --only-use-versions-from-resolved-file \
+        --disable-index-store \
         --allow-writing-to-package-directory \
         generate-grpc-code-from-protos \
         --no-servers \
