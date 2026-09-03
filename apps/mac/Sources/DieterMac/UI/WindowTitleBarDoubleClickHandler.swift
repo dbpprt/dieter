@@ -62,7 +62,7 @@ final class WindowTitleBarDoubleClickView: NSView {
         )
     }
 
-    static func shouldZoom(
+    nonisolated static func shouldZoom(
         eventType: NSEvent.EventType,
         clickCount: Int,
         eventBelongsToWindow: Bool,
