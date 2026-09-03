@@ -83,7 +83,7 @@ jobs:
   macos-daemon:
     name: macOS daemon and native capture helper
     needs: version
-    runs-on: macos-26-arm64
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
@@ -174,7 +174,7 @@ jobs:
   macos:
     name: macOS app (Apple Silicon)
     needs: version
-    runs-on: macos-26-arm64
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
