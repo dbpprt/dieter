@@ -379,6 +379,9 @@ func (s *unixSession) capturePTY() {
 			break
 		}
 	}
+	// exec.Cmd.Wait closes its pipes. Do not let it take ownership of stdin
+	// before Start has delivered the initial input and EOF.
+	<-s.startupDone
 	s.finish(s.command.Wait())
 }
 
@@ -388,6 +391,9 @@ func (s *unixSession) capturePipes(stdout, stderr io.ReadCloser) {
 	go s.capturePipe(stdout, StreamStdout, &readers)
 	go s.capturePipe(stderr, StreamStderr, &readers)
 	readers.Wait()
+	// Keep stdout and stderr draining concurrently with startup, but delay Wait
+	// so it cannot close stdin before the initial handoff is complete.
+	<-s.startupDone
 	s.finish(s.command.Wait())
 }
 
@@ -407,10 +413,6 @@ func (s *unixSession) capturePipe(reader io.ReadCloser, stream Stream, readers *
 }
 
 func (s *unixSession) finish(waitErr error) {
-	// A short-lived command can exit before Start has delivered its initial
-	// stdin and EOF. Keep the execution writable until that startup handoff is
-	// complete, while the capture goroutines continue draining output.
-	<-s.startupDone
 	exitCode, exitSignal := processResult(waitErr)
 	now := time.Now().UTC()
 	s.mu.Lock()

@@ -42,25 +42,52 @@ final class WindowTitleBarDoubleClickView: NSView {
     }
 
     static func shouldZoom(for event: NSEvent, in window: NSWindow) -> Bool {
-        guard event.type == .leftMouseDown,
-              event.clickCount == 2,
-              event.window === window,
-              window.styleMask.contains(.titled),
-              window.styleMask.contains(.resizable),
-              !window.styleMask.contains(.fullScreen),
-              !window.isSheet,
-              let zoomButton = window.standardWindowButton(.zoomButton),
-              zoomButton.isEnabled,
-              !zoomButton.isHidden
+        let windowButtons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        guard let zoomButton = window.standardWindowButton(.zoomButton) else { return false }
+        let buttonFrames = windowButtons.compactMap { type -> NSRect? in
+            guard let button = window.standardWindowButton(type) else { return nil }
+            return button.convert(button.bounds, to: nil)
+        }
+        return shouldZoom(
+            eventType: event.type,
+            clickCount: event.clickCount,
+            eventBelongsToWindow: event.window === window,
+            styleMask: window.styleMask,
+            isSheet: window.isSheet,
+            zoomButtonEnabled: zoomButton.isEnabled,
+            zoomButtonHidden: zoomButton.isHidden,
+            location: event.locationInWindow,
+            contentLayoutMaxY: window.contentLayoutRect.maxY,
+            windowButtonFrames: buttonFrames
+        )
+    }
+
+    static func shouldZoom(
+        eventType: NSEvent.EventType,
+        clickCount: Int,
+        eventBelongsToWindow: Bool,
+        styleMask: NSWindow.StyleMask,
+        isSheet: Bool,
+        zoomButtonEnabled: Bool,
+        zoomButtonHidden: Bool,
+        location: NSPoint,
+        contentLayoutMaxY: CGFloat,
+        windowButtonFrames: [NSRect]
+    ) -> Bool {
+        guard eventType == .leftMouseDown,
+              clickCount == 2,
+              eventBelongsToWindow,
+              styleMask.contains(.titled),
+              styleMask.contains(.resizable),
+              !styleMask.contains(.fullScreen),
+              !isSheet,
+              zoomButtonEnabled,
+              !zoomButtonHidden,
+              location.y >= contentLayoutMaxY
         else { return false }
 
-        let location = event.locationInWindow
-        guard location.y >= window.contentLayoutRect.maxY else { return false }
-
-        let windowButtons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-        return !windowButtons.contains { type in
-            guard let button = window.standardWindowButton(type) else { return false }
-            return button.convert(button.bounds, to: nil).insetBy(dx: -2, dy: -2).contains(location)
+        return !windowButtonFrames.contains {
+            $0.insetBy(dx: -2, dy: -2).contains(location)
         }
     }
 }

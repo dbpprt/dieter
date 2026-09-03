@@ -52,15 +52,15 @@ jobs:
       - uses: extractions/setup-just@v3
         with:
           just-version: "1.58.0"
-      - name: Select Xcode 26.6
-        run: just release select-xcode /Applications/Xcode_26.6.app/Contents/Developer
+      - name: Select Xcode 26.5
+        run: just release select-xcode
       - name: Restore Swift build caches
         uses: actions/cache@v4
         with:
           path: |
             apps/mac/.build/dieter-local
             apps/mac/.build/dieter-tests
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.6-dieter-mac-check-v3-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-dieter-mac-check-v3-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
       - name: Check macOS client
         run: just mac check
 
