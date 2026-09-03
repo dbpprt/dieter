@@ -58,6 +58,7 @@ type unixSession struct {
 	eventBytes      int64
 	maxOutputBytes  int64
 	changed         chan struct{}
+	startupDone     chan struct{}
 	requestHash     string
 	cancelRequested bool
 	timedOut        bool
@@ -180,7 +181,7 @@ func (b *unixBackend) Start(input StartInput) (Execution, error) {
 	}
 	session := &unixSession{
 		value: value, command: command, process: command.Process, stdin: stdin, pty: pseudoTerminal,
-		maxOutputBytes: input.MaxOutputBytes, changed: make(chan struct{}), requestHash: requestHash,
+		maxOutputBytes: input.MaxOutputBytes, changed: make(chan struct{}), startupDone: make(chan struct{}), requestHash: requestHash,
 	}
 	session.mu.Lock()
 	session.advanceLocked(StreamState, nil, false)
@@ -197,9 +198,11 @@ func (b *unixBackend) Start(input StartInput) (Execution, error) {
 	if len(input.Stdin) > 0 || input.StdinEOF {
 		if _, err := session.write(input.Stdin, input.StdinEOF); err != nil {
 			_, _ = session.cancel()
+			close(session.startupDone)
 			return Execution{}, err
 		}
 	}
+	close(session.startupDone)
 	if input.Timeout > 0 {
 		go session.enforceTimeout(input.Timeout)
 	}
@@ -404,6 +407,10 @@ func (s *unixSession) capturePipe(reader io.ReadCloser, stream Stream, readers *
 }
 
 func (s *unixSession) finish(waitErr error) {
+	// A short-lived command can exit before Start has delivered its initial
+	// stdin and EOF. Keep the execution writable until that startup handoff is
+	// complete, while the capture goroutines continue draining output.
+	<-s.startupDone
 	exitCode, exitSignal := processResult(waitErr)
 	now := time.Now().UTC()
 	s.mu.Lock()

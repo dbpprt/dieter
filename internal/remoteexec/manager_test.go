@@ -46,6 +46,24 @@ func TestExecutionPreservesArgvStreamsAndExitStatus(t *testing.T) {
 	}
 }
 
+func TestImmediateExitDoesNotRaceInitialStdinEOF(t *testing.T) {
+	manager := New()
+	t.Cleanup(func() { manager.Shutdown(context.Background()) })
+	workingDirectory := t.TempDir()
+	for iteration := 0; iteration < 100; iteration++ {
+		value, err := manager.Start(StartInput{
+			Argv: []string{"/usr/bin/true"}, WorkingDirectory: workingDirectory, StdinEOF: true,
+		})
+		if err != nil {
+			t.Fatalf("start iteration %d: %v", iteration, err)
+		}
+		_, final := waitExecution(t, manager, value.ID)
+		if final.Status != StatusExited || final.ExitCode == nil || *final.ExitCode != 0 {
+			t.Fatalf("final execution at iteration %d = %#v", iteration, final)
+		}
+	}
+}
+
 func TestExecutionInputIdempotencyAndResume(t *testing.T) {
 	manager := New()
 	t.Cleanup(func() { manager.Shutdown(context.Background()) })
