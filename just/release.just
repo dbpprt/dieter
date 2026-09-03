@@ -10,10 +10,13 @@ default:
 workflow-check:
     #!/usr/bin/env bash
     set -euo pipefail
-    run_lines="$(rg -n '^[[:space:]]+run:' .github/workflows || true)"
+    run_lines="$(awk '/^[[:space:]]+run:/ { print FILENAME ":" FNR ":" $0 }' .github/workflows/*.yml)"
     [[ -n "$run_lines" ]] || { echo "No workflow run steps found." >&2; exit 1; }
-    unexpected="$(rg -n '^[[:space:]]+run:' .github/workflows | \
-        rg -v 'run:[[:space:]]+just([[:space:]]|$)' || true)"
+    unexpected="$(awk '
+        /^[[:space:]]+run:/ && $0 !~ /run:[[:space:]]+just([[:space:]]|$)/ {
+            print FILENAME ":" FNR ":" $0
+        }
+    ' .github/workflows/*.yml)"
     if [[ -n "$unexpected" ]]; then
         echo "Workflow run steps must be single Just invocations:" >&2
         printf '%s\n' "$unexpected" >&2
@@ -68,7 +71,8 @@ checksums:
     #!/usr/bin/env bash
     set -euo pipefail
     test -d dist
-    find dist -maxdepth 1 -type f ! -name SHA256SUMS -print -quit | rg -q .
+    first_artifact="$(find dist -maxdepth 1 -type f ! -name SHA256SUMS -print -quit)"
+    [[ -n "$first_artifact" ]] || { echo "No release artifacts found in dist." >&2; exit 1; }
     (
         cd dist
         artifacts=()
@@ -150,7 +154,7 @@ homebrew:
         formula.sub!(/^    bin\.install "dieter"$/, "    bin.install \"dieter\", \"dieter-capture\"")
         File.write(path, formula)
     '
-    rg -F 'bin.install "dieter", "dieter-capture"' tap/Formula/dieter.rb
+    grep -Fq 'bin.install "dieter", "dieter-capture"' tap/Formula/dieter.rb
     if ! git -C tap diff --quiet -- Formula/dieter.rb Casks/dieter-app.rb; then
         git -C tap config user.name "github-actions[bot]"
         git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
