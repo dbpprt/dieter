@@ -33,25 +33,28 @@ import Testing
     schedule.providerOptions = ["personality": "pragmatic"]
 
     let draft = ScheduleEditorDraft.make(from: schedule)
+    var expected = Dieter_V1_ScheduleDraft()
+    expected.projectID = schedule.projectID
+    expected.boardID = schedule.boardID
+    expected.name = schedule.name
+    expected.description_p = schedule.description_p
+    expected.cron = schedule.cron
+    expected.timezone = schedule.timezone
+    expected.enabled = schedule.enabled
+    expected.action = schedule.action
+    expected.titleTemplate = schedule.titleTemplate
+    expected.promptTemplate = schedule.promptTemplate
+    expected.provider = schedule.provider
+    expected.model = schedule.model
+    expected.effort = schedule.effort
+    expected.labelIds = schedule.labelIds
+    expected.openCardPolicy = schedule.openCardPolicy
+    expected.misfirePolicy = schedule.misfirePolicy
+    expected.busyPolicy = schedule.busyPolicy
+    expected.providerOptions = schedule.providerOptions
+    expected.workspaceMode = "project"
 
-    #expect(draft.projectID == schedule.projectID)
-    #expect(draft.boardID == schedule.boardID)
-    #expect(draft.name == schedule.name)
-    #expect(draft.description_p == schedule.description_p)
-    #expect(draft.cron == schedule.cron)
-    #expect(draft.timezone == schedule.timezone)
-    #expect(draft.enabled == schedule.enabled)
-    #expect(draft.action == schedule.action)
-    #expect(draft.titleTemplate == schedule.titleTemplate)
-    #expect(draft.promptTemplate == schedule.promptTemplate)
-    #expect(draft.provider == schedule.provider)
-    #expect(draft.model == schedule.model)
-    #expect(draft.effort == schedule.effort)
-    #expect(draft.labelIds == schedule.labelIds)
-    #expect(draft.openCardPolicy == schedule.openCardPolicy)
-    #expect(draft.misfirePolicy == schedule.misfirePolicy)
-    #expect(draft.busyPolicy == schedule.busyPolicy)
-    #expect(draft.providerOptions == schedule.providerOptions)
+    #expect(draft == expected)
 }
 
 @Test func scheduleEditorPreviewDebounceStopsWhenCancelled() async {
