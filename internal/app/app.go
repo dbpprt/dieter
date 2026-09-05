@@ -1021,7 +1021,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 		// ACP implementations can persist the interrupted prompt inside their
 		// own session even when the Harness continuation envelope is discarded.
 		// A queued message must replace that prompt, so restart ACP cleanly.
-		if request.Adapter == "omp-acp" {
+		if request.Adapter == "omp-acp" || request.Adapter == "dsh-acp" {
 			_, _ = s.Store.SetConversationSession(detail.Card.ID, turnID, json.RawMessage("null"))
 		}
 		_ = finish(true, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "idle"})

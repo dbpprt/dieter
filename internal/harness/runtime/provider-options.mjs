@@ -11,3 +11,9 @@ export function ompACPArgs(request, hookPath) {
     ...(request.options?.advisor === 'true' ? ['--advisor'] : []),
   ];
 }
+
+export const dshPackageVersion = '0.1.2-rc.1';
+
+export function dshACPArgs(...extra) {
+  return ['--profile', 'acp', ...extra];
+}

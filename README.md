@@ -26,9 +26,10 @@ Dieter (pronounced **DEE-ter**) is an open-source control plane for local coding
 agents. It runs [Codex](https://github.com/openai/codex),
 [Claude Code](https://github.com/anthropics/claude-code),
 [Pi](https://github.com/badlogic/pi-mono), and
-[Oh My Pi](https://github.com/can1357/oh-my-pi) on the machines that hold your
-Git working trees, credentials, and tools—then brings them together in one
-native workspace.
+[Oh My Pi](https://github.com/can1357/oh-my-pi), and
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) on the
+machines that hold your Git working trees, credentials, and tools—then brings
+them together in one native workspace.
 
 - **Work across machines.** Enroll a laptop, workstation, or home server and
   see their projects in one place.
@@ -189,7 +190,8 @@ user prompt.
 - Node.js 22.19 or newer on daemon hosts
 - [just](https://just.systems/) 1.58 or newer for development commands
 - Git working trees for registered projects
-- a configured Codex, Claude Code, Pi, or Oh My Pi installation
+- a configured Codex, Claude Code, Pi, Oh My Pi, or DeepSeek Harness
+  installation
 - macOS 15+ or Android 8+ for the official clients
 
 Build the CLI/daemon and gateway:
@@ -279,10 +281,16 @@ itself. Proxy mode requires a loopback listener and an HTTPS
 | Claude Code | `~/.claude` or `CLAUDE_CONFIG_DIR` |
 | Pi | `~/.pi/agent` or `PI_AGENT_DIR` |
 | Oh My Pi | `~/.omp/agent`, with `OMP_PROFILE` when set |
+| DeepSeek Harness | `~/.dsh` or `DSH_HOME` |
 
 Supported models and provider options live in
 [`config/harnesses.yaml`](config/harnesses.yaml). Override the registry with
 `$DIETER_HOME/harnesses.yaml`, `DIETER_HARNESS_CONFIG`, or `--harness-config`.
+DeepSeek Harness is installed lazily at its exact tested version through the
+AI SDK ACP bootstrap; a global `dsh` installation is not required. DSH owns its
+provider and credential configuration. Dieter discovers the models advertised
+by DSH's standard ACP session options and returns only those models to clients.
+See the [DSH integration proposal and operational notes](docs/deepseek-dsh-harness.md).
 
 ## Development
 

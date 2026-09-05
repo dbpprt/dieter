@@ -1225,6 +1225,7 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 		{provider: "claude-code", model: "sonnet", effort: "low"},
 		{provider: "pi", model: "default", effort: "minimal"},
 		{provider: "omp", model: "default", effort: "low", options: map[string]string{"advisor": "true"}},
+		{provider: "dsh", model: "default"},
 	}
 	for _, provider := range providers {
 		t.Run(provider.provider, func(t *testing.T) {

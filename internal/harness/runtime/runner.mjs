@@ -12,7 +12,7 @@ import { tool, toUIMessageStream } from 'ai';
 import { z } from 'zod';
 import { createLocalSandboxProvider } from './local-sandbox.mjs';
 import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
-import { ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
+import { dshACPArgs, dshPackageVersion, ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
 import { createMessageMetadataTracker } from './usage-metadata.mjs';
 import {
@@ -175,6 +175,37 @@ switch (adapter) {
     });
     break;
   }
+  case 'dsh-acp':
+  {
+    harness = createACP({
+      harnessId: 'dsh',
+      source: {
+        type: 'npm-simple',
+        packageName: '@deepseek-ai/dsh',
+        packageVersion: dshPackageVersion,
+      },
+      executable: 'dsh',
+      args: dshACPArgs(),
+      // DSH reports implementation-owned tools through ACP's generic tool
+      // surface. Mark them dynamic so the AI SDK UI converter does not try to
+      // validate them against Dieter's host-tool catalog; retain the original
+      // title/rawInput here before the bridge assigns a fallback tool name.
+      isMcpToolCall: toolCall => {
+        capabilityCollector.consumeACPToolCall(toolCall);
+        return true;
+      },
+      // DSH owns its provider catalog. Dieter's discovered RuntimeModel is the
+      // opaque value DSH advertised for this standard ACP option.
+      modelMapping: { type: 'session-config-option', path: 'model' },
+      forwardEnv: [
+        'HOME', 'DSH_HOME', 'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_SEARCH_BASE_URL',
+        'DSH_PERMISSION_MODE', 'DSH_TOOLS_MODE', 'DSH_TELEMETRY_MODE', 'DSH_TELEMETRY_DISABLED',
+        'DSH_TELEMETRY_OTLP_URL', 'NODE_EXTRA_CA_CERTS', 'NODE_USE_ENV_PROXY',
+        'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', ...extraHarnessEnv,
+      ],
+    });
+    break;
+  }
   default:
     throw new Error(`unsupported harness adapter: ${adapter}`);
 }
@@ -250,17 +281,17 @@ try {
   const agent = new HarnessAgent({
     harness,
     sandbox,
-    model: adapter === 'omp-acp' ? request.model || undefined : undefined,
+    model: ['omp-acp', 'dsh-acp'].includes(adapter) ? request.model || undefined : undefined,
     instructions: instructions || undefined,
     ...(adapter === 'pi' ? { tools: { board_task_plan: piTaskPlanTool } } : {}),
     permissionMode: 'allow-all',
     sandboxConfig: { workDir: sandboxWorkDir },
   });
   const sessionOptions = { sessionId: request.sessionId, abortSignal: controller.signal };
-  const incompleteOMPSession = adapter === 'omp-acp' && request.session && !request.session.data?.acpSessionId;
+  const incompleteACPSession = (adapter === 'omp-acp' || adapter === 'dsh-acp') && request.session && !request.session.data?.acpSessionId;
   if (request.continue && request.session?.continueFrom) {
     sessionOptions.continueFrom = request.session.continueFrom;
-  } else if (request.session && !incompleteOMPSession) {
+  } else if (request.session && !incompleteACPSession) {
     // stop() during an interrupted turn returns a resumable session with a
     // nested continueFrom state. Dieter's queued message replaces that turn;
     // retain the ACP session but deliberately discard the unfinished turn.

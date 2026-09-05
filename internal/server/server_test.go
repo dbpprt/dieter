@@ -118,7 +118,7 @@ func TestConnectConversationEndToEnd(t *testing.T) {
 		t.Fatalf("health=%#v err=%v", health, err)
 	}
 	harnesses, err := client.GetHarnesses(ctx, connect.NewRequest(&emptypb.Empty{}))
-	if err != nil || len(harnesses.Msg.GetHarnesses()) < 5 {
+	if err != nil || len(harnesses.Msg.GetHarnesses()) < 6 {
 		t.Fatalf("harnesses=%#v err=%v", harnesses, err)
 	}
 
