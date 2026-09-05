@@ -608,6 +608,8 @@ struct AppSidebar: View {
     }
 
     private func machineDetail(_ machine: DieterEndpoint) -> String {
+		if let incompatibility = machine.incompatibilityDescription { return incompatibility }
+		if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
         if machine.id == store.endpoint.id && !store.workspaceIsLive {
             if store.workspaceFreshness == .syncing { return "Waiting for live sync…" }
             return "Unavailable · \(MachinePresenceText.lastSeen(machine.lastSeenAt))"
@@ -623,7 +625,7 @@ struct AppSidebar: View {
     }
 
     private func machineIsPresentedOnline(_ machine: DieterEndpoint) -> Bool {
-        machine.online && (machine.id != store.endpoint.id || store.workspaceIsLive)
+		store.machineIsAvailable(machine)
     }
 
 }
@@ -701,7 +703,7 @@ private struct SidebarProjectRow: View {
 
     private var projectMachineOnline: Bool? {
         guard let machine = store.machine(forProjectID: project.id) else { return nil }
-        return store.workspaceIsLive && machine.online
+		return store.machineIsAvailable(machine)
     }
 
     private var projectMachine: DieterEndpoint? {
@@ -736,7 +738,7 @@ private struct SidebarProjectRow: View {
                         Image(systemName: "plus").font(.system(size: 10, weight: .bold))
                     }
                     .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
-                    .disabled(!store.workspaceIsLive)
+					.disabled(!store.projectIsAvailable(project.id))
                     .help("New board in \(project.name)")
                     .transition(.opacity)
                 }
@@ -871,7 +873,7 @@ private struct SidebarProjectDestinations: View {
     var onNavigate: (() -> Void)? = nil
 
     private var projectIsUnavailable: Bool {
-        !store.workspaceIsLive || store.machine(forProjectID: project.id)?.online == false
+		!store.projectIsAvailable(project.id)
     }
 
     var body: some View {
@@ -923,7 +925,7 @@ private struct SidebarProjectRail: View {
 
     private var projectMachineOnline: Bool? {
         guard let machine = store.machine(forProjectID: project.id) else { return nil }
-        return store.workspaceIsLive && machine.online
+		return store.machineIsAvailable(machine)
     }
 
     var body: some View {
@@ -989,7 +991,7 @@ private struct ProjectQuickNav: View {
 
     private var projectMachineOnline: Bool? {
         guard let machine = store.machine(forProjectID: project.id) else { return nil }
-        return store.workspaceIsLive && machine.online
+		return store.machineIsAvailable(machine)
     }
 
     var body: some View {
@@ -1014,7 +1016,7 @@ private struct ProjectQuickNav: View {
             Divider().overlay(DieterTheme.border)
 
             SidebarFooterButton(title: "New board…", symbol: "plus") { dismiss(); store.presentNewBoard(projectID: project.id) }
-                .disabled(!store.workspaceIsLive)
+				.disabled(!store.projectIsAvailable(project.id))
         }
         .padding(10)
         .frame(width: 244)
@@ -1388,6 +1390,7 @@ private struct OnboardingMachineRow: View {
 
     private var detail: String {
         if !machine.online { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
+		if let incompatibility = machine.incompatibilityDescription { return incompatibility }
         return machine.version.isEmpty ? "Online" : "Online · Dieter \(machine.version)"
     }
 
@@ -1399,12 +1402,16 @@ private struct OnboardingMachineRow: View {
                 Text(detail).font(.caption2).foregroundStyle(DieterTheme.tertiary)
             }
             Spacer()
-            Text(machine.online ? "Included automatically" : "Offline")
-                .font(.caption2).foregroundStyle(machine.online ? DieterTheme.shell : DieterTheme.tertiary)
+			Text(machine.apiCompatibility == .incompatible ? "Update daemon" : (machine.online ? "Included automatically" : "Offline"))
+				.font(.caption2).foregroundStyle(storeColor)
         }
         .padding(11).background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border))
     }
+
+	private var storeColor: Color {
+		machine.apiCompatibility == .incompatible ? DieterTheme.coral : (machine.online ? DieterTheme.shell : DieterTheme.tertiary)
+	}
 }
 
 struct CommandPalette: View {

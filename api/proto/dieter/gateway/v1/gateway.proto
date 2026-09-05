@@ -54,6 +54,10 @@ message Daemon {
   uint64 generation = 6;
   repeated DirectCandidate direct_candidates = 7;
   RemoteDesktopPresence remote_desktop = 8;
+  // api_version is the daemon data-plane compatibility version returned by
+  // DieterService.Health. It is separate from the release version above so
+  // clients can route mixed-version machine fleets without probing each one.
+  string api_version = 9;
 }
 
 // RemoteDesktopPresence is intentionally coarse gateway metadata. Display
@@ -209,4 +213,5 @@ message DaemonLinkFrame {
   uint64 generation = 15;
   repeated DirectCandidate direct_candidates = 16;
   RemoteDesktopPresence remote_desktop = 17;
+  string api_version = 18;
 }

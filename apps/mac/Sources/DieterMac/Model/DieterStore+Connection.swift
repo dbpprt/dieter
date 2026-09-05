@@ -7,6 +7,15 @@ import OSLog
 import UniformTypeIdentifiers
 import UserNotifications
 
+private struct InitialConnectionState {
+    let health: Dieter_V1_HealthResponse
+    let runtime: Dieter_V1_RuntimeStatus
+    let state: Dieter_V1_State
+    let harnesses: Dieter_V1_HarnessCatalog
+    let settings: Dieter_V1_Settings
+    let options: Dieter_V1_SettingsOptions
+}
+
 extension DieterStore {
     func connect(to newEndpoint: DieterEndpoint? = nil, automatic: Bool = false) async {
         if let syncRestoreTask {
@@ -15,20 +24,18 @@ extension DieterStore {
         }
         if !automatic { reconnectTask?.cancel(); reconnectTask = nil }
         let requested = newEndpoint ?? endpoint
-        let preferredDaemonID = requested.daemonID ?? (requested.credentialID == endpoint.credentialID ? endpoint.daemonID : nil)
+        let preferredDaemonID = MachineRoutingPolicy.preferredDaemonID(newEndpoint: newEndpoint, currentEndpoint: endpoint)
+        let explicitMachineSelection = newEndpoint?.daemonID != nil
         let origin = gatewayOrigins.first(where: { $0.credentialID == requested.credentialID }) ?? requested.gatewayEndpoint
         connectionGeneration &+= 1
         let generation = connectionGeneration
-        phase = .connecting
-        stateTask?.cancel(); conversationTask?.cancel(); gitOperationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); machinePresenceLeaseTask?.cancel(); machineTelemetryTask?.cancel()
-        startMachinePresenceLeaseMonitor()
-        terminalStreamConnected = false
-        rpc?.shutdown()
-        rpc = nil
-        connectionTask = nil
+        let preservingLiveConnection = phase.isConnected && rpc != nil
+        if !preservingLiveConnection { phase = .connecting }
         var gatewayRPC: DieterRPC?
         var gatewayTask: Task<Void, Never>?
         var gatewayAuthenticated = false
+        var attemptedTarget: DieterEndpoint?
+		var discoveredDirectory: [DieterEndpoint]?
         do {
             let accessToken = await accessToken(for: origin)
             let control = try DieterRPC(endpoint: origin, accessToken: accessToken)
@@ -44,7 +51,7 @@ extension DieterStore {
                 return
             }
             gatewayAuthenticated = true
-            let discovered = daemonDirectory.daemons.map {
+			var discovered = daemonDirectory.daemons.map {
                 DieterEndpoint(
                     name: $0.name.isEmpty ? $0.id : $0.name,
                     host: origin.host,
@@ -54,6 +61,7 @@ extension DieterStore {
                     online: MachinePresenceText.online(serverOnline: $0.online, lastSeenAt: $0.lastSeenAt),
                     lastSeenAt: $0.lastSeenAt,
 					version: $0.version,
+					apiVersion: $0.apiVersion,
 					remoteDesktopReady: $0.remoteDesktop.ready,
 					remoteDesktopReason: $0.remoteDesktop.reason,
 					remoteDesktopPlatform: $0.remoteDesktop.platform
@@ -62,26 +70,75 @@ extension DieterStore {
             guard !discovered.isEmpty else {
                 throw NSError(domain: "DieterGateway", code: 1, userInfo: [NSLocalizedDescriptionKey: "No Dieter daemons are enrolled for this account."])
             }
-            endpoints = discovered
-            let target = MachineRoutingPolicy.automaticConnectionTarget(
+			discoveredDirectory = discovered
+            let targets = MachineRoutingPolicy.connectionTargets(
                 from: discovered,
-                preferredDaemonID: preferredDaemonID
+                preferredDaemonID: preferredDaemonID,
+                explicitMachineSelection: explicitMachineSelection
             )
-            guard let target else {
+			if !explicitMachineSelection,
+			   targets.isEmpty,
+			   let incompatible = discovered.first(where: { $0.online && $0.apiCompatibility == .incompatible }) {
+				attemptedTarget = incompatible
+				throw DieterStoreConnectionError.incompatible(found: incompatible.apiVersion)
+			}
+            guard !targets.isEmpty else {
                 throw NSError(domain: "DieterGateway", code: 3, userInfo: [NSLocalizedDescriptionKey: "No enrolled Dieter machines are online."])
             }
 
-            let dataPlane = try await selectDataPlane(
-                gateway: control,
-                target: target,
-                gatewayAccessToken: accessToken
-            )
+            var prepared: (target: DieterEndpoint, plane: DataPlaneConnection, initial: InitialConnectionState)?
+			var lastTargetError: Error?
+			for candidate in targets {
+				attemptedTarget = candidate
+				if candidate.apiCompatibility == .incompatible {
+					lastTargetError = DieterStoreConnectionError.incompatible(found: candidate.apiVersion)
+					break
+				}
+				do {
+					let plane = try await selectDataPlane(
+						gateway: control,
+						target: candidate,
+						gatewayAccessToken: accessToken
+					)
+					do {
+						let initial = try await loadInitialConnectionState(from: plane.rpc)
+						var connectedTarget = candidate
+						connectedTarget.apiVersion = initial.health.version
+						prepared = (connectedTarget, plane, initial)
+						break
+					} catch {
+						plane.task.cancel()
+						plane.rpc.shutdown()
+						if let connectionError = error as? DieterStoreConnectionError,
+						   case let .incompatible(found) = connectionError {
+							discovered = discovered.map { machine in
+								guard machine.id == candidate.id else { return machine }
+								var machine = machine
+								machine.apiVersion = found
+								return machine
+							}
+							discoveredDirectory = discovered
+						}
+						lastTargetError = error
+					}
+				} catch {
+					lastTargetError = error
+				}
+				if explicitMachineSelection { break }
+			}
+			guard let prepared else {
+				throw lastTargetError ?? NSError(
+					domain: "DieterGateway",
+					code: 4,
+					userInfo: [NSLocalizedDescriptionKey: "No compatible Dieter machine could be reached."]
+				)
+			}
             guard ConnectionAttemptOwnership.mayMutateSharedState(
                 attemptGeneration: generation,
                 currentGeneration: connectionGeneration
             ) else {
-                dataPlane.task.cancel()
-                dataPlane.rpc.shutdown()
+				prepared.plane.task.cancel()
+				prepared.plane.rpc.shutdown()
                 gatewayTask?.cancel()
                 control.shutdown()
                 return
@@ -91,66 +148,42 @@ extension DieterStore {
             gatewayTask = nil
             gatewayRPC = nil
 
-            rpc = dataPlane.rpc
-            connectionTask = dataPlane.task
-            machineConnectionStatuses[target.id] = dataPlane.connection
-            if let expiresAt = dataPlane.directTokenExpiresAt {
-                scheduleDirectRefresh(expiresAt: expiresAt, target: target)
-            }
             try? await saveSyncPersistence()
             guard ConnectionAttemptOwnership.mayMutateSharedState(
                 attemptGeneration: generation,
                 currentGeneration: connectionGeneration
             ) else {
-                dataPlane.task.cancel()
-                dataPlane.rpc.shutdown()
+				prepared.plane.task.cancel()
+				prepared.plane.rpc.shutdown()
                 return
             }
-            endpoint = target
-            activateSyncProjection(for: target)
-            persistEndpoints()
-            // Do not use `async let` in this throwing `do` scope. Swift 6.1–6.3 can
-            // destroy failed child tasks out of allocation order (Swift #81771),
-            // aborting the process while a gRPC connection is unwinding. Explicit
-            // tasks preserve parallel loading without using async-let stack storage.
-            let healthTask = Task { try await dataPlane.rpc.health() }
-            let runtimeTask = Task { try await dataPlane.rpc.runtimeStatus() }
-            let stateTask = Task { try await dataPlane.rpc.state() }
-            let harnessesTask = Task { try await dataPlane.rpc.harnesses() }
-            let settingsTask = Task { try await dataPlane.rpc.settings() }
-            let optionsTask = Task { try await dataPlane.rpc.settingsOptions() }
-            defer {
-                healthTask.cancel()
-                runtimeTask.cancel()
-                stateTask.cancel()
-                harnessesTask.cancel()
-                settingsTask.cancel()
-                optionsTask.cancel()
-            }
-            let initialHealth = try await healthTask.value
-            guard initialHealth.status == "ok", initialHealth.version == dieterExpectedAPIVersion else {
-                throw DieterStoreConnectionError.incompatible(found: initialHealth.version)
-            }
-            let initialRuntime = try await runtimeTask.value
-            let initialState = try await stateTask.value
-            let initialHarnesses = try await harnessesTask.value
-            let initialSettings = try await settingsTask.value
-            let initialOptions = try await optionsTask.value
-            guard ConnectionAttemptOwnership.mayMutateSharedState(
-                attemptGeneration: generation,
-                currentGeneration: connectionGeneration
-            ) else {
-                dataPlane.task.cancel()
-                dataPlane.rpc.shutdown()
-                return
-            }
-            self.health = initialHealth
-            self.runtime = initialRuntime
-            acceptState(initialState)
-            self.harnessCatalog = initialHarnesses
-            self.boardSettings = initialSettings
-            self.settingsOptions = initialOptions
-            phase = .connected(version: initialHealth.version)
+
+			// Commit the route switch only after the candidate has passed Health and
+			// its initial state has loaded. Until this point the previous machine and
+			// all of its streams remain fully usable.
+			stateTask?.cancel(); conversationTask?.cancel(); gitOperationTask?.cancel(); terminalWatchTask?.cancel(); syncTask?.cancel(); syncLivenessTask?.cancel(); outboxTask?.cancel(); connectionTask?.cancel(); directRefreshTask?.cancel(); machineDirectoryTask?.cancel(); machinePresenceLeaseTask?.cancel(); machineTelemetryTask?.cancel()
+			terminalStreamConnected = false
+			rpc?.shutdown()
+			rpc = prepared.plane.rpc
+			connectionTask = prepared.plane.task
+			endpoint = prepared.target
+			endpoints = (discoveredDirectory ?? []).map { $0.id == prepared.target.id ? prepared.target : $0 }
+			machineConnectionStatuses[prepared.target.id] = prepared.plane.connection
+			machineConnectionErrors.removeValue(forKey: prepared.target.id)
+			activateSyncProjection(for: prepared.target)
+			persistEndpoints()
+			startMachinePresenceLeaseMonitor()
+			if let expiresAt = prepared.plane.directTokenExpiresAt {
+				scheduleDirectRefresh(expiresAt: expiresAt, target: prepared.target)
+			}
+			self.health = prepared.initial.health
+			self.runtime = prepared.initial.runtime
+			acceptState(prepared.initial.state)
+			self.harnessCatalog = prepared.initial.harnesses
+			self.boardSettings = prepared.initial.settings
+			self.settingsOptions = prepared.initial.options
+			errorMessage = nil
+            phase = .connected(version: prepared.initial.health.version)
             startGlobalSync()
             startSyncLivenessMonitor()
             startOutboxWorker()
@@ -169,14 +202,35 @@ extension DieterStore {
                 connectionLogger.debug("Ignoring failed stale connection attempt generation \(generation, privacy: .public)")
                 return
             }
-            connectionTask?.cancel()
-            connectionTask = nil
-            rpc?.shutdown()
-            rpc = nil
+			if let attemptedTarget {
+				machineConnectionErrors[attemptedTarget.id] = error.localizedDescription
+			}
+			if preservingLiveConnection, phase.isConnected, rpc != nil {
+				if let connectionError = error as? DieterStoreConnectionError,
+				   case let .incompatible(found) = connectionError,
+				   let attemptedTarget {
+					endpoints = endpoints.map { machine in
+						guard machine.id == attemptedTarget.id else { return machine }
+						var machine = machine
+						machine.apiVersion = found
+						return machine
+					}
+				}
+				// A failed machine switch is local to that destination. Never turn a
+				// healthy machine's workspace into a global offline state or modal.
+				return
+			}
+			connectionTask?.cancel()
+			connectionTask = nil
+			rpc?.shutdown()
+			rpc = nil
+			if let discoveredDirectory { endpoints = discoveredDirectory }
             if let connectionError = error as? DieterStoreConnectionError,
                case let .incompatible(found) = connectionError {
                 phase = .incompatible(found: found)
-                errorMessage = error.localizedDescription
+				endpoint = origin
+				persistEndpoints()
+				errorMessage = nil
                 return
             }
             if !gatewayAuthenticated, let rpcError = error as? RPCError, rpcError.code == .unauthenticated {
@@ -195,6 +249,38 @@ extension DieterStore {
             }
         }
     }
+
+	private func loadInitialConnectionState(from rpc: DieterRPC) async throws -> InitialConnectionState {
+		let health = try await rpc.health()
+		guard health.status == "ok" else {
+			throw NSError(domain: "DieterDaemon", code: 1, userInfo: [NSLocalizedDescriptionKey: "Dieter reported an unhealthy data plane."])
+		}
+		guard health.version == dieterExpectedAPIVersion else {
+			throw DieterStoreConnectionError.incompatible(found: health.version)
+		}
+		// Do not use `async let` in this throwing scope. Swift 6.1–6.3 can
+		// destroy failed child tasks out of allocation order (Swift #81771).
+		let runtimeTask = Task { try await rpc.runtimeStatus() }
+		let stateTask = Task { try await rpc.state() }
+		let harnessesTask = Task { try await rpc.harnesses() }
+		let settingsTask = Task { try await rpc.settings() }
+		let optionsTask = Task { try await rpc.settingsOptions() }
+		defer {
+			runtimeTask.cancel()
+			stateTask.cancel()
+			harnessesTask.cancel()
+			settingsTask.cancel()
+			optionsTask.cancel()
+		}
+		return try await InitialConnectionState(
+			health: health,
+			runtime: runtimeTask.value,
+			state: stateTask.value,
+			harnesses: harnessesTask.value,
+			settings: settingsTask.value,
+			options: optionsTask.value
+		)
+	}
 
     func selectDataPlane(
         gateway: DieterRPC,
@@ -561,6 +647,10 @@ extension DieterStore {
     @discardableResult
     func ensureProjectConnection(_ projectID: String, reportOffline: Bool = true) async -> Bool {
         guard let target = machine(forProjectID: projectID) else { return true }
+		guard target.apiCompatibility != .incompatible else {
+			machineConnectionErrors[target.id] = target.incompatibilityDescription
+			return false
+		}
         guard target.online else {
             if reportOffline {
                 errorMessage = "\(target.name) is offline. Start Dieter on that machine to open this project."
@@ -577,7 +667,9 @@ extension DieterStore {
         // The active machine is owned by WatchSync. Polling it here used to
         // replace the live snapshot while retaining its cursor, so later
         // deltas could be reduced against state from a different point in time.
-        let onlineMachines = machines.filter { $0.online && $0.id != endpoint.id }
+        let onlineMachines = machines.filter {
+			$0.online && $0.apiCompatibility != .incompatible && $0.id != endpoint.id
+		}
         guard !onlineMachines.isEmpty else { return }
 
         var snapshots: [MachineSnapshot] = []
@@ -746,6 +838,7 @@ extension DieterStore {
                 item.online = MachinePresenceText.online(serverOnline: daemon.online, lastSeenAt: daemon.lastSeenAt)
                 item.lastSeenAt = daemon.lastSeenAt
                 item.version = daemon.version
+				item.apiVersion = daemon.apiVersion
 				item.remoteDesktopReady = daemon.remoteDesktop.ready
 				item.remoteDesktopReason = daemon.remoteDesktop.reason
 				item.remoteDesktopPlatform = daemon.remoteDesktop.platform
@@ -845,6 +938,9 @@ extension DieterStore {
         guard machine.daemonID != nil else {
             throw NSError(domain: "DieterGateway", code: 5, userInfo: [NSLocalizedDescriptionKey: "Machine endpoint is missing its daemon identity."])
         }
+		guard machine.apiCompatibility != .incompatible else {
+			throw DieterStoreConnectionError.incompatible(found: machine.apiVersion)
+		}
         let origin = gatewayOrigins.first(where: { $0.credentialID == machine.credentialID }) ?? machine.gatewayEndpoint
         let gatewayAccessToken = await accessToken(for: origin)
         let gateway = try DieterRPC(endpoint: origin, accessToken: gatewayAccessToken)

@@ -289,9 +289,16 @@ private struct NewTerminalSheet: View {
     private enum Field { case name, workingDirectory }
 
     private var availableProjects: [Dieter_V1_Project] { store.projects.filter { !$0.archived } }
-    private var selectedProject: Dieter_V1_Project? { availableProjects.first { $0.id == projectID } }
+    private var destinationGroups: [ProjectDestinationGroup] {
+        store.projectDestinationGroups(projects: availableProjects)
+    }
+    private var selectedDestination: ProjectDestination? {
+        ProjectDestinationCatalog.destination(projectID: projectID, in: destinationGroups)
+    }
+    private var selectedProject: Dieter_V1_Project? { selectedDestination?.project }
     private var canCreate: Bool {
-        !creating && !projectID.isEmpty && !workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !creating && selectedDestination?.machineOnline == true &&
+            !workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -308,7 +315,8 @@ private struct NewTerminalSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("New terminal")
                         .font(.system(size: 19, weight: .semibold))
-                    Text("Start a persistent shell on \(store.endpoint.name)")
+                    Text(selectedDestination.map { "Start a persistent shell on \($0.machineName)" }
+                        ?? "Choose where to start a persistent shell")
                         .font(DieterFont.meta)
                         .foregroundStyle(DieterTheme.tertiary)
                 }
@@ -336,8 +344,8 @@ private struct NewTerminalSheet: View {
                             Text(selectedProject?.name ?? "Choose a project")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(DieterTheme.text)
-                            if let path = selectedProject?.path {
-                                Text((path as NSString).abbreviatingWithTildeInPath)
+                            if let selectedDestination {
+                                Text("\(selectedDestination.machineName) · \(selectedDestination.detail)")
                                     .font(.system(size: 10, design: .monospaced))
                                     .foregroundStyle(DieterTheme.tertiary)
                                     .lineLimit(1)
@@ -353,17 +361,13 @@ private struct NewTerminalSheet: View {
                     .allowsHitTesting(false)
 
                     Menu {
-                        ForEach(availableProjects, id: \.id) { project in
-                            Button {
-                                projectID = project.id
-                                workingDirectory = project.path
-                            } label: {
-                                if project.id == projectID {
-                                    Label(project.name, systemImage: "checkmark")
-                                } else {
-                                    Text(project.name)
-                                }
-                            }
+                        ProjectDestinationMenuContent(
+                            groups: destinationGroups,
+                            selectedProjectID: projectID,
+                            allowsOffline: false
+                        ) {
+                            projectID = $0.project.id
+                            workingDirectory = $0.project.path
                         }
                     } label: {
                         Color.clear
@@ -374,7 +378,7 @@ private struct NewTerminalSheet: View {
                     .menuIndicator(.hidden)
                     .frame(maxWidth: .infinity)
                     .accessibilityLabel("Project")
-                    .accessibilityValue(selectedProject?.name ?? "No project selected")
+                    .accessibilityValue(selectedDestination?.title ?? "No project selected")
                 }
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))

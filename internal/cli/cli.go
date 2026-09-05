@@ -462,7 +462,7 @@ add an optional LAN, Tailscale, or public route.
 		}
 		go func() {
 			client := &dieterdaemon.GatewayClient{
-				Identity: identity, LocalTarget: *addr, Version: Version, Routes: routes,
+				Identity: identity, LocalTarget: *addr, Version: Version, APIVersion: server.APIVersion, Routes: routes,
 				Log: logger, OnStatus: statusWriter.Gateway, RemoteDesktopPresence: remoteDesktopPresence,
 			}
 			if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {

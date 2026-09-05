@@ -169,6 +169,11 @@ public nonisolated struct Dieter_Gateway_V1_Daemon: Sendable {
   /// Clears the value of `remoteDesktop`. Subsequent reads from it will return its default value.
   public mutating func clearRemoteDesktop() {self._remoteDesktop = nil}
 
+  /// api_version is the daemon data-plane compatibility version returned by
+  /// DieterService.Health. It is separate from the release version above so
+  /// clients can route mixed-version machine fleets without probing each one.
+  public var apiVersion: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -557,6 +562,11 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
   /// Clears the value of `remoteDesktop`. Subsequent reads from it will return its default value.
   public mutating func clearRemoteDesktop() {_uniqueStorage()._remoteDesktop = nil}
 
+  public var apiVersion: String {
+    get {_storage._apiVersion}
+    set {_uniqueStorage()._apiVersion = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -639,7 +649,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonRef: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Daemon"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{3}last_seen_at\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{3}last_seen_at\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{3}api_version\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -655,6 +665,7 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
       case 6: try { try decoder.decodeSingularUInt64Field(value: &self.generation) }()
       case 7: try { try decoder.decodeRepeatedMessageField(value: &self.directCandidates) }()
       case 8: try { try decoder.decodeSingularMessageField(value: &self._remoteDesktop) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.apiVersion) }()
       default: break
       }
     }
@@ -689,6 +700,9 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
     try { if let v = self._remoteDesktop {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
     } }()
+    if !self.apiVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.apiVersion, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -701,6 +715,7 @@ nonisolated extension Dieter_Gateway_V1_Daemon: SwiftProtobuf.Message, SwiftProt
     if lhs.generation != rhs.generation {return false}
     if lhs.directCandidates != rhs.directCandidates {return false}
     if lhs._remoteDesktop != rhs._remoteDesktop {return false}
+    if lhs.apiVersion != rhs.apiVersion {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -1403,7 +1418,7 @@ nonisolated extension Dieter_Gateway_V1_RTCConfiguration: SwiftProtobuf.Message,
 
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonLinkFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{3}api_version\0")
 
   fileprivate class _StorageClass {
     var _kind: Dieter_Gateway_V1_DaemonLinkFrameKind = .unspecified
@@ -1423,6 +1438,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
     var _generation: UInt64 = 0
     var _directCandidates: [Dieter_Gateway_V1_DirectCandidate] = []
     var _remoteDesktop: Dieter_Gateway_V1_RemoteDesktopPresence? = nil
+    var _apiVersion: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1450,6 +1466,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       _generation = source._generation
       _directCandidates = source._directCandidates
       _remoteDesktop = source._remoteDesktop
+      _apiVersion = source._apiVersion
     }
   }
 
@@ -1485,6 +1502,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         case 15: try { try decoder.decodeSingularUInt64Field(value: &_storage._generation) }()
         case 16: try { try decoder.decodeRepeatedMessageField(value: &_storage._directCandidates) }()
         case 17: try { try decoder.decodeSingularMessageField(value: &_storage._remoteDesktop) }()
+        case 18: try { try decoder.decodeSingularStringField(value: &_storage._apiVersion) }()
         default: break
         }
       }
@@ -1548,6 +1566,9 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       try { if let v = _storage._remoteDesktop {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 17)
       } }()
+      if !_storage._apiVersion.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._apiVersion, fieldNumber: 18)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1574,6 +1595,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         if _storage._generation != rhs_storage._generation {return false}
         if _storage._directCandidates != rhs_storage._directCandidates {return false}
         if _storage._remoteDesktop != rhs_storage._remoteDesktop {return false}
+        if _storage._apiVersion != rhs_storage._apiVersion {return false}
         return true
       }
       if !storagesAreEqual {return false}

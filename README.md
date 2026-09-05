@@ -98,6 +98,11 @@ dieter --machine <machine-id> remote exec --project <project-id> -- uname -a
 dieter --machine <machine-id> terminal list --format jsonl
 ```
 
+`machine list`, `machine show`, and `machine watch` expose both the Dieter
+release version and the data-plane API version. Native clients use the API
+version to skip incompatible machines while keeping compatible machines in a
+mixed-version fleet available.
+
 `dieter status` reports daemon-wide active project, board, card, and chat
 counts in one snapshot, including when the selected machine is remote.
 

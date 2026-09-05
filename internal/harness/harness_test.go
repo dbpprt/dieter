@@ -468,3 +468,29 @@ func TestSubprocessRunnerRetainsDiagnosticsAfterStructuredError(t *testing.T) {
 		t.Fatalf("reported=%q err=%v", reported, err)
 	}
 }
+
+func TestSubprocessRunnerRetainsDiagnosticsAfterUIError(t *testing.T) {
+	runtimeDir := t.TempDir()
+	script := `process.stdin.once('data', () => {
+  process.stderr.write('ACP model mapping is required when a model is set.\n');
+  process.stdout.write(JSON.stringify({type:'chunk', chunk:{type:'error', errorText:'An error occurred.'}}) + '\n');
+});`
+	if err := os.WriteFile(filepath.Join(runtimeDir, "runner.mjs"), []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", runtimeDir)
+	runner := NewSubprocessRunner(t.TempDir())
+	emittedErrorChunk := false
+	err := runner.Run(context.Background(), Request{
+		Harness: "omp", Prompt: "fail", SessionID: "card", ProjectPath: t.TempDir(), RuntimeRoot: t.TempDir(),
+	}, func(output Output) error {
+		if output.Type == "chunk" && strings.Contains(string(output.Chunk), `"type":"error"`) {
+			emittedErrorChunk = true
+		}
+		return nil
+	})
+	if emittedErrorChunk || err == nil || !strings.Contains(err.Error(), "An error occurred.") ||
+		!strings.Contains(err.Error(), "ACP model mapping is required when a model is set.") {
+		t.Fatalf("emittedErrorChunk=%v err=%v", emittedErrorChunk, err)
+	}
+}

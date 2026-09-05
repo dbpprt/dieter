@@ -139,6 +139,21 @@ enum NativeUISmokeRunner {
             "connection": "passed",
             "fixture-project": project.name,
         ]
+		let compatibleEndpointID = store.endpoint.id
+		results["mixed-version-compatible-startup"] =
+			store.endpoint.apiCompatibility == .compatible && store.machines.contains(where: { $0.apiCompatibility == .incompatible })
+			? "passed"
+			: "failed: startup did not select API \(dieterExpectedAPIVersion) from the mixed fleet"
+		if let incompatibleMachine = store.machines.first(where: { $0.apiCompatibility == .incompatible }) {
+			await store.connect(to: incompatibleMachine)
+			results["mixed-version-switch-isolation"] =
+				store.endpoint.id == compatibleEndpointID && store.phase.isConnected && store.workspaceIsLive
+				&& store.machineConnectionErrors[incompatibleMachine.id] != nil && store.errorMessage == nil
+				? "passed"
+				: "failed: incompatible switch displaced the healthy route or presented a global error"
+		} else {
+			results["mixed-version-switch-isolation"] = "failed: legacy fixture machine was absent"
+		}
         if let fixtureNote { results["fixture"] = fixtureNote }
         if let scheduleFixtureError { results["schedule-fixture"] = "failed: \(scheduleFixtureError)" }
 
@@ -571,6 +586,46 @@ enum NativeUISmokeRunner {
         store.closeConversation()
         try? await DieterTaskSleep.milliseconds(500)
         await captureAppearances(window, named: "13d-standalone-chat-renamed.png", in: output)
+
+        // A repository can be registered on several enrolled machines. Render
+        // the real new-chat surface with a duplicate project name and require
+        // its selected destination to retain the owning machine identity.
+        let duplicateMachine = DieterEndpoint(
+            name: "Smoke remote Mac",
+            host: store.endpoint.host,
+            port: store.endpoint.port,
+            secure: store.endpoint.secure,
+            daemonID: "smoke-duplicate-machine",
+            online: false,
+            version: "v0.4.57"
+        )
+        var duplicateProject = project
+        duplicateProject.id = "p_duplicate_machine_ui_smoke"
+        duplicateProject.path = "/Users/smoke/Development/\(project.name)"
+        store.endpoints.append(duplicateMachine)
+        store.projectDirectory[duplicateProject.id] = duplicateProject
+        store.projectEndpointIDs[duplicateProject.id] = duplicateMachine.id
+        store.beginStandaloneChat(projectID: duplicateProject.id)
+        try? await DieterTaskSleep.milliseconds(700)
+        let destinationGroups = store.projectDestinationGroups()
+        let duplicateDestination = ProjectDestinationCatalog.destination(
+            projectID: duplicateProject.id,
+            in: destinationGroups
+        )
+        let duplicateNamesAreGrouped = destinationGroups.filter {
+            $0.destinations.contains { $0.project.name == project.name }
+        }.count >= 2
+        results["13g-new-chat-projects-grouped-by-machine"] =
+            duplicateNamesAreGrouped && duplicateDestination?.title == "\(project.name) · Smoke remote Mac"
+                ? "passed"
+                : "failed: groups=\(destinationGroups.map(\.title)), selection=\(duplicateDestination?.title ?? "none")"
+        await captureAppearances(window, named: "13g-new-chat-project-machine.png", in: output)
+        store.projectDirectory.removeValue(forKey: duplicateProject.id)
+        store.projectEndpointIDs.removeValue(forKey: duplicateProject.id)
+        store.endpoints.removeAll { $0.id == duplicateMachine.id }
+        store.newChatProjectID = project.id
+        store.selectedProjectID = project.id
+        try? await DieterTaskSleep.milliseconds(350)
 
         store.createProjectPresented = true
         try? await DieterTaskSleep.milliseconds(700)

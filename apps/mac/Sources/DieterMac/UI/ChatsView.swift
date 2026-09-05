@@ -572,7 +572,14 @@ private struct StandaloneChatStartView: View {
         ("Fix a failure", "Investigate the current failures in this project, find the root cause, and implement a verified fix."),
     ]
 
-    private var project: Dieter_V1_Project? { store.projects.first { $0.id == projectID } }
+    private var availableProjects: [Dieter_V1_Project] { store.projects.filter { !$0.archived } }
+    private var destinationGroups: [ProjectDestinationGroup] {
+        store.projectDestinationGroups(projects: availableProjects)
+    }
+    private var destination: ProjectDestination? {
+        ProjectDestinationCatalog.destination(projectID: projectID, in: destinationGroups)
+    }
+    private var project: Dieter_V1_Project? { destination?.project }
     private var harness: Dieter_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == provider } }
     private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
     var body: some View {
@@ -581,7 +588,8 @@ private struct StandaloneChatStartView: View {
                 HStack {
                     PaneTitleBlock(
                         title: "New chat",
-                        subtitle: "\(project?.name ?? "Choose a project") · Standalone chat",
+                        subtitle: destination.map { "\($0.project.name) on \($0.machineName) · Standalone chat" }
+                            ?? "Choose a project and machine · Standalone chat",
                         symbol: "bubble.left"
                     )
                     StatusPill(text: "New")
@@ -620,8 +628,22 @@ private struct StandaloneChatStartView: View {
             VStack(spacing: 9) {
                 HStack(spacing: 8) {
                     Menu {
-                        ForEach(store.projects.filter { !$0.archived }, id: \.id) { item in Button(item.name) { projectID = item.id } }
-                    } label: { DieterChipLabel(title: project?.name ?? "Project", symbol: "folder") }.menuStyle(.borderlessButton).fixedSize()
+                        ProjectDestinationMenuContent(
+                            groups: destinationGroups,
+                            selectedProjectID: projectID,
+                            allowsOffline: true
+                        ) { projectID = $0.project.id }
+                    } label: {
+                        DieterChipLabel(
+                            title: destination?.title ?? "Project and machine",
+                            symbol: "folder",
+                            maximumTitleWidth: 210
+                        )
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+                    .help(destination?.detail ?? "Choose the machine and registered Git project for this chat")
+                    .accessibilityIdentifier("chats.new.project")
+                    .accessibilityValue(destination?.title ?? "No project selected")
 
                     Menu {
                         ForEach(store.harnessCatalog.harnesses, id: \.id) { item in
@@ -652,6 +674,20 @@ private struct StandaloneChatStartView: View {
                     }
                     ProviderOptionChips(options: harness?.options ?? [], values: $providerOptions)
                     Spacer()
+                }
+                if let destination {
+                    HStack(spacing: 7) {
+                        Image(systemName: destination.machineOnline ? "desktopcomputer" : "desktopcomputer.trianglebadge.exclamationmark")
+                            .foregroundStyle(destination.machineOnline ? DieterTheme.eyes : DieterTheme.coral)
+                        Text("Runs on \(destination.machineName)")
+                            .font(.caption.weight(.semibold)).foregroundStyle(DieterTheme.subtle)
+                        Text("· \(destination.detail)")
+                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 4)
+                    .accessibilityIdentifier("chats.new.destination")
                 }
                 if !attachments.isEmpty {
                     AttachmentPreviewStrip(attachments: $attachments)
@@ -712,7 +748,9 @@ private struct StandaloneChatStartView: View {
 
     private func chooseDefaults() {
         if projectID.isEmpty {
-            projectID = store.newChatProjectID.isEmpty ? (store.selectedProjectID.isEmpty ? (store.projects.first?.id ?? "") : store.selectedProjectID) : store.newChatProjectID
+            projectID = store.newChatProjectID.isEmpty
+                ? (store.selectedProjectID.isEmpty ? (availableProjects.first?.id ?? "") : store.selectedProjectID)
+                : store.newChatProjectID
         }
         let preferences = ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
         guard provider.isEmpty,

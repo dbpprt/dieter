@@ -313,7 +313,7 @@ func (s *Service) protoDaemon(record DaemonRecord) *gatewayv1.Daemon {
 	_ = json.Unmarshal(record.RoutesJSON, &routes)
 	remoteDesktop := &gatewayv1.RemoteDesktopPresence{}
 	_ = json.Unmarshal(record.RemoteDesktopJSON, remoteDesktop)
-	return &gatewayv1.Daemon{Id: record.ID, Name: record.Name, Online: s.hub.Online(record.ID), LastSeenAt: record.LastSeenAt.Format(time.RFC3339Nano), Version: record.Version, Generation: record.Generation, DirectCandidates: routes, RemoteDesktop: remoteDesktop}
+	return &gatewayv1.Daemon{Id: record.ID, Name: record.Name, Online: s.hub.Online(record.ID), LastSeenAt: record.LastSeenAt.Format(time.RFC3339Nano), Version: record.Version, ApiVersion: record.APIVersion, Generation: record.Generation, DirectCandidates: routes, RemoteDesktop: remoteDesktop}
 }
 
 func (s *Service) credential(record DaemonRecord) *gatewayv1.DaemonCredential {

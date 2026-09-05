@@ -235,7 +235,7 @@ func (c *CLI) machineCommand(args []string) error {
 		}
 		writer := tabwriter.NewWriter(c.Out, 0, 3, 2, ' ', 0)
 		if *format == "table" {
-			fmt.Fprintln(writer, "ID\tSTATUS\tVERSION\tNAME")
+			fmt.Fprintln(writer, "ID\tSTATUS\tVERSION\tAPI\tNAME")
 		}
 		for _, item := range response.GetDaemons() {
 			switch *format {
@@ -250,7 +250,7 @@ func (c *CLI) machineCommand(args []string) error {
 				if item.GetOnline() {
 					state = "online"
 				}
-				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\n", item.GetId(), state, item.GetVersion(), item.GetName())
+				fmt.Fprintf(writer, "%s\t%s\t%s\t%s\t%s\n", item.GetId(), state, item.GetVersion(), item.GetApiVersion(), item.GetName())
 			}
 		}
 		return writer.Flush()

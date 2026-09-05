@@ -530,12 +530,14 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         daemonID: "daemon-1",
         online: false,
         lastSeenAt: "2026-08-18T12:00:00Z",
-        version: "3"
+		version: "v0.4.92",
+		apiVersion: dieterExpectedAPIVersion
     )
     #expect(endpoint.id == "https://dieter.example:443#daemon-1")
     #expect(endpoint.credentialID == "https://dieter.example:443")
     #expect(endpoint.name == "Studio Mac")
     #expect(!endpoint.online)
+	#expect(endpoint.apiCompatibility == .compatible)
     #expect(endpoint.gatewayEndpoint.daemonID == nil)
     #expect(endpoint.gatewayEndpoint.credentialID == endpoint.credentialID)
     #expect(DieterRPC.Route.gateway.daemonID == nil)
@@ -1642,6 +1644,102 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     ) == nil)
 }
 
+@Test func machineRoutingSkipsKnownIncompatibleDaemonsAndRetainsUnknownFallbacks() throws {
+	let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
+	let incompatible = DieterEndpoint(
+		name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
+		daemonID: "legacy", online: true, apiVersion: "2"
+	)
+	let unknown = DieterEndpoint(
+		name: "Unknown", host: gateway.host, port: gateway.port, secure: true,
+		daemonID: "unknown", online: true
+	)
+	let compatible = DieterEndpoint(
+		name: "Current", host: gateway.host, port: gateway.port, secure: true,
+		daemonID: "current", online: true, apiVersion: dieterExpectedAPIVersion
+	)
+
+	#expect(MachineRoutingPolicy.connectionTargets(
+		from: [incompatible, unknown, compatible],
+		preferredDaemonID: "legacy",
+		explicitMachineSelection: false
+	) == [compatible, unknown])
+	#expect(MachineRoutingPolicy.connectionTargets(
+		from: [incompatible, compatible],
+		preferredDaemonID: "legacy",
+		explicitMachineSelection: true
+	) == [incompatible])
+	#expect(try #require(incompatible.incompatibilityDescription).contains("API 2"))
+}
+
+@Test func explicitGatewaySelectionClearsTheCurrentMachinePreference() {
+	let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
+	let machine = DieterEndpoint(
+		name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
+		daemonID: "legacy", online: true, apiVersion: "2"
+	)
+
+	#expect(MachineRoutingPolicy.preferredDaemonID(newEndpoint: nil, currentEndpoint: machine) == "legacy")
+	#expect(MachineRoutingPolicy.preferredDaemonID(newEndpoint: gateway, currentEndpoint: machine) == nil)
+}
+
+@Test func projectDestinationsGroupDuplicateNamesByOwningMachine() throws {
+    let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
+    let home = DieterEndpoint(
+        name: "mini-home", host: gateway.host, port: gateway.port, secure: true,
+        daemonID: "home", online: true, version: "v0.4.92"
+    )
+    let office = DieterEndpoint(
+        name: "mini-office", host: gateway.host, port: gateway.port, secure: true,
+        daemonID: "office", online: false, version: "v0.4.57"
+    )
+    var homeProject = Dieter_V1_Project()
+    homeProject.id = "p_home"
+    homeProject.name = "dieter"
+    homeProject.path = "/Users/home/Development/dieter"
+    var officeProject = Dieter_V1_Project()
+    officeProject.id = "p_office"
+    officeProject.name = "dieter"
+    officeProject.path = "/Users/office/Development/dieter"
+
+    let groups = ProjectDestinationCatalog.groups(
+        projects: [officeProject, homeProject],
+        projectEndpointIDs: [homeProject.id: home.id, officeProject.id: office.id],
+        endpoints: [office, home],
+        fallbackEndpoint: gateway
+    )
+
+    #expect(groups.map(\.machineName) == ["mini-home", "mini-office"])
+    #expect(groups.map(\.title) == ["mini-home · Online", "mini-office · Offline"])
+    #expect(groups.map { $0.destinations.map(\.project.name) } == [["dieter"], ["dieter"]])
+    let destination = try #require(ProjectDestinationCatalog.destination(projectID: officeProject.id, in: groups))
+    #expect(destination.title == "dieter · mini-office")
+    #expect(destination.detail == "Offline · /Users/office/Development/dieter")
+}
+
+@Test func projectDestinationWithoutAnExplicitMappingUsesTheActiveMachine() throws {
+    let machine = DieterEndpoint(
+        name: "Studio Mac", host: "example.com", port: 443, secure: true,
+        daemonID: "studio", online: true
+    )
+    var project = Dieter_V1_Project()
+    project.id = "p_studio"
+    project.name = "Dieter"
+    project.path = "/work/dieter"
+
+    let groups = ProjectDestinationCatalog.groups(
+        projects: [project],
+        projectEndpointIDs: [:],
+        endpoints: [machine],
+        fallbackEndpoint: machine
+    )
+
+    let group = try #require(groups.first)
+    #expect(group.machineID == machine.id)
+    #expect(group.machineName == "Studio Mac")
+    #expect(group.destinations.first?.title == "Dieter · Studio Mac")
+}
+
 @Test func boardPresentationUsesLoadingStateUntilASelectionCanBeResolved() {
     #expect(BoardPresentationState.resolve(
         hasLoadedWorkspace: false,
@@ -1682,6 +1780,17 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(!ConnectionAttemptOwnership.mayMutateSharedState(
         attemptGeneration: 7,
         currentGeneration: 8
+    ))
+}
+
+@Test func retiredOutboxWorkerCannotClearItsReplacement() {
+    #expect(OutboxWorkerOwnership.mayClearTask(
+        workerGeneration: 12,
+        currentGeneration: 12
+    ))
+    #expect(!OutboxWorkerOwnership.mayClearTask(
+        workerGeneration: 11,
+        currentGeneration: 12
     ))
 }
 

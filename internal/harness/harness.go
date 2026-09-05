@@ -649,6 +649,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 8<<20)
 	var workerError string
+	var streamError string
 	var stdoutDiagnostics strings.Builder
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
@@ -671,6 +672,19 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 		if output.Type == "error" {
 			workerError = output.Message
 		}
+		if output.Type == "chunk" {
+			var chunk struct {
+				Type      string `json:"type"`
+				ErrorText string `json:"errorText"`
+			}
+			if json.Unmarshal(output.Chunk, &chunk) == nil && chunk.Type == "error" {
+				streamError = strings.TrimSpace(chunk.ErrorText)
+				// The AI SDK emits a generic UI error while the actionable ACP
+				// diagnostic is written to stderr. Hold the generic chunk until the
+				// process exits so the caller can persist the complete failure once.
+				continue
+			}
+		}
 		if err := emit(output); err != nil {
 			_ = command.Process.Kill()
 			return err
@@ -687,6 +701,12 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 			return fmt.Errorf("%s: %s", workerError, diagnostic)
 		}
 		return errors.New(workerError)
+	}
+	if streamError != "" {
+		if diagnostic := strings.TrimSpace(stderr.String() + "\n" + stdoutDiagnostics.String()); diagnostic != "" {
+			return fmt.Errorf("%s: %s", streamError, diagnostic)
+		}
+		return errors.New(streamError)
 	}
 	if waitErr != nil {
 		message := strings.TrimSpace(stderr.String() + "\n" + stdoutDiagnostics.String())

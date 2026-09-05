@@ -12,7 +12,7 @@ import { tool, toUIMessageStream } from 'ai';
 import { z } from 'zod';
 import { createLocalSandboxProvider } from './local-sandbox.mjs';
 import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
-import { ompACPArgs } from './provider-options.mjs';
+import { ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
 import { createMessageMetadataTracker } from './usage-metadata.mjs';
 import {
@@ -166,11 +166,11 @@ switch (adapter) {
       source: {
         type: 'npm-simple',
         packageName: '@oh-my-pi/pi-coding-agent',
-        packageVersion: '17.3.4',
+        packageVersion: '18.1.10',
       },
       executable: 'omp',
       args: ompACPArgs(request, fileURLToPath(new URL('./omp-capabilities-hook.mjs', import.meta.url))),
-      modelId: request.model || undefined,
+      modelMapping: ompACPModelMapping,
       forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'DIETER_OMP_CAPABILITY_FILE', ...extraHarnessEnv],
     });
     break;
@@ -250,6 +250,7 @@ try {
   const agent = new HarnessAgent({
     harness,
     sandbox,
+    model: adapter === 'omp-acp' ? request.model || undefined : undefined,
     instructions: instructions || undefined,
     ...(adapter === 'pi' ? { tools: { board_task_plan: piTaskPlanTool } } : {}),
     permissionMode: 'allow-all',

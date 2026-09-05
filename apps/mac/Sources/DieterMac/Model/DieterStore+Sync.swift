@@ -447,9 +447,21 @@ extension DieterStore {
 
     func startOutboxWorker() {
         guard outboxTask?.isCancelled != false else { return }
+        outboxWorkerGeneration &+= 1
+        let generation = outboxWorkerGeneration
         outboxTask = Task { [weak self] in
             guard let self else { return }
-            defer { self.outboxTask = nil }
+            defer {
+                // A reconnect can cancel this worker and install its successor
+                // before this task observes cancellation. The retired worker
+                // must not clear the live worker's reference when it unwinds.
+                if OutboxWorkerOwnership.mayClearTask(
+                    workerGeneration: generation,
+                    currentGeneration: self.outboxWorkerGeneration
+                ) {
+                    self.outboxTask = nil
+                }
+            }
             while !Task.isCancelled {
                 guard self.rpc != nil, self.phase.isConnected else { return }
                 let reachableEndpointIDs = [self.endpoint.id] + self.endpoints
