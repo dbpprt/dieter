@@ -216,8 +216,12 @@ type Daemon struct {
 	Generation       uint64                 `protobuf:"varint,6,opt,name=generation,proto3" json:"generation,omitempty"`
 	DirectCandidates []*DirectCandidate     `protobuf:"bytes,7,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
 	RemoteDesktop    *RemoteDesktopPresence `protobuf:"bytes,8,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// api_version is the daemon data-plane compatibility version returned by
+	// DieterService.Health. It is separate from the release version above so
+	// clients can route mixed-version machine fleets without probing each one.
+	ApiVersion    string `protobuf:"bytes,9,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Daemon) Reset() {
@@ -304,6 +308,13 @@ func (x *Daemon) GetRemoteDesktop() *RemoteDesktopPresence {
 		return x.RemoteDesktop
 	}
 	return nil
+}
+
+func (x *Daemon) GetApiVersion() string {
+	if x != nil {
+		return x.ApiVersion
+	}
+	return ""
 }
 
 // RemoteDesktopPresence is intentionally coarse gateway metadata. Display
@@ -1382,6 +1393,7 @@ type DaemonLinkFrame struct {
 	Generation          uint64                 `protobuf:"varint,15,opt,name=generation,proto3" json:"generation,omitempty"`
 	DirectCandidates    []*DirectCandidate     `protobuf:"bytes,16,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
 	RemoteDesktop       *RemoteDesktopPresence `protobuf:"bytes,17,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
+	ApiVersion          string                 `protobuf:"bytes,18,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1535,6 +1547,13 @@ func (x *DaemonLinkFrame) GetRemoteDesktop() *RemoteDesktopPresence {
 	return nil
 }
 
+func (x *DaemonLinkFrame) GetApiVersion() string {
+	if x != nil {
+		return x.ApiVersion
+	}
+	return ""
+}
+
 var File_dieter_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
@@ -1544,7 +1563,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\tgithub_id\x18\x01 \x01(\x03R\bgithubId\x12\x14\n" +
 	"\x05login\x18\x02 \x01(\tR\x05login\"(\n" +
 	"\tDaemonRef\x12\x1b\n" +
-	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"\xc2\x02\n" +
+	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\"\xe3\x02\n" +
 	"\x06Daemon\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
@@ -1556,7 +1575,9 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"generation\x18\x06 \x01(\x04R\n" +
 	"generation\x12O\n" +
 	"\x11direct_candidates\x18\a \x03(\v2\".dieter.gateway.v1.DirectCandidateR\x10directCandidates\x12O\n" +
-	"\x0eremote_desktop\x18\b \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\"\xaf\x01\n" +
+	"\x0eremote_desktop\x18\b \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x12\x1f\n" +
+	"\vapi_version\x18\t \x01(\tR\n" +
+	"apiVersion\"\xaf\x01\n" +
 	"\x15RemoteDesktopPresence\x12\x1a\n" +
 	"\bplatform\x18\x01 \x01(\tR\bplatform\x12%\n" +
 	"\x0ehelper_version\x18\x02 \x01(\tR\rhelperVersion\x12\x14\n" +
@@ -1645,7 +1666,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x10operator_subject\x18\x05 \x01(\tR\x0foperatorSubject\x12)\n" +
 	"\x10configuration_id\x18\x06 \x01(\tR\x0fconfigurationId\x12+\n" +
 	"\x11daemon_generation\x18\a \x01(\x04R\x10daemonGeneration\x12\x1b\n" +
-	"\tissued_at\x18\b \x01(\tR\bissuedAt\"\xb6\x06\n" +
+	"\tissued_at\x18\b \x01(\tR\bissuedAt\"\xd7\x06\n" +
 	"\x0fDaemonLinkFrame\x12:\n" +
 	"\x04kind\x18\x01 \x01(\x0e2&.dieter.gateway.v1.DaemonLinkFrameKindR\x04kind\x12\x1b\n" +
 	"\tstream_id\x18\x02 \x01(\x04R\bstreamId\x12\x1b\n" +
@@ -1668,7 +1689,9 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"generation\x18\x0f \x01(\x04R\n" +
 	"generation\x12O\n" +
 	"\x11direct_candidates\x18\x10 \x03(\v2\".dieter.gateway.v1.DirectCandidateR\x10directCandidates\x12O\n" +
-	"\x0eremote_desktop\x18\x11 \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x1a;\n" +
+	"\x0eremote_desktop\x18\x11 \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x12\x1f\n" +
+	"\vapi_version\x18\x12 \x01(\tR\n" +
+	"apiVersion\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x82\x05\n" +

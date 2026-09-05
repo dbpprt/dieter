@@ -221,7 +221,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	defer boardHTTP.Close()
 
 	tunnel := &daemon.GatewayClient{
-		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", Log: logger,
+		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Log: logger,
 		RemoteDesktopPresence: func() *gatewayv1.RemoteDesktopPresence {
 			return remoteDesktop.Presence(true, false)
 		},
@@ -436,6 +436,9 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	list, err := gatewayClient.ListDaemons(authorized, &emptypb.Empty{})
 	if err != nil || len(list.GetDaemons()) != 1 || !list.GetDaemons()[0].GetOnline() {
 		t.Fatalf("list daemons=%#v err=%v", list, err)
+	}
+	if got := list.GetDaemons()[0].GetApiVersion(); got != server.APIVersion {
+		t.Fatalf("advertised API version=%q want %q", got, server.APIVersion)
 	}
 	if desktop := list.GetDaemons()[0].GetRemoteDesktop(); !desktop.GetReady() || desktop.GetPlatform() != runtime.GOOS {
 		t.Fatalf("remote desktop presence=%#v", desktop)
@@ -672,7 +675,7 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 		})
 
 		machineCtx, stop := context.WithCancel(ctx)
-		tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", Log: logger}
+		tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Log: logger}
 		go func() { _ = tunnel.Run(machineCtx) }()
 		machines = append(machines, machine{identity: identity, store: boardStore, stop: stop})
 	}
@@ -702,6 +705,9 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 	for _, item := range list.GetDaemons() {
 		if !item.GetOnline() {
 			t.Fatalf("expected both daemons online: %#v", list)
+		}
+		if item.GetApiVersion() != server.APIVersion {
+			t.Fatalf("machine %q API version=%q want %q", item.GetName(), item.GetApiVersion(), server.APIVersion)
 		}
 	}
 

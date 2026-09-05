@@ -175,6 +175,10 @@ extension DieterStore {
             machineInformationError = "\(machine.name) is offline."
             return
         }
+		guard machine.apiCompatibility != .incompatible else {
+			machineInformationError = machine.incompatibilityDescription
+			return
+		}
         machineInformationLoading = machineInformation[machineID] == nil
         defer { machineInformationLoading = false }
 
@@ -218,6 +222,10 @@ extension DieterStore {
             show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
             return
         }
+		guard machine.apiCompatibility != .incompatible else {
+			machineOperationMessage = machine.incompatibilityDescription
+			return
+		}
         var borrowedPlane: DataPlaneConnection?
         do {
             let client: DieterRPC
@@ -244,6 +252,10 @@ extension DieterStore {
             show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
             return
         }
+		guard machine.apiCompatibility != .incompatible else {
+			machineConnectionErrors[machine.id] = machine.incompatibilityDescription
+			return
+		}
         if machine.id != endpoint.id {
             await connect(to: machine)
             guard phase.isConnected, endpoint.id == machine.id else { return }

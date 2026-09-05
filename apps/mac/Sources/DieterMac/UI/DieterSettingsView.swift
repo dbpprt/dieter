@@ -727,6 +727,8 @@ struct ConnectionSettings: View {
     }
 
     private func machineSummary(_ machine: DieterEndpoint) -> String {
+		if let incompatibility = machine.incompatibilityDescription { return incompatibility }
+		if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
         guard machine.online else { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
         if let status = store.connectionStatus(for: machine) { return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms" }
         return machine.version.isEmpty ? "Online" : "Online · Dieter \(machine.version)"

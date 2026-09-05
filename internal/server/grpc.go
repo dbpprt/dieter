@@ -49,7 +49,12 @@ type cachedConversation struct {
 	accessed uint64
 }
 
-const maxCachedConversations = 12
+const (
+	// APIVersion is advertised through Health and gateway presence. Native
+	// clients use it to avoid selecting an incompatible daemon in a mixed fleet.
+	APIVersion             = "3"
+	maxCachedConversations = 12
+)
 
 type sequencedSnapshot struct {
 	seq      int64
@@ -64,7 +69,7 @@ type snapshotHistory struct {
 const maxSnapshotsPerConversation = 8
 
 func (api *grpcAPI) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthResponse, error) {
-	return &dieterv1.HealthResponse{Status: "ok", Version: "3", StorePath: api.server.store.Root}, nil
+	return &dieterv1.HealthResponse{Status: "ok", Version: APIVersion, StorePath: api.server.store.Root}, nil
 }
 
 func (api *grpcAPI) GetRuntimeStatus(context.Context, *emptypb.Empty) (*dieterv1.RuntimeStatus, error) {

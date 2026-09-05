@@ -50,6 +50,12 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
 		return err
 	}
+	// Smoke fixtures exercise client delivery and reconnect behavior with the
+	// bounded in-process mock harness. Do not let the host's production agent
+	// disk reserve turn that transport assertion into a machine-capacity test.
+	if err := os.Setenv("DIETER_MIN_FREE_BYTES", "0"); err != nil {
+		return err
+	}
 	if home == "" {
 		var err error
 		home, err = os.MkdirTemp("", "dieter-isolated-*")
@@ -165,7 +171,7 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	go func() { _ = boardHTTP.Serve(boardListener) }()
 	defer boardHTTP.Close()
 
-	tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "isolated-e2e", Log: logger}
+	tunnel := &daemon.GatewayClient{Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "isolated-e2e", APIVersion: server.APIVersion, Log: logger}
 	if offlineTrigger == "" {
 		go func() { _ = tunnel.Run(ctx) }()
 	} else {
@@ -211,6 +217,32 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 		}()
 	}
 
+	// Keep an online legacy daemon in the directory to exercise mixed-version
+	// client routing. It shares the disposable data plane, but advertises API 2;
+	// a compatible client must reject it from presence metadata before dialing.
+	legacyIdentity, err := daemon.LoadOrCreateEnrollmentIdentity(filepath.Join(home, "legacy-daemon"), "Legacy API 2 machine", publicURL.String())
+	if err != nil {
+		return err
+	}
+	legacyEnrollment, err := daemon.BeginEnrollment(ctx, legacyIdentity)
+	if err != nil {
+		return err
+	}
+	if err = gatewayStore.ApproveEnrollment(legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
+		return err
+	}
+	legacyCredential, err := daemon.CompleteEnrollment(ctx, legacyIdentity, legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetEnrollmentSecret())
+	if err != nil {
+		return err
+	}
+	if err = legacyIdentity.SaveCredential(legacyCredential.GetDaemonId(), legacyCredential.GetDaemonName(), legacyCredential.GetCertificatePem(), legacyCredential.GetDaemonCaPem(), legacyCredential.GetGatewaySigningPublicKey(), legacyCredential.GetExpiresAt(), legacyCredential.GetGeneration()); err != nil {
+		return err
+	}
+	legacyTunnel := &daemon.GatewayClient{
+		Identity: legacyIdentity, LocalTarget: boardListener.Addr().String(), Version: "legacy-e2e", APIVersion: "2", Log: logger,
+	}
+	go func() { _ = legacyTunnel.Run(ctx) }()
+
 	tokenBytes := make([]byte, 24)
 	if _, err = rand.Read(tokenBytes); err != nil {
 		return err
@@ -233,16 +265,17 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	}
 
 	deadline := time.Now().Add(10 * time.Second)
-	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
+	for (!gatewayServer.Hub.Online(identity.ID) || !gatewayServer.Hub.Online(legacyIdentity.ID)) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if !gatewayServer.Hub.Online(identity.ID) {
-		return fmt.Errorf("daemon tunnel did not come online")
+	if !gatewayServer.Hub.Online(identity.ID) || !gatewayServer.Hub.Online(legacyIdentity.ID) {
+		return fmt.Errorf("mixed-version daemon tunnels did not come online")
 	}
 
 	fmt.Printf("DIETER_ISOLATED_ADDR=%s\n", gatewayListener.Addr().String())
 	fmt.Printf("DIETER_ISOLATED_TOKEN=%s\n", token)
 	fmt.Printf("DIETER_ISOLATED_DAEMON=%s\n", identity.ID)
+	fmt.Printf("DIETER_ISOLATED_LEGACY_DAEMON=%s\n", legacyIdentity.ID)
 	fmt.Printf("DIETER_ISOLATED_PROJECT=%s\n", project.ID)
 	fmt.Printf("DIETER_ISOLATED_BOARD=%s\n", board.ID)
 	fmt.Println("READY")

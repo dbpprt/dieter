@@ -96,7 +96,7 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	}
 	routes, _ := json.Marshal(hello.GetDirectCandidates())
 	remoteDesktop, _ := json.Marshal(hello.GetRemoteDesktop())
-	if err := h.store.MarkDaemonSeen(identity, hello.GetVersion(), routes, remoteDesktop); err != nil {
+	if err := h.store.MarkDaemonSeen(identity, hello.GetVersion(), hello.GetApiVersion(), routes, remoteDesktop); err != nil {
 		return status.Error(codes.Unauthenticated, "daemon is revoked")
 	}
 	link := &daemonLink{id: identity, generation: record.Generation, send: make(chan *gatewayv1.DaemonLinkFrame, 8), done: make(chan struct{}), streams: map[uint64]chan *gatewayv1.DaemonLinkFrame{}}
@@ -138,7 +138,7 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT:
 				routes, _ := json.Marshal(frame.GetDirectCandidates())
 				remoteDesktop, _ := json.Marshal(frame.GetRemoteDesktop())
-				if err := h.store.MarkDaemonSeen(identity, frame.GetVersion(), routes, remoteDesktop); err != nil {
+				if err := h.store.MarkDaemonSeen(identity, frame.GetVersion(), frame.GetApiVersion(), routes, remoteDesktop); err != nil {
 					recvErr <- err
 					return
 				}

@@ -50,6 +50,7 @@ final class DieterStore {
     var projectDirectory: [String: Dieter_V1_Project] = [:]
     var projectEndpointIDs: [String: String] = [:]
     var machineConnectionStatuses: [String: MachineConnectionStatus] = [:]
+	var machineConnectionErrors: [String: String] = [:]
     var selectedMachineID: String?
     var machineInformation: [String: Dieter_V1_MachineInformation] = [:]
     var machineCPUHistory: [String: [Double]] = [:]
@@ -160,6 +161,16 @@ final class DieterStore {
         workspaceFreshness.isLive
     }
 
+	func machineIsAvailable(_ machine: DieterEndpoint) -> Bool {
+		guard machine.online, machine.apiCompatibility != .incompatible else { return false }
+		return machine.id != endpoint.id || workspaceIsLive
+	}
+
+	func projectIsAvailable(_ projectID: String) -> Bool {
+		guard let machine = machine(forProjectID: projectID) else { return workspaceIsLive }
+		return machineIsAvailable(machine)
+	}
+
     func refreshConversationPresentationState() {
         let live = conversation?.conversation.messages ?? []
         let liveIDs = Set(live.lazy.map(\.id).filter { !$0.isEmpty })
@@ -231,6 +242,7 @@ final class DieterStore {
     var syncTask: Task<Void, Never>?
     var syncLivenessTask: Task<Void, Never>?
     var outboxTask: Task<Void, Never>?
+    var outboxWorkerGeneration: UInt64 = 0
     var connectionGeneration: UInt64 = 0
     var boardSelectionGeneration: UInt64 = 0
     var pendingCardMoves: [String: OptimisticCardMove] = [:]

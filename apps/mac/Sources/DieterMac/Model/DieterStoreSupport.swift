@@ -244,6 +244,30 @@ enum ConnectionAttemptOwnership {
     }
 }
 
+enum MachineAPICompatibility: Equatable, Sendable {
+	case compatible
+	case incompatible
+	case unknown
+}
+
+extension DieterEndpoint {
+	var apiCompatibility: MachineAPICompatibility {
+		guard !apiVersion.isEmpty else { return .unknown }
+		return apiVersion == dieterExpectedAPIVersion ? .compatible : .incompatible
+	}
+
+	var incompatibilityDescription: String? {
+		guard apiCompatibility == .incompatible else { return nil }
+		return "Update required · API \(apiVersion) (requires \(dieterExpectedAPIVersion))"
+	}
+}
+
+enum OutboxWorkerOwnership {
+    static func mayClearTask(workerGeneration: UInt64, currentGeneration: UInt64) -> Bool {
+        workerGeneration == currentGeneration
+    }
+}
+
 enum SyncFreshnessPresentation {
     static func lastConnectedLabel(lastConnectedAt: Date?, now: Date = Date()) -> String {
         guard let lastConnectedAt else { return "Last connected unknown" }
@@ -411,14 +435,46 @@ struct ProjectFileNavigation: Equatable, Sendable {
 }
 
 enum MachineRoutingPolicy {
+	static func preferredDaemonID(newEndpoint: DieterEndpoint?, currentEndpoint: DieterEndpoint) -> String? {
+		newEndpoint?.daemonID ?? (newEndpoint == nil ? currentEndpoint.daemonID : nil)
+	}
+
     static func automaticConnectionTarget(
         from machines: [DieterEndpoint],
         preferredDaemonID: String?
     ) -> DieterEndpoint? {
-        machines.first { $0.daemonID == preferredDaemonID && $0.online }
-            ?? machines.filter(\.online).sorted {
-                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }.first
+		connectionTargets(
+			from: machines,
+			preferredDaemonID: preferredDaemonID,
+			explicitMachineSelection: false
+		).first
+	}
+
+	static func connectionTargets(
+		from machines: [DieterEndpoint],
+		preferredDaemonID: String?,
+		explicitMachineSelection: Bool
+	) -> [DieterEndpoint] {
+		let online = machines.filter(\.online)
+		if explicitMachineSelection, let preferredDaemonID {
+			return online.filter { $0.daemonID == preferredDaemonID }
+		}
+		let eligible = online.filter { $0.apiCompatibility != .incompatible }
+		let sorted = eligible.sorted {
+			let leftRank = $0.apiCompatibility == .compatible ? 0 : 1
+			let rightRank = $1.apiCompatibility == .compatible ? 0 : 1
+			if leftRank != rightRank { return leftRank < rightRank }
+			let names = $0.name.localizedCaseInsensitiveCompare($1.name)
+			if names != .orderedSame { return names == .orderedAscending }
+			return $0.id < $1.id
+		}
+		guard let preferredIndex = sorted.firstIndex(where: { $0.daemonID == preferredDaemonID }) else {
+			return sorted
+		}
+		var result = sorted
+		let preferred = result.remove(at: preferredIndex)
+		result.insert(preferred, at: 0)
+		return result
     }
 }
 

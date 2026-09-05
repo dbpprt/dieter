@@ -36,7 +36,9 @@ Remote commands prefer the daemon's authenticated direct TLS route and fall
 back to the bounded gateway relay. The gateway routes requests but does not
 store projects, transcripts, files, schedules, or harness credentials. Use
 `dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
-inspect presence and advertised routes.
+inspect presence and advertised routes. Directory output includes the daemon's
+release `version` and compatibility `apiVersion`; use the latter when deciding
+whether a native client can safely target a machine in a mixed-version fleet.
 
 The initial task should supply an exact card ID. Never guess one. Resolve names
 only for interactive discovery, then retain returned IDs for mutation.

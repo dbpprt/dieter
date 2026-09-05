@@ -79,6 +79,7 @@ type DaemonRecord struct {
 	CreatedAt         time.Time
 	LastSeenAt        time.Time
 	Version           string
+	APIVersion        string
 	RoutesJSON        []byte
 	RemoteDesktopJSON []byte
 }
@@ -157,6 +158,7 @@ CREATE TABLE IF NOT EXISTS daemons (
   created_at TEXT NOT NULL,
   last_seen_at TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '',
+  api_version TEXT NOT NULL DEFAULT '',
   routes_json BLOB NOT NULL DEFAULT '[]',
   remote_desktop_json BLOB NOT NULL DEFAULT '{}'
 );
@@ -165,6 +167,9 @@ CREATE TABLE IF NOT EXISTS daemons (
 		return fmt.Errorf("initialize gateway database: %w", err)
 	}
 	if err := s.ensureDaemonColumn("remote_desktop_json", `BLOB NOT NULL DEFAULT '{}'`); err != nil {
+		return fmt.Errorf("migrate gateway database: %w", err)
+	}
+	if err := s.ensureDaemonColumn("api_version", `TEXT NOT NULL DEFAULT ''`); err != nil {
 		return fmt.Errorf("migrate gateway database: %w", err)
 	}
 	if info, statErr := os.Stat(filepath.Join(s.Root, "gateway.db")); statErr == nil && info.Mode().Perm() != 0o600 {
@@ -328,8 +333,8 @@ func (s *Store) Daemon(id string) (DaemonRecord, error) {
 	var generation int64
 	var revoked int
 	var created, lastSeen string
-	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, routes_json, remote_desktop_json FROM daemons WHERE id=?`, id).
-		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &record.RoutesJSON, &record.RemoteDesktopJSON)
+	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, api_version, routes_json, remote_desktop_json FROM daemons WHERE id=?`, id).
+		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &record.APIVersion, &record.RoutesJSON, &record.RemoteDesktopJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return record, errors.New("daemon not found")
 	}
@@ -397,8 +402,8 @@ func (s *Store) RevokeDaemon(id string, githubID int64) (uint64, error) {
 	return next, err
 }
 
-func (s *Store) MarkDaemonSeen(id, version string, routes, remoteDesktop []byte) error {
-	result, err := s.DB.Exec(`UPDATE daemons SET last_seen_at=?, version=?, routes_json=?, remote_desktop_json=? WHERE id=? AND revoked=0`, time.Now().UTC().Format(time.RFC3339Nano), version, routes, remoteDesktop, id)
+func (s *Store) MarkDaemonSeen(id, version, apiVersion string, routes, remoteDesktop []byte) error {
+	result, err := s.DB.Exec(`UPDATE daemons SET last_seen_at=?, version=?, api_version=?, routes_json=?, remote_desktop_json=? WHERE id=? AND revoked=0`, time.Now().UTC().Format(time.RFC3339Nano), version, apiVersion, routes, remoteDesktop, id)
 	if err != nil {
 		return err
 	}

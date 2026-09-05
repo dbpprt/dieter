@@ -11,6 +11,7 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
     var online: Bool
     var lastSeenAt: String
     var version: String
+	var apiVersion: String
 	var remoteDesktopReady: Bool
 	var remoteDesktopReason: String
 	var remoteDesktopPlatform: String
@@ -51,7 +52,7 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
     }
 
 	private enum CodingKeys: String, CodingKey {
-		case name, host, port, secure, daemonID, online, lastSeenAt, version
+		case name, host, port, secure, daemonID, online, lastSeenAt, version, apiVersion
 		case remoteDesktopReady, remoteDesktopReason, remoteDesktopPlatform
 	}
     init(
@@ -63,6 +64,7 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
         online: Bool = true,
         lastSeenAt: String = "",
 		version: String = "",
+		apiVersion: String = "",
 		remoteDesktopReady: Bool = false,
 		remoteDesktopReason: String = "",
 		remoteDesktopPlatform: String = ""
@@ -75,6 +77,7 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.online = online
         self.lastSeenAt = lastSeenAt
         self.version = version
+		self.apiVersion = apiVersion
 		self.remoteDesktopReady = remoteDesktopReady
 		self.remoteDesktopReason = remoteDesktopReason
 		self.remoteDesktopPlatform = remoteDesktopPlatform
@@ -87,6 +90,7 @@ struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
         online = try values.decodeIfPresent(Bool.self, forKey: .online) ?? true
         lastSeenAt = try values.decodeIfPresent(String.self, forKey: .lastSeenAt) ?? ""
         version = try values.decodeIfPresent(String.self, forKey: .version) ?? ""
+		apiVersion = try values.decodeIfPresent(String.self, forKey: .apiVersion) ?? ""
 		remoteDesktopReady = try values.decodeIfPresent(Bool.self, forKey: .remoteDesktopReady) ?? false
 		remoteDesktopReason = try values.decodeIfPresent(String.self, forKey: .remoteDesktopReason) ?? ""
 		remoteDesktopPlatform = try values.decodeIfPresent(String.self, forKey: .remoteDesktopPlatform) ?? ""

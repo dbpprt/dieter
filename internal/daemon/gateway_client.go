@@ -32,6 +32,7 @@ type GatewayClient struct {
 	Identity              *Identity
 	LocalTarget           string
 	Version               string
+	APIVersion            string
 	Routes                []*gatewayv1.DirectCandidate
 	Log                   *slog.Logger
 	OnStatus              func(GatewayEvent)
@@ -125,7 +126,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
+	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
 		return 0, err
 	}
 	challenge, err := stream.Recv()
@@ -231,7 +232,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 		case err := <-recvErr:
 			return finish(err)
 		case <-heartbeat.C:
-			enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}, true)
+			enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}, true)
 			heartbeatInterval = nextGatewayHeartbeatInterval(heartbeatInterval, relayActive.Swap(false))
 			heartbeat.Reset(heartbeatInterval)
 		case frame := <-recv:
