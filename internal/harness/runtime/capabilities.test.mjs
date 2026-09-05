@@ -65,6 +65,30 @@ test('projects Claude TodoWrite as a versioned task plan', () => {
   assert.equal(events[2].plan.state, 'completed');
 });
 
+test('projects DSH todo_write as a versioned task plan', () => {
+  const events = [];
+  const collector = createSubagentCapabilityCollector({ provider: 'dsh', adapter: 'dsh-acp', messageId: 'm-dsh', emit: event => events.push(event), now: () => '2026-09-05T10:00:00Z' });
+  collector.consumeUIChunk({ type: 'tool-input-available', toolCallId: 'todo-dsh', toolName: 'todo_write', input: { todos: [
+    { content: 'Research DSH', status: 'completed' },
+    { content: 'Run integration test', status: 'in_progress' },
+  ] } });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].plan.provider, 'dsh');
+  assert.equal(events[0].plan.source, 'todo_write');
+  assert.equal(events[0].plan.phases[0].tasks[1].status, 'in_progress');
+});
+
+test('projects DSH todo_write from the ACP tool candidate before UI name normalization', () => {
+  const events = [];
+  const collector = createSubagentCapabilityCollector({ provider: 'dsh', adapter: 'dsh-acp', messageId: 'm-dsh-acp', emit: event => events.push(event), now: () => '2026-09-05T10:00:00Z' });
+  collector.consumeACPToolCall({ toolCallId: 'call-1', title: 'todo_write', rawInput: { todos: [
+    { content: 'Exercise real ACP', status: 'in_progress' },
+  ] } });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].plan.phases[0].tasks[0].content, 'Exercise real ACP');
+  assert.equal(events[0].plan.source, 'todo_write');
+});
+
 test('aggregates current Claude TaskCreate and TaskUpdate lifecycle', () => {
   const events = [];
   const collector = createSubagentCapabilityCollector({ provider: 'claude-code', messageId: 'm3-tasks', emit: event => events.push(event), now: () => '2026-08-15T10:00:00Z' });

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestCancelRejectsUnverifiableLegacyWorkerPID(t *testing.T) {
@@ -65,7 +68,7 @@ func TestEmbeddedRuntimeAssets(t *testing.T) {
 
 func TestEmbeddedRuntimeContainsLocalModuleClosure(t *testing.T) {
 	imports := regexp.MustCompile(`(?:from\s+|import\s*\()\s*['"](\./[^'"]+)['"]`)
-	queue := []string{"runtime/runner.mjs"}
+	queue := []string{"runtime/runner.mjs", "runtime/dsh-discovery.mjs"}
 	seen := map[string]bool{}
 	for len(queue) > 0 {
 		name := queue[0]
@@ -93,10 +96,10 @@ func TestEmbeddedRuntimeContainsLocalModuleClosure(t *testing.T) {
 }
 
 func TestCatalogIncludesEverySupportedHarness(t *testing.T) {
-	if got := len(Catalog(false)); got != 4 {
-		t.Fatalf("catalog has %d harnesses, want 4", got)
+	if got := len(Catalog(false)); got != 5 {
+		t.Fatalf("catalog has %d harnesses, want 5", got)
 	}
-	for _, id := range []string{"codex", "claude-code", "pi", "omp"} {
+	for _, id := range []string{"codex", "claude-code", "pi", "omp", "dsh"} {
 		adapter, found := ResolveAdapter(id, false)
 		if !found || adapter.DefaultModel == "" || len(adapter.Models) == 0 {
 			t.Errorf("harness %q is incomplete: %#v", id, adapter)
@@ -104,6 +107,20 @@ func TestCatalogIncludesEverySupportedHarness(t *testing.T) {
 		if !hasCapability(adapter, "task-plan") {
 			t.Errorf("harness %q does not advertise task plans: %#v", id, adapter.Capabilities)
 		}
+	}
+}
+
+func TestCatalogIncludesDeepSeekHarnessACPWithConfiguredDefaultFallback(t *testing.T) {
+	adapter, valid := ResolveAdapter("dsh", false)
+	if !valid || adapter.Runtime != "dsh-acp" || adapter.DefaultModel != "default" || len(adapter.Models) != 1 {
+		t.Fatalf("dsh catalog=%#v valid=%v", adapter, valid)
+	}
+	model := adapter.Models[0]
+	if model.ID != "default" || model.RuntimeModel == nil || *model.RuntimeModel != "" {
+		t.Fatalf("dsh models=%#v", adapter.Models)
+	}
+	if adapter.Effort != nil {
+		t.Fatalf("dsh effort=%#v", adapter.Effort)
 	}
 }
 
@@ -307,6 +324,11 @@ func TestHarnessPathAddsUserRuntimeBins(t *testing.T) {
 
 func TestHarnessEnvironmentIncludesConfigAndOptInVariables(t *testing.T) {
 	t.Setenv("CODEX_HOME", "/tmp/codex-test")
+	t.Setenv("DSH_HOME", "/tmp/dsh-test")
+	t.Setenv("DEEPSEEK_BASE_URL", "https://deepseek.example.test/v1")
+	t.Setenv("DEEPSEEK_API_KEY", "deepseek-test-key")
+	t.Setenv("DSH_TELEMETRY_MODE", "DISABLED")
+	t.Setenv("NODE_USE_ENV_PROXY", "1")
 	t.Setenv("USER", "board-user")
 	t.Setenv("LOGNAME", "board-user")
 	t.Setenv("DIETER_HARNESS_ENV", "CUSTOM_MODEL_API_KEY,CUSTOM_MODEL_BASE_URL")
@@ -319,6 +341,11 @@ func TestHarnessEnvironmentIncludesConfigAndOptInVariables(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		"CODEX_HOME":            "/tmp/codex-test",
+		"DSH_HOME":              "/tmp/dsh-test",
+		"DEEPSEEK_BASE_URL":     "https://deepseek.example.test/v1",
+		"DEEPSEEK_API_KEY":      "deepseek-test-key",
+		"DSH_TELEMETRY_MODE":    "DISABLED",
+		"NODE_USE_ENV_PROXY":    "1",
 		"USER":                  "board-user",
 		"LOGNAME":               "board-user",
 		"CUSTOM_MODEL_API_KEY":  "test-key",
@@ -326,6 +353,182 @@ func TestHarnessEnvironmentIncludesConfigAndOptInVariables(t *testing.T) {
 	} {
 		if values[name] != want {
 			t.Errorf("%s=%q want %q", name, values[name], want)
+		}
+	}
+}
+
+func TestSubprocessRunnerDSHACPIntegration(t *testing.T) {
+	if os.Getenv("DIETER_TEST_DSH_E2E") != "1" {
+		t.Skip("set DIETER_TEST_DSH_E2E=1 to install and run the pinned DSH ACP package")
+	}
+	cwd, _ := os.Getwd()
+	runtimeDir := filepath.Join(cwd, "runtime")
+	if _, err := os.Stat(filepath.Join(runtimeDir, "node_modules")); err != nil {
+		t.Skip("local harness dependencies are not installed")
+	}
+	stagedRuntime := t.TempDir()
+	if err := stageRuntimeAssets(stagedRuntime); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(runtimeDir, "node_modules"), filepath.Join(stagedRuntime, "node_modules")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_HARNESS_RUNTIME_DIR", stagedRuntime)
+
+	var apiMu sync.Mutex
+	var apiRequests []map[string]any
+	var apiAuthorization []string
+	api := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/chat/completions" || request.Method != http.MethodPost {
+			http.Error(response, "unexpected fixture API operation", http.StatusNotFound)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			http.Error(response, err.Error(), http.StatusBadRequest)
+			return
+		}
+		apiMu.Lock()
+		apiRequests = append(apiRequests, body)
+		apiAuthorization = append(apiAuthorization, request.Header.Get("Authorization"))
+		requestNumber := len(apiRequests)
+		apiMu.Unlock()
+
+		response.Header().Set("Content-Type", "text/event-stream")
+		_, _ = response.Write([]byte("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null,\"reasoning_content\":\"\"}}]}\n\n"))
+		if requestNumber == 1 {
+			_, _ = response.Write([]byte("data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_dieter_plan\",\"type\":\"function\",\"function\":{\"name\":\"todo_write\",\"arguments\":\"{\\\"todos\\\":[{\\\"content\\\":\\\"Verify DSH ACP\\\",\\\"status\\\":\\\"in_progress\\\"}]}\"}}]}}]}\n\n"))
+			_, _ = response.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n\n"))
+		} else {
+			text := "DSH_E2E_OK"
+			if requestNumber > 2 {
+				text = "DSH_RESUME_OK"
+			}
+			chunk, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"content": text}}}})
+			_, _ = response.Write([]byte("data: " + string(chunk) + "\n\n"))
+			_, _ = response.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2}}\n\n"))
+		}
+		_, _ = response.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer api.Close()
+
+	base := t.TempDir()
+	dshHome := filepath.Join(base, "dsh-home")
+	dieterHome := filepath.Join(base, "dieter-home")
+	runtimeRoot := filepath.Join(dieterHome, "runtime", "harness", "dsh-discovery")
+	repo := filepath.Join(base, "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dshHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	profilePatch := `- id: llm-deepseek
+  disabled: true
+
+- id: llm-pi-ai
+  config:
+    providers:
+      fixture:
+        displayName: Fixture
+        apiKeyEnv: DIETER_DSH_E2E_API_KEY
+        api: openai-completions
+        baseURL: ` + api.URL + `
+        reasoning: high
+        models:
+          - id: test-model
+            name: Test Model
+            contextWindow: 1000000
+            maxTokens: 131072
+            reasoningEfforts:
+              low: low
+              high: high
+            compat:
+              supportsDeveloperRole: true
+              supportsUsageInStreaming: true
+              maxTokensField: max_tokens
+              thinkingFormat: chat-template
+              chatTemplateKwargs:
+                enable_thinking:
+                  $var: thinking.enabled
+                reasoning_effort:
+                  $var: thinking.effort
+                  omitWhenOff: true
+
+- id: agent-default-model
+  config:
+    provider: fixture
+    model: test-model
+
+- id: acp
+  config:
+    provider: fixture
+    model: test-model
+    sessionListPageSize: 100
+`
+	if err := os.WriteFile(filepath.Join(dshHome, "cordis.patch.yml"), []byte(profilePatch), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_HOME", dieterHome)
+	t.Setenv("DSH_HOME", dshHome)
+	t.Setenv("DIETER_HARNESS_ENV", "DIETER_DSH_E2E_API_KEY")
+	t.Setenv("DIETER_DSH_E2E_API_KEY", "dieter-e2e-key")
+	t.Setenv("DSH_TELEMETRY_DISABLED", "1")
+	t.Setenv("DSH_PERMISSION_MODE", "workspace-write")
+	t.Setenv("NO_PROXY", "127.0.0.1,localhost")
+	discoveryCtx, cancelDiscovery := context.WithTimeout(context.Background(), 10*time.Minute)
+	discovered, err := discoverDSHModels(discoveryCtx)
+	cancelDiscovery()
+	if err != nil || len(discovered) != 1 || discovered[0].ID != "fixture/test-model" || discovered[0].RuntimeModel == nil || *discovered[0].RuntimeModel != `["fixture","test-model"]` {
+		t.Fatalf("discovered DSH models=%#v err=%v", discovered, err)
+	}
+
+	runner := NewSubprocessRunner(t.TempDir())
+	run := func(prompt, responseID string, session json.RawMessage) (string, string, json.RawMessage, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+		defer cancel()
+		var chunks []string
+		var capabilities []string
+		var state json.RawMessage
+		err := runner.Run(ctx, Request{
+			Harness: "dsh", Adapter: "dsh-acp", Model: *discovered[0].RuntimeModel, ConfiguredModel: discovered[0].ID,
+			Prompt: prompt, SessionID: "dsh-e2e", ResponseMessageID: responseID,
+			Session: session, ProjectPath: repo, RuntimeRoot: runtimeRoot,
+		}, func(output Output) error {
+			switch output.Type {
+			case "chunk":
+				chunks = append(chunks, string(output.Chunk))
+			case "capability":
+				capabilities = append(capabilities, string(output.Capability))
+			case "session":
+				state = append(state[:0], output.State...)
+			}
+			return nil
+		})
+		return strings.Join(chunks, ""), strings.Join(capabilities, ""), state, err
+	}
+
+	firstStream, firstCapabilities, state, err := run("Use todo_write once, then answer.", "assistant_dsh_1", nil)
+	if err != nil || !strings.Contains(firstStream, "DSH_E2E_OK") || strings.Contains(firstStream, "tool-input-error") || !strings.Contains(firstCapabilities, "Verify DSH ACP") || !strings.Contains(string(state), `"acpSessionId"`) {
+		t.Fatalf("first stream=%q capabilities=%q state=%s err=%v", firstStream, firstCapabilities, state, err)
+	}
+	secondStream, _, resumedState, err := run("Confirm this resumed session.", "assistant_dsh_2", state)
+	if err != nil || !strings.Contains(secondStream, "DSH_RESUME_OK") || !strings.Contains(string(resumedState), `"acpSessionId"`) {
+		t.Fatalf("resumed stream=%q state=%s err=%v", secondStream, resumedState, err)
+	}
+
+	apiMu.Lock()
+	defer apiMu.Unlock()
+	if len(apiRequests) != 3 {
+		t.Fatalf("fixture API received %d requests: %#v", len(apiRequests), apiRequests)
+	}
+	for index, body := range apiRequests {
+		thinking, ok := body["chat_template_kwargs"].(map[string]any)
+		if body["model"] != "test-model" || !ok || thinking["enable_thinking"] != true || thinking["reasoning_effort"] != "high" {
+			t.Errorf("request %d model=%v chat_template_kwargs=%v", index+1, body["model"], body["chat_template_kwargs"])
+		}
+		if apiAuthorization[index] != "Bearer dieter-e2e-key" {
+			t.Errorf("request %d authorization=%q", index+1, apiAuthorization[index])
 		}
 	}
 }

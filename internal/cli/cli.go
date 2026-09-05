@@ -1139,7 +1139,7 @@ Options:
   --prompt TEXT          Initial task brief
   --prompt-file FILE     Read the task brief from a file or -
   --attach FILE          Attach an image or file (repeat up to 4 times)
-  --provider HARNESS     Harness provider (codex, claude-code, pi, omp)
+  --provider HARNESS     Harness provider (codex, claude-code, pi, omp, dsh)
   --model MODEL          Model for the first turn
   --effort EFFORT        Reasoning or thinking effort for the first turn
   --labels LABELS        Comma-separated board label IDs or names

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,6 +23,7 @@ var (
 	discoveryMu      sync.Mutex
 	discoveryUpdated time.Time
 	runDiscovery     = runDiscoveryCommand
+	runDSHDiscovery  = runDSHDiscoveryCommand
 )
 
 // RefreshCatalog asks each installed harness for its current model and
@@ -57,7 +59,13 @@ func RefreshCatalog(ctx context.Context, includeMock bool) []Adapter {
 			defer wait.Done()
 			// Pi needs two native RPC rounds (models, then per-model levels), and
 			// provider CLIs can contend for startup I/O when refreshed together.
-			commandCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			timeout := 30 * time.Second
+			// The first DSH discovery prepares the same pinned AI SDK ACP
+			// implementation a turn will use. Subsequent refreshes reuse it.
+			if adapter.ID == "dsh" {
+				timeout = 10 * time.Minute
+			}
+			commandCtx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			models, err := discoverModels(commandCtx, adapter.ID)
 			if err == nil && len(models) > 0 {
@@ -97,9 +105,88 @@ func discoverModels(ctx context.Context, provider string) ([]Model, error) {
 		return discoverPiModels(ctx)
 	case "omp":
 		return discoverOMPModels(ctx)
+	case "dsh":
+		return discoverDSHModels(ctx)
 	default:
 		return nil, fmt.Errorf("no discovery integration for %s", provider)
 	}
+}
+
+type dshDiscoveryDocument struct {
+	Models []struct {
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		RuntimeModel string `json:"runtimeModel"`
+	} `json:"models"`
+}
+
+func discoverDSHModels(ctx context.Context) ([]Model, error) {
+	output, err := runDSHDiscovery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var document dshDiscoveryDocument
+	if err := json.Unmarshal(output, &document); err != nil {
+		return nil, fmt.Errorf("decode DSH ACP model catalog: %w", err)
+	}
+	models := make([]Model, 0, len(document.Models))
+	seen := map[string]bool{}
+	for _, item := range document.Models {
+		id, name, runtimeModel := strings.TrimSpace(item.ID), strings.TrimSpace(item.Name), strings.TrimSpace(item.RuntimeModel)
+		if id == "" || name == "" || runtimeModel == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		models = append(models, Model{ID: id, Name: name, RuntimeModel: &runtimeModel})
+	}
+	if len(models) == 0 {
+		return nil, errors.New("DSH ACP model catalog is empty")
+	}
+	return models, nil
+}
+
+func runDSHDiscoveryCommand(ctx context.Context) ([]byte, error) {
+	dshHome := strings.TrimSpace(os.Getenv("DSH_HOME"))
+	if dshHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		dshHome = filepath.Join(home, ".dsh")
+	}
+	if info, err := os.Stat(dshHome); err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("DSH home %q is not initialized", dshHome)
+	}
+
+	dieterHome := strings.TrimSpace(os.Getenv("DIETER_HOME"))
+	if dieterHome == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		dieterHome = filepath.Join(home, ".dieter")
+	}
+	runtimeDir, err := NewSubprocessRunner(dieterHome).ensure(ctx)
+	if err != nil {
+		return nil, err
+	}
+	discoveryRoot := filepath.Join(dieterHome, "runtime", "harness", "dsh-discovery")
+	command := exec.CommandContext(ctx, discoveryExecutable("node"), filepath.Join(runtimeDir, "dsh-discovery.mjs"), discoveryRoot)
+	prepareHarnessCommand(command)
+	command.WaitDelay = 9 * time.Second
+	command.Dir = runtimeDir
+	command.Env = harnessEnvironment()
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return nil, fmt.Errorf("discover DSH ACP models: %s", message)
+	}
+	return output, nil
 }
 
 func mergeDiscoveredAdapter(adapter Adapter, visible []Model) Adapter {

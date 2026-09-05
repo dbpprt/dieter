@@ -73,7 +73,7 @@ test('closes trailing content from any provider before terminal finish', () => {
 });
 
 test('wraps every supported provider session with terminal reconciliation', async () => {
-  for (const harnessId of ['codex', 'claude-code', 'pi', 'omp']) {
+  for (const harnessId of ['codex', 'claude-code', 'pi', 'omp', 'dsh']) {
     const events = [];
     const harness = {
       specificationVersion: 'harness-v1',
