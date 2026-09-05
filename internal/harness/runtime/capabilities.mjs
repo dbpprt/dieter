@@ -152,6 +152,10 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
       replaceTaskPlan({ tasks: chunk.input?.todos, source: 'TodoWrite' });
       return;
     }
+    if (adapter === 'dsh-acp' && chunk.type === 'tool-input-available' && toolName === 'todo_write') {
+      replaceTaskPlan({ tasks: chunk.input?.todos, source: 'todo_write' });
+      return;
+    }
     if (adapter === 'claude-code' && chunk.type === 'tool-input-available' && toolName === 'taskcreate' && id) {
       const input = chunk.input && typeof chunk.input === 'object' ? chunk.input : {};
       const taskId = String(++claudeTaskSequence);
@@ -287,6 +291,12 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
     }, { force: terminalStatuses.has(status) });
   }
 
+  function consumeACPToolCall(toolCall) {
+    if (adapter !== 'dsh-acp' || !toolCall || typeof toolCall !== 'object') return;
+    if (String(toolCall.title || '').toLowerCase() !== 'todo_write') return;
+    replaceTaskPlan({ tasks: toolCall.rawInput?.todos, source: 'todo_write' });
+  }
+
   function consumeHarnessEvent(event) {
     if (!event || event.type !== 'raw' || !event.rawValue || typeof event.rawValue !== 'object') return;
     const raw = event.rawValue;
@@ -324,7 +334,7 @@ export function createSubagentCapabilityCollector({ provider, adapter = provider
     }
   }
 
-  return { consumeUIChunk, consumeOMPEnvelope, consumeHarnessEvent, consumeBoardTaskPlan, finishTaskPlan, finalize };
+  return { consumeUIChunk, consumeOMPEnvelope, consumeACPToolCall, consumeHarnessEvent, consumeBoardTaskPlan, finishTaskPlan, finalize };
 }
 
 const codexTodoNeedle = `    if (item.type === "agent_message" && typeof item.text === "string") {`;

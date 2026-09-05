@@ -14,11 +14,11 @@ function localPath(candidate) {
 
 function commandValue(command) {
   if (command.startsWith('pnpm install')) {
-    return 'npm install --ignore-scripts --no-audit --no-fund';
+    return 'npm install --ignore-scripts --no-audit --no-fund --prefer-offline';
   }
   const scopedInstall = command.match(/^pnpm --dir ([^ ]+) install(?: |$)/);
   if (scopedInstall) {
-    return `npm install --prefix ${scopedInstall[1]} --ignore-scripts --no-audit --no-fund`;
+    return `npm install --prefix ${scopedInstall[1]} --ignore-scripts --no-audit --no-fund --prefer-offline`;
   }
   return command;
 }

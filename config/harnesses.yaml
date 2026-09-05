@@ -158,3 +158,15 @@ harnesses:
       - id: box/qwen3_6_27b
         name: Qwen 3.6 27B · Box
         contextWindow: 262144
+
+  - id: dsh
+    name: DeepSeek Harness
+    adapter: dsh-acp
+    capabilities:
+      - id: task-plan
+        level: snapshots
+    defaultModel: default
+    models:
+      - id: default
+        name: Configured default
+        runtimeModel: ""

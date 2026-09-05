@@ -486,7 +486,7 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs
+//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {
@@ -800,7 +800,9 @@ func harnessEnvironment() []string {
 		"AI_GATEWAY_API_KEY": true, "AI_GATEWAY_BASE_URL": true, "VERCEL_OIDC_TOKEN": true,
 		"ANTHROPIC_API_KEY": true, "ANTHROPIC_AUTH_TOKEN": true, "ANTHROPIC_BASE_URL": true, "CLAUDE_CODE_OAUTH_TOKEN": true, "CLAUDE_CONFIG_DIR": true,
 		"PI_AGENT_DIR": true, "PI_CODING_AGENT_DIR": true, "OMP_PROFILE": true,
-		"NODE_EXTRA_CA_CERTS": true, "HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true,
+		"DSH_HOME": true, "DEEPSEEK_API_KEY": true, "DEEPSEEK_BASE_URL": true, "DEEPSEEK_SEARCH_BASE_URL": true,
+		"DSH_PERMISSION_MODE": true, "DSH_TOOLS_MODE": true, "DSH_TELEMETRY_MODE": true, "DSH_TELEMETRY_DISABLED": true, "DSH_TELEMETRY_OTLP_URL": true,
+		"NODE_EXTRA_CA_CERTS": true, "NODE_USE_ENV_PROXY": true, "HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true,
 	}
 	for _, name := range strings.Split(os.Getenv("DIETER_HARNESS_ENV"), ",") {
 		if name = strings.TrimSpace(name); name != "" && !strings.Contains(name, "=") {
