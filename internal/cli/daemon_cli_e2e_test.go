@@ -25,9 +25,11 @@ import (
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type synchronizedBuffer struct {
@@ -545,9 +547,10 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 		t.Fatalf("gateway build output=%q err=%v", firstOutput.String(), err)
 	}
 	firstOutput.Reset()
-	if err := first.Run([]string{"machine", "restart", "--confirm", "RESTART"}); err != nil || !strings.Contains(firstOutput.String(), `"accepted": true`) {
+	if err := first.Run([]string{"machine", "restart", "--confirm", "RESTART"}); err != nil {
 		t.Fatalf("direct restart output=%q err=%v", firstOutput.String(), err)
 	}
+	assertMachineOperationAccepted(t, firstOutput.Bytes())
 	select {
 	case operation := <-powerActions:
 		if operation != machine.OperationRestart {
@@ -582,9 +585,10 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)
 	}
 	secondOutput.Reset()
-	if err := second.Run([]string{"machine", "shutdown", "--confirm", "SHUT DOWN"}); err != nil || !strings.Contains(secondOutput.String(), `"accepted": true`) {
+	if err := second.Run([]string{"machine", "shutdown", "--confirm", "SHUT DOWN"}); err != nil {
 		t.Fatalf("relay shutdown output=%q err=%v", secondOutput.String(), err)
 	}
+	assertMachineOperationAccepted(t, secondOutput.Bytes())
 	select {
 	case operation := <-powerActions:
 		if operation != machine.OperationShutdown {
@@ -596,5 +600,13 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	secondOutput.Reset()
 	if err := second.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "relay-exec"}); err != nil || secondOutput.String() != "relay-exec" {
 		t.Fatalf("relay remote exec output=%q err=%v", secondOutput.String(), err)
+	}
+}
+
+func assertMachineOperationAccepted(t *testing.T, raw []byte) {
+	t.Helper()
+	var response dieterv1.MachineOperationResponse
+	if err := protojson.Unmarshal(raw, &response); err != nil || !response.GetAccepted() {
+		t.Fatalf("machine operation response=%q accepted=%v err=%v", raw, response.GetAccepted(), err)
 	}
 }
