@@ -46,11 +46,9 @@ func TestMachineOperationRequiresExactConfirmationBeforeScheduling(t *testing.T)
 }
 
 func TestMachineOperationSchedulesTheValidatedHostAction(t *testing.T) {
-	if !machine.SupportsOperations() {
-		t.Skip("host operations are not available on this platform")
-	}
 	application := New(store.New(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	application.machineDelay = 0
+	application.machineCapabilities = testMachineOperationCapabilities
 	called := make(chan machine.Operation, 1)
 	application.machineAction = func(_ context.Context, operation machine.Operation) error {
 		called <- operation
@@ -69,5 +67,32 @@ func TestMachineOperationSchedulesTheValidatedHostAction(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("validated machine operation was not scheduled")
+	}
+}
+
+func TestMachineOperationIsIdempotentAndRejectsKeyReuse(t *testing.T) {
+	application := New(store.New(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	application.machineDelay = time.Hour
+	application.machineCapabilities = testMachineOperationCapabilities
+	api := &grpcAPI{server: application}
+	request := &dieterv1.MachineOperationRequest{Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_RESTART, Confirmation: "RESTART", IdempotencyKey: "same-request"}
+	first, err := api.PerformMachineOperation(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := api.PerformMachineOperation(context.Background(), request)
+	if err != nil || second.GetOperationId() != first.GetOperationId() || second.GetScheduledAt() != first.GetScheduledAt() {
+		t.Fatalf("first=%#v second=%#v err=%v", first, second, err)
+	}
+	_, err = api.PerformMachineOperation(context.Background(), &dieterv1.MachineOperationRequest{Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_SHUTDOWN, Confirmation: "SHUT DOWN", IdempotencyKey: "same-request"})
+	if status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("key reuse error=%v", err)
+	}
+}
+
+func testMachineOperationCapabilities(context.Context) []machine.OperationCapability {
+	return []machine.OperationCapability{
+		{Operation: machine.OperationRestart, Supported: true, Authorized: true},
+		{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
 	}
 }

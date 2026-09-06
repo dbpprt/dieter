@@ -4,6 +4,7 @@ package com.dbpprt.dieter.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +23,14 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.MoreVert
@@ -57,7 +60,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +82,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 import com.dbpprt.dieter.ui.theme.DieterRunning
 
 @Composable
@@ -404,6 +411,16 @@ internal fun SubagentStatusCard(subagent: Subagent) {
     val completed = subagent.status == "completed"
     val title = subagentDisplayTitle(subagent)
     val elapsed = subagentElapsed(subagent)
+    val narrative = remember(subagent) { subagentNarrativeSections(subagent) }
+    val primaryNarrative = narrative.firstOrNull()
+    val activity = subagentActivity(subagent)
+    val metrics = remember(subagent) { subagentOperationalMetrics(subagent) }
+    val contextProgress = subagentContextProgress(subagent)
+    val detailSections = remember(subagent, primaryNarrative) {
+        narrative.filterNot { it == primaryNarrative } + subagentTechnicalSections(subagent)
+    }
+    val hasMoreDetails = detailSections.isNotEmpty()
+    var expanded by remember(subagent.id) { mutableStateOf(false) }
     val tint = when {
         running -> DieterRunning
         completed -> DieterEyes
@@ -440,27 +457,93 @@ internal fun SubagentStatusCard(subagent: Subagent) {
                     Text(elapsed, color = if (running) tint else DieterMuted, fontSize = 10.sp)
                 }
             }
-            val activity = subagent.activity.ifBlank {
-                subagent.currentTool.ifBlank { subagent.description.ifBlank { subagent.assignment } }
-            }
-            if (activity.isNotBlank() && cleanSubagentTitle(activity) != title) {
-                Text(
-                    activity,
-                    color = DieterMuted,
-                    fontSize = 11.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+            if (primaryNarrative != null) {
+                SubagentDetailText(
+                    label = primaryNarrative.label,
+                    value = primaryNarrative.value,
+                    modifier = Modifier.padding(start = 39.dp, end = 13.dp, top = 7.dp),
+                    maxLines = if (expanded) Int.MAX_VALUE else 3,
                 )
             }
-            if (running) {
+            if (activity.isNotBlank() && !sameSubagentText(activity, title) &&
+                (primaryNarrative == null || !sameSubagentText(activity, primaryNarrative.value))
+            ) {
+                Text(
+                    "Now · $activity",
+                    color = DieterMuted,
+                    fontSize = 11.sp,
+                    maxLines = if (expanded) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 39.dp, end = 13.dp, top = 7.dp),
+                )
+            }
+            if (metrics.isNotEmpty()) {
+                Text(
+                    metrics.joinToString(" · "),
+                    color = DieterMuted,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                    modifier = Modifier.padding(start = 39.dp, end = 13.dp, top = 7.dp),
+                )
+            }
+            if (contextProgress != null) {
                 LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp).height(3.dp),
+                    progress = { contextProgress },
+                    modifier = Modifier.fillMaxWidth().padding(start = 39.dp, end = 13.dp, top = 8.dp).height(3.dp),
                     color = tint,
                     trackColor = DieterOutline,
                 )
             }
-            HorizontalDivider(color = DieterOutline.copy(alpha = 0.52f), modifier = Modifier.padding(top = 10.dp))
+            if (subagent.error.isNotBlank()) {
+                SubagentDetailText(
+                    label = "Error",
+                    value = subagent.error,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(start = 39.dp, end = 13.dp, top = 8.dp),
+                )
+            }
+            if (subagent.retry.isNotBlank()) {
+                SubagentDetailText(
+                    label = "Retry",
+                    value = subagent.retry,
+                    modifier = Modifier.padding(start = 39.dp, end = 13.dp, top = 8.dp),
+                )
+            }
+            if (hasMoreDetails) {
+                Row(
+                    Modifier
+                        .padding(start = 31.dp, end = 5.dp, top = 3.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                        .clickable { expanded = !expanded }
+                        .padding(horizontal = 7.dp, vertical = 7.dp)
+                        .testTag("subagent-details-${subagent.id}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.ChevronRight,
+                        contentDescription = null,
+                        tint = DieterMuted,
+                        modifier = Modifier.size(15.dp).rotate(if (expanded) 90f else 0f),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (expanded) "Hide details" else "More details", color = DieterMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            if (expanded) {
+                Column(
+                    Modifier.padding(start = 39.dp, end = 13.dp, bottom = 3.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    detailSections.forEach { section ->
+                        SubagentDetailText(
+                            label = section.label,
+                            value = section.value,
+                            monospace = section.monospace,
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(color = DieterOutline.copy(alpha = 0.52f), modifier = Modifier.padding(top = 9.dp))
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -472,7 +555,7 @@ internal fun SubagentStatusCard(subagent: Subagent) {
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    listOf(subagent.provider, subagent.model).filter(String::isNotBlank).joinToString("/").ifBlank { "local" },
+                    subagentIdentity(subagent),
                     color = DieterMuted,
                     fontSize = 10.sp,
                     modifier = Modifier.weight(1f),
@@ -485,16 +568,116 @@ internal fun SubagentStatusCard(subagent: Subagent) {
     }
 }
 
+@Composable
+private fun SubagentDetailText(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    monospace: Boolean = false,
+    maxLines: Int = Int.MAX_VALUE,
+    color: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Column(modifier) {
+        Text(label.uppercase(), color = DieterMuted, fontSize = 8.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(2.dp))
+        SelectionContainer {
+            Text(
+                boundedSubagentDetail(value),
+                color = color,
+                fontSize = if (monospace) 9.sp else 11.sp,
+                lineHeight = if (monospace) 13.sp else 15.sp,
+                fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
+                maxLines = maxLines,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+internal data class SubagentDetailSection(
+    val label: String,
+    val value: String,
+    val monospace: Boolean = false,
+)
+
+internal fun subagentNarrativeSections(subagent: Subagent): List<SubagentDetailSection> {
+    val candidates = listOf(
+        SubagentDetailSection("Assignment", subagent.assignment.trim()),
+        SubagentDetailSection("Task", subagent.task.trim()),
+        SubagentDetailSection("Description", subagent.description.trim()),
+    )
+    val seen = mutableSetOf<String>()
+    return candidates.filter { section ->
+        section.value.isNotBlank() && seen.add(normalizedSubagentText(section.value))
+    }
+}
+
+internal fun subagentTechnicalSections(subagent: Subagent): List<SubagentDetailSection> = buildList {
+    val currentTool = listOfNotNull(
+        subagent.currentTool.trim().takeIf(String::isNotBlank),
+        subagent.currentToolArgs.trim().takeIf(String::isNotBlank),
+    ).joinToString("\n")
+    if (currentTool.isNotBlank()) add(SubagentDetailSection("Current tool", currentTool, monospace = true))
+    val recentOutput = subagent.recentOutputList.map(String::trim).filter(String::isNotBlank).joinToString("\n")
+    if (recentOutput.isNotBlank()) add(SubagentDetailSection("Recent output", recentOutput, monospace = true))
+}
+
+internal fun subagentOperationalMetrics(subagent: Subagent): List<String> = buildList {
+    if (subagent.toolCount > 0) add("${subagent.toolCount} ${plural(subagent.toolCount.toInt(), "tool call")}")
+    if (subagent.requests > 0) add("${subagent.requests} ${plural(subagent.requests.toInt(), "request")}")
+    addAll(subagentUsageMetrics(subagent.tokens, subagent.contextTokens, subagent.contextWindow))
+    if (subagent.cost > 0) {
+        val pattern = if (subagent.cost < 0.01) "$%.4f" else "$%.2f"
+        add(String.format(Locale.US, pattern, subagent.cost))
+    }
+    if (subagent.detached) add("detached")
+    if (subagent.transcriptAvailable) add("transcript captured")
+}
+
+internal fun subagentContextProgress(subagent: Subagent): Float? =
+    if (subagent.contextTokens > 0 && subagent.contextWindow > 0) {
+        (subagent.contextTokens.toFloat() / subagent.contextWindow.toFloat()).coerceIn(0f, 1f)
+    } else {
+        null
+    }
+
+internal fun subagentActivity(subagent: Subagent): String = subagent.activity.trim().ifBlank {
+    subagent.currentTool.trim().takeIf(String::isNotBlank)?.let { "Using $it" }.orEmpty()
+}
+
+internal fun subagentIdentity(subagent: Subagent): String = listOf(
+    listOf(subagent.provider, subagent.model).filter(String::isNotBlank).joinToString("/"),
+    subagent.agentSource,
+).filter(String::isNotBlank).joinToString(" · ").ifBlank { "local" }
+
+internal fun boundedSubagentDetail(value: String, maxChars: Int = 4_000): String {
+    val trimmed = value.trim()
+    return if (trimmed.length <= maxChars) trimmed else trimmed.take(maxChars).trimEnd() + "…"
+}
+
+internal fun sameSubagentText(left: String, right: String): Boolean =
+    normalizedSubagentText(left) == normalizedSubagentText(right)
+
+private fun normalizedSubagentText(value: String): String = value
+    .replace(subagentSuffixPattern, "")
+    .replace(Regex("\\s+"), " ")
+    .trim()
+    .lowercase()
+
 internal val subagentSuffixPattern = Regex("""\s*\((agent\s+\d+)\)\s*$""", RegexOption.IGNORE_CASE)
 
 internal fun cleanSubagentTitle(value: String): String =
     value.replace(subagentSuffixPattern, "").trim().ifBlank { "Subagent" }
 
-internal fun subagentDisplayTitle(subagent: Subagent): String = cleanSubagentTitle(
-    subagent.name.ifBlank {
-        subagent.assignment.ifBlank { subagent.task.ifBlank { subagent.agentType.ifBlank { "Subagent" } } }
-    },
-)
+internal fun subagentDisplayTitle(subagent: Subagent): String {
+    val name = cleanSubagentTitle(subagent.name)
+    val genericNames = setOf("agent", "subagent", "task", "worker")
+    val informativeName = name.takeUnless { it.lowercase() in genericNames }
+    val informativeTask = listOf(subagent.task, subagent.assignment, subagent.description)
+        .map(::cleanSubagentTitle)
+        .firstOrNull { it.lowercase() !in genericNames && it != "Subagent" }
+    return informativeName ?: informativeTask ?: cleanSubagentTitle(subagent.agentType)
+}
 
 internal fun subagentAgentLabel(name: String, fallback: String): String =
     subagentSuffixPattern.find(name)?.groupValues?.getOrNull(1)?.lowercase()

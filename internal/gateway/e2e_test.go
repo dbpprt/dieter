@@ -116,6 +116,9 @@ func TestGatewayAllowsMultipleAccountsAndIsolatesDaemons(t *testing.T) {
 		if err != nil || len(list.GetDaemons()) != 1 || list.GetDaemons()[0].GetId() != account.daemonID {
 			t.Fatalf("@%s daemon isolation=%#v err=%v", account.login, list, err)
 		}
+		if info := list.GetGatewayInformation(); info.GetReleaseVersion() == "" || info.GetApiVersion() != gateway.GatewayAPIVersion {
+			t.Fatalf("gateway build information=%#v", info)
+		}
 		other := accounts[(index+1)%len(accounts)]
 		if _, err := client.ExchangeDaemonToken(authorized, &gatewayv1.ExchangeDaemonTokenRequest{DaemonId: other.daemonID, ClientKeyThumbprint: "client-key"}); status.Code(err) != codes.NotFound {
 			t.Fatalf("@%s accessed @%s daemon: %v", account.login, other.login, err)
@@ -254,6 +257,13 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	}
 	if health.GetStatus() != "ok" || health.GetStorePath() != boardStore.Root {
 		t.Fatalf("unexpected relayed health: %#v", health)
+	}
+	machineInformation, err := dieterClient.GetMachineInformation(routed, &emptypb.Empty{})
+	if err != nil {
+		t.Fatalf("relay DieterService.GetMachineInformation: %v", err)
+	}
+	if machineInformation.GetDaemonBuild().GetReleaseVersion() == "" || machineInformation.GetDaemonBuild().GetApiVersion() != server.APIVersion || machineInformation.GetGpu() == nil {
+		t.Fatalf("relayed machine build/GPU information=%#v", machineInformation)
 	}
 	terminalCtx, stopTerminal := context.WithTimeout(routed, 10*time.Second)
 	defer stopTerminal()

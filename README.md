@@ -93,16 +93,34 @@ to the gateway relay:
 ```sh
 dieter auth login
 dieter machine list --format jsonl
+dieter machine gateway
+dieter machine info
 dieter --machine <machine-id> status
+dieter --machine <machine-id> machine info
 dieter --machine <machine-id> project list --format jsonl
 dieter --machine <machine-id> remote exec --project <project-id> -- uname -a
 dieter --machine <machine-id> terminal list --format jsonl
 ```
 
 `machine list`, `machine show`, and `machine watch` expose both the Dieter
-release version and the data-plane API version. Native clients use the API
-version to skip incompatible machines while keeping compatible machines in a
-mixed-version fleet available.
+release version and the data-plane API version. `machine gateway` reports the
+gateway release and control-plane API versions. `machine info` returns live
+host telemetry, including optional Apple, NVIDIA, and AMD GPU data with absent
+sensors kept distinct from real zero values. Native clients use API versions
+to keep compatible machines in a mixed-version fleet available.
+
+Restart and shutdown use the same authenticated local, direct-TLS, or relay
+route as every other machine operation and require exact confirmation phrases:
+
+```sh
+dieter --machine <machine-id> machine restart --confirm RESTART
+dieter --machine <machine-id> machine shutdown --confirm "SHUT DOWN"
+```
+
+macOS uses the signed-in user's normal System Events authorization. Linux uses
+non-interactive systemd-logind authorization and never accepts a sudo password;
+an administrator must grant the daemon user the relevant PolicyKit permission
+before the commands are advertised as available.
 
 `dieter status` reports daemon-wide active project, board, card, and chat
 counts in one snapshot, including when the selected machine is remote.

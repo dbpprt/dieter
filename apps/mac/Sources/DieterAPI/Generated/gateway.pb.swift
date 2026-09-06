@@ -210,6 +210,35 @@ public nonisolated struct Dieter_Gateway_V1_ListDaemonsResponse: Sendable {
 
   public var daemons: [Dieter_Gateway_V1_Daemon] = []
 
+  public var gatewayInformation: Dieter_Gateway_V1_GatewayInformation {
+    get {_gatewayInformation ?? Dieter_Gateway_V1_GatewayInformation()}
+    set {_gatewayInformation = newValue}
+  }
+  /// Returns true if `gatewayInformation` has been explicitly set.
+  public var hasGatewayInformation: Bool {self._gatewayInformation != nil}
+  /// Clears the value of `gatewayInformation`. Subsequent reads from it will return its default value.
+  public mutating func clearGatewayInformation() {self._gatewayInformation = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _gatewayInformation: Dieter_Gateway_V1_GatewayInformation? = nil
+}
+
+public nonisolated struct Dieter_Gateway_V1_GatewayInformation: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var releaseVersion: String = String()
+
+  public var apiVersion: String = String()
+
+  public var sourceRevision: String = String()
+
+  public var builtAt: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -236,9 +265,20 @@ public nonisolated struct Dieter_Gateway_V1_DaemonPresenceUpdate: Sendable {
 
   public var revision: UInt64 = 0
 
+  public var gatewayInformation: Dieter_Gateway_V1_GatewayInformation {
+    get {_gatewayInformation ?? Dieter_Gateway_V1_GatewayInformation()}
+    set {_gatewayInformation = newValue}
+  }
+  /// Returns true if `gatewayInformation` has been explicitly set.
+  public var hasGatewayInformation: Bool {self._gatewayInformation != nil}
+  /// Clears the value of `gatewayInformation`. Subsequent reads from it will return its default value.
+  public mutating func clearGatewayInformation() {self._gatewayInformation = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _gatewayInformation: Dieter_Gateway_V1_GatewayInformation? = nil
 }
 
 public nonisolated struct Dieter_Gateway_V1_BeginDaemonEnrollmentRequest: Sendable {
@@ -773,7 +813,7 @@ nonisolated extension Dieter_Gateway_V1_RemoteDesktopPresence: SwiftProtobuf.Mes
 
 nonisolated extension Dieter_Gateway_V1_ListDaemonsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ListDaemonsResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}daemons\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}daemons\0\u{3}gateway_information\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -782,20 +822,74 @@ nonisolated extension Dieter_Gateway_V1_ListDaemonsResponse: SwiftProtobuf.Messa
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedMessageField(value: &self.daemons) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._gatewayInformation) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.daemons.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.daemons, fieldNumber: 1)
     }
+    try { if let v = self._gatewayInformation {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_Gateway_V1_ListDaemonsResponse, rhs: Dieter_Gateway_V1_ListDaemonsResponse) -> Bool {
     if lhs.daemons != rhs.daemons {return false}
+    if lhs._gatewayInformation != rhs._gatewayInformation {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_Gateway_V1_GatewayInformation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GatewayInformation"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}release_version\0\u{3}api_version\0\u{3}source_revision\0\u{3}built_at\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.releaseVersion) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.apiVersion) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.sourceRevision) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.builtAt) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.releaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.releaseVersion, fieldNumber: 1)
+    }
+    if !self.apiVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.apiVersion, fieldNumber: 2)
+    }
+    if !self.sourceRevision.isEmpty {
+      try visitor.visitSingularStringField(value: self.sourceRevision, fieldNumber: 3)
+    }
+    if !self.builtAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.builtAt, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_GatewayInformation, rhs: Dieter_Gateway_V1_GatewayInformation) -> Bool {
+    if lhs.releaseVersion != rhs.releaseVersion {return false}
+    if lhs.apiVersion != rhs.apiVersion {return false}
+    if lhs.sourceRevision != rhs.sourceRevision {return false}
+    if lhs.builtAt != rhs.builtAt {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -833,7 +927,7 @@ nonisolated extension Dieter_Gateway_V1_WatchDaemonsRequest: SwiftProtobuf.Messa
 
 nonisolated extension Dieter_Gateway_V1_DaemonPresenceUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonPresenceUpdate"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}daemons\0\u{1}revision\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}daemons\0\u{1}revision\0\u{3}gateway_information\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -843,24 +937,33 @@ nonisolated extension Dieter_Gateway_V1_DaemonPresenceUpdate: SwiftProtobuf.Mess
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedMessageField(value: &self.daemons) }()
       case 2: try { try decoder.decodeSingularUInt64Field(value: &self.revision) }()
+      case 3: try { try decoder.decodeSingularMessageField(value: &self._gatewayInformation) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.daemons.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.daemons, fieldNumber: 1)
     }
     if self.revision != 0 {
       try visitor.visitSingularUInt64Field(value: self.revision, fieldNumber: 2)
     }
+    try { if let v = self._gatewayInformation {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_Gateway_V1_DaemonPresenceUpdate, rhs: Dieter_Gateway_V1_DaemonPresenceUpdate) -> Bool {
     if lhs.daemons != rhs.daemons {return false}
     if lhs.revision != rhs.revision {return false}
+    if lhs._gatewayInformation != rhs._gatewayInformation {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

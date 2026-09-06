@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -129,7 +130,10 @@ func (a *Auth) grpcPrincipal(ctx context.Context) (Principal, error) {
 func (a *Auth) health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.WriteString(w, `{"status":"ok","service":"dieter-gateway"}`)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"status": "ok", "service": "dieter-gateway", "version": buildinfo.ReleaseVersion,
+		"apiVersion": GatewayAPIVersion, "revision": buildinfo.SourceRevision, "builtAt": buildinfo.BuiltAt,
+	})
 }
 
 func (a *Auth) start(w http.ResponseWriter, r *http.Request) {

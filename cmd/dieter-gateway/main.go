@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	"github.com/dbpprt/dieter/internal/envfile"
 	"github.com/dbpprt/dieter/internal/gateway"
 )
@@ -14,7 +15,12 @@ func main() {
 	root := flag.String("store", gateway.DefaultRoot(), "gateway state directory")
 	envFile := flag.String("env-file", "", "environment file (default gateway home/.env)")
 	verbose := flag.Bool("verbose", false, "verbose logs")
+	version := flag.Bool("version", false, "print version")
 	flag.Parse()
+	if *version {
+		fmt.Fprintln(os.Stdout, buildinfo.ReleaseVersion)
+		return
+	}
 	if err := envfile.Load(*root, *envFile); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

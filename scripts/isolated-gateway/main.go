@@ -27,6 +27,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
+	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/server"
 	boardstore "github.com/dbpprt/dieter/internal/store"
@@ -167,7 +168,14 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	if err != nil {
 		return err
 	}
-	boardHTTP := &http.Server{Handler: server.New(data, logger).Handler()}
+	boardServer := server.NewWithOptions(data, logger, server.Options{
+		MachineAction: func(_ context.Context, operation machine.Operation) error {
+			logger.Info("isolated machine operation accepted", "operation", operation)
+			return nil
+		},
+		MachineCapabilities: isolatedMachineCapabilities,
+	})
+	boardHTTP := &http.Server{Handler: boardServer.Handler()}
 	go func() { _ = boardHTTP.Serve(boardListener) }()
 	defer boardHTTP.Close()
 
@@ -282,6 +290,13 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 
 	<-ctx.Done()
 	return nil
+}
+
+func isolatedMachineCapabilities(context.Context) []machine.OperationCapability {
+	return []machine.OperationCapability{
+		{Operation: machine.OperationRestart, Supported: true, Authorized: true},
+		{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
+	}
 }
 
 func seedBoardStressFixture(data *boardstore.Store, project model.Project, board model.Board) (model.Board, error) {

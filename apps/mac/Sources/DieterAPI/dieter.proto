@@ -184,6 +184,57 @@ message MachineInformation {
   bool supports_restart = 25;
   bool supports_shutdown = 26;
   repeated double cpu_core_usage_percent = 27;
+  BuildInformation daemon_build = 28;
+  GPUTelemetry gpu = 29;
+  repeated MachineOperationCapability operation_capabilities = 30;
+}
+
+message BuildInformation {
+  string release_version = 1;
+  string api_version = 2;
+  string source_revision = 3;
+  string built_at = 4;
+}
+
+enum GPUTelemetryState {
+  GPU_TELEMETRY_STATE_UNSPECIFIED = 0;
+  GPU_TELEMETRY_STATE_UNAVAILABLE = 1;
+  GPU_TELEMETRY_STATE_NO_DEVICES = 2;
+  GPU_TELEMETRY_STATE_PARTIAL = 3;
+  GPU_TELEMETRY_STATE_AVAILABLE = 4;
+}
+
+enum GPUVendor {
+  GPU_VENDOR_UNSPECIFIED = 0;
+  GPU_VENDOR_APPLE = 1;
+  GPU_VENDOR_NVIDIA = 2;
+  GPU_VENDOR_AMD = 3;
+}
+
+enum GPUMemoryKind {
+  GPU_MEMORY_KIND_UNSPECIFIED = 0;
+  GPU_MEMORY_KIND_UNIFIED = 1;
+  GPU_MEMORY_KIND_DEDICATED = 2;
+}
+
+message GPUTelemetry {
+  GPUTelemetryState state = 1;
+  repeated GPUDevice devices = 2;
+  string unavailable_reason = 3;
+}
+
+message GPUDevice {
+  string id = 1;
+  GPUVendor vendor = 2;
+  string name = 3;
+  string driver_version = 4;
+  GPUMemoryKind memory_kind = 5;
+  optional double utilization_percent = 6;
+  optional uint64 memory_total_bytes = 7;
+  optional uint64 memory_used_bytes = 8;
+  optional double temperature_celsius = 9;
+  optional double power_watts = 10;
+  optional uint32 process_count = 11;
 }
 
 message MachineProcess {
@@ -194,6 +245,12 @@ message MachineProcess {
   double cpu_usage_percent = 5;
   uint64 memory_bytes = 6;
   string started_at = 7;
+  repeated MachineProcessGPU gpu_usage = 8;
+}
+
+message MachineProcessGPU {
+  string gpu_id = 1;
+  optional uint64 memory_bytes = 2;
 }
 
 enum MachineOperationAction {
@@ -207,11 +264,23 @@ message MachineOperationRequest {
   // Destructive host actions require an exact action-specific confirmation
   // phrase even after the client presents its own confirmation UI.
   string confirmation = 2;
+  // Clients may repeat a request with the same key after a transport failure;
+  // a different action with the same key is rejected.
+  string idempotency_key = 3;
 }
 
 message MachineOperationResponse {
   bool accepted = 1;
   string message = 2;
+  string operation_id = 3;
+  string scheduled_at = 4;
+}
+
+message MachineOperationCapability {
+  MachineOperationAction action = 1;
+  bool supported = 2;
+  bool authorized = 3;
+  string unavailable_reason = 4;
 }
 
 message GetStateRequest {

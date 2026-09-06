@@ -34,6 +34,7 @@ type Process struct {
 	CPUPercent  float64
 	MemoryBytes uint64
 	StartedAt   string
+	GPUUsage    []GPUProcessUsage
 }
 
 type Snapshot struct {
@@ -61,6 +62,7 @@ type Snapshot struct {
 	NetworkSend    float64
 	Temperature    float64
 	Processes      []Process
+	GPU            GPUTelemetry
 }
 
 type networkSample struct {
@@ -79,10 +81,11 @@ type Collector struct {
 	staticReady bool
 	lastNetwork networkSample
 	processes   map[int32]*process.Process
+	gpu         gpuCollector
 }
 
 func NewCollector(root string) *Collector {
-	return &Collector{root: root, processes: map[int32]*process.Process{}}
+	return &Collector{root: root, processes: map[int32]*process.Process{}, gpu: newPlatformGPUCollector()}
 }
 
 func (c *Collector) Collect(ctx context.Context, descriptors []ProcessDescriptor) Snapshot {
@@ -128,7 +131,11 @@ func (c *Collector) Collect(ctx context.Context, descriptors []ProcessDescriptor
 			snapshot.Temperature = total / float64(count)
 		}
 	}
+	snapshot.GPU = c.gpu.Collect(ctx, descriptors)
 	snapshot.Processes = c.processInformation(ctx, descriptors)
+	for index := range snapshot.Processes {
+		snapshot.Processes[index].GPUUsage = append([]GPUProcessUsage(nil), snapshot.GPU.ProcessUsage[int32(snapshot.Processes[index].PID)]...)
+	}
 	return snapshot
 }
 

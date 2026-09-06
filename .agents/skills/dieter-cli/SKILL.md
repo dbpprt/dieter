@@ -39,6 +39,16 @@ store projects, transcripts, files, schedules, or harness credentials. Use
 inspect presence and advertised routes. Directory output includes the daemon's
 release `version` and compatibility `apiVersion`; use the latter when deciding
 whether a native client can safely target a machine in a mixed-version fleet.
+Use `dieter machine gateway` for the running gateway build identity and
+`dieter --machine <machine-id> machine info` for live CPU, memory, process, and
+optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a
+driver cannot provide them; zero remains a real measurement.
+
+Machine restart and shutdown are destructive, require the exact confirmation
+phrases shown by `--help`, and are available only when the target daemon reports
+that the host OS has authorized the action. Linux power control is
+non-interactive systemd-logind/PolicyKit; never attempt to provide sudo or an
+administrator password through Dieter.
 
 The initial task should supply an exact card ID. Never guess one. Resolve names
 only for interactive discovery, then retain returned IDs for mutation.

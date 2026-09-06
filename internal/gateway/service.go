@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/linkauth"
 	"google.golang.org/grpc"
@@ -59,7 +60,7 @@ func (s *Service) ListDaemons(ctx context.Context, _ *emptypb.Empty) (*gatewayv1
 	if err != nil {
 		return nil, status.Error(codes.Internal, "list daemons")
 	}
-	result := &gatewayv1.ListDaemonsResponse{}
+	result := &gatewayv1.ListDaemonsResponse{GatewayInformation: gatewayBuildInformation()}
 	for _, item := range items {
 		result.Daemons = append(result.Daemons, s.protoDaemon(item))
 	}
@@ -81,7 +82,7 @@ func (s *Service) WatchDaemons(request *gatewayv1.WatchDaemonsRequest, stream gr
 		if err != nil {
 			return err
 		}
-		if err := stream.Send(&gatewayv1.DaemonPresenceUpdate{Daemons: response.Daemons, Revision: s.hub.Revision()}); err != nil {
+		if err := stream.Send(&gatewayv1.DaemonPresenceUpdate{Daemons: response.Daemons, Revision: s.hub.Revision(), GatewayInformation: response.GatewayInformation}); err != nil {
 			return err
 		}
 		select {
@@ -90,6 +91,15 @@ func (s *Service) WatchDaemons(request *gatewayv1.WatchDaemonsRequest, stream gr
 		case <-ticker.C:
 		case <-s.hub.Changed():
 		}
+	}
+}
+
+func gatewayBuildInformation() *gatewayv1.GatewayInformation {
+	return &gatewayv1.GatewayInformation{
+		ReleaseVersion: buildinfo.ReleaseVersion,
+		ApiVersion:     GatewayAPIVersion,
+		SourceRevision: buildinfo.SourceRevision,
+		BuiltAt:        buildinfo.BuiltAt,
 	}
 }
 

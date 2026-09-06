@@ -1,9 +1,14 @@
-//go:build !darwin
+//go:build !darwin && !linux
 
 package machine
 
 import "context"
 
-func supportsOperations() bool { return false }
+func operationCapabilities(context.Context) []OperationCapability {
+	return []OperationCapability{
+		{Operation: OperationRestart, UnavailableReason: ErrOperationUnsupported.Error()},
+		{Operation: OperationShutdown, UnavailableReason: ErrOperationUnsupported.Error()},
+	}
+}
 
 func executeOperation(context.Context, Operation) error { return ErrOperationUnsupported }

@@ -72,6 +72,14 @@ message RemoteDesktopPresence {
 
 message ListDaemonsResponse {
   repeated Daemon daemons = 1;
+  GatewayInformation gateway_information = 2;
+}
+
+message GatewayInformation {
+  string release_version = 1;
+  string api_version = 2;
+  string source_revision = 3;
+  string built_at = 4;
 }
 
 message WatchDaemonsRequest {
@@ -81,6 +89,7 @@ message WatchDaemonsRequest {
 message DaemonPresenceUpdate {
   repeated Daemon daemons = 1;
   uint64 revision = 2;
+  GatewayInformation gateway_information = 3;
 }
 
 message BeginDaemonEnrollmentRequest {

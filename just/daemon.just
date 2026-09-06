@@ -23,7 +23,7 @@ build version="":
     mkdir -p bin
     if [[ -n "{{ version }}" ]]; then
         go build -trimpath \
-            -ldflags "-X github.com/dbpprt/dieter/internal/cli.Version={{ version }}" \
+            -ldflags "-X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion={{ version }}" \
             -o "{{ binary }}" "{{ target }}"
     else
         go build -trimpath -o "{{ binary }}" "{{ target }}"
@@ -68,7 +68,7 @@ package-release:
     [[ ! -e "$package" && ! -e "$archive" ]] || { echo "Release output already exists: $ASSET" >&2; exit 1; }
     mkdir -p "$package" dist
     CGO_ENABLED=0 go build -trimpath \
-        -ldflags "-s -w -X github.com/dbpprt/dieter/internal/cli.Version=$RELEASE_VERSION" \
+        -ldflags "-s -w -X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$RELEASE_VERSION" \
         -o "$package/dieter" "{{ target }}"
     cp LICENSE "$package/LICENSE"
     cp scripts/install.sh "$package/install.sh"
@@ -84,7 +84,7 @@ package-macos:
     [[ ! -e "{{ mac_package }}" ]] || { echo "{{ mac_package }} already exists." >&2; exit 1; }
     mkdir -p "{{ mac_package }}" dist
     CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath \
-        -ldflags "-s -w -X github.com/dbpprt/dieter/internal/cli.Version=$RELEASE_VERSION" \
+        -ldflags "-s -w -X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$RELEASE_VERSION" \
         -o "{{ mac_package }}/dieter" "{{ target }}"
     native/macos-capture/build.sh "{{ mac_package }}/dieter-capture"
     cp LICENSE "{{ mac_package }}/LICENSE"

@@ -54,9 +54,12 @@ final class DieterStore {
     var selectedMachineID: String?
     var machineInformation: [String: Dieter_V1_MachineInformation] = [:]
     var machineCPUHistory: [String: [Double]] = [:]
+    var machineGPUHistory: [String: [String: [Double]]] = [:]
+    var gatewayInformation: [String: Dieter_Gateway_V1_GatewayInformation] = [:]
     var machineInformationLoading = false
     var machineInformationError: String?
     var machineOperationMessage: String?
+    var machineOperationInFlight = false
     var archivedProjects: [Dieter_V1_Project] = []
     var archivedCards: [Dieter_V1_Card] = []
 

@@ -57,4 +57,5 @@ jobs:
         env:
           GATEWAY_IMAGE_TAGS: ${{ steps.metadata.outputs.tags }}
           GATEWAY_IMAGE_LABELS: ${{ steps.metadata.outputs.labels }}
+          GATEWAY_RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
         run: just --yes gateway image-publish

@@ -204,6 +204,16 @@ extension DieterStore {
             history.append(information.cpuUsagePercent)
             if history.count > 12 { history.removeFirst(history.count - 12) }
             machineCPUHistory[machineID] = history
+            var gpuHistory = machineGPUHistory[machineID, default: [:]]
+            let liveGPUIds = Set(information.gpu.devices.map(\.id))
+            gpuHistory = gpuHistory.filter { liveGPUIds.contains($0.key) }
+            for gpu in information.gpu.devices where gpu.hasUtilizationPercent {
+                var values = gpuHistory[gpu.id, default: []]
+                values.append(gpu.utilizationPercent)
+                if values.count > 12 { values.removeFirst(values.count - 12) }
+                gpuHistory[gpu.id] = values
+            }
+            machineGPUHistory[machineID] = gpuHistory
             machineInformationError = nil
         } catch is CancellationError {
         } catch {
@@ -222,6 +232,9 @@ extension DieterStore {
             show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
             return
         }
+		guard !machineOperationInFlight else { return }
+		machineOperationInFlight = true
+		defer { machineOperationInFlight = false }
 		guard machine.apiCompatibility != .incompatible else {
 			machineOperationMessage = machine.incompatibilityDescription
 			return

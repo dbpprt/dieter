@@ -25,6 +25,132 @@ fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobu
   typealias Version = _2
 }
 
+public nonisolated enum Dieter_V1_GPUTelemetryState: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case unavailable // = 1
+  case noDevices // = 2
+  case partial // = 3
+  case available // = 4
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .unavailable
+    case 2: self = .noDevices
+    case 3: self = .partial
+    case 4: self = .available
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .unavailable: return 1
+    case .noDevices: return 2
+    case .partial: return 3
+    case .available: return 4
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_V1_GPUTelemetryState] = [
+    .unspecified,
+    .unavailable,
+    .noDevices,
+    .partial,
+    .available,
+  ]
+
+}
+
+public nonisolated enum Dieter_V1_GPUVendor: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case apple // = 1
+  case nvidia // = 2
+  case amd // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .apple
+    case 2: self = .nvidia
+    case 3: self = .amd
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .apple: return 1
+    case .nvidia: return 2
+    case .amd: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_V1_GPUVendor] = [
+    .unspecified,
+    .apple,
+    .nvidia,
+    .amd,
+  ]
+
+}
+
+public nonisolated enum Dieter_V1_GPUMemoryKind: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case unified // = 1
+  case dedicated // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .unified
+    case 2: self = .dedicated
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .unified: return 1
+    case .dedicated: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_V1_GPUMemoryKind] = [
+    .unspecified,
+    .unified,
+    .dedicated,
+  ]
+
+}
+
 public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -329,11 +455,149 @@ public nonisolated struct Dieter_V1_MachineInformation: @unchecked Sendable {
     set {_uniqueStorage()._cpuCoreUsagePercent = newValue}
   }
 
+  public var daemonBuild: Dieter_V1_BuildInformation {
+    get {_storage._daemonBuild ?? Dieter_V1_BuildInformation()}
+    set {_uniqueStorage()._daemonBuild = newValue}
+  }
+  /// Returns true if `daemonBuild` has been explicitly set.
+  public var hasDaemonBuild: Bool {_storage._daemonBuild != nil}
+  /// Clears the value of `daemonBuild`. Subsequent reads from it will return its default value.
+  public mutating func clearDaemonBuild() {_uniqueStorage()._daemonBuild = nil}
+
+  public var gpu: Dieter_V1_GPUTelemetry {
+    get {_storage._gpu ?? Dieter_V1_GPUTelemetry()}
+    set {_uniqueStorage()._gpu = newValue}
+  }
+  /// Returns true if `gpu` has been explicitly set.
+  public var hasGpu: Bool {_storage._gpu != nil}
+  /// Clears the value of `gpu`. Subsequent reads from it will return its default value.
+  public mutating func clearGpu() {_uniqueStorage()._gpu = nil}
+
+  public var operationCapabilities: [Dieter_V1_MachineOperationCapability] {
+    get {_storage._operationCapabilities}
+    set {_uniqueStorage()._operationCapabilities = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct Dieter_V1_BuildInformation: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var releaseVersion: String = String()
+
+  public var apiVersion: String = String()
+
+  public var sourceRevision: String = String()
+
+  public var builtAt: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_GPUTelemetry: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var state: Dieter_V1_GPUTelemetryState = .unspecified
+
+  public var devices: [Dieter_V1_GPUDevice] = []
+
+  public var unavailableReason: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_GPUDevice: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var vendor: Dieter_V1_GPUVendor = .unspecified
+
+  public var name: String = String()
+
+  public var driverVersion: String = String()
+
+  public var memoryKind: Dieter_V1_GPUMemoryKind = .unspecified
+
+  public var utilizationPercent: Double {
+    get {_utilizationPercent ?? 0}
+    set {_utilizationPercent = newValue}
+  }
+  /// Returns true if `utilizationPercent` has been explicitly set.
+  public var hasUtilizationPercent: Bool {self._utilizationPercent != nil}
+  /// Clears the value of `utilizationPercent`. Subsequent reads from it will return its default value.
+  public mutating func clearUtilizationPercent() {self._utilizationPercent = nil}
+
+  public var memoryTotalBytes: UInt64 {
+    get {_memoryTotalBytes ?? 0}
+    set {_memoryTotalBytes = newValue}
+  }
+  /// Returns true if `memoryTotalBytes` has been explicitly set.
+  public var hasMemoryTotalBytes: Bool {self._memoryTotalBytes != nil}
+  /// Clears the value of `memoryTotalBytes`. Subsequent reads from it will return its default value.
+  public mutating func clearMemoryTotalBytes() {self._memoryTotalBytes = nil}
+
+  public var memoryUsedBytes: UInt64 {
+    get {_memoryUsedBytes ?? 0}
+    set {_memoryUsedBytes = newValue}
+  }
+  /// Returns true if `memoryUsedBytes` has been explicitly set.
+  public var hasMemoryUsedBytes: Bool {self._memoryUsedBytes != nil}
+  /// Clears the value of `memoryUsedBytes`. Subsequent reads from it will return its default value.
+  public mutating func clearMemoryUsedBytes() {self._memoryUsedBytes = nil}
+
+  public var temperatureCelsius: Double {
+    get {_temperatureCelsius ?? 0}
+    set {_temperatureCelsius = newValue}
+  }
+  /// Returns true if `temperatureCelsius` has been explicitly set.
+  public var hasTemperatureCelsius: Bool {self._temperatureCelsius != nil}
+  /// Clears the value of `temperatureCelsius`. Subsequent reads from it will return its default value.
+  public mutating func clearTemperatureCelsius() {self._temperatureCelsius = nil}
+
+  public var powerWatts: Double {
+    get {_powerWatts ?? 0}
+    set {_powerWatts = newValue}
+  }
+  /// Returns true if `powerWatts` has been explicitly set.
+  public var hasPowerWatts: Bool {self._powerWatts != nil}
+  /// Clears the value of `powerWatts`. Subsequent reads from it will return its default value.
+  public mutating func clearPowerWatts() {self._powerWatts = nil}
+
+  public var processCount: UInt32 {
+    get {_processCount ?? 0}
+    set {_processCount = newValue}
+  }
+  /// Returns true if `processCount` has been explicitly set.
+  public var hasProcessCount: Bool {self._processCount != nil}
+  /// Clears the value of `processCount`. Subsequent reads from it will return its default value.
+  public mutating func clearProcessCount() {self._processCount = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _utilizationPercent: Double? = nil
+  fileprivate var _memoryTotalBytes: UInt64? = nil
+  fileprivate var _memoryUsedBytes: UInt64? = nil
+  fileprivate var _temperatureCelsius: Double? = nil
+  fileprivate var _powerWatts: Double? = nil
+  fileprivate var _processCount: UInt32? = nil
 }
 
 public nonisolated struct Dieter_V1_MachineProcess: Sendable {
@@ -355,9 +619,34 @@ public nonisolated struct Dieter_V1_MachineProcess: Sendable {
 
   public var startedAt: String = String()
 
+  public var gpuUsage: [Dieter_V1_MachineProcessGPU] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+}
+
+public nonisolated struct Dieter_V1_MachineProcessGPU: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var gpuID: String = String()
+
+  public var memoryBytes: UInt64 {
+    get {_memoryBytes ?? 0}
+    set {_memoryBytes = newValue}
+  }
+  /// Returns true if `memoryBytes` has been explicitly set.
+  public var hasMemoryBytes: Bool {self._memoryBytes != nil}
+  /// Clears the value of `memoryBytes`. Subsequent reads from it will return its default value.
+  public mutating func clearMemoryBytes() {self._memoryBytes = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _memoryBytes: UInt64? = nil
 }
 
 public nonisolated struct Dieter_V1_MachineOperationRequest: Sendable {
@@ -370,6 +659,10 @@ public nonisolated struct Dieter_V1_MachineOperationRequest: Sendable {
   /// Destructive host actions require an exact action-specific confirmation
   /// phrase even after the client presents its own confirmation UI.
   public var confirmation: String = String()
+
+  /// Clients may repeat a request with the same key after a transport failure;
+  /// a different action with the same key is rejected.
+  public var idempotencyKey: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -384,6 +677,28 @@ public nonisolated struct Dieter_V1_MachineOperationResponse: Sendable {
   public var accepted: Bool = false
 
   public var message: String = String()
+
+  public var operationID: String = String()
+
+  public var scheduledAt: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_MachineOperationCapability: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var action: Dieter_V1_MachineOperationAction = .unspecified
+
+  public var supported: Bool = false
+
+  public var authorized: Bool = false
+
+  public var unavailableReason: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -5395,6 +5710,18 @@ public nonisolated struct Dieter_V1_ScheduleRunsResponse: Sendable {
 
 fileprivate nonisolated let _protobuf_package = "dieter.v1"
 
+nonisolated extension Dieter_V1_GPUTelemetryState: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0GPU_TELEMETRY_STATE_UNSPECIFIED\0\u{1}GPU_TELEMETRY_STATE_UNAVAILABLE\0\u{1}GPU_TELEMETRY_STATE_NO_DEVICES\0\u{1}GPU_TELEMETRY_STATE_PARTIAL\0\u{1}GPU_TELEMETRY_STATE_AVAILABLE\0")
+}
+
+nonisolated extension Dieter_V1_GPUVendor: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0GPU_VENDOR_UNSPECIFIED\0\u{1}GPU_VENDOR_APPLE\0\u{1}GPU_VENDOR_NVIDIA\0\u{1}GPU_VENDOR_AMD\0")
+}
+
+nonisolated extension Dieter_V1_GPUMemoryKind: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0GPU_MEMORY_KIND_UNSPECIFIED\0\u{1}GPU_MEMORY_KIND_UNIFIED\0\u{1}GPU_MEMORY_KIND_DEDICATED\0")
+}
+
 nonisolated extension Dieter_V1_MachineOperationAction: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MACHINE_OPERATION_ACTION_UNSPECIFIED\0\u{1}MACHINE_OPERATION_ACTION_RESTART\0\u{1}MACHINE_OPERATION_ACTION_SHUTDOWN\0")
 }
@@ -5494,7 +5821,7 @@ nonisolated extension Dieter_V1_RuntimeStatus: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MachineInformation"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}hostname\0\u{3}os_name\0\u{3}os_version\0\u{1}architecture\0\u{3}hardware_model\0\u{1}processor\0\u{3}uptime_seconds\0\u{3}collected_at\0\u{3}cpu_usage_percent\0\u{3}logical_cpu_count\0\u{3}load_1\0\u{3}load_5\0\u{3}load_15\0\u{3}memory_total_bytes\0\u{3}memory_used_bytes\0\u{3}memory_cached_bytes\0\u{3}swap_used_bytes\0\u{3}disk_total_bytes\0\u{3}disk_free_bytes\0\u{3}network_receive_bytes_per_second\0\u{3}network_send_bytes_per_second\0\u{3}temperature_celsius\0\u{1}processes\0\u{3}active_agent_count\0\u{3}supports_restart\0\u{3}supports_shutdown\0\u{3}cpu_core_usage_percent\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}hostname\0\u{3}os_name\0\u{3}os_version\0\u{1}architecture\0\u{3}hardware_model\0\u{1}processor\0\u{3}uptime_seconds\0\u{3}collected_at\0\u{3}cpu_usage_percent\0\u{3}logical_cpu_count\0\u{3}load_1\0\u{3}load_5\0\u{3}load_15\0\u{3}memory_total_bytes\0\u{3}memory_used_bytes\0\u{3}memory_cached_bytes\0\u{3}swap_used_bytes\0\u{3}disk_total_bytes\0\u{3}disk_free_bytes\0\u{3}network_receive_bytes_per_second\0\u{3}network_send_bytes_per_second\0\u{3}temperature_celsius\0\u{1}processes\0\u{3}active_agent_count\0\u{3}supports_restart\0\u{3}supports_shutdown\0\u{3}cpu_core_usage_percent\0\u{3}daemon_build\0\u{1}gpu\0\u{3}operation_capabilities\0")
 
   fileprivate class _StorageClass {
     var _hostname: String = String()
@@ -5524,6 +5851,9 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
     var _supportsRestart: Bool = false
     var _supportsShutdown: Bool = false
     var _cpuCoreUsagePercent: [Double] = []
+    var _daemonBuild: Dieter_V1_BuildInformation? = nil
+    var _gpu: Dieter_V1_GPUTelemetry? = nil
+    var _operationCapabilities: [Dieter_V1_MachineOperationCapability] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -5561,6 +5891,9 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
       _supportsRestart = source._supportsRestart
       _supportsShutdown = source._supportsShutdown
       _cpuCoreUsagePercent = source._cpuCoreUsagePercent
+      _daemonBuild = source._daemonBuild
+      _gpu = source._gpu
+      _operationCapabilities = source._operationCapabilities
     }
   }
 
@@ -5606,6 +5939,9 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
         case 25: try { try decoder.decodeSingularBoolField(value: &_storage._supportsRestart) }()
         case 26: try { try decoder.decodeSingularBoolField(value: &_storage._supportsShutdown) }()
         case 27: try { try decoder.decodeRepeatedDoubleField(value: &_storage._cpuCoreUsagePercent) }()
+        case 28: try { try decoder.decodeSingularMessageField(value: &_storage._daemonBuild) }()
+        case 29: try { try decoder.decodeSingularMessageField(value: &_storage._gpu) }()
+        case 30: try { try decoder.decodeRepeatedMessageField(value: &_storage._operationCapabilities) }()
         default: break
         }
       }
@@ -5614,6 +5950,10 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
     try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
       if !_storage._hostname.isEmpty {
         try visitor.visitSingularStringField(value: _storage._hostname, fieldNumber: 1)
       }
@@ -5695,6 +6035,15 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
       if !_storage._cpuCoreUsagePercent.isEmpty {
         try visitor.visitPackedDoubleField(value: _storage._cpuCoreUsagePercent, fieldNumber: 27)
       }
+      try { if let v = _storage._daemonBuild {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 28)
+      } }()
+      try { if let v = _storage._gpu {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 29)
+      } }()
+      if !_storage._operationCapabilities.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._operationCapabilities, fieldNumber: 30)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -5731,6 +6080,9 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
         if _storage._supportsRestart != rhs_storage._supportsRestart {return false}
         if _storage._supportsShutdown != rhs_storage._supportsShutdown {return false}
         if _storage._cpuCoreUsagePercent != rhs_storage._cpuCoreUsagePercent {return false}
+        if _storage._daemonBuild != rhs_storage._daemonBuild {return false}
+        if _storage._gpu != rhs_storage._gpu {return false}
+        if _storage._operationCapabilities != rhs_storage._operationCapabilities {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -5740,9 +6092,178 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
   }
 }
 
+nonisolated extension Dieter_V1_BuildInformation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".BuildInformation"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}release_version\0\u{3}api_version\0\u{3}source_revision\0\u{3}built_at\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.releaseVersion) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.apiVersion) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.sourceRevision) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.builtAt) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.releaseVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.releaseVersion, fieldNumber: 1)
+    }
+    if !self.apiVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.apiVersion, fieldNumber: 2)
+    }
+    if !self.sourceRevision.isEmpty {
+      try visitor.visitSingularStringField(value: self.sourceRevision, fieldNumber: 3)
+    }
+    if !self.builtAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.builtAt, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_BuildInformation, rhs: Dieter_V1_BuildInformation) -> Bool {
+    if lhs.releaseVersion != rhs.releaseVersion {return false}
+    if lhs.apiVersion != rhs.apiVersion {return false}
+    if lhs.sourceRevision != rhs.sourceRevision {return false}
+    if lhs.builtAt != rhs.builtAt {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_GPUTelemetry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GPUTelemetry"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}state\0\u{1}devices\0\u{3}unavailable_reason\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.state) }()
+      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.devices) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.unavailableReason) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.state != .unspecified {
+      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 1)
+    }
+    if !self.devices.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.devices, fieldNumber: 2)
+    }
+    if !self.unavailableReason.isEmpty {
+      try visitor.visitSingularStringField(value: self.unavailableReason, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_GPUTelemetry, rhs: Dieter_V1_GPUTelemetry) -> Bool {
+    if lhs.state != rhs.state {return false}
+    if lhs.devices != rhs.devices {return false}
+    if lhs.unavailableReason != rhs.unavailableReason {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_GPUDevice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GPUDevice"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}vendor\0\u{1}name\0\u{3}driver_version\0\u{3}memory_kind\0\u{3}utilization_percent\0\u{3}memory_total_bytes\0\u{3}memory_used_bytes\0\u{3}temperature_celsius\0\u{3}power_watts\0\u{3}process_count\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.vendor) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.driverVersion) }()
+      case 5: try { try decoder.decodeSingularEnumField(value: &self.memoryKind) }()
+      case 6: try { try decoder.decodeSingularDoubleField(value: &self._utilizationPercent) }()
+      case 7: try { try decoder.decodeSingularUInt64Field(value: &self._memoryTotalBytes) }()
+      case 8: try { try decoder.decodeSingularUInt64Field(value: &self._memoryUsedBytes) }()
+      case 9: try { try decoder.decodeSingularDoubleField(value: &self._temperatureCelsius) }()
+      case 10: try { try decoder.decodeSingularDoubleField(value: &self._powerWatts) }()
+      case 11: try { try decoder.decodeSingularUInt32Field(value: &self._processCount) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if self.vendor != .unspecified {
+      try visitor.visitSingularEnumField(value: self.vendor, fieldNumber: 2)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 3)
+    }
+    if !self.driverVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.driverVersion, fieldNumber: 4)
+    }
+    if self.memoryKind != .unspecified {
+      try visitor.visitSingularEnumField(value: self.memoryKind, fieldNumber: 5)
+    }
+    try { if let v = self._utilizationPercent {
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 6)
+    } }()
+    try { if let v = self._memoryTotalBytes {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 7)
+    } }()
+    try { if let v = self._memoryUsedBytes {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 8)
+    } }()
+    try { if let v = self._temperatureCelsius {
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 9)
+    } }()
+    try { if let v = self._powerWatts {
+      try visitor.visitSingularDoubleField(value: v, fieldNumber: 10)
+    } }()
+    try { if let v = self._processCount {
+      try visitor.visitSingularUInt32Field(value: v, fieldNumber: 11)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_GPUDevice, rhs: Dieter_V1_GPUDevice) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.vendor != rhs.vendor {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.driverVersion != rhs.driverVersion {return false}
+    if lhs.memoryKind != rhs.memoryKind {return false}
+    if lhs._utilizationPercent != rhs._utilizationPercent {return false}
+    if lhs._memoryTotalBytes != rhs._memoryTotalBytes {return false}
+    if lhs._memoryUsedBytes != rhs._memoryUsedBytes {return false}
+    if lhs._temperatureCelsius != rhs._temperatureCelsius {return false}
+    if lhs._powerWatts != rhs._powerWatts {return false}
+    if lhs._processCount != rhs._processCount {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Dieter_V1_MachineProcess: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MachineProcess"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}pid\0\u{1}kind\0\u{1}name\0\u{1}detail\0\u{3}cpu_usage_percent\0\u{3}memory_bytes\0\u{3}started_at\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}pid\0\u{1}kind\0\u{1}name\0\u{1}detail\0\u{3}cpu_usage_percent\0\u{3}memory_bytes\0\u{3}started_at\0\u{3}gpu_usage\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5757,6 +6278,7 @@ nonisolated extension Dieter_V1_MachineProcess: SwiftProtobuf.Message, SwiftProt
       case 5: try { try decoder.decodeSingularDoubleField(value: &self.cpuUsagePercent) }()
       case 6: try { try decoder.decodeSingularUInt64Field(value: &self.memoryBytes) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.startedAt) }()
+      case 8: try { try decoder.decodeRepeatedMessageField(value: &self.gpuUsage) }()
       default: break
       }
     }
@@ -5784,6 +6306,9 @@ nonisolated extension Dieter_V1_MachineProcess: SwiftProtobuf.Message, SwiftProt
     if !self.startedAt.isEmpty {
       try visitor.visitSingularStringField(value: self.startedAt, fieldNumber: 7)
     }
+    if !self.gpuUsage.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.gpuUsage, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5795,6 +6320,46 @@ nonisolated extension Dieter_V1_MachineProcess: SwiftProtobuf.Message, SwiftProt
     if lhs.cpuUsagePercent != rhs.cpuUsagePercent {return false}
     if lhs.memoryBytes != rhs.memoryBytes {return false}
     if lhs.startedAt != rhs.startedAt {return false}
+    if lhs.gpuUsage != rhs.gpuUsage {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_MachineProcessGPU: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MachineProcessGPU"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}gpu_id\0\u{3}memory_bytes\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.gpuID) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self._memoryBytes) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.gpuID.isEmpty {
+      try visitor.visitSingularStringField(value: self.gpuID, fieldNumber: 1)
+    }
+    try { if let v = self._memoryBytes {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 2)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MachineProcessGPU, rhs: Dieter_V1_MachineProcessGPU) -> Bool {
+    if lhs.gpuID != rhs.gpuID {return false}
+    if lhs._memoryBytes != rhs._memoryBytes {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -5802,7 +6367,7 @@ nonisolated extension Dieter_V1_MachineProcess: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Dieter_V1_MachineOperationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MachineOperationRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}action\0\u{1}confirmation\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}action\0\u{1}confirmation\0\u{3}idempotency_key\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5812,6 +6377,7 @@ nonisolated extension Dieter_V1_MachineOperationRequest: SwiftProtobuf.Message, 
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularEnumField(value: &self.action) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.confirmation) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.idempotencyKey) }()
       default: break
       }
     }
@@ -5824,12 +6390,16 @@ nonisolated extension Dieter_V1_MachineOperationRequest: SwiftProtobuf.Message, 
     if !self.confirmation.isEmpty {
       try visitor.visitSingularStringField(value: self.confirmation, fieldNumber: 2)
     }
+    if !self.idempotencyKey.isEmpty {
+      try visitor.visitSingularStringField(value: self.idempotencyKey, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_MachineOperationRequest, rhs: Dieter_V1_MachineOperationRequest) -> Bool {
     if lhs.action != rhs.action {return false}
     if lhs.confirmation != rhs.confirmation {return false}
+    if lhs.idempotencyKey != rhs.idempotencyKey {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -5837,7 +6407,7 @@ nonisolated extension Dieter_V1_MachineOperationRequest: SwiftProtobuf.Message, 
 
 nonisolated extension Dieter_V1_MachineOperationResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MachineOperationResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}accepted\0\u{1}message\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}accepted\0\u{1}message\0\u{3}operation_id\0\u{3}scheduled_at\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5847,6 +6417,8 @@ nonisolated extension Dieter_V1_MachineOperationResponse: SwiftProtobuf.Message,
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularBoolField(value: &self.accepted) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.operationID) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.scheduledAt) }()
       default: break
       }
     }
@@ -5859,12 +6431,65 @@ nonisolated extension Dieter_V1_MachineOperationResponse: SwiftProtobuf.Message,
     if !self.message.isEmpty {
       try visitor.visitSingularStringField(value: self.message, fieldNumber: 2)
     }
+    if !self.operationID.isEmpty {
+      try visitor.visitSingularStringField(value: self.operationID, fieldNumber: 3)
+    }
+    if !self.scheduledAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.scheduledAt, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Dieter_V1_MachineOperationResponse, rhs: Dieter_V1_MachineOperationResponse) -> Bool {
     if lhs.accepted != rhs.accepted {return false}
     if lhs.message != rhs.message {return false}
+    if lhs.operationID != rhs.operationID {return false}
+    if lhs.scheduledAt != rhs.scheduledAt {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_MachineOperationCapability: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MachineOperationCapability"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}action\0\u{1}supported\0\u{1}authorized\0\u{3}unavailable_reason\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.action) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.supported) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.authorized) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.unavailableReason) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.action != .unspecified {
+      try visitor.visitSingularEnumField(value: self.action, fieldNumber: 1)
+    }
+    if self.supported != false {
+      try visitor.visitSingularBoolField(value: self.supported, fieldNumber: 2)
+    }
+    if self.authorized != false {
+      try visitor.visitSingularBoolField(value: self.authorized, fieldNumber: 3)
+    }
+    if !self.unavailableReason.isEmpty {
+      try visitor.visitSingularStringField(value: self.unavailableReason, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MachineOperationCapability, rhs: Dieter_V1_MachineOperationCapability) -> Bool {
+    if lhs.action != rhs.action {return false}
+    if lhs.supported != rhs.supported {return false}
+    if lhs.authorized != rhs.authorized {return false}
+    if lhs.unavailableReason != rhs.unavailableReason {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

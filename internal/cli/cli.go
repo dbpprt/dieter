@@ -23,6 +23,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/app"
 	"github.com/dbpprt/dieter/internal/attachments"
+	"github.com/dbpprt/dieter/internal/buildinfo"
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
@@ -35,7 +36,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var Version = "0.4.1-dev"
+var Version = buildinfo.ReleaseVersion
 
 type CLI struct {
 	Out, Err io.Writer

@@ -33,6 +33,11 @@ type Server struct {
 	HTTPHandler http.Handler
 }
 
+// GatewayAPIVersion identifies the authenticated gateway control-plane
+// contract. It is intentionally distinct from daemon API compatibility and
+// the daemon-link framing version.
+const GatewayAPIVersion = "1"
+
 func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error) {
 	keys, err := LoadOrCreateKeys(store.Root)
 	if err != nil {

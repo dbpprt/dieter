@@ -2,8 +2,9 @@
 import AppKit
 import Foundation
 
-/// Focused packaged-app verification for the authenticated machine path. It
-/// deliberately never invokes restart or shutdown.
+/// Focused packaged-app verification for the authenticated machine path. Its
+/// restart check is hard-gated to the isolated fixture's advertised version;
+/// it never invokes a power operation on an operator daemon.
 @MainActor
 enum MachineUISmokeRunner {
     static func run(store: DieterStore) async {
@@ -53,6 +54,12 @@ enum MachineUISmokeRunner {
                 ? "failed: telemetry was incomplete" : "passed",
             "dieter-processes": information.processes.contains(where: { $0.kind == "daemon" })
                 ? "passed" : "failed: daemon process was absent",
+            "gpu": information.hasGpu && !information.gpu.devices.isEmpty
+                ? "passed" : "failed: GPU telemetry was absent",
+            "daemon-version": information.hasDaemonBuild && !information.daemonBuild.releaseVersion.isEmpty
+                ? "passed" : "failed: daemon build identity was absent",
+            "gateway-version": store.gatewayInformation[machine.credentialID]?.releaseVersion.isEmpty == false
+                ? "passed" : "failed: gateway build identity was absent",
             "host-controls": information.supportsRestart && information.supportsShutdown
                 ? "passed" : "failed: restart/shutdown were unavailable",
             "route": store.connectionStatus(for: machine) == nil
@@ -60,6 +67,14 @@ enum MachineUISmokeRunner {
         ]
         results["render"] = capture(window: window, to: output.appendingPathComponent("machine-information.png"))
             ? "passed" : "failed: could not capture machine popup"
+        if machine.version == "isolated-e2e" {
+            await store.performMachineOperation(.restart, confirmation: "RESTART")
+            results["power-control"] = store.machineOperationMessage?.isEmpty == false
+                ? "passed" : "failed: isolated restart was not accepted"
+            store.machineOperationMessage = nil
+        } else {
+            results["power-control"] = "failed: refused non-isolated target \(machine.version)"
+        }
         writeReport(results, to: output)
     }
 

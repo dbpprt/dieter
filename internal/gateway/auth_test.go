@@ -7,9 +7,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestHealthReportsGatewayBuildIdentity(t *testing.T) {
+	auth := NewAuth(Config{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	recorder := httptest.NewRecorder()
+	auth.health(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, `"service":"dieter-gateway"`) || !strings.Contains(body, `"apiVersion":"`+GatewayAPIVersion+`"`) || !strings.Contains(body, `"version":`) {
+		t.Fatalf("status=%d body=%q", recorder.Code, body)
+	}
+}
 
 func TestExchangeDecodesGitHubAccessToken(t *testing.T) {
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

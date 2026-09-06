@@ -32,39 +32,69 @@ import (
 )
 
 type Server struct {
-	store         *store.Store
-	app           *app.Service
-	workspaces    *workspace.Manager
-	changesets    *changeset.Service
-	gitOperations *gitops.Manager
-	schedules     *scheduler.Manager
-	log           *slog.Logger
-	mux           *http.ServeMux
-	filesMu       sync.RWMutex
-	auth          *authManager
-	terminals     *terminal.Manager
-	executions    *remoteexec.Manager
-	remoteDesktop *remotedesktop.Manager
-	machine       *machine.Collector
-	machineAction func(context.Context, machine.Operation) error
-	machineDelay  time.Duration
+	store                   *store.Store
+	app                     *app.Service
+	workspaces              *workspace.Manager
+	changesets              *changeset.Service
+	gitOperations           *gitops.Manager
+	schedules               *scheduler.Manager
+	log                     *slog.Logger
+	mux                     *http.ServeMux
+	filesMu                 sync.RWMutex
+	auth                    *authManager
+	terminals               *terminal.Manager
+	executions              *remoteexec.Manager
+	remoteDesktop           *remotedesktop.Manager
+	machine                 *machine.Collector
+	machineAction           func(context.Context, machine.Operation) error
+	machineCapabilities     func(context.Context) []machine.OperationCapability
+	machineDelay            time.Duration
+	machineOperationMu      sync.Mutex
+	machineOperations       map[string]acceptedMachineOperation
+	machineOperationOrder   []string
+	pendingMachineOperation string
+}
+
+// Options provides explicit seams for native end-to-end fixtures. Production
+// callers leave machine operations unset and receive the platform collector,
+// capability probe, and executor. Tests can substitute a no-op executor
+// without weakening the authenticated RPC or its validation.
+type Options struct {
+	Runner              harness.Runner
+	RemoteDesktop       *remotedesktop.Manager
+	MachineAction       func(context.Context, machine.Operation) error
+	MachineCapabilities func(context.Context) []machine.OperationCapability
+	MachineDelay        time.Duration
 }
 
 func New(data *store.Store, logger *slog.Logger) *Server {
-	return NewWithRunner(data, logger, nil)
+	return NewWithOptions(data, logger, Options{})
 }
 
 func NewWithRunner(data *store.Store, logger *slog.Logger, runner harness.Runner) *Server {
+	return NewWithOptions(data, logger, Options{Runner: runner})
+}
+
+func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Server {
 	manager, _ := newAuthManager(authConfig{}, data)
-	return newWithAuth(data, logger, runner, manager)
+	application := newWithAuth(data, logger, options.Runner, manager)
+	if options.RemoteDesktop != nil {
+		application.remoteDesktop = options.RemoteDesktop
+	}
+	if options.MachineAction != nil {
+		application.machineAction = options.MachineAction
+	}
+	if options.MachineCapabilities != nil {
+		application.machineCapabilities = options.MachineCapabilities
+	}
+	if options.MachineDelay > 0 {
+		application.machineDelay = options.MachineDelay
+	}
+	return application
 }
 
 func NewWithRemoteDesktop(data *store.Store, logger *slog.Logger, runner harness.Runner, remoteDesktop *remotedesktop.Manager) *Server {
-	application := NewWithRunner(data, logger, runner)
-	if remoteDesktop != nil {
-		application.remoteDesktop = remoteDesktop
-	}
-	return application
+	return NewWithOptions(data, logger, Options{Runner: runner, RemoteDesktop: remoteDesktop})
 }
 
 func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, manager *authManager) *Server {
@@ -77,8 +107,8 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
 		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(), executions: remoteexec.New(),
 		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
-		machine:       machine.NewCollector(data.Root), machineAction: machine.ExecuteOperation,
-		machineDelay: 750 * time.Millisecond,
+		machine:       machine.NewCollector(data.Root), machineAction: machine.ExecuteOperation, machineCapabilities: machine.OperationCapabilities,
+		machineDelay: 750 * time.Millisecond, machineOperations: map[string]acceptedMachineOperation{},
 	}
 	s.changesets = changeset.New(s.workspaces)
 	if err := data.InterruptRunningGitOperations(); err != nil {

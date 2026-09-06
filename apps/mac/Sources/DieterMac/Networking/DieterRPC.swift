@@ -224,6 +224,7 @@ final class DieterRPC: Sendable {
         var request = Dieter_V1_MachineOperationRequest()
         request.action = action
         request.confirmation = confirmation
+        request.idempotencyKey = UUID().uuidString
         return try await service.performMachineOperation(
             request: .init(message: request),
             options: Self.boundedUnaryCallOptions()

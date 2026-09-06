@@ -396,10 +396,11 @@ func (x *RemoteDesktopPresence) GetActiveSession() bool {
 }
 
 type ListDaemonsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Daemons       []*Daemon              `protobuf:"bytes,1,rep,name=daemons,proto3" json:"daemons,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Daemons            []*Daemon              `protobuf:"bytes,1,rep,name=daemons,proto3" json:"daemons,omitempty"`
+	GatewayInformation *GatewayInformation    `protobuf:"bytes,2,opt,name=gateway_information,json=gatewayInformation,proto3" json:"gateway_information,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ListDaemonsResponse) Reset() {
@@ -439,6 +440,81 @@ func (x *ListDaemonsResponse) GetDaemons() []*Daemon {
 	return nil
 }
 
+func (x *ListDaemonsResponse) GetGatewayInformation() *GatewayInformation {
+	if x != nil {
+		return x.GatewayInformation
+	}
+	return nil
+}
+
+type GatewayInformation struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ReleaseVersion string                 `protobuf:"bytes,1,opt,name=release_version,json=releaseVersion,proto3" json:"release_version,omitempty"`
+	ApiVersion     string                 `protobuf:"bytes,2,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	SourceRevision string                 `protobuf:"bytes,3,opt,name=source_revision,json=sourceRevision,proto3" json:"source_revision,omitempty"`
+	BuiltAt        string                 `protobuf:"bytes,4,opt,name=built_at,json=builtAt,proto3" json:"built_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *GatewayInformation) Reset() {
+	*x = GatewayInformation{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GatewayInformation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GatewayInformation) ProtoMessage() {}
+
+func (x *GatewayInformation) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GatewayInformation.ProtoReflect.Descriptor instead.
+func (*GatewayInformation) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GatewayInformation) GetReleaseVersion() string {
+	if x != nil {
+		return x.ReleaseVersion
+	}
+	return ""
+}
+
+func (x *GatewayInformation) GetApiVersion() string {
+	if x != nil {
+		return x.ApiVersion
+	}
+	return ""
+}
+
+func (x *GatewayInformation) GetSourceRevision() string {
+	if x != nil {
+		return x.SourceRevision
+	}
+	return ""
+}
+
+func (x *GatewayInformation) GetBuiltAt() string {
+	if x != nil {
+		return x.BuiltAt
+	}
+	return ""
+}
+
 type WatchDaemonsRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	HeartbeatSeconds uint32                 `protobuf:"varint,1,opt,name=heartbeat_seconds,json=heartbeatSeconds,proto3" json:"heartbeat_seconds,omitempty"`
@@ -448,7 +524,7 @@ type WatchDaemonsRequest struct {
 
 func (x *WatchDaemonsRequest) Reset() {
 	*x = WatchDaemonsRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[5]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -460,7 +536,7 @@ func (x *WatchDaemonsRequest) String() string {
 func (*WatchDaemonsRequest) ProtoMessage() {}
 
 func (x *WatchDaemonsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[5]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -473,7 +549,7 @@ func (x *WatchDaemonsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDaemonsRequest.ProtoReflect.Descriptor instead.
 func (*WatchDaemonsRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{5}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *WatchDaemonsRequest) GetHeartbeatSeconds() uint32 {
@@ -484,16 +560,17 @@ func (x *WatchDaemonsRequest) GetHeartbeatSeconds() uint32 {
 }
 
 type DaemonPresenceUpdate struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Daemons       []*Daemon              `protobuf:"bytes,1,rep,name=daemons,proto3" json:"daemons,omitempty"`
-	Revision      uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	Daemons            []*Daemon              `protobuf:"bytes,1,rep,name=daemons,proto3" json:"daemons,omitempty"`
+	Revision           uint64                 `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	GatewayInformation *GatewayInformation    `protobuf:"bytes,3,opt,name=gateway_information,json=gatewayInformation,proto3" json:"gateway_information,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DaemonPresenceUpdate) Reset() {
 	*x = DaemonPresenceUpdate{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[6]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -505,7 +582,7 @@ func (x *DaemonPresenceUpdate) String() string {
 func (*DaemonPresenceUpdate) ProtoMessage() {}
 
 func (x *DaemonPresenceUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[6]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -518,7 +595,7 @@ func (x *DaemonPresenceUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonPresenceUpdate.ProtoReflect.Descriptor instead.
 func (*DaemonPresenceUpdate) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{6}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DaemonPresenceUpdate) GetDaemons() []*Daemon {
@@ -535,6 +612,13 @@ func (x *DaemonPresenceUpdate) GetRevision() uint64 {
 	return 0
 }
 
+func (x *DaemonPresenceUpdate) GetGatewayInformation() *GatewayInformation {
+	if x != nil {
+		return x.GatewayInformation
+	}
+	return nil
+}
+
 type BeginDaemonEnrollmentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -545,7 +629,7 @@ type BeginDaemonEnrollmentRequest struct {
 
 func (x *BeginDaemonEnrollmentRequest) Reset() {
 	*x = BeginDaemonEnrollmentRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[7]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -557,7 +641,7 @@ func (x *BeginDaemonEnrollmentRequest) String() string {
 func (*BeginDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *BeginDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[7]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -570,7 +654,7 @@ func (x *BeginDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*BeginDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{7}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *BeginDaemonEnrollmentRequest) GetName() string {
@@ -600,7 +684,7 @@ type DaemonEnrollment struct {
 
 func (x *DaemonEnrollment) Reset() {
 	*x = DaemonEnrollment{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[8]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -612,7 +696,7 @@ func (x *DaemonEnrollment) String() string {
 func (*DaemonEnrollment) ProtoMessage() {}
 
 func (x *DaemonEnrollment) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[8]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -625,7 +709,7 @@ func (x *DaemonEnrollment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonEnrollment.ProtoReflect.Descriptor instead.
 func (*DaemonEnrollment) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{8}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DaemonEnrollment) GetEnrollmentId() string {
@@ -673,7 +757,7 @@ type CompleteDaemonEnrollmentRequest struct {
 
 func (x *CompleteDaemonEnrollmentRequest) Reset() {
 	*x = CompleteDaemonEnrollmentRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[9]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -685,7 +769,7 @@ func (x *CompleteDaemonEnrollmentRequest) String() string {
 func (*CompleteDaemonEnrollmentRequest) ProtoMessage() {}
 
 func (x *CompleteDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[9]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -698,7 +782,7 @@ func (x *CompleteDaemonEnrollmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteDaemonEnrollmentRequest.ProtoReflect.Descriptor instead.
 func (*CompleteDaemonEnrollmentRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{9}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CompleteDaemonEnrollmentRequest) GetEnrollmentId() string {
@@ -726,7 +810,7 @@ type UnenrollDaemonRequest struct {
 
 func (x *UnenrollDaemonRequest) Reset() {
 	*x = UnenrollDaemonRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[10]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -738,7 +822,7 @@ func (x *UnenrollDaemonRequest) String() string {
 func (*UnenrollDaemonRequest) ProtoMessage() {}
 
 func (x *UnenrollDaemonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[10]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -751,7 +835,7 @@ func (x *UnenrollDaemonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnenrollDaemonRequest.ProtoReflect.Descriptor instead.
 func (*UnenrollDaemonRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{10}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *UnenrollDaemonRequest) GetDaemonId() string {
@@ -790,7 +874,7 @@ type DaemonCredential struct {
 
 func (x *DaemonCredential) Reset() {
 	*x = DaemonCredential{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[11]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +886,7 @@ func (x *DaemonCredential) String() string {
 func (*DaemonCredential) ProtoMessage() {}
 
 func (x *DaemonCredential) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[11]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +899,7 @@ func (x *DaemonCredential) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonCredential.ProtoReflect.Descriptor instead.
 func (*DaemonCredential) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{11}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DaemonCredential) GetDaemonId() string {
@@ -877,7 +961,7 @@ type RenameDaemonRequest struct {
 
 func (x *RenameDaemonRequest) Reset() {
 	*x = RenameDaemonRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[12]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -889,7 +973,7 @@ func (x *RenameDaemonRequest) String() string {
 func (*RenameDaemonRequest) ProtoMessage() {}
 
 func (x *RenameDaemonRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[12]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -902,7 +986,7 @@ func (x *RenameDaemonRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenameDaemonRequest.ProtoReflect.Descriptor instead.
 func (*RenameDaemonRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{12}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RenameDaemonRequest) GetDaemonId() string {
@@ -931,7 +1015,7 @@ type ExchangeDaemonTokenRequest struct {
 
 func (x *ExchangeDaemonTokenRequest) Reset() {
 	*x = ExchangeDaemonTokenRequest{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[13]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -943,7 +1027,7 @@ func (x *ExchangeDaemonTokenRequest) String() string {
 func (*ExchangeDaemonTokenRequest) ProtoMessage() {}
 
 func (x *ExchangeDaemonTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[13]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -956,7 +1040,7 @@ func (x *ExchangeDaemonTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeDaemonTokenRequest.ProtoReflect.Descriptor instead.
 func (*ExchangeDaemonTokenRequest) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{13}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ExchangeDaemonTokenRequest) GetDaemonId() string {
@@ -985,7 +1069,7 @@ type DaemonAccessToken struct {
 
 func (x *DaemonAccessToken) Reset() {
 	*x = DaemonAccessToken{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[14]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -997,7 +1081,7 @@ func (x *DaemonAccessToken) String() string {
 func (*DaemonAccessToken) ProtoMessage() {}
 
 func (x *DaemonAccessToken) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[14]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1010,7 +1094,7 @@ func (x *DaemonAccessToken) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonAccessToken.ProtoReflect.Descriptor instead.
 func (*DaemonAccessToken) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{14}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DaemonAccessToken) GetAccessToken() string {
@@ -1055,7 +1139,7 @@ type DirectCandidate struct {
 
 func (x *DirectCandidate) Reset() {
 	*x = DirectCandidate{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[15]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1067,7 +1151,7 @@ func (x *DirectCandidate) String() string {
 func (*DirectCandidate) ProtoMessage() {}
 
 func (x *DirectCandidate) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[15]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1080,7 +1164,7 @@ func (x *DirectCandidate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DirectCandidate.ProtoReflect.Descriptor instead.
 func (*DirectCandidate) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{15}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DirectCandidate) GetId() string {
@@ -1144,7 +1228,7 @@ type DaemonRoute struct {
 
 func (x *DaemonRoute) Reset() {
 	*x = DaemonRoute{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[16]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1156,7 +1240,7 @@ func (x *DaemonRoute) String() string {
 func (*DaemonRoute) ProtoMessage() {}
 
 func (x *DaemonRoute) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[16]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1169,7 +1253,7 @@ func (x *DaemonRoute) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonRoute.ProtoReflect.Descriptor instead.
 func (*DaemonRoute) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{16}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DaemonRoute) GetDaemonId() string {
@@ -1225,7 +1309,7 @@ type RTCIceServer struct {
 
 func (x *RTCIceServer) Reset() {
 	*x = RTCIceServer{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[17]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1237,7 +1321,7 @@ func (x *RTCIceServer) String() string {
 func (*RTCIceServer) ProtoMessage() {}
 
 func (x *RTCIceServer) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[17]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1250,7 +1334,7 @@ func (x *RTCIceServer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RTCIceServer.ProtoReflect.Descriptor instead.
 func (*RTCIceServer) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{17}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RTCIceServer) GetUrls() []string {
@@ -1290,7 +1374,7 @@ type RTCConfiguration struct {
 
 func (x *RTCConfiguration) Reset() {
 	*x = RTCConfiguration{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[18]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1302,7 +1386,7 @@ func (x *RTCConfiguration) String() string {
 func (*RTCConfiguration) ProtoMessage() {}
 
 func (x *RTCConfiguration) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[18]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1315,7 +1399,7 @@ func (x *RTCConfiguration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RTCConfiguration.ProtoReflect.Descriptor instead.
 func (*RTCConfiguration) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{18}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RTCConfiguration) GetIceServers() []*RTCIceServer {
@@ -1400,7 +1484,7 @@ type DaemonLinkFrame struct {
 
 func (x *DaemonLinkFrame) Reset() {
 	*x = DaemonLinkFrame{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[19]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1412,7 +1496,7 @@ func (x *DaemonLinkFrame) String() string {
 func (*DaemonLinkFrame) ProtoMessage() {}
 
 func (x *DaemonLinkFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[19]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1425,7 +1509,7 @@ func (x *DaemonLinkFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonLinkFrame.ProtoReflect.Descriptor instead.
 func (*DaemonLinkFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{19}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DaemonLinkFrame) GetKind() DaemonLinkFrameKind {
@@ -1583,14 +1667,22 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x0ehelper_version\x18\x02 \x01(\tR\rhelperVersion\x12\x14\n" +
 	"\x05ready\x18\x03 \x01(\bR\x05ready\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12%\n" +
-	"\x0eactive_session\x18\x05 \x01(\bR\ractiveSession\"J\n" +
+	"\x0eactive_session\x18\x05 \x01(\bR\ractiveSession\"\xa2\x01\n" +
 	"\x13ListDaemonsResponse\x123\n" +
-	"\adaemons\x18\x01 \x03(\v2\x19.dieter.gateway.v1.DaemonR\adaemons\"B\n" +
+	"\adaemons\x18\x01 \x03(\v2\x19.dieter.gateway.v1.DaemonR\adaemons\x12V\n" +
+	"\x13gateway_information\x18\x02 \x01(\v2%.dieter.gateway.v1.GatewayInformationR\x12gatewayInformation\"\xa2\x01\n" +
+	"\x12GatewayInformation\x12'\n" +
+	"\x0frelease_version\x18\x01 \x01(\tR\x0ereleaseVersion\x12\x1f\n" +
+	"\vapi_version\x18\x02 \x01(\tR\n" +
+	"apiVersion\x12'\n" +
+	"\x0fsource_revision\x18\x03 \x01(\tR\x0esourceRevision\x12\x19\n" +
+	"\bbuilt_at\x18\x04 \x01(\tR\abuiltAt\"B\n" +
 	"\x13WatchDaemonsRequest\x12+\n" +
-	"\x11heartbeat_seconds\x18\x01 \x01(\rR\x10heartbeatSeconds\"g\n" +
+	"\x11heartbeat_seconds\x18\x01 \x01(\rR\x10heartbeatSeconds\"\xbf\x01\n" +
 	"\x14DaemonPresenceUpdate\x123\n" +
 	"\adaemons\x18\x01 \x03(\v2\x19.dieter.gateway.v1.DaemonR\adaemons\x12\x1a\n" +
-	"\brevision\x18\x02 \x01(\x04R\brevision\"Q\n" +
+	"\brevision\x18\x02 \x01(\x04R\brevision\x12V\n" +
+	"\x13gateway_information\x18\x03 \x01(\v2%.dieter.gateway.v1.GatewayInformationR\x12gatewayInformation\"Q\n" +
 	"\x1cBeginDaemonEnrollmentRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -1743,7 +1835,7 @@ func file_dieter_gateway_v1_gateway_proto_rawDescGZIP() []byte {
 }
 
 var file_dieter_gateway_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_dieter_gateway_v1_gateway_proto_goTypes = []any{
 	(DaemonLinkFrameKind)(0),                // 0: dieter.gateway.v1.DaemonLinkFrameKind
 	(*Account)(nil),                         // 1: dieter.gateway.v1.Account
@@ -1751,64 +1843,67 @@ var file_dieter_gateway_v1_gateway_proto_goTypes = []any{
 	(*Daemon)(nil),                          // 3: dieter.gateway.v1.Daemon
 	(*RemoteDesktopPresence)(nil),           // 4: dieter.gateway.v1.RemoteDesktopPresence
 	(*ListDaemonsResponse)(nil),             // 5: dieter.gateway.v1.ListDaemonsResponse
-	(*WatchDaemonsRequest)(nil),             // 6: dieter.gateway.v1.WatchDaemonsRequest
-	(*DaemonPresenceUpdate)(nil),            // 7: dieter.gateway.v1.DaemonPresenceUpdate
-	(*BeginDaemonEnrollmentRequest)(nil),    // 8: dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	(*DaemonEnrollment)(nil),                // 9: dieter.gateway.v1.DaemonEnrollment
-	(*CompleteDaemonEnrollmentRequest)(nil), // 10: dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	(*UnenrollDaemonRequest)(nil),           // 11: dieter.gateway.v1.UnenrollDaemonRequest
-	(*DaemonCredential)(nil),                // 12: dieter.gateway.v1.DaemonCredential
-	(*RenameDaemonRequest)(nil),             // 13: dieter.gateway.v1.RenameDaemonRequest
-	(*ExchangeDaemonTokenRequest)(nil),      // 14: dieter.gateway.v1.ExchangeDaemonTokenRequest
-	(*DaemonAccessToken)(nil),               // 15: dieter.gateway.v1.DaemonAccessToken
-	(*DirectCandidate)(nil),                 // 16: dieter.gateway.v1.DirectCandidate
-	(*DaemonRoute)(nil),                     // 17: dieter.gateway.v1.DaemonRoute
-	(*RTCIceServer)(nil),                    // 18: dieter.gateway.v1.RTCIceServer
-	(*RTCConfiguration)(nil),                // 19: dieter.gateway.v1.RTCConfiguration
-	(*DaemonLinkFrame)(nil),                 // 20: dieter.gateway.v1.DaemonLinkFrame
-	nil,                                     // 21: dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
-	(*emptypb.Empty)(nil),                   // 22: google.protobuf.Empty
+	(*GatewayInformation)(nil),              // 6: dieter.gateway.v1.GatewayInformation
+	(*WatchDaemonsRequest)(nil),             // 7: dieter.gateway.v1.WatchDaemonsRequest
+	(*DaemonPresenceUpdate)(nil),            // 8: dieter.gateway.v1.DaemonPresenceUpdate
+	(*BeginDaemonEnrollmentRequest)(nil),    // 9: dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	(*DaemonEnrollment)(nil),                // 10: dieter.gateway.v1.DaemonEnrollment
+	(*CompleteDaemonEnrollmentRequest)(nil), // 11: dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	(*UnenrollDaemonRequest)(nil),           // 12: dieter.gateway.v1.UnenrollDaemonRequest
+	(*DaemonCredential)(nil),                // 13: dieter.gateway.v1.DaemonCredential
+	(*RenameDaemonRequest)(nil),             // 14: dieter.gateway.v1.RenameDaemonRequest
+	(*ExchangeDaemonTokenRequest)(nil),      // 15: dieter.gateway.v1.ExchangeDaemonTokenRequest
+	(*DaemonAccessToken)(nil),               // 16: dieter.gateway.v1.DaemonAccessToken
+	(*DirectCandidate)(nil),                 // 17: dieter.gateway.v1.DirectCandidate
+	(*DaemonRoute)(nil),                     // 18: dieter.gateway.v1.DaemonRoute
+	(*RTCIceServer)(nil),                    // 19: dieter.gateway.v1.RTCIceServer
+	(*RTCConfiguration)(nil),                // 20: dieter.gateway.v1.RTCConfiguration
+	(*DaemonLinkFrame)(nil),                 // 21: dieter.gateway.v1.DaemonLinkFrame
+	nil,                                     // 22: dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
+	(*emptypb.Empty)(nil),                   // 23: google.protobuf.Empty
 }
 var file_dieter_gateway_v1_gateway_proto_depIdxs = []int32{
-	16, // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	17, // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
 	4,  // 1: dieter.gateway.v1.Daemon.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
 	3,  // 2: dieter.gateway.v1.ListDaemonsResponse.daemons:type_name -> dieter.gateway.v1.Daemon
-	3,  // 3: dieter.gateway.v1.DaemonPresenceUpdate.daemons:type_name -> dieter.gateway.v1.Daemon
-	16, // 4: dieter.gateway.v1.DaemonRoute.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	18, // 5: dieter.gateway.v1.RTCConfiguration.ice_servers:type_name -> dieter.gateway.v1.RTCIceServer
-	0,  // 6: dieter.gateway.v1.DaemonLinkFrame.kind:type_name -> dieter.gateway.v1.DaemonLinkFrameKind
-	21, // 7: dieter.gateway.v1.DaemonLinkFrame.metadata:type_name -> dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
-	16, // 8: dieter.gateway.v1.DaemonLinkFrame.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	4,  // 9: dieter.gateway.v1.DaemonLinkFrame.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
-	22, // 10: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
-	22, // 11: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
-	6,  // 12: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
-	8,  // 13: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	10, // 14: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	11, // 15: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
-	13, // 16: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
-	2,  // 17: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
-	14, // 18: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
-	2,  // 19: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
-	2,  // 20: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
-	20, // 21: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
-	1,  // 22: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
-	5,  // 23: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
-	7,  // 24: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
-	9,  // 25: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
-	12, // 26: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
-	22, // 27: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
-	3,  // 28: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
-	22, // 29: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
-	15, // 30: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
-	17, // 31: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
-	19, // 32: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
-	20, // 33: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
-	22, // [22:34] is the sub-list for method output_type
-	10, // [10:22] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	6,  // 3: dieter.gateway.v1.ListDaemonsResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	3,  // 4: dieter.gateway.v1.DaemonPresenceUpdate.daemons:type_name -> dieter.gateway.v1.Daemon
+	6,  // 5: dieter.gateway.v1.DaemonPresenceUpdate.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	17, // 6: dieter.gateway.v1.DaemonRoute.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	19, // 7: dieter.gateway.v1.RTCConfiguration.ice_servers:type_name -> dieter.gateway.v1.RTCIceServer
+	0,  // 8: dieter.gateway.v1.DaemonLinkFrame.kind:type_name -> dieter.gateway.v1.DaemonLinkFrameKind
+	22, // 9: dieter.gateway.v1.DaemonLinkFrame.metadata:type_name -> dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
+	17, // 10: dieter.gateway.v1.DaemonLinkFrame.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	4,  // 11: dieter.gateway.v1.DaemonLinkFrame.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
+	23, // 12: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
+	23, // 13: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
+	7,  // 14: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
+	9,  // 15: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	11, // 16: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	12, // 17: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
+	14, // 18: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
+	2,  // 19: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
+	15, // 20: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
+	2,  // 21: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
+	2,  // 22: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
+	21, // 23: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
+	1,  // 24: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
+	5,  // 25: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
+	8,  // 26: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
+	10, // 27: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
+	13, // 28: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
+	23, // 29: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
+	3,  // 30: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
+	23, // 31: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
+	16, // 32: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
+	18, // 33: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
+	20, // 34: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
+	21, // 35: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
+	24, // [24:36] is the sub-list for method output_type
+	12, // [12:24] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_dieter_gateway_v1_gateway_proto_init() }
@@ -1822,7 +1917,7 @@ func file_dieter_gateway_v1_gateway_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_gateway_v1_gateway_proto_rawDesc), len(file_dieter_gateway_v1_gateway_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   21,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

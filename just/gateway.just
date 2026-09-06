@@ -16,9 +16,15 @@ doctor:
     command -v docker >/dev/null || echo "Docker is optional unless building the gateway image."
 
 # Build the gateway binary.
-build:
+build version="":
+    #!/usr/bin/env bash
+    set -euo pipefail
     mkdir -p bin
-    go build -trimpath -o "{{ binary }}" "{{ target }}"
+    if [[ -n "{{ version }}" ]]; then
+        go build -trimpath -ldflags "-X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion={{ version }}" -o "{{ binary }}" "{{ target }}"
+    else
+        go build -trimpath -o "{{ binary }}" "{{ target }}"
+    fi
 
 # Test every Dieter package in the gateway command's dependency graph.
 test:
@@ -51,12 +57,13 @@ package-release:
     : "${GOOS:?GOOS is required}"
     : "${GOARCH:?GOARCH is required}"
     : "${ASSET:?ASSET is required}"
+    : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
     [[ "$ASSET" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Unsafe ASSET: $ASSET" >&2; exit 1; }
     package="stage/$ASSET"
     archive="dist/$ASSET.tar.gz"
     [[ ! -e "$package" && ! -e "$archive" ]] || { echo "Release output already exists: $ASSET" >&2; exit 1; }
     mkdir -p "$package" dist
-    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/dbpprt/dieter/internal/buildinfo.ReleaseVersion=$RELEASE_VERSION" \
         -o "$package/dieter-gateway" "{{ target }}"
     cp LICENSE "$package/LICENSE"
     tar -C stage -czf "$archive" "$ASSET"
@@ -73,7 +80,9 @@ image-publish:
     set -euo pipefail
     [[ "${GITHUB_ACTIONS:-}" == true ]] || { echo "Image publishing is CI-only." >&2; exit 1; }
     : "${GATEWAY_IMAGE_TAGS:?GATEWAY_IMAGE_TAGS is required}"
-    arguments=(buildx build --file Dockerfile.gateway --platform linux/amd64,linux/arm64 --push)
+    arguments=(buildx build --file Dockerfile.gateway --platform linux/amd64,linux/arm64 --push
+        --build-arg "RELEASE_VERSION=${GATEWAY_RELEASE_VERSION:-main}"
+        --build-arg "SOURCE_REVISION=${GITHUB_SHA:-unknown}")
     while IFS= read -r tag; do
         [[ -n "$tag" ]] && arguments+=(--tag "$tag")
     done <<<"$GATEWAY_IMAGE_TAGS"

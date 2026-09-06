@@ -25,6 +25,7 @@ import (
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
 )
@@ -471,7 +472,20 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	remoteHTTP := &http.Server{Handler: server.New(remoteStore, logger).Handler()}
+	powerActions := make(chan machine.Operation, 2)
+	remoteServer := server.NewWithOptions(remoteStore, logger, server.Options{
+		MachineAction: func(_ context.Context, operation machine.Operation) error {
+			powerActions <- operation
+			return nil
+		},
+		MachineCapabilities: func(context.Context) []machine.OperationCapability {
+			return []machine.OperationCapability{
+				{Operation: machine.OperationRestart, Supported: true, Authorized: true},
+				{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
+			}
+		},
+	})
+	remoteHTTP := &http.Server{Handler: remoteServer.Handler()}
 	go func() { _ = remoteHTTP.Serve(localListener) }()
 	defer remoteHTTP.Close()
 
@@ -523,6 +537,26 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 		t.Fatalf("route=%#v want direct", first.transport)
 	}
 	firstOutput.Reset()
+	if err := first.Run([]string{"machine", "info"}); err != nil || !strings.Contains(firstOutput.String(), `"daemonBuild"`) || !strings.Contains(firstOutput.String(), `"gpu"`) {
+		t.Fatalf("direct machine info output=%q err=%v", firstOutput.String(), err)
+	}
+	firstOutput.Reset()
+	if err := first.Run([]string{"machine", "gateway"}); err != nil || !strings.Contains(firstOutput.String(), `"releaseVersion"`) {
+		t.Fatalf("gateway build output=%q err=%v", firstOutput.String(), err)
+	}
+	firstOutput.Reset()
+	if err := first.Run([]string{"machine", "restart", "--confirm", "RESTART"}); err != nil || !strings.Contains(firstOutput.String(), `"accepted": true`) {
+		t.Fatalf("direct restart output=%q err=%v", firstOutput.String(), err)
+	}
+	select {
+	case operation := <-powerActions:
+		if operation != machine.OperationRestart {
+			t.Fatalf("direct operation=%q", operation)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("direct restart did not reach the fake executor")
+	}
+	firstOutput.Reset()
 	if err := first.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "direct-exec"}); err != nil || firstOutput.String() != "direct-exec" {
 		t.Fatalf("direct remote exec output=%q err=%v", firstOutput.String(), err)
 	}
@@ -542,6 +576,22 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	}
 	if second.transport == nil || second.transport.route != "relay" {
 		t.Fatalf("route=%#v want relay", second.transport)
+	}
+	secondOutput.Reset()
+	if err := second.Run([]string{"machine", "info"}); err != nil || !strings.Contains(secondOutput.String(), `"daemonBuild"`) || !strings.Contains(secondOutput.String(), `"gpu"`) {
+		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)
+	}
+	secondOutput.Reset()
+	if err := second.Run([]string{"machine", "shutdown", "--confirm", "SHUT DOWN"}); err != nil || !strings.Contains(secondOutput.String(), `"accepted": true`) {
+		t.Fatalf("relay shutdown output=%q err=%v", secondOutput.String(), err)
+	}
+	select {
+	case operation := <-powerActions:
+		if operation != machine.OperationShutdown {
+			t.Fatalf("relay operation=%q", operation)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("relay shutdown did not reach the fake executor")
 	}
 	secondOutput.Reset()
 	if err := second.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "relay-exec"}); err != nil || secondOutput.String() != "relay-exec" {

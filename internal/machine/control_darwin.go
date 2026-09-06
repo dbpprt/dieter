@@ -7,7 +7,12 @@ import (
 	"os/exec"
 )
 
-func supportsOperations() bool { return true }
+func operationCapabilities(context.Context) []OperationCapability {
+	return []OperationCapability{
+		{Operation: OperationRestart, Supported: true, Authorized: true},
+		{Operation: OperationShutdown, Supported: true, Authorized: true},
+	}
+}
 
 func executeOperation(ctx context.Context, operation Operation) error {
 	verb := "restart"

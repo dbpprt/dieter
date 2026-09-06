@@ -224,7 +224,10 @@ func (c *CLI) authStatus(args []string) error {
 	if err != nil {
 		return err
 	}
-	return protoJSONOut(c.Out, map[string]any{"gateway": gateway.url, "account": account, "machines": daemons.GetDaemons()})
+	return protoJSONOut(c.Out, map[string]any{
+		"gateway": gateway.url, "gatewayInformation": daemons.GetGatewayInformation(),
+		"account": account, "machines": daemons.GetDaemons(),
+	})
 }
 
 func (c *CLI) authLogout(args []string) error {

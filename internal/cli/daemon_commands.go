@@ -167,6 +167,7 @@ const machineHelp = `Usage: dieter machine <action>
 
 Actions:
   list [--format table|json|jsonl|ids]       List enrolled machines
+  gateway                                    Show the connected gateway build
   watch [--count N]                          Stream gateway presence as JSON Lines
   show [MACHINE]                             Show gateway presence and route
   info [MACHINE]                             Show live host telemetry (local by default)
@@ -212,6 +213,26 @@ func (c *CLI) machineCommand(args []string) error {
 		return nil
 	}
 	switch args[0] {
+	case "gateway":
+		const usage = "Usage: dieter machine gateway\n"
+		if wantsHelp(args[1:]) {
+			fmt.Fprint(c.Out, usage)
+			return nil
+		}
+		if len(args) != 1 {
+			return errors.New("machine gateway does not accept arguments")
+		}
+		ctx, cancel := c.commandContext()
+		defer cancel()
+		gateway, err := c.dialGateway(ctx)
+		if err != nil {
+			return err
+		}
+		response, err := gateway.client.ListDaemons(ctx, &emptypb.Empty{})
+		if err != nil {
+			return err
+		}
+		return protoJSONOut(c.Out, response.GetGatewayInformation())
 	case "list", "ls":
 		const usage = "Usage: dieter machine list [--format table|json|jsonl|ids]\n"
 		set := flags("machine list")

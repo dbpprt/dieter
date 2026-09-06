@@ -51,6 +51,9 @@ extension DieterStore {
                 return
             }
             gatewayAuthenticated = true
+			if daemonDirectory.hasGatewayInformation {
+				gatewayInformation[origin.credentialID] = daemonDirectory.gatewayInformation
+			}
 			var discovered = daemonDirectory.daemons.map {
                 DieterEndpoint(
                     name: $0.name.isEmpty ? $0.id : $0.name,
@@ -825,6 +828,9 @@ extension DieterStore {
             let runner = Task { try? await client.run() }
             defer { runner.cancel(); client.shutdown() }
             let directory = try await client.daemons()
+            if directory.hasGatewayInformation {
+                gatewayInformation[origin.credentialID] = directory.gatewayInformation
+            }
             let previous = Dictionary(uniqueKeysWithValues: endpoints.compactMap { item in item.daemonID.map { ($0, item) } })
             endpoints = directory.daemons.map { daemon in
                 var item = previous[daemon.id] ?? DieterEndpoint(
