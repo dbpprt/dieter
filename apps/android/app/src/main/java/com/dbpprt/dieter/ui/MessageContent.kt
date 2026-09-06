@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,12 +59,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -129,9 +132,18 @@ internal fun MessageParts(
 }
 
 internal data class MessageMarkdownBlock(
-    val text: String,
+    val text: String = "",
     val code: Boolean = false,
     val headingLevel: Int = 0,
+    val table: MessageMarkdownTable? = null,
+)
+
+internal enum class MessageMarkdownAlignment { START, CENTER, END }
+
+internal data class MessageMarkdownTable(
+    val headers: List<String>,
+    val alignments: List<MessageMarkdownAlignment>,
+    val rows: List<List<String>>,
 )
 
 internal fun parseMessageMarkdown(value: String): List<MessageMarkdownBlock> {
@@ -149,21 +161,96 @@ internal fun parseMessageMarkdown(value: String): List<MessageMarkdownBlock> {
         blocks += MessageMarkdownBlock(text = text, code = inCode, headingLevel = heading)
     }
 
-    value.lineSequence().forEach { line ->
+    val lines = value.lines()
+    var index = 0
+    while (index < lines.size) {
+        val line = lines[index]
         if (line.trimStart().startsWith("```")) {
             flush()
             inCode = !inCode
-        } else if (!inCode && line.isBlank()) {
+            index += 1
+            continue
+        }
+        if (!inCode && index + 1 < lines.size) {
+            val headers = markdownTableCells(line)
+            val alignments = markdownTableDelimiter(lines[index + 1])
+            if (headers != null && alignments != null && headers.size == alignments.size) {
+                flush()
+                index += 2
+                val rows = mutableListOf<List<String>>()
+                while (index < lines.size) {
+                    val cells = markdownTableCells(lines[index]) ?: break
+                    rows += List(headers.size) { column -> cells.getOrElse(column) { "" } }
+                    index += 1
+                }
+                blocks += MessageMarkdownBlock(
+                    table = MessageMarkdownTable(headers, alignments, rows),
+                )
+                continue
+            }
+        }
+        if (!inCode && line.isBlank()) {
             flush()
+            index += 1
         } else if (!inCode && line.trimStart().matches(Regex("^[-*]\\s+.*"))) {
             flush()
             blocks += MessageMarkdownBlock("• " + line.trimStart().drop(2))
+            index += 1
         } else {
             pending += line
+            index += 1
         }
     }
     flush()
     return blocks
+}
+
+/** Parses a GFM pipe row without treating escaped pipes or pipes in code spans as separators. */
+internal fun markdownTableCells(value: String): List<String>? {
+    val trimmed = value.trim()
+    if ('|' !in trimmed) return null
+    val content = trimmed
+        .removePrefix("|")
+        .let { if (it.endsWith('|') && !it.endsWith("\\|")) it.dropLast(1) else it }
+    val cells = mutableListOf<String>()
+    val current = StringBuilder()
+    var escaped = false
+    var inCode = false
+    content.forEach { character ->
+        when {
+            escaped -> {
+                current.append(character)
+                escaped = false
+            }
+            character == '\\' -> escaped = true
+            character == '`' -> {
+                inCode = !inCode
+                current.append(character)
+            }
+            character == '|' && !inCode -> {
+                cells += current.toString().trim()
+                current.clear()
+            }
+            else -> current.append(character)
+        }
+    }
+    if (escaped) current.append('\\')
+    cells += current.toString().trim()
+    return cells.takeIf { it.isNotEmpty() }
+}
+
+private fun markdownTableDelimiter(value: String): List<MessageMarkdownAlignment>? {
+    val cells = markdownTableCells(value) ?: return null
+    return cells.map { cell ->
+        val marker = cell.trim()
+        val dashes = marker.trim(':')
+        if (dashes.length < 3 || dashes.any { it != '-' }) return null
+        when {
+            marker.startsWith(':') && marker.endsWith(':') -> MessageMarkdownAlignment.CENTER
+            marker.endsWith(':') -> MessageMarkdownAlignment.END
+            else -> MessageMarkdownAlignment.START
+        }
+    }
 }
 
 @Composable
@@ -171,7 +258,9 @@ internal fun MessageMarkdown(value: String, compact: Boolean) {
     val blocks = remember(value) { parseMessageMarkdown(value) }
     Column(verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 7.dp)) {
         blocks.forEach { block ->
-            if (block.code) {
+            if (block.table != null) {
+                MessageMarkdownTable(block.table)
+            } else if (block.code) {
                 Surface(color = DieterSurfaceHigh, shape = RoundedCornerShape(9.dp), modifier = Modifier.fillMaxWidth()) {
                     Text(
                         block.text,
@@ -191,6 +280,63 @@ internal fun MessageMarkdown(value: String, compact: Boolean) {
                     lineHeight = if (compact) 20.sp else 21.sp,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun MessageMarkdownTable(table: MessageMarkdownTable) {
+    val columnWidths = remember(table) {
+        table.headers.indices.map { column ->
+            val longest = (listOf(table.headers[column]) + table.rows.map { it.getOrElse(column) { "" } })
+                .maxOf { it.length }
+            (longest.coerceIn(8, 24) * 7 + 24).dp
+        }
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(9.dp),
+        modifier = Modifier.fillMaxWidth().testTag("markdown-table")
+            .border(1.dp, DieterOutline, RoundedCornerShape(9.dp)),
+    ) {
+        Column(Modifier.horizontalScroll(rememberScrollState())) {
+            MarkdownTableRow(table.headers, table.alignments, columnWidths, header = true)
+            table.rows.forEach { row ->
+                MarkdownTableRow(row, table.alignments, columnWidths, header = false)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkdownTableRow(
+    values: List<String>,
+    alignments: List<MessageMarkdownAlignment>,
+    widths: List<androidx.compose.ui.unit.Dp>,
+    header: Boolean,
+) {
+    Row(
+        Modifier
+            .background(if (header) DieterSurfaceHigh else MaterialTheme.colorScheme.surface)
+            .drawBehind {
+                drawLine(DieterOutline, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx())
+            },
+        verticalAlignment = Alignment.Top,
+    ) {
+        widths.indices.forEach { column ->
+            val alignment = alignments.getOrElse(column) { MessageMarkdownAlignment.START }
+            Text(
+                markdownInlineText(values.getOrElse(column) { "" }),
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                fontWeight = if (header) FontWeight.SemiBold else FontWeight.Normal,
+                textAlign = when (alignment) {
+                    MessageMarkdownAlignment.START -> TextAlign.Start
+                    MessageMarkdownAlignment.CENTER -> TextAlign.Center
+                    MessageMarkdownAlignment.END -> TextAlign.End
+                },
+                modifier = Modifier.width(widths[column]).padding(horizontal = 10.dp, vertical = 8.dp),
+            )
         }
     }
 }

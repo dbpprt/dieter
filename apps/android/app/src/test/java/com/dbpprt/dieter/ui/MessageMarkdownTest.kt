@@ -35,4 +35,41 @@ class MessageMarkdownTest {
             markdownInlineText("Use `internal/store` and [README](README.md) for **details**.").text,
         )
     }
+
+    @Test
+    fun recognizesPipeTableWithoutSurroundingBlankLines() {
+        val blocks = parseMessageMarkdown(
+            """
+            Snapshot at 21:33 CEST:
+            | Node | CPU | GPU | Unified RAM |
+            |---|---:|:---:|---|
+            | gx10-c674 | ~6% | 96% | 115.7 GiB |
+            | gx10-d6c4 | ~10% | 96% | 114.8 GiB |
+            Available RAM remains low.
+            """.trimIndent(),
+        )
+
+        assertEquals(3, blocks.size)
+        assertEquals("Snapshot at 21:33 CEST:", blocks[0].text)
+        assertEquals(listOf("Node", "CPU", "GPU", "Unified RAM"), blocks[1].table?.headers)
+        assertEquals(
+            listOf(
+                MessageMarkdownAlignment.START,
+                MessageMarkdownAlignment.END,
+                MessageMarkdownAlignment.CENTER,
+                MessageMarkdownAlignment.START,
+            ),
+            blocks[1].table?.alignments,
+        )
+        assertEquals(listOf("gx10-c674", "~6%", "96%", "115.7 GiB"), blocks[1].table?.rows?.first())
+        assertEquals("Available RAM remains low.", blocks[2].text)
+    }
+
+    @Test
+    fun keepsEscapedAndCodeSpanPipesInsideTableCells() {
+        assertEquals(
+            listOf("name", "a|b", "`x|y`"),
+            markdownTableCells("| name | a\\|b | `x|y` |"),
+        )
+    }
 }

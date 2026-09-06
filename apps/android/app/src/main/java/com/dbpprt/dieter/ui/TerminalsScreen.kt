@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -67,7 +66,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterCoral
@@ -101,8 +99,10 @@ fun TerminalsScreen(
 
     Column(
         modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-            .padding(bottom = contentPadding.calculateBottomPadding())
-            .statusBarsPadding(),
+            .padding(
+                top = contentPadding.calculateTopPadding(),
+                bottom = contentPadding.calculateBottomPadding(),
+            ),
     ) {
         TerminalHeader(
             terminalCount = state.terminals.size,
@@ -110,7 +110,6 @@ fun TerminalsScreen(
             loading = state.terminalLoading,
             onRefresh = model::loadTerminals,
             onCreate = model::showTerminalCreate,
-            modifier = Modifier.padding(top = terminalConnectionStatusInset(state.connectionPhase)),
         )
         if (state.terminals.isNotEmpty()) {
             TerminalTabs(
@@ -224,9 +223,6 @@ fun TerminalsScreen(
     }
 }
 
-internal fun terminalConnectionStatusInset(phase: ConnectionPhase) =
-    if (phase == ConnectionPhase.CONNECTED) 0.dp else 64.dp
-
 @Composable
 internal fun TerminalHeader(
     terminalCount: Int,
@@ -237,7 +233,8 @@ internal fun TerminalHeader(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier.fillMaxWidth().padding(start = 18.dp, top = 12.dp, end = 10.dp, bottom = 9.dp),
+        modifier.fillMaxWidth().testTag("terminal-header")
+            .padding(start = 18.dp, top = 12.dp, end = 10.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(color = DieterShell.copy(alpha = 0.12f), shape = RoundedCornerShape(13.dp), modifier = Modifier.size(42.dp)) {

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
@@ -255,8 +256,21 @@ fun DieterApp(container: DieterContainer) {
                 desiredConnected = state.desiredConnected,
                 phase = state.connectionPhase,
             )
+        val globalConnectionStatusVisible =
+            state.connectionPhase != ConnectionPhase.CONNECTED && !workspaceStatusIsInline
         if (state.appSurface != null) {
-            Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                topBar = {
+                    if (globalConnectionStatusVisible) {
+                        ConnectionStatusTopBar(
+                            phase = state.connectionPhase,
+                            lastConnectedAtMillis = state.lastConnectedAtMillis,
+                            showingCachedData = state.hasCachedWorkspace,
+                        )
+                    }
+                },
+            ) { padding ->
                 AppSurfaceContent(state, model, container.appUpdateManager, Modifier.fillMaxSize(), padding)
             }
         } else if (tabletLayout) {
@@ -283,8 +297,21 @@ fun DieterApp(container: DieterContainer) {
                             }
                         },
                     )
-                    Box(Modifier.weight(1f).statusBarsPadding()) {
-                        DestinationContent(state, model, expanded = true)
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        if (globalConnectionStatusVisible) {
+                            ConnectionStatusTopBar(
+                                phase = state.connectionPhase,
+                                lastConnectedAtMillis = state.lastConnectedAtMillis,
+                                showingCachedData = state.hasCachedWorkspace,
+                            )
+                        }
+                        Box(
+                            Modifier.weight(1f).fillMaxWidth().then(
+                                if (globalConnectionStatusVisible) Modifier else Modifier.statusBarsPadding(),
+                            ),
+                        ) {
+                            DestinationContent(state, model, expanded = true)
+                        }
                     }
                 }
             }
@@ -317,6 +344,15 @@ fun DieterApp(container: DieterContainer) {
             }
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
+                topBar = {
+                    if (globalConnectionStatusVisible) {
+                        ConnectionStatusTopBar(
+                            phase = state.connectionPhase,
+                            lastConnectedAtMillis = state.lastConnectedAtMillis,
+                            showingCachedData = state.hasCachedWorkspace,
+                        )
+                    }
+                },
                 bottomBar = {
                     if (!detailVisible) {
                         if (state.navigationStyle == NavigationStyle.GLASS) {
@@ -355,14 +391,6 @@ fun DieterApp(container: DieterContainer) {
                 }
             }
         }
-        if (state.connectionPhase != ConnectionPhase.CONNECTED && !workspaceStatusIsInline) {
-            ConnectionStatusIndicator(
-                phase = state.connectionPhase,
-                lastConnectedAtMillis = state.lastConnectedAtMillis,
-                showingCachedData = state.hasCachedWorkspace,
-                modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top = 6.dp, end = 10.dp),
-            )
-        }
         if (state.connectionDialogVisible) {
             DieterConnectionDialog(state, model)
         }
@@ -389,6 +417,21 @@ fun DieterApp(container: DieterContainer) {
         }
     }
     AppUpdateDialog(container.appUpdateManager)
+}
+
+@Composable
+internal fun ConnectionStatusTopBar(
+    phase: ConnectionPhase,
+    lastConnectedAtMillis: Long?,
+    showingCachedData: Boolean,
+) {
+    ConnectionStatusIndicator(
+        phase = phase,
+        lastConnectedAtMillis = lastConnectedAtMillis,
+        showingCachedData = showingCachedData,
+        modifier = Modifier.fillMaxWidth().statusBarsPadding()
+            .padding(start = 10.dp, top = 6.dp, end = 10.dp, bottom = 4.dp),
+    )
 }
 
 @Composable

@@ -115,6 +115,7 @@ enum ConversationUISmokeRunner {
         capture(window, to: output.appending(path: "03-reasoning-on-again.png"))
         results["reasoning-toggle"] = "passed"
 
+        await runMarkdownTableCheck(store: store, window: window, results: &results, output: output)
         await runPasteChecks(store: store, window: window, results: &results, output: output)
         if cardID == syntheticFixtureID {
             results["history-bounded"] = "skipped: fresh-state renderer fixture"
@@ -127,6 +128,47 @@ enum ConversationUISmokeRunner {
         await runTurnFailureCheck(store: store, window: window, results: &results, output: output)
 
         writeReport(results, to: output)
+    }
+
+    /// Exercises the model-output path with the compact pipe-table shape that
+    /// commonly arrives in final assistant messages, including numeric alignment.
+    private static func runMarkdownTableCheck(
+        store: DieterStore,
+        window: NSWindow,
+        results: inout [String: String],
+        output: URL
+    ) async {
+        guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            results["markdown-table"] = "failed: renderer fixture unavailable"
+            return
+        }
+        var text = Dieter_V1_MessagePart()
+        text.type = "text"
+        text.text = """
+        Snapshot at 21:33 CEST:
+        | Node | CPU | GPU | Unified RAM |
+        |---|---:|---:|---:|
+        | `gx10-c674` | ~6% | 96% | 115.7 / 121.6 GiB |
+        | `gx10-d6c4` | ~10% | 96% | 114.8 / 121.6 GiB |
+        Available RAM remains low.
+        """
+        var assistant = Dieter_V1_UiMessage()
+        assistant.id = "message_markdown_table"
+        assistant.role = "assistant"
+        assistant.parts = [text]
+        snapshot.conversation.messages.append(assistant)
+        store.conversation = snapshot
+        store.selectedDetail = snapshot.detail
+        try? await DieterTaskSleep.seconds(1)
+        capture(window, to: output.appending(path: "03b-markdown-table.png"))
+
+        let tables = ConversationMarkdownParser.parse(text.text).compactMap { block in
+            if case .table(let table) = block { return table }
+            return nil
+        }
+        results["markdown-table"] = tables.first?.rows.count == 2
+            ? "passed"
+            : "failed: model pipe table was not promoted to a table block"
     }
 
     /// Renders the complete terminal failure affordance in the packaged app
@@ -367,10 +409,17 @@ enum ConversationUISmokeRunner {
         store.conversation = snapshot
         store.selectedDetail = snapshot.detail
         store.composerText = "Queue one more follow-up"
-        defer { store.composerText = "" }
+        let originalTheme = store.themeSelection
+        defer {
+            store.composerText = ""
+            store.themeSelection = originalTheme
+        }
 
-        try? await DieterTaskSleep.seconds(1)
-        capture(window, to: output.appending(path: "06b-queued-message.png"))
+        for appearance in [DieterAppearance.light, .dark] {
+            store.themeSelection.appearance = appearance
+            try? await DieterTaskSleep.milliseconds(600)
+            capture(window, to: output.appending(path: "06b-queued-message-\(appearance.rawValue).png"))
+        }
         let delivered = ConversationQueuePresentation.deliveredMessages(
             snapshot.conversation.messages,
             whileQueued: snapshot.conversation.queue

@@ -843,10 +843,13 @@ struct MessageView: View {
                     }
                 }
                 .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)
-                .background(DieterTheme.shellDeep.opacity(0.9), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .background(DieterTheme.userMessageBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(DieterTheme.strongBorder)
+                }
                 .frame(maxWidth: 620, alignment: .trailing)
             }
-            .opacity(store.isPendingMessage(message.id) ? 0.52 : 1)
             .overlay(alignment: .bottomTrailing) {
                 MessageDeliveryReceipt(state: deliveryState)
                     .padding(.trailing, 4)
@@ -894,12 +897,16 @@ private struct QueuedMessageView: View {
         HStack {
             Spacer(minLength: 70)
             VStack(alignment: .leading, spacing: 7) {
-                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-                    MessagePartView(messageID: message.id, part: part, inUserBubble: true)
-                }
-                if canInterrupt {
-                    HStack {
-                        Spacer(minLength: 0)
+                HStack(spacing: 6) {
+                    Image(systemName: "clock.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(DieterTheme.amber)
+                    Text("Queued · sends after this turn")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(DieterTheme.subtle)
+                        .lineLimit(1)
+                    Spacer(minLength: 12)
+                    if canInterrupt {
                         Button {
                             interrupting = true
                             Task { @MainActor in
@@ -913,17 +920,17 @@ private struct QueuedMessageView: View {
                                 if interrupting {
                                     ProgressView().controlSize(.mini)
                                 } else {
-                                    Image(systemName: "stop.fill")
-                                        .font(.system(size: 8, weight: .bold))
+                                    Image(systemName: "paperplane.fill")
+                                        .font(.system(size: 9, weight: .semibold))
                                 }
-                                Text(interrupting ? "Interrupting…" : "Interrupt")
+                                Text(interrupting ? "Sending…" : "Send now")
                                     .font(.system(size: 11, weight: .semibold))
                             }
-                            .foregroundStyle(DieterTheme.coral)
+                            .foregroundStyle(DieterTheme.userMessageForeground)
                             .padding(.horizontal, 9)
                             .frame(height: 25)
-                            .background(DieterTheme.coral.opacity(0.1), in: Capsule())
-                            .overlay(Capsule().stroke(DieterTheme.coral.opacity(0.24)))
+                            .background(DieterTheme.surface, in: Capsule())
+                            .overlay(Capsule().stroke(DieterTheme.strongBorder))
                         }
                         .buttonStyle(.plain)
                         .disabled(interrupting)
@@ -932,19 +939,17 @@ private struct QueuedMessageView: View {
                         .accessibilityIdentifier("conversation.queued-message.interrupt.\(message.id)")
                     }
                 }
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    MessagePartView(messageID: message.id, part: part, inUserBubble: true)
+                }
             }
             .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)
-            .background(DieterTheme.shellDeep.opacity(0.72), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(DieterTheme.userMessageBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(DieterTheme.amber.opacity(0.45))
+                    .stroke(DieterTheme.strongBorder)
             }
             .frame(maxWidth: 620, alignment: .trailing)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            MessageDeliveryReceipt(state: .queued)
-                .padding(.trailing, 4)
-                .padding(.bottom, 4)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation.queued-message.\(message.id)")
@@ -1157,10 +1162,7 @@ struct MessagePartView: View {
             }
         default:
             if !part.text.isEmpty {
-                Text(ConversationRenderCache.markdown(part.text))
-                    .font(.system(size: 13))
-                    .foregroundStyle(inUserBubble ? Color.white : DieterTheme.text)
-                    .lineSpacing(4)
+                ConversationMarkdownView(source: part.text, inUserBubble: inUserBubble)
             }
         }
     }
@@ -1593,10 +1595,19 @@ private struct ConversationComposer: View {
         VStack(spacing: 8) {
             if let queue = store.conversation?.conversation.queue, !queue.isEmpty {
                 HStack(spacing: 7) {
-                    Image(systemName: "clock").font(.caption)
-                    Text("\(queue.count) queued message\(queue.count == 1 ? "" : "s")").font(.caption)
-                    Spacer(); Text("Delivered after this turn").font(.caption2)
-                }.foregroundStyle(DieterTheme.amber)
+                    Image(systemName: "clock.fill")
+                        .font(.caption)
+                        .foregroundStyle(DieterTheme.amber)
+                    Text("\(queue.count) message\(queue.count == 1 ? "" : "s") queued")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(DieterTheme.text)
+                    Text("Sends after the current turn")
+                        .font(.caption2)
+                        .foregroundStyle(DieterTheme.subtle)
+                    Spacer()
+                }
+                .padding(.horizontal, 4)
+                .accessibilityElement(children: .combine)
             }
             VStack(alignment: .leading, spacing: 0) {
                 TextField("Message the local agent…", text: $store.composerText, axis: .vertical)

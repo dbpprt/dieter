@@ -24,6 +24,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Archive
@@ -58,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -69,6 +76,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -76,12 +84,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.dbpprt.dieter.connection.isActiveRuntime
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterShellDeep
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterPane
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
+import com.dbpprt.dieter.ui.theme.DieterRunning
 import com.dbpprt.dieter.v1.Card as BoardCard
 import com.dbpprt.dieter.v1.Project
 import com.dbpprt.dieter.ui.theme.DieterShellTint
@@ -286,6 +296,7 @@ internal fun ChatRow(
     var actionsOpen by remember(chat.id) { mutableStateOf(false) }
     var renameOpen by remember(chat.id) { mutableStateOf(false) }
     var renameText by remember(chat.id, chat.title) { mutableStateOf(chat.title) }
+    val running = isActiveRuntime(chat.runtime)
     Surface(
         color = if (chat.pinned) DieterSurface else Color.Transparent,
         shape = RoundedCornerShape(16.dp),
@@ -297,6 +308,7 @@ internal fun ChatRow(
             .semantics {
                 contentDescription = buildString {
                     append(chat.title.ifBlank { "Untitled chat" })
+                    append(if (running) "; running" else "; not running")
                     append("; long press for actions")
                     if (chat.pinned) append("; use the drag handle to reorder")
                 }
@@ -312,36 +324,7 @@ internal fun ChatRow(
                     .padding(horizontal = 12.dp, vertical = if (chat.pinned) 13.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (chat.pinned) {
-                    Surface(shape = CircleShape, color = DieterShellTint, modifier = Modifier.size(36.dp)) {
-                        Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.PushPin, null, tint = DieterShell, modifier = Modifier.size(17.dp)) }
-                    }
-                } else {
-                    Box(
-                        Modifier.size(10.dp).border(1.dp, if (chat.runtime.contains("running", true)) DieterShell else DieterMuted, CircleShape)
-                            .then(if (chat.runtime.contains("running", true)) Modifier.background(DieterShell, CircleShape) else Modifier),
-                    )
-                }
-                Spacer(Modifier.width(14.dp))
-                Text(
-                    chat.title.ifBlank { "Untitled chat" },
-                    fontSize = 14.sp,
-                    fontWeight = if (chat.runtime.contains("running", true)) FontWeight.SemiBold else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(if (chat.pinned) 12.dp else 8.dp))
-                Text(shortTimestamp(chat.lastActivityAt.ifBlank { chat.updatedAt }), color = DieterMuted, fontSize = 11.sp)
-                if (chat.pinned) {
-                    Spacer(Modifier.width(8.dp))
-                    Icon(
-                        Icons.Outlined.DragHandle,
-                        contentDescription = "Drag pinned chat to reorder",
-                        tint = DieterMuted,
-                        modifier = dragHandleModifier.size(32.dp).padding(6.dp),
-                    )
-                }
+                ChatRowContent(chat, running, dragHandleModifier)
             }
             DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
                 DropdownMenuItem(
@@ -393,6 +376,106 @@ internal fun ChatRow(
                     },
                 ) { Text("Rename") }
             },
+        )
+    }
+}
+
+@Composable
+internal fun RowScope.ChatRowContent(
+    chat: BoardCard,
+    running: Boolean,
+    dragHandleModifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = CircleShape,
+        color = if (chat.pinned) DieterShellTint else DieterSurfaceHigh,
+        modifier = Modifier.size(36.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                if (chat.pinned) Icons.Outlined.PushPin else Icons.Outlined.ChatBubbleOutline,
+                contentDescription = null,
+                tint = if (running || chat.pinned) DieterShell else DieterMuted,
+                modifier = Modifier.size(17.dp),
+            )
+        }
+    }
+    Spacer(Modifier.width(14.dp))
+    Column(Modifier.weight(1f)) {
+        Text(
+            chat.title.ifBlank { "Untitled chat" },
+            fontSize = 14.sp,
+            fontWeight = if (running) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(2.dp))
+        ChatRuntimeStatus(
+            running = running,
+            modifier = Modifier.testTag("chat-runtime-${chat.id}"),
+        )
+    }
+    Spacer(Modifier.width(8.dp))
+    Text(shortTimestamp(chat.lastActivityAt.ifBlank { chat.updatedAt }), color = DieterMuted, fontSize = 11.sp)
+    if (chat.pinned) {
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            Icons.Outlined.DragHandle,
+            contentDescription = "Drag pinned chat to reorder",
+            tint = DieterMuted,
+            modifier = dragHandleModifier.size(32.dp).padding(6.dp),
+        )
+    }
+}
+
+@Composable
+internal fun ChatRuntimeStatus(
+    running: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val status = if (running) "Running" else "Not running"
+    val transition = if (running) rememberInfiniteTransition(label = "chat-running") else null
+    val pulseScale = transition?.animateFloat(
+        initialValue = 1f,
+        targetValue = 2.1f,
+        animationSpec = infiniteRepeatable(tween(1_150, easing = FastOutSlowInEasing)),
+        label = "chat-running-pulse-scale",
+    )?.value ?: 1f
+    val pulseAlpha = transition?.animateFloat(
+        initialValue = 0.48f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(tween(1_150, easing = LinearEasing)),
+        label = "chat-running-pulse-alpha",
+    )?.value ?: 0f
+
+    Row(
+        modifier.semantics(mergeDescendants = true) {
+            contentDescription = "Chat is ${status.lowercase()}"
+            stateDescription = status
+        },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+            if (running) {
+                Box(
+                    Modifier.size(7.dp).scale(pulseScale).alpha(pulseAlpha)
+                        .background(DieterRunning, CircleShape),
+                )
+                Box(Modifier.size(7.dp).background(DieterRunning, CircleShape))
+            } else {
+                Box(
+                    Modifier.size(7.dp).background(DieterMuted.copy(alpha = 0.12f), CircleShape)
+                        .border(1.dp, DieterMuted.copy(alpha = 0.82f), CircleShape),
+                )
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            status,
+            color = if (running) DieterRunning else DieterMuted,
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
+            fontWeight = if (running) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
 }

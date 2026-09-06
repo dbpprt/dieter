@@ -2,10 +2,10 @@ package com.dbpprt.dieter.ui
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
@@ -80,27 +80,22 @@ class WorkspaceFreshnessIndicatorTest {
     }
 
     @Test
-    fun disconnectedTerminalHeaderClearsTheFloatingConnectionStatus() {
+    fun disconnectedTerminalHeaderFollowsTheConnectionStatusTopBar() {
         composeRule.setContent {
             DieterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    Box(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize()) {
+                        ConnectionStatusTopBar(
+                            phase = ConnectionPhase.AUTH_REQUIRED,
+                            lastConnectedAtMillis = null,
+                            showingCachedData = false,
+                        )
                         TerminalHeader(
                             terminalCount = 0,
                             connected = false,
                             loading = false,
                             onRefresh = {},
                             onCreate = {},
-                            modifier = Modifier.statusBarsPadding().padding(
-                                top = terminalConnectionStatusInset(ConnectionPhase.AUTH_REQUIRED),
-                            ),
-                        )
-                        ConnectionStatusIndicator(
-                            phase = ConnectionPhase.AUTH_REQUIRED,
-                            lastConnectedAtMillis = null,
-                            showingCachedData = false,
-                            modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding()
-                                .padding(top = 6.dp, end = 10.dp),
                         )
                     }
                 }
@@ -109,8 +104,17 @@ class WorkspaceFreshnessIndicatorTest {
 
         val statusBottom = composeRule.onNodeWithTag("workspace-connection-status")
             .fetchSemanticsNode().boundsInRoot.bottom
-        val headerTop = composeRule.onNodeWithText("Terminals")
+        val headerTop = composeRule.onNodeWithTag("terminal-header")
             .fetchSemanticsNode().boundsInRoot.top
         assertTrue("Connection status overlaps the terminal header", headerTop >= statusBottom)
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val screenshot = File(requireNotNull(context.getExternalFilesDir(null)), "connection-status-terminal-layout.png")
+        val pendingScreenshot = File(screenshot.parentFile, "connection-status-terminal-layout.pending")
+        pendingScreenshot.outputStream().use { output ->
+            assertTrue(composeRule.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
+        }
+        screenshot.delete()
+        assertTrue(pendingScreenshot.renameTo(screenshot))
     }
 }

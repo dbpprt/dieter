@@ -85,6 +85,24 @@ struct DieterThemePerformanceTests {
         continuation.finish()
     }
 
+    @Test @MainActor func outgoingMessagesKeepEnhancedContrastInEveryTheme() throws {
+        defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+
+        for palette in DieterPalette.allCases {
+            for scheme in [ColorScheme.light, .dark] {
+                DieterTheme.install(palette: palette, colorScheme: scheme)
+                let foreground = try #require(NSColor(DieterTheme.userMessageForeground).usingColorSpace(.sRGB))
+                let background = try #require(NSColor(DieterTheme.userMessageBackground).usingColorSpace(.sRGB))
+                let ratio = contrastRatio(foreground, background)
+
+                #expect(
+                    ratio >= 7,
+                    "\(palette.rawValue) \(scheme) outgoing-message contrast was only \(ratio):1"
+                )
+            }
+        }
+    }
+
     @Test @MainActor func productionChatListWithManyRunningRowsSettlesInAHostedView() throws {
         let fixture = makeProductionChatListFixture()
         let view = NSHostingView(rootView: productionChatList(store: fixture.store))
@@ -387,5 +405,23 @@ struct DieterThemePerformanceTests {
             }
         }
         return result == KERN_SUCCESS ? info.phys_footprint : 0
+    }
+
+    private func contrastRatio(_ first: NSColor, _ second: NSColor) -> CGFloat {
+        let firstLuminance = relativeLuminance(first)
+        let secondLuminance = relativeLuminance(second)
+        return (max(firstLuminance, secondLuminance) + 0.05) /
+            (min(firstLuminance, secondLuminance) + 0.05)
+    }
+
+    private func relativeLuminance(_ color: NSColor) -> CGFloat {
+        func linearize(_ component: CGFloat) -> CGFloat {
+            component <= 0.04045
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+        return (0.2126 * linearize(color.redComponent)) +
+            (0.7152 * linearize(color.greenComponent)) +
+            (0.0722 * linearize(color.blueComponent))
     }
 }

@@ -226,6 +226,8 @@ private struct DieterThemeTokens {
     let text: Color
     let subtle: Color
     let tertiary: Color
+    let userMessageBackground: Color
+    let userMessageForeground: Color
     let shellDeep: Color
     let shell: Color
     let primary: Color
@@ -252,6 +254,8 @@ private struct DieterThemeTokens {
         text = Color(rgb: dark ? colors.light : colors.darkBrand)
         subtle = Color(rgb: dark ? colors.darkSubtle : colors.lightSubtle)
         tertiary = Color(rgb: dark ? colors.darkTertiary : colors.lightTertiary)
+        userMessageBackground = Color(rgb: dark ? colors.darkRaised : colors.lightRaised)
+        userMessageForeground = Color(rgb: dark ? colors.light : colors.darkBrand)
         shellDeep = Color(rgb: colors.shellEnd)
         shell = Color(rgb: dark ? colors.shellStart : colors.shellEnd)
         primary = Color(rgb: dark ? colors.shellStart : colors.shellEnd)
@@ -349,6 +353,9 @@ enum DieterTheme {
     static var text: Color { state.colors.text }
     static var subtle: Color { state.colors.subtle }
     static var tertiary: Color { state.colors.tertiary }
+    /// A restrained outgoing-message surface that stays legible in every palette.
+    static var userMessageBackground: Color { state.colors.userMessageBackground }
+    static var userMessageForeground: Color { state.colors.userMessageForeground }
     static var shellDeep: Color { state.colors.shellDeep }
     static var shell: Color { state.colors.shell }
     static var primary: Color { state.colors.primary }
