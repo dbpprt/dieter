@@ -229,6 +229,47 @@ func TestConversationCardLifecycle(t *testing.T) {
 	}
 }
 
+func TestNewCardsSnapshotBoardGitDefaults(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	if _, err := s.UpdateProjectWorkspaceSettings(project.ID, "origin", "main", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateBoardGitSettings(board.ID, "private", model.RemotePublishPullRequest); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.CreateCard(CreateCardInput{
+		Project: project.ID, Board: board.ID, Title: "First", WorkspaceMode: model.WorkspaceModeWorktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.WorkspaceBaseRemote != "private" || first.RemotePublishMode != model.RemotePublishPullRequest {
+		t.Fatalf("first card did not snapshot board defaults: %#v", first)
+	}
+	if _, err := s.UpdateBoardGitSettings(board.ID, "origin", model.RemotePublishPushBase); err != nil {
+		t.Fatal(err)
+	}
+	first, err = s.ResolveCard(first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.WorkspaceBaseRemote != "private" || first.RemotePublishMode != model.RemotePublishPullRequest {
+		t.Fatalf("existing card changed with board defaults: %#v", first)
+	}
+	second, err := s.CreateCard(CreateCardInput{
+		Project: project.ID, Board: board.ID, Title: "Second", WorkspaceMode: model.WorkspaceModeWorktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.WorkspaceBaseRemote != "origin" || second.RemotePublishMode != model.RemotePublishPushBase {
+		t.Fatalf("second card did not snapshot updated defaults: %#v", second)
+	}
+	if _, err := s.UpdateBoardGitSettings(board.ID, "private", "unexpected"); err == nil {
+		t.Fatal("invalid remote publish mode was accepted")
+	}
+}
+
 func TestConversationEventDoesNotOverwriteConcurrentLaneMove(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{
@@ -1099,5 +1140,40 @@ func TestGlobalStateCacheAdvancesWithSyncCursor(t *testing.T) {
 	second, err := s.GlobalState()
 	if err != nil || len(second.Cards) != 2 {
 		t.Fatalf("updated global state = %#v, %v", second, err)
+	}
+}
+
+func TestRemoveQueuedConversationMessagePreservesContentAndReplay(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	card, err := s.CreateCard(CreateCardInput{
+		Project: project.ID, Board: board.ID, ID: "card_queue_edit", Title: "Queue editing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := []model.UIMessagePart{
+		{Type: "text", Text: "Revise this follow-up"},
+		{Type: "file", Filename: "context.txt", MediaType: "text/plain", URL: "data:text/plain;base64,Y29udGV4dA=="},
+	}
+	queued, _, err := s.QueueConversationMessagePartsWithID(card.ID, "message_queue_edit", parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed, conversation, err := s.RemoveQueuedConversationMessage(card.ID, queued.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed.ID != queued.ID || removed.Text != "Revise this follow-up" || len(removed.Parts) != 2 || len(conversation.Queue) != 0 {
+		t.Fatalf("removed=%#v conversation=%#v", removed, conversation)
+	}
+	replayed, err := New(s.Root).Conversation(card.ID)
+	if err != nil || len(replayed.Queue) != 0 {
+		t.Fatalf("replayed queue=%#v err=%v", replayed.Queue, err)
+	}
+	if _, err := s.StartQueuedConversationTurnParts(card.ID, "turn_removed", "message_removed", queued.ID, parts); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("starting removed queued message error=%v", err)
+	}
+	if _, _, err := s.RemoveQueuedConversationMessage(card.ID, queued.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("removing queued message twice error=%v", err)
 	}
 }

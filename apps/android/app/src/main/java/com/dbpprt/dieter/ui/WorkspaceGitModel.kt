@@ -118,6 +118,7 @@ data class WorkspaceActionAvailability(
     val dirty: Boolean = false,
     val workspaceBranch: String = "",
     val baseBranch: String = "",
+    val remotePublishMode: String = "manual",
 ) {
     /**
      * The merge flow opens in more states than the raw merge_local gate: a dirty
@@ -126,7 +127,8 @@ data class WorkspaceActionAvailability(
      */
     val allowsMergeFlow: Boolean
         get() {
-            if (agentActive || operationActive || workspaceMode != "worktree") return false
+            if (agentActive || operationActive || workspaceMode != "worktree" || remotePublishMode == "pull_request") return false
+            if (remotePublishMode == "push_base" && !hasRemote) return false
             return hasCommits || changedFiles > 0 || workspaceState == "conflicted"
         }
 
@@ -141,10 +143,10 @@ data class WorkspaceActionAvailability(
         return when (kind) {
             GitOperationKinds.COMMIT -> dirty || changedFiles > 0
             GitOperationKinds.UPDATE, GitOperationKinds.VALIDATE -> true
-            GitOperationKinds.MERGE_LOCAL -> workspaceMode == "worktree" && hasCommits && changedFiles == 0
+            GitOperationKinds.MERGE_LOCAL -> workspaceMode == "worktree" && hasCommits && changedFiles == 0 && remotePublishMode != "pull_request"
             GitOperationKinds.PUSH -> hasReviewBranch && hasRemote && hasCommits
             GitOperationKinds.CREATE_PR ->
-                hasReviewBranch && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest
+                hasReviewBranch && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest && remotePublishMode != "push_base"
             GitOperationKinds.REFRESH_PR, GitOperationKinds.MERGE_PR -> hasPullRequest && scmAuthenticated
             GitOperationKinds.CONTINUE_CONFLICT, GitOperationKinds.ABORT_CONFLICT -> false
             GitOperationKinds.ADOPT -> workspaceMode == "worktree"
@@ -293,6 +295,9 @@ fun workspaceActionAvailability(card: Card?, review: WorkspaceReviewState): Work
         dirty = workspace?.dirty == true,
         workspaceBranch = workspace?.branch ?: summary?.branch.orEmpty(),
         baseBranch = workspace?.baseBranch ?: summary?.baseBranch.orEmpty(),
+        remotePublishMode = workspace?.remotePublishMode?.ifBlank { null }
+            ?: card?.remotePublishMode?.ifBlank { null }
+            ?: "manual",
     )
 }
 

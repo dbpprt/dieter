@@ -12,7 +12,7 @@ import { tool, toUIMessageStream } from 'ai';
 import { z } from 'zod';
 import { createLocalSandboxProvider } from './local-sandbox.mjs';
 import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
-import { dshACPArgs, dshPackageVersion, ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
+import { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
 import { createMessageMetadataTracker } from './usage-metadata.mjs';
 import {
@@ -141,7 +141,12 @@ if (request.harness === 'mock') {
 let harness;
 switch (adapter) {
   case 'codex':
-    harness = createCodex({ model: request.model || undefined, reasoningEffort: request.effort || undefined, webSearch: request.webSearch === true });
+    harness = createCodex({
+      model: request.model || undefined,
+      reasoningEffort: request.effort || undefined,
+      webSearch: request.webSearch === true,
+      codexConfig: codexConfig(request),
+    });
     break;
   case 'claude-code':
     harness = createClaudeCode({ model: request.model || undefined, effort: request.effort || undefined });

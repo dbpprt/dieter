@@ -74,6 +74,10 @@ dieter card send --message "Inspect these inputs." \
   --attach screenshot.png --attach notes.pdf <card-id>
 ```
 
+When `--effort` is omitted for a new card or chat, Dieter uses that model's
+`defaultEffort` from the harness registry. Pass `--effort default` to defer to
+the provider's native default instead.
+
 Use `card poll` for one bounded update and `card watch` for JSON Lines streaming.
 Fetch a large tool payload separately with `card tool-output` when the transcript
 contains only its bounded preview.
@@ -105,7 +109,9 @@ Paths passed to project commands are paths on the targeted daemon host:
 ```sh
 dieter project directories /path/on/daemon
 dieter project open --prompt-file prompt.md /path/on/daemon/repo
-dieter board create --project <project-id> --name Delivery --workflow review
+dieter board create --project <project-id> --name Delivery --workflow review \
+  --base-remote origin --remote-publish pull_request
+dieter board git --base-remote private --remote-publish push_base <board-id>
 dieter card create --project <project-id> --board <board-id> \
   --lane todo --title "Implement recovery" --prompt-file task.md \
   --workspace worktree --format id
@@ -117,9 +123,21 @@ dieter card create --project <project-id> --board <board-id> \
   --workspace worktree --format id
 ```
 
+Harness-defined options use repeatable `--provider-option KEY=VALUE` flags.
+For example, Codex chats and tasks using GPT-5.4, GPT-5.5, GPT-5.6, or GPT-6
+Astra can select Fast mode with `--provider-option fast_mode=true`; schedules
+accept the same option and apply it to every task they create. GPT-5.3 Codex
+and Spark do not support this option.
+
 `card start` admits a draft's first turn. `card send` admits a human follow-up.
 Both return without waiting for the agent to finish. Do not replay either just
 because the client disconnected; inspect the card and conversation first.
+Messages sent during an active turn are queued in order. Remove one that has
+not started yet—and receive its complete text and attachments as JSON—with:
+
+```sh
+dieter card queue remove --message <message-id> <card-id>
+```
 
 Boards own their labels. Use label IDs for filtering and assignment:
 
@@ -194,6 +212,12 @@ Worktree targets additionally support `update`, `continue_conflict`,
 `abort_conflict`, `merge_local`, `push`, `cleanup`, `discard`, `adopt`,
 `create_pr`, `refresh_pr`, and `merge_pr`. Inspect help and current state before
 destructive or externally visible Git operations.
+
+New board cards snapshot the board's configured remote and publish mode. The
+`manual` mode preserves explicit local merge, branch push, and PR choices;
+`pull_request` prevents a local base merge; and `push_base` publishes the
+validated integration result to the configured base branch during
+`merge_local`. Existing conversations keep their snapshotted values.
 
 ## Run commands on a daemon host
 

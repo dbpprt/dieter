@@ -11,7 +11,9 @@ import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.SendMessageRequest
 import com.dbpprt.dieter.v1.StartCardRequest
 import com.dbpprt.dieter.v1.UiMessage
+import com.google.protobuf.ByteString
 import io.grpc.Status
+import java.time.Instant
 
 internal fun isServerConversationId(id: String): Boolean = !id.startsWith("local_")
 
@@ -183,42 +185,78 @@ internal fun overlayOptimisticMessages(
 ): ConversationSnapshot {
     val cardId = snapshot.detail.card.id.ifBlank { snapshot.conversation.cardId }
     if (cardId.isBlank()) return snapshot
-    val conversation = snapshot.conversation.toBuilder()
-    var changed = false
-    entries.forEach { entry ->
-        val optimistic = when (entry.kind) {
+
+    data class Candidate(
+        val entry: AndroidOutboxEntry,
+        val message: UiMessage,
+        val suppressWhenUserMessageExists: Boolean,
+    )
+
+    val ownedIds = mutableSetOf<String>()
+    val candidates = entries.mapNotNull { entry ->
+        val candidate = when (entry.kind) {
             OutboxKind.SEND_MESSAGE -> {
                 val request = runCatching { SendMessageRequest.parseFrom(entry.request) }.getOrNull()
-                    ?: return@forEach
-                if (request.cardId != cardId || snapshot.conversation.queueList.any { it.id == entry.optimisticId }) {
-                    return@forEach
-                }
-                UiMessage.newBuilder()
+                    ?: return@mapNotNull null
+                if (request.cardId != cardId) return@mapNotNull null
+                ownedIds += entry.optimisticId
+                if (snapshot.conversation.queueList.any { it.id == entry.optimisticId }) return@mapNotNull null
+                Candidate(entry, UiMessage.newBuilder()
                     .setId(entry.optimisticId)
                     .setRole("user")
+                    .setMetadataJson(optimisticMessageMetadata(entry.createdAtMillis))
                     .addAllParts(request.partsList)
-                    .build()
+                    .build(), false)
             }
             OutboxKind.CREATE_CHAT -> {
-                if (optimisticConversationId(entry) != cardId) return@forEach
+                if (optimisticConversationId(entry) != cardId) return@mapNotNull null
                 val request = runCatching { CreateConversationRequest.parseFrom(entry.request) }.getOrNull()
-                    ?: return@forEach
-                optimisticChatMessage(request, "${entry.optimisticId}_initial") ?: return@forEach
+                    ?: return@mapNotNull null
+                val optimistic = optimisticChatMessage(request, "${entry.optimisticId}_initial")
+                    ?: return@mapNotNull null
+                ownedIds += optimistic.id
+                Candidate(
+                    entry,
+                    optimistic.toBuilder()
+                        .setMetadataJson(optimisticMessageMetadata(entry.createdAtMillis))
+                        .build(),
+                    true,
+                )
             }
-            OutboxKind.CREATE_CARD -> return@forEach
-            OutboxKind.START_CARD -> return@forEach
+            OutboxKind.CREATE_CARD -> return@mapNotNull null
+            OutboxKind.START_CARD -> return@mapNotNull null
         }
-        val alreadyVisible = conversation.messagesList.any { message ->
-            message.id == optimistic.id ||
-                entry.kind == OutboxKind.CREATE_CHAT && message.isUserMessage()
-        }
-        if (!alreadyVisible) {
-            conversation.addMessages(optimistic)
-            changed = true
-        }
+        candidate
     }
-    return if (changed) snapshot.toBuilder().setConversation(conversation).build() else snapshot
+    if (ownedIds.isEmpty()) return snapshot
+
+    val messages = snapshot.conversation.messagesList.filterNot { it.id in ownedIds }.toMutableList()
+    candidates.sortedWith(compareBy<Candidate> { it.entry.createdAtMillis }.thenBy { it.entry.commandId })
+        .forEach { candidate ->
+            if (candidate.suppressWhenUserMessageExists && messages.any(UiMessage::isUserMessage)) return@forEach
+            val insertionIndex = messages.indexOfFirst { message ->
+                messageCreatedAtMillis(message)?.let { it > candidate.entry.createdAtMillis } == true
+            }.let { if (it < 0) messages.size else it }
+            messages.add(insertionIndex, candidate.message)
+        }
+
+    if (messages == snapshot.conversation.messagesList) return snapshot
+    return snapshot.toBuilder()
+        .setConversation(snapshot.conversation.toBuilder().clearMessages().addAllMessages(messages))
+        .build()
 }
+
+private fun optimisticMessageMetadata(createdAtMillis: Long): ByteString =
+    ByteString.copyFromUtf8("{\"createdAt\":\"${Instant.ofEpochMilli(createdAtMillis)}\"}")
+
+private fun messageCreatedAtMillis(message: UiMessage): Long? = runCatching {
+    val value = Regex("\"createdAt\"\\s*:\\s*\"([^\"]+)\"")
+        .find(message.metadataJson.toStringUtf8())
+        ?.groupValues
+        ?.get(1)
+        ?: return null
+    Instant.parse(value).toEpochMilli()
+}.getOrNull()
 
 /** True only once the accepted mutation is represented by durable sync data. */
 internal fun outboxEntryIsSynced(

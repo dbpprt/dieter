@@ -204,11 +204,13 @@ extension DieterStore {
         let projection = OptimisticCardProjection.reconcile(
             cards: global.cards,
             moves: pendingCardMoves,
-            labels: pendingCardLabelUpdates
+            labels: pendingCardLabelUpdates,
+            starts: pendingCardStarts
         )
         global.cards = projection.cards
         pendingCardMoves = projection.moves
         pendingCardLabelUpdates = projection.labels
+        pendingCardStarts = projection.starts
         movingCardIDs = Set(projection.moves.keys)
         labelUpdatingCardIDs = Set(projection.labels.keys)
         for card in global.cards + global.chats {
@@ -394,17 +396,14 @@ extension DieterStore {
                     navigationCards[card.projectID, default: []].append(card)
                 }
             case .sendMessage:
-                guard let request = try? Dieter_V1_SendMessageRequest(serializedBytes: entry.request),
-                      (selectedCardID ?? selectedChatID) == request.cardID,
-                      var snapshot = conversation,
-                      !snapshot.conversation.messages.contains(where: { $0.id == entry.optimisticID }) else { continue }
-                var message = Dieter_V1_UiMessage()
-                message.id = entry.optimisticID
-                message.role = "user"
-                message.parts = request.parts
-                snapshot.conversation.messages.append(message)
-                conversation = snapshot
+                continue
             }
+        }
+        if let snapshot = conversation {
+            conversation = DieterOutboxPolicy.overlayOptimisticMessages(
+                snapshot,
+                entries: syncDiskState.outbox
+            )
         }
     }
 
@@ -657,6 +656,9 @@ extension DieterStore {
             snapshot.conversation.messages.removeAll { messageIDs.contains($0.id) }
             conversation = snapshot
         }
+        if !messageIDs.isEmpty {
+            olderConversationMessages.removeAll { messageIDs.contains($0.id) }
+        }
     }
 
     @discardableResult
@@ -787,11 +789,13 @@ extension DieterStore {
         let cardProjection = OptimisticCardProjection.reconcile(
             cards: next.cards,
             moves: pendingCardMoves,
-            labels: pendingCardLabelUpdates
+            labels: pendingCardLabelUpdates,
+            starts: pendingCardStarts
         )
         next.cards = cardProjection.cards
         pendingCardMoves = cardProjection.moves
         pendingCardLabelUpdates = cardProjection.labels
+        pendingCardStarts = cardProjection.starts
         movingCardIDs = Set(cardProjection.moves.keys)
         labelUpdatingCardIDs = Set(cardProjection.labels.keys)
         for card in next.cards + next.chats {

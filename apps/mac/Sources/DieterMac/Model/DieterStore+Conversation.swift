@@ -65,6 +65,7 @@ extension DieterStore {
         }
         selectedCardID = opensChat ? nil : cardID
         selectedChatID = opensChat ? cardID : nil
+        if opensChat { lastUsedChatID = cardID }
         if opensChat { newChatProjectID = "" }
         resetConversationHistory()
         conversationTask?.cancel()
@@ -191,11 +192,15 @@ extension DieterStore {
         refreshedAt: Date? = Date(),
         cache: Bool = true
     ) async {
-        if conversation != snapshot {
-            resetConversationHistory(from: snapshot)
-            conversation = snapshot
+        let presented = DieterOutboxPolicy.overlayOptimisticMessages(
+            snapshot,
+            entries: syncDiskState.outbox
+        )
+        if conversation != presented {
+            resetConversationHistory(from: presented)
+            conversation = presented
         }
-        if selectedDetail != snapshot.detail { selectedDetail = snapshot.detail }
+        if selectedDetail != presented.detail { selectedDetail = presented.detail }
         conversationLoading = false
         conversationSyncing = false
         conversationLastRefreshedAt = refreshedAt
@@ -203,8 +208,11 @@ extension DieterStore {
         composerModel = snapshot.detail.card.model
         composerEffort = snapshot.detail.card.effort
         let selectedHarness = harnessCatalog.harnesses.first { $0.id == composerProvider }
-        composerProviderOptions = ProviderOptionValues.defaults(for: selectedHarness)
-        composerProviderOptions.merge(snapshot.detail.card.providerOptions) { _, saved in saved }
+        composerProviderOptions = ProviderOptionValues.normalized(
+            for: selectedHarness,
+            model: composerModel,
+            saved: snapshot.detail.card.providerOptions
+        )
         if chat, let card = chats.first(where: { $0.id == snapshot.detail.card.id }) { markChatRead(card) }
         if cache, let refreshedAt {
             await cacheConversation(snapshot, endpointID: endpoint.id, refreshedAt: refreshedAt)
@@ -336,7 +344,10 @@ extension DieterStore {
             } else {
                 olderConversationMessages = []
             }
-            conversation = update.snapshot
+            conversation = DieterOutboxPolicy.overlayOptimisticMessages(
+                update.snapshot,
+                entries: syncDiskState.outbox
+            )
             selectedDetail = update.snapshot.detail
             if olderConversationMessages.isEmpty {
                 conversationHistoryStart = Int(update.snapshot.page.start)
@@ -377,7 +388,10 @@ extension DieterStore {
             }
             conversationHistoryTotal = max(conversationHistoryTotal, Int(update.page.total))
         }
-        conversation = snapshot
+        conversation = DieterOutboxPolicy.overlayOptimisticMessages(
+            snapshot,
+            entries: syncDiskState.outbox
+        )
     }
 
     func sendComposer() async {
@@ -413,6 +427,32 @@ extension DieterStore {
             composerText = text
             composerAttachments = attachments
             show(error)
+        }
+    }
+
+    /// Dequeues a not-yet-started message. Editing restores its text and every
+    /// attachment ahead of any draft already in the composer, so neither
+    /// queued nor in-progress input is lost.
+    @discardableResult
+    func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage, edit: Bool) async -> Bool {
+        guard let cardID = selectedCardID ?? selectedChatID, let rpc else { return false }
+        do {
+            let removed = try await rpc.removeQueuedMessage(cardID: cardID, messageID: message.id)
+            guard (selectedCardID ?? selectedChatID) == cardID else { return false }
+            if var snapshot = conversation {
+                snapshot.conversation.queue.removeAll { $0.id == removed.id }
+                conversation = snapshot
+            }
+            if edit {
+                let draft = ConversationQueuePresentation.editableDraft(for: removed)
+                let currentText = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+                composerText = [draft.text, currentText].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                composerAttachments = draft.attachments + composerAttachments
+            }
+            return true
+        } catch {
+            show(error)
+            return false
         }
     }
 
@@ -741,6 +781,64 @@ extension DieterStore {
                 state = next
             }
             show(error)
+        }
+    }
+
+    func start(_ card: Dieter_V1_Card) async {
+        guard await ensureProjectConnection(card.projectID) else { return }
+        guard let client = cardStartRPCOverride ?? rpc else { return }
+        let current = state.cards.first(where: { $0.id == card.id }) ?? card
+        let board = board(id: current.boardID)
+        let hasDraftAttachments = conversation?.detail.card.id == current.id &&
+            !(conversation?.conversation.draftAttachments.isEmpty ?? true)
+        guard let optimistic = BoardCardStartPolicy.optimisticCard(
+            current,
+            board: board,
+            hasDraftAttachments: hasDraftAttachments
+        ), pendingCardStarts[current.id] == nil else { return }
+
+        let operationID = UUID()
+        pendingCardStarts[current.id] = .init(
+            operationID: operationID,
+            runningLaneID: optimistic.lane
+        )
+        applyBoardCardMutation(optimistic)
+
+        var request = Dieter_V1_StartCardRequest()
+        request.cardID = current.id
+        request.clientID = syncClientID
+        request.commandID = UUID().uuidString.lowercased()
+        do {
+            let response = try await client.startCard(request)
+            guard pendingCardStarts[current.id]?.operationID == operationID else { return }
+            applyBoardCardMutation(response.card)
+        } catch {
+            guard pendingCardStarts[current.id]?.operationID == operationID else { return }
+            pendingCardStarts.removeValue(forKey: current.id)
+            applyBoardCardMutation(current)
+            show(error)
+        }
+    }
+
+    func applyBoardCardMutation(_ updated: Dieter_V1_Card) {
+        if let index = state.cards.firstIndex(where: { $0.id == updated.id }) {
+            var next = state
+            next.cards[index] = updated
+            state = next
+        }
+        if var cards = navigationCards[updated.projectID],
+           let index = cards.firstIndex(where: { $0.id == updated.id }) {
+            cards[index] = updated
+            navigationCards[updated.projectID] = cards
+        }
+        if var detail = selectedDetail, detail.card.id == updated.id {
+            detail.card = updated
+            selectedDetail = detail
+        }
+        if var snapshot = conversation, snapshot.detail.card.id == updated.id {
+            snapshot.detail.card = updated
+            snapshot.conversation.status = updated.runtime
+            conversation = snapshot
         }
     }
 

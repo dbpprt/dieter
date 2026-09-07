@@ -76,6 +76,90 @@ func TestCommitFastForwardMergeAndCleanupEndToEnd(t *testing.T) {
 	}
 }
 
+func TestPushBasePublishingPushesValidatedIntegration(t *testing.T) {
+	repository := testRepository(t)
+	remote := filepath.Join(t.TempDir(), "private.git")
+	runGit(t, "", "init", "--bare", remote)
+	runGit(t, repository, "remote", "add", "private", remote)
+	runGit(t, repository, "push", "private", "main")
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{
+		Name: "Fixture", Path: repository, BaseBranch: "main", BaseRemote: "private",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.CreateChat(store.CreateCardInput{
+		Project: project.ID, Title: "Publish main", WorkspaceMode: model.WorkspaceModeWorktree,
+		RemotePublishMode: model.RemotePublishPushBase,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	value, err := workspaces.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "README.md"), []byte("published content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, value.Path, "add", "README.md")
+	runGit(t, value.Path, "commit", "-m", "publish content")
+	manager := gitops.New(data, workspaces, nil)
+	merge, err := manager.Start(context.Background(), gitops.Request{
+		CardID: chat.ID, Kind: "merge_local",
+		Parameters: map[string]string{"strategy": "squash", "subject": "publish content", "validate": "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	merge = waitOperation(t, manager, merge.ID)
+	if merge.Status != model.GitOperationSucceeded {
+		t.Fatalf("merge and push failed: %#v", merge)
+	}
+	localHead := runGit(t, repository, "rev-parse", "main")
+	remoteHead := runGit(t, "", "--git-dir="+remote, "rev-parse", "main")
+	if localHead != remoteHead || localHead != merge.Result {
+		t.Fatalf("published heads differ: local=%s remote=%s result=%s", localHead, remoteHead, merge.Result)
+	}
+}
+
+func TestPullRequestPublishingRejectsLocalMerge(t *testing.T) {
+	repository := testRepository(t)
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.CreateChat(store.CreateCardInput{
+		Project: project.ID, Title: "PR only", WorkspaceMode: model.WorkspaceModeWorktree,
+		RemotePublishMode: model.RemotePublishPullRequest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	if _, err := workspaces.Ensure(context.Background(), chat.ID); err != nil {
+		t.Fatal(err)
+	}
+	manager := gitops.New(data, workspaces, nil)
+	operation, err := manager.Start(context.Background(), gitops.Request{CardID: chat.ID, Kind: "merge_local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation = waitOperation(t, manager, operation.ID)
+	if operation.Status != model.GitOperationFailed || !strings.Contains(operation.Error, "pull-request publishing") {
+		t.Fatalf("local merge was not rejected by PR policy: %#v", operation)
+	}
+}
+
 func TestRebaseConflictCanBeResolvedAndContinued(t *testing.T) {
 	repository := testRepository(t)
 	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))

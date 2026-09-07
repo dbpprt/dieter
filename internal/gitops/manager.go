@@ -682,6 +682,9 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	if value.Mode != model.WorkspaceModeWorktree {
 		return errors.New("local merge requires a worktree workspace")
 	}
+	if value.RemotePublishMode == model.RemotePublishPullRequest {
+		return errors.New("this conversation is configured for pull-request publishing; create a pull request instead")
+	}
 	clean, err := m.isClean(ctx, value.Path)
 	if err != nil {
 		return err
@@ -786,6 +789,15 @@ func (m *Manager) mergeLocal(ctx context.Context, operation *model.GitOperation,
 	current, err := m.gitOutput(ctx, project.Path, "rev-parse", "HEAD")
 	if err != nil || current != baseSHA {
 		return errors.New("registered base checkout moved during merge preparation")
+	}
+	if value.RemotePublishMode == model.RemotePublishPushBase {
+		if value.BaseRemote == "" {
+			return errors.New("push-base publishing requires a configured remote")
+		}
+		if _, err := m.Git.Run(ctx, integrationPath, "push", value.BaseRemote, resultSHA+":refs/heads/"+value.BaseBranch); err != nil {
+			return fmt.Errorf("push integrated %s to %s: %w", value.BaseBranch, value.BaseRemote, err)
+		}
+		m.step(operation, "pushed "+value.BaseBranch+" to "+value.BaseRemote)
 	}
 	if _, err := m.Git.Run(ctx, project.Path, "merge", "--ff-only", resultSHA); err != nil {
 		return err
@@ -979,7 +991,7 @@ func (m *Manager) adopt(ctx context.Context, operation *model.GitOperation, valu
 	if err != nil {
 		return err
 	}
-	if _, err := m.Store.UpdateCardWorkspaceSelection(target, value.Mode, value.Branch, value.BaseBranch, true); err != nil {
+	if _, err := m.Store.UpdateCardWorkspaceSelection(target, value.Mode, value.Branch, value.BaseBranch, value.BaseRemote, value.RemotePublishMode, true); err != nil {
 		return err
 	}
 	transferred, err := m.Store.TransferWorkspace(value.CardID, targetCard.ID)
@@ -996,6 +1008,9 @@ func (m *Manager) adopt(ctx context.Context, operation *model.GitOperation, valu
 }
 
 func (m *Manager) createPullRequest(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
+	if value.RemotePublishMode == model.RemotePublishPushBase {
+		return errors.New("this conversation is configured to push the base branch directly; local-merge it instead")
+	}
 	if !hasReviewBranch(value) {
 		return errors.New("the project directory is on its base branch; switch branches or use a worktree before creating a pull request")
 	}

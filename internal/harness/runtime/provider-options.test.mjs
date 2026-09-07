@@ -1,11 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  codexConfig,
   dshACPArgs,
   dshPackageVersion,
   ompACPArgs,
   ompACPModelMapping,
 } from './provider-options.mjs';
+test('maps the mutable Codex Fast mode option to an explicit service tier', () => {
+  assert.deepEqual(codexConfig({ options: { fast_mode: 'true' } }), {
+    service_tier: 'fast',
+    features: { fast_mode: true },
+  });
+  assert.deepEqual(codexConfig({ options: { fast_mode: 'false' } }), {
+    service_tier: 'default',
+    features: { fast_mode: true },
+  });
+  assert.deepEqual(codexConfig({}), {
+    service_tier: 'default',
+    features: { fast_mode: true },
+  });
+});
 
 test('maps the selected Dieter model to the OMP ACP model option', () => {
   assert.deepEqual(ompACPModelMapping, {

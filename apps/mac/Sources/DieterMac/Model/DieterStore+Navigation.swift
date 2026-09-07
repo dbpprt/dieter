@@ -82,6 +82,10 @@ extension DieterStore {
         closeConversation()
         section = .chats
         await refreshChats()
+        if let lastUsedChatID,
+           chats.contains(where: { $0.id == lastUsedChatID && !$0.archived }) {
+            await openConversation(cardID: lastUsedChatID, chat: true)
+        }
     }
 
     func openTerminals() async {

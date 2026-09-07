@@ -122,3 +122,53 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
 
     #expect(store.conversation == conversation)
 }
+
+@Test @MainActor func queuedComposerRendersInteractiveActions() throws {
+    DieterTheme.install(palette: .monochrome, colorScheme: .dark)
+    defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+    let store = DieterStore()
+    var project = Dieter_V1_Project()
+    project.id = "project-queue-render"
+    project.name = "Queue render"
+    var chat = Dieter_V1_Card()
+    chat.id = "chat-queue-render"
+    chat.projectID = project.id
+    chat.scope = "chat"
+    chat.title = "Queue controls"
+    chat.runtime = "running"
+    var text = Dieter_V1_MessagePart()
+    text.type = "text"
+    text.text = "Keep this follow-up queued until the current turn finishes."
+    var queued = Dieter_V1_QueuedMessage()
+    queued.id = "queued-render"
+    queued.text = text.text
+    queued.parts = [text]
+    var conversation = Dieter_V1_ConversationSnapshot()
+    conversation.detail.project = project
+    conversation.detail.card = chat
+    conversation.conversation.cardID = chat.id
+    conversation.conversation.status = "running"
+    conversation.conversation.queue = [queued]
+
+    store.projectDirectory = [project.id: project]
+    store.projectEndpointIDs = [project.id: store.endpoint.id]
+    store.selectedProjectID = project.id
+    store.state.project = project
+    store.state.chats = [chat]
+    store.chats = [chat]
+    store.selectedChatID = chat.id
+    store.conversation = conversation
+    store.selectedDetail = conversation.detail
+
+    let hostingView = NSHostingView(rootView: ConversationView().environment(store).preferredColorScheme(.dark))
+    hostingView.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
+    hostingView.layoutSubtreeIfNeeded()
+    let bitmap = try #require(hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds))
+    hostingView.cacheDisplay(in: hostingView.bounds, to: bitmap)
+    let png = try #require(bitmap.representation(using: .png, properties: [:]))
+    #expect(png.count > 10_000)
+
+    if let output = ProcessInfo.processInfo.environment["DIETER_QUEUE_RENDER_OUTPUT"], !output.isEmpty {
+        try png.write(to: URL(fileURLWithPath: output), options: .atomic)
+    }
+}

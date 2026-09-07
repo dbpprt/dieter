@@ -800,9 +800,8 @@ internal fun MessageBlock(
     subagents: List<Subagent> = emptyList(),
 ) {
     val fromUser = message.role.equals("user", true) || message.role.equals("human", true)
-    val pendingAlpha = if (model.isPendingMessage(message.id)) 0.52f else 1f
     val failed = model.isFailedOutboxItem(message.id)
-    var deliveryActionsOpen by remember(message.id) { mutableStateOf(false) }
+    val pendingAlpha = if (model.isPendingMessage(message.id) && !failed) 0.52f else 1f
     if (fromUser) {
         Row(Modifier.fillMaxWidth().alpha(pendingAlpha), horizontalArrangement = Arrangement.End) {
             Surface(
@@ -821,24 +820,30 @@ internal fun MessageBlock(
                             plan = plan,
                             subagents = subagents,
                         )
+                        if (failed) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("Send failed", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                                Spacer(Modifier.weight(1f))
+                                TextButton(onClick = { model.retryOutboxItem(message.id) }) { Text("Retry") }
+                                TextButton(
+                                    onClick = { model.discardOutboxItem(message.id) },
+                                    modifier = Modifier.testTag("failed-message-remove:${message.id}"),
+                                ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                            }
+                        }
                     }
-                    MessageDeliveryReceipt(
-                        messageDeliveryState(
-                            pending = model.isPendingMessage(message.id),
-                            accepted = model.isAcceptedOutboxItem(message.id),
-                            failed = failed,
-                        ),
-                        Modifier.align(Alignment.BottomEnd).offset(x = (-4).dp, y = (-4).dp)
-                            .clickable(enabled = failed) { deliveryActionsOpen = true },
-                    )
-                    DropdownMenu(expanded = deliveryActionsOpen, onDismissRequest = { deliveryActionsOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Retry queued message") },
-                            onClick = { deliveryActionsOpen = false; model.retryOutboxItem(message.id) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Discard queued message") },
-                            onClick = { deliveryActionsOpen = false; model.discardOutboxItem(message.id) },
+                    if (!failed) {
+                        MessageDeliveryReceipt(
+                            messageDeliveryState(
+                                pending = model.isPendingMessage(message.id),
+                                accepted = model.isAcceptedOutboxItem(message.id),
+                                failed = false,
+                            ),
+                            Modifier.align(Alignment.BottomEnd).offset(x = (-4).dp, y = (-4).dp),
                         )
                     }
                 }
@@ -875,7 +880,7 @@ internal fun MessageDeliveryReceipt(state: MessageDeliveryState, modifier: Modif
         MessageDeliveryState.LOCAL -> "Waiting to send"
         MessageDeliveryState.ACCEPTED -> "Accepted by daemon"
         MessageDeliveryState.SYNCED -> "Synced"
-        MessageDeliveryState.FAILED -> "Send failed; tap to retry or discard"
+        MessageDeliveryState.FAILED -> "Send failed; retry or remove this message"
     }
     Box(modifier.width(14.dp).height(10.dp)) {
         when (state) {

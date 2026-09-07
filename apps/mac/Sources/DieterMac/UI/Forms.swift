@@ -66,10 +66,12 @@ struct NewConversationSheet: View {
                         .focused($focusedField, equals: .prompt)
                         .padding(.horizontal, 13).padding(.vertical, 14)
                         .frame(height: 135, alignment: .topLeading)
-                        .background(
-                            attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input,
-                            in: RoundedRectangle(cornerRadius: 10)
-                        )
+                        .background {
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input)
+                                .contentShape(RoundedRectangle(cornerRadius: 10))
+                                .onTapGesture { focusedField = .prompt }
+                        }
                         .overlay(
                             RoundedRectangle(cornerRadius: 10).stroke(
                                 attachmentDropTargeted
@@ -134,13 +136,16 @@ struct NewConversationSheet: View {
                                     Button(item.name) {
                                         provider = item.id; model = item.defaultModel
                                         effort = item.models.first(where: { $0.id == item.defaultModel })?.defaultEffort ?? ""
-                                        providerOptions = ProviderOptionValues.defaults(for: item)
+                                        providerOptions = ProviderOptionValues.defaults(for: item, model: model)
                                     }
                                 }
                             }
                             newCardMenu(title: "Model", value: selectedModel?.name ?? "Agent default", symbol: "terminal") {
                                 ForEach(harness?.models ?? [], id: \.id) { item in
-                                    Button(item.name) { model = item.id; effort = item.defaultEffort }
+                                    Button(item.name) {
+                                        model = item.id; effort = item.defaultEffort
+                                        providerOptions = ProviderOptionValues.normalized(for: harness, model: model, saved: providerOptions)
+                                    }
                                 }
                             }
                             newCardMenu(title: "Reasoning", value: effort.isEmpty ? "Default" : effort.capitalized, symbol: "sparkles") {
@@ -153,9 +158,9 @@ struct NewConversationSheet: View {
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
 
-                    if !(harness?.options ?? []).isEmpty {
+                    if !ProviderOptionValues.options(for: harness, model: model).isEmpty {
                         HStack(spacing: 7) {
-                            ProviderOptionChips(options: harness?.options ?? [], values: $providerOptions)
+                            ProviderOptionChips(options: ProviderOptionValues.options(for: harness, model: model), values: $providerOptions)
                             Spacer()
                         }
                     }
@@ -213,6 +218,13 @@ struct NewConversationSheet: View {
     private func chooseDefaults() {
         if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
         if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
+        if workspaceDraft.baseRemote.isEmpty {
+            let boardRemote = store.selectedBoard?.baseRemote ?? ""
+            workspaceDraft.baseRemote = boardRemote.isEmpty ? (project?.baseRemote ?? "") : boardRemote
+        }
+        if let configured = store.selectedBoard?.remotePublishMode, !configured.isEmpty {
+            workspaceDraft.remotePublishMode = configured
+        }
         let preferences = ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
         guard provider.isEmpty,
               let selection = preferences.resolved(in: store.harnessCatalog.harnesses),
@@ -221,7 +233,7 @@ struct NewConversationSheet: View {
         model = selection.model
         effort = selection.effort
         workspaceDraft.mode = selection.workspaceMode
-        providerOptions = ProviderOptionValues.defaults(for: harness)
+        providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
     }
 
     private var laneTitle: String {
@@ -329,6 +341,8 @@ private struct ConversationWorkspacePickerSheet: View {
     @State private var draftMode: ConversationWorkspaceMode
     @State private var draftBranch: String
     @State private var draftBaseBranch: String
+    @State private var draftBaseRemote: String
+    @State private var draftRemotePublishMode: String
     @FocusState private var branchFocused: Bool
 
     init(
@@ -340,6 +354,8 @@ private struct ConversationWorkspacePickerSheet: View {
         _draftMode = State(initialValue: draft.wrappedValue.mode)
         _draftBranch = State(initialValue: draft.wrappedValue.branch)
         _draftBaseBranch = State(initialValue: draft.wrappedValue.baseBranch.isEmpty ? (project?.baseBranch ?? "") : draft.wrappedValue.baseBranch)
+        _draftBaseRemote = State(initialValue: draft.wrappedValue.baseRemote.isEmpty ? (project?.baseRemote ?? "") : draft.wrappedValue.baseRemote)
+        _draftRemotePublishMode = State(initialValue: draft.wrappedValue.remotePublishMode)
     }
 
     var body: some View {
@@ -406,6 +422,20 @@ private struct ConversationWorkspacePickerSheet: View {
                             .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
                         }
                         .frame(maxWidth: 220)
+                    }
+                }
+
+                HStack(alignment: .top, spacing: 12) {
+                    workspaceField(title: "Remote", detail: "Snapshotted for this conversation.") {
+                        TextField("No remote", text: $draftBaseRemote)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityIdentifier("workspace.base-remote")
+                    }
+                    workspaceField(title: "Publishing", detail: RemotePublishMode(rawValue: draftRemotePublishMode)?.detail ?? "") {
+                        Picker("Publishing", selection: $draftRemotePublishMode) {
+                            ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+                        }
+                        .labelsHidden().pickerStyle(.menu)
                     }
                 }
 
@@ -515,6 +545,8 @@ private struct ConversationWorkspacePickerSheet: View {
         draft.mode = draftMode
         draft.branch = draftMode == .worktree ? draftBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         draft.baseBranch = draftMode == .worktree ? draftBaseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        draft.baseRemote = draftBaseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft.remotePublishMode = draftRemotePublishMode
         dismiss()
     }
 }
@@ -540,14 +572,17 @@ struct EditCardSheet: View {
         _workspaceDraft = State(initialValue: .init(
             mode: ConversationWorkspaceMode.selectable(card.workspaceMode),
             branch: card.workspaceBranch,
-            baseBranch: card.workspaceBaseBranch
+            baseBranch: card.workspaceBaseBranch,
+            baseRemote: card.workspaceBaseRemote,
+            remotePublishMode: card.remotePublishMode.isEmpty ? RemotePublishMode.manual.rawValue : card.remotePublishMode
         ))
     }
 
     private var hasChanges: Bool {
         title != card.title || task != card.initialPrompt || workspaceDraft != ConversationWorkspaceDraft(
             mode: ConversationWorkspaceMode.selectable(card.workspaceMode),
-            branch: card.workspaceBranch, baseBranch: card.workspaceBaseBranch)
+            branch: card.workspaceBranch, baseBranch: card.workspaceBaseBranch,
+            baseRemote: card.workspaceBaseRemote, remotePublishMode: card.remotePublishMode.isEmpty ? RemotePublishMode.manual.rawValue : card.remotePublishMode)
     }
 
     private var canSave: Bool {
@@ -622,6 +657,10 @@ struct EditCardSheet: View {
                                 TextField("Optional base branch", text: $workspaceDraft.baseBranch)
                             }
                         }
+                        TextField("Base remote", text: $workspaceDraft.baseRemote)
+                        Picker("Publishing", selection: $workspaceDraft.remotePublishMode) {
+                            ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+                        }
                         Text(workspaceDraft.mode.detail).font(.caption).foregroundStyle(DieterTheme.tertiary)
                     } else {
                         Text("\(ConversationWorkspaceMode.projectMode(card.workspace.mode).title) · \(card.workspace.branch)")
@@ -693,24 +732,47 @@ struct HarnessFields: View {
             ForEach(store.harnessCatalog.harnesses, id: \.id) { Text($0.name).tag($0.id) }
         }.onChange(of: provider) { _, _ in
             model = harness?.defaultModel ?? ""; effort = selectedModel?.defaultEffort ?? ""
-            providerOptions = ProviderOptionValues.defaults(for: harness)
+            providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
         }
         Picker("Model", selection: $model) {
             Text("Agent default").tag("")
             ForEach(harness?.models ?? [], id: \.id) { Text($0.name).tag($0.id) }
-        }.onChange(of: model) { _, _ in effort = selectedModel?.defaultEffort ?? "" }
+        }.onChange(of: model) { _, _ in
+            effort = selectedModel?.defaultEffort ?? ""
+            providerOptions = ProviderOptionValues.normalized(for: harness, model: model, saved: providerOptions)
+        }
         if let efforts = selectedModel?.efforts, !efforts.isEmpty {
             Picker("Reasoning effort", selection: $effort) {
                 ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
             }
         }
-        ProviderOptionFields(options: harness?.options ?? [], values: $providerOptions)
+        ProviderOptionFields(options: ProviderOptionValues.options(for: harness, model: model), values: $providerOptions)
     }
 }
 
 enum ProviderOptionValues {
-    static func defaults(for harness: Dieter_V1_Harness?) -> [String: String] {
-        Dictionary((harness?.options ?? []).map { ($0.id, $0.defaultValue) }, uniquingKeysWith: { first, _ in first })
+    static func options(for harness: Dieter_V1_Harness?, model: String) -> [Dieter_V1_ProviderOption] {
+        guard let harness else { return [] }
+        let selectedModel = model.isEmpty ? harness.defaultModel : model
+        return harness.options.filter { $0.models.isEmpty || $0.models.contains(selectedModel) }
+    }
+
+    static func defaults(for harness: Dieter_V1_Harness?, model: String? = nil) -> [String: String] {
+        normalized(for: harness, model: model ?? harness?.defaultModel ?? "", saved: [:])
+    }
+
+    static func normalized(
+        for harness: Dieter_V1_Harness?,
+        model: String,
+        saved: [String: String]
+    ) -> [String: String] {
+        Dictionary(options(for: harness, model: model).map { option in
+            (option.id, saved[option.id] ?? option.defaultValue)
+        }, uniquingKeysWith: { first, _ in first })
+    }
+
+    static func isEnabled(_ option: Dieter_V1_ProviderOption, conversationLocked: Bool) -> Bool {
+        !conversationLocked || option.mutable
     }
 }
 
@@ -755,10 +817,15 @@ private struct ProviderOptionField: View {
 struct ProviderOptionChips: View {
     let options: [Dieter_V1_ProviderOption]
     @Binding var values: [String: String]
+    var conversationLocked = false
 
     var body: some View {
         ForEach(options, id: \Dieter_V1_ProviderOption.id) { option in
-            ProviderOptionChip(option: option, values: $values)
+            ProviderOptionChip(
+                option: option,
+                values: $values,
+                isEnabled: ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
+            )
         }
     }
 }
@@ -766,6 +833,7 @@ struct ProviderOptionChips: View {
 private struct ProviderOptionChip: View {
     let option: Dieter_V1_ProviderOption
     @Binding var values: [String: String]
+    let isEnabled: Bool
 
     private var currentValue: String { values[option.id, default: option.defaultValue] }
 
@@ -778,7 +846,7 @@ private struct ProviderOptionChip: View {
                     symbol: enabled ? "checkmark.circle.fill" : "circle",
                     showsDisclosure: false
                 )
-            }.buttonStyle(.plain).help(option.description_p)
+            }.buttonStyle(.plain).disabled(!isEnabled).help(option.description_p)
         } else if ["enum", "select"].contains(option.type.lowercased()) {
             Menu {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
@@ -786,10 +854,10 @@ private struct ProviderOptionChip: View {
                 }
             } label: {
                 DieterChipLabel(title: option.choices.first(where: { $0.value == currentValue })?.name ?? option.name, symbol: "slider.horizontal.3")
-            }.menuStyle(.borderlessButton).fixedSize().help(option.description_p)
+            }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).help(option.description_p)
         } else {
             TextField(option.name, text: Binding(get: { currentValue }, set: { values[option.id] = $0 }))
-                .textFieldStyle(.roundedBorder).frame(width: 130).help(option.description_p)
+                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).help(option.description_p)
         }
     }
 }
@@ -1307,6 +1375,8 @@ struct NewBoardSheet: View {
     @State private var description = ""
     @State private var workflow = BoardWorkflow.review.rawValue
     @State private var doneArchivePolicy = DoneArchivePolicy.never.rawValue
+    @State private var baseRemote = ""
+    @State private var remotePublishMode = RemotePublishMode.manual.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -1325,8 +1395,15 @@ struct NewBoardSheet: View {
             Picker("Archive Done conversations", selection: $doneArchivePolicy) {
                 ForEach(DoneArchivePolicy.allCases) { option in Text(option.title).tag(option.rawValue) }
             }
-            HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Create") { Task { await store.createBoard(name: name, workflow: workflow, description: description, doneArchivePolicy: doneArchivePolicy) } }.buttonStyle(.borderedProminent).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            TextField("Default Git remote", text: $baseRemote)
+            Picker("Remote publishing", selection: $remotePublishMode) {
+                ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+            }
+            Text(RemotePublishMode(rawValue: remotePublishMode)?.detail ?? "")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Create") { Task { await store.createBoard(name: name, workflow: workflow, description: description, doneArchivePolicy: doneArchivePolicy, baseRemote: baseRemote, remotePublishMode: remotePublishMode) } }.buttonStyle(.borderedProminent).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }.padding(24).frame(width: 540)
+            .onAppear { baseRemote = store.selectedProject?.baseRemote ?? "" }
     }
 }
 
@@ -1827,16 +1904,41 @@ struct ArchivePolicySheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var policy = "never"
+    @State private var baseRemote = ""
+    @State private var remotePublishMode = RemotePublishMode.manual.rawValue
+    @State private var saving = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Done retention").font(.title2.weight(.bold))
-            Text("Automatically archive cards that remain in Done. Scheduled occurrence history stays authoritative.").foregroundStyle(.secondary)
+            Text("Board settings").font(.title2.weight(.bold))
+            Text("Choose how new conversations publish Git work and when completed cards are archived.").foregroundStyle(.secondary)
+            TextField("Default Git remote", text: $baseRemote)
+            Picker("Remote publishing", selection: $remotePublishMode) {
+                ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+            }
+            Text(RemotePublishMode(rawValue: remotePublishMode)?.detail ?? "")
+                .font(.caption).foregroundStyle(.secondary)
             Picker("Archive done cards", selection: $policy) {
                 ForEach(DoneArchivePolicy.allCases) { option in Text(option.title).tag(option.rawValue) }
             }.pickerStyle(.radioGroup)
-            HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Save") { Task { await store.setArchivePolicy(policy) } }.buttonStyle(.borderedProminent) }
-        }.padding(24).frame(width: 500).onAppear { policy = store.selectedBoard?.doneArchivePolicy ?? "never" }
+            HStack { Spacer(); Button("Cancel") { dismiss() }; Button(saving ? "Saving…" : "Save") { Task { await save() } }.buttonStyle(.borderedProminent).disabled(saving) }
+        }.padding(24).frame(width: 520).onAppear {
+            policy = store.selectedBoard?.doneArchivePolicy ?? "never"
+            let boardRemote = store.selectedBoard?.baseRemote ?? ""
+            baseRemote = boardRemote.isEmpty ? (store.selectedProject?.baseRemote ?? "") : boardRemote
+            remotePublishMode = store.selectedBoard?.remotePublishMode.isEmpty == false
+                ? store.selectedBoard!.remotePublishMode : RemotePublishMode.manual.rawValue
+        }
+    }
+
+    private func save() async {
+        saving = true
+        guard await store.updateBoardGitSettings(remote: baseRemote, publishMode: remotePublishMode) else {
+            saving = false
+            return
+        }
+        await store.setArchivePolicy(policy)
+        saving = false
     }
 }
 

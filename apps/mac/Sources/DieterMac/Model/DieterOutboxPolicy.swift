@@ -194,4 +194,66 @@ enum DieterOutboxPolicy {
             entries[index].request = try request.serializedData()
         }
     }
+
+    /// Overlays local sends into their chronological transcript position.
+    ///
+    /// Failed sends remain in the durable outbox until the user retries or
+    /// removes them. Rebuilding a projection used to append those retained
+    /// messages after the authoritative tail, which made an old failure look
+    /// newer than turns that had already run successfully.
+    static func overlayOptimisticMessages(
+        _ snapshot: Dieter_V1_ConversationSnapshot,
+        entries: [DieterOutboxEntry]
+    ) -> Dieter_V1_ConversationSnapshot {
+        let cardID = snapshot.detail.card.id.isEmpty
+            ? snapshot.conversation.cardID
+            : snapshot.detail.card.id
+        guard !cardID.isEmpty else { return snapshot }
+
+        let sends = entries.compactMap { entry -> (DieterOutboxEntry, Dieter_V1_SendMessageRequest)? in
+            guard entry.kind == .sendMessage,
+                  let request = try? Dieter_V1_SendMessageRequest(serializedBytes: entry.request),
+                  request.cardID == cardID else { return nil }
+            return (entry, request)
+        }
+        guard !sends.isEmpty else { return snapshot }
+
+        let optimisticIDs = Set(sends.map { $0.0.optimisticID })
+        let queuedIDs = Set(snapshot.conversation.queue.map(\.id))
+        var messages = snapshot.conversation.messages.filter { !optimisticIDs.contains($0.id) }
+
+        for (entry, request) in sends.sorted(by: {
+            if $0.0.createdAt == $1.0.createdAt { return $0.0.commandID < $1.0.commandID }
+            return $0.0.createdAt < $1.0.createdAt
+        }) where !queuedIDs.contains(entry.optimisticID) {
+            var message = Dieter_V1_UiMessage()
+            message.id = entry.optimisticID
+            message.role = "user"
+            message.parts = request.parts
+            message.metadataJson = optimisticMessageMetadata(createdAt: entry.createdAt)
+            let insertionIndex = messages.firstIndex {
+                guard let date = messageCreatedAt($0) else { return false }
+                return date > entry.createdAt
+            } ?? messages.endIndex
+            messages.insert(message, at: insertionIndex)
+        }
+
+        guard messages != snapshot.conversation.messages else { return snapshot }
+        var result = snapshot
+        result.conversation.messages = messages
+        return result
+    }
+
+    private static func optimisticMessageMetadata(createdAt: Date) -> Data {
+        (try? JSONSerialization.data(withJSONObject: [
+            "createdAt": DieterTimestamp.string(from: createdAt),
+        ])) ?? Data()
+    }
+
+    private static func messageCreatedAt(_ message: Dieter_V1_UiMessage) -> Date? {
+        guard !message.metadataJson.isEmpty,
+              let metadata = try? JSONSerialization.jsonObject(with: message.metadataJson) as? [String: Any],
+              let value = metadata["createdAt"] as? String else { return nil }
+        return DieterTimestamp.date(from: value)
+    }
 }

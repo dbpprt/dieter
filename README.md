@@ -37,6 +37,9 @@ them together in one native workspace.
   data or harness credentials through the gateway.
 - **Resume real work.** Chats, boards, queues, terminals, files, schedules, and
   conversation history survive client disconnects and daemon restarts.
+- **Steer without losing your place.** Follow-ups wait visibly behind the
+  active turn and can be steered next, removed, or returned to the composer for
+  editing before they run.
 - **Use native clients.** The macOS and Android apps automatically route each
   project to the machine that owns it.
 - **Bring your existing agent setup.** Dieter uses each harness's normal local
@@ -121,6 +124,15 @@ macOS uses the signed-in user's normal System Events authorization. Linux uses
 non-interactive systemd-logind authorization and never accepts a sudo password;
 an administrator must grant the daemon user the relevant PolicyKit permission
 before the commands are advertised as available.
+
+Messages submitted during an active turn wait in that conversation's durable
+queue. Native clients can steer the next message, discard any queued message,
+or return it to the composer for editing. Automation can dequeue the complete
+payload (including attachments) as JSON:
+
+```sh
+dieter card queue remove --message <message-id> <card-id>
+```
 
 `dieter status` reports daemon-wide active project, board, card, and chat
 counts in one snapshot, including when the selected machine is remote.
@@ -293,6 +305,15 @@ dieter card create --project PROJECT --board BOARD --lane todo \
   --workspace worktree
 ```
 
+Each board can snapshot its own Git remote into newly created cards and choose
+how reviewed work is published. `manual` keeps remote actions explicit,
+`pull_request` routes delivery through a PR, and `push_base` pushes the
+validated local integration to the configured base branch:
+
+```sh
+dieter board git --base-remote private --remote-publish pull_request BOARD_ID
+```
+
 To reach it through your gateway, enroll the machine once:
 
 ```sh
@@ -348,6 +369,15 @@ AI SDK ACP bootstrap; a global `dsh` installation is not required. DSH owns its
 provider and credential configuration. Dieter discovers the models advertised
 by DSH's standard ACP session options and returns only those models to clients.
 See the [DSH integration proposal and operational notes](docs/deepseek-dsh-harness.md).
+An optional model `defaultEffort` is Dieter's default for new conversations and
+overrides the provider-discovered default when that model supports the selected
+level. Pass `--effort default` to explicitly use the provider's native default.
+Codex advertises a mutable `fast_mode` option for GPT-5.4, GPT-5.5, GPT-5.6,
+and GPT-6 Astra models: native clients expose it for chats, board tasks, and
+scheduled task templates, while the CLI accepts
+`--provider-option fast_mode=true`. GPT-5.3 Codex and Spark do not expose Fast
+mode. Turning it off explicitly selects the standard service tier for that
+conversation.
 
 ## Development
 

@@ -184,6 +184,10 @@ func (api *connectAPI) SetBoardArchivePolicy(ctx context.Context, request *conne
 	return connectUnary(ctx, request, api.core.SetBoardArchivePolicy)
 }
 
+func (api *connectAPI) UpdateBoardGitSettings(ctx context.Context, request *connect.Request[dieterv1.UpdateBoardGitSettingsRequest]) (*connect.Response[dieterv1.Board], error) {
+	return connectUnary(ctx, request, api.core.UpdateBoardGitSettings)
+}
+
 func (api *connectAPI) ListArchivedCards(ctx context.Context, request *connect.Request[dieterv1.BoardRef]) (*connect.Response[dieterv1.CardsResponse], error) {
 	return connectUnary(ctx, request, api.core.ListArchivedCards)
 }
@@ -238,6 +242,10 @@ func (api *connectAPI) GetToolOutput(ctx context.Context, request *connect.Reque
 
 func (api *connectAPI) SendMessage(ctx context.Context, request *connect.Request[dieterv1.SendMessageRequest]) (*connect.Response[dieterv1.SendMessageResponse], error) {
 	return connectUnary(ctx, request, api.core.SendMessage)
+}
+
+func (api *connectAPI) RemoveQueuedMessage(ctx context.Context, request *connect.Request[dieterv1.RemoveQueuedMessageRequest]) (*connect.Response[dieterv1.QueuedMessage], error) {
+	return connectUnary(ctx, request, api.core.RemoveQueuedMessage)
 }
 
 func (api *connectAPI) AddComment(ctx context.Context, request *connect.Request[dieterv1.AddCommentRequest]) (*connect.Response[dieterv1.Comment], error) {

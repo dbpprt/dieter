@@ -197,6 +197,59 @@ private actor ChatPinRPCStub: DieterChatPinRPC {
     func recordedRequests() -> [Dieter_V1_PinChatRequest] { requests }
 }
 
+private actor CardStartRPCStub: DieterCardStartRPC {
+    private var requests: [Dieter_V1_StartCardRequest] = []
+
+    func startCard(_ request: Dieter_V1_StartCardRequest) async throws -> Dieter_V1_StartCardResponse {
+        requests.append(request)
+        var card = Dieter_V1_Card()
+        card.id = request.cardID
+        card.projectID = "p_dieter"
+        card.boardID = "b_main"
+        card.scope = "board"
+        card.lane = "running"
+        card.initialPrompt = "Verify the Mac start flow"
+        card.initialPromptSentAt = "2026-09-04T19:00:00Z"
+        card.runtime = "starting"
+        var response = Dieter_V1_StartCardResponse()
+        response.card = card
+        response.accepted = true
+        response.commandID = request.commandID
+        return response
+    }
+
+    func recordedRequests() -> [Dieter_V1_StartCardRequest] { requests }
+}
+
+@Test @MainActor func runningATodoCardAdmitsItsInitialTask() async throws {
+    let rpc = CardStartRPCStub()
+    let store = DieterStore(cardStartRPCOverride: rpc, restoreSync: false)
+    var todo = Dieter_V1_Lane(); todo.id = "todo"; todo.name = "Todo"
+    var running = Dieter_V1_Lane(); running.id = "running"; running.name = "Running"
+    var board = Dieter_V1_Board(); board.id = "b_main"; board.projectID = "p_dieter"; board.lanes = [todo, running]
+    var card = Dieter_V1_Card()
+    card.id = "c_task"
+    card.projectID = "p_dieter"
+    card.boardID = board.id
+    card.scope = "board"
+    card.lane = "todo"
+    card.initialPrompt = "Verify the Mac start flow"
+    store.selectedProjectID = card.projectID
+    store.selectedBoardID = board.id
+    store.state.boards = [board]
+    store.state.cards = [card]
+
+    await store.start(card)
+
+    let request = try #require(await rpc.recordedRequests().first)
+    #expect(request.cardID == card.id)
+    #expect(!request.clientID.isEmpty)
+    #expect(!request.commandID.isEmpty)
+    #expect(store.state.cards.first?.lane == "running")
+    #expect(store.state.cards.first?.initialPromptSentAt == "2026-09-04T19:00:00Z")
+    #expect(store.pendingCardStarts[card.id] != nil)
+}
+
 @Test @MainActor func pinningAndUnpinningAChatUpdatesTheMacProjectionImmediately() async throws {
     let rpc = ChatPinRPCStub()
     let store = DieterStore(chatPinRPCOverride: rpc)
@@ -640,6 +693,53 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
 @Test func shiftReturnCreatesANewlineAndPlainReturnSends() {
     #expect(ComposerReturnPolicy.sendsMessage(shiftPressed: false))
     #expect(!ComposerReturnPolicy.sendsMessage(shiftPressed: true))
+}
+
+@Test func composerHistoryWalksBackwardAndReturnsToThePreservedDraft() {
+    let entries = ["First prompt", "Second prompt", "Third prompt"]
+    var navigation = ComposerHistoryNavigation()
+
+    #expect(navigation.navigate(.older, entries: entries, currentText: "unfinished draft") == "Third prompt")
+    #expect(navigation.navigate(.older, entries: entries, currentText: "Third prompt") == "Second prompt")
+    #expect(navigation.navigate(.older, entries: entries, currentText: "Second prompt") == "First prompt")
+    #expect(navigation.navigate(.older, entries: entries, currentText: "First prompt") == "First prompt")
+    #expect(navigation.navigate(.newer, entries: entries, currentText: "First prompt") == "Second prompt")
+    #expect(navigation.navigate(.newer, entries: entries, currentText: "Second prompt") == "Third prompt")
+    #expect(navigation.navigate(.newer, entries: entries, currentText: "Third prompt") == "unfinished draft")
+    #expect(!navigation.isBrowsing)
+    #expect(navigation.navigate(.newer, entries: entries, currentText: "unfinished draft") == nil)
+}
+
+@Test func composerHistoryUsesDeliveredUserTextAndStopsWhenEditing() {
+    func message(_ id: String, role: String, text: String) -> Dieter_V1_UiMessage {
+        var part = Dieter_V1_MessagePart(); part.type = "text"; part.text = text
+        var message = Dieter_V1_UiMessage(); message.id = id; message.role = role; message.parts = [part]
+        return message
+    }
+    var queued = Dieter_V1_QueuedMessage(); queued.id = "queued"
+    let entries = ComposerHistoryNavigation.entries(
+        messages: [
+            message("one", role: "user", text: "First"),
+            message("assistant", role: "assistant", text: "Answer"),
+            message("queued", role: "user", text: "Still queued"),
+            message("two", role: "human", text: "Second")
+        ],
+        queuedMessages: [queued]
+    )
+    #expect(entries == ["First", "Second"])
+
+    var navigation = ComposerHistoryNavigation()
+    #expect(navigation.navigate(.older, entries: entries, currentText: "") == "Second")
+    navigation.observeTextChange("Second, edited")
+    #expect(!navigation.isBrowsing)
+}
+
+@Test func composerHistoryOnlyTakesOverAtMultilineEdges() {
+    let text = "first line\nsecond line"
+    #expect(ComposerHistoryNavigation.isAtBoundary(.older, text: text, selection: NSRange(location: 3, length: 0)))
+    #expect(!ComposerHistoryNavigation.isAtBoundary(.older, text: text, selection: NSRange(location: 14, length: 0)))
+    #expect(!ComposerHistoryNavigation.isAtBoundary(.newer, text: text, selection: NSRange(location: 3, length: 0)))
+    #expect(ComposerHistoryNavigation.isAtBoundary(.newer, text: text, selection: NSRange(location: 14, length: 0)))
 }
 
 @Test func optimisticCardMoveSurvivesAStaleProjectionUntilSyncConfirmsIt() {
@@ -2131,6 +2231,55 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(try Dieter_V1_SendMessageRequest(serializedBytes: entries[0].request).cardID == "c_server")
 }
 
+@Test func retainedFailedSendKeepsItsOriginalTranscriptPosition() throws {
+    func message(_ id: String, role: String, createdAt: Date) throws -> Dieter_V1_UiMessage {
+        var result = Dieter_V1_UiMessage()
+        result.id = id
+        result.role = role
+        result.metadataJson = try JSONSerialization.data(withJSONObject: [
+            "createdAt": DieterTimestamp.string(from: createdAt),
+        ])
+        return result
+    }
+
+    let failedAt = Date(timeIntervalSince1970: 10)
+    var request = Dieter_V1_SendMessageRequest()
+    request.cardID = "c_chat"
+    var part = Dieter_V1_MessagePart()
+    part.type = "text"
+    part.text = "Older failed command"
+    request.parts = [part]
+    let failed = DieterOutboxEntry(
+        commandID: "failed-command",
+        clientID: "mac",
+        endpointID: "endpoint",
+        kind: .sendMessage,
+        request: try request.serializedData(),
+        optimisticID: "msg_failed",
+        attempts: 1,
+        state: .failed,
+        createdAt: failedAt
+    )
+    var staleTail = Dieter_V1_UiMessage()
+    staleTail.id = "msg_failed"
+    staleTail.role = "user"
+    staleTail.parts = [part]
+    var snapshot = Dieter_V1_ConversationSnapshot()
+    snapshot.detail.card.id = "c_chat"
+    snapshot.conversation.cardID = "c_chat"
+    snapshot.conversation.messages = [
+        try message("msg_running", role: "user", createdAt: Date(timeIntervalSince1970: 20)),
+        try message("msg_answer", role: "assistant", createdAt: Date(timeIntervalSince1970: 30)),
+        staleTail,
+    ]
+
+    let overlaid = DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: [failed])
+
+    #expect(overlaid.conversation.messages.map(\.id) == ["msg_failed", "msg_running", "msg_answer"])
+    #expect(overlaid.conversation.messages.first?.parts.first?.text == "Older failed command")
+    #expect(!overlaid.conversation.messages.first!.metadataJson.isEmpty)
+}
+
 @Test func createSuccessMergesAnOptimisticChatWithAnAlreadySynchronizedChat() {
     var synchronized = Dieter_V1_Card()
     synchronized.id = "c_server"
@@ -2345,14 +2494,38 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(queued.text == "Keep me visible")
 }
 
-@Test func onlyTheNextQueuedMessageCanInterruptAnActiveTurn() {
+@Test func onlyTheNextQueuedMessageCanSteerAnActiveTurn() {
     var first = Dieter_V1_QueuedMessage(); first.id = "first"
     var second = Dieter_V1_QueuedMessage(); second.id = "second"
     let queue = [first, second]
 
-    #expect(ConversationQueuePresentation.canInterrupt(messageID: first.id, queue: queue, agentIsWorking: true))
-    #expect(!ConversationQueuePresentation.canInterrupt(messageID: second.id, queue: queue, agentIsWorking: true))
-    #expect(!ConversationQueuePresentation.canInterrupt(messageID: first.id, queue: queue, agentIsWorking: false))
+    #expect(ConversationQueuePresentation.canSteer(messageID: first.id, queue: queue, agentIsWorking: true))
+    #expect(!ConversationQueuePresentation.canSteer(messageID: second.id, queue: queue, agentIsWorking: true))
+    #expect(!ConversationQueuePresentation.canSteer(messageID: first.id, queue: queue, agentIsWorking: false))
+}
+
+@Test func queuedMessageEditingRestoresTextAndAttachments() {
+    var text = Dieter_V1_MessagePart(); text.type = "text"; text.text = "Move me back to the composer"
+    var attachment = Dieter_V1_MessagePart(); attachment.type = "file"; attachment.filename = "context.txt"
+    var queued = Dieter_V1_QueuedMessage()
+    queued.id = "queued-edit"
+    queued.text = "fallback"
+    queued.parts = [text, attachment]
+
+    let draft = ConversationQueuePresentation.editableDraft(for: queued)
+
+    #expect(draft.text == "Move me back to the composer")
+    #expect(draft.attachments.map(\.filename) == ["context.txt"])
+}
+
+@Test func legacyQueuedMessageEditingFallsBackToStoredText() {
+    var queued = Dieter_V1_QueuedMessage()
+    queued.text = "Legacy queued text"
+
+    let draft = ConversationQueuePresentation.editableDraft(for: queued)
+
+    #expect(draft.text == "Legacy queued text")
+    #expect(draft.attachments.isEmpty)
 }
 
 @Test @MainActor func macAttachmentSelectionPreservesBytesAndEnforcesTheSharedLimit() async throws {
@@ -2480,6 +2653,62 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     card.initialPromptSentAt = ""
     card.initialPrompt = "   "
     #expect(!BoardCardEditingPolicy.canEditDraft(card))
+}
+
+@Test func onlyNeverStartedTodoCardsExposeTheRunAction() throws {
+    var todo = Dieter_V1_Lane(); todo.id = "todo"; todo.name = "Todo"
+    var active = Dieter_V1_Lane(); active.id = "active"; active.name = "Running"
+    var board = Dieter_V1_Board(); board.lanes = [todo, active]
+    var card = Dieter_V1_Card()
+    card.scope = "board"
+    card.lane = "todo"
+    card.initialPrompt = "Run the saved task"
+
+    #expect(BoardCardStartPolicy.canStart(card, board: board))
+    #expect(BoardCardStartPolicy.runningLaneID(in: board) == "active")
+    let optimistic = try #require(BoardCardStartPolicy.optimisticCard(card, board: board))
+    #expect(optimistic.lane == "active")
+    #expect(optimistic.runtime == "starting")
+
+    card.initialPromptSentAt = "2026-09-04T19:00:00Z"
+    #expect(!BoardCardStartPolicy.canStart(card, board: board))
+    card.initialPromptSentAt = ""
+    card.lane = "review"
+    #expect(!BoardCardStartPolicy.canStart(card, board: board))
+    card.lane = "todo"
+    card.scope = "chat"
+    #expect(!BoardCardStartPolicy.canStart(card, board: board))
+}
+
+@Test func optimisticCardStartsSurviveStaleBoardFramesUntilAdmissionIsVisible() {
+    var stale = Dieter_V1_Card()
+    stale.id = "card-start"
+    stale.lane = "todo"
+    stale.runtime = "idle"
+    let start = OptimisticCardStart(operationID: UUID(), runningLaneID: "running")
+
+    let projected = OptimisticCardProjection.reconcile(
+        cards: [stale],
+        moves: [:],
+        labels: [:],
+        starts: [stale.id: start]
+    )
+    #expect(projected.cards[0].lane == "running")
+    #expect(projected.cards[0].runtime == "starting")
+    #expect(projected.starts[stale.id] == start)
+
+    var admitted = stale
+    admitted.lane = "running"
+    admitted.runtime = "starting"
+    admitted.initialPromptSentAt = "2026-09-04T19:00:00Z"
+    let synchronized = OptimisticCardProjection.reconcile(
+        cards: [admitted],
+        moves: [:],
+        labels: [:],
+        starts: projected.starts
+    )
+    #expect(synchronized.cards[0] == admitted)
+    #expect(synchronized.starts.isEmpty)
 }
 
 @Test func embeddedMacImageAttachmentsProvidePreviewImages() throws {
@@ -2737,4 +2966,31 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(store.selectedProjectID == targetProject.id)
     #expect(store.selectedCardID == nil)
     #expect(store.selectedChatID == chat.id)
+}
+
+@Test @MainActor func openingAllChatsRestoresTheLastUsedActiveChat() async {
+    let store = DieterStore()
+    var project = Dieter_V1_Project()
+    project.id = "p_project"
+    var firstChat = Dieter_V1_Card()
+    firstChat.id = "c_first"
+    firstChat.projectID = project.id
+    firstChat.scope = "chat"
+    var lastUsedChat = Dieter_V1_Card()
+    lastUsedChat.id = "c_last"
+    lastUsedChat.projectID = project.id
+    lastUsedChat.scope = "chat"
+
+    store.projectDirectory = [project.id: project]
+    store.chats = [firstChat, lastUsedChat]
+
+    await store.openConversation(cardID: lastUsedChat.id, chat: true)
+    store.closeConversation()
+    store.section = .settings
+
+    await store.openChats()
+
+    #expect(store.section == .chats)
+    #expect(store.selectedChatID == lastUsedChat.id)
+    #expect(store.lastUsedChatID == lastUsedChat.id)
 }

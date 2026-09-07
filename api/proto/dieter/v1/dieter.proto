@@ -42,6 +42,7 @@ service DieterService {
   rpc CreateBoard(CreateBoardRequest) returns (Board);
   rpc RenameBoard(RenameBoardRequest) returns (Board);
   rpc SetBoardArchivePolicy(SetBoardArchivePolicyRequest) returns (Board);
+  rpc UpdateBoardGitSettings(UpdateBoardGitSettingsRequest) returns (Board);
   rpc ListArchivedCards(BoardRef) returns (CardsResponse);
   rpc CreateBoardLabel(CreateBoardLabelRequest) returns (Board);
   rpc UpdateBoardLabel(UpdateBoardLabelRequest) returns (Board);
@@ -57,6 +58,10 @@ service DieterService {
   rpc WatchConversation(WatchConversationRequest) returns (stream ConversationUpdate);
   rpc GetToolOutput(GetToolOutputRequest) returns (ToolOutput);
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  // RemoveQueuedMessage dequeues content that has not started yet and returns
+  // the full message so clients can either discard it or restore it to an
+  // editor without losing attachments.
+  rpc RemoveQueuedMessage(RemoveQueuedMessageRequest) returns (QueuedMessage);
   rpc AddComment(AddCommentRequest) returns (Comment);
   rpc MoveCard(MoveCardRequest) returns (Card);
   // StartCard is an idempotent admission command. It durably admits the
@@ -429,6 +434,8 @@ message Board {
   repeated Label labels = 9;
   repeated Lane lanes = 10;
   string prompt_template = 11;
+  string base_remote = 12;
+  string remote_publish_mode = 13;
 }
 
 message Label {
@@ -485,9 +492,8 @@ message Card {
   string workspace_base_branch = 30;
   WorkspaceSummary workspace = 31;
   PullRequestSummary pull_request = 32;
-  // Fields used by deployed private builds must never be reused.
-  reserved 33, 34;
-  reserved "workspace_base_remote", "remote_publish_mode";
+  string workspace_base_remote = 33;
+  string remote_publish_mode = 34;
   TokenUsage token_usage = 35;
 }
 
@@ -677,6 +683,8 @@ message ProviderOption {
   string type = 4;
   string default_value = 5;
   repeated ProviderOptionChoice choices = 6;
+  bool mutable = 7;
+  repeated string models = 8;
 }
 
 message ProviderOptionChoice {
@@ -798,6 +806,7 @@ message CreateProjectRequest {
   string base_remote = 9;
   string base_branch = 10;
   repeated ValidationCommand validation_commands = 11;
+  string remote_publish_mode = 12;
 }
 
 message CreateProjectResponse {
@@ -843,6 +852,8 @@ message CreateBoardRequest {
   string workflow = 3;
   string description = 4;
   string done_archive_policy = 5;
+  string base_remote = 6;
+  string remote_publish_mode = 7;
 }
 
 message RenameBoardRequest {
@@ -905,6 +916,8 @@ message CreateConversationRequest {
   // Generate a 4–6 word persisted title from prompt with Dieter's fast title model.
   // Clients may still send a local placeholder in title for optimistic UI.
   bool auto_generate_title = 18;
+  string workspace_base_remote = 19;
+  string remote_publish_mode = 20;
 }
 
 message ListChatsRequest {
@@ -1071,6 +1084,8 @@ message UpdateConversationWorkspaceRequest {
   string mode = 2;
   string branch = 3;
   string base_branch = 4;
+  string base_remote = 5;
+  string remote_publish_mode = 6;
 }
 
 message WorkspaceSummary {
@@ -1120,6 +1135,7 @@ message Workspace {
   string integration_strategy = 28;
   string integrated_at = 29;
   bool dirty = 30;
+  string remote_publish_mode = 31;
 }
 
 message WorkspacesResponse {
@@ -1869,4 +1885,15 @@ message ScheduleRun {
 message ScheduleRunsResponse {
   repeated ScheduleRun runs = 1;
   string next_page_token = 2;
+}
+
+message UpdateBoardGitSettingsRequest {
+  string board_id = 1;
+  string base_remote = 2;
+  string remote_publish_mode = 3;
+}
+
+message RemoveQueuedMessageRequest {
+  string card_id = 1;
+  string message_id = 2;
 }

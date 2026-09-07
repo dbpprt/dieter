@@ -29,6 +29,7 @@ Actions:
   tool-output  Fetch a full tool input/output payload
   fork         Fork a completed conversation into a standalone chat
   send         Submit a human message to the daemon-owned turn lifecycle
+  queue        Manage messages waiting behind the active turn
   comment      Add a non-triggering annotation
   move         Move a card between workflow lanes
   start        Start a draft card idempotently
@@ -45,7 +46,7 @@ const chatHelp = `Usage: dieter chat <action>
 
 Actions:
   create, list, show, context, transcript, watch, tool-output, fork, send,
-  comment, cancel, rename, update, archive, unarchive, workspace, pin, unpin
+  queue, comment, cancel, rename, update, archive, unarchive, workspace, pin, unpin
 
 Standalone chats use the same durable conversation and workspace operations as
 cards but are not assigned to a board lane.
@@ -81,6 +82,8 @@ func (c *CLI) rpcCard(args []string, chat bool) error {
 		return c.rpcCardFork(args[1:])
 	case "send":
 		return c.rpcCardSend(args[1:])
+	case "queue":
+		return c.rpcCardQueue(args[1:])
 	case "comment":
 		return c.rpcCardComment(args[1:])
 	case "move":
@@ -153,6 +156,8 @@ Options:
   --workspace MODE          project or worktree
   --branch BRANCH           Optional worktree branch
   --base-branch BRANCH      Optional worktree base branch
+  --base-remote REMOTE      Optional board/project remote override
+  --remote-publish MODE     manual, pull_request, or push_base
   --format json|id          Output format
 `
 	if chat {
@@ -178,6 +183,8 @@ Options:
 	workspaceMode := set.String("workspace", "", "project or worktree")
 	branch := set.String("branch", "", "worktree branch")
 	baseBranch := set.String("base-branch", "", "worktree base branch")
+	baseRemote := set.String("base-remote", "", "base remote override")
+	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -227,6 +234,7 @@ Options:
 		LabelIds: splitCSV(*labels), DeferStart: !chat && *lane != "running", Attachments: messageParts(attachments),
 		ClientId: "dieter-cli", CommandId: commandID, WorkspaceMode: *workspaceMode,
 		WorkspaceBranch: *branch, WorkspaceBaseBranch: *baseBranch, AutoGenerateTitle: *autoTitle,
+		WorkspaceBaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
 	}
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {
@@ -613,6 +621,44 @@ func (c *CLI) rpcCardSend(args []string) error {
 	return nil
 }
 
+func (c *CLI) rpcCardQueue(args []string) error {
+	const usage = "Usage: dieter card queue <action>\n\nActions:\n  remove   Remove a message that has not started yet\n"
+	if groupHelp(args) {
+		fmt.Fprint(c.Out, usage)
+		return nil
+	}
+	if args[0] != "remove" {
+		return fmt.Errorf("unknown queue action %q; run `dieter card queue --help`", args[0])
+	}
+	return c.rpcCardQueueRemove(args[1:])
+}
+
+func (c *CLI) rpcCardQueueRemove(args []string) error {
+	const usage = "Usage: dieter card queue remove --message MESSAGE_ID CARD\n\nRemoves a queued message and prints its complete content as JSON.\n"
+	set := flags("card queue remove")
+	messageID := set.String("message", "", "queued message ID")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 || strings.TrimSpace(*messageID) == "" {
+		return errors.New("CARD and --message are required")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	removed, err := client.RemoveQueuedMessage(rpcCtx, &dieterv1.RemoveQueuedMessageRequest{
+		CardId: set.Arg(0), MessageId: *messageID,
+	})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, removed)
+}
+
 func (c *CLI) rpcCardComment(args []string) error {
 	const usage = "Usage: dieter card comment [--message TEXT|--file FILE] [--author NAME] CARD\n\nComments never wake the agent or count as approval.\n"
 	set := flags("card comment")
@@ -836,11 +882,13 @@ func (c *CLI) rpcCardArchive(args []string, archived bool) error {
 }
 
 func (c *CLI) rpcCardWorkspace(args []string) error {
-	const usage = "Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] CARD\n"
+	const usage = "Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base] CARD\n"
 	set := flags("card workspace")
 	mode := set.String("mode", "", "project or worktree")
 	branch := set.String("branch", "", "worktree branch")
 	baseBranch := set.String("base-branch", "", "worktree base branch")
+	baseRemote := set.String("base-remote", "", "base remote override")
+	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -854,7 +902,10 @@ func (c *CLI) rpcCardWorkspace(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.UpdateConversationWorkspace(rpcCtx, &dieterv1.UpdateConversationWorkspaceRequest{CardId: set.Arg(0), Mode: *mode, Branch: *branch, BaseBranch: *baseBranch})
+	value, err := client.UpdateConversationWorkspace(rpcCtx, &dieterv1.UpdateConversationWorkspaceRequest{
+		CardId: set.Arg(0), Mode: *mode, Branch: *branch, BaseBranch: *baseBranch,
+		BaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
+	})
 	if err != nil {
 		return err
 	}

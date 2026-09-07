@@ -220,10 +220,29 @@ private fun BoardManagement(state: DieterUiState, model: DieterViewModel) {
     var description by remember { mutableStateOf("") }
     var labelName by remember { mutableStateOf("") }
     var labelColor by remember(board?.id) { mutableStateOf(randomLabelColor()) }
+    var baseRemote by remember(board?.id) { mutableStateOf(board?.baseRemote?.ifBlank { state.project?.baseRemote.orEmpty() }.orEmpty()) }
+    var remotePublishMode by remember(board?.id) { mutableStateOf(board?.remotePublishMode?.ifBlank { "manual" } ?: "manual") }
     SectionTitle("Current board")
     if (board != null) {
         Text(board.name, fontWeight = FontWeight.SemiBold)
         Text(board.description.ifBlank { "${board.workflow} workflow" }, color = DieterMuted)
+        OutlinedTextField(
+            baseRemote,
+            { baseRemote = it },
+            label = { Text("Default Git remote") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+        Text("Remote publishing", color = DieterMuted, modifier = Modifier.padding(top = 8.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("manual" to "Manual", "pull_request" to "Pull request", "push_base" to "Push base").forEach { (value, label) ->
+                FilterChip(selected = remotePublishMode == value, onClick = { remotePublishMode = value }, label = { Text(label) })
+            }
+        }
+        Button(
+            onClick = { model.updateBoardGitSettings(baseRemote, remotePublishMode) },
+            enabled = !state.working,
+        ) { Text("Save Git defaults") }
         Text("Archive completed cards", color = DieterMuted, modifier = Modifier.padding(top = 8.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("never", "immediately", "after_1_day", "after_7_days", "after_30_days", "after_90_days").forEach { policy ->

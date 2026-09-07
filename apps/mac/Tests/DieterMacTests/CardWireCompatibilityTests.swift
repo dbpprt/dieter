@@ -7,6 +7,8 @@ import Testing
     let wire = Data([0x8a, 0x02, 6] + Array("origin".utf8) + [0x92, 0x02, 6] + Array("manual".utf8))
     let card = try Dieter_V1_Card(serializedBytes: wire)
     #expect(!card.hasTokenUsage)
+    #expect(card.workspaceBaseRemote == "origin")
+    #expect(card.remotePublishMode == "manual")
     var updated = card
     updated.tokenUsage.totalTokens = 125
     updated.tokenUsage.reportedMessages = 1

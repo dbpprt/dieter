@@ -1,9 +1,98 @@
+import AppKit
 import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
 enum ComposerReturnPolicy {
     static func sendsMessage(shiftPressed: Bool) -> Bool { !shiftPressed }
+}
+
+enum ComposerHistoryDirection {
+    case older
+    case newer
+}
+
+struct ComposerHistoryNavigation {
+    private(set) var selectedIndex: Int?
+    private(set) var selectedText: String?
+    private var preservedDraft = ""
+
+    var isBrowsing: Bool { selectedIndex != nil }
+
+    static func entries(
+        messages: [Dieter_V1_UiMessage],
+        queuedMessages: [Dieter_V1_QueuedMessage]
+    ) -> [String] {
+        let queuedIDs = Set(queuedMessages.lazy.map(\.id).filter { !$0.isEmpty })
+        return messages.compactMap { message in
+            guard ["user", "human"].contains(message.role.lowercased()),
+                  !queuedIDs.contains(message.id) else { return nil }
+            let text = message.parts
+                .filter { $0.type == "text" }
+                .map(\.text)
+                .joined()
+            return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
+        }
+    }
+
+    static func isAtBoundary(
+        _ direction: ComposerHistoryDirection,
+        text: String,
+        selection: NSRange?
+    ) -> Bool {
+        guard let selection, selection.location != NSNotFound else {
+            return !text.contains("\n")
+        }
+        let value = text as NSString
+        let location: Int
+        switch direction {
+        case .older:
+            location = min(max(0, selection.location), value.length)
+            return !value.substring(to: location).contains("\n")
+        case .newer:
+            location = min(max(0, selection.location + selection.length), value.length)
+            return !value.substring(from: location).contains("\n")
+        }
+    }
+
+    mutating func navigate(
+        _ direction: ComposerHistoryDirection,
+        entries: [String],
+        currentText: String
+    ) -> String? {
+        guard !entries.isEmpty else { return nil }
+        switch direction {
+        case .older:
+            if let selectedIndex {
+                self.selectedIndex = max(0, min(selectedIndex, entries.count - 1) - 1)
+            } else {
+                preservedDraft = currentText
+                selectedIndex = entries.count - 1
+            }
+            selectedText = entries[selectedIndex!]
+            return selectedText
+        case .newer:
+            guard let selectedIndex else { return nil }
+            if selectedIndex < entries.count - 1 {
+                self.selectedIndex = selectedIndex + 1
+                selectedText = entries[selectedIndex + 1]
+                return selectedText
+            }
+            let draft = preservedDraft
+            reset()
+            return draft
+        }
+    }
+
+    mutating func observeTextChange(_ text: String) {
+        if isBrowsing, text != selectedText { reset() }
+    }
+
+    mutating func reset() {
+        selectedIndex = nil
+        selectedText = nil
+        preservedDraft = ""
+    }
 }
 
 enum ConversationRefreshText {
@@ -48,6 +137,17 @@ struct ConversationView: View {
         (store.selectedCard ?? store.selectedDetail?.card)?.scope == "chat"
     }
 
+    private var card: Dieter_V1_Card? { store.selectedCard ?? store.selectedDetail?.card }
+    private var startingCard: Bool { card.map { store.pendingCardStarts[$0.id] != nil } ?? false }
+    private var canStartCard: Bool {
+        guard let card else { return false }
+        return BoardCardStartPolicy.canStart(
+            card,
+            board: store.selectedDetail?.board ?? store.selectedBoard,
+            hasDraftAttachments: !(store.conversation?.conversation.draftAttachments.isEmpty ?? true)
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ConversationChrome(compact: compact, standalone: standalone, tab: $tab)
@@ -77,6 +177,9 @@ struct ConversationView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if tab == "Conversation" {
+                if let card, canStartCard || startingCard {
+                    ConversationStartCardBanner(card: card, starting: startingCard)
+                }
                 ConversationComposer(fileImporterPresented: $fileImporterPresented)
             }
         }
@@ -126,6 +229,38 @@ private struct ProjectDirectoryChangesRedirect: View {
             .accessibilityIdentifier("changes.open-project")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct ConversationStartCardBanner: View {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
+    let starting: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Ready to run").font(.system(size: 12, weight: .semibold))
+                Text(starting ? "Starting the saved task…" : "Run the saved task and move this card to Running.")
+                    .font(.caption).foregroundStyle(DieterTheme.tertiary)
+            }
+            Spacer()
+            Button {
+                Task { await store.start(card) }
+            } label: {
+                HStack(spacing: 6) {
+                    if starting { ProgressView().controlSize(.mini) }
+                    else { Image(systemName: "play.fill").font(.system(size: 9, weight: .bold)) }
+                    Text(starting ? "Starting…" : "Run task")
+                }
+            }
+            .buttonStyle(DieterPrimaryButtonStyle())
+            .disabled(starting)
+            .accessibilityIdentifier("conversation-run-card")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(DieterTheme.shellDeep.opacity(0.08))
+        .overlay(alignment: .top) { Divider().overlay(DieterTheme.border) }
     }
 }
 
@@ -409,18 +544,6 @@ struct ConversationTimeline: View {
                     ForEach(timelineRows) { row in
                         ConversationTimelineRow(item: row.item, details: row.details)
                             .id(row.id)
-                    }
-
-                    ForEach(queuedMessages, id: \.id) { message in
-                        QueuedMessageView(
-                            message: message,
-                            canInterrupt: ConversationQueuePresentation.canInterrupt(
-                                messageID: message.id,
-                                queue: queuedMessages,
-                                agentIsWorking: agentIsWorking
-                            )
-                        )
-                            .id("queued:\(message.id)")
                     }
 
                     ForEach(projection.unattachedPlans, id: \.id) {
@@ -727,6 +850,11 @@ private struct TurnFailureLogSheet: View {
 }
 
 enum ConversationQueuePresentation {
+    struct EditableDraft {
+        let text: String
+        let attachments: [Dieter_V1_MessagePart]
+    }
+
     static func deliveredMessages(
         _ messages: [Dieter_V1_UiMessage],
         whileQueued queue: [Dieter_V1_QueuedMessage]
@@ -735,12 +863,21 @@ enum ConversationQueuePresentation {
         return messages.filter { !queuedIDs.contains($0.id) }
     }
 
-    static func canInterrupt(
+    static func canSteer(
         messageID: String,
         queue: [Dieter_V1_QueuedMessage],
         agentIsWorking: Bool
     ) -> Bool {
         agentIsWorking && !messageID.isEmpty && queue.first?.id == messageID
+    }
+
+    static func editableDraft(for message: Dieter_V1_QueuedMessage) -> EditableDraft {
+        let textParts = message.parts.filter { $0.type == "text" }.map(\.text)
+        let text = textParts.isEmpty ? message.text : textParts.joined()
+        return EditableDraft(
+            text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+            attachments: message.parts.filter { $0.type != "text" }
+        )
     }
 }
 
@@ -868,6 +1005,18 @@ struct MessageView: View {
                     ForEach(Array(ConversationMessagePartGroup.coalescingText(message.parts).enumerated()), id: \.offset) { _, part in
                         MessagePartView(messageID: message.id, part: part, inUserBubble: true)
                     }
+                    if deliveryState == .failed {
+                        HStack(spacing: 8) {
+                            Label("Send failed", systemImage: "exclamationmark.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(DieterTheme.coral)
+                            Spacer(minLength: 8)
+                            Button("Retry") { Task { await store.retryOutboxItem(message.id) } }
+                            Button("Remove", role: .destructive) { Task { await store.discardOutboxItem(message.id) } }
+                                .accessibilityIdentifier("conversation.failed-message.remove.\(message.id)")
+                        }
+                        .controlSize(.small)
+                    }
                 }
                 .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)
                 .background(DieterTheme.userMessageBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -877,15 +1026,18 @@ struct MessageView: View {
                 }
                 .frame(maxWidth: 620, alignment: .trailing)
             }
+            .opacity(store.isPendingMessage(message.id) && deliveryState != .failed ? 0.52 : 1)
             .overlay(alignment: .bottomTrailing) {
-                MessageDeliveryReceipt(state: deliveryState)
-                    .padding(.trailing, 4)
-                    .padding(.bottom, 4)
+                if deliveryState != .failed {
+                    MessageDeliveryReceipt(state: deliveryState)
+                        .padding(.trailing, 4)
+                        .padding(.bottom, 4)
+                }
             }
             .contextMenu {
                 if deliveryState == .failed {
                     Button("Retry queued message") { Task { await store.retryOutboxItem(message.id) } }
-                    Button("Discard queued message", role: .destructive) { Task { await store.discardOutboxItem(message.id) } }
+                    Button("Remove failed message", role: .destructive) { Task { await store.discardOutboxItem(message.id) } }
                 }
             }
         } else {
@@ -902,84 +1054,6 @@ struct MessageView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-}
-
-private struct QueuedMessageView: View {
-    @Environment(DieterStore.self) private var store
-    let message: Dieter_V1_QueuedMessage
-    let canInterrupt: Bool
-    @State private var interrupting = false
-
-    private var parts: [Dieter_V1_MessagePart] {
-        if !message.parts.isEmpty { return message.parts }
-        guard !message.text.isEmpty else { return [] }
-        var part = Dieter_V1_MessagePart()
-        part.type = "text"
-        part.text = message.text
-        return [part]
-    }
-
-    var body: some View {
-        HStack {
-            Spacer(minLength: 70)
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 6) {
-                    Image(systemName: "clock.fill")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(DieterTheme.amber)
-                    Text("Queued · sends after this turn")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(DieterTheme.subtle)
-                        .lineLimit(1)
-                    Spacer(minLength: 12)
-                    if canInterrupt {
-                        Button {
-                            interrupting = true
-                            Task { @MainActor in
-                                if let card = store.selectedCard ?? store.selectedDetail?.card {
-                                    await store.cancel(card)
-                                }
-                                interrupting = false
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                if interrupting {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Image(systemName: "paperplane.fill")
-                                        .font(.system(size: 9, weight: .semibold))
-                                }
-                                Text(interrupting ? "Sending…" : "Send now")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                            .foregroundStyle(DieterTheme.userMessageForeground)
-                            .padding(.horizontal, 9)
-                            .frame(height: 25)
-                            .background(DieterTheme.surface, in: Capsule())
-                            .overlay(Capsule().stroke(DieterTheme.strongBorder))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(interrupting)
-                        .help("Interrupt the current turn and send this message now")
-                        .accessibilityLabel("Interrupt current turn and send this message now")
-                        .accessibilityIdentifier("conversation.queued-message.interrupt.\(message.id)")
-                    }
-                }
-                ForEach(Array(ConversationMessagePartGroup.coalescingText(parts).enumerated()), id: \.offset) { _, part in
-                    MessagePartView(messageID: message.id, part: part, inUserBubble: true)
-                }
-            }
-            .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)
-            .background(DieterTheme.userMessageBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(DieterTheme.strongBorder)
-            }
-            .frame(maxWidth: 620, alignment: .trailing)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("conversation.queued-message.\(message.id)")
     }
 }
 
@@ -1035,7 +1109,7 @@ private struct MessageDeliveryReceipt: View {
         case .accepted: "Accepted by daemon"
         case .queued: "Queued for the next turn"
         case .synced: "Synced"
-        case .failed: "Send failed; use the context menu to retry or discard"
+        case .failed: "Send failed; retry or remove this message"
         }
     }
 }
@@ -1612,12 +1686,182 @@ struct CommentsView: View {
     }
 }
 
+private struct QueuedMessageTray: View {
+    let messages: [Dieter_V1_QueuedMessage]
+    let agentIsWorking: Bool
+    let onEdit: (Dieter_V1_QueuedMessage) async -> Void
+    let onRemove: (Dieter_V1_QueuedMessage) async -> Void
+    let onSteer: () async -> Void
+
+    private var trayHeight: CGFloat {
+        min(CGFloat(messages.count) * 64, 190)
+    }
+
+    var body: some View {
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 6) {
+                ForEach(messages, id: \.id) { message in
+                    QueuedComposerMessage(
+                        message: message,
+                        canSteer: ConversationQueuePresentation.canSteer(
+                            messageID: message.id,
+                            queue: messages,
+                            agentIsWorking: agentIsWorking
+                        ),
+                        onEdit: { await onEdit(message) },
+                        onRemove: { await onRemove(message) },
+                        onSteer: onSteer
+                    )
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+        .frame(height: trayHeight)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Queued messages")
+        .accessibilityIdentifier("conversation.queue")
+    }
+}
+
+private struct QueuedComposerMessage: View {
+    enum Action { case edit, remove, steer }
+
+    let message: Dieter_V1_QueuedMessage
+    let canSteer: Bool
+    let onEdit: () async -> Void
+    let onRemove: () async -> Void
+    let onSteer: () async -> Void
+    @State private var action: Action?
+
+    private var draft: ConversationQueuePresentation.EditableDraft {
+        ConversationQueuePresentation.editableDraft(for: message)
+    }
+
+    private var summary: String {
+        if !draft.text.isEmpty { return draft.text }
+        return draft.attachments.count == 1 ? "1 attachment" : "\(draft.attachments.count) attachments"
+    }
+
+    private var attachmentCount: Int {
+        draft.attachments.count
+    }
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: "arrow.turn.down.right")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(DieterTheme.tertiary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(summary)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(DieterTheme.text)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if attachmentCount > 0 && !draft.text.isEmpty {
+                    Label("\(attachmentCount) attachment\(attachmentCount == 1 ? "" : "s")", systemImage: "paperclip")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(DieterTheme.tertiary)
+                }
+            }
+
+            if canSteer {
+                Button {
+                    perform(.steer, onSteer)
+                } label: {
+                    HStack(spacing: 5) {
+                        if action == .steer {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "arrow.turn.down.right")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        Text(action == .steer ? "Steering…" : "Steer")
+                    }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DieterTheme.subtle)
+                    .padding(.horizontal, 7)
+                    .frame(height: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(action != nil)
+                .help("Stop the current turn and run this message next")
+                .accessibilityIdentifier("conversation.queued-message.steer.\(message.id)")
+            }
+
+            Button(role: .destructive) {
+                perform(.remove, onRemove)
+            } label: {
+                Group {
+                    if action == .remove {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "trash")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                }
+                .foregroundStyle(DieterTheme.tertiary)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(action != nil)
+            .help("Remove queued message")
+            .accessibilityLabel("Remove queued message")
+            .accessibilityIdentifier("conversation.queued-message.remove.\(message.id)")
+
+            Menu {
+                Button("Edit queued message", systemImage: "pencil") {
+                    perform(.edit, onEdit)
+                }
+                Button("Remove queued message", systemImage: "trash", role: .destructive) {
+                    perform(.remove, onRemove)
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .disabled(action != nil)
+            .help("Queued message actions")
+            .accessibilityIdentifier("conversation.queued-message.menu.\(message.id)")
+        }
+        .padding(.leading, 13)
+        .padding(.trailing, 8)
+        .padding(.vertical, 9)
+        .frame(minHeight: 58)
+        .background(DieterTheme.elevated.opacity(0.96), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(DieterTheme.border.opacity(0.9))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("conversation.queued-message.\(message.id)")
+    }
+
+    private func perform(_ next: Action, _ operation: @escaping () async -> Void) {
+        guard action == nil else { return }
+        action = next
+        Task { @MainActor in
+            await operation()
+            action = nil
+        }
+    }
+}
+
 
 private struct ConversationComposer: View {
     @Environment(DieterStore.self) private var store
     @Binding var fileImporterPresented: Bool
     @FocusState private var composerFocused: Bool
     @State private var attachmentDropTargeted = false
+    @State private var historyNavigation = ComposerHistoryNavigation()
 
     private var harness: Dieter_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == store.composerProvider } }
     private var model: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == store.composerModel } }
@@ -1630,24 +1874,34 @@ private struct ConversationComposer: View {
     private var hasDraft: Bool {
         !store.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !store.composerAttachments.isEmpty
     }
+    private var conversationID: String { store.selectedCardID ?? store.selectedChatID ?? "" }
+    private var historyEntries: [String] {
+        ComposerHistoryNavigation.entries(
+            messages: store.conversationMessages,
+            queuedMessages: store.conversation?.conversation.queue ?? []
+        )
+    }
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 8) {
             if let queue = store.conversation?.conversation.queue, !queue.isEmpty {
-                HStack(spacing: 7) {
-                    Image(systemName: "clock.fill")
-                        .font(.caption)
-                        .foregroundStyle(DieterTheme.amber)
-                    Text("\(queue.count) message\(queue.count == 1 ? "" : "s") queued")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(DieterTheme.text)
-                    Text("Sends after the current turn")
-                        .font(.caption2)
-                        .foregroundStyle(DieterTheme.subtle)
-                    Spacer()
-                }
-                .padding(.horizontal, 4)
-                .accessibilityElement(children: .combine)
+                QueuedMessageTray(
+                    messages: queue,
+                    agentIsWorking: working,
+                    onEdit: { message in
+                        if await store.removeQueuedMessage(message, edit: true) {
+                            composerFocused = true
+                        }
+                    },
+                    onRemove: { message in
+                        _ = await store.removeQueuedMessage(message, edit: false)
+                    },
+                    onSteer: {
+                        if let card = store.selectedCard ?? store.selectedDetail?.card {
+                            await store.cancel(card)
+                        }
+                    }
+                )
             }
             VStack(alignment: .leading, spacing: 0) {
                 TextField("Message the local agent…", text: $store.composerText, axis: .vertical)
@@ -1662,10 +1916,28 @@ private struct ConversationComposer: View {
                         if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
                             return .ignored
                         }
-                        if hasDraft { Task { await store.sendComposer() } }
+                        if hasDraft { submitComposer() }
                         return .handled
                     }
+                    .onKeyPress(.upArrow, phases: .down) { press in
+                        guard press.modifiers.isEmpty else { return .ignored }
+                        return navigateHistory(.older) ? .handled : .ignored
+                    }
+                    .onKeyPress(.downArrow, phases: .down) { press in
+                        guard press.modifiers.isEmpty else { return .ignored }
+                        return navigateHistory(.newer) ? .handled : .ignored
+                    }
+                    .onChange(of: store.composerText) { _, text in
+                        var navigation = historyNavigation
+                        navigation.observeTextChange(text)
+                        historyNavigation = navigation
+                    }
                     .frame(minHeight: 54, alignment: .topLeading)
+                    .background {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { composerFocused = true }
+                    }
 
                 if !store.composerAttachments.isEmpty {
                     AttachmentPreviewStrip(attachments: $store.composerAttachments)
@@ -1699,7 +1971,7 @@ private struct ConversationComposer: View {
                     }
 
                     Button {
-                        Task { await store.sendComposer() }
+                        submitComposer()
                     } label: {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 12, weight: .bold))
@@ -1722,7 +1994,12 @@ private struct ConversationComposer: View {
                 .padding(.bottom, 9)
 
             }
-            .background(attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.surface)
+                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .onTapGesture { composerFocused = true }
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(attachmentDropTargeted ? DieterTheme.shell : (composerFocused ? DieterTheme.shellDeep.opacity(0.55) : DieterTheme.border), lineWidth: attachmentDropTargeted ? 1.5 : 1)
@@ -1736,6 +2013,32 @@ private struct ConversationComposer: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(DieterTheme.sidebar)
+        .onChange(of: conversationID) { _, _ in historyNavigation.reset() }
+    }
+
+    private func navigateHistory(_ direction: ComposerHistoryDirection) -> Bool {
+        guard !historyEntries.isEmpty else { return false }
+        let selection = (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectedRange()
+        guard historyNavigation.isBrowsing || ComposerHistoryNavigation.isAtBoundary(
+            direction,
+            text: store.composerText,
+            selection: selection
+        ) else { return false }
+
+        var navigation = historyNavigation
+        guard let text = navigation.navigate(
+            direction,
+            entries: historyEntries,
+            currentText: store.composerText
+        ) else { return false }
+        historyNavigation = navigation
+        store.composerText = text
+        return true
+    }
+
+    private func submitComposer() {
+        historyNavigation.reset()
+        Task { await store.sendComposer() }
     }
 
     private func composerSettings(showContext: Bool) -> some View {
@@ -1750,7 +2053,7 @@ private struct ConversationComposer: View {
                         store.composerProvider = item.id
                         store.composerModel = item.defaultModel
                         store.composerEffort = item.models.first(where: { $0.id == item.defaultModel })?.defaultEffort ?? ""
-                        store.composerProviderOptions = ProviderOptionValues.defaults(for: item)
+                        store.composerProviderOptions = ProviderOptionValues.defaults(for: item, model: store.composerModel)
                     }
                 }
             } label: {
@@ -1764,6 +2067,11 @@ private struct ConversationComposer: View {
                     Button(item.name) {
                         store.composerModel = item.id
                         store.composerEffort = item.defaultEffort
+                        store.composerProviderOptions = ProviderOptionValues.normalized(
+                            for: harness,
+                            model: store.composerModel,
+                            saved: store.composerProviderOptions
+                        )
                     }
                 }
             } label: {
@@ -1784,10 +2092,10 @@ private struct ConversationComposer: View {
                 .fixedSize()
             }
 
-            ProviderOptionChips(options: harness?.options ?? [], values: Binding(
+            ProviderOptionChips(options: ProviderOptionValues.options(for: harness, model: store.composerModel), values: Binding(
                 get: { store.composerProviderOptions },
                 set: { store.composerProviderOptions = $0 }
-            ))
+            ), conversationLocked: (store.selectedCard ?? store.selectedDetail?.card)?.initialPromptSentAt.isEmpty == false)
 
             Spacer(minLength: 0)
             if showContext, let usage = ConversationContextUsage.latest(

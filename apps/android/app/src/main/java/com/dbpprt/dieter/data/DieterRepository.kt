@@ -65,6 +65,7 @@ import com.dbpprt.dieter.v1.ProjectRef
 import com.dbpprt.dieter.v1.SCMCapabilities
 import com.dbpprt.dieter.v1.StartGitOperationRequest
 import com.dbpprt.dieter.v1.UpdateConversationWorkspaceRequest
+import com.dbpprt.dieter.v1.UpdateBoardGitSettingsRequest
 import com.dbpprt.dieter.v1.WatchGitOperationRequest
 import com.dbpprt.dieter.v1.Workspace
 import com.dbpprt.dieter.v1.WorkspacesResponse
@@ -221,6 +222,7 @@ interface DieterRepository {
     suspend fun archivedProjects(): ProjectsResponse
     suspend fun createBoard(request: CreateBoardRequest): Board
     suspend fun setBoardArchivePolicy(boardId: String, policy: String): Board
+    suspend fun updateBoardGitSettings(boardId: String, baseRemote: String, remotePublishMode: String): Board
     suspend fun archivedCards(boardId: String): CardsResponse
     suspend fun createBoardLabel(boardId: String, name: String, color: String): Board
     suspend fun deleteBoardLabel(boardId: String, labelId: String): Board
@@ -579,6 +581,15 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override suspend fun setBoardArchivePolicy(boardId: String, policy: String): Board = unary().setBoardArchivePolicy(
         SetBoardArchivePolicyRequest.newBuilder().setBoardId(boardId).setDoneArchivePolicy(policy).build(),
     )
+
+    override suspend fun updateBoardGitSettings(boardId: String, baseRemote: String, remotePublishMode: String): Board =
+        unary().updateBoardGitSettings(
+            UpdateBoardGitSettingsRequest.newBuilder()
+                .setBoardId(boardId)
+                .setBaseRemote(baseRemote.trim())
+                .setRemotePublishMode(remotePublishMode)
+                .build(),
+        )
 
     override suspend fun archivedCards(boardId: String): CardsResponse = unary().listArchivedCards(
         BoardRef.newBuilder().setBoardId(boardId).build(),

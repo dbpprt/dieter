@@ -15,6 +15,7 @@ import com.dbpprt.dieter.v1.QueuedMessage
 import com.dbpprt.dieter.v1.SendMessageRequest
 import com.dbpprt.dieter.v1.StartCardRequest
 import com.dbpprt.dieter.v1.UiMessage
+import com.google.protobuf.ByteString
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -157,6 +158,28 @@ class ConversationOutboxPolicyTest {
     }
 
     @Test
+    fun `retained failed send stays before newer running turns`() {
+        val failed = sendEntry(serverId = null).copy(
+            state = OutboxState.FAILED,
+            createdAtMillis = 1_000,
+        )
+        val staleTail = userMessage("msg_local", "Still there?")
+        val running = userMessage("msg_running", "Newer command", createdAtMillis = 2_000)
+        val answer = userMessage("msg_answer", "Newer answer", role = "assistant", createdAtMillis = 3_000)
+
+        val overlaid = overlayOptimisticMessages(
+            snapshot(messages = listOf(running, answer, staleTail)),
+            listOf(failed),
+        )
+
+        assertEquals(
+            listOf("msg_local", "msg_running", "msg_answer"),
+            overlaid.conversation.messagesList.map(UiMessage::getId),
+        )
+        assertFalse(overlaid.conversation.messagesList.first().metadataJson.isEmpty)
+    }
+
+    @Test
     fun `accepted send stays pending until transcript or queue reflects it`() {
         val entry = sendEntry(serverId = "msg_local")
 
@@ -284,9 +307,20 @@ class ConversationOutboxPolicyTest {
         )
         .build()
 
-    private fun userMessage(id: String, text: String): UiMessage = UiMessage.newBuilder()
-        .setId(id)
-        .setRole("user")
-        .addParts(MessagePart.newBuilder().setType("text").setText(text))
-        .build()
+    private fun userMessage(
+        id: String,
+        text: String,
+        role: String = "user",
+        createdAtMillis: Long? = null,
+    ): UiMessage =
+        UiMessage.newBuilder()
+            .setId(id)
+            .setRole(role)
+            .apply {
+                createdAtMillis?.let {
+                    metadataJson = ByteString.copyFromUtf8("{\"createdAt\":\"${java.time.Instant.ofEpochMilli(it)}\"}")
+                }
+            }
+            .addParts(MessagePart.newBuilder().setType("text").setText(text))
+            .build()
 }

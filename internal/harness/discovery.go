@@ -191,8 +191,16 @@ func runDSHDiscoveryCommand(ctx context.Context) ([]byte, error) {
 
 func mergeDiscoveredAdapter(adapter Adapter, visible []Model) Adapter {
 	known := make(map[string]bool, len(visible))
+	configured := make(map[string]Model, len(adapter.Models))
+	for _, model := range adapter.Models {
+		configured[model.ID] = model
+	}
 	efforts := map[string]bool{}
-	for _, model := range visible {
+	for index := range visible {
+		model := &visible[index]
+		if configuredModel, ok := configured[model.ID]; ok && configuredModel.DefaultEffort != "" && supportsEffort(*model, configuredModel.DefaultEffort) {
+			model.DefaultEffort = configuredModel.DefaultEffort
+		}
 		known[model.ID] = true
 		for _, effort := range model.Efforts {
 			efforts[effort] = true
@@ -227,6 +235,15 @@ func mergeDiscoveredAdapter(adapter Adapter, visible []Model) Adapter {
 	}
 	adapter.Effort = &EffortConfig{Label: label, Options: options}
 	return adapter
+}
+
+func supportsEffort(model Model, effort string) bool {
+	for _, supported := range model.Efforts {
+		if supported == effort {
+			return true
+		}
+	}
+	return false
 }
 
 func runDiscoveryCommand(ctx context.Context, name string, args ...string) ([]byte, error) {

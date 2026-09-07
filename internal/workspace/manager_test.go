@@ -20,12 +20,15 @@ func TestWorktreeWorkspaceUsesSameCardIdentityForBoardCardsAndChats(t *testing.T
 		t.Fatal(err)
 	}
 	project, err := data.CreateProject(store.CreateProjectInput{
-		Name: "Fixture", Path: repository, BaseBranch: "main",
+		Name: "Fixture", Path: repository, BaseBranch: "main", BaseRemote: "origin",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: model.WorkflowReview})
+	board, err := data.CreateBoard(store.CreateBoardInput{
+		Project: project.ID, Name: "Main", Workflow: model.WorkflowReview,
+		BaseRemote: "private", RemotePublishMode: model.RemotePublishPullRequest,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +62,12 @@ func TestWorktreeWorkspaceUsesSameCardIdentityForBoardCardsAndChats(t *testing.T
 	}
 	if cardWorkspace.Path == chatWorkspace.Path || cardWorkspace.Branch == chatWorkspace.Branch {
 		t.Fatal("card and chat workspaces must be isolated")
+	}
+	if cardWorkspace.BaseRemote != "private" || cardWorkspace.RemotePublishMode != model.RemotePublishPullRequest {
+		t.Fatalf("card workspace ignored board Git defaults: %#v", cardWorkspace)
+	}
+	if chatWorkspace.BaseRemote != "origin" || chatWorkspace.RemotePublishMode != model.RemotePublishManual {
+		t.Fatalf("chat workspace did not use project/manual defaults: %#v", chatWorkspace)
 	}
 }
 

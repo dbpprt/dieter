@@ -113,7 +113,8 @@ struct WorkspaceChangesView: View {
             hasPullRequest: pullRequest != nil,
             workspaceBranch: workspace?.branch ?? card?.workspace.branch ?? "",
             baseBranch: workspace?.baseBranch ?? card?.workspace.baseBranch ?? "",
-            dirty: workspace?.dirty ?? false
+            dirty: workspace?.dirty ?? false,
+            remotePublishMode: workspace?.remotePublishMode ?? card?.remotePublishMode ?? RemotePublishMode.manual.rawValue
         )
     }
 
@@ -1746,7 +1747,9 @@ private struct MergeIntoBaseSheet: View {
                     .buttonStyle(DieterPrimaryButtonStyle())
                     .disabled(true).opacity(0.45)
             } else {
-                Text("Runs locally · nothing is pushed")
+                Text(availability.remotePublishMode == RemotePublishMode.pushBase.rawValue
+                    ? "Validated result is pushed to the configured base remote"
+                    : "Runs locally · nothing is pushed")
                     .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
                 if mergeFailedConflict {

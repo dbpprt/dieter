@@ -2477,6 +2477,8 @@ type Board struct {
 	Labels            []*Label               `protobuf:"bytes,9,rep,name=labels,proto3" json:"labels,omitempty"`
 	Lanes             []*Lane                `protobuf:"bytes,10,rep,name=lanes,proto3" json:"lanes,omitempty"`
 	PromptTemplate    string                 `protobuf:"bytes,11,opt,name=prompt_template,json=promptTemplate,proto3" json:"prompt_template,omitempty"`
+	BaseRemote        string                 `protobuf:"bytes,12,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	RemotePublishMode string                 `protobuf:"bytes,13,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -2584,6 +2586,20 @@ func (x *Board) GetLanes() []*Lane {
 func (x *Board) GetPromptTemplate() string {
 	if x != nil {
 		return x.PromptTemplate
+	}
+	return ""
+}
+
+func (x *Board) GetBaseRemote() string {
+	if x != nil {
+		return x.BaseRemote
+	}
+	return ""
+}
+
+func (x *Board) GetRemotePublishMode() string {
+	if x != nil {
+		return x.RemotePublishMode
 	}
 	return ""
 }
@@ -2826,6 +2842,8 @@ type Card struct {
 	WorkspaceBaseBranch string                 `protobuf:"bytes,30,opt,name=workspace_base_branch,json=workspaceBaseBranch,proto3" json:"workspace_base_branch,omitempty"`
 	Workspace           *WorkspaceSummary      `protobuf:"bytes,31,opt,name=workspace,proto3" json:"workspace,omitempty"`
 	PullRequest         *PullRequestSummary    `protobuf:"bytes,32,opt,name=pull_request,json=pullRequest,proto3" json:"pull_request,omitempty"`
+	WorkspaceBaseRemote string                 `protobuf:"bytes,33,opt,name=workspace_base_remote,json=workspaceBaseRemote,proto3" json:"workspace_base_remote,omitempty"`
+	RemotePublishMode   string                 `protobuf:"bytes,34,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
 	TokenUsage          *TokenUsage            `protobuf:"bytes,35,opt,name=token_usage,json=tokenUsage,proto3" json:"token_usage,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
@@ -3083,6 +3101,20 @@ func (x *Card) GetPullRequest() *PullRequestSummary {
 		return x.PullRequest
 	}
 	return nil
+}
+
+func (x *Card) GetWorkspaceBaseRemote() string {
+	if x != nil {
+		return x.WorkspaceBaseRemote
+	}
+	return ""
+}
+
+func (x *Card) GetRemotePublishMode() string {
+	if x != nil {
+		return x.RemotePublishMode
+	}
+	return ""
 }
 
 func (x *Card) GetTokenUsage() *TokenUsage {
@@ -4736,6 +4768,8 @@ type ProviderOption struct {
 	Type          string                  `protobuf:"bytes,4,opt,name=type,proto3" json:"type,omitempty"`
 	DefaultValue  string                  `protobuf:"bytes,5,opt,name=default_value,json=defaultValue,proto3" json:"default_value,omitempty"`
 	Choices       []*ProviderOptionChoice `protobuf:"bytes,6,rep,name=choices,proto3" json:"choices,omitempty"`
+	Mutable       bool                    `protobuf:"varint,7,opt,name=mutable,proto3" json:"mutable,omitempty"`
+	Models        []string                `protobuf:"bytes,8,rep,name=models,proto3" json:"models,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4808,6 +4842,20 @@ func (x *ProviderOption) GetDefaultValue() string {
 func (x *ProviderOption) GetChoices() []*ProviderOptionChoice {
 	if x != nil {
 		return x.Choices
+	}
+	return nil
+}
+
+func (x *ProviderOption) GetMutable() bool {
+	if x != nil {
+		return x.Mutable
+	}
+	return false
+}
+
+func (x *ProviderOption) GetModels() []string {
+	if x != nil {
+		return x.Models
 	}
 	return nil
 }
@@ -5856,6 +5904,7 @@ type CreateProjectRequest struct {
 	BaseRemote         string                 `protobuf:"bytes,9,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
 	BaseBranch         string                 `protobuf:"bytes,10,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
 	ValidationCommands []*ValidationCommand   `protobuf:"bytes,11,rep,name=validation_commands,json=validationCommands,proto3" json:"validation_commands,omitempty"`
+	RemotePublishMode  string                 `protobuf:"bytes,12,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -5958,6 +6007,13 @@ func (x *CreateProjectRequest) GetValidationCommands() []*ValidationCommand {
 		return x.ValidationCommands
 	}
 	return nil
+}
+
+func (x *CreateProjectRequest) GetRemotePublishMode() string {
+	if x != nil {
+		return x.RemotePublishMode
+	}
+	return ""
 }
 
 type CreateProjectResponse struct {
@@ -6299,6 +6355,8 @@ type CreateBoardRequest struct {
 	Workflow          string                 `protobuf:"bytes,3,opt,name=workflow,proto3" json:"workflow,omitempty"`
 	Description       string                 `protobuf:"bytes,4,opt,name=description,proto3" json:"description,omitempty"`
 	DoneArchivePolicy string                 `protobuf:"bytes,5,opt,name=done_archive_policy,json=doneArchivePolicy,proto3" json:"done_archive_policy,omitempty"`
+	BaseRemote        string                 `protobuf:"bytes,6,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	RemotePublishMode string                 `protobuf:"bytes,7,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -6364,6 +6422,20 @@ func (x *CreateBoardRequest) GetDescription() string {
 func (x *CreateBoardRequest) GetDoneArchivePolicy() string {
 	if x != nil {
 		return x.DoneArchivePolicy
+	}
+	return ""
+}
+
+func (x *CreateBoardRequest) GetBaseRemote() string {
+	if x != nil {
+		return x.BaseRemote
+	}
+	return ""
+}
+
+func (x *CreateBoardRequest) GetRemotePublishMode() string {
+	if x != nil {
+		return x.RemotePublishMode
 	}
 	return ""
 }
@@ -6785,9 +6857,11 @@ type CreateConversationRequest struct {
 	WorkspaceBaseBranch string                 `protobuf:"bytes,17,opt,name=workspace_base_branch,json=workspaceBaseBranch,proto3" json:"workspace_base_branch,omitempty"`
 	// Generate a 4–6 word persisted title from prompt with Dieter's fast title model.
 	// Clients may still send a local placeholder in title for optimistic UI.
-	AutoGenerateTitle bool `protobuf:"varint,18,opt,name=auto_generate_title,json=autoGenerateTitle,proto3" json:"auto_generate_title,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	AutoGenerateTitle   bool   `protobuf:"varint,18,opt,name=auto_generate_title,json=autoGenerateTitle,proto3" json:"auto_generate_title,omitempty"`
+	WorkspaceBaseRemote string `protobuf:"bytes,19,opt,name=workspace_base_remote,json=workspaceBaseRemote,proto3" json:"workspace_base_remote,omitempty"`
+	RemotePublishMode   string `protobuf:"bytes,20,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CreateConversationRequest) Reset() {
@@ -6944,6 +7018,20 @@ func (x *CreateConversationRequest) GetAutoGenerateTitle() bool {
 		return x.AutoGenerateTitle
 	}
 	return false
+}
+
+func (x *CreateConversationRequest) GetWorkspaceBaseRemote() string {
+	if x != nil {
+		return x.WorkspaceBaseRemote
+	}
+	return ""
+}
+
+func (x *CreateConversationRequest) GetRemotePublishMode() string {
+	if x != nil {
+		return x.RemotePublishMode
+	}
+	return ""
 }
 
 type ListChatsRequest struct {
@@ -8439,13 +8527,15 @@ func (x *ConversationRef) GetCardId() string {
 }
 
 type UpdateConversationWorkspaceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Mode          string                 `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
-	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
-	BaseBranch    string                 `protobuf:"bytes,4,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	CardId            string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	Mode              string                 `protobuf:"bytes,2,opt,name=mode,proto3" json:"mode,omitempty"`
+	Branch            string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	BaseBranch        string                 `protobuf:"bytes,4,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	BaseRemote        string                 `protobuf:"bytes,5,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	RemotePublishMode string                 `protobuf:"bytes,6,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *UpdateConversationWorkspaceRequest) Reset() {
@@ -8502,6 +8592,20 @@ func (x *UpdateConversationWorkspaceRequest) GetBranch() string {
 func (x *UpdateConversationWorkspaceRequest) GetBaseBranch() string {
 	if x != nil {
 		return x.BaseBranch
+	}
+	return ""
+}
+
+func (x *UpdateConversationWorkspaceRequest) GetBaseRemote() string {
+	if x != nil {
+		return x.BaseRemote
+	}
+	return ""
+}
+
+func (x *UpdateConversationWorkspaceRequest) GetRemotePublishMode() string {
+	if x != nil {
+		return x.RemotePublishMode
 	}
 	return ""
 }
@@ -8678,6 +8782,7 @@ type Workspace struct {
 	IntegrationStrategy string                 `protobuf:"bytes,28,opt,name=integration_strategy,json=integrationStrategy,proto3" json:"integration_strategy,omitempty"`
 	IntegratedAt        string                 `protobuf:"bytes,29,opt,name=integrated_at,json=integratedAt,proto3" json:"integrated_at,omitempty"`
 	Dirty               bool                   `protobuf:"varint,30,opt,name=dirty,proto3" json:"dirty,omitempty"`
+	RemotePublishMode   string                 `protobuf:"bytes,31,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -8920,6 +9025,13 @@ func (x *Workspace) GetDirty() bool {
 		return x.Dirty
 	}
 	return false
+}
+
+func (x *Workspace) GetRemotePublishMode() string {
+	if x != nil {
+		return x.RemotePublishMode
+	}
+	return ""
 }
 
 type WorkspacesResponse struct {
@@ -15758,6 +15870,118 @@ func (x *ScheduleRunsResponse) GetNextPageToken() string {
 	return ""
 }
 
+type UpdateBoardGitSettingsRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	BoardId           string                 `protobuf:"bytes,1,opt,name=board_id,json=boardId,proto3" json:"board_id,omitempty"`
+	BaseRemote        string                 `protobuf:"bytes,2,opt,name=base_remote,json=baseRemote,proto3" json:"base_remote,omitempty"`
+	RemotePublishMode string                 `protobuf:"bytes,3,opt,name=remote_publish_mode,json=remotePublishMode,proto3" json:"remote_publish_mode,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *UpdateBoardGitSettingsRequest) Reset() {
+	*x = UpdateBoardGitSettingsRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[184]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateBoardGitSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateBoardGitSettingsRequest) ProtoMessage() {}
+
+func (x *UpdateBoardGitSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[184]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateBoardGitSettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateBoardGitSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{184}
+}
+
+func (x *UpdateBoardGitSettingsRequest) GetBoardId() string {
+	if x != nil {
+		return x.BoardId
+	}
+	return ""
+}
+
+func (x *UpdateBoardGitSettingsRequest) GetBaseRemote() string {
+	if x != nil {
+		return x.BaseRemote
+	}
+	return ""
+}
+
+func (x *UpdateBoardGitSettingsRequest) GetRemotePublishMode() string {
+	if x != nil {
+		return x.RemotePublishMode
+	}
+	return ""
+}
+
+type RemoveQueuedMessageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	MessageId     string                 `protobuf:"bytes,2,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveQueuedMessageRequest) Reset() {
+	*x = RemoveQueuedMessageRequest{}
+	mi := &file_dieter_v1_dieter_proto_msgTypes[185]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveQueuedMessageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveQueuedMessageRequest) ProtoMessage() {}
+
+func (x *RemoveQueuedMessageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_v1_dieter_proto_msgTypes[185]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveQueuedMessageRequest.ProtoReflect.Descriptor instead.
+func (*RemoveQueuedMessageRequest) Descriptor() ([]byte, []int) {
+	return file_dieter_v1_dieter_proto_rawDescGZIP(), []int{185}
+}
+
+func (x *RemoveQueuedMessageRequest) GetCardId() string {
+	if x != nil {
+		return x.CardId
+	}
+	return ""
+}
+
+func (x *RemoveQueuedMessageRequest) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
 var File_dieter_v1_dieter_proto protoreflect.FileDescriptor
 
 const file_dieter_v1_dieter_proto_rawDesc = "" +
@@ -15968,7 +16192,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"baseRemote\x12\x1f\n" +
 	"\vbase_branch\x18\x0f \x01(\tR\n" +
 	"baseBranch\x12M\n" +
-	"\x13validation_commands\x18\x10 \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommandsJ\x04\b\r\x10\x0eR\x16default_workspace_mode\"\xf0\x02\n" +
+	"\x13validation_commands\x18\x10 \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommandsJ\x04\b\r\x10\x0eR\x16default_workspace_mode\"\xc1\x03\n" +
 	"\x05Board\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -15984,7 +16208,10 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x06labels\x18\t \x03(\v2\x10.dieter.v1.LabelR\x06labels\x12%\n" +
 	"\x05lanes\x18\n" +
 	" \x03(\v2\x0f.dieter.v1.LaneR\x05lanes\x12'\n" +
-	"\x0fprompt_template\x18\v \x01(\tR\x0epromptTemplate\"e\n" +
+	"\x0fprompt_template\x18\v \x01(\tR\x0epromptTemplate\x12\x1f\n" +
+	"\vbase_remote\x18\f \x01(\tR\n" +
+	"baseRemote\x12.\n" +
+	"\x13remote_publish_mode\x18\r \x01(\tR\x11remotePublishMode\"e\n" +
 	"\x05Label\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
@@ -16000,8 +16227,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\ftotal_tokens\x18\x03 \x01(\x03R\vtotalTokens\x12+\n" +
 	"\x11reported_messages\x18\x04 \x01(\x03R\x10reportedMessages\x12)\n" +
 	"\x10missing_messages\x18\x05 \x01(\x03R\x0fmissingMessages\x12\x18\n" +
-	"\apartial\x18\x06 \x01(\bR\apartial\"\xe3\n" +
-	"\n" +
+	"\apartial\x18\x06 \x01(\bR\apartial\"\x8f\v\n" +
 	"\x04Card\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05scope\x18\x02 \x01(\tR\x05scope\x12\x1d\n" +
@@ -16038,12 +16264,14 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x10workspace_branch\x18\x1d \x01(\tR\x0fworkspaceBranch\x122\n" +
 	"\x15workspace_base_branch\x18\x1e \x01(\tR\x13workspaceBaseBranch\x129\n" +
 	"\tworkspace\x18\x1f \x01(\v2\x1b.dieter.v1.WorkspaceSummaryR\tworkspace\x12@\n" +
-	"\fpull_request\x18  \x01(\v2\x1d.dieter.v1.PullRequestSummaryR\vpullRequest\x126\n" +
+	"\fpull_request\x18  \x01(\v2\x1d.dieter.v1.PullRequestSummaryR\vpullRequest\x122\n" +
+	"\x15workspace_base_remote\x18! \x01(\tR\x13workspaceBaseRemote\x12.\n" +
+	"\x13remote_publish_mode\x18\" \x01(\tR\x11remotePublishMode\x126\n" +
 	"\vtoken_usage\x18# \x01(\v2\x15.dieter.v1.TokenUsageR\n" +
 	"tokenUsage\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b!\x10\"J\x04\b\"\x10#R\x15workspace_base_remoteR\x13remote_publish_mode\"\x8e\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8e\x01\n" +
 	"\n" +
 	"CardOrigin\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1f\n" +
@@ -16221,14 +16449,16 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x06models\x18\x04 \x03(\v2\x17.dieter.v1.HarnessModelR\x06models\x12/\n" +
 	"\x06effort\x18\x05 \x01(\v2\x17.dieter.v1.EffortConfigR\x06effort\x12@\n" +
 	"\fcapabilities\x18\x06 \x03(\v2\x1c.dieter.v1.HarnessCapabilityR\fcapabilities\x123\n" +
-	"\aoptions\x18\a \x03(\v2\x19.dieter.v1.ProviderOptionR\aoptions\"\xca\x01\n" +
+	"\aoptions\x18\a \x03(\v2\x19.dieter.v1.ProviderOptionR\aoptions\"\xfc\x01\n" +
 	"\x0eProviderOption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x12\n" +
 	"\x04type\x18\x04 \x01(\tR\x04type\x12#\n" +
 	"\rdefault_value\x18\x05 \x01(\tR\fdefaultValue\x129\n" +
-	"\achoices\x18\x06 \x03(\v2\x1f.dieter.v1.ProviderOptionChoiceR\achoices\"@\n" +
+	"\achoices\x18\x06 \x03(\v2\x1f.dieter.v1.ProviderOptionChoiceR\achoices\x12\x18\n" +
+	"\amutable\x18\a \x01(\bR\amutable\x12\x16\n" +
+	"\x06models\x18\b \x03(\tR\x06models\"@\n" +
 	"\x14ProviderOptionChoice\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"9\n" +
@@ -16311,7 +16541,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0egit_repository\x18\x04 \x01(\bR\rgitRepository\x12\x1c\n" +
 	"\tseparator\x18\x05 \x01(\tR\tseparator\x123\n" +
 	"\aentries\x18\x06 \x03(\v2\x19.dieter.v1.DirectoryEntryR\aentries\x12:\n" +
-	"\tlocations\x18\a \x03(\v2\x1c.dieter.v1.DirectoryLocationR\tlocations\"\xee\x02\n" +
+	"\tlocations\x18\a \x03(\v2\x1c.dieter.v1.DirectoryLocationR\tlocations\"\x9e\x03\n" +
 	"\x14CreateProjectRequest\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
@@ -16326,7 +16556,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\vbase_branch\x18\n" +
 	" \x01(\tR\n" +
 	"baseBranch\x12M\n" +
-	"\x13validation_commands\x18\v \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommandsJ\x04\b\b\x10\tR\x16default_workspace_mode\"m\n" +
+	"\x13validation_commands\x18\v \x03(\v2\x1c.dieter.v1.ValidationCommandR\x12validationCommands\x12.\n" +
+	"\x13remote_publish_mode\x18\f \x01(\tR\x11remotePublishModeJ\x04\b\b\x10\tR\x16default_workspace_mode\"m\n" +
 	"\x15CreateProjectResponse\x12,\n" +
 	"\aproject\x18\x01 \x01(\v2\x12.dieter.v1.ProjectR\aproject\x12&\n" +
 	"\x05board\x18\x02 \x01(\v2\x10.dieter.v1.BoardR\x05board\"\xcc\x01\n" +
@@ -16365,14 +16596,17 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x15ArchiveProjectRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1a\n" +
-	"\barchived\x18\x02 \x01(\bR\barchived\"\xb5\x01\n" +
+	"\barchived\x18\x02 \x01(\bR\barchived\"\x86\x02\n" +
 	"\x12CreateBoardRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n" +
 	"\bworkflow\x18\x03 \x01(\tR\bworkflow\x12 \n" +
 	"\vdescription\x18\x04 \x01(\tR\vdescription\x12.\n" +
-	"\x13done_archive_policy\x18\x05 \x01(\tR\x11doneArchivePolicy\"C\n" +
+	"\x13done_archive_policy\x18\x05 \x01(\tR\x11doneArchivePolicy\x12\x1f\n" +
+	"\vbase_remote\x18\x06 \x01(\tR\n" +
+	"baseRemote\x12.\n" +
+	"\x13remote_publish_mode\x18\a \x01(\tR\x11remotePublishMode\"C\n" +
 	"\x12RenameBoardRequest\x12\x19\n" +
 	"\bboard_id\x18\x01 \x01(\tR\aboardId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"%\n" +
@@ -16397,7 +16631,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\blabel_id\x18\x02 \x01(\tR\alabelId\"2\n" +
 	"\fEffortOption\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xf5\x05\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xd9\x06\n" +
 	"\x19CreateConversationRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x19\n" +
@@ -16420,7 +16654,9 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x0eworkspace_mode\x18\x0f \x01(\tR\rworkspaceMode\x12)\n" +
 	"\x10workspace_branch\x18\x10 \x01(\tR\x0fworkspaceBranch\x122\n" +
 	"\x15workspace_base_branch\x18\x11 \x01(\tR\x13workspaceBaseBranch\x12.\n" +
-	"\x13auto_generate_title\x18\x12 \x01(\bR\x11autoGenerateTitle\x1aB\n" +
+	"\x13auto_generate_title\x18\x12 \x01(\bR\x11autoGenerateTitle\x122\n" +
+	"\x15workspace_base_remote\x18\x13 \x01(\tR\x13workspaceBaseRemote\x12.\n" +
+	"\x13remote_publish_mode\x18\x14 \x01(\tR\x11remotePublishMode\x1aB\n" +
 	"\x14ProviderOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"=\n" +
@@ -16555,13 +16791,16 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\"*\n" +
 	"\x0fConversationRef\x12\x17\n" +
-	"\acard_id\x18\x01 \x01(\tR\x06cardId\"\x8a\x01\n" +
+	"\acard_id\x18\x01 \x01(\tR\x06cardId\"\xdb\x01\n" +
 	"\"UpdateConversationWorkspaceRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04mode\x18\x02 \x01(\tR\x04mode\x12\x16\n" +
 	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x1f\n" +
 	"\vbase_branch\x18\x04 \x01(\tR\n" +
-	"baseBranch\"\x88\x03\n" +
+	"baseBranch\x12\x1f\n" +
+	"\vbase_remote\x18\x05 \x01(\tR\n" +
+	"baseRemote\x12.\n" +
+	"\x13remote_publish_mode\x18\x06 \x01(\tR\x11remotePublishMode\"\x88\x03\n" +
 	"\x10WorkspaceSummary\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x16\n" +
@@ -16577,7 +16816,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	" \x01(\x05R\tdeletions\x12\x14\n" +
 	"\x05ahead\x18\v \x01(\x05R\x05ahead\x12\x16\n" +
 	"\x06behind\x18\f \x01(\x05R\x06behind\x120\n" +
-	"\x14current_operation_id\x18\r \x01(\tR\x12currentOperationId\"\xe8\a\n" +
+	"\x14current_operation_id\x18\r \x01(\tR\x12currentOperationId\"\x98\b\n" +
 	"\tWorkspace\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1d\n" +
 	"\n" +
@@ -16615,7 +16854,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x15integrated_result_sha\x18\x1b \x01(\tR\x13integratedResultSha\x121\n" +
 	"\x14integration_strategy\x18\x1c \x01(\tR\x13integrationStrategy\x12#\n" +
 	"\rintegrated_at\x18\x1d \x01(\tR\fintegratedAt\x12\x14\n" +
-	"\x05dirty\x18\x1e \x01(\bR\x05dirty\"J\n" +
+	"\x05dirty\x18\x1e \x01(\bR\x05dirty\x12.\n" +
+	"\x13remote_publish_mode\x18\x1f \x01(\tR\x11remotePublishMode\"J\n" +
 	"\x12WorkspacesResponse\x124\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x14.dieter.v1.WorkspaceR\n" +
@@ -17311,7 +17551,16 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"finishedAt\"j\n" +
 	"\x14ScheduleRunsResponse\x12*\n" +
 	"\x04runs\x18\x01 \x03(\v2\x16.dieter.v1.ScheduleRunR\x04runs\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\xc5\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x8b\x01\n" +
+	"\x1dUpdateBoardGitSettingsRequest\x12\x19\n" +
+	"\bboard_id\x18\x01 \x01(\tR\aboardId\x12\x1f\n" +
+	"\vbase_remote\x18\x02 \x01(\tR\n" +
+	"baseRemote\x12.\n" +
+	"\x13remote_publish_mode\x18\x03 \x01(\tR\x11remotePublishMode\"T\n" +
+	"\x1aRemoveQueuedMessageRequest\x12\x17\n" +
+	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x02 \x01(\tR\tmessageId*\xc5\x01\n" +
 	"\x11GPUTelemetryState\x12#\n" +
 	"\x1fGPU_TELEMETRY_STATE_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fGPU_TELEMETRY_STATE_UNAVAILABLE\x10\x01\x12\"\n" +
@@ -17342,7 +17591,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x1aEXECUTION_SIGNAL_INTERRUPT\x10\x01\x12\x1e\n" +
 	"\x1aEXECUTION_SIGNAL_TERMINATE\x10\x02\x12\x19\n" +
 	"\x15EXECUTION_SIGNAL_KILL\x10\x03\x12\x1b\n" +
-	"\x17EXECUTION_SIGNAL_HANGUP\x10\x042\xbf8\n" +
+	"\x17EXECUTION_SIGNAL_HANGUP\x10\x042\xed9\n" +
 	"\rDieterService\x12;\n" +
 	"\x06Health\x12\x16.google.protobuf.Empty\x1a\x19.dieter.v1.HealthResponse\x12D\n" +
 	"\x10GetRuntimeStatus\x12\x16.google.protobuf.Empty\x1a\x18.dieter.v1.RuntimeStatus\x12N\n" +
@@ -17369,7 +17618,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x14ListArchivedProjects\x12\x16.google.protobuf.Empty\x1a\x1b.dieter.v1.ProjectsResponse\x12>\n" +
 	"\vCreateBoard\x12\x1d.dieter.v1.CreateBoardRequest\x1a\x10.dieter.v1.Board\x12>\n" +
 	"\vRenameBoard\x12\x1d.dieter.v1.RenameBoardRequest\x1a\x10.dieter.v1.Board\x12R\n" +
-	"\x15SetBoardArchivePolicy\x12'.dieter.v1.SetBoardArchivePolicyRequest\x1a\x10.dieter.v1.Board\x12B\n" +
+	"\x15SetBoardArchivePolicy\x12'.dieter.v1.SetBoardArchivePolicyRequest\x1a\x10.dieter.v1.Board\x12T\n" +
+	"\x16UpdateBoardGitSettings\x12(.dieter.v1.UpdateBoardGitSettingsRequest\x1a\x10.dieter.v1.Board\x12B\n" +
 	"\x11ListArchivedCards\x12\x13.dieter.v1.BoardRef\x1a\x18.dieter.v1.CardsResponse\x12H\n" +
 	"\x10CreateBoardLabel\x12\".dieter.v1.CreateBoardLabelRequest\x1a\x10.dieter.v1.Board\x12H\n" +
 	"\x10UpdateBoardLabel\x12\".dieter.v1.UpdateBoardLabelRequest\x1a\x10.dieter.v1.Board\x12H\n" +
@@ -17385,7 +17635,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x10PollConversation\x12\".dieter.v1.PollConversationRequest\x1a\x1d.dieter.v1.ConversationUpdate\x12Y\n" +
 	"\x11WatchConversation\x12#.dieter.v1.WatchConversationRequest\x1a\x1d.dieter.v1.ConversationUpdate0\x01\x12G\n" +
 	"\rGetToolOutput\x12\x1f.dieter.v1.GetToolOutputRequest\x1a\x15.dieter.v1.ToolOutput\x12L\n" +
-	"\vSendMessage\x12\x1d.dieter.v1.SendMessageRequest\x1a\x1e.dieter.v1.SendMessageResponse\x12>\n" +
+	"\vSendMessage\x12\x1d.dieter.v1.SendMessageRequest\x1a\x1e.dieter.v1.SendMessageResponse\x12V\n" +
+	"\x13RemoveQueuedMessage\x12%.dieter.v1.RemoveQueuedMessageRequest\x1a\x18.dieter.v1.QueuedMessage\x12>\n" +
 	"\n" +
 	"AddComment\x12\x1c.dieter.v1.AddCommentRequest\x1a\x12.dieter.v1.Comment\x127\n" +
 	"\bMoveCard\x12\x1a.dieter.v1.MoveCardRequest\x1a\x0f.dieter.v1.Card\x12F\n" +
@@ -17465,7 +17716,7 @@ func file_dieter_v1_dieter_proto_rawDescGZIP() []byte {
 }
 
 var file_dieter_v1_dieter_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_dieter_v1_dieter_proto_msgTypes = make([]protoimpl.MessageInfo, 195)
+var file_dieter_v1_dieter_proto_msgTypes = make([]protoimpl.MessageInfo, 197)
 var file_dieter_v1_dieter_proto_goTypes = []any{
 	(GPUTelemetryState)(0),                        // 0: dieter.v1.GPUTelemetryState
 	(GPUVendor)(0),                                // 1: dieter.v1.GPUVendor
@@ -17658,19 +17909,21 @@ var file_dieter_v1_dieter_proto_goTypes = []any{
 	(*ListScheduleRunsRequest)(nil),               // 188: dieter.v1.ListScheduleRunsRequest
 	(*ScheduleRun)(nil),                           // 189: dieter.v1.ScheduleRun
 	(*ScheduleRunsResponse)(nil),                  // 190: dieter.v1.ScheduleRunsResponse
-	nil,                                           // 191: dieter.v1.Card.ProviderOptionsEntry
-	nil,                                           // 192: dieter.v1.Settings.AgentParallelLimitsEntry
-	nil,                                           // 193: dieter.v1.Settings.BoardParallelLimitsEntry
-	nil,                                           // 194: dieter.v1.ValidationCommand.EnvironmentEntry
-	nil,                                           // 195: dieter.v1.CreateConversationRequest.ProviderOptionsEntry
-	nil,                                           // 196: dieter.v1.SendMessageRequest.ProviderOptionsEntry
-	nil,                                           // 197: dieter.v1.GitOperation.ParametersEntry
-	nil,                                           // 198: dieter.v1.StartGitOperationRequest.ParametersEntry
-	nil,                                           // 199: dieter.v1.StartExecutionRequest.EnvironmentEntry
-	nil,                                           // 200: dieter.v1.Schedule.ProviderOptionsEntry
-	nil,                                           // 201: dieter.v1.ScheduleDraft.ProviderOptionsEntry
-	(*v1.RTCConfiguration)(nil),                   // 202: dieter.gateway.v1.RTCConfiguration
-	(*emptypb.Empty)(nil),                         // 203: google.protobuf.Empty
+	(*UpdateBoardGitSettingsRequest)(nil),         // 191: dieter.v1.UpdateBoardGitSettingsRequest
+	(*RemoveQueuedMessageRequest)(nil),            // 192: dieter.v1.RemoveQueuedMessageRequest
+	nil,                                           // 193: dieter.v1.Card.ProviderOptionsEntry
+	nil,                                           // 194: dieter.v1.Settings.AgentParallelLimitsEntry
+	nil,                                           // 195: dieter.v1.Settings.BoardParallelLimitsEntry
+	nil,                                           // 196: dieter.v1.ValidationCommand.EnvironmentEntry
+	nil,                                           // 197: dieter.v1.CreateConversationRequest.ProviderOptionsEntry
+	nil,                                           // 198: dieter.v1.SendMessageRequest.ProviderOptionsEntry
+	nil,                                           // 199: dieter.v1.GitOperation.ParametersEntry
+	nil,                                           // 200: dieter.v1.StartGitOperationRequest.ParametersEntry
+	nil,                                           // 201: dieter.v1.StartExecutionRequest.EnvironmentEntry
+	nil,                                           // 202: dieter.v1.Schedule.ProviderOptionsEntry
+	nil,                                           // 203: dieter.v1.ScheduleDraft.ProviderOptionsEntry
+	(*v1.RTCConfiguration)(nil),                   // 204: dieter.gateway.v1.RTCConfiguration
+	(*emptypb.Empty)(nil),                         // 205: google.protobuf.Empty
 }
 var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	13,  // 0: dieter.v1.MachineInformation.processes:type_name -> dieter.v1.MachineProcess
@@ -17718,7 +17971,7 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	32,  // 42: dieter.v1.Board.lanes:type_name -> dieter.v1.Lane
 	35,  // 43: dieter.v1.Card.origin:type_name -> dieter.v1.CardOrigin
 	40,  // 44: dieter.v1.Card.active_subagents:type_name -> dieter.v1.Subagent
-	191, // 45: dieter.v1.Card.provider_options:type_name -> dieter.v1.Card.ProviderOptionsEntry
+	193, // 45: dieter.v1.Card.provider_options:type_name -> dieter.v1.Card.ProviderOptionsEntry
 	108, // 46: dieter.v1.Card.workspace:type_name -> dieter.v1.WorkspaceSummary
 	122, // 47: dieter.v1.Card.pull_request:type_name -> dieter.v1.PullRequestSummary
 	33,  // 48: dieter.v1.Card.token_usage:type_name -> dieter.v1.TokenUsage
@@ -17747,8 +18000,8 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	52,  // 71: dieter.v1.Harness.options:type_name -> dieter.v1.ProviderOption
 	53,  // 72: dieter.v1.ProviderOption.choices:type_name -> dieter.v1.ProviderOptionChoice
 	82,  // 73: dieter.v1.EffortConfig.options:type_name -> dieter.v1.EffortOption
-	192, // 74: dieter.v1.Settings.agent_parallel_limits:type_name -> dieter.v1.Settings.AgentParallelLimitsEntry
-	193, // 75: dieter.v1.Settings.board_parallel_limits:type_name -> dieter.v1.Settings.BoardParallelLimitsEntry
+	194, // 74: dieter.v1.Settings.agent_parallel_limits:type_name -> dieter.v1.Settings.AgentParallelLimitsEntry
+	195, // 75: dieter.v1.Settings.board_parallel_limits:type_name -> dieter.v1.Settings.BoardParallelLimitsEntry
 	29,  // 76: dieter.v1.SettingsOptions.projects:type_name -> dieter.v1.Project
 	30,  // 77: dieter.v1.SettingsOptions.boards:type_name -> dieter.v1.Board
 	50,  // 78: dieter.v1.SettingsOptions.agents:type_name -> dieter.v1.HarnessCatalog
@@ -17759,9 +18012,9 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	72,  // 83: dieter.v1.CreateProjectRequest.validation_commands:type_name -> dieter.v1.ValidationCommand
 	29,  // 84: dieter.v1.CreateProjectResponse.project:type_name -> dieter.v1.Project
 	30,  // 85: dieter.v1.CreateProjectResponse.board:type_name -> dieter.v1.Board
-	194, // 86: dieter.v1.ValidationCommand.environment:type_name -> dieter.v1.ValidationCommand.EnvironmentEntry
+	196, // 86: dieter.v1.ValidationCommand.environment:type_name -> dieter.v1.ValidationCommand.EnvironmentEntry
 	72,  // 87: dieter.v1.UpdateProjectWorkspaceSettingsRequest.validation_commands:type_name -> dieter.v1.ValidationCommand
-	195, // 88: dieter.v1.CreateConversationRequest.provider_options:type_name -> dieter.v1.CreateConversationRequest.ProviderOptionsEntry
+	197, // 88: dieter.v1.CreateConversationRequest.provider_options:type_name -> dieter.v1.CreateConversationRequest.ProviderOptionsEntry
 	45,  // 89: dieter.v1.CreateConversationRequest.attachments:type_name -> dieter.v1.MessagePart
 	29,  // 90: dieter.v1.ChatsResponse.projects:type_name -> dieter.v1.Project
 	34,  // 91: dieter.v1.ChatsResponse.chats:type_name -> dieter.v1.Card
@@ -17775,28 +18028,28 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	41,  // 99: dieter.v1.ConversationUpdate.task_plans:type_name -> dieter.v1.TaskPlan
 	45,  // 100: dieter.v1.ConversationUpdate.draft_attachments:type_name -> dieter.v1.MessagePart
 	45,  // 101: dieter.v1.SendMessageRequest.parts:type_name -> dieter.v1.MessagePart
-	196, // 102: dieter.v1.SendMessageRequest.provider_options:type_name -> dieter.v1.SendMessageRequest.ProviderOptionsEntry
+	198, // 102: dieter.v1.SendMessageRequest.provider_options:type_name -> dieter.v1.SendMessageRequest.ProviderOptionsEntry
 	34,  // 103: dieter.v1.StartCardResponse.card:type_name -> dieter.v1.Card
 	109, // 104: dieter.v1.WorkspacesResponse.workspaces:type_name -> dieter.v1.Workspace
 	111, // 105: dieter.v1.Changeset.files:type_name -> dieter.v1.ChangedFile
 	112, // 106: dieter.v1.Changeset.commits:type_name -> dieter.v1.WorkspaceCommit
 	117, // 107: dieter.v1.ChangeCommentsResponse.comments:type_name -> dieter.v1.ChangeComment
-	197, // 108: dieter.v1.GitOperation.parameters:type_name -> dieter.v1.GitOperation.ParametersEntry
+	199, // 108: dieter.v1.GitOperation.parameters:type_name -> dieter.v1.GitOperation.ParametersEntry
 	124, // 109: dieter.v1.GitOperation.validation_results:type_name -> dieter.v1.ValidationResult
 	123, // 110: dieter.v1.GitOperation.conflicts:type_name -> dieter.v1.GitConflict
-	198, // 111: dieter.v1.StartGitOperationRequest.parameters:type_name -> dieter.v1.StartGitOperationRequest.ParametersEntry
+	200, // 111: dieter.v1.StartGitOperationRequest.parameters:type_name -> dieter.v1.StartGitOperationRequest.ParametersEntry
 	125, // 112: dieter.v1.GitOperationFrame.operation:type_name -> dieter.v1.GitOperation
 	129, // 113: dieter.v1.GitOperationFrame.logs:type_name -> dieter.v1.GitOperationLogEntry
 	132, // 114: dieter.v1.FileList.entries:type_name -> dieter.v1.FileEntry
 	136, // 115: dieter.v1.TerminalsResponse.terminals:type_name -> dieter.v1.Terminal
 	136, // 116: dieter.v1.TerminalFrame.terminal:type_name -> dieter.v1.Terminal
 	146, // 117: dieter.v1.ExecutionsResponse.executions:type_name -> dieter.v1.Execution
-	199, // 118: dieter.v1.StartExecutionRequest.environment:type_name -> dieter.v1.StartExecutionRequest.EnvironmentEntry
+	201, // 118: dieter.v1.StartExecutionRequest.environment:type_name -> dieter.v1.StartExecutionRequest.EnvironmentEntry
 	146, // 119: dieter.v1.ExecutionEvent.execution:type_name -> dieter.v1.Execution
 	4,   // 120: dieter.v1.ExecutionEvent.stream:type_name -> dieter.v1.ExecutionStream
 	5,   // 121: dieter.v1.SignalExecutionRequest.signal:type_name -> dieter.v1.ExecutionSignal
 	157, // 122: dieter.v1.RemoteDesktopCapabilities.displays:type_name -> dieter.v1.RemoteDesktopDisplay
-	202, // 123: dieter.v1.StartRemoteDesktopRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
+	204, // 123: dieter.v1.StartRemoteDesktopRequest.rtc_configuration:type_name -> dieter.gateway.v1.RTCConfiguration
 	160, // 124: dieter.v1.StartRemoteDesktopRequest.offer:type_name -> dieter.v1.RemoteDesktopSessionDescription
 	161, // 125: dieter.v1.StartRemoteDesktopRequest.initial_candidates:type_name -> dieter.v1.RemoteDesktopICECandidate
 	6,   // 126: dieter.v1.RemoteDesktopPointerButton.button:type_name -> dieter.v1.RemoteDesktopPointerButton.Button
@@ -17810,24 +18063,24 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	161, // 134: dieter.v1.RemoteDesktopSignal.candidate:type_name -> dieter.v1.RemoteDesktopICECandidate
 	171, // 135: dieter.v1.RemoteDesktopSignal.state:type_name -> dieter.v1.RemoteDesktopSessionState
 	172, // 136: dieter.v1.RemoteDesktopSignal.error:type_name -> dieter.v1.RemoteDesktopSessionError
-	203, // 137: dieter.v1.RemoteDesktopSignal.lease_heartbeat:type_name -> google.protobuf.Empty
+	205, // 137: dieter.v1.RemoteDesktopSignal.lease_heartbeat:type_name -> google.protobuf.Empty
 	181, // 138: dieter.v1.SchedulesResponse.schedules:type_name -> dieter.v1.Schedule
-	200, // 139: dieter.v1.Schedule.provider_options:type_name -> dieter.v1.Schedule.ProviderOptionsEntry
-	201, // 140: dieter.v1.ScheduleDraft.provider_options:type_name -> dieter.v1.ScheduleDraft.ProviderOptionsEntry
+	202, // 139: dieter.v1.Schedule.provider_options:type_name -> dieter.v1.Schedule.ProviderOptionsEntry
+	203, // 140: dieter.v1.ScheduleDraft.provider_options:type_name -> dieter.v1.ScheduleDraft.ProviderOptionsEntry
 	182, // 141: dieter.v1.SaveScheduleRequest.schedule:type_name -> dieter.v1.ScheduleDraft
 	189, // 142: dieter.v1.ScheduleRunsResponse.runs:type_name -> dieter.v1.ScheduleRun
-	203, // 143: dieter.v1.DieterService.Health:input_type -> google.protobuf.Empty
-	203, // 144: dieter.v1.DieterService.GetRuntimeStatus:input_type -> google.protobuf.Empty
-	203, // 145: dieter.v1.DieterService.GetMachineInformation:input_type -> google.protobuf.Empty
+	205, // 143: dieter.v1.DieterService.Health:input_type -> google.protobuf.Empty
+	205, // 144: dieter.v1.DieterService.GetRuntimeStatus:input_type -> google.protobuf.Empty
+	205, // 145: dieter.v1.DieterService.GetMachineInformation:input_type -> google.protobuf.Empty
 	15,  // 146: dieter.v1.DieterService.PerformMachineOperation:input_type -> dieter.v1.MachineOperationRequest
 	18,  // 147: dieter.v1.DieterService.GetState:input_type -> dieter.v1.GetStateRequest
 	19,  // 148: dieter.v1.DieterService.WatchState:input_type -> dieter.v1.WatchStateRequest
 	22,  // 149: dieter.v1.DieterService.WatchSync:input_type -> dieter.v1.SyncRequest
-	203, // 150: dieter.v1.DieterService.GetHarnesses:input_type -> google.protobuf.Empty
-	203, // 151: dieter.v1.DieterService.GetSettings:input_type -> google.protobuf.Empty
-	203, // 152: dieter.v1.DieterService.GetSettingsOptions:input_type -> google.protobuf.Empty
+	205, // 150: dieter.v1.DieterService.GetHarnesses:input_type -> google.protobuf.Empty
+	205, // 151: dieter.v1.DieterService.GetSettings:input_type -> google.protobuf.Empty
+	205, // 152: dieter.v1.DieterService.GetSettingsOptions:input_type -> google.protobuf.Empty
 	59,  // 153: dieter.v1.DieterService.UpdateSettings:input_type -> dieter.v1.UpdateSettingsRequest
-	203, // 154: dieter.v1.DieterService.GetPromptSettings:input_type -> google.protobuf.Empty
+	205, // 154: dieter.v1.DieterService.GetPromptSettings:input_type -> google.protobuf.Empty
 	61,  // 155: dieter.v1.DieterService.UpdatePromptSettings:input_type -> dieter.v1.UpdatePromptSettingsRequest
 	62,  // 156: dieter.v1.DieterService.SetProjectPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
 	62,  // 157: dieter.v1.DieterService.SetBoardPromptTemplate:input_type -> dieter.v1.SetScopedPromptTemplateRequest
@@ -17837,181 +18090,185 @@ var file_dieter_v1_dieter_proto_depIdxs = []int32{
 	71,  // 161: dieter.v1.DieterService.UpdateProject:input_type -> dieter.v1.UpdateProjectRequest
 	73,  // 162: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:input_type -> dieter.v1.UpdateProjectWorkspaceSettingsRequest
 	74,  // 163: dieter.v1.DieterService.ArchiveProject:input_type -> dieter.v1.ArchiveProjectRequest
-	203, // 164: dieter.v1.DieterService.ListArchivedProjects:input_type -> google.protobuf.Empty
+	205, // 164: dieter.v1.DieterService.ListArchivedProjects:input_type -> google.protobuf.Empty
 	75,  // 165: dieter.v1.DieterService.CreateBoard:input_type -> dieter.v1.CreateBoardRequest
 	76,  // 166: dieter.v1.DieterService.RenameBoard:input_type -> dieter.v1.RenameBoardRequest
 	78,  // 167: dieter.v1.DieterService.SetBoardArchivePolicy:input_type -> dieter.v1.SetBoardArchivePolicyRequest
-	77,  // 168: dieter.v1.DieterService.ListArchivedCards:input_type -> dieter.v1.BoardRef
-	79,  // 169: dieter.v1.DieterService.CreateBoardLabel:input_type -> dieter.v1.CreateBoardLabelRequest
-	80,  // 170: dieter.v1.DieterService.UpdateBoardLabel:input_type -> dieter.v1.UpdateBoardLabelRequest
-	81,  // 171: dieter.v1.DieterService.DeleteBoardLabel:input_type -> dieter.v1.DeleteBoardLabelRequest
-	83,  // 172: dieter.v1.DieterService.CreateCard:input_type -> dieter.v1.CreateConversationRequest
-	83,  // 173: dieter.v1.DieterService.CreateChat:input_type -> dieter.v1.CreateConversationRequest
-	85,  // 174: dieter.v1.DieterService.ForkChat:input_type -> dieter.v1.ForkChatRequest
-	84,  // 175: dieter.v1.DieterService.ListChats:input_type -> dieter.v1.ListChatsRequest
-	87,  // 176: dieter.v1.DieterService.GetCard:input_type -> dieter.v1.GetCardRequest
-	88,  // 177: dieter.v1.DieterService.GetConversation:input_type -> dieter.v1.GetConversationRequest
-	90,  // 178: dieter.v1.DieterService.PollConversation:input_type -> dieter.v1.PollConversationRequest
-	89,  // 179: dieter.v1.DieterService.WatchConversation:input_type -> dieter.v1.WatchConversationRequest
-	92,  // 180: dieter.v1.DieterService.GetToolOutput:input_type -> dieter.v1.GetToolOutputRequest
-	94,  // 181: dieter.v1.DieterService.SendMessage:input_type -> dieter.v1.SendMessageRequest
-	96,  // 182: dieter.v1.DieterService.AddComment:input_type -> dieter.v1.AddCommentRequest
-	97,  // 183: dieter.v1.DieterService.MoveCard:input_type -> dieter.v1.MoveCardRequest
-	98,  // 184: dieter.v1.DieterService.StartCard:input_type -> dieter.v1.StartCardRequest
-	100, // 185: dieter.v1.DieterService.SetCardLabels:input_type -> dieter.v1.SetCardLabelsRequest
-	87,  // 186: dieter.v1.DieterService.CancelCard:input_type -> dieter.v1.GetCardRequest
-	101, // 187: dieter.v1.DieterService.RenameCard:input_type -> dieter.v1.RenameCardRequest
-	102, // 188: dieter.v1.DieterService.UpdateCard:input_type -> dieter.v1.UpdateCardRequest
-	103, // 189: dieter.v1.DieterService.ArchiveCard:input_type -> dieter.v1.ArchiveCardRequest
-	104, // 190: dieter.v1.DieterService.PinChat:input_type -> dieter.v1.PinChatRequest
-	107, // 191: dieter.v1.DieterService.UpdateConversationWorkspace:input_type -> dieter.v1.UpdateConversationWorkspaceRequest
-	106, // 192: dieter.v1.DieterService.GetWorkspace:input_type -> dieter.v1.ConversationRef
-	105, // 193: dieter.v1.DieterService.ListProjectWorkspaces:input_type -> dieter.v1.ProjectRef
-	114, // 194: dieter.v1.DieterService.GetChangeset:input_type -> dieter.v1.GetChangesetRequest
-	115, // 195: dieter.v1.DieterService.GetFileDiff:input_type -> dieter.v1.GetDiffRequest
-	115, // 196: dieter.v1.DieterService.GetCommitDiff:input_type -> dieter.v1.GetDiffRequest
-	118, // 197: dieter.v1.DieterService.AddChangeComment:input_type -> dieter.v1.AddChangeCommentRequest
-	119, // 198: dieter.v1.DieterService.ListChangeComments:input_type -> dieter.v1.ListChangeCommentsRequest
-	106, // 199: dieter.v1.DieterService.GetSCMCapabilities:input_type -> dieter.v1.ConversationRef
-	126, // 200: dieter.v1.DieterService.StartGitOperation:input_type -> dieter.v1.StartGitOperationRequest
-	127, // 201: dieter.v1.DieterService.GetGitOperation:input_type -> dieter.v1.GitOperationRef
-	128, // 202: dieter.v1.DieterService.WatchGitOperation:input_type -> dieter.v1.WatchGitOperationRequest
-	127, // 203: dieter.v1.DieterService.CancelGitOperation:input_type -> dieter.v1.GitOperationRef
-	131, // 204: dieter.v1.DieterService.ListFiles:input_type -> dieter.v1.ListFilesRequest
-	134, // 205: dieter.v1.DieterService.ReadFile:input_type -> dieter.v1.ReadFileRequest
-	174, // 206: dieter.v1.DieterService.SaveFile:input_type -> dieter.v1.SaveFileRequest
-	175, // 207: dieter.v1.DieterService.CreateFile:input_type -> dieter.v1.CreateFileRequest
-	176, // 208: dieter.v1.DieterService.MoveFile:input_type -> dieter.v1.MoveFileRequest
-	178, // 209: dieter.v1.DieterService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
-	138, // 210: dieter.v1.DieterService.ListTerminals:input_type -> dieter.v1.ListTerminalsRequest
-	140, // 211: dieter.v1.DieterService.CreateTerminal:input_type -> dieter.v1.CreateTerminalRequest
-	141, // 212: dieter.v1.DieterService.WatchTerminal:input_type -> dieter.v1.WatchTerminalRequest
-	143, // 213: dieter.v1.DieterService.WriteTerminal:input_type -> dieter.v1.TerminalInputRequest
-	144, // 214: dieter.v1.DieterService.ResizeTerminal:input_type -> dieter.v1.ResizeTerminalRequest
-	145, // 215: dieter.v1.DieterService.RenameTerminal:input_type -> dieter.v1.RenameTerminalRequest
-	137, // 216: dieter.v1.DieterService.CloseTerminal:input_type -> dieter.v1.TerminalRef
-	148, // 217: dieter.v1.DieterService.ListExecutions:input_type -> dieter.v1.ListExecutionsRequest
-	150, // 218: dieter.v1.DieterService.StartExecution:input_type -> dieter.v1.StartExecutionRequest
-	147, // 219: dieter.v1.DieterService.GetExecution:input_type -> dieter.v1.ExecutionRef
-	151, // 220: dieter.v1.DieterService.WatchExecution:input_type -> dieter.v1.WatchExecutionRequest
-	153, // 221: dieter.v1.DieterService.WriteExecutionInput:input_type -> dieter.v1.ExecutionInputRequest
-	154, // 222: dieter.v1.DieterService.SignalExecution:input_type -> dieter.v1.SignalExecutionRequest
-	155, // 223: dieter.v1.DieterService.ResizeExecution:input_type -> dieter.v1.ResizeExecutionRequest
-	147, // 224: dieter.v1.DieterService.CancelExecution:input_type -> dieter.v1.ExecutionRef
-	147, // 225: dieter.v1.DieterService.CloseExecution:input_type -> dieter.v1.ExecutionRef
-	203, // 226: dieter.v1.DieterService.GetRemoteDesktopCapabilities:input_type -> google.protobuf.Empty
-	203, // 227: dieter.v1.DieterService.GetRemoteDesktopSettings:input_type -> google.protobuf.Empty
-	159, // 228: dieter.v1.DieterService.UpdateRemoteDesktopSettings:input_type -> dieter.v1.UpdateRemoteDesktopSettingsRequest
-	162, // 229: dieter.v1.DieterService.StartRemoteDesktop:input_type -> dieter.v1.StartRemoteDesktopRequest
-	173, // 230: dieter.v1.DieterService.SendRemoteDesktopSignal:input_type -> dieter.v1.RemoteDesktopSignal
-	163, // 231: dieter.v1.DieterService.CloseRemoteDesktop:input_type -> dieter.v1.RemoteDesktopRef
-	179, // 232: dieter.v1.DieterService.ListSchedules:input_type -> dieter.v1.ListSchedulesRequest
-	184, // 233: dieter.v1.DieterService.PreviewSchedule:input_type -> dieter.v1.PreviewScheduleRequest
-	183, // 234: dieter.v1.DieterService.CreateSchedule:input_type -> dieter.v1.SaveScheduleRequest
-	183, // 235: dieter.v1.DieterService.UpdateSchedule:input_type -> dieter.v1.SaveScheduleRequest
-	186, // 236: dieter.v1.DieterService.DeleteSchedule:input_type -> dieter.v1.ScheduleRef
-	186, // 237: dieter.v1.DieterService.RunSchedule:input_type -> dieter.v1.ScheduleRef
-	187, // 238: dieter.v1.DieterService.SetScheduleEnabled:input_type -> dieter.v1.SetScheduleEnabledRequest
-	188, // 239: dieter.v1.DieterService.ListScheduleRuns:input_type -> dieter.v1.ListScheduleRunsRequest
-	7,   // 240: dieter.v1.DieterService.Health:output_type -> dieter.v1.HealthResponse
-	8,   // 241: dieter.v1.DieterService.GetRuntimeStatus:output_type -> dieter.v1.RuntimeStatus
-	9,   // 242: dieter.v1.DieterService.GetMachineInformation:output_type -> dieter.v1.MachineInformation
-	16,  // 243: dieter.v1.DieterService.PerformMachineOperation:output_type -> dieter.v1.MachineOperationResponse
-	20,  // 244: dieter.v1.DieterService.GetState:output_type -> dieter.v1.State
-	20,  // 245: dieter.v1.DieterService.WatchState:output_type -> dieter.v1.State
-	26,  // 246: dieter.v1.DieterService.WatchSync:output_type -> dieter.v1.SyncFrame
-	50,  // 247: dieter.v1.DieterService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
-	57,  // 248: dieter.v1.DieterService.GetSettings:output_type -> dieter.v1.Settings
-	58,  // 249: dieter.v1.DieterService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
-	57,  // 250: dieter.v1.DieterService.UpdateSettings:output_type -> dieter.v1.Settings
-	60,  // 251: dieter.v1.DieterService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
-	60,  // 252: dieter.v1.DieterService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
-	29,  // 253: dieter.v1.DieterService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
-	30,  // 254: dieter.v1.DieterService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
-	64,  // 255: dieter.v1.DieterService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
-	68,  // 256: dieter.v1.DieterService.ListDirectories:output_type -> dieter.v1.DirectoryListing
-	70,  // 257: dieter.v1.DieterService.CreateProject:output_type -> dieter.v1.CreateProjectResponse
-	29,  // 258: dieter.v1.DieterService.UpdateProject:output_type -> dieter.v1.Project
-	29,  // 259: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:output_type -> dieter.v1.Project
-	29,  // 260: dieter.v1.DieterService.ArchiveProject:output_type -> dieter.v1.Project
-	27,  // 261: dieter.v1.DieterService.ListArchivedProjects:output_type -> dieter.v1.ProjectsResponse
-	30,  // 262: dieter.v1.DieterService.CreateBoard:output_type -> dieter.v1.Board
-	30,  // 263: dieter.v1.DieterService.RenameBoard:output_type -> dieter.v1.Board
-	30,  // 264: dieter.v1.DieterService.SetBoardArchivePolicy:output_type -> dieter.v1.Board
-	28,  // 265: dieter.v1.DieterService.ListArchivedCards:output_type -> dieter.v1.CardsResponse
-	30,  // 266: dieter.v1.DieterService.CreateBoardLabel:output_type -> dieter.v1.Board
-	30,  // 267: dieter.v1.DieterService.UpdateBoardLabel:output_type -> dieter.v1.Board
-	30,  // 268: dieter.v1.DieterService.DeleteBoardLabel:output_type -> dieter.v1.Board
-	34,  // 269: dieter.v1.DieterService.CreateCard:output_type -> dieter.v1.Card
-	34,  // 270: dieter.v1.DieterService.CreateChat:output_type -> dieter.v1.Card
-	34,  // 271: dieter.v1.DieterService.ForkChat:output_type -> dieter.v1.Card
-	86,  // 272: dieter.v1.DieterService.ListChats:output_type -> dieter.v1.ChatsResponse
-	36,  // 273: dieter.v1.DieterService.GetCard:output_type -> dieter.v1.CardDetail
-	49,  // 274: dieter.v1.DieterService.GetConversation:output_type -> dieter.v1.ConversationSnapshot
-	91,  // 275: dieter.v1.DieterService.PollConversation:output_type -> dieter.v1.ConversationUpdate
-	91,  // 276: dieter.v1.DieterService.WatchConversation:output_type -> dieter.v1.ConversationUpdate
-	93,  // 277: dieter.v1.DieterService.GetToolOutput:output_type -> dieter.v1.ToolOutput
-	95,  // 278: dieter.v1.DieterService.SendMessage:output_type -> dieter.v1.SendMessageResponse
-	37,  // 279: dieter.v1.DieterService.AddComment:output_type -> dieter.v1.Comment
-	34,  // 280: dieter.v1.DieterService.MoveCard:output_type -> dieter.v1.Card
-	99,  // 281: dieter.v1.DieterService.StartCard:output_type -> dieter.v1.StartCardResponse
-	34,  // 282: dieter.v1.DieterService.SetCardLabels:output_type -> dieter.v1.Card
-	203, // 283: dieter.v1.DieterService.CancelCard:output_type -> google.protobuf.Empty
-	34,  // 284: dieter.v1.DieterService.RenameCard:output_type -> dieter.v1.Card
-	34,  // 285: dieter.v1.DieterService.UpdateCard:output_type -> dieter.v1.Card
-	34,  // 286: dieter.v1.DieterService.ArchiveCard:output_type -> dieter.v1.Card
-	34,  // 287: dieter.v1.DieterService.PinChat:output_type -> dieter.v1.Card
-	34,  // 288: dieter.v1.DieterService.UpdateConversationWorkspace:output_type -> dieter.v1.Card
-	109, // 289: dieter.v1.DieterService.GetWorkspace:output_type -> dieter.v1.Workspace
-	110, // 290: dieter.v1.DieterService.ListProjectWorkspaces:output_type -> dieter.v1.WorkspacesResponse
-	113, // 291: dieter.v1.DieterService.GetChangeset:output_type -> dieter.v1.Changeset
-	116, // 292: dieter.v1.DieterService.GetFileDiff:output_type -> dieter.v1.FileDiff
-	116, // 293: dieter.v1.DieterService.GetCommitDiff:output_type -> dieter.v1.FileDiff
-	117, // 294: dieter.v1.DieterService.AddChangeComment:output_type -> dieter.v1.ChangeComment
-	120, // 295: dieter.v1.DieterService.ListChangeComments:output_type -> dieter.v1.ChangeCommentsResponse
-	121, // 296: dieter.v1.DieterService.GetSCMCapabilities:output_type -> dieter.v1.SCMCapabilities
-	125, // 297: dieter.v1.DieterService.StartGitOperation:output_type -> dieter.v1.GitOperation
-	125, // 298: dieter.v1.DieterService.GetGitOperation:output_type -> dieter.v1.GitOperation
-	130, // 299: dieter.v1.DieterService.WatchGitOperation:output_type -> dieter.v1.GitOperationFrame
-	125, // 300: dieter.v1.DieterService.CancelGitOperation:output_type -> dieter.v1.GitOperation
-	133, // 301: dieter.v1.DieterService.ListFiles:output_type -> dieter.v1.FileList
-	135, // 302: dieter.v1.DieterService.ReadFile:output_type -> dieter.v1.FileDocument
-	135, // 303: dieter.v1.DieterService.SaveFile:output_type -> dieter.v1.FileDocument
-	132, // 304: dieter.v1.DieterService.CreateFile:output_type -> dieter.v1.FileEntry
-	177, // 305: dieter.v1.DieterService.MoveFile:output_type -> dieter.v1.MoveFileResponse
-	203, // 306: dieter.v1.DieterService.DeleteFile:output_type -> google.protobuf.Empty
-	139, // 307: dieter.v1.DieterService.ListTerminals:output_type -> dieter.v1.TerminalsResponse
-	136, // 308: dieter.v1.DieterService.CreateTerminal:output_type -> dieter.v1.Terminal
-	142, // 309: dieter.v1.DieterService.WatchTerminal:output_type -> dieter.v1.TerminalFrame
-	136, // 310: dieter.v1.DieterService.WriteTerminal:output_type -> dieter.v1.Terminal
-	136, // 311: dieter.v1.DieterService.ResizeTerminal:output_type -> dieter.v1.Terminal
-	136, // 312: dieter.v1.DieterService.RenameTerminal:output_type -> dieter.v1.Terminal
-	203, // 313: dieter.v1.DieterService.CloseTerminal:output_type -> google.protobuf.Empty
-	149, // 314: dieter.v1.DieterService.ListExecutions:output_type -> dieter.v1.ExecutionsResponse
-	146, // 315: dieter.v1.DieterService.StartExecution:output_type -> dieter.v1.Execution
-	146, // 316: dieter.v1.DieterService.GetExecution:output_type -> dieter.v1.Execution
-	152, // 317: dieter.v1.DieterService.WatchExecution:output_type -> dieter.v1.ExecutionEvent
-	146, // 318: dieter.v1.DieterService.WriteExecutionInput:output_type -> dieter.v1.Execution
-	146, // 319: dieter.v1.DieterService.SignalExecution:output_type -> dieter.v1.Execution
-	146, // 320: dieter.v1.DieterService.ResizeExecution:output_type -> dieter.v1.Execution
-	146, // 321: dieter.v1.DieterService.CancelExecution:output_type -> dieter.v1.Execution
-	203, // 322: dieter.v1.DieterService.CloseExecution:output_type -> google.protobuf.Empty
-	156, // 323: dieter.v1.DieterService.GetRemoteDesktopCapabilities:output_type -> dieter.v1.RemoteDesktopCapabilities
-	158, // 324: dieter.v1.DieterService.GetRemoteDesktopSettings:output_type -> dieter.v1.RemoteDesktopSettings
-	158, // 325: dieter.v1.DieterService.UpdateRemoteDesktopSettings:output_type -> dieter.v1.RemoteDesktopSettings
-	173, // 326: dieter.v1.DieterService.StartRemoteDesktop:output_type -> dieter.v1.RemoteDesktopSignal
-	203, // 327: dieter.v1.DieterService.SendRemoteDesktopSignal:output_type -> google.protobuf.Empty
-	203, // 328: dieter.v1.DieterService.CloseRemoteDesktop:output_type -> google.protobuf.Empty
-	180, // 329: dieter.v1.DieterService.ListSchedules:output_type -> dieter.v1.SchedulesResponse
-	185, // 330: dieter.v1.DieterService.PreviewSchedule:output_type -> dieter.v1.SchedulePreview
-	181, // 331: dieter.v1.DieterService.CreateSchedule:output_type -> dieter.v1.Schedule
-	181, // 332: dieter.v1.DieterService.UpdateSchedule:output_type -> dieter.v1.Schedule
-	203, // 333: dieter.v1.DieterService.DeleteSchedule:output_type -> google.protobuf.Empty
-	189, // 334: dieter.v1.DieterService.RunSchedule:output_type -> dieter.v1.ScheduleRun
-	181, // 335: dieter.v1.DieterService.SetScheduleEnabled:output_type -> dieter.v1.Schedule
-	190, // 336: dieter.v1.DieterService.ListScheduleRuns:output_type -> dieter.v1.ScheduleRunsResponse
-	240, // [240:337] is the sub-list for method output_type
-	143, // [143:240] is the sub-list for method input_type
+	191, // 168: dieter.v1.DieterService.UpdateBoardGitSettings:input_type -> dieter.v1.UpdateBoardGitSettingsRequest
+	77,  // 169: dieter.v1.DieterService.ListArchivedCards:input_type -> dieter.v1.BoardRef
+	79,  // 170: dieter.v1.DieterService.CreateBoardLabel:input_type -> dieter.v1.CreateBoardLabelRequest
+	80,  // 171: dieter.v1.DieterService.UpdateBoardLabel:input_type -> dieter.v1.UpdateBoardLabelRequest
+	81,  // 172: dieter.v1.DieterService.DeleteBoardLabel:input_type -> dieter.v1.DeleteBoardLabelRequest
+	83,  // 173: dieter.v1.DieterService.CreateCard:input_type -> dieter.v1.CreateConversationRequest
+	83,  // 174: dieter.v1.DieterService.CreateChat:input_type -> dieter.v1.CreateConversationRequest
+	85,  // 175: dieter.v1.DieterService.ForkChat:input_type -> dieter.v1.ForkChatRequest
+	84,  // 176: dieter.v1.DieterService.ListChats:input_type -> dieter.v1.ListChatsRequest
+	87,  // 177: dieter.v1.DieterService.GetCard:input_type -> dieter.v1.GetCardRequest
+	88,  // 178: dieter.v1.DieterService.GetConversation:input_type -> dieter.v1.GetConversationRequest
+	90,  // 179: dieter.v1.DieterService.PollConversation:input_type -> dieter.v1.PollConversationRequest
+	89,  // 180: dieter.v1.DieterService.WatchConversation:input_type -> dieter.v1.WatchConversationRequest
+	92,  // 181: dieter.v1.DieterService.GetToolOutput:input_type -> dieter.v1.GetToolOutputRequest
+	94,  // 182: dieter.v1.DieterService.SendMessage:input_type -> dieter.v1.SendMessageRequest
+	192, // 183: dieter.v1.DieterService.RemoveQueuedMessage:input_type -> dieter.v1.RemoveQueuedMessageRequest
+	96,  // 184: dieter.v1.DieterService.AddComment:input_type -> dieter.v1.AddCommentRequest
+	97,  // 185: dieter.v1.DieterService.MoveCard:input_type -> dieter.v1.MoveCardRequest
+	98,  // 186: dieter.v1.DieterService.StartCard:input_type -> dieter.v1.StartCardRequest
+	100, // 187: dieter.v1.DieterService.SetCardLabels:input_type -> dieter.v1.SetCardLabelsRequest
+	87,  // 188: dieter.v1.DieterService.CancelCard:input_type -> dieter.v1.GetCardRequest
+	101, // 189: dieter.v1.DieterService.RenameCard:input_type -> dieter.v1.RenameCardRequest
+	102, // 190: dieter.v1.DieterService.UpdateCard:input_type -> dieter.v1.UpdateCardRequest
+	103, // 191: dieter.v1.DieterService.ArchiveCard:input_type -> dieter.v1.ArchiveCardRequest
+	104, // 192: dieter.v1.DieterService.PinChat:input_type -> dieter.v1.PinChatRequest
+	107, // 193: dieter.v1.DieterService.UpdateConversationWorkspace:input_type -> dieter.v1.UpdateConversationWorkspaceRequest
+	106, // 194: dieter.v1.DieterService.GetWorkspace:input_type -> dieter.v1.ConversationRef
+	105, // 195: dieter.v1.DieterService.ListProjectWorkspaces:input_type -> dieter.v1.ProjectRef
+	114, // 196: dieter.v1.DieterService.GetChangeset:input_type -> dieter.v1.GetChangesetRequest
+	115, // 197: dieter.v1.DieterService.GetFileDiff:input_type -> dieter.v1.GetDiffRequest
+	115, // 198: dieter.v1.DieterService.GetCommitDiff:input_type -> dieter.v1.GetDiffRequest
+	118, // 199: dieter.v1.DieterService.AddChangeComment:input_type -> dieter.v1.AddChangeCommentRequest
+	119, // 200: dieter.v1.DieterService.ListChangeComments:input_type -> dieter.v1.ListChangeCommentsRequest
+	106, // 201: dieter.v1.DieterService.GetSCMCapabilities:input_type -> dieter.v1.ConversationRef
+	126, // 202: dieter.v1.DieterService.StartGitOperation:input_type -> dieter.v1.StartGitOperationRequest
+	127, // 203: dieter.v1.DieterService.GetGitOperation:input_type -> dieter.v1.GitOperationRef
+	128, // 204: dieter.v1.DieterService.WatchGitOperation:input_type -> dieter.v1.WatchGitOperationRequest
+	127, // 205: dieter.v1.DieterService.CancelGitOperation:input_type -> dieter.v1.GitOperationRef
+	131, // 206: dieter.v1.DieterService.ListFiles:input_type -> dieter.v1.ListFilesRequest
+	134, // 207: dieter.v1.DieterService.ReadFile:input_type -> dieter.v1.ReadFileRequest
+	174, // 208: dieter.v1.DieterService.SaveFile:input_type -> dieter.v1.SaveFileRequest
+	175, // 209: dieter.v1.DieterService.CreateFile:input_type -> dieter.v1.CreateFileRequest
+	176, // 210: dieter.v1.DieterService.MoveFile:input_type -> dieter.v1.MoveFileRequest
+	178, // 211: dieter.v1.DieterService.DeleteFile:input_type -> dieter.v1.DeleteFileRequest
+	138, // 212: dieter.v1.DieterService.ListTerminals:input_type -> dieter.v1.ListTerminalsRequest
+	140, // 213: dieter.v1.DieterService.CreateTerminal:input_type -> dieter.v1.CreateTerminalRequest
+	141, // 214: dieter.v1.DieterService.WatchTerminal:input_type -> dieter.v1.WatchTerminalRequest
+	143, // 215: dieter.v1.DieterService.WriteTerminal:input_type -> dieter.v1.TerminalInputRequest
+	144, // 216: dieter.v1.DieterService.ResizeTerminal:input_type -> dieter.v1.ResizeTerminalRequest
+	145, // 217: dieter.v1.DieterService.RenameTerminal:input_type -> dieter.v1.RenameTerminalRequest
+	137, // 218: dieter.v1.DieterService.CloseTerminal:input_type -> dieter.v1.TerminalRef
+	148, // 219: dieter.v1.DieterService.ListExecutions:input_type -> dieter.v1.ListExecutionsRequest
+	150, // 220: dieter.v1.DieterService.StartExecution:input_type -> dieter.v1.StartExecutionRequest
+	147, // 221: dieter.v1.DieterService.GetExecution:input_type -> dieter.v1.ExecutionRef
+	151, // 222: dieter.v1.DieterService.WatchExecution:input_type -> dieter.v1.WatchExecutionRequest
+	153, // 223: dieter.v1.DieterService.WriteExecutionInput:input_type -> dieter.v1.ExecutionInputRequest
+	154, // 224: dieter.v1.DieterService.SignalExecution:input_type -> dieter.v1.SignalExecutionRequest
+	155, // 225: dieter.v1.DieterService.ResizeExecution:input_type -> dieter.v1.ResizeExecutionRequest
+	147, // 226: dieter.v1.DieterService.CancelExecution:input_type -> dieter.v1.ExecutionRef
+	147, // 227: dieter.v1.DieterService.CloseExecution:input_type -> dieter.v1.ExecutionRef
+	205, // 228: dieter.v1.DieterService.GetRemoteDesktopCapabilities:input_type -> google.protobuf.Empty
+	205, // 229: dieter.v1.DieterService.GetRemoteDesktopSettings:input_type -> google.protobuf.Empty
+	159, // 230: dieter.v1.DieterService.UpdateRemoteDesktopSettings:input_type -> dieter.v1.UpdateRemoteDesktopSettingsRequest
+	162, // 231: dieter.v1.DieterService.StartRemoteDesktop:input_type -> dieter.v1.StartRemoteDesktopRequest
+	173, // 232: dieter.v1.DieterService.SendRemoteDesktopSignal:input_type -> dieter.v1.RemoteDesktopSignal
+	163, // 233: dieter.v1.DieterService.CloseRemoteDesktop:input_type -> dieter.v1.RemoteDesktopRef
+	179, // 234: dieter.v1.DieterService.ListSchedules:input_type -> dieter.v1.ListSchedulesRequest
+	184, // 235: dieter.v1.DieterService.PreviewSchedule:input_type -> dieter.v1.PreviewScheduleRequest
+	183, // 236: dieter.v1.DieterService.CreateSchedule:input_type -> dieter.v1.SaveScheduleRequest
+	183, // 237: dieter.v1.DieterService.UpdateSchedule:input_type -> dieter.v1.SaveScheduleRequest
+	186, // 238: dieter.v1.DieterService.DeleteSchedule:input_type -> dieter.v1.ScheduleRef
+	186, // 239: dieter.v1.DieterService.RunSchedule:input_type -> dieter.v1.ScheduleRef
+	187, // 240: dieter.v1.DieterService.SetScheduleEnabled:input_type -> dieter.v1.SetScheduleEnabledRequest
+	188, // 241: dieter.v1.DieterService.ListScheduleRuns:input_type -> dieter.v1.ListScheduleRunsRequest
+	7,   // 242: dieter.v1.DieterService.Health:output_type -> dieter.v1.HealthResponse
+	8,   // 243: dieter.v1.DieterService.GetRuntimeStatus:output_type -> dieter.v1.RuntimeStatus
+	9,   // 244: dieter.v1.DieterService.GetMachineInformation:output_type -> dieter.v1.MachineInformation
+	16,  // 245: dieter.v1.DieterService.PerformMachineOperation:output_type -> dieter.v1.MachineOperationResponse
+	20,  // 246: dieter.v1.DieterService.GetState:output_type -> dieter.v1.State
+	20,  // 247: dieter.v1.DieterService.WatchState:output_type -> dieter.v1.State
+	26,  // 248: dieter.v1.DieterService.WatchSync:output_type -> dieter.v1.SyncFrame
+	50,  // 249: dieter.v1.DieterService.GetHarnesses:output_type -> dieter.v1.HarnessCatalog
+	57,  // 250: dieter.v1.DieterService.GetSettings:output_type -> dieter.v1.Settings
+	58,  // 251: dieter.v1.DieterService.GetSettingsOptions:output_type -> dieter.v1.SettingsOptions
+	57,  // 252: dieter.v1.DieterService.UpdateSettings:output_type -> dieter.v1.Settings
+	60,  // 253: dieter.v1.DieterService.GetPromptSettings:output_type -> dieter.v1.PromptSettings
+	60,  // 254: dieter.v1.DieterService.UpdatePromptSettings:output_type -> dieter.v1.PromptSettings
+	29,  // 255: dieter.v1.DieterService.SetProjectPromptTemplate:output_type -> dieter.v1.Project
+	30,  // 256: dieter.v1.DieterService.SetBoardPromptTemplate:output_type -> dieter.v1.Board
+	64,  // 257: dieter.v1.DieterService.PreviewPrompt:output_type -> dieter.v1.PromptPreview
+	68,  // 258: dieter.v1.DieterService.ListDirectories:output_type -> dieter.v1.DirectoryListing
+	70,  // 259: dieter.v1.DieterService.CreateProject:output_type -> dieter.v1.CreateProjectResponse
+	29,  // 260: dieter.v1.DieterService.UpdateProject:output_type -> dieter.v1.Project
+	29,  // 261: dieter.v1.DieterService.UpdateProjectWorkspaceSettings:output_type -> dieter.v1.Project
+	29,  // 262: dieter.v1.DieterService.ArchiveProject:output_type -> dieter.v1.Project
+	27,  // 263: dieter.v1.DieterService.ListArchivedProjects:output_type -> dieter.v1.ProjectsResponse
+	30,  // 264: dieter.v1.DieterService.CreateBoard:output_type -> dieter.v1.Board
+	30,  // 265: dieter.v1.DieterService.RenameBoard:output_type -> dieter.v1.Board
+	30,  // 266: dieter.v1.DieterService.SetBoardArchivePolicy:output_type -> dieter.v1.Board
+	30,  // 267: dieter.v1.DieterService.UpdateBoardGitSettings:output_type -> dieter.v1.Board
+	28,  // 268: dieter.v1.DieterService.ListArchivedCards:output_type -> dieter.v1.CardsResponse
+	30,  // 269: dieter.v1.DieterService.CreateBoardLabel:output_type -> dieter.v1.Board
+	30,  // 270: dieter.v1.DieterService.UpdateBoardLabel:output_type -> dieter.v1.Board
+	30,  // 271: dieter.v1.DieterService.DeleteBoardLabel:output_type -> dieter.v1.Board
+	34,  // 272: dieter.v1.DieterService.CreateCard:output_type -> dieter.v1.Card
+	34,  // 273: dieter.v1.DieterService.CreateChat:output_type -> dieter.v1.Card
+	34,  // 274: dieter.v1.DieterService.ForkChat:output_type -> dieter.v1.Card
+	86,  // 275: dieter.v1.DieterService.ListChats:output_type -> dieter.v1.ChatsResponse
+	36,  // 276: dieter.v1.DieterService.GetCard:output_type -> dieter.v1.CardDetail
+	49,  // 277: dieter.v1.DieterService.GetConversation:output_type -> dieter.v1.ConversationSnapshot
+	91,  // 278: dieter.v1.DieterService.PollConversation:output_type -> dieter.v1.ConversationUpdate
+	91,  // 279: dieter.v1.DieterService.WatchConversation:output_type -> dieter.v1.ConversationUpdate
+	93,  // 280: dieter.v1.DieterService.GetToolOutput:output_type -> dieter.v1.ToolOutput
+	95,  // 281: dieter.v1.DieterService.SendMessage:output_type -> dieter.v1.SendMessageResponse
+	47,  // 282: dieter.v1.DieterService.RemoveQueuedMessage:output_type -> dieter.v1.QueuedMessage
+	37,  // 283: dieter.v1.DieterService.AddComment:output_type -> dieter.v1.Comment
+	34,  // 284: dieter.v1.DieterService.MoveCard:output_type -> dieter.v1.Card
+	99,  // 285: dieter.v1.DieterService.StartCard:output_type -> dieter.v1.StartCardResponse
+	34,  // 286: dieter.v1.DieterService.SetCardLabels:output_type -> dieter.v1.Card
+	205, // 287: dieter.v1.DieterService.CancelCard:output_type -> google.protobuf.Empty
+	34,  // 288: dieter.v1.DieterService.RenameCard:output_type -> dieter.v1.Card
+	34,  // 289: dieter.v1.DieterService.UpdateCard:output_type -> dieter.v1.Card
+	34,  // 290: dieter.v1.DieterService.ArchiveCard:output_type -> dieter.v1.Card
+	34,  // 291: dieter.v1.DieterService.PinChat:output_type -> dieter.v1.Card
+	34,  // 292: dieter.v1.DieterService.UpdateConversationWorkspace:output_type -> dieter.v1.Card
+	109, // 293: dieter.v1.DieterService.GetWorkspace:output_type -> dieter.v1.Workspace
+	110, // 294: dieter.v1.DieterService.ListProjectWorkspaces:output_type -> dieter.v1.WorkspacesResponse
+	113, // 295: dieter.v1.DieterService.GetChangeset:output_type -> dieter.v1.Changeset
+	116, // 296: dieter.v1.DieterService.GetFileDiff:output_type -> dieter.v1.FileDiff
+	116, // 297: dieter.v1.DieterService.GetCommitDiff:output_type -> dieter.v1.FileDiff
+	117, // 298: dieter.v1.DieterService.AddChangeComment:output_type -> dieter.v1.ChangeComment
+	120, // 299: dieter.v1.DieterService.ListChangeComments:output_type -> dieter.v1.ChangeCommentsResponse
+	121, // 300: dieter.v1.DieterService.GetSCMCapabilities:output_type -> dieter.v1.SCMCapabilities
+	125, // 301: dieter.v1.DieterService.StartGitOperation:output_type -> dieter.v1.GitOperation
+	125, // 302: dieter.v1.DieterService.GetGitOperation:output_type -> dieter.v1.GitOperation
+	130, // 303: dieter.v1.DieterService.WatchGitOperation:output_type -> dieter.v1.GitOperationFrame
+	125, // 304: dieter.v1.DieterService.CancelGitOperation:output_type -> dieter.v1.GitOperation
+	133, // 305: dieter.v1.DieterService.ListFiles:output_type -> dieter.v1.FileList
+	135, // 306: dieter.v1.DieterService.ReadFile:output_type -> dieter.v1.FileDocument
+	135, // 307: dieter.v1.DieterService.SaveFile:output_type -> dieter.v1.FileDocument
+	132, // 308: dieter.v1.DieterService.CreateFile:output_type -> dieter.v1.FileEntry
+	177, // 309: dieter.v1.DieterService.MoveFile:output_type -> dieter.v1.MoveFileResponse
+	205, // 310: dieter.v1.DieterService.DeleteFile:output_type -> google.protobuf.Empty
+	139, // 311: dieter.v1.DieterService.ListTerminals:output_type -> dieter.v1.TerminalsResponse
+	136, // 312: dieter.v1.DieterService.CreateTerminal:output_type -> dieter.v1.Terminal
+	142, // 313: dieter.v1.DieterService.WatchTerminal:output_type -> dieter.v1.TerminalFrame
+	136, // 314: dieter.v1.DieterService.WriteTerminal:output_type -> dieter.v1.Terminal
+	136, // 315: dieter.v1.DieterService.ResizeTerminal:output_type -> dieter.v1.Terminal
+	136, // 316: dieter.v1.DieterService.RenameTerminal:output_type -> dieter.v1.Terminal
+	205, // 317: dieter.v1.DieterService.CloseTerminal:output_type -> google.protobuf.Empty
+	149, // 318: dieter.v1.DieterService.ListExecutions:output_type -> dieter.v1.ExecutionsResponse
+	146, // 319: dieter.v1.DieterService.StartExecution:output_type -> dieter.v1.Execution
+	146, // 320: dieter.v1.DieterService.GetExecution:output_type -> dieter.v1.Execution
+	152, // 321: dieter.v1.DieterService.WatchExecution:output_type -> dieter.v1.ExecutionEvent
+	146, // 322: dieter.v1.DieterService.WriteExecutionInput:output_type -> dieter.v1.Execution
+	146, // 323: dieter.v1.DieterService.SignalExecution:output_type -> dieter.v1.Execution
+	146, // 324: dieter.v1.DieterService.ResizeExecution:output_type -> dieter.v1.Execution
+	146, // 325: dieter.v1.DieterService.CancelExecution:output_type -> dieter.v1.Execution
+	205, // 326: dieter.v1.DieterService.CloseExecution:output_type -> google.protobuf.Empty
+	156, // 327: dieter.v1.DieterService.GetRemoteDesktopCapabilities:output_type -> dieter.v1.RemoteDesktopCapabilities
+	158, // 328: dieter.v1.DieterService.GetRemoteDesktopSettings:output_type -> dieter.v1.RemoteDesktopSettings
+	158, // 329: dieter.v1.DieterService.UpdateRemoteDesktopSettings:output_type -> dieter.v1.RemoteDesktopSettings
+	173, // 330: dieter.v1.DieterService.StartRemoteDesktop:output_type -> dieter.v1.RemoteDesktopSignal
+	205, // 331: dieter.v1.DieterService.SendRemoteDesktopSignal:output_type -> google.protobuf.Empty
+	205, // 332: dieter.v1.DieterService.CloseRemoteDesktop:output_type -> google.protobuf.Empty
+	180, // 333: dieter.v1.DieterService.ListSchedules:output_type -> dieter.v1.SchedulesResponse
+	185, // 334: dieter.v1.DieterService.PreviewSchedule:output_type -> dieter.v1.SchedulePreview
+	181, // 335: dieter.v1.DieterService.CreateSchedule:output_type -> dieter.v1.Schedule
+	181, // 336: dieter.v1.DieterService.UpdateSchedule:output_type -> dieter.v1.Schedule
+	205, // 337: dieter.v1.DieterService.DeleteSchedule:output_type -> google.protobuf.Empty
+	189, // 338: dieter.v1.DieterService.RunSchedule:output_type -> dieter.v1.ScheduleRun
+	181, // 339: dieter.v1.DieterService.SetScheduleEnabled:output_type -> dieter.v1.Schedule
+	190, // 340: dieter.v1.DieterService.ListScheduleRuns:output_type -> dieter.v1.ScheduleRunsResponse
+	242, // [242:341] is the sub-list for method output_type
+	143, // [143:242] is the sub-list for method input_type
 	143, // [143:143] is the sub-list for extension type_name
 	143, // [143:143] is the sub-list for extension extendee
 	0,   // [0:143] is the sub-list for field type_name
@@ -18051,7 +18308,7 @@ func file_dieter_v1_dieter_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_v1_dieter_proto_rawDesc), len(file_dieter_v1_dieter_proto_rawDesc)),
 			NumEnums:      7,
-			NumMessages:   195,
+			NumMessages:   197,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

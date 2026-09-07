@@ -98,6 +98,28 @@ func TestMergeDiscoveredCatalogHidesCompatibilityModels(t *testing.T) {
 	}
 }
 
+func TestMergeDiscoveredCatalogPrefersSupportedConfiguredDefaultEffort(t *testing.T) {
+	adapter := Adapter{ID: "codex", DefaultModel: "sol", Models: []Model{{ID: "sol", DefaultEffort: "xhigh"}}}
+	merged := mergeDiscoveredAdapter(adapter, []Model{
+		{ID: "sol", DefaultEffort: "low", Efforts: []string{"low", "high", "xhigh"}},
+		{ID: "spark", DefaultEffort: "high", Efforts: []string{"low", "high"}},
+	})
+	if got := merged.Models[0].DefaultEffort; got != "xhigh" {
+		t.Fatalf("configured default effort=%q want xhigh", got)
+	}
+	if got := merged.Models[1].DefaultEffort; got != "high" {
+		t.Fatalf("discovered default effort=%q want high", got)
+	}
+}
+
+func TestMergeDiscoveredCatalogKeepsProviderDefaultWhenConfiguredValueIsUnsupported(t *testing.T) {
+	adapter := Adapter{ID: "codex", DefaultModel: "sol", Models: []Model{{ID: "sol", DefaultEffort: "xhigh"}}}
+	merged := mergeDiscoveredAdapter(adapter, []Model{{ID: "sol", DefaultEffort: "low", Efforts: []string{"low", "high"}}})
+	if got := merged.Models[0].DefaultEffort; got != "low" {
+		t.Fatalf("unsupported configured default replaced provider default with %q", got)
+	}
+}
+
 func TestMergeDiscoveredCatalogSurvivesAnEmptyDiscovery(t *testing.T) {
 	adapter := Adapter{ID: "pi", DefaultModel: "default"}
 	merged := mergeDiscoveredAdapter(adapter, nil)

@@ -366,6 +366,7 @@ func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateP
 	}
 	board, err := api.server.store.CreateBoard(store.CreateBoardInput{
 		Project: project.ID, Name: boardName, Workflow: request.GetWorkflow(),
+		BaseRemote: request.GetBaseRemote(), RemotePublishMode: request.GetRemotePublishMode(),
 	})
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -416,7 +417,18 @@ func (api *grpcAPI) CreateBoard(_ context.Context, request *dieterv1.CreateBoard
 	value, err := api.server.store.CreateBoard(store.CreateBoardInput{
 		Project: request.GetProjectId(), Name: request.GetName(), Workflow: request.GetWorkflow(),
 		Description: request.GetDescription(), DoneArchivePolicy: request.GetDoneArchivePolicy(),
+		BaseRemote: request.GetBaseRemote(), RemotePublishMode: request.GetRemotePublishMode(),
 	})
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
+}
+
+func (api *grpcAPI) UpdateBoardGitSettings(_ context.Context, request *dieterv1.UpdateBoardGitSettingsRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.UpdateBoardGitSettings(
+		request.GetBoardId(), request.GetBaseRemote(), request.GetRemotePublishMode(),
+	)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -497,7 +509,8 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInp
 		Model: request.GetModel(), Effort: request.GetEffort(), ProviderOptions: cloneProtoStringMap(request.GetProviderOptions()),
 		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), AutoGenerateTitle: request.GetAutoGenerateTitle(), Attachments: attachments,
 		WorkspaceMode: workspaceMode, WorkspaceBranch: request.GetWorkspaceBranch(),
-		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(),
+		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(), WorkspaceBaseRemote: request.GetWorkspaceBaseRemote(),
+		RemotePublishMode: request.GetRemotePublishMode(),
 	}, nil
 }
 
@@ -1008,6 +1021,14 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *dieterv1.SendMessage
 		return nil, grpcFailure(err)
 	}
 	return &dieterv1.SendMessageResponse{Sent: !queued, Queued: queued, MessageId: messageID}, nil
+}
+
+func (api *grpcAPI) RemoveQueuedMessage(_ context.Context, request *dieterv1.RemoveQueuedMessageRequest) (*dieterv1.QueuedMessage, error) {
+	removed, _, err := api.server.store.RemoveQueuedConversationMessage(request.GetCardId(), request.GetMessageId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoQueuedMessage(removed), nil
 }
 
 func (api *grpcAPI) AddComment(_ context.Context, request *dieterv1.AddCommentRequest) (*dieterv1.Comment, error) {

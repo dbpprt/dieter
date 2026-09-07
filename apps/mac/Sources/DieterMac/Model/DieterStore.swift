@@ -69,6 +69,7 @@ final class DieterStore {
     }
     var selectedCardID: String?
     var selectedChatID: String?
+    var lastUsedChatID: String?
     var conversation: Dieter_V1_ConversationSnapshot? {
         didSet {
             guard conversation != oldValue else { return }
@@ -244,6 +245,7 @@ final class DieterStore {
     var rpc: DieterRPC?
     let scheduleRPCOverride: (any DieterScheduleRPC)?
     let chatPinRPCOverride: (any DieterChatPinRPC)?
+    let cardStartRPCOverride: (any DieterCardStartRPC)?
     var connectionTask: Task<Void, Never>?
     var reconnectTask: Task<Void, Never>?
     var directRefreshTask: Task<Void, Never>?
@@ -265,6 +267,7 @@ final class DieterStore {
     var boardSelectionGeneration: UInt64 = 0
     var pendingCardMoves: [String: OptimisticCardMove] = [:]
     var pendingCardLabelUpdates: [String: OptimisticCardLabels] = [:]
+    var pendingCardStarts: [String: OptimisticCardStart] = [:]
     var pendingBoards: [String: Dieter_V1_Board] = [:]
     var pendingProjects: [String: Dieter_V1_Project] = [:]
     var notificationStatuses: [String: String] = [:]
@@ -294,12 +297,14 @@ final class DieterStore {
     init(
         scheduleRPCOverride: (any DieterScheduleRPC)? = nil,
         chatPinRPCOverride: (any DieterChatPinRPC)? = nil,
+        cardStartRPCOverride: (any DieterCardStartRPC)? = nil,
         syncPersistenceOverride: DieterSyncPersistence? = nil,
         themeDefaultsOverride: UserDefaults? = nil,
         restoreSync: Bool = true
     ) {
         self.scheduleRPCOverride = scheduleRPCOverride
         self.chatPinRPCOverride = chatPinRPCOverride
+        self.cardStartRPCOverride = cardStartRPCOverride
         syncPersistence = syncPersistenceOverride ?? DieterSyncPersistence()
         let themeDefaults = themeDefaultsOverride ?? DieterAppearance.applicationDefaults()
         self.themeDefaults = themeDefaults

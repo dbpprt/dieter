@@ -579,6 +579,44 @@ func TestCreateRunningCardStartsHarnessWithBoardInstructions(t *testing.T) {
 	}
 }
 
+func TestNewConversationUsesConfiguredModelEffortByDefault(t *testing.T) {
+	service, fake, project, board := appSetup(t)
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Think deeply", Prompt: "Solve it", Provider: "codex", Model: "gpt-5.6-sol",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return fake.count() == 1 && !hasActiveTurn(service, project.ID) })
+	stored, err := service.Store.ResolveCard(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Effort != "xhigh" || fake.request(0).Effort != "xhigh" {
+		t.Fatalf("stored effort=%q request effort=%q", stored.Effort, fake.request(0).Effort)
+	}
+}
+
+func TestNewConversationCanExplicitlyUseProviderDefaultEffort(t *testing.T) {
+	service, fake, project, board := appSetup(t)
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Use provider default", Prompt: "Solve it", Provider: "codex", Model: "gpt-5.6-sol", Effort: "default",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return fake.count() == 1 && !hasActiveTurn(service, project.ID) })
+	stored, err := service.Store.ResolveCard(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Effort != "" || fake.request(0).Effort != "" {
+		t.Fatalf("stored effort=%q request effort=%q", stored.Effort, fake.request(0).Effort)
+	}
+}
+
 func TestCreateRunningCardUsesTitleAsInitialTaskWhenPromptIsEmpty(t *testing.T) {
 	service, fake, project, board := appSetup(t)
 	card, err := service.CreateCard(context.Background(), CardInput{
@@ -1099,6 +1137,85 @@ func TestProviderOptionsPersistReachRuntimeAndLockAfterFirstTurn(t *testing.T) {
 	}
 }
 
+func TestCodexFastModePersistsForTasksAndChatsAndCanChangeBetweenTurns(t *testing.T) {
+	service, fake, project, board := appSetup(t)
+	fast := map[string]string{"fast_mode": "true"}
+	task, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Fast task", Prompt: "Work quickly", Provider: "codex", ProviderOptions: fast,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.ProviderOptions["fast_mode"] != "true" {
+		t.Fatalf("task options=%#v", task.ProviderOptions)
+	}
+	if _, err = service.SubmitCardParts(task.ID, []model.UIMessagePart{{Type: "text", Text: "Start"}}, "codex", task.Model, task.Effort, fast); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return fake.count() == 1 })
+	waitFor(t, func() bool {
+		stored, resolveErr := service.Store.ResolveCard(task.ID)
+		return resolveErr == nil && stored.Runtime == "idle"
+	})
+	waitFor(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.active) == 0
+	})
+
+	standard := map[string]string{"fast_mode": "false"}
+	if _, err = service.SubmitCardParts(task.ID, []model.UIMessagePart{{Type: "text", Text: "Continue"}}, "codex", task.Model, task.Effort, standard); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return fake.count() == 2 })
+	waitFor(t, func() bool {
+		stored, resolveErr := service.Store.ResolveCard(task.ID)
+		return resolveErr == nil && stored.Runtime == "idle"
+	})
+	waitFor(t, func() bool {
+		service.mu.Lock()
+		defer service.mu.Unlock()
+		return len(service.active) == 0
+	})
+	if fake.request(0).Options["fast_mode"] != "true" || fake.request(1).Options["fast_mode"] != "false" {
+		t.Fatalf("runtime options first=%#v second=%#v", fake.request(0).Options, fake.request(1).Options)
+	}
+	storedTask, err := service.Store.ResolveCard(task.ID)
+	if err != nil || storedTask.ProviderOptions["fast_mode"] != "false" {
+		t.Fatalf("stored task=%#v err=%v", storedTask, err)
+	}
+
+	chat, err := service.CreateChat(context.Background(), CardInput{
+		Project: project.ID, Title: "Fast chat", Prompt: "Discuss quickly", Provider: "codex",
+		ProviderOptions: fast, DeferStart: true, WorkspaceMode: model.WorkspaceModeProject,
+	})
+	if err != nil || chat.Scope != model.ConversationScopeChat || chat.ProviderOptions["fast_mode"] != "true" {
+		t.Fatalf("chat=%#v err=%v", chat, err)
+	}
+}
+
+func TestCodexFastModeRejectsUnsupportedModels(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	_, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Spark task", Prompt: "Work quickly", Provider: "codex", Model: "gpt-5.3-codex-spark",
+		ProviderOptions: map[string]string{"fast_mode": "true"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not supported for model") {
+		t.Fatalf("Spark Fast mode err=%v", err)
+	}
+
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Standard Spark task", Prompt: "Work quickly", Provider: "codex", Model: "gpt-5.3-codex-spark",
+		ProviderOptions: map[string]string{"fast_mode": "false"},
+	})
+	if err != nil || len(card.ProviderOptions) != 0 {
+		t.Fatalf("standard Spark card=%#v err=%v", card, err)
+	}
+}
+
 func TestProviderOptionDefaultsDoNotLockLegacyConversation(t *testing.T) {
 	service, fake, project, board := appSetup(t)
 	card, err := service.CreateCard(context.Background(), CardInput{
@@ -1235,6 +1352,71 @@ func TestQueuedMessageStartsAfterInterruptWithoutRecordingFailure(t *testing.T) 
 				t.Fatalf("interrupt was recorded as failure: %#v", conversation.Messages)
 			}
 		}
+	}
+}
+
+func TestQueuedMessageUsesUpdatedMutableProviderOptions(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	runner := &interruptQueueRunner{started: make(chan int, 2)}
+	service.Runner = runner
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Queue", Prompt: "Keep working", Provider: "codex", DeferStart: true,
+		ProviderOptions: map[string]string{"fast_mode": "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go drainTurnUpdates(updates)
+	if turn := <-runner.started; turn != 1 {
+		t.Fatalf("first turn=%d", turn)
+	}
+	queued, err := service.SubmitCardParts(
+		card.ID,
+		[]model.UIMessagePart{{Type: "text", Text: "Continue quickly"}},
+		card.Provider,
+		card.Model,
+		card.Effort,
+		map[string]string{"fast_mode": "true"},
+	)
+	if err != nil || !queued {
+		t.Fatalf("queued=%v err=%v", queued, err)
+	}
+	stored, err := service.Store.ResolveCard(card.ID)
+	if err != nil || stored.ProviderOptions["fast_mode"] != "true" {
+		t.Fatalf("stored options=%#v err=%v", stored.ProviderOptions, err)
+	}
+	if err := service.CancelCard(card.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case turn := <-runner.started:
+		if turn != 2 {
+			t.Fatalf("second turn=%d", turn)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued turn did not start after interrupt")
+	}
+	service.mu.Lock()
+	secondTurn := service.active[card.ID]
+	service.mu.Unlock()
+	if secondTurn == nil {
+		t.Fatal("queued turn was not registered as active")
+	}
+	select {
+	case <-secondTurn.done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("queued turn did not finish")
+	}
+	runner.mu.Lock()
+	requests := append([]harness.Request(nil), runner.requests...)
+	runner.mu.Unlock()
+	if len(requests) != 2 || requests[0].Options["fast_mode"] != "false" || requests[1].Options["fast_mode"] != "true" {
+		t.Fatalf("runtime options=%#v", requests)
 	}
 }
 

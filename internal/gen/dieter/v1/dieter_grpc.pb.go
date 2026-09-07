@@ -45,6 +45,7 @@ const (
 	DieterService_CreateBoard_FullMethodName                    = "/dieter.v1.DieterService/CreateBoard"
 	DieterService_RenameBoard_FullMethodName                    = "/dieter.v1.DieterService/RenameBoard"
 	DieterService_SetBoardArchivePolicy_FullMethodName          = "/dieter.v1.DieterService/SetBoardArchivePolicy"
+	DieterService_UpdateBoardGitSettings_FullMethodName         = "/dieter.v1.DieterService/UpdateBoardGitSettings"
 	DieterService_ListArchivedCards_FullMethodName              = "/dieter.v1.DieterService/ListArchivedCards"
 	DieterService_CreateBoardLabel_FullMethodName               = "/dieter.v1.DieterService/CreateBoardLabel"
 	DieterService_UpdateBoardLabel_FullMethodName               = "/dieter.v1.DieterService/UpdateBoardLabel"
@@ -59,6 +60,7 @@ const (
 	DieterService_WatchConversation_FullMethodName              = "/dieter.v1.DieterService/WatchConversation"
 	DieterService_GetToolOutput_FullMethodName                  = "/dieter.v1.DieterService/GetToolOutput"
 	DieterService_SendMessage_FullMethodName                    = "/dieter.v1.DieterService/SendMessage"
+	DieterService_RemoveQueuedMessage_FullMethodName            = "/dieter.v1.DieterService/RemoveQueuedMessage"
 	DieterService_AddComment_FullMethodName                     = "/dieter.v1.DieterService/AddComment"
 	DieterService_MoveCard_FullMethodName                       = "/dieter.v1.DieterService/MoveCard"
 	DieterService_StartCard_FullMethodName                      = "/dieter.v1.DieterService/StartCard"
@@ -153,6 +155,7 @@ type DieterServiceClient interface {
 	CreateBoard(ctx context.Context, in *CreateBoardRequest, opts ...grpc.CallOption) (*Board, error)
 	RenameBoard(ctx context.Context, in *RenameBoardRequest, opts ...grpc.CallOption) (*Board, error)
 	SetBoardArchivePolicy(ctx context.Context, in *SetBoardArchivePolicyRequest, opts ...grpc.CallOption) (*Board, error)
+	UpdateBoardGitSettings(ctx context.Context, in *UpdateBoardGitSettingsRequest, opts ...grpc.CallOption) (*Board, error)
 	ListArchivedCards(ctx context.Context, in *BoardRef, opts ...grpc.CallOption) (*CardsResponse, error)
 	CreateBoardLabel(ctx context.Context, in *CreateBoardLabelRequest, opts ...grpc.CallOption) (*Board, error)
 	UpdateBoardLabel(ctx context.Context, in *UpdateBoardLabelRequest, opts ...grpc.CallOption) (*Board, error)
@@ -167,6 +170,10 @@ type DieterServiceClient interface {
 	WatchConversation(ctx context.Context, in *WatchConversationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ConversationUpdate], error)
 	GetToolOutput(ctx context.Context, in *GetToolOutputRequest, opts ...grpc.CallOption) (*ToolOutput, error)
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
+	// RemoveQueuedMessage dequeues content that has not started yet and returns
+	// the full message so clients can either discard it or restore it to an
+	// editor without losing attachments.
+	RemoveQueuedMessage(ctx context.Context, in *RemoveQueuedMessageRequest, opts ...grpc.CallOption) (*QueuedMessage, error)
 	AddComment(ctx context.Context, in *AddCommentRequest, opts ...grpc.CallOption) (*Comment, error)
 	MoveCard(ctx context.Context, in *MoveCardRequest, opts ...grpc.CallOption) (*Card, error)
 	// StartCard is an idempotent admission command. It durably admits the
@@ -513,6 +520,16 @@ func (c *dieterServiceClient) SetBoardArchivePolicy(ctx context.Context, in *Set
 	return out, nil
 }
 
+func (c *dieterServiceClient) UpdateBoardGitSettings(ctx context.Context, in *UpdateBoardGitSettingsRequest, opts ...grpc.CallOption) (*Board, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Board)
+	err := c.cc.Invoke(ctx, DieterService_UpdateBoardGitSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dieterServiceClient) ListArchivedCards(ctx context.Context, in *BoardRef, opts ...grpc.CallOption) (*CardsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CardsResponse)
@@ -656,6 +673,16 @@ func (c *dieterServiceClient) SendMessage(ctx context.Context, in *SendMessageRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SendMessageResponse)
 	err := c.cc.Invoke(ctx, DieterService_SendMessage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) RemoveQueuedMessage(ctx context.Context, in *RemoveQueuedMessageRequest, opts ...grpc.CallOption) (*QueuedMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QueuedMessage)
+	err := c.cc.Invoke(ctx, DieterService_RemoveQueuedMessage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1312,6 +1339,7 @@ type DieterServiceServer interface {
 	CreateBoard(context.Context, *CreateBoardRequest) (*Board, error)
 	RenameBoard(context.Context, *RenameBoardRequest) (*Board, error)
 	SetBoardArchivePolicy(context.Context, *SetBoardArchivePolicyRequest) (*Board, error)
+	UpdateBoardGitSettings(context.Context, *UpdateBoardGitSettingsRequest) (*Board, error)
 	ListArchivedCards(context.Context, *BoardRef) (*CardsResponse, error)
 	CreateBoardLabel(context.Context, *CreateBoardLabelRequest) (*Board, error)
 	UpdateBoardLabel(context.Context, *UpdateBoardLabelRequest) (*Board, error)
@@ -1326,6 +1354,10 @@ type DieterServiceServer interface {
 	WatchConversation(*WatchConversationRequest, grpc.ServerStreamingServer[ConversationUpdate]) error
 	GetToolOutput(context.Context, *GetToolOutputRequest) (*ToolOutput, error)
 	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
+	// RemoveQueuedMessage dequeues content that has not started yet and returns
+	// the full message so clients can either discard it or restore it to an
+	// editor without losing attachments.
+	RemoveQueuedMessage(context.Context, *RemoveQueuedMessageRequest) (*QueuedMessage, error)
 	AddComment(context.Context, *AddCommentRequest) (*Comment, error)
 	MoveCard(context.Context, *MoveCardRequest) (*Card, error)
 	// StartCard is an idempotent admission command. It durably admits the
@@ -1479,6 +1511,9 @@ func (UnimplementedDieterServiceServer) RenameBoard(context.Context, *RenameBoar
 func (UnimplementedDieterServiceServer) SetBoardArchivePolicy(context.Context, *SetBoardArchivePolicyRequest) (*Board, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetBoardArchivePolicy not implemented")
 }
+func (UnimplementedDieterServiceServer) UpdateBoardGitSettings(context.Context, *UpdateBoardGitSettingsRequest) (*Board, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateBoardGitSettings not implemented")
+}
 func (UnimplementedDieterServiceServer) ListArchivedCards(context.Context, *BoardRef) (*CardsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListArchivedCards not implemented")
 }
@@ -1520,6 +1555,9 @@ func (UnimplementedDieterServiceServer) GetToolOutput(context.Context, *GetToolO
 }
 func (UnimplementedDieterServiceServer) SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendMessage not implemented")
+}
+func (UnimplementedDieterServiceServer) RemoveQueuedMessage(context.Context, *RemoveQueuedMessageRequest) (*QueuedMessage, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveQueuedMessage not implemented")
 }
 func (UnimplementedDieterServiceServer) AddComment(context.Context, *AddCommentRequest) (*Comment, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddComment not implemented")
@@ -2152,6 +2190,24 @@ func _DieterService_SetBoardArchivePolicy_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DieterService_UpdateBoardGitSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateBoardGitSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).UpdateBoardGitSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_UpdateBoardGitSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).UpdateBoardGitSettings(ctx, req.(*UpdateBoardGitSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DieterService_ListArchivedCards_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BoardRef)
 	if err := dec(in); err != nil {
@@ -2393,6 +2449,24 @@ func _DieterService_SendMessage_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).SendMessage(ctx, req.(*SendMessageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_RemoveQueuedMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveQueuedMessageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).RemoveQueuedMessage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_RemoveQueuedMessage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).RemoveQueuedMessage(ctx, req.(*RemoveQueuedMessageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3513,6 +3587,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DieterService_SetBoardArchivePolicy_Handler,
 		},
 		{
+			MethodName: "UpdateBoardGitSettings",
+			Handler:    _DieterService_UpdateBoardGitSettings_Handler,
+		},
+		{
 			MethodName: "ListArchivedCards",
 			Handler:    _DieterService_ListArchivedCards_Handler,
 		},
@@ -3563,6 +3641,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendMessage",
 			Handler:    _DieterService_SendMessage_Handler,
+		},
+		{
+			MethodName: "RemoveQueuedMessage",
+			Handler:    _DieterService_RemoveQueuedMessage_Handler,
 		},
 		{
 			MethodName: "AddComment",

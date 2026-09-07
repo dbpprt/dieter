@@ -101,8 +101,21 @@ func (m *Manager) Ensure(ctx context.Context, cardRef string) (model.Workspace, 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	value := model.Workspace{
 		CardID: detail.Card.ID, ProjectID: detail.Project.ID, Mode: mode, State: model.WorkspaceStateProvisioning,
-		BaseRemote: strings.TrimSpace(detail.Project.BaseRemote), BaseBranch: strings.TrimSpace(detail.Card.WorkspaceBaseBranch),
-		Branch: strings.TrimSpace(detail.Card.WorkspaceBranch), CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		BaseRemote: strings.TrimSpace(detail.Card.WorkspaceBaseRemote), BaseBranch: strings.TrimSpace(detail.Card.WorkspaceBaseBranch),
+		RemotePublishMode: strings.TrimSpace(detail.Card.RemotePublishMode),
+		Branch:            strings.TrimSpace(detail.Card.WorkspaceBranch), CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	}
+	if value.BaseRemote == "" {
+		value.BaseRemote = strings.TrimSpace(detail.Board.BaseRemote)
+	}
+	if value.BaseRemote == "" {
+		value.BaseRemote = strings.TrimSpace(detail.Project.BaseRemote)
+	}
+	if value.RemotePublishMode == "" {
+		value.RemotePublishMode = detail.Board.RemotePublishMode
+	}
+	if value.RemotePublishMode == "" {
+		value.RemotePublishMode = model.RemotePublishManual
 	}
 	if value.BaseBranch == "" {
 		value.BaseBranch = strings.TrimSpace(detail.Project.BaseBranch)
@@ -128,11 +141,6 @@ func (m *Manager) provision(ctx context.Context, detail model.CardDetail, value 
 	currentBranch, _ := m.output(ctx, projectPath, "symbolic-ref", "--quiet", "--short", "HEAD")
 	if value.BaseBranch == "" {
 		value.BaseBranch = currentBranch
-	}
-	if value.BaseRemote == "" {
-		if _, err := m.Git.Run(ctx, projectPath, "remote", "get-url", "origin"); err == nil {
-			value.BaseRemote = "origin"
-		}
 	}
 	baseRef := value.BaseBranch
 	if baseRef == "" {
@@ -209,6 +217,9 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 	value, err := m.Store.Workspace(cardRef)
 	if err != nil {
 		return model.Workspace{}, err
+	}
+	if value.RemotePublishMode == "" {
+		value.RemotePublishMode = model.RemotePublishManual
 	}
 	if _, err := os.Stat(value.Path); err != nil {
 		value.State = model.WorkspaceStateOrphaned

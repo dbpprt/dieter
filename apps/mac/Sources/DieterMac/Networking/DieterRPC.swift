@@ -16,6 +16,10 @@ protocol DieterChatPinRPC: Sendable {
     func pinChat(_ request: Dieter_V1_PinChatRequest) async throws -> Dieter_V1_Card
 }
 
+protocol DieterCardStartRPC: Sendable {
+    func startCard(_ request: Dieter_V1_StartCardRequest) async throws -> Dieter_V1_StartCardResponse
+}
+
 /// One long-lived native HTTP/2 gRPC channel to the loopback Dieter server.
 final class DieterRPC: Sendable {
     typealias Transport = HTTP2ClientTransport.Posix
@@ -343,6 +347,10 @@ final class DieterRPC: Sendable {
         try await service.setBoardArchivePolicy(request: .init(message: request))
     }
 
+    func updateBoardGitSettings(_ request: Dieter_V1_UpdateBoardGitSettingsRequest) async throws -> Dieter_V1_Board {
+        try await service.updateBoardGitSettings(request: .init(message: request))
+    }
+
     func archivedCards(boardID: String) async throws -> Dieter_V1_CardsResponse {
         var request = Dieter_V1_BoardRef(); request.boardID = boardID
         return try await service.listArchivedCards(request: .init(message: request))
@@ -414,12 +422,26 @@ final class DieterRPC: Sendable {
         try await service.sendMessage(request: .init(message: request), options: Self.attachmentCallOptions())
     }
 
+    func removeQueuedMessage(cardID: String, messageID: String) async throws -> Dieter_V1_QueuedMessage {
+        var request = Dieter_V1_RemoveQueuedMessageRequest()
+        request.cardID = cardID
+        request.messageID = messageID
+        return try await service.removeQueuedMessage(request: .init(message: request))
+    }
+
     func addComment(_ request: Dieter_V1_AddCommentRequest) async throws -> Dieter_V1_Comment {
         try await service.addComment(request: .init(message: request))
     }
 
     func moveCard(_ request: Dieter_V1_MoveCardRequest) async throws -> Dieter_V1_Card {
         try await service.moveCard(request: .init(message: request))
+    }
+
+    func startCard(_ request: Dieter_V1_StartCardRequest) async throws -> Dieter_V1_StartCardResponse {
+        try await service.startCard(
+            request: .init(message: request),
+            options: Self.boundedUnaryCallOptions()
+        )
     }
 
     func setCardLabels(_ request: Dieter_V1_SetCardLabelsRequest) async throws -> Dieter_V1_Card {
@@ -669,7 +691,7 @@ final class DieterRPC: Sendable {
     }
 }
 
-extension DieterRPC: DieterScheduleRPC, DieterChatPinRPC {}
+extension DieterRPC: DieterScheduleRPC, DieterChatPinRPC, DieterCardStartRPC {}
 
 enum DieterTransportTarget {
     enum HostKind: Equatable {

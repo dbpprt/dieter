@@ -57,6 +57,39 @@ enum BoardCardEditingPolicy {
     }
 }
 
+enum BoardCardStartPolicy {
+    static func runningLaneID(in board: Dieter_V1_Board?) -> String? {
+        guard let board else { return nil }
+        return board.lanes.first { $0.id.caseInsensitiveCompare("running") == .orderedSame }?.id
+            ?? board.lanes.first { $0.name.caseInsensitiveCompare("running") == .orderedSame }?.id
+    }
+
+    static func canStart(
+        _ card: Dieter_V1_Card,
+        board: Dieter_V1_Board?,
+        hasDraftAttachments: Bool = false
+    ) -> Bool {
+        card.scope == "board" &&
+            card.lane.caseInsensitiveCompare("todo") == .orderedSame &&
+            card.initialPromptSentAt.isEmpty &&
+            (!card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasDraftAttachments) &&
+            runningLaneID(in: board) != nil
+    }
+
+    static func optimisticCard(
+        _ card: Dieter_V1_Card,
+        board: Dieter_V1_Board?,
+        hasDraftAttachments: Bool = false
+    ) -> Dieter_V1_Card? {
+        guard canStart(card, board: board, hasDraftAttachments: hasDraftAttachments),
+              let runningLaneID = runningLaneID(in: board) else { return nil }
+        var card = card
+        card.lane = runningLaneID
+        card.runtime = "starting"
+        return card
+    }
+}
+
 enum BoardDropOrdering {
     static func position(before targetCardID: String, movingCardID: String, cards: [Dieter_V1_Card]) -> Int64? {
         let remaining = cards.filter { $0.id != movingCardID }.sorted { $0.position < $1.position }
@@ -371,7 +404,7 @@ struct BoardHeader: View {
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
 
                 Button { store.archivePolicyPresented = true } label: {
-                    DieterChipLabel(title: retentionTitle, symbol: "archivebox")
+                    DieterChipLabel(title: "Board settings", symbol: "gearshape")
                 }
                 .buttonStyle(.plain)
 
@@ -435,7 +468,7 @@ struct BoardHeader: View {
                             Button(runtime.capitalized) { store.runtimeFilter = runtime }
                         }
                         Divider()
-                        Button(retentionTitle) { store.archivePolicyPresented = true }
+                        Button("Board settings…") { store.archivePolicyPresented = true }
                         Button("Manage labels…") { store.labelsPresented = true }
                     } label: {
                         DieterChipLabel(
@@ -599,7 +632,7 @@ private struct QuickTaskPopover: View {
             provider: resolved?.provider ?? "",
             model: resolved?.model ?? "",
             effort: resolved?.effort ?? "",
-            providerOptions: harness.map { ProviderOptionValues.defaults(for: $0) } ?? [:],
+            providerOptions: harness.map { ProviderOptionValues.defaults(for: $0, model: resolved?.model ?? "") } ?? [:],
             deferred: lane?.id.lowercased() != "running",
             lane: lane?.id ?? "todo",
             workspace: workspace,
@@ -907,9 +940,17 @@ struct BoardCardView: View {
     @State private var labelDropTargeted = false
 
     var labels: [Dieter_V1_Label] { store.selectedBoard?.labels.filter { card.labelIds.contains($0.id) } ?? [] }
+    private var starting: Bool { store.pendingCardStarts[card.id] != nil }
+    private var canStart: Bool { BoardCardStartPolicy.canStart(card, board: store.selectedBoard) }
+    private var showsRunAction: Bool { canStart || starting }
+    private var runActionAccessibilityLabel: String {
+        let title = card.title.isEmpty ? "card" : card.title
+        return starting ? "Starting \(title)" : "Run \(title)"
+    }
 
     var body: some View {
-        Button { Task { await store.openConversation(cardID: card.id) } } label: {
+        ZStack(alignment: .bottomTrailing) {
+            Button { Task { await store.openConversation(cardID: card.id) } } label: {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .top) {
                     Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.leading).lineLimit(3)
@@ -939,6 +980,7 @@ struct BoardCardView: View {
                     }
                     if card.commentCount > 0 { Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary) }
                     if !card.activeSubagents.isEmpty { Label("\(card.activeSubagents.count)", systemImage: "person.2").font(.system(size: 10)).foregroundStyle(DieterTheme.shell) }
+                    if showsRunAction { Color.clear.frame(width: 24, height: 24) }
                 }
             }
             .padding(12)
@@ -998,9 +1040,35 @@ struct BoardCardView: View {
                 return true
             } isTargeted: { labelDropTargeted = $0 }
             .animation(.easeOut(duration: 0.14), value: labelDropTargeted)
+            }
+            .buttonStyle(BoardCardClickStyle(edit: openEditor))
+            if showsRunAction && hovering {
+                Button {
+                    Task { await store.start(card) }
+                } label: {
+                    Group {
+                        if starting {
+                            ProgressView().controlSize(.mini).tint(.white).scaleEffect(0.75)
+                        } else {
+                            Image(systemName: "play.fill").font(.system(size: 8, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(DieterTheme.shellDeep, in: Circle())
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(starting)
+                .help(starting ? "Starting the saved task" : "Run the saved task and move this card to Running")
+                .accessibilityLabel(runActionAccessibilityLabel)
+                .accessibilityIdentifier("card-run.\(card.id)")
+                .padding(.trailing, 12).padding(.bottom, 12)
+                .transition(.scale(scale: 0.85).combined(with: .opacity))
+            }
         }
-        .buttonStyle(BoardCardClickStyle(edit: openEditor))
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .contextMenu {
             if store.isFailedOutboxItem(card.id) {
                 Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
@@ -1008,6 +1076,12 @@ struct BoardCardView: View {
                 Divider()
             }
             Button("Open conversation") { Task { await store.openConversation(cardID: card.id) } }
+            if showsRunAction {
+                Button(starting ? "Starting task…" : "Run task", systemImage: "play.fill") {
+                    Task { await store.start(card) }
+                }
+                .disabled(starting)
+            }
             if BoardCardEditingPolicy.canEditDraft(card) {
                 Button("Edit card…") { editPresented = true }
             }

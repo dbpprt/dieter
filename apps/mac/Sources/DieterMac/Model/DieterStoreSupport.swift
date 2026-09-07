@@ -513,18 +513,37 @@ struct OptimisticCardLabels: Equatable, Sendable {
     }
 }
 
+struct OptimisticCardStart: Equatable, Sendable {
+    let operationID: UUID
+    let runningLaneID: String
+
+    func isConfirmed(by card: Dieter_V1_Card) -> Bool {
+        !card.initialPromptSentAt.isEmpty
+    }
+
+    func applying(to card: Dieter_V1_Card) -> Dieter_V1_Card {
+        var card = card
+        card.lane = runningLaneID
+        card.runtime = "starting"
+        return card
+    }
+}
+
 struct OptimisticCardProjection {
     let cards: [Dieter_V1_Card]
     let moves: [String: OptimisticCardMove]
     let labels: [String: OptimisticCardLabels]
+    let starts: [String: OptimisticCardStart]
 
     static func reconcile(
         cards: [Dieter_V1_Card],
         moves: [String: OptimisticCardMove],
-        labels: [String: OptimisticCardLabels]
+        labels: [String: OptimisticCardLabels],
+        starts: [String: OptimisticCardStart] = [:]
     ) -> OptimisticCardProjection {
         var remainingMoves = moves
         var remainingLabels = labels
+        var remainingStarts = starts
         let projected = cards.map { serverCard in
             var card = serverCard
             if let move = moves[card.id] {
@@ -535,9 +554,13 @@ struct OptimisticCardProjection {
                 if labelUpdate.isConfirmed(by: serverCard) { remainingLabels.removeValue(forKey: card.id) }
                 else { card = labelUpdate.applying(to: card) }
             }
+            if let start = starts[card.id] {
+                if start.isConfirmed(by: serverCard) { remainingStarts.removeValue(forKey: card.id) }
+                else { card = start.applying(to: card) }
+            }
             return card
         }
-        return .init(cards: projected, moves: remainingMoves, labels: remainingLabels)
+        return .init(cards: projected, moves: remainingMoves, labels: remainingLabels, starts: remainingStarts)
     }
 }
 

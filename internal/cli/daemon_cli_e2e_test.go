@@ -116,12 +116,22 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 		t.Fatalf("created project JSON=%q err=%v", createdJSON, err)
 	}
 
+	boardJSON := runDaemonCLI(t, client, output, "board", "git", "--base-remote", "private", "--remote-publish", "pull_request", created.Board.ID)
+	var configuredBoard struct {
+		BaseRemote        string `json:"baseRemote"`
+		RemotePublishMode string `json:"remotePublishMode"`
+	}
+	if err := json.Unmarshal([]byte(boardJSON), &configuredBoard); err != nil || configuredBoard.BaseRemote != "private" || configuredBoard.RemotePublishMode != "pull_request" {
+		t.Fatalf("configured board JSON=%q parsed=%#v err=%v", boardJSON, configuredBoard, err)
+	}
 	runDaemonCLI(t, client, output, "board", "label", "add", "--board", created.Board.ID, "--name", "CLI", "--instructions", "Keep the CLI current")
 	cardJSON := runDaemonCLI(t, client, output, "card", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--lane", "todo", "--title", "Daemon parity", "--prompt", "Exercise the API", "--workspace", "project", "--provider", "mock", "--model", "mock")
 	var card struct {
-		ID string `json:"id"`
+		ID                  string `json:"id"`
+		WorkspaceBaseRemote string `json:"workspaceBaseRemote"`
+		RemotePublishMode   string `json:"remotePublishMode"`
 	}
-	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil || card.ID == "" {
+	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil || card.ID == "" || card.WorkspaceBaseRemote != "private" || card.RemotePublishMode != "pull_request" {
 		t.Fatalf("created card JSON=%q err=%v", cardJSON, err)
 	}
 	quickJSON := runDaemonCLI(t, client, output, "card", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--lane", "todo", "--auto-title", "--prompt", "Add keyboard navigation", "--workspace", "project", "--provider", "mock", "--model", "mock")
@@ -595,6 +605,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := first.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "direct-exec"}); err != nil || firstOutput.String() != "direct-exec" {
 		t.Fatalf("direct remote exec output=%q err=%v", firstOutput.String(), err)
 	}
+	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	first.Close()
 
 	directRoute.server.Stop()
@@ -633,6 +644,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := second.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "relay-exec"}); err != nil || secondOutput.String() != "relay-exec" {
 		t.Fatalf("relay remote exec output=%q err=%v", secondOutput.String(), err)
 	}
+	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 }
 
 func assertMachineOperationAccepted(t *testing.T, raw []byte) {

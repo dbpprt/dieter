@@ -48,11 +48,39 @@ struct ConversationWorkspaceDraft: Equatable, Sendable {
     var mode: ConversationWorkspaceMode = .worktree
     var branch = ""
     var baseBranch = ""
+    var baseRemote = ""
+    var remotePublishMode = RemotePublishMode.manual.rawValue
 
     func apply(to request: inout Dieter_V1_CreateConversationRequest) {
         request.workspaceMode = mode.rawValue
         request.workspaceBranch = mode == .worktree ? branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         request.workspaceBaseBranch = mode == .worktree ? baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        request.workspaceBaseRemote = baseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.remotePublishMode = remotePublishMode
+    }
+}
+
+enum RemotePublishMode: String, CaseIterable, Identifiable, Sendable {
+    case manual
+    case pullRequest = "pull_request"
+    case pushBase = "push_base"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .manual: "Manual"
+        case .pullRequest: "Pull request"
+        case .pushBase: "Push base branch"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .manual: "Choose local merge, branch push, or pull request when publishing."
+        case .pullRequest: "Publish the conversation branch through a pull request."
+        case .pushBase: "Push the validated integration result directly to the base branch."
+        }
     }
 }
 
@@ -167,12 +195,15 @@ struct WorkspaceActionAvailability: Equatable {
     /// Uncommitted working-tree changes (as opposed to `changedFiles`, which
     /// counts every file that differs from the base, committed or not).
     var dirty = false
+    var remotePublishMode = RemotePublishMode.manual.rawValue
 
     /// The merge sheet opens in more states than the raw merge_local gate: a
     /// dirty tree is committed first, and a conflicted workspace shows the
     /// blocked explanation instead of hiding the entry point.
     var allowsMergeFlow: Bool {
-        guard !agentActive, !operationActive, workspaceMode == "worktree" else { return false }
+        guard !agentActive, !operationActive, workspaceMode == "worktree",
+              remotePublishMode != RemotePublishMode.pullRequest.rawValue else { return false }
+        if remotePublishMode == RemotePublishMode.pushBase.rawValue && !hasRemote { return false }
         return hasCommits || changedFiles > 0 || workspaceState == "conflicted"
     }
 
@@ -188,9 +219,9 @@ struct WorkspaceActionAvailability: Equatable {
         return switch kind {
         case .commit: dirty || changedFiles > 0
         case .update, .validate: true
-        case .mergeLocal: workspaceMode == "worktree" && hasCommits && changedFiles == 0
+        case .mergeLocal: workspaceMode == "worktree" && hasCommits && changedFiles == 0 && remotePublishMode != RemotePublishMode.pullRequest.rawValue
         case .push: hasReviewBranch && hasRemote && hasCommits
-        case .createPullRequest: hasReviewBranch && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest
+        case .createPullRequest: hasReviewBranch && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest && remotePublishMode != RemotePublishMode.pushBase.rawValue
         case .refreshPullRequest, .mergePullRequest: hasPullRequest && scmAuthenticated
         case .continueConflict, .abortConflict: false
         case .adopt: workspaceMode == "worktree"
