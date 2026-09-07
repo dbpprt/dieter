@@ -12,7 +12,7 @@ extension DieterStore {
         guard await ensureProjectConnection(id) else { return }
         selectedProjectID = id
         selectedBoardID = boards(for: id).first?.id ?? ""
-        filePath = ""; fileNavigation.reset(); fileDocument = nil
+        resetFileSurface()
         await refreshState()
         if section == .files { await loadFiles() }
         if section == .schedules { await loadSchedules() }
@@ -30,7 +30,7 @@ extension DieterStore {
         closeConversation()
         section = .board
         selectCachedBoard(boardID, projectID: projectID)
-        filePath = ""; fileNavigation.reset(); fileDocument = nil
+        resetFileSurface()
         query = ""; runtimeFilter = ""; labelFilter = ""
         guard await ensureProjectConnection(projectID, reportOffline: false) else { return }
         guard generation == boardSelectionGeneration, section == .board else { return }
@@ -48,27 +48,33 @@ extension DieterStore {
     }
 
     func openProject(_ projectID: String, section destination: AppSection) async {
-        guard await ensureProjectConnection(projectID) else { return }
+        boardSelectionGeneration &+= 1
+        let generation = boardSelectionGeneration
         stopTerminalWatch()
         closeConversation()
         section = destination
         selectedProjectID = projectID
         fileScopeCardID = nil
-        projectFilesMode = "browse"
         terminalScopeCardID = nil
         if selectedBoardID.isEmpty || boards(for: projectID).contains(where: { $0.id == selectedBoardID }) == false {
             selectedBoardID = boards(for: projectID).first?.id ?? ""
         }
-        filePath = ""; fileNavigation.reset(); fileDocument = nil
+        resetFileSurface()
+        updateSelectedState()
+        guard await ensureProjectConnection(projectID), generation == boardSelectionGeneration,
+              selectedProjectID == projectID, section == destination else { return }
+        // Changes owns its reads; opening it must not fetch the Files directory
+        // or round-trip the full board state before presenting the destination.
+        if destination == .changes { return }
         await refreshState()
+        guard generation == boardSelectionGeneration, selectedProjectID == projectID,
+              section == destination else { return }
         if destination == .files { await loadFiles() }
         if destination == .schedules { await loadSchedules() }
     }
 
     func openProjectChanges(_ projectID: String) async {
-        await openProject(projectID, section: .files)
-        guard selectedProjectID == projectID, section == .files else { return }
-        projectFilesMode = "changes"
+        await openProject(projectID, section: .changes)
     }
 
     func openChats() async {
@@ -89,14 +95,11 @@ extension DieterStore {
         guard await ensureProjectConnection(card.projectID) else { return }
         selectedProjectID = card.projectID
         fileScopeCardID = card.id
-        projectFilesMode = "browse"
-        filePath = ""
-        fileNavigation.reset()
-        fileDocument = nil
+        resetFileSurface()
         closeConversation()
         section = .files
         await loadFiles()
-        if let path, !path.isEmpty { await openFile(path: path) }
+        if let path, !path.isEmpty, selectedProjectID == card.projectID, fileScopeCardID == card.id, section == .files { await openFile(path: path) }
     }
 
     func openWorkspaceTerminal(card: Dieter_V1_Card) async {

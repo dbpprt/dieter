@@ -9,87 +9,112 @@ import UserNotifications
 
 extension DieterStore {
     func loadWorkspaceSurface() async {
+        if let workspaceRefreshTask {
+            workspaceRefreshAgain = true
+            await workspaceRefreshTask.value
+            return
+        }
         guard let rpc, let cardID = selectedCardID ?? selectedChatID,
               DieterConversationID.isServerBacked(cardID) else { return }
+        workspaceRequestGeneration &+= 1
+        let generation = workspaceRequestGeneration
         workspaceLoading = true
-        workspaceError = nil
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.workspaceRequestGeneration == generation {
+                    self.workspaceLoading = false
+                    self.workspaceRefreshTask = nil
+                }
+            }
+            repeat {
+                self.workspaceRefreshAgain = false
+                await self.readWorkspaceSurface(rpc: rpc, cardID: cardID, generation: generation)
+            } while self.workspaceRefreshAgain && self.workspaceRequestGeneration == generation && !Task.isCancelled
+        }
+        workspaceRefreshTask = task
+        await task.value
+    }
+
+    private func readWorkspaceSurface(rpc: DieterRPC, cardID: String, generation: UInt64) async {
+        let reconciliationGeneration = gitReconciliationGeneration
+        func ownsRequest() -> Bool {
+            !Task.isCancelled && self.rpc === rpc && workspaceRequestGeneration == generation
+                && (selectedCardID ?? selectedChatID) == cardID
+        }
         do {
             async let workspaceValue = rpc.workspace(cardID: cardID)
             async let changesetValue = rpc.changeset(cardID: cardID)
-            async let capabilitiesValue = rpc.scmCapabilities(cardID: cardID)
-            let (workspace, changes, capabilities) = try await (workspaceValue, changesetValue, capabilitiesValue)
-            guard (selectedCardID ?? selectedChatID) == cardID else { return }
-            conversationWorkspace = workspace
-            conversationChangeset = changes
+            let (workspace, changes) = try await (workspaceValue, changesetValue)
+            guard ownsRequest() else { return }
+            let revisionChanged = conversationChangeset?.revision != changes.revision
+            var comments = conversationChangeComments
+            if revisionChanged { comments = try await rpc.changeComments(cardID: cardID, revision: changes.revision).comments }
+            guard ownsRequest() else { return }
+            var capabilities = conversationSCMCapabilities
+            if capabilities == nil { capabilities = try await rpc.scmCapabilities(cardID: cardID) }
+            guard ownsRequest() else { return }
+            if conversationWorkspace != workspace { conversationWorkspace = workspace }
+            if conversationChangeset != changes { conversationChangeset = changes }
+            if conversationChangeComments != comments { conversationChangeComments = comments }
             conversationSCMCapabilities = capabilities
+            if gitReconciliationGeneration == reconciliationGeneration { gitOperationNeedsReconciliation = false }
+            workspaceError = nil
             acceptWorkspaceSummary(workspace)
-            conversationChangeComments = try await rpc.changeComments(cardID: cardID, revision: changes.revision).comments
-
             let selection = WorkspaceReviewSelectionResolver.resolve(
-                currentPath: selectedChangePath,
-                currentCommitSHA: selectedCommitSHA,
-                filePaths: changes.files.map(\.path),
-                commitSHAs: changes.commits.map(\.sha)
+                currentPath: selectedChangePath, currentCommitSHA: selectedCommitSHA,
+                filePaths: changes.files.map(\.path), commitSHAs: changes.commits.map(\.sha)
             )
-            if selection.path != selectedChangePath || selection.commitSHA != selectedCommitSHA {
-                conversationDiff = nil
+            if selection.path.isEmpty && selection.commitSHA.isEmpty {
+                diffRequestGeneration &+= 1
+                selectedChangePath = ""; selectedCommitSHA = ""
+                conversationDiff = nil; conversationDiffLoading = false
+            } else if revisionChanged || conversationDiff == nil || selection.path != selectedChangePath || selection.commitSHA != selectedCommitSHA {
+                await loadConversationDiff(path: selection.path, commitSHA: selection.commitSHA, retryStale: false)
             }
-            selectedChangePath = selection.path
-            selectedCommitSHA = selection.commitSHA
-            if !selection.commitSHA.isEmpty {
-                await loadConversationDiff(path: "", commitSHA: selection.commitSHA)
-            } else if !selection.path.isEmpty {
-                await loadConversationDiff(path: selection.path)
-            } else {
-                conversationDiff = nil
-            }
+            guard ownsRequest() else { return }
             let observed = gitOperation?.cardID == cardID ? gitOperation : nil
             if let operationID = GitOperationReconciliation.operationID(
                 workspaceOperationID: workspace.currentOperationID,
-                observedOperationID: observed?.id,
-                observedStatus: observed?.status
-            ) {
-                await resumeGitOperation(id: operationID)
-            }
+                observedOperationID: observed?.id, observedStatus: observed?.status
+            ) { await resumeGitOperation(id: operationID) }
         } catch {
-            guard (selectedCardID ?? selectedChatID) == cardID else { return }
+            guard ownsRequest() else { return }
             workspaceError = DieterRPCFailure.message(for: error)
         }
-        workspaceLoading = false
     }
 
-    func loadConversationDiff(path: String, commitSHA: String = "", append: Bool = false) async {
+    func loadConversationDiff(path: String, commitSHA: String = "", append: Bool = false, retryStale: Bool = true) async {
         guard let rpc, let cardID = selectedCardID ?? selectedChatID,
               let changes = conversationChangeset else { return }
-        selectedChangePath = path
-        selectedCommitSHA = commitSHA
+        if append, conversationDiffLoading { return }
+        if selectedChangePath != path || selectedCommitSHA != commitSHA { conversationDiff = nil }
+        selectedChangePath = path; selectedCommitSHA = commitSHA
+        diffRequestGeneration &+= 1
+        let generation = diffRequestGeneration
+        conversationDiffLoading = true
+        defer { if generation == diffRequestGeneration { conversationDiffLoading = false } }
         var request = Dieter_V1_GetDiffRequest()
-        request.cardID = cardID
-        request.path = path
-        request.commitSha = commitSHA
-        request.expectedRevision = changes.revision
-        request.limit = 1_048_576
-        if append, let current = conversationDiff { request.offset = current.nextOffset }
+        request.cardID = cardID; request.path = path; request.commitSha = commitSHA
+        request.expectedRevision = changes.revision; request.limit = 1_048_576
+        let previous = append ? conversationDiff : nil
+        if let previous { request.offset = previous.nextOffset }
+        func ownsRequest() -> Bool {
+            !Task.isCancelled && self.rpc === rpc && diffRequestGeneration == generation
+                && (selectedCardID ?? selectedChatID) == cardID && conversationChangeset?.revision == changes.revision
+                && selectedChangePath == path && selectedCommitSHA == commitSHA
+        }
         do {
-            let page = try await (commitSHA.isEmpty ? rpc.fileDiff(request) : rpc.commitDiff(request))
-            guard (selectedCardID ?? selectedChatID) == cardID,
-                  selectedChangePath == path, selectedCommitSHA == commitSHA else { return }
-            if append, var current = conversationDiff {
-                current.patch += page.patch
-                current.truncated = page.truncated
-                current.nextOffset = page.nextOffset
-                current.totalBytes = page.totalBytes
-                conversationDiff = current
-            } else {
-                conversationDiff = page
-            }
+            var page = try await (commitSHA.isEmpty ? rpc.fileDiff(request) : rpc.commitDiff(request))
+            guard ownsRequest() else { return }
+            if let previous { page.patch = previous.patch + page.patch }
+            conversationDiff = page
         } catch {
+            guard ownsRequest() else { return }
             let message = DieterRPCFailure.message(for: error)
-            if message.localizedCaseInsensitiveContains("refresh") || message.localizedCaseInsensitiveContains("revision") {
-                workspaceError = "The workspace changed while this diff was open. Refreshing…"
+            workspaceError = message
+            if retryStale && (message.localizedCaseInsensitiveContains("refresh") || message.localizedCaseInsensitiveContains("revision")) {
                 await loadWorkspaceSurface()
-            } else {
-                workspaceError = message
             }
         }
     }
@@ -153,7 +178,11 @@ extension DieterStore {
     }
 
     func startGitOperation(_ kind: GitOperationKind, cardID explicitCardID: String? = nil, parameters: [String: String] = [:]) async -> Bool {
-        guard let rpc, let cardID = explicitCardID ?? selectedCardID ?? selectedChatID else { return false }
+        guard !gitOperationSubmitting, let rpc, let cardID = explicitCardID ?? selectedCardID ?? selectedChatID else { return false }
+        let submissionID = UUID()
+        gitOperationSubmissionID = submissionID
+        gitOperationSubmitting = true
+        defer { if gitOperationSubmissionID == submissionID { gitOperationSubmitting = false; gitOperationSubmissionID = nil } }
         var request = Dieter_V1_StartGitOperationRequest()
         request.cardID = cardID; request.kind = kind.rawValue
         if explicitCardID == nil || explicitCardID == selectedCardID || explicitCardID == selectedChatID {
@@ -162,11 +191,14 @@ extension DieterStore {
         request.parameters = parameters
         do {
             let operation = try await rpc.startGitOperation(request)
+            guard self.rpc === rpc, gitOperationSubmissionID == submissionID else { return false }
+            if GitOperationStatus.terminal(operation.status) { requireGitReconciliation() }
             gitOperation = operation
             gitOperationLogs = []
             observeGitOperation(id: operation.id, after: 0)
             return true
         } catch {
+            guard self.rpc === rpc, gitOperationSubmissionID == submissionID else { return false }
             workspaceError = DieterRPCFailure.message(for: error)
             return false
         }
@@ -310,8 +342,12 @@ extension DieterStore {
         guard let rpc else { return }
         do {
             let operation = try await rpc.gitOperation(id: id)
-            guard operation.cardID == (selectedCardID ?? selectedChatID) else { return }
+            guard self.rpc === rpc, operation.cardID == (selectedCardID ?? selectedChatID) else { return }
             let changedOperation = gitOperation?.id != id
+            if GitOperationStatus.terminal(operation.status), changedOperation || gitOperation?.status != operation.status {
+                requireGitReconciliation()
+                workspaceRefreshAgain = true
+            }
             gitOperation = operation
             if changedOperation {
                 gitOperationLogs = []
@@ -360,6 +396,9 @@ extension DieterStore {
     func acceptGitOperationFrame(_ frame: Dieter_V1_GitOperationFrame, operationID: String) -> Bool {
         guard gitOperation?.id == operationID else { return false }
         let enteredConflict = gitOperation?.status != "waiting_for_resolution" && frame.operation.status == "waiting_for_resolution"
+        if GitOperationStatus.terminal(frame.operation.status), gitOperation?.status != frame.operation.status {
+            requireGitReconciliation()
+        }
         gitOperation = frame.operation
         let known = Set(gitOperationLogs.map(\.sequence))
         gitOperationLogs.append(contentsOf: frame.logs.filter { !known.contains($0.sequence) })
@@ -367,6 +406,10 @@ extension DieterStore {
     }
 
     func clearWorkspaceContentPreservingOperation() {
+        workspaceRequestGeneration &+= 1; diffRequestGeneration &+= 1
+        workspaceRefreshTask?.cancel(); workspaceRefreshTask = nil; workspaceRefreshAgain = false
+        conversationDiffLoading = false
+        gitOperationNeedsReconciliation = false
         conversationWorkspace = nil
         conversationChangeset = nil
         conversationDiff = nil
@@ -376,6 +419,11 @@ extension DieterStore {
         selectedCommitSHA = ""
         workspaceLoading = false
         workspaceError = nil
+    }
+
+    private func requireGitReconciliation() {
+        gitReconciliationGeneration &+= 1
+        gitOperationNeedsReconciliation = true
     }
 
     func acceptWorkspaceCard(_ card: Dieter_V1_Card) {

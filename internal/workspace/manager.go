@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -309,8 +310,9 @@ func (m *Manager) refreshGitState(ctx context.Context, value model.Workspace, in
 	if untracked, untrackedErr := m.Git.Run(ctx, value.Path, "ls-files", "--others", "--exclude-standard", "-z"); untrackedErr == nil {
 		for _, relative := range bytesZeroFields(untracked.Output) {
 			_, _ = hash.Write([]byte(relative))
-			if raw, readErr := os.ReadFile(filepath.Join(value.Path, filepath.FromSlash(relative))); readErr == nil {
-				_, _ = hash.Write(raw)
+			if file, readErr := os.Open(filepath.Join(value.Path, filepath.FromSlash(relative))); readErr == nil {
+				_, _ = io.Copy(hash, file)
+				_ = file.Close()
 			}
 		}
 	}

@@ -254,6 +254,7 @@ private struct ConversationTabBar: View {
                 }.buttonStyle(.plain)
                     .accessibilityLabel(item.1 > 0 ? "\(item.0), \(item.1)" : item.0)
                     .accessibilityIdentifier("conversation-tab-\(item.0.lowercased())")
+                .smokeTarget("conversation-tab-\(item.0.lowercased())")
             }
             Spacer()
         }
@@ -658,6 +659,7 @@ struct TurnFailureBanner: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(DieterTheme.primary)
                     .accessibilityIdentifier("conversation.failure.view-log")
+                    .smokeTarget("conversation.failure.view-log")
                 Button(action: onRetry) {
                     HStack(spacing: 6) {
                         if retrying { ProgressView().controlSize(.mini) }

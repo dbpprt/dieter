@@ -7,6 +7,31 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
     UnifiedDiffParser.parse(patch)
 }
 
+@Test func diffProjectionMeasuresLongCodeAndKeepsHunkCountsSeparate() {
+    let longLine = String(repeating: "x", count: 180) + "\t界"
+    let patch = """
+    diff --git a/source.swift b/source.swift
+    @@ -1,2 +1,3 @@
+     context
+    -old
+    +new
+    +\(longLine)
+    @@ -40 +41 @@
+    -before
+    +after
+    """
+    for split in [false, true] {
+        let projection = WorkspaceDiffProjection.build(patch: patch, path: "source.swift", commitSHA: "", split: split, comments: [])
+        let hunkIDs = projection.rows.compactMap { row -> Int? in
+            if case .hunk(let id, _, _) = row { id } else { nil }
+        }
+        #expect(projection.maximumCodeColumns >= 186)
+        #expect(hunkIDs.count == 2)
+        #expect(projection.hunkDeltas[hunkIDs[0]] == .init(additions: 2, deletions: 1))
+        #expect(projection.hunkDeltas[hunkIDs[1]] == .init(additions: 1, deletions: 1))
+    }
+}
+
 @Test func diffDisplayDropsHeaderNoiseAndKeepsChanges() {
     let rows = WorkspaceDiffDisplay.inlineRows(parsed("""
     diff --git a/a.swift b/a.swift

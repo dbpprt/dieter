@@ -15,34 +15,6 @@ struct FilesView: View {
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-            if store.fileScopeCardID == nil {
-                HStack(spacing: 2) {
-                    ForEach([("Browse", "browse"), ("Changes", "changes")], id: \.1) { item in
-                        Button {
-                            store.projectFilesMode = item.1
-                        } label: {
-                            Text(item.0)
-                                .font(.system(size: 11, weight: store.projectFilesMode == item.1 ? .semibold : .medium))
-                                .padding(.horizontal, 12)
-                                .frame(height: 26)
-                                .background(store.projectFilesMode == item.1 ? DieterTheme.elevated : .clear, in: RoundedRectangle(cornerRadius: 7))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("files.mode-\(item.1)")
-                    }
-                    Spacer()
-                    Text(store.selectedProject?.name ?? "Project")
-                        .font(DieterFont.meta)
-                        .foregroundStyle(DieterTheme.tertiary)
-                }
-                .padding(.horizontal, 12)
-                .frame(height: 42)
-                .background(DieterTheme.sidebar)
-                Divider().overlay(DieterTheme.paneSeparator)
-            }
-            if store.fileScopeCardID == nil && store.projectFilesMode == "changes" {
-                ProjectChangesView()
-            } else {
                 HSplitView {
             VStack(spacing: 0) {
                 FluidPaneChrome(background: DieterTheme.sidebar, spacing: 9) {
@@ -203,9 +175,7 @@ struct FilesView: View {
                 }
             }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
         }
-        .task { await store.loadFiles() }
         .onChange(of: store.fileDocument?.revision) { _, _ in
             guard let document = store.fileDocument else { return }
             editorSession.prepare(

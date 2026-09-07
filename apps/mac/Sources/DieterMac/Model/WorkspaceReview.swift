@@ -60,6 +60,8 @@ struct WorkspaceDiffCommentKey: Hashable, Sendable {
 struct WorkspaceDiffProjection: Sendable {
     var rows: [WorkspaceDiffRow] = []
     var commentsByLine: [WorkspaceDiffCommentKey: [Dieter_V1_ChangeComment]] = [:]
+    var maximumCodeColumns = 0
+    var hunkDeltas: [Int: WorkspaceHunkDelta] = [:]
 
     static func build(
         patch: String,
@@ -77,9 +79,31 @@ struct WorkspaceDiffProjection: Sendable {
         let commentsByLine = Dictionary(grouping: comments) {
             WorkspaceDiffCommentKey(side: $0.side, line: $0.line)
         }
-        return WorkspaceDiffProjection(rows: rows, commentsByLine: commentsByLine)
+        var maximumCodeColumns = 0
+        var hunkDeltas: [Int: WorkspaceHunkDelta] = [:]
+        var hunkID: Int?
+        for line in lines {
+            if line.kind == .hunk { hunkID = line.id; hunkDeltas[line.id] = WorkspaceHunkDelta() }
+            guard line.kind == .context || line.kind == .addition || line.kind == .deletion else { continue }
+            // Reserve enough horizontal space for tabs and wide Unicode glyphs.
+            // This runs once with parsing, never during row layout or scrolling.
+            let columns = line.text.unicodeScalars.reduce(0) { width, scalar in
+                width + (scalar == "\t" ? 4 : scalar.isASCII ? 1 : 2)
+            }
+            maximumCodeColumns = max(maximumCodeColumns, columns)
+            if let hunkID {
+                if line.kind == .addition { hunkDeltas[hunkID, default: .init()].additions += 1 }
+                if line.kind == .deletion { hunkDeltas[hunkID, default: .init()].deletions += 1 }
+            }
+        }
+        return WorkspaceDiffProjection(rows: rows, commentsByLine: commentsByLine, maximumCodeColumns: maximumCodeColumns, hunkDeltas: hunkDeltas)
         }
     }
+}
+
+struct WorkspaceHunkDelta: Equatable, Sendable {
+    var additions = 0
+    var deletions = 0
 }
 
 enum WorkspaceDiffDisplay {

@@ -66,8 +66,100 @@ enum WorkspaceUISmokeRunner {
         // Phase C — shared project checkout: inspect → stage → commit → discard.
         await runProjectChangesPhase(store: store, window: window, project: project, results: &results, output: output)
 
+        await runProjectDesignPhase(store: store, window: window, project: project, results: &results, output: output)
         writeReport(results, to: output)
         progress("runner finished", in: output)
+    }
+
+    /// A richer real-Git fixture exercises the reference layout, including a
+    /// file with staged and unstaged edits and two distinct diff hunks.
+    private static func runProjectDesignPhase(
+        store: DieterStore, window: NSWindow, project: Dieter_V1_Project,
+        results: inout [String: String], output: URL
+    ) async {
+        let model = store.projectChanges
+        let path = project.path
+        let folder = """
+        import SwiftUI
+
+        struct ChatFolder: View {
+            let chats: [Chat]
+            @State private var expanded = false
+
+            var body: some View {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(chats) { chat in
+                        ChatRow(chat: chat)
+                    }
+                }
+            }
+        }
+        """
+        try? FileManager.default.createDirectory(atPath: path + "/web/Legacy", withIntermediateDirectories: true)
+        try? folder.write(toFile: path + "/web/ChatFolder.swift", atomically: true, encoding: .utf8)
+        try? "// Previous chat list\n".write(toFile: path + "/web/Legacy/OldChatList.swift", atomically: true, encoding: .utf8)
+        git(["add", "-A"], in: path)
+        git(["commit", "-m", "Prepare Changes design fixture"], in: path)
+        let staged = folder.replacingOccurrences(of: "    @State", with: "    private let foldThreshold = 5\n    private var visible: [Chat] {\n        expanded ? chats : Array(chats.prefix(foldThreshold))\n    }\n\n    @State")
+        try? staged.write(toFile: path + "/web/ChatFolder.swift", atomically: true, encoding: .utf8)
+        git(["add", "web/ChatFolder.swift"], in: path)
+        let edited = staged.replacingOccurrences(of: "ForEach(chats)", with: "ForEach(visible)").replacingOccurrences(of: "        }\n    }\n}", with: "            if chats.count > foldThreshold {\n                ShowMoreRow(count: chats.count - foldThreshold) { expanded.toggle() }\n            }\n        }\n    }\n}")
+        try? edited.write(toFile: path + "/web/ChatFolder.swift", atomically: true, encoding: .utf8)
+        try? "# Isolated E2E\n\nChats fold to five per project.\n".write(toFile: path + "/README.md", atomically: true, encoding: .utf8)
+        try? "Review keyboard navigation and expanded chat rows.\n".write(toFile: path + "/notes.txt", atomically: true, encoding: .utf8)
+        try? FileManager.default.removeItem(atPath: path + "/web/Legacy/OldChatList.swift")
+        try? "import SwiftUI\n\nstruct ShowMoreRow: View {\n    let count: Int\n    let action: () -> Void\n    var body: some View { Button(\"Show more\", action: action) }\n}\n".write(toFile: path + "/web/ShowMoreRow.swift", atomically: true, encoding: .utf8)
+        window.setContentSize(NSSize(width: 1_440, height: 900))
+        window.center()
+        store.themeSelection.appearance = .dark
+        let refreshed = await NativeUIAccessibility.wait {
+            model.changes?.files.first(where: { $0.path == "web/ChatFolder.swift" }).map { $0.staged && $0.unstaged } == true
+                && model.changes?.files.first(where: { $0.path == "web/Legacy/OldChatList.swift" })?.worktreeStatus == "deleted" && !model.busy
+        }
+        let selected = NativeUIAccessibility.click("project-changes.unstaged.web/ChatFolder.swift", in: window)
+        _ = NativeUIAccessibility.click("project-changes.diff-mode", in: window, horizontalFraction: 0.75)
+        let visible = await NativeUIAccessibility.wait {
+            model.diff?.path == "web/ChatFolder.swift" && model.diff?.section == "unstaged" && NativeUISmokeTargets.diffSplit == true
+        }
+        _ = NativeUIAccessibility.click("project-changes.commit-subject", in: window)
+        await NativeUIAccessibility.type("Fold chats to five per project", in: window)
+        _ = NativeUIAccessibility.click("project-changes.commit-body", in: window)
+        await NativeUIAccessibility.type("Keep projects compact and make every chat reachable.", in: window)
+        _ = NativeUIAccessibility.click("project-changes.unstaged.web/ChatFolder.swift", in: window)
+        try? await DieterTaskSleep.milliseconds(300)
+        capture(window, to: output.appending(path: "11-design-dark-split.png"))
+        let hunkID = UnifiedDiffParser.parse(model.diff?.patch ?? "").first { $0.kind == .hunk }?.id ?? -1
+        let hunkTarget = "workspace-diff.hunk.\(hunkID)"
+        let hunkBefore = NativeUIAccessibility.find(hunkTarget, in: window)?.recordedFrame
+        let scrolled = NativeUIAccessibility.scrollHorizontally("project-changes.diff", in: window, delta: -220)
+        let offsetChanged = await NativeUIAccessibility.wait { (NativeUIAccessibility.horizontalScrollView("project-changes.diff", in: window)?.contentView.bounds.origin.x ?? 0) > 50 }
+        try? await DieterTaskSleep.milliseconds(200)
+        capture(window, to: output.appending(path: "11a-design-horizontal-scroll.png"))
+        let hunkAfter = NativeUIAccessibility.find(hunkTarget, in: window)?.recordedFrame
+        let pinned = hunkBefore != nil && hunkAfter != nil && abs(hunkBefore!.minX - hunkAfter!.minX) < 2
+        results["project-split-horizontal-scroll"] = scrolled && offsetChanged && pinned ? "passed" : "failed: long split lines did not scroll with pinned headers"
+        _ = NativeUIAccessibility.scrollHorizontally("project-changes.diff", in: window, delta: 220)
+        results["project-design-mixed-staging"] = refreshed && selected && visible ? "passed" : "failed: mixed staged and working-tree edits unavailable"
+        _ = NativeUIAccessibility.click("project-changes.staged.web/ChatFolder.swift", in: window)
+        let stagedVisible = await NativeUIAccessibility.wait { model.diff?.section == "staged" && NativeUISmokeTargets.diffText.contains("private let foldThreshold") }
+        capture(window, to: output.appending(path: "12-design-staged.png"))
+        results["project-design-staged-diff"] = stagedVisible ? "passed" : "failed: staged content did not match the index"
+        store.themeSelection.appearance = .light
+        _ = await NativeUIAccessibility.wait { window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua }
+        try? await DieterTaskSleep.milliseconds(300)
+        capture(window, to: output.appending(path: "13-design-light.png"))
+        store.themeSelection.appearance = .dark
+        _ = await NativeUIAccessibility.wait { window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua }
+        _ = NativeUIAccessibility.click("project-changes.unstaged.web/ChatFolder.swift", in: window)
+        _ = NativeUIAccessibility.click("project-changes.diff-mode", in: window, horizontalFraction: 0.25)
+        _ = await NativeUIAccessibility.wait { NativeUISmokeTargets.diffSplit == false && model.diff?.section == "unstaged" }
+        capture(window, to: output.appending(path: "14-design-inline.png"))
+        window.setContentSize(NSSize(width: 1_080, height: 680))
+        _ = await NativeUIAccessibility.wait { NativeUIAccessibility.find("project-changes.back", in: window) != nil }
+        let back = NativeUIAccessibility.click("project-changes.back", in: window)
+        let composerVisible = await NativeUIAccessibility.wait { NativeUIAccessibility.find("project-changes.commit-subject", in: window) != nil }
+        results["project-inline-draft-persists"] = back && composerVisible && model.commitSubject == "Fold chats to five per project" && model.commitBody == "Keep projects compact and make every chat reachable." ? "passed" : "failed: inline draft or compact back navigation lost"
+        capture(window, to: output.appending(path: "15-design-compact-composer.png"))
     }
 
     // MARK: Phase A
@@ -103,18 +195,23 @@ enum WorkspaceUISmokeRunner {
             ? "passed"
             : "failed: expected local-only files, no commit history, and a dirty tree"
 
-        NotificationCenter.default.post(name: selectTabNotification, object: "Changes")
-        try? await DieterTaskSleep.seconds(1)
-        if let first = changes?.files.first {
-            await store.loadConversationDiff(path: first.path)
+        _ = NativeUIAccessibility.click("conversation-tab-changes", in: window)
+        _ = await NativeUIAccessibility.wait { NativeUIAccessibility.find("changes.file.README.md", in: window) != nil }
+        _ = NativeUIAccessibility.click("changes.file.README.md", in: window)
+        let inlineVisible = await NativeUIAccessibility.wait {
+            store.conversationDiff?.path == "README.md" && NativeUIAccessibility.containsText("Chats now fold", in: window)
         }
-        try? await DieterTaskSleep.milliseconds(600)
+        results["inline-diff-visible"] = inlineVisible ? "passed" : "failed: selected diff did not render"
         capture(window, to: output.appending(path: "01-changes-inline.png"))
-
-        UserDefaults.standard.set("Split", forKey: "DieterDiffViewMode")
-        try? await DieterTaskSleep.milliseconds(800)
+        _ = NativeUIAccessibility.click("changes.view-mode-split", in: window)
+        let splitVisible = await NativeUIAccessibility.wait {
+            UserDefaults.standard.string(forKey: "DieterDiffViewMode") == "Split"
+                && NativeUISmokeTargets.diffSplit == true
+                && NativeUIAccessibility.containsText("Chats now fold", in: window)
+        }
+        results["split-diff-visible"] = splitVisible ? "passed" : "failed: split diff did not render"
         capture(window, to: output.appending(path: "02-changes-split.png"))
-        UserDefaults.standard.set("Inline", forKey: "DieterDiffViewMode")
+        _ = NativeUIAccessibility.click("changes.view-mode-inline", in: window)
 
         NotificationCenter.default.post(name: openMergeSheetNotification, object: nil)
         let mergeSheet = await waitForSheet(of: window)
@@ -149,91 +246,114 @@ enum WorkspaceUISmokeRunner {
     // MARK: Phase C
 
     private static func runProjectChangesPhase(
-        store: DieterStore,
-        window: NSWindow,
-        project: Dieter_V1_Project,
-        results: inout [String: String],
-        output: URL
+        store: DieterStore, window: NSWindow, project: Dieter_V1_Project,
+        results: inout [String: String], output: URL
     ) async {
-        guard let rpc = store.rpc else {
-            results["project-changes"] = "failed: RPC unavailable"
-            return
-        }
+        guard let rpc = store.rpc else { results["project-changes"] = "failed: RPC unavailable"; return }
         try? "# Isolated E2E\n\nProject checkout local edit.\n".write(toFile: project.path + "/README.md", atomically: true, encoding: .utf8)
         try? "temporary project note\n".write(toFile: project.path + "/project-scratch.txt", atomically: true, encoding: .utf8)
-        await store.openProjectChanges(project.id)
-        try? await DieterTaskSleep.seconds(1)
+        if NativeUIAccessibility.find("sidebar.changes.\(project.id)", in: window) == nil {
+            _ = NativeUIAccessibility.click("sidebar.project.\(project.id).toggle", in: window)
+        }
+        _ = await NativeUIAccessibility.wait { NativeUIAccessibility.find("sidebar.changes.\(project.id)", in: window) != nil }
+        let navigated = NativeUIAccessibility.click("sidebar.changes.\(project.id)", in: window)
+        let model = store.projectChanges
+        let loaded = await NativeUIAccessibility.wait {
+            store.section == .changes && model.projectID == project.id && model.changes?.files.count == 2 && model.diff != nil && !model.mutationsDisabled
+        }
+        results["project-navigation"] = navigated && loaded ? "passed" : "failed: Changes subnavigation did not load the checkout"
+        guard loaded else { capture(window, to: output.appending(path: "08-project-load-failure.png")); return }
+        results["project-four-destinations"] = ["sidebar.board.\(store.selectedBoardID)", "sidebar.files.\(project.id)", "sidebar.changes.\(project.id)", "sidebar.schedules.\(project.id)"].allSatisfy {
+            NativeUIAccessibility.find($0, in: window) != nil
+        } ? "passed" : "failed: expected board, Files, Changes, Schedules"
+
+        _ = NativeUIAccessibility.click("project-changes.unstaged.project-scratch.txt", in: window)
+        let scratchVisible = await NativeUIAccessibility.wait {
+            model.diff?.path == "project-scratch.txt" && NativeUIAccessibility.containsText("temporary project note", in: window)
+        }
+        _ = NativeUIAccessibility.click("project-changes.unstaged.README.md", in: window)
+        let readmeVisible = await NativeUIAccessibility.wait {
+            model.diff?.path == "README.md" && NativeUIAccessibility.containsText("Project checkout local edit", in: window)
+        }
+        results["project-file-selection"] = scratchVisible && readmeVisible ? "passed" : "failed: native selection did not show matching patches"
+        NativeUIAccessibility.arrow(down: true, in: window)
+        let keyboardDown = await NativeUIAccessibility.wait { model.selection?.path == "project-scratch.txt" && NativeUIAccessibility.containsText("temporary project note", in: window) }
+        NativeUIAccessibility.arrow(down: false, in: window)
+        let keyboardUp = await NativeUIAccessibility.wait { model.selection?.path == "README.md" && NativeUIAccessibility.containsText("Project checkout local edit", in: window) }
+        results["project-keyboard-selection"] = keyboardDown && keyboardUp ? "passed" : "failed: arrow keys did not select matching diffs"
         capture(window, to: output.appending(path: "08-project-changes.png"))
+        let originalTheme = store.themeSelection
+        let originalAppearance = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
+        store.themeSelection.appearance = .light
+        _ = await NativeUIAccessibility.wait { window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua }
+        capture(window, to: output.appending(path: "08d-project-light.png"))
+        store.themeSelection = originalTheme
+        _ = await NativeUIAccessibility.wait { window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == originalAppearance }
+        // Native text controls repaint after the appearance transaction commits.
+        try? await DieterTaskSleep.milliseconds(200)
+        _ = NativeUIAccessibility.click("project-changes.diff-mode", in: window, horizontalFraction: 0.75)
+        let projectSplit = await NativeUIAccessibility.wait { UserDefaults.standard.string(forKey: "DieterDiffViewMode") == "Split" && NativeUISmokeTargets.diffSplit == true }
+        results["project-split-rendered"] = projectSplit ? "passed" : "failed: split projection did not render"
+        capture(window, to: output.appending(path: "08a-project-split.png"))
+        _ = NativeUIAccessibility.click("project-changes.diff-mode", in: window, horizontalFraction: 0.25)
 
+        for (identifier, expectedStaged, key) in [
+            ("project-changes.stage-all", 2, "project-stage-all"),
+            ("project-changes.unstage-all", 0, "project-unstage-all"),
+            ("project-changes.stage.README.md", 1, "project-stage"),
+            ("project-changes.unstage.README.md", 0, "project-unstage"),
+            ("project-changes.stage-file", 1, "project-restage")
+        ] {
+            _ = await NativeUIAccessibility.wait { !model.mutationsDisabled && NativeUIAccessibility.find(identifier, in: window) != nil }
+            // Let the accepted snapshot's SwiftUI transaction enable and place
+            // the next control before delivering its native mouse-down.
+            try? await DieterTaskSleep.milliseconds(100)
+            let clicked = NativeUIAccessibility.click(identifier, in: window)
+            let reconciled = await NativeUIAccessibility.wait { model.stagedFiles.count == expectedStaged && !model.busy && !model.refreshing }
+            results[key] = clicked && reconciled ? "passed" : "failed: button did not reconcile staging"
+            if !clicked || !reconciled { capture(window, to: output.appending(path: key + "-failure.png")); return }
+        }
+        results["project-selection-follows-stage"] = model.selection == .init(path: "README.md", section: "staged") ? "passed" : "failed: selected file was lost after staging"
+        capture(window, to: output.appending(path: "08b-project-staged.png"))
+        _ = NativeUIAccessibility.click("project-changes.commit-subject", in: window)
+        await NativeUIAccessibility.type("project checkout smoke", in: window)
+        let entered = await NativeUIAccessibility.wait { model.commitSubject == "project checkout smoke" }
+        capture(window, to: output.appending(path: "08c-project-commit-composer.png"))
+        let committed = entered && NativeUIAccessibility.click("project-changes.commit", in: window)
+        let reconciled = await NativeUIAccessibility.wait { model.changes?.files.count == 1 && model.changes?.files.first?.path == "project-scratch.txt" && !model.busy }
+        let head = git(["log", "-1", "--pretty=%s"], in: project.path)
+        results["project-commit"] = committed && reconciled && head.output.contains("project checkout smoke") ? "passed" : "failed: native staged-only commit did not converge"
+        guard reconciled else { return }
+        _ = await NativeUIAccessibility.wait { window.attachedSheet == nil && !model.mutationsDisabled }
+        _ = NativeUIAccessibility.click("project-changes.discard", in: window)
+        _ = await NativeUIAccessibility.wait {
+            NativeUIAccessibility.find("project-changes.confirm-discard", in: window.attachedSheet ?? window, fallbackLabel: "Discard changes") != nil
+        }
+        let discarded = NativeUIAccessibility.click("project-changes.confirm-discard", in: window.attachedSheet ?? window, fallbackLabel: "Discard changes")
+        let clean = await NativeUIAccessibility.wait { model.changes?.files.isEmpty == true && NativeUIAccessibility.find("project-changes.clean", in: window) != nil }
+        results["project-discard"] = discarded && clean ? "passed" : "failed: native discard did not render clean checkout"
+        capture(window, to: output.appending(path: "09-project-changes-clean.png"))
         do {
-            var changes = try await rpc.changeset(projectID: project.id)
-            guard changes.projectID == project.id, changes.cardID.isEmpty,
-                  changes.files.contains(where: { $0.path == "README.md" && $0.unstaged }),
-                  changes.files.contains(where: { $0.path == "project-scratch.txt" && $0.unstaged }) else {
-                results["project-changes"] = "failed: project-scoped files missing"
-                return
-            }
-            var request = Dieter_V1_StartGitOperationRequest()
-            request.projectID = project.id
-            request.kind = "stage"
-            request.expectedRevision = changes.revision
-            request.parameters = ["path": "README.md"]
-            var operation = try await rpc.startGitOperation(request)
-            operation = try await waitForProjectOperation(rpc: rpc, id: operation.id)
-            guard operation.status == "succeeded" else { throw WorkspaceSmokeFailure.operation(operation) }
-
-            changes = try await rpc.changeset(projectID: project.id)
-            guard changes.files.contains(where: { $0.path == "README.md" && $0.staged }) else {
-                results["project-stage"] = "failed: README was not staged"
-                return
-            }
-            request = Dieter_V1_StartGitOperationRequest()
-            request.projectID = project.id
-            request.kind = "commit"
-            request.expectedRevision = changes.revision
-            request.parameters = ["subject": "project checkout smoke", "validate": "false"]
-            operation = try await rpc.startGitOperation(request)
-            operation = try await waitForProjectOperation(rpc: rpc, id: operation.id)
-            guard operation.status == "succeeded" else { throw WorkspaceSmokeFailure.operation(operation) }
-
-            changes = try await rpc.changeset(projectID: project.id)
-            guard changes.files.count == 1, changes.files.first?.path == "project-scratch.txt" else {
-                results["project-commit"] = "failed: commit did not preserve only the unstaged file"
-                return
-            }
-            request = Dieter_V1_StartGitOperationRequest()
-            request.projectID = project.id
-            request.kind = "discard_changes"
-            request.expectedRevision = changes.revision
-            request.parameters = ["path": "project-scratch.txt"]
-            operation = try await rpc.startGitOperation(request)
-            operation = try await waitForProjectOperation(rpc: rpc, id: operation.id)
-            guard operation.status == "succeeded" else { throw WorkspaceSmokeFailure.operation(operation) }
-
-            changes = try await rpc.changeset(projectID: project.id)
-            results["project-changes"] = changes.files.isEmpty ? "passed" : "failed: checkout still has \(changes.files.count) local files"
+            let changes = try await rpc.changeset(projectID: project.id)
+            results["project-changes"] = changes.files.isEmpty && clean ? "passed" : "failed: UI and daemon disagree"
             results["project-branch"] = changes.branch
-            // The mutations above deliberately use the public RPC directly.
-            // Recreate the Changes surface so the screenshot proves the app
-            // itself reloads and renders the clean checkout returned by the
-            // server, rather than capturing its pre-mutation state.
-            store.projectFilesMode = "browse"
-            try? await DieterTaskSleep.milliseconds(300)
-            store.projectFilesMode = "changes"
-            try? await DieterTaskSleep.seconds(1)
-            capture(window, to: output.appending(path: "09-project-changes-clean.png"))
-        } catch {
-            results["project-changes"] = "failed: \(error)"
-        }
-    }
+        } catch { results["project-changes"] = "failed: \(error)" }
 
-    private static func waitForProjectOperation(rpc: DieterRPC, id: String) async throws -> Dieter_V1_GitOperation {
-        for _ in 0..<120 {
-            let operation = try await rpc.gitOperation(id: id)
-            if !GitOperationStatus.active(operation.status) { return operation }
-            try? await DieterTaskSleep.milliseconds(250)
+        // External edits must appear without a refresh click or view recreation.
+        try? "external editor change\n".write(toFile: project.path + "/external.txt", atomically: true, encoding: .utf8)
+        let external = await NativeUIAccessibility.wait { model.changes?.files.contains(where: { $0.path == "external.txt" }) == true }
+        results["project-external-refresh"] = external ? "passed" : "failed: external edit remained invisible"
+        _ = await NativeUIAccessibility.wait { NativeUIAccessibility.find("project-changes.unstaged.external.txt", in: window) != nil }
+        _ = NativeUIAccessibility.click("project-changes.unstaged.external.txt", in: window)
+        _ = await NativeUIAccessibility.wait { model.selection?.path == "external.txt" && NativeUIAccessibility.containsText("external editor change", in: window) }
+        window.setContentSize(NSSize(width: 1_080, height: 680))
+        _ = await NativeUIAccessibility.wait { NativeUIAccessibility.find("project-changes.unstaged.external.txt", in: window) != nil || NativeUIAccessibility.find("project-changes.back", in: window) != nil }
+        if NativeUIAccessibility.find("project-changes.unstaged.external.txt", in: window) != nil {
+            _ = NativeUIAccessibility.click("project-changes.unstaged.external.txt", in: window)
         }
-        throw WorkspaceSmokeFailure.timeout
+        let compact = await NativeUIAccessibility.wait { NativeUIAccessibility.containsText("external editor change", in: window) && NativeUIAccessibility.find("project-changes.back", in: window) != nil }
+        results["project-compact-diff"] = compact ? "passed" : "failed: selected diff lost on resize"
+        capture(window, to: output.appending(path: "10-project-compact.png"))
     }
 
     private enum WorkspaceSmokeFailure: Error {

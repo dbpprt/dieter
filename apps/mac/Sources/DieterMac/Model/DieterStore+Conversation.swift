@@ -10,8 +10,11 @@ import UserNotifications
 extension DieterStore {
     func refreshChats(includeArchived: Bool = true) async {
         guard let rpc else { return }
+        chatsRequestGeneration &+= 1
+        let generation = chatsRequestGeneration
         do {
             let response = try await rpc.chats(includeArchived: includeArchived)
+            guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
             let refreshedChats = reconcilePendingChatPins(response.chats)
             for card in refreshedChats {
                 if let previous = notificationStatuses[card.id], previous != card.runtime,
@@ -37,6 +40,7 @@ extension DieterStore {
                 markChatRead(selected)
             }
         } catch {
+            guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
             show(error)
         }
     }
@@ -284,6 +288,13 @@ extension DieterStore {
     }
 
     func resetWorkspaceSurface() {
+        workspaceRequestGeneration &+= 1; diffRequestGeneration &+= 1
+        workspaceRefreshTask?.cancel(); workspaceRefreshTask = nil; workspaceRefreshAgain = false
+        conversationDiffLoading = false
+        gitOperationSubmitting = false
+        gitOperationNeedsReconciliation = false
+        gitReconciliationGeneration &+= 1
+        gitOperationSubmissionID = nil
         conversationWorkspace = nil
         conversationChangeset = nil
         conversationDiff = nil

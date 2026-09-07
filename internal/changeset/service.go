@@ -1,9 +1,11 @@
 package changeset
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -50,6 +52,10 @@ func (s *Service) GetTarget(ctx context.Context, cardID, projectID string) (mode
 	if err != nil {
 		return model.Changeset{}, err
 	}
+	return s.changesForWorkspace(ctx, value)
+}
+
+func (s *Service) changesForWorkspace(ctx context.Context, value model.Workspace) (model.Changeset, error) {
 	files, additions, deletions, err := s.changedFiles(ctx, value)
 	if err != nil {
 		return model.Changeset{}, err
@@ -82,7 +88,9 @@ func (s *Service) resolveTarget(ctx context.Context, cardID, projectID string) (
 	if value.Mode != model.WorkspaceModeWorktree {
 		return model.Workspace{}, ErrProjectChangesRequireProject
 	}
-	return s.Workspaces.Refresh(ctx, cardID, false)
+	// Ensure already refreshes an existing worktree. Repeating Refresh hashes
+	// every local edit again and emits another store mutation for the same read.
+	return value, nil
 }
 
 func (s *Service) changedFiles(ctx context.Context, value model.Workspace) ([]model.ChangedFile, int, int, error) {
@@ -180,13 +188,11 @@ func mergeSection(target, section map[string]*model.ChangedFile, staged bool) {
 
 func parseNameStatus(raw []byte, files map[string]*model.ChangedFile) {
 	fields := zeroFields(raw)
-	for index := 0; index < len(fields); {
-		parts := strings.SplitN(fields[index], "\t", 2)
-		index++
-		if len(parts) != 2 {
-			continue
-		}
-		status, filePath := parts[0], parts[1]
+	// With -z, Git separates the status and every path with NUL, including
+	// both paths of a rename. Tabs/newlines are legal filename characters.
+	for index := 0; index+1 < len(fields); {
+		status, filePath := fields[index], fields[index+1]
+		index += 2
 		previous := ""
 		if (strings.HasPrefix(status, "R") || strings.HasPrefix(status, "C")) && index < len(fields) {
 			previous, filePath = filePath, fields[index]
@@ -201,7 +207,7 @@ func parseNumstat(raw []byte, files map[string]*model.ChangedFile) {
 	for index := 0; index < len(fields); {
 		entry := fields[index]
 		index++
-		parts := strings.Split(entry, "\t")
+		parts := strings.SplitN(entry, "\t", 3)
 		if len(parts) < 3 {
 			continue
 		}
@@ -244,8 +250,9 @@ func parsePorcelainSections(root string, raw []byte, files map[string]*model.Cha
 		file.Conflicted = strings.ContainsRune(xy, 'U') || xy == "AA" || xy == "DD"
 		if xy == "??" {
 			file.Status, file.WorktreeStatus, file.Unstaged = "untracked", "untracked", true
-			if raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(filePath))); err == nil {
-				file.UnstagedAdditions = countLines(raw)
+			if input, err := os.Open(filepath.Join(root, filepath.FromSlash(filePath))); err == nil {
+				file.UnstagedAdditions = countFileLines(input)
+				_ = input.Close()
 			}
 			continue
 		}
@@ -284,12 +291,20 @@ func statusName(value string) string {
 	}
 }
 
-func countLines(raw []byte) int {
-	if len(raw) == 0 {
-		return 0
+func countFileLines(input io.Reader) int {
+	buffer := make([]byte, 32*1024)
+	count, last := 0, byte('\n')
+	for {
+		n, err := input.Read(buffer)
+		if n > 0 {
+			count += bytes.Count(buffer[:n], []byte{'\n'})
+			last = buffer[n-1]
+		}
+		if err != nil {
+			break
+		}
 	}
-	count := strings.Count(string(raw), "\n")
-	if raw[len(raw)-1] != '\n' {
+	if last != '\n' {
 		count++
 	}
 	return count
@@ -378,16 +393,16 @@ func (s *Service) FileDiffTarget(ctx context.Context, cardID, projectID, expecte
 		}
 		filePath = cleaned
 	}
-	changes, err := s.GetTarget(ctx, cardID, projectID)
+	workspaceValue, err := s.resolveTarget(ctx, cardID, projectID)
+	if err != nil {
+		return model.FileDiff{}, err
+	}
+	changes, err := s.changesForWorkspace(ctx, workspaceValue)
 	if err != nil {
 		return model.FileDiff{}, err
 	}
 	if expectedRevision == "" || changes.Revision != expectedRevision {
 		return model.FileDiff{}, ErrStaleRevision
-	}
-	workspaceValue, err := s.resolveTarget(ctx, cardID, projectID)
-	if err != nil {
-		return model.FileDiff{}, err
 	}
 	section = strings.ToLower(strings.TrimSpace(section))
 	if section == "" {

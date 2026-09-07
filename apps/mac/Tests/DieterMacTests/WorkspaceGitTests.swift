@@ -191,3 +191,12 @@ import Testing
         commitSHAs: []
     ) == .init(path: "", commitSHA: ""))
 }
+
+@Test func unifiedDiffDoesNotInventALineFromThePatchTerminator() {
+    let lines = UnifiedDiffParser.parse("@@ -0,0 +1,2 @@\n+new line\n+\n")
+    #expect(lines.filter { $0.kind == .context }.isEmpty)
+    #expect(lines.filter { $0.kind == .addition }.map(\.newLine) == [1, 2])
+    let context = UnifiedDiffParser.parse("@@ -1 +1 @@\n \n")
+    #expect(context.last?.kind == .context)
+    #expect(context.last?.newLine == 1)
+}

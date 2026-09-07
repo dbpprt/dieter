@@ -106,9 +106,21 @@ final class DieterStore {
     var workspaceToast: WorkspaceToast?
     var mergeFlowStep: WorkspaceMergeStep?
     var fileScopeCardID: String?
-    /// Selects the project-level surface inside Files. Conversation worktrees
-    /// always browse their own checkout and never use project Changes.
-    var projectFilesMode = "browse"
+    let projectChanges = ProjectChangesModel()
+    var fileScopeGeneration: UInt64 = 0
+    var fileListingGeneration: UInt64 = 0
+    var fileReadGeneration: UInt64 = 0
+    var stateRequestGeneration: UInt64 = 0
+    var chatsRequestGeneration: UInt64 = 0
+    var workspaceRequestGeneration: UInt64 = 0
+    @ObservationIgnored var workspaceRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var workspaceRefreshAgain = false
+    var diffRequestGeneration: UInt64 = 0
+    var conversationDiffLoading = false
+    var gitOperationSubmitting = false
+    var gitOperationNeedsReconciliation = false
+    var gitReconciliationGeneration: UInt64 = 0
+    var gitOperationSubmissionID: UUID?
     var terminalScopeCardID: String?
     var composerText = ""
     var composerAttachments: [Dieter_V1_MessagePart] = []

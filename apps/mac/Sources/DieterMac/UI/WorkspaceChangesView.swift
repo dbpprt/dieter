@@ -94,7 +94,7 @@ struct WorkspaceChangesView: View {
     private var selectedFile: Dieter_V1_ChangedFile? {
         changes?.files.first { $0.path == store.selectedChangePath }
     }
-    private var operationActive: Bool { store.gitOperation.map { GitOperationStatus.active($0.status) } ?? false }
+    private var operationActive: Bool { store.gitOperationSubmitting || store.gitOperationNeedsReconciliation || (store.gitOperation.map { GitOperationStatus.active($0.status) } ?? false) }
     private var visibleOperation: Dieter_V1_GitOperation? {
         guard let operation = store.gitOperation else { return nil }
         return GitOperationStatus.active(operation.status) || operation.status == "failed" ? operation : nil
@@ -134,12 +134,9 @@ struct WorkspaceChangesView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard !Task.isCancelled, (store.selectedCardID ?? store.selectedChatID) == id else { return }
-                let runtime = (store.selectedCard ?? store.selectedDetail?.card)?.runtime.lowercased() ?? ""
-                let gitOperationActive = store.gitOperation?.cardID == id
-                    && GitOperationStatus.active(store.gitOperation?.status ?? "")
-                if gitOperationActive || ["starting", "running", "working", "streaming", "waiting", "waiting_for_user", "cancelling"].contains(runtime) {
-                    await store.loadWorkspaceSurface()
-                }
+                // Include idle checkouts: external edits and short turns can
+                // start and finish entirely between two polls.
+                await store.loadWorkspaceSurface()
             }
         }
         .onChange(of: changes?.revision) { _, revision in
@@ -245,6 +242,7 @@ struct WorkspaceChangesView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("changes.view-mode-\(mode.rawValue.lowercased())")
+                .smokeTarget("changes.view-mode-\(mode.rawValue.lowercased())")
             }
         }
         .padding(2)
@@ -464,7 +462,7 @@ struct WorkspaceChangesView: View {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     if let pullRequest { pullRequestCard(pullRequest) }
                     filesSection(compact: compact)
-                    commitsSection(compact: compact)
+                    if changes?.commits.isEmpty == false { commitsSection(compact: compact) }
                     scmNotice
                 }
                 .padding(.horizontal, 10).padding(.vertical, 12)
@@ -573,6 +571,8 @@ struct WorkspaceChangesView: View {
                     compactPane = .diff
                     Task { await store.loadConversationDiff(path: file.path) }
                 }
+                .accessibilityIdentifier("changes.file.\(file.path)")
+                .smokeTarget("changes.file.\(file.path)")
             }
         }
     }
@@ -644,7 +644,7 @@ struct WorkspaceChangesView: View {
 
     private func workspaceFooter(_ workspace: Dieter_V1_Workspace) -> some View {
         HStack(spacing: 7) {
-            StatusPill(text: workspace.state, color: workspace.state == "conflicted" ? DieterTheme.coral : DieterTheme.eyes)
+            StatusPill(text: workspace.state, color: workspace.state == "conflicted" ? DieterTheme.coral : DieterTheme.diffAddition)
             Text(ConversationWorkspaceMode.projectMode(workspace.mode).shortTitle)
             if workspace.sizeBytes > 0 {
                 Text("· \(ByteCountFormatter.string(fromByteCount: workspace.sizeBytes, countStyle: .file))")
@@ -677,9 +677,13 @@ struct WorkspaceChangesView: View {
                             addComment: { line in selectedCommentLine = line },
                             loadMore: {
                                 Task { await store.loadConversationDiff(path: diff.path, commitSHA: diff.commitSha, append: true) }
-                            }
+                            },
+                            loadingMore: store.conversationDiffLoading
                         )
+                        .id("\(store.selectedChangePath)|\(store.selectedCommitSHA)")
                     }
+                } else if store.conversationDiffLoading {
+                    ProgressView("Loading diff…").frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     ContentUnavailableView("Select a change", systemImage: "doc.text.magnifyingglass", description: Text("Choose a changed file or commit to inspect its diff."))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -736,7 +740,7 @@ struct WorkspaceChangesView: View {
             HStack(spacing: 5) {
                 Image(systemName: viewed ? "checkmark.square.fill" : "square")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(viewed ? DieterTheme.eyes : DieterTheme.tertiary)
+                    .foregroundStyle(viewed ? DieterTheme.diffAddition : DieterTheme.tertiary)
                 Text("Viewed").font(.system(size: 10, weight: .medium))
                     .foregroundStyle(viewed ? DieterTheme.text : DieterTheme.subtle)
             }
@@ -764,11 +768,11 @@ struct WorkspaceChangesView: View {
                     .foregroundStyle(DieterTheme.coral)
             } else {
                 Label("No conflicts with \(baseBranch)", systemImage: "checkmark")
-                    .foregroundStyle(DieterTheme.eyes)
+                    .foregroundStyle(DieterTheme.diffAddition)
             }
             if let validation = lastValidationSummary {
                 Label(validation.text, systemImage: validation.passed ? "checkmark" : "xmark")
-                    .foregroundStyle(validation.passed ? DieterTheme.eyes : DieterTheme.coral)
+                    .foregroundStyle(validation.passed ? DieterTheme.diffAddition : DieterTheme.coral)
             }
             Spacer()
             if let files = changes?.files, !files.isEmpty {
@@ -843,45 +847,102 @@ struct WorkspaceChangesView: View {
 
 // MARK: - Diff content
 
-private struct WorkspaceDiffContent: View {
+/// AppKit owns the native scroll position. Observe that position directly so
+/// both split columns pan together while their gutters stay in the viewport.
+private struct DiffScrollOffsetObserver: NSViewRepresentable {
+    var onChange: (CGFloat) -> Void
+
+    final class Anchor: NSView {
+        var onChange: (CGFloat) -> Void = { _ in }
+        private weak var clip: NSClipView?
+        private var lastOffset: CGFloat = -1
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToSuperview() { super.viewDidMoveToSuperview(); scheduleConnection() }
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); scheduleConnection() }
+
+        func scheduleConnection() {
+            DispatchQueue.main.async { [weak self] in self?.connect() }
+        }
+
+        private func connect() {
+            guard let next = enclosingScrollView?.contentView, next !== clip else { return }
+            detach()
+            clip = next
+            next.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: next)
+            scrolled()
+        }
+
+        @objc private func scrolled() {
+            let offset = max(0, clip?.bounds.minX ?? 0)
+            guard abs(offset - lastOffset) > 0.25 else { return }
+            lastOffset = offset
+            DispatchQueue.main.async { [weak self] in self?.onChange(offset) }
+        }
+
+        func detach() {
+            NotificationCenter.default.removeObserver(self)
+            clip = nil
+            lastOffset = -1
+        }
+    }
+
+    func makeNSView(context: Context) -> Anchor { let view = Anchor(); view.onChange = onChange; return view }
+    func updateNSView(_ view: Anchor, context: Context) { view.onChange = onChange; view.scheduleConnection() }
+    static func dismantleNSView(_ view: Anchor, coordinator: ()) { view.detach() }
+}
+
+struct WorkspaceDiffContent: View {
     let diff: Dieter_V1_FileDiff
     let split: Bool
     let comments: [Dieter_V1_ChangeComment]
     let canComment: Bool
     let addComment: (UnifiedDiffLine) -> Void
     let loadMore: () -> Void
+    var loadingMore = false
+    var reviewSection: String? = nil
 
     @State private var projection = WorkspaceDiffProjection()
     @State private var builtKey = ""
+    @State private var horizontalOffset: CGFloat = 0
     @State private var expandedFolds: Set<Int> = []
 
     private var buildKey: String {
         let commentRevision = comments.map { "\($0.id):\($0.revision)" }.joined(separator: ",")
-        return "\(diff.path)|\(diff.commitSha)|\(diff.revision)|\(split)|\(diff.nextOffset)|\(diff.totalBytes)|\(commentRevision)"
+        return "\(diff.projectID)|\(diff.cardID)|\(diff.section)|\(diff.path)|\(diff.commitSha)|\(diff.revision)|\(split)|\(diff.nextOffset)|\(diff.totalBytes)|\(commentRevision)"
     }
 
     var body: some View {
         GeometryReader { viewport in
-            ScrollView(split ? .vertical : [.horizontal, .vertical]) {
+            let contentWidth = split
+                ? viewport.size.width + max(0, CGFloat(projection.maximumCodeColumns) * 7.3 + 78 - viewport.size.width / 2)
+                : viewport.size.width
+            ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(projection.rows) { row in
                         diffRow(row, viewportWidth: max(0, viewport.size.width))
+                            .frame(width: split ? viewport.size.width : nil, alignment: .leading)
+                            .offset(x: split ? horizontalOffset : 0)
                     }
                     if diff.truncated {
                         Button("Load the rest of this diff") { loadMore() }
+                            .disabled(loadingMore)
                             .buttonStyle(DieterSecondaryButtonStyle()).padding(12)
                     }
                 }
                 .frame(
-                    minWidth: max(0, viewport.size.width),
+                    minWidth: max(0, contentWidth),
                     minHeight: max(0, viewport.size.height),
                     alignment: .topLeading
                 )
+                .background(DiffScrollOffsetObserver { horizontalOffset = $0 })
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .task(id: buildKey) {
             guard builtKey != buildKey else { return }
+            let key = buildKey
             let patch = diff.patch
             let path = diff.path
             let commitSHA = diff.commitSha
@@ -896,10 +957,19 @@ private struct WorkspaceDiffContent: View {
                     comments: comments
                 )
             }.value
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, buildKey == key else { return }
             projection = next
-            builtKey = buildKey
+            builtKey = key
             expandedFolds = []
+#if DIETER_UI_SMOKE
+            if NativeUISmokeTargets.enabled { NativeUISmokeTargets.diffText = patch; NativeUISmokeTargets.diffSplit = split }
+#endif
+        }
+        .onDisappear {
+#if DIETER_UI_SMOKE
+            NativeUISmokeTargets.diffText = ""
+            NativeUISmokeTargets.diffSplit = nil
+#endif
         }
     }
 
@@ -914,7 +984,7 @@ private struct WorkspaceDiffContent: View {
                 addComment: { addComment(line) }
             )
         case .pair(let pair):
-            WorkspaceSplitPairRow(pair: pair, width: viewportWidth)
+            WorkspaceSplitPairRow(pair: pair, width: viewportWidth, horizontalOffset: horizontalOffset)
         case .file(let id, let path):
             HStack(spacing: 7) {
                 Image(systemName: "doc.text").font(.system(size: 9, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
@@ -931,24 +1001,42 @@ private struct WorkspaceDiffContent: View {
                 if skipped > 0 {
                     WorkspaceUnchangedSeparator(count: skipped, width: viewportWidth)
                 }
-                HStack(spacing: 0) {
+                HStack(spacing: 10) {
                     Text(text)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(DieterTheme.shell)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(DieterTheme.subtle)
                         .lineLimit(1)
-                        .padding(.horizontal, 12)
                     Spacer(minLength: 0)
+                    if let delta = projection.hunkDeltas[id] {
+                        HStack(spacing: 5) {
+                            Text("+\(delta.additions)").foregroundStyle(DieterTheme.diffAddition)
+                            Text("−\(delta.deletions)").foregroundStyle(DieterTheme.coral)
+                        }.font(.system(size: 10, design: .monospaced))
+                    }
+                    if let reviewSection {
+                        Text(reviewSection.uppercased())
+                            .font(.system(size: 9, weight: .semibold)).tracking(0.4)
+                            .foregroundStyle(reviewSection == "staged" ? DieterTheme.reviewAccent : DieterTheme.tertiary)
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(reviewSection == "staged" ? DieterTheme.reviewAccent.opacity(0.12) : DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 3))
+                    }
                 }
-                .frame(minWidth: viewportWidth, minHeight: 26, alignment: .leading)
-                .background(DieterTheme.shell.opacity(0.07))
+                .padding(.horizontal, 14)
+                .frame(minWidth: viewportWidth, minHeight: 32, alignment: .leading)
+                .background(DieterTheme.sidebar)
+                .overlay(alignment: .leading) {
+                    if reviewSection == "staged" { DieterTheme.reviewAccent.frame(width: 2) }
+                }
+                .overlay(alignment: .bottom) { Divider().overlay(DieterTheme.border.opacity(0.5)) }
             }
             .id(id)
+            .smokeTarget("workspace-diff.hunk.\(id)")
         case .fold(let id, let count, let lines, let pairs):
             if expandedFolds.contains(id) {
                 VStack(spacing: 0) {
                     foldButton(id: id, count: count, expanded: true, width: viewportWidth)
                     if split {
-                        ForEach(pairs) { pair in WorkspaceSplitPairRow(pair: pair, width: viewportWidth) }
+                        ForEach(pairs) { pair in WorkspaceSplitPairRow(pair: pair, width: viewportWidth, horizontalOffset: horizontalOffset) }
                     } else {
                         ForEach(lines) { line in
                             WorkspaceDiffLineRow(
@@ -1011,6 +1099,7 @@ private struct WorkspaceUnchangedSeparator: View {
 private struct WorkspaceSplitPairRow: View {
     let pair: WorkspaceSplitPair
     let width: CGFloat
+    var horizontalOffset: CGFloat = 0
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -1018,7 +1107,7 @@ private struct WorkspaceSplitPairRow: View {
             Rectangle().fill(DieterTheme.border).frame(width: 1)
             side(line: pair.new, number: pair.new.flatMap(\.newLine), addition: true)
         }
-        .frame(minWidth: width, minHeight: 21, alignment: .topLeading)
+        .frame(minWidth: width, minHeight: 23, alignment: .topLeading)
     }
 
     @ViewBuilder private func side(line: UnifiedDiffLine?, number: Int?, addition: Bool) -> some View {
@@ -1029,26 +1118,32 @@ private struct WorkspaceSplitPairRow: View {
                 .frame(width: 42, alignment: .trailing)
                 .frame(maxHeight: .infinity)
                 .background(DieterTheme.sidebar.opacity(0.72))
+            Text(line?.kind == .addition ? "+" : line?.kind == .deletion ? "−" : " ")
+                .foregroundStyle(foreground(line)).frame(width: 20)
             Text(displayText(line))
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(foreground(line))
                 .padding(.leading, 6).padding(.trailing, 8)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .offset(x: -horizontalOffset)
+                .frame(width: max(0, (width - 1) / 2 - 62), alignment: .topLeading)
+                .clipped()
         }
-        .font(.system(size: 11, design: .monospaced))
-        .frame(maxWidth: .infinity, minHeight: 21, alignment: .topLeading)
+        .font(.system(size: 12, design: .monospaced))
+        .frame(width: max(0, (width - 1) / 2), alignment: .topLeading)
+        .frame(minHeight: 23)
         .background(background(line, addition: addition))
     }
 
     private func displayText(_ line: UnifiedDiffLine?) -> String {
         guard let line else { return " " }
-        return line.text.isEmpty ? " " : line.text
+        let code = String(line.text.dropFirst()).replacingOccurrences(of: "\t", with: "    ")
+        return code.isEmpty ? " " : code
     }
 
     private func foreground(_ line: UnifiedDiffLine?) -> Color {
         switch line?.kind {
-        case .addition: DieterTheme.eyes
+        case .addition: DieterTheme.diffAddition
         case .deletion: DieterTheme.coral
         default: DieterTheme.text
         }
@@ -1056,8 +1151,8 @@ private struct WorkspaceSplitPairRow: View {
 
     private func background(_ line: UnifiedDiffLine?, addition: Bool) -> Color {
         switch line?.kind {
-        case .addition: DieterTheme.eyes.opacity(0.09)
-        case .deletion: DieterTheme.coral.opacity(0.09)
+        case .addition: DieterTheme.diffAddition.opacity(0.14)
+        case .deletion: DieterTheme.coral.opacity(0.14)
         case .context: .clear
         default: DieterTheme.raised.opacity(0.35)
         }
@@ -1089,7 +1184,7 @@ private struct WorkspaceDeltaLabel: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("+\(additions)").foregroundStyle(DieterTheme.eyes)
+            Text("+\(additions)").foregroundStyle(DieterTheme.diffAddition)
             Text("−\(deletions)").foregroundStyle(DieterTheme.coral)
         }
         .font(.system(size: 10, weight: .semibold, design: .monospaced)).fixedSize()
@@ -1138,7 +1233,7 @@ private struct WorkspaceFileRow: View {
                 }
                 Spacer(minLength: 5)
                 if viewed {
-                    Image(systemName: "checkmark").font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.eyes)
+                    Image(systemName: "checkmark").font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.diffAddition)
                 }
                 WorkspaceDeltaLabel(additions: file.additions, deletions: file.deletions)
             }
@@ -1195,7 +1290,7 @@ private struct PullRequestStateBadge: View {
 
     private var color: Color {
         switch tone {
-        case .positive: DieterTheme.eyes
+        case .positive: DieterTheme.diffAddition
         case .active: DieterTheme.shell
         case .warning: DieterTheme.amber
         case .critical: DieterTheme.coral
@@ -1233,7 +1328,7 @@ private struct PullRequestSignalLabel: View {
 
     private var color: Color {
         switch signal.tone {
-        case .positive: DieterTheme.eyes
+        case .positive: DieterTheme.diffAddition
         case .active: DieterTheme.shell
         case .warning: DieterTheme.amber
         case .critical: DieterTheme.coral
@@ -1259,13 +1354,16 @@ private struct WorkspaceDiffLineRow: View {
                     if canComment {
                         Button(action: addComment) { Image(systemName: "plus").font(.system(size: 8, weight: .bold)).frame(width: 22, height: 20) }
                             .buttonStyle(.plain).foregroundStyle(DieterTheme.shell).opacity(hovering || !comments.isEmpty ? 1 : 0)
-                    } else { Color.clear.frame(width: 22, height: 20) }
+                    } else {
+                        Text(line.kind == .addition ? "+" : line.kind == .deletion ? "−" : " ")
+                            .frame(width: 22, height: 23)
+                    }
                 }
-                Text(line.text.isEmpty ? " " : line.text).textSelection(.enabled).fixedSize(horizontal: true, vertical: false)
+                Text(codeText).textSelection(.enabled).fixedSize(horizontal: true, vertical: false)
                     .padding(.leading, 5).padding(.trailing, 12)
             }
-            .font(.system(size: 11, design: .monospaced)).foregroundStyle(foreground)
-            .frame(minWidth: minimumWidth, minHeight: 21, alignment: .topLeading)
+            .font(.system(size: 12, design: .monospaced)).foregroundStyle(foreground)
+            .frame(minWidth: minimumWidth, minHeight: 23, alignment: .topLeading)
             .background(background)
             ForEach(comments, id: \.id) { comment in
                 HStack(alignment: .top, spacing: 8) {
@@ -1287,10 +1385,15 @@ private struct WorkspaceDiffLineRow: View {
             .padding(.trailing, 7).frame(maxHeight: .infinity).background(DieterTheme.sidebar.opacity(0.72))
     }
 
+    private var codeText: String {
+        let text = canComment || line.kind == .header || line.kind == .hunk ? line.text : String(line.text.dropFirst())
+        return text.isEmpty ? " " : text.replacingOccurrences(of: "\t", with: "    ")
+    }
+
     private var background: Color {
         switch line.kind {
-        case .addition: DieterTheme.eyes.opacity(0.09)
-        case .deletion: DieterTheme.coral.opacity(0.09)
+        case .addition: DieterTheme.diffAddition.opacity(0.14)
+        case .deletion: DieterTheme.coral.opacity(0.14)
         case .hunk: DieterTheme.selection
         case .header: DieterTheme.sidebar
         case .context: .clear
@@ -1299,7 +1402,7 @@ private struct WorkspaceDiffLineRow: View {
 
     private var foreground: Color {
         switch line.kind {
-        case .addition: DieterTheme.eyes
+        case .addition: DieterTheme.diffAddition
         case .deletion: DieterTheme.coral
         case .header, .hunk: DieterTheme.shell
         case .context: DieterTheme.text
@@ -1463,7 +1566,7 @@ private struct MergeIntoBaseSheet: View {
 
     private func color(for tone: WorkspaceMergeReadiness.Tone) -> Color {
         switch tone {
-        case .ready: DieterTheme.eyes
+        case .ready: DieterTheme.diffAddition
         case .note: DieterTheme.amber
         case .blocked: DieterTheme.coral
         }
@@ -1758,7 +1861,7 @@ private struct GitOperationSheet: View {
                             title: "Clean, integrated work only",
                             detail: "Cleanup stops if the branch still has changes or has not been integrated.",
                             symbol: "checkmark.shield.fill",
-                            tint: DieterTheme.eyes
+                            tint: DieterTheme.diffAddition
                         )
                     }
                 }
@@ -1804,7 +1907,7 @@ private struct GitOperationSheet: View {
                 Toggle("Run project validation after rebasing", isOn: $validate)
             }
         case .validate:
-            WorkspaceSheetNotice(title: "Validate this workspace", detail: operationDescription, symbol: "checkmark.seal.fill", tint: DieterTheme.eyes)
+            WorkspaceSheetNotice(title: "Validate this workspace", detail: operationDescription, symbol: "checkmark.seal.fill", tint: DieterTheme.diffAddition)
         case .mergeLocal:
             WorkspaceSheetPickerLabel("MERGE STRATEGY")
             Picker("Merge strategy", selection: $strategy) { Text("Squash").tag("squash"); Text("Merge commit").tag("merge_commit"); Text("Fast-forward").tag("fast_forward") }
@@ -1823,7 +1926,7 @@ private struct GitOperationSheet: View {
             WorkspaceSheetPickerLabel("MERGE STRATEGY")
             Picker("Merge strategy", selection: $strategy) { Text("Squash").tag("squash"); Text("Merge commit").tag("merge"); Text("Rebase").tag("rebase") }
                 .labelsHidden().pickerStyle(.segmented)
-            WorkspaceSheetNotice(title: "Head revision is protected", detail: "The provider verifies that the pull request head still matches this workspace before merging.", symbol: "lock.shield.fill", tint: DieterTheme.eyes)
+            WorkspaceSheetNotice(title: "Head revision is protected", detail: "The provider verifies that the pull request head still matches this workspace before merging.", symbol: "lock.shield.fill", tint: DieterTheme.diffAddition)
         case .continueConflict:
             WorkspaceSheetNotice(title: "Confirm conflicts are resolved", detail: "Continue only after every conflict marker has been resolved and the files have been saved.", symbol: "exclamationmark.triangle.fill", tint: DieterTheme.amber)
             WorkspaceSheetOptions { Toggle("Run validation after continuing", isOn: $validate) }
@@ -2014,7 +2117,7 @@ struct WorkspaceToastView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(DieterTheme.eyes)
+            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(DieterTheme.diffAddition)
             Text(toast.message).font(.system(size: 12, weight: .medium)).foregroundStyle(DieterTheme.text)
         }
         .lineLimit(1)

@@ -44,7 +44,10 @@ type ExecRunner struct{}
 
 func (ExecRunner) Run(ctx context.Context, directory string, args ...string) (Result, error) {
 	started := time.Now()
-	command := exec.CommandContext(ctx, "git", args...)
+	// `git diff` can refresh the index even with GIT_OPTIONAL_LOCKS=0.
+	// Presentation reads must leave index writes to explicit Git operations.
+	commandArgs := append([]string{"-c", "diff.autoRefreshIndex=false"}, args...)
+	command := exec.CommandContext(ctx, "git", commandArgs...)
 	command.Dir = directory
 	command.Env = gitEnvironment()
 	var output limitedBuffer
@@ -70,12 +73,15 @@ func gitEnvironment() []string {
 	result := values[:0]
 	for _, value := range values {
 		if strings.HasPrefix(value, "GIT_TERMINAL_PROMPT=") || strings.HasPrefix(value, "GIT_EDITOR=") ||
-			strings.HasPrefix(value, "GIT_SEQUENCE_EDITOR=") || strings.HasPrefix(value, "LC_ALL=") {
+			strings.HasPrefix(value, "GIT_SEQUENCE_EDITOR=") || strings.HasPrefix(value, "LC_ALL=") ||
+			strings.HasPrefix(value, "GIT_OPTIONAL_LOCKS=") {
 			continue
 		}
 		result = append(result, value)
 	}
-	return append(result, "GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true", "LC_ALL=C")
+	// Background status/diff reads must not refresh the index on disk and race
+	// an explicit stage or commit. Required mutation locks still apply.
+	return append(result, "GIT_TERMINAL_PROMPT=0", "GIT_EDITOR=true", "GIT_SEQUENCE_EDITOR=true", "LC_ALL=C", "GIT_OPTIONAL_LOCKS=0")
 }
 
 func Redact(value string) string {

@@ -78,7 +78,7 @@ struct DieterRootView: View {
 
     private var showsSynchronizedWorkspace: Bool {
         switch store.section {
-        case .board, .chats, .files, .schedules, .archive: true
+        case .board, .chats, .files, .changes, .schedules, .archive: true
         case .terminals, .screens, .settings: false
         }
     }
@@ -135,6 +135,7 @@ struct DieterRootView: View {
                     case .terminals: TerminalsView()
 					case .screens: ScreensView()
                     case .files: FilesView()
+                    case .changes: ProjectChangesView()
                     case .schedules: SchedulesView()
                     case .archive: ArchiveView()
                     case .settings: DieterSettingsView()
@@ -730,7 +731,7 @@ private struct SidebarProjectRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("\(project.name) — boards, files, schedules")
+                .help("\(project.name) — boards, files, changes, schedules")
                 .accessibilityIdentifier("sidebar.project.\(project.id)")
 
                 if hovering {
@@ -755,6 +756,7 @@ private struct SidebarProjectRow: View {
                 .help(expanded ? "Collapse \(project.name)" : "Expand \(project.name)")
                 .accessibilityLabel(expanded ? "Collapse \(project.name)" : "Expand \(project.name)")
                 .accessibilityIdentifier("sidebar.project.\(project.id).toggle")
+                .smokeTarget("sidebar.project.\(project.id).toggle")
             }
             .padding(.horizontal, 8).frame(height: DieterMetrics.navigationRowHeight)
             .background(
@@ -886,6 +888,7 @@ private struct SidebarProjectDestinations: View {
                     badge: activeCount(board.id)
                 ) { onNavigate?(); Task { await store.openBoard(board.id, projectID: project.id) } }
                 .accessibilityIdentifier("sidebar.board.\(board.id)")
+                .smokeTarget("sidebar.board.\(board.id)")
                 .contextMenu {
                     Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
                     Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
@@ -897,17 +900,26 @@ private struct SidebarProjectDestinations: View {
             .disabled(projectIsUnavailable)
             .opacity(projectIsUnavailable ? 0.42 : 1)
             .accessibilityIdentifier("sidebar.files.\(project.id)")
+            .smokeTarget("sidebar.files.\(project.id)")
+            SidebarDestination(title: "Changes", symbol: "arrow.triangle.branch", selected: store.section == .changes && store.selectedProjectID == project.id) {
+                onNavigate?(); Task { await store.openProjectChanges(project.id) }
+            }
+            .disabled(projectIsUnavailable)
+            .opacity(projectIsUnavailable ? 0.42 : 1)
+            .accessibilityIdentifier("sidebar.changes.\(project.id)")
+            .smokeTarget("sidebar.changes.\(project.id)")
             SidebarDestination(title: "Schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
                 onNavigate?(); Task { await store.openProject(project.id, section: .schedules) }
             }
             .disabled(projectIsUnavailable)
             .opacity(projectIsUnavailable ? 0.42 : 1)
             .accessibilityIdentifier("sidebar.schedules.\(project.id)")
+            .smokeTarget("sidebar.schedules.\(project.id)")
         }
     }
 
     private func activeCount(_ boardID: String) -> Int {
-        store.navigationCards.values.flatMap { $0 }.filter { $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime) }.count
+        store.navigationCards[project.id, default: []].filter { $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime) }.count
     }
 }
 
@@ -939,7 +951,7 @@ private struct SidebarProjectRail: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("\(project.name) — boards, files, schedules")
+        .help("\(project.name) — boards, files, changes, schedules")
         .accessibilityIdentifier("sidebar.project.\(project.id)")
         .popover(isPresented: $popoverPresented, arrowEdge: .trailing) {
             ProjectQuickNav(project: project) { popoverPresented = false }

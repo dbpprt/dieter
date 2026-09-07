@@ -10,10 +10,68 @@ import (
 	"testing"
 
 	"github.com/dbpprt/dieter/internal/changeset"
+	"github.com/dbpprt/dieter/internal/gitexec"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
 	"github.com/dbpprt/dieter/internal/workspace"
 )
+
+type countingGitReads struct {
+	headReads int
+}
+
+func (r *countingGitReads) Run(ctx context.Context, directory string, args ...string) (gitexec.Result, error) {
+	if strings.Join(args, " ") == "rev-parse --verify HEAD^{commit}" {
+		r.headReads++
+	}
+	return (gitexec.ExecRunner{}).Run(ctx, directory, args...)
+}
+
+func TestProjectFileDiffUsesOneWorkspaceSnapshotAndHashesWholeUntrackedFiles(t *testing.T) {
+	repository := testRepository(t)
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Read cost", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cross the streaming buffer boundary and omit the final newline.
+	content := strings.Repeat("some content\n", 10_000) + "last line"
+	filePath := filepath.Join(repository, "untracked.txt")
+	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manager := workspace.New(data, nil)
+	runner := &countingGitReads{}
+	manager.SetGitRunner(runner)
+	service := changeset.New(manager)
+	set, err := service.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Files) != 1 || set.Files[0].UnstagedAdditions != 10_001 {
+		t.Fatalf("wrong streamed line count: %#v", set.Files)
+	}
+	runner.headReads = 0
+	diff, err := service.FileDiffTarget(context.Background(), "", project.ID, set.Revision, "untracked.txt", "", "unstaged", 0, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.headReads != 1 {
+		t.Fatalf("file selection refreshed the workspace %d times", runner.headReads)
+	}
+	if !strings.Contains(diff.Patch, "+last line") {
+		t.Fatal("diff omitted the tail of the untracked file")
+	}
+	if err := os.WriteFile(filePath, []byte(content+" changed"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.FileDiffTarget(context.Background(), "", project.ID, set.Revision, "untracked.txt", "", "unstaged", 0, 1<<20); !errors.Is(err, changeset.ErrStaleRevision) {
+		t.Fatalf("tail edit must invalidate the old revision: %v", err)
+	}
+}
 
 func TestChangesetIncludesTrackedAndUntrackedDiffsAndRejectsStaleRevision(t *testing.T) {
 	repository := testRepository(t)
@@ -239,4 +297,58 @@ func gitOutput(t *testing.T, directory string, args ...string) string {
 		t.Fatalf("git %v: %v", args, err)
 	}
 	return string(output)
+}
+
+func TestProjectChangesPreserveGitStatusesAndUnusualPaths(t *testing.T) {
+	repository := testRepository(t)
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repository, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("old.txt", "rename source\nunchanged content\n")
+	write("gone.txt", "deleted content\n")
+	runGit(t, repository, "add", "-A")
+	runGit(t, repository, "commit", "-m", "status fixture")
+	if err := os.Rename(filepath.Join(repository, "old.txt"), filepath.Join(repository, "renamed\tfile.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(repository, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	write("new\nfile.txt", "brand new content\n")
+	runGit(t, repository, "add", "-A")
+	write("README.md", "modified working tree\n")
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Statuses", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := changeset.New(workspace.New(data, nil))
+	set, err := service.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]model.ChangedFile{}
+	for _, file := range set.Files {
+		files[file.Path] = file
+	}
+	if len(files) != 4 {
+		t.Fatalf("unexpected changes: %#v", files)
+	}
+	for name, expected := range map[string]string{"renamed\tfile.txt": "renamed", "gone.txt": "deleted", "new\nfile.txt": "added"} {
+		if file := files[name]; file.IndexStatus != expected || !file.Staged {
+			t.Errorf("%q: expected staged %s, got %#v", name, expected, file)
+		}
+	}
+	if files["renamed\tfile.txt"].PreviousPath != "old.txt" || files["new\nfile.txt"].StagedAdditions != 1 || files["gone.txt"].StagedDeletions != 1 {
+		t.Fatalf("lost rename or line counts: %#v", files)
+	}
+	if files["README.md"].WorktreeStatus != "modified" || !files["README.md"].Unstaged {
+		t.Fatal("working-tree status was lost")
+	}
 }

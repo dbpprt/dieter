@@ -223,6 +223,9 @@ enum UnifiedDiffParser {
         var oldLine: Int?
         var newLine: Int?
         for (index, raw) in patch.split(separator: "\n", omittingEmptySubsequences: false).map(String.init).enumerated() {
+            // Every hunk line has a prefix, including a blank context line
+            // (" "). A bare empty string is a separator or final newline.
+            guard !raw.isEmpty else { continue }
             if raw.hasPrefix("@@"), let ranges = hunkRanges(raw) {
                 oldLine = ranges.old
                 newLine = ranges.new

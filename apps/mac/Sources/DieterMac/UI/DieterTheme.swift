@@ -280,7 +280,7 @@ private struct DieterThemeKey: Hashable {
 private final class DieterThemeState {
     private(set) var colors: DieterThemeTokens
     @ObservationIgnored private(set) var systemColorScheme: ColorScheme
-    private var installedKey: DieterThemeKey
+    private(set) var installedKey: DieterThemeKey
 
     init(key: DieterThemeKey, colors: DieterThemeTokens, systemColorScheme: ColorScheme) {
         installedKey = key
@@ -362,6 +362,10 @@ enum DieterTheme {
     static var eyes: Color { state.colors.eyes }
     static var amber: Color { state.colors.amber }
     static var coral: Color { state.colors.coral }
+
+    /// Git additions remain green regardless of the decorative app palette.
+    static var diffAddition: Color { Color(rgb: state.installedKey.dark ? 0x85BD93 : 0x277642) }
+    static var reviewAccent: Color { Color(rgb: 0xF28B7A) }
 
     /// Background for the selected navigation or list row.
     static var selection: Color { state.colors.selection }

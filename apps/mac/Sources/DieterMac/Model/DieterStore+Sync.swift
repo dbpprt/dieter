@@ -753,9 +753,15 @@ extension DieterStore {
             }
             return
         }
+        stateRequestGeneration &+= 1
+        let generation = stateRequestGeneration
+        let request = stateRequest()
         do {
-            acceptState(try await rpc.state(stateRequest()))
+            let value = try await rpc.state(request)
+            guard self.rpc === rpc, generation == stateRequestGeneration, selectedProjectID == request.projectID else { return }
+            acceptState(value)
         } catch {
+            guard self.rpc === rpc, generation == stateRequestGeneration, selectedProjectID == request.projectID else { return }
             if DieterRPCFailure.isTransient(error) {
                 connectionStopped(error, client: rpc)
             } else {
@@ -795,7 +801,7 @@ extension DieterStore {
             }
             notificationStatuses[card.id] = card.runtime
         }
-        state = next
+        if state != next { state = next }
         if !next.project.id.isEmpty {
             navigationBoards[next.project.id] = next.boards
             navigationCards[next.project.id] = next.cards

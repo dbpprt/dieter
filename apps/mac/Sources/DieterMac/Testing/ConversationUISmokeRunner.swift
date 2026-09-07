@@ -212,11 +212,11 @@ enum ConversationUISmokeRunner {
             ? "passed"
             : "failed: original prompt was not available for retry"
 
-        // The smoke window has a fixed size and deterministic fixture. Use a
-        // real in-process native click on the visible log action, then require
-        // the SwiftUI sheet to materialize before capturing it.
-        click(window: window, x: 1_223, distanceFromTop: 436)
-        try? await DieterTaskSleep.milliseconds(700)
+        // Resolve the live control instead of assuming screen-sized coordinates.
+        _ = NativeUIAccessibility.click("conversation.failure.view-log", in: window)
+        _ = await NativeUIAccessibility.wait {
+            NSApp.windows.contains { $0.isSheet && $0.isVisible && $0.contentLayoutRect.width >= 620 }
+        }
         if let sheet = NSApp.windows.first(where: {
             $0.isSheet && $0.isVisible && $0.contentLayoutRect.width >= 620
         }) {

@@ -8,18 +8,32 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DieterStore {
+    func resetFileSurface() {
+        fileScopeGeneration &+= 1
+        fileListingGeneration &+= 1
+        fileReadGeneration &+= 1
+        fileNavigationLoading = false
+        filePath = ""; files = []; fileDocument = nil; fileNavigation.reset()
+    }
+
     @discardableResult
     func loadFiles(path: String? = nil) async -> Bool {
         guard let rpc, !selectedProjectID.isEmpty else { return false }
         let destination = path ?? filePath
         var request = Dieter_V1_ListFilesRequest(); request.projectID = selectedProjectID; request.path = destination; request.showHidden = showHiddenFiles
         request.cardID = fileScopeCardID ?? ""
+        fileListingGeneration &+= 1
+        let generation = fileListingGeneration
         do {
             let listing = try await rpc.listFiles(request)
+            guard self.rpc === rpc, fileListingGeneration == generation,
+                  selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID else { return false }
             files = listing.entries
             filePath = listing.path
             return true
         } catch {
+            guard self.rpc === rpc, fileListingGeneration == generation,
+                  selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID else { return false }
             show(error)
             return false
         }
@@ -28,34 +42,49 @@ extension DieterStore {
     func navigateFiles(to destination: String) async {
         guard destination != filePath, !fileNavigationLoading else { return }
         fileNavigationLoading = true
-        defer { fileNavigationLoading = false }
+        let scope = fileScopeGeneration
+        defer { if scope == fileScopeGeneration { fileNavigationLoading = false } }
         let previousNavigation = fileNavigation
         fileNavigation.recordNavigation(from: filePath, to: destination)
-        if !(await loadFiles(path: destination)) { fileNavigation = previousNavigation }
+        if !(await loadFiles(path: destination)), scope == fileScopeGeneration { fileNavigation = previousNavigation }
     }
 
     func navigateFilesBack() async {
         guard !fileNavigationLoading else { return }
         fileNavigationLoading = true
-        defer { fileNavigationLoading = false }
+        let scope = fileScopeGeneration
+        defer { if scope == fileScopeGeneration { fileNavigationLoading = false } }
         let previousNavigation = fileNavigation
         guard let destination = fileNavigation.goBack(from: filePath) else { return }
-        if !(await loadFiles(path: destination)) { fileNavigation = previousNavigation }
+        if !(await loadFiles(path: destination)), scope == fileScopeGeneration { fileNavigation = previousNavigation }
     }
 
     func navigateFilesForward() async {
         guard !fileNavigationLoading else { return }
         fileNavigationLoading = true
-        defer { fileNavigationLoading = false }
+        let scope = fileScopeGeneration
+        defer { if scope == fileScopeGeneration { fileNavigationLoading = false } }
         let previousNavigation = fileNavigation
         guard let destination = fileNavigation.goForward(from: filePath) else { return }
-        if !(await loadFiles(path: destination)) { fileNavigation = previousNavigation }
+        if !(await loadFiles(path: destination)), scope == fileScopeGeneration { fileNavigation = previousNavigation }
     }
 
     func openFile(path: String) async {
         guard let rpc else { return }
         var request = Dieter_V1_ReadFileRequest(); request.projectID = selectedProjectID; request.path = path; request.cardID = fileScopeCardID ?? ""
-        do { fileDocument = try await rpc.readFile(request) } catch { show(error) }
+        fileReadGeneration &+= 1
+        let generation = fileReadGeneration
+        fileDocument = nil
+        do {
+            let document = try await rpc.readFile(request)
+            guard self.rpc === rpc, generation == fileReadGeneration, selectedProjectID == request.projectID,
+                  (fileScopeCardID ?? "") == request.cardID else { return }
+            fileDocument = document
+        } catch {
+            guard self.rpc === rpc, generation == fileReadGeneration, selectedProjectID == request.projectID,
+                  (fileScopeCardID ?? "") == request.cardID else { return }
+            show(error)
+        }
     }
 
     @discardableResult
@@ -63,12 +92,18 @@ extension DieterStore {
         guard let rpc, let doc = fileDocument else { return nil }
         var request = Dieter_V1_SaveFileRequest(); request.projectID = selectedProjectID; request.path = doc.path; request.cardID = fileScopeCardID ?? ""
         request.content = content; request.revision = doc.revision
+        let generation = fileReadGeneration
         do {
             var saved = try await rpc.saveFile(request)
+            guard self.rpc === rpc, generation == fileReadGeneration,
+                  selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID,
+                  fileDocument?.path == doc.path else { return nil }
             if saved.mimeType.isEmpty { saved.mimeType = doc.mimeType }
             fileDocument = saved
             return saved
         } catch {
+            guard self.rpc === rpc, generation == fileReadGeneration,
+                  selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID else { return nil }
             show(error)
             return nil
         }
