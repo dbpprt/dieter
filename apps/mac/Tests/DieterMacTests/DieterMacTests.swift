@@ -1400,6 +1400,14 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(KanbanLaneSizing.contentWidth(availableWidth: 680, laneCount: 4) == 1_111)
 }
 
+@Test func quickTaskOptimisticTitleUsesTheFirstStoryLineAndBoundsIt() {
+    #expect(QuickTaskDraft.optimisticTitle(from: "Add keyboard navigation\nKeep focus visible") == "Add keyboard navigation")
+    let long = "Make every Kanban lane fully accessible to keyboard users while preserving card ordering and focus"
+    let title = QuickTaskDraft.optimisticTitle(from: long)
+    #expect(title.count <= 80)
+    #expect(!title.hasSuffix(" "))
+}
+
 @Test func boardCardsDefaultToNewestFirstAndCanSortOldestFirst() {
     func card(_ id: String, _ createdAt: String) -> Dieter_V1_Card {
         var card = Dieter_V1_Card()

@@ -121,7 +121,19 @@ type Label struct {
 	Instructions string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 }
 
+// TokenUsage is provider-reported usage for this conversation, excluding fork seed messages.
+// Partial means some messages or token categories were not fully reported.
+type TokenUsage struct {
+	InputTokens      int64 `json:"inputTokens"`
+	OutputTokens     int64 `json:"outputTokens"`
+	TotalTokens      int64 `json:"totalTokens"`
+	ReportedMessages int64 `json:"reportedMessages"`
+	MissingMessages  int64 `json:"missingMessages"`
+	Partial          bool  `json:"partial"`
+}
+
 type Card struct {
+	TokenUsage          *TokenUsage         `json:"tokenUsage,omitempty" yaml:"-"`
 	ID                  string              `json:"id" yaml:"id"`
 	Scope               string              `json:"scope" yaml:"scope,omitempty"`
 	ProjectID           string              `json:"projectId" yaml:"project_id"`

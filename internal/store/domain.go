@@ -769,6 +769,7 @@ func (s *Store) listCards(includeArchived bool) ([]model.Card, error) {
 		// comment body on every sync mutation as histories grow.
 		comments, _ := listMarkdown(filepath.Join(s.commentDir(), item.ID))
 		item.CommentCount = len(comments)
+		item.TokenUsage = s.cardTokenUsage(item.ID)
 		result = append(result, item)
 	}
 	return result, nil

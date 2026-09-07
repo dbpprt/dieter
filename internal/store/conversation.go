@@ -237,9 +237,24 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 }
 
 func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID string, data any) (model.ConversationEvent, model.Conversation, error) {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return model.ConversationEvent{}, model.Conversation{}, err
+	}
 	writeKind := "store_changed"
 	if eventType == "ui-chunk" || eventType == "capability" {
 		writeKind = "conversation_changed"
+		if eventType == "ui-chunk" {
+			var chunk struct {
+				Type string `json:"type"`
+			}
+			_ = json.Unmarshal(raw, &chunk)
+			// Usage updates change the Kanban directory projection; text deltas
+			// continue using the inexpensive conversation-only sync route.
+			if chunk.Type == "message-metadata" || chunk.Type == "finish" {
+				writeKind = "store_changed"
+			}
+		}
 	}
 	release, err := s.beginWriteKind(writeKind)
 	if err != nil {
@@ -251,10 +266,6 @@ func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID st
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}
 	conversation, err := s.loadConversation(card.ID)
-	if err != nil {
-		return model.ConversationEvent{}, model.Conversation{}, err
-	}
-	raw, err := json.Marshal(data)
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}

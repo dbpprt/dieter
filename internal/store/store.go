@@ -25,6 +25,9 @@ var (
 type Store struct {
 	Root string
 
+	usageMu    sync.Mutex
+	usageCache map[string]cardUsageCacheEntry
+
 	scheduleDBMu        sync.Mutex
 	scheduleDB          *sql.DB
 	globalStateMu       sync.Mutex

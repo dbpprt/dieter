@@ -495,7 +495,7 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInp
 		Project: request.GetProjectId(), Board: request.GetBoardId(), Lane: request.GetLane(),
 		Title: request.GetTitle(), Prompt: request.GetPrompt(), Provider: request.GetProvider(),
 		Model: request.GetModel(), Effort: request.GetEffort(), ProviderOptions: cloneProtoStringMap(request.GetProviderOptions()),
-		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), Attachments: attachments,
+		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), AutoGenerateTitle: request.GetAutoGenerateTitle(), Attachments: attachments,
 		WorkspaceMode: workspaceMode, WorkspaceBranch: request.GetWorkspaceBranch(),
 		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(),
 	}, nil

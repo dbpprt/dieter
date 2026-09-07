@@ -443,6 +443,15 @@ message Lane {
   string name = 2;
 }
 
+message TokenUsage {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  int64 total_tokens = 3;
+  int64 reported_messages = 4;
+  int64 missing_messages = 5;
+  bool partial = 6;
+}
+
 message Card {
   string id = 1;
   string scope = 2;
@@ -476,6 +485,10 @@ message Card {
   string workspace_base_branch = 30;
   WorkspaceSummary workspace = 31;
   PullRequestSummary pull_request = 32;
+  // Fields used by deployed private builds must never be reused.
+  reserved 33, 34;
+  reserved "workspace_base_remote", "remote_publish_mode";
+  TokenUsage token_usage = 35;
 }
 
 message CardOrigin {
@@ -889,6 +902,9 @@ message CreateConversationRequest {
   string workspace_mode = 15;
   string workspace_branch = 16;
   string workspace_base_branch = 17;
+  // Generate a 4–6 word persisted title from prompt with Dieter's fast title model.
+  // Clients may still send a local placeholder in title for optimistic UI.
+  bool auto_generate_title = 18;
 }
 
 message ListChatsRequest {

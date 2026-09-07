@@ -523,6 +523,7 @@ struct EditCardSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     let card: Dieter_V1_Card
+    let availableHeight: CGFloat
     @State private var title: String
     @State private var task: String
     @State private var workspaceDraft: ConversationWorkspaceDraft
@@ -531,8 +532,9 @@ struct EditCardSheet: View {
 
     private enum Field { case title, task }
 
-    init(card: Dieter_V1_Card) {
+    init(card: Dieter_V1_Card, availableHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800) {
         self.card = card
+        self.availableHeight = availableHeight
         _title = State(initialValue: card.title)
         _task = State(initialValue: card.initialPrompt)
         _workspaceDraft = State(initialValue: .init(
@@ -540,6 +542,12 @@ struct EditCardSheet: View {
             branch: card.workspaceBranch,
             baseBranch: card.workspaceBaseBranch
         ))
+    }
+
+    private var hasChanges: Bool {
+        title != card.title || task != card.initialPrompt || workspaceDraft != ConversationWorkspaceDraft(
+            mode: ConversationWorkspaceMode.selectable(card.workspaceMode),
+            branch: card.workspaceBranch, baseBranch: card.workspaceBaseBranch)
     }
 
     private var canSave: Bool {
@@ -567,61 +575,64 @@ struct EditCardSheet: View {
             }
             .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 17)
 
-            VStack(alignment: .leading, spacing: 16) {
-                Text("You can change this draft until its initial task is sent to the agent.")
-                    .font(.caption).foregroundStyle(DieterTheme.tertiary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("You can change this draft until its initial task is sent to the agent.")
+                        .font(.caption).foregroundStyle(DieterTheme.tertiary)
 
-                Text("Card title")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
-                TextField("What should this agent accomplish?", text: $title)
-                    .textFieldStyle(.plain).font(.system(size: 15, weight: .medium))
-                    .focused($focusedField, equals: .title)
-                    .padding(.horizontal, 14).frame(height: 46)
-                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-                        focusedField == .title ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
-                        lineWidth: focusedField == .title ? 2 : 1
-                    ))
-                    .accessibilityIdentifier("edit-card.title")
+                    Text("Card title")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+                    TextField("What should this agent accomplish?", text: $title)
+                        .textFieldStyle(.plain).font(.system(size: 15, weight: .medium))
+                        .focused($focusedField, equals: .title)
+                        .padding(.horizontal, 14).frame(height: 46)
+                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(
+                            focusedField == .title ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
+                            lineWidth: focusedField == .title ? 2 : 1
+                        ))
+                        .accessibilityIdentifier("edit-card.title")
 
-                Text("Agent task")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
-                TextEditor(text: $task)
-                    .font(.system(size: 14)).lineSpacing(3)
-                    .scrollContentBackground(.hidden)
-                    .focused($focusedField, equals: .task)
-                    .padding(10)
-                    .frame(minHeight: 190)
-                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-                        focusedField == .task ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
-                        lineWidth: focusedField == .task ? 2 : 1
-                    ))
-                    .accessibilityIdentifier("edit-card.task")
+                    Text("Agent task")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+                    TextEditor(text: $task)
+                        .font(.system(size: 14)).lineSpacing(3)
+                        .scrollContentBackground(.hidden)
+                        .focused($focusedField, equals: .task)
+                        .padding(10)
+                        .frame(height: 190)
+                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(
+                            focusedField == .task ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
+                            lineWidth: focusedField == .task ? 2 : 1
+                        ))
+                        .accessibilityIdentifier("edit-card.task")
 
-                Divider().overlay(DieterTheme.border)
-                Text("Agent workspace")
-                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
-                if card.workspace.revision.isEmpty {
-                    Picker("Workspace", selection: $workspaceDraft.mode) {
-                        ForEach(ConversationWorkspaceMode.allCases) { mode in Text(mode.title).tag(mode) }
-                    }
-                    .pickerStyle(.menu)
-                    if workspaceDraft.mode == .worktree {
-                        HStack {
-                            TextField("Optional branch", text: $workspaceDraft.branch)
-                            TextField("Optional base branch", text: $workspaceDraft.baseBranch)
+                    Divider().overlay(DieterTheme.border)
+                    Text("Agent workspace")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+                    if card.workspace.revision.isEmpty {
+                        Picker("Workspace", selection: $workspaceDraft.mode) {
+                            ForEach(ConversationWorkspaceMode.allCases) { mode in Text(mode.title).tag(mode) }
                         }
+                        .pickerStyle(.menu)
+                        if workspaceDraft.mode == .worktree {
+                            HStack {
+                                TextField("Optional branch", text: $workspaceDraft.branch)
+                                TextField("Optional base branch", text: $workspaceDraft.baseBranch)
+                            }
+                        }
+                        Text(workspaceDraft.mode.detail).font(.caption).foregroundStyle(DieterTheme.tertiary)
+                    } else {
+                        Text("\(ConversationWorkspaceMode.projectMode(card.workspace.mode).title) · \(card.workspace.branch)")
+                        Text("The workspace is already provisioned, so its checkout and branch are locked.").font(.caption).foregroundStyle(DieterTheme.tertiary)
                     }
-                    Text(workspaceDraft.mode.detail).font(.caption).foregroundStyle(DieterTheme.tertiary)
-                } else {
-                    Text("\(ConversationWorkspaceMode.projectMode(card.workspace.mode).title) · \(card.workspace.branch)")
-                    Text("The workspace is already provisioned, so its checkout and branch are locked.").font(.caption).foregroundStyle(DieterTheme.tertiary)
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 20)
             }
-            .padding(.horizontal, 24)
+            .frame(maxHeight: .infinity)
 
-            Spacer(minLength: 20)
             Divider().overlay(DieterTheme.border)
             HStack(spacing: 10) {
                 Spacer()
@@ -642,9 +653,10 @@ struct EditCardSheet: View {
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
-        .frame(width: 620, height: 700)
+        .frame(width: 620, height: min(700, max(360, availableHeight - 80)))
         .background(DieterTheme.background)
-        .interactiveDismissDisabled(saving)
+        .background(SheetOutsideClickDismissal(enabled: !saving && !hasChanges) { dismiss() })
+        .interactiveDismissDisabled(saving || hasChanges)
         .task {
             await Task.yield()
             focusedField = .title

@@ -206,7 +206,7 @@ extension DieterStore {
                 return
             }
 			if let attemptedTarget {
-				machineConnectionErrors[attemptedTarget.id] = error.localizedDescription
+				machineConnectionErrors[attemptedTarget.id] = Self.connectionFailureDescription(error)
 			}
 			if preservingLiveConnection, phase.isConnected, rpc != nil {
 				if let connectionError = error as? DieterStoreConnectionError,
@@ -245,12 +245,19 @@ extension DieterStore {
                 phase = .connecting
                 scheduleReconnect(to: requested)
             } else {
-                phase = .failed(error.localizedDescription)
+                phase = .failed(Self.connectionFailureDescription(error))
                 // The connection overlay already presents startup failures in
                 // context. Do not duplicate expected offline state as a modal.
                 errorMessage = nil
             }
         }
+    }
+
+    private static func connectionFailureDescription(_ error: Error) -> String {
+        if let rpcError = error as? RPCError {
+            return "gRPC \(rpcError.code): \(rpcError.message)"
+        }
+        return error.localizedDescription
     }
 
 	private func loadInitialConnectionState(from rpc: DieterRPC) async throws -> InitialConnectionState {
@@ -492,7 +499,7 @@ extension DieterStore {
         guard !Task.isCancelled else { return }
         guard rpc === client else { return }
         guard hasLoadedWorkspace else {
-            phase = .failed(error.localizedDescription)
+            phase = .failed(Self.connectionFailureDescription(error))
             return
         }
         // A lost daemon is connectivity state, not an application error. Keep

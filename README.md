@@ -284,6 +284,15 @@ dieter project open ~/Development/my-project
 dieter daemon start
 ```
 
+Create a story-only quick task with the same daemon-side GPT Spark 4–6 word
+title generation used by the native Kanban popover:
+
+```sh
+dieter card create --project PROJECT --board BOARD --lane todo \
+  --auto-title --prompt "Add keyboard navigation to the board" \
+  --workspace worktree
+```
+
 To reach it through your gateway, enroll the machine once:
 
 ```sh
@@ -341,6 +350,32 @@ by DSH's standard ACP session options and returns only those models to clients.
 See the [DSH integration proposal and operational notes](docs/deepseek-dsh-harness.md).
 
 ## Development
+
+For local iteration, detect changes and run only the affected components:
+
+```sh
+just check-changed --dry-run
+just check-changed
+just check-changed --base origin/main
+```
+
+This requires Python 3 and includes staged, unstaged, deleted, renamed, and
+untracked files. By default it compares with `HEAD`; `--base REF` includes branch
+changes since the merge base with that ref. Documentation-only edits skip tests.
+Go changes run race tests and vet for affected packages and their reverse
+dependencies (including test imports and embedded files). Native changes run
+the affected client's complete unit test suite because each client is one
+application module. App code, resources, or build configuration also select
+that client's integration suite: macOS packaged smoke tests or Android connected
+tests. Unit-test-only edits do not select device tests. Shared protobuf and
+native fixture changes select both clients. Harness and website changes select
+their own checks.
+
+Checks stop on the first failure. Mac smoke tests require no Dieter app to be
+running; Android connected tests require a healthy configured emulator and use
+the existing instrumentation configuration, including its opt-in gateway tests.
+The command never stops an app or daemon, starts an emulator, or changes gateway
+credentials. `--dry-run` shows the exact commands without executing them.
 
 Install the pinned JavaScript harness runtime and run the full Go checks:
 
@@ -408,3 +443,13 @@ Dieter is available under the [MIT License](LICENSE). Brand assets and usage
 guidance live in [`assets/brand`](assets/brand/README.md).
 
 <p align="center"><sub>Made with &hearts; in Berlin.</sub></p>
+
+Kanban cards display cumulative provider-reported token usage, with input/output
+counts (hover on macOS). `dieter card show CARD` includes `card.tokenUsage`, and
+`dieter card context CARD` includes `tokenUsage`; JSON card lists carry it too.
+The aggregate counts each assistant message once, preferring cumulative
+`totalUsage` over the last request's `usage`. Last-request-only data, missing
+messages, and missing input/output categories are marked partial. Missing usage
+is not presented as zero. Existing transcripts are included; copied fork history
+and separate subagent counters are excluded to avoid attributing inherited or
+potentially overlapping usage. These are reported tokens, not cost estimates.

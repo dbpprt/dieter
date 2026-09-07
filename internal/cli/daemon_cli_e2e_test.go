@@ -124,6 +124,14 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil || card.ID == "" {
 		t.Fatalf("created card JSON=%q err=%v", cardJSON, err)
 	}
+	quickJSON := runDaemonCLI(t, client, output, "card", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--lane", "todo", "--auto-title", "--prompt", "Add keyboard navigation", "--workspace", "project", "--provider", "mock", "--model", "mock")
+	var quick struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(quickJSON), &quick); err != nil || quick.ID == "" || quick.Title != "Add Keyboard Board Navigation" {
+		t.Fatalf("quick task JSON=%q parsed=%#v err=%v", quickJSON, quick, err)
+	}
 	runDaemonCLI(t, client, output, "card", "comment", "--message", "CLI annotation", card.ID)
 	runDaemonCLI(t, client, output, "workspace", "show", card.ID)
 	changesJSON := runDaemonCLI(t, client, output, "workspace", "changes", "--project", created.Project.ID)
@@ -632,5 +640,43 @@ func assertMachineOperationAccepted(t *testing.T, raw []byte) {
 	var response dieterv1.MachineOperationResponse
 	if err := protojson.Unmarshal(raw, &response); err != nil || !response.GetAccepted() {
 		t.Fatalf("machine operation response=%q accepted=%v err=%v", raw, response.GetAccepted(), err)
+	}
+}
+
+func TestDaemonCLICardTokenUsage(t *testing.T) {
+	client, output, data := daemonCLIForTest(t)
+	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "usage"), Name: "Usage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: "review"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Usage", Prompt: "Count"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{`{"type":"start","messageId":"answer"}`, `{"type":"finish","messageMetadata":{"totalUsage":{"inputTokens":100,"outputTokens":25,"totalTokens":125}}}`} {
+		if _, _, err := data.AppendUIChunk(card.ID, "turn", json.RawMessage(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw := runDaemonCLI(t, client, output, "card", "show", card.ID)
+	var detail dieterv1.CardDetail
+	if err := protojson.Unmarshal([]byte(raw), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.GetCard().GetTokenUsage().GetTotalTokens() != 125 {
+		t.Fatalf("show: %s", raw)
+	}
+	raw = runDaemonCLI(t, client, output, "card", "context", card.ID)
+	var context struct {
+		Usage struct {
+			Total int64 `json:"totalTokens"`
+		} `json:"tokenUsage"`
+	}
+	if err := json.Unmarshal([]byte(raw), &context); err != nil || context.Usage.Total != 125 {
+		t.Fatalf("context: %s %v", raw, err)
 	}
 }

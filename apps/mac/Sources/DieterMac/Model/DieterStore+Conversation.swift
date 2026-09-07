@@ -631,7 +631,8 @@ extension DieterStore {
         projectID: String? = nil,
         lane: String? = nil,
         labelIDs: [String] = [],
-        workspace: ConversationWorkspaceDraft = ConversationWorkspaceDraft()
+        workspace: ConversationWorkspaceDraft = ConversationWorkspaceDraft(),
+        autoGenerateTitle: Bool = false
     ) async {
         let destinationProjectID = projectID ?? selectedProjectID
         var request = Dieter_V1_CreateConversationRequest()
@@ -641,6 +642,7 @@ extension DieterStore {
         request.providerOptions = providerOptions
         request.attachments = attachments
         request.labelIds = labelIDs
+        request.autoGenerateTitle = autoGenerateTitle
         workspace.apply(to: &request)
         request.clientID = syncClientID
         request.commandID = UUID().uuidString.lowercased()

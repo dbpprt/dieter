@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.DragHandle
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.ViewKanban
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -53,6 +55,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -81,6 +84,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.pointer.pointerInput
@@ -93,6 +97,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.dbpprt.dieter.connection.ProjectHost
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.toColorInt
@@ -806,6 +812,7 @@ internal fun plural(count: Int, word: String): String = if (count == 1) word els
 @Composable
 internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
     var switcherOpen by remember { mutableStateOf(false) }
+    var quickTaskOpen by remember(state.selectedBoardId) { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember(state.selectedBoardId) { mutableStateOf("") }
     var selectedLabelId by remember(state.selectedBoardId) { mutableStateOf("") }
@@ -853,12 +860,12 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             }
         }
         FloatingActionButton(
-            onClick = { model.openSurface(AppSurface.NEW_CARD) },
+            onClick = { quickTaskOpen = !quickTaskOpen },
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).testTag("new-card"),
             containerColor = DieterPane,
             contentColor = DieterAbyss,
             shape = RoundedCornerShape(24.dp),
-        ) { Icon(Icons.Default.Add, contentDescription = "New card") }
+        ) { Icon(Icons.Default.Add, contentDescription = "Quick task") }
         labelDragState.label?.let { label ->
             if (labelDragState.pointerInRoot.isSpecified) {
                 Surface(
@@ -893,6 +900,108 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             model = model,
             onDismiss = { switcherOpen = false },
         )
+    }
+    if (quickTaskOpen) {
+        QuickTaskPopover(
+            state = state,
+            defaults = resolveConversationCreationPreferences(model.conversationCreationPreferences, state.harnesses),
+            onDismiss = { quickTaskOpen = false },
+            onOpenFull = {
+                quickTaskOpen = false
+                model.openSurface(AppSurface.NEW_CARD)
+            },
+            onCreate = { story ->
+                quickTaskOpen = false
+                model.createQuickTask(story)
+            },
+        )
+    }
+}
+
+@Composable
+internal fun QuickTaskPopover(
+    state: DieterUiState,
+    defaults: ResolvedConversationCreationPreferences,
+    onDismiss: () -> Unit,
+    onOpenFull: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var story by remember(state.selectedBoardId) { mutableStateOf("") }
+    val cleanStory = story.trim()
+    val harness = state.harnesses.firstOrNull { it.id == defaults.provider }
+    val selectedModel = harness?.modelsList?.firstOrNull { it.id == defaults.model }
+    val lane = state.board?.lanesList?.firstOrNull()
+    val width = (LocalConfiguration.current.screenWidthDp.dp - 32.dp).coerceAtMost(380.dp)
+    val summary = buildString {
+        append(lane?.name ?: "Todo")
+        append(" · ").append(defaults.workspaceMode.title)
+        if (harness != null && selectedModel != null) {
+            append(" · ").append(harness.name).append(" / ").append(selectedModel.name)
+        } else {
+            append(" · Agent defaults")
+        }
+    }
+
+    Popup(
+        alignment = Alignment.BottomEnd,
+        offset = IntOffset(-20, -88),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Surface(
+            modifier = Modifier.width(width).testTag("quick-task-popover"),
+            shape = RoundedCornerShape(20.dp),
+            color = DieterSurfaceHigh,
+            border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
+            shadowElevation = 14.dp,
+        ) {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(13.dp),
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = DieterShellTint,
+                    ) {
+                        Icon(
+                            Icons.Outlined.Bolt,
+                            contentDescription = null,
+                            tint = DieterShell,
+                            modifier = Modifier.padding(8.dp).size(18.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Quick task", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Text("Enter the story. GPT Spark writes a 4–6 word title.", color = DieterMuted, fontSize = 11.sp)
+                    }
+                }
+                OutlinedTextField(
+                    value = story,
+                    onValueChange = { story = it },
+                    label = { Text("Task story") },
+                    placeholder = { Text("What should the agent accomplish?") },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth().testTag("quick-task-story"),
+                )
+                Text(summary, color = DieterMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onOpenFull) { Text("More options") }
+                    Spacer(Modifier.weight(1f))
+                    Button(
+                        onClick = { onCreate(cleanStory) },
+                        enabled = cleanStory.isNotEmpty() && !state.working && state.project != null && state.board != null,
+                        modifier = Modifier.testTag("quick-task-create"),
+                    ) {
+                        Icon(Icons.Outlined.Bolt, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add task")
+                    }
+                }
+            }
+        }
     }
 }
 

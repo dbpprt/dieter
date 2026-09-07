@@ -137,10 +137,11 @@ func messageParts(parts []model.UIMessagePart) []*dieterv1.MessagePart {
 
 func (c *CLI) rpcCardCreate(args []string, chat bool) error {
 	group := "card"
-	usage := `Usage: dieter card create --project PROJECT --board BOARD --title TITLE --workspace project|worktree [options]
+	usage := `Usage: dieter card create --project PROJECT --board BOARD (--title TITLE | --auto-title) --workspace project|worktree [options]
 
 Options:
   --lane todo|running       Todo creates a draft; Running starts immediately
+  --auto-title              Generate the title from the task brief with GPT Spark
   --prompt TEXT             Initial task brief
   --prompt-file FILE        Read the task brief from FILE or -
   --attach FILE             Attach a file; repeat up to four times
@@ -162,6 +163,7 @@ Options:
 	projectRef := set.String("project", "", "project ID or name")
 	boardRef := set.String("board", "", "board ID or name")
 	title := set.String("title", "", "conversation title")
+	autoTitle := set.Bool("auto-title", false, "generate title from task brief with GPT Spark")
 	lane := set.String("lane", "todo", "todo or running")
 	prompt := set.String("prompt", "", "initial task brief")
 	promptFile := set.String("prompt-file", "", "initial task brief file")
@@ -181,8 +183,11 @@ Options:
 	if help || err != nil {
 		return err
 	}
-	if set.NArg() != 0 || strings.TrimSpace(*projectRef) == "" || strings.TrimSpace(*title) == "" || strings.TrimSpace(*workspaceMode) == "" {
-		return errors.New("--project, --title, and --workspace are required")
+	if set.NArg() != 0 || strings.TrimSpace(*projectRef) == "" || strings.TrimSpace(*workspaceMode) == "" {
+		return errors.New("--project and --workspace are required")
+	}
+	if strings.TrimSpace(*title) == "" && !*autoTitle {
+		return errors.New("--title is required unless --auto-title is set")
 	}
 	if !chat && strings.TrimSpace(*boardRef) == "" {
 		return errors.New("--board is required")
@@ -190,6 +195,9 @@ Options:
 	promptValue, err := textValue(*prompt, *promptFile, c.In)
 	if err != nil {
 		return err
+	}
+	if *autoTitle && strings.TrimSpace(promptValue) == "" {
+		return errors.New("--prompt or --prompt-file is required with --auto-title")
 	}
 	attachments, err := attachmentParts(attachmentFiles)
 	if err != nil {
@@ -218,7 +226,7 @@ Options:
 		Provider: *provider, Model: *modelName, Effort: *effort, ProviderOptions: providerOptions,
 		LabelIds: splitCSV(*labels), DeferStart: !chat && *lane != "running", Attachments: messageParts(attachments),
 		ClientId: "dieter-cli", CommandId: commandID, WorkspaceMode: *workspaceMode,
-		WorkspaceBranch: *branch, WorkspaceBaseBranch: *baseBranch,
+		WorkspaceBranch: *branch, WorkspaceBaseBranch: *baseBranch, AutoGenerateTitle: *autoTitle,
 	}
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {
@@ -359,7 +367,7 @@ func (c *CLI) rpcCardShow(args []string, compact bool) error {
 	if compact {
 		action = "context"
 	}
-	usage := fmt.Sprintf("Usage: dieter card %s CARD\n", action)
+	usage := fmt.Sprintf("Usage: dieter card %s CARD\n\nIncludes cumulative provider-reported tokenUsage (input/output/total and partial coverage).\n", action)
 	if wantsHelp(args) {
 		fmt.Fprint(c.Out, usage)
 		return nil
@@ -374,11 +382,18 @@ func (c *CLI) rpcCardShow(args []string, compact bool) error {
 		return err
 	}
 	if compact {
+		var tokenUsage any
+		if u := detail.GetCard().GetTokenUsage(); u != nil {
+			tokenUsage = map[string]any{"inputTokens": u.InputTokens, "outputTokens": u.OutputTokens,
+				"totalTokens": u.TotalTokens, "reportedMessages": u.ReportedMessages,
+				"missingMessages": u.MissingMessages, "partial": u.Partial}
+		}
 		return jsonOut(c.Out, map[string]any{
 			"cardId": detail.GetCard().GetId(), "project": detail.GetProject().GetName(),
 			"projectPrompt": detail.GetProject().GetPrompt(), "board": detail.GetBoard().GetName(),
 			"workflow": detail.GetBoard().GetWorkflow(), "lane": detail.GetCard().GetLane(),
 			"task": detail.GetCard().GetInitialPrompt(), "comments": detail.GetComments(),
+			"tokenUsage": tokenUsage,
 		})
 	}
 	return protoJSONOut(c.Out, detail)
@@ -799,7 +814,7 @@ func (c *CLI) rpcCardArchive(args []string, archived bool) error {
 	if !archived {
 		action = "unarchive"
 	}
-	usage := fmt.Sprintf("Usage: dieter card %s CARD\n", action)
+	usage := fmt.Sprintf("Usage: dieter card %s CARD\n\nIncludes cumulative provider-reported tokenUsage (input/output/total and partial coverage).\n", action)
 	if wantsHelp(args) {
 		fmt.Fprint(c.Out, usage)
 		return nil

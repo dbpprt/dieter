@@ -22,7 +22,11 @@ type fakeRunner struct{ requests []harness.Request }
 
 func (f *fakeRunner) Run(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
 	f.requests = append(f.requests, request)
-	for _, chunk := range []string{`{"type":"start","messageId":"assistant"}`, `{"type":"text-start","id":"text"}`, `{"type":"text-delta","id":"text","delta":"done"}`, `{"type":"text-end","id":"text"}`, `{"type":"finish","finishReason":"stop"}`} {
+	response := "done"
+	if request.ConfiguredModel == "gpt-5.3-codex-spark" {
+		response = "Add Keyboard Board Navigation"
+	}
+	for _, chunk := range []string{`{"type":"start","messageId":"assistant"}`, `{"type":"text-start","id":"text"}`, `{"type":"text-delta","id":"text","delta":"` + response + `"}`, `{"type":"text-end","id":"text"}`, `{"type":"finish","finishReason":"stop"}`} {
 		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
 			return err
 		}

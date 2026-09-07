@@ -1340,6 +1340,7 @@ class DieterViewModel(
         workspaceMode: String = ConversationWorkspaceMode.WORKTREE.wire,
         workspaceBranch: String = "",
         workspaceBaseBranch: String = "",
+        autoGenerateTitle: Boolean = false,
     ) = action(ensureProjectRoute = false) {
         val current = _state.value
         check(current.project != null) { "Select a project before creating a conversation." }
@@ -1357,6 +1358,7 @@ class DieterViewModel(
             .setWorkspaceMode(selectedWorkspaceMode.wire)
             .setWorkspaceBranch(workspaceBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
             .setWorkspaceBaseBranch(workspaceBaseBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
+            .setAutoGenerateTitle(autoGenerateTitle)
             .addAllLabelIds(if (chat) emptyList() else labelIds)
             .setDeferStart(deferStart)
             .addAllAttachments(attachments)
@@ -1374,6 +1376,30 @@ class DieterViewModel(
         if (shouldOpenCreatedConversation(chat, lane)) {
             openCard(card, if (chat) Destination.CHATS else Destination.BOARD)
         }
+    }
+
+    fun createQuickTask(story: String) {
+        val cleanStory = story.trim()
+        if (cleanStory.isEmpty()) return
+        val current = _state.value
+        val defaults = resolveConversationCreationPreferences(conversationCreationPreferences, current.harnesses)
+        val harness = current.harnesses.firstOrNull { it.id == defaults.provider }
+        val lane = current.board?.lanesList?.firstOrNull()?.id.orEmpty().ifBlank { "todo" }
+        createConversation(
+            title = optimisticQuickTaskTitle(cleanStory),
+            prompt = cleanStory,
+            chat = false,
+            provider = defaults.provider,
+            model = defaults.model,
+            effort = defaults.effort,
+            providerOptions = providerOptionValues(harness),
+            lane = lane,
+            labelIds = emptyList(),
+            deferStart = !lane.equals("running", ignoreCase = true),
+            workspaceMode = defaults.workspaceMode.wire,
+            workspaceBaseBranch = current.project?.baseBranch.orEmpty(),
+            autoGenerateTitle = true,
+        )
     }
 
     fun sendMessage(

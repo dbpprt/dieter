@@ -109,6 +109,12 @@ dieter board create --project <project-id> --name Delivery --workflow review
 dieter card create --project <project-id> --board <board-id> \
   --lane todo --title "Implement recovery" --prompt-file task.md \
   --workspace worktree --format id
+
+# Story-only quick task: GPT Spark generates a 4–6 word persisted title while
+# the normal card defaults remain unchanged.
+dieter card create --project <project-id> --board <board-id> \
+  --lane todo --auto-title --prompt "Add keyboard navigation" \
+  --workspace worktree --format id
 ```
 
 `card start` admits a draft's first turn. `card send` admits a human follow-up.
@@ -286,3 +292,12 @@ delete data without explicit authorization.
 - Never stop or replace an operator's live daemon for testing. Use isolated
   temporary daemon/gateway instances on random loopback ports.
 - Never edit `DIETER_HOME` manually during normal operation.
+
+## Task token usage
+
+`dieter card show CARD` returns `card.tokenUsage`; `dieter card context CARD`
+returns `tokenUsage`. JSON card/chat listings include the same summary without
+fetching transcripts. Fields are `inputTokens`, `outputTokens`, `totalTokens`,
+`reportedMessages`, `missingMessages`, and `partial`. Treat partial counts as
+incomplete provider data. Copied fork history and separate subagent counters
+are excluded; the summary is not a billing estimate.

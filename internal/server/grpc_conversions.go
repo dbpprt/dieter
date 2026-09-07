@@ -100,6 +100,11 @@ func protoCard(value model.Card) *dieterv1.Card {
 		LabelIds: append([]string(nil), value.LabelIDs...), CommentCount: int32(value.CommentCount),
 		WorkspaceMode: value.WorkspaceMode, WorkspaceBranch: value.WorkspaceBranch, WorkspaceBaseBranch: value.WorkspaceBaseBranch,
 	}
+	if value.TokenUsage != nil {
+		u := value.TokenUsage
+		result.TokenUsage = &dieterv1.TokenUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+			TotalTokens: u.TotalTokens, ReportedMessages: u.ReportedMessages, MissingMessages: u.MissingMessages, Partial: u.Partial}
+	}
 	if value.Workspace != nil {
 		result.Workspace = protoWorkspaceSummary(*value.Workspace)
 	}

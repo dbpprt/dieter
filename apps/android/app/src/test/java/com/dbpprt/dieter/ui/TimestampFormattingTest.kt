@@ -1,5 +1,8 @@
 package com.dbpprt.dieter.ui
 
+import java.time.Month
+import java.time.format.TextStyle
+import java.util.Locale
 import java.time.Instant
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
@@ -20,7 +23,8 @@ class TimestampFormattingTest {
 
     @Test
     fun formatsOlderCommentsAsShortDate() {
-        assertEquals("Aug 13", shortTimestamp("2026-08-13T12:00:00Z", now, utc))
+        val month = Month.AUGUST.getDisplayName(TextStyle.SHORT, Locale.getDefault(Locale.Category.FORMAT))
+        assertEquals("$month 13", shortTimestamp("2026-08-13T12:00:00Z", now, utc))
     }
 
     @Test

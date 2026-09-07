@@ -275,6 +275,7 @@ struct BoardView: View {
 
 struct BoardHeader: View {
     @Environment(DieterStore.self) private var store
+    @State private var quickTaskPresented = false
 
     private var needsAttention: Int {
         store.boardCards.filter { ["waiting_for_user", "review"].contains($0.runtime) }.count
@@ -387,10 +388,12 @@ struct BoardHeader: View {
                 .help("Manage board labels")
 
                 Button { store.createConversationPresented = true } label: {
-                    Label("New card", systemImage: "plus")
+                    Label("New card", systemImage: "rectangle.badge.plus")
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterSecondaryButtonStyle())
                 .accessibilityIdentifier("board.new-card")
+
+                quickTaskButton(compact: false)
                 }
 
                 HStack(spacing: 7) {
@@ -442,15 +445,168 @@ struct BoardHeader: View {
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
 
-                    Button { store.createConversationPresented = true } label: {
-                        Label("New", systemImage: "plus")
+                    Menu {
+                        Button("New card…") { store.createConversationPresented = true }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .frame(width: 28, height: 28)
                     }
-                    .buttonStyle(DieterPrimaryButtonStyle())
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .help("New card")
                     .accessibilityIdentifier("board.new-card")
+
+                    quickTaskButton(compact: true)
                 }
             }
         }
+    }
+
+    private func quickTaskButton(compact: Bool) -> some View {
+        Button { quickTaskPresented = true } label: {
+            Label(compact ? "Quick" : "Quick task", systemImage: "sparkles")
+        }
+        .buttonStyle(DieterPrimaryButtonStyle())
+        .help("Create a task from its story")
+        .accessibilityIdentifier("board.quick-task")
+        .popover(isPresented: $quickTaskPresented, arrowEdge: .top) {
+            QuickTaskPopover(isPresented: $quickTaskPresented)
+                .environment(store)
+        }
+    }
+}
+
+struct QuickTaskDraft {
+    static func optimisticTitle(from story: String) -> String {
+        let firstLine = story
+            .split(whereSeparator: { $0.isNewline })
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard firstLine.count > 80 else { return firstLine }
+        let end = firstLine.index(firstLine.startIndex, offsetBy: 80)
+        let prefix = String(firstLine[..<end])
+        guard let boundary = prefix.lastIndex(of: " "), prefix.distance(from: prefix.startIndex, to: boundary) >= 40 else {
+            return prefix
+        }
+        return String(prefix[..<boundary])
+    }
+}
+
+private struct QuickTaskPopover: View {
+    @Environment(DieterStore.self) private var store
+    @Binding var isPresented: Bool
+    @State private var story = ""
+    @State private var submitting = false
+    @FocusState private var storyFocused: Bool
+
+    private var cleanStory: String { story.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var lane: Dieter_V1_Lane? { store.selectedBoard?.lanes.first }
+    private var selection: ConversationCreationSelection? {
+        ConversationCreationPreferences
+            .load(from: DieterAppearance.applicationDefaults())
+            .resolved(in: store.harnessCatalog.harnesses)
+    }
+    private var preferences: ConversationCreationPreferences {
+        ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
+    }
+    private var defaultsSummary: String {
+        let laneName = lane?.name ?? "Todo"
+        let workspace = preferences.workspaceMode.title
+        guard let selection,
+              let harness = store.harnessCatalog.harnesses.first(where: { $0.id == selection.provider }),
+              let model = harness.models.first(where: { $0.id == selection.model }) else {
+            return "\(laneName) · \(workspace) · Agent defaults"
+        }
+        return "\(laneName) · \(workspace) · \(harness.name) / \(model.name)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DieterTheme.shell)
+                    .frame(width: 30, height: 30)
+                    .background(DieterTheme.shellDeep.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Quick task").font(.system(size: 15, weight: .semibold))
+                    Text("Enter the story. GPT Spark writes a 4–6 word title.")
+                        .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
+                }
+                Spacer()
+            }
+
+            TextField("What should the agent accomplish?", text: $story, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13)).lineSpacing(2).lineLimit(3...7)
+                .focused($storyFocused)
+                .padding(.horizontal, 12).padding(.vertical, 11)
+                .frame(minHeight: 92, alignment: .topLeading)
+                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(storyFocused ? DieterTheme.shellDeep : DieterTheme.strongBorder, lineWidth: storyFocused ? 1.5 : 1))
+                .accessibilityIdentifier("quick-task.story")
+
+            HStack(spacing: 7) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(defaultsSummary).lineLimit(1)
+            }
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(DieterTheme.tertiary)
+
+            HStack(spacing: 9) {
+                Button("Cancel") { isPresented = false }
+                    .buttonStyle(DieterSecondaryButtonStyle())
+                Spacer()
+                Button {
+                    Task { await submit() }
+                } label: {
+                    HStack(spacing: 7) {
+                        if submitting { ProgressView().controlSize(.mini) }
+                        else { Image(systemName: "sparkles") }
+                        Text("Add task")
+                    }
+                }
+                .buttonStyle(DieterPrimaryButtonStyle())
+                .disabled(cleanStory.isEmpty || submitting || store.selectedProject == nil || store.selectedBoard == nil)
+                .keyboardShortcut(.return, modifiers: [.command])
+                .accessibilityIdentifier("quick-task.create")
+            }
+        }
+        .padding(17)
+        .frame(width: 390)
+        .background(DieterTheme.background)
+        .task {
+            await Task.yield()
+            storyFocused = true
+        }
+        .onExitCommand { isPresented = false }
+    }
+
+    private func submit() async {
+        let story = cleanStory
+        guard !story.isEmpty else { return }
+        submitting = true
+        let resolved = selection
+        let harness = resolved.flatMap { value in store.harnessCatalog.harnesses.first { $0.id == value.provider } }
+        var workspace = ConversationWorkspaceDraft()
+        workspace.mode = preferences.workspaceMode
+        workspace.baseBranch = store.selectedProject?.baseBranch ?? ""
+        await store.createConversation(
+            title: QuickTaskDraft.optimisticTitle(from: story),
+            prompt: story,
+            chat: false,
+            provider: resolved?.provider ?? "",
+            model: resolved?.model ?? "",
+            effort: resolved?.effort ?? "",
+            providerOptions: harness.map { ProviderOptionValues.defaults(for: $0) } ?? [:],
+            deferred: lane?.id.lowercased() != "running",
+            lane: lane?.id ?? "todo",
+            workspace: workspace,
+            autoGenerateTitle: true
+        )
+        submitting = false
+        isPresented = false
     }
 }
 
@@ -712,6 +868,35 @@ private struct BoardCardDragPreview: View {
     }
 }
 
+/// Delay the single-click action until the double-click recognizer has failed.
+/// Opening the conversation on the first mouse-up can otherwise remove the
+/// card before the second click has a chance to open its editor.
+private struct BoardCardClickStyle: PrimitiveButtonStyle {
+    let edit: () -> Void
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .gesture(
+                TapGesture(count: 2)
+                    .exclusively(before: TapGesture(count: 1))
+                    .onEnded { action in
+                        switch action {
+                        case .first: edit()
+                        case .second: configuration.trigger()
+                        }
+                    }
+            )
+            .focusable()
+            .onKeyPress(keys: [.return, .space]) { _ in
+                configuration.trigger()
+                return .handled
+            }
+            .accessibilityAction { configuration.trigger() }
+            .accessibilityAction(named: "Edit card", edit)
+    }
+}
+
 struct BoardCardView: View {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
@@ -731,6 +916,7 @@ struct BoardCardView: View {
                     Spacer(minLength: 4)
                     Circle().fill(runtimeColor(card.runtime)).frame(width: 6, height: 6).padding(.top, 5)
                 }
+                if card.hasTokenUsage { TaskTokenUsageBadge(usage: card.tokenUsage) }
                 if !card.summary.isEmpty { Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle).lineLimit(3).multilineTextAlignment(.leading) }
                 if !labels.isEmpty {
                     FlowLabels(labels: labels)
@@ -813,7 +999,7 @@ struct BoardCardView: View {
             } isTargeted: { labelDropTargeted = $0 }
             .animation(.easeOut(duration: 0.14), value: labelDropTargeted)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(BoardCardClickStyle(edit: openEditor))
         .onHover { hovering = $0 }
         .contextMenu {
             if store.isFailedOutboxItem(card.id) {
@@ -843,11 +1029,21 @@ struct BoardCardView: View {
             Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
         }
         .accessibilityIdentifier("card.\(card.id)")
+        .accessibilityHint("Click to open chat. Double-click to edit.")
         .sheet(isPresented: $renamePresented) {
             VStack(alignment: .leading, spacing: 14) { Text("Rename card").font(.title2.weight(.bold)); TextField("Title", text: $renameText); HStack { Spacer(); Button("Cancel") { renamePresented = false }; Button("Rename") { Task { await store.rename(card, title: renameText); renamePresented = false } }.buttonStyle(.borderedProminent).disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty) } }.padding(22).frame(width: 440)
         }
         .sheet(isPresented: $editPresented) {
             EditCardSheet(card: card).environment(store)
+        }
+    }
+
+    private func openEditor() {
+        if BoardCardEditingPolicy.canEditDraft(card) {
+            editPresented = true
+        } else {
+            renameText = card.title
+            renamePresented = true
         }
     }
 }

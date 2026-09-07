@@ -537,6 +537,18 @@ internal fun WorkCard(
                         if (hasWorkspaceBadge) WorkspaceCardBadge(card, Modifier.widthIn(max = 176.dp))
                     }
                 }
+                if (card.hasTokenUsage() && (card.tokenUsage.reportedMessages > 0 || card.tokenUsage.missingMessages > 0 || card.tokenUsage.partial)) {
+                    Text(
+                        taskTokenUsageLabel(card.tokenUsage),
+                        color = DieterMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.semantics { contentDescription = taskTokenUsageDetail(card.tokenUsage) },
+                    )
+                    if (card.tokenUsage.reportedMessages > 0) {
+                        Text("${card.tokenUsage.inputTokens} input · ${card.tokenUsage.outputTokens} output",
+                            color = DieterMuted, fontSize = 10.sp)
+                    }
+                }
                 if (!operationError.isNullOrBlank()) {
                     Text(operationError, color = MaterialTheme.colorScheme.error, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }

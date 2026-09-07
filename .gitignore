@@ -12,6 +12,9 @@
 .env.*
 !.env.example
 
+# Python bytecode
+__pycache__/
+
 # JavaScript dependencies and caches
 /internal/harness/runtime/node_modules/
 /internal/harness/runtime/.npm/

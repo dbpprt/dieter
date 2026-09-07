@@ -865,7 +865,7 @@ struct MessageView: View {
             HStack {
                 Spacer(minLength: 70)
                 VStack(alignment: .leading, spacing: 7) {
-                    ForEach(Array(message.parts.enumerated()), id: \.offset) { _, part in
+                    ForEach(Array(ConversationMessagePartGroup.coalescingText(message.parts).enumerated()), id: \.offset) { _, part in
                         MessagePartView(messageID: message.id, part: part, inUserBubble: true)
                     }
                 }
@@ -966,7 +966,7 @@ private struct QueuedMessageView: View {
                         .accessibilityIdentifier("conversation.queued-message.interrupt.\(message.id)")
                     }
                 }
-                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                ForEach(Array(ConversationMessagePartGroup.coalescingText(parts).enumerated()), id: \.offset) { _, part in
                     MessagePartView(messageID: message.id, part: part, inUserBubble: true)
                 }
             }
@@ -1046,8 +1046,7 @@ struct ConversationMessagePartGroup {
 
     static func group(_ parts: [Dieter_V1_MessagePart], showReasoning: Bool = true) -> [ConversationMessagePartGroup] {
         var groups: [ConversationMessagePartGroup] = []
-        for part in parts {
-            if isHidden(part, showReasoning: showReasoning) { continue }
+        for part in coalescingText(parts.filter { !isHidden($0, showReasoning: showReasoning) }) {
             let isToolCall = isToolCall(part)
             if isToolCall, groups.last?.isToolCallGroup == true {
                 groups[groups.count - 1].parts.append(part)
@@ -1056,6 +1055,20 @@ struct ConversationMessagePartGroup {
             }
         }
         return groups
+    }
+
+    // Providers can split a response into several text parts. Keep adjacent
+    // prose on one selection surface, while retaining tool/attachment order.
+    static func coalescingText(_ parts: [Dieter_V1_MessagePart]) -> [Dieter_V1_MessagePart] {
+        var result: [Dieter_V1_MessagePart] = []
+        for part in parts {
+            if part.type.lowercased() == "text", result.last?.type.lowercased() == "text" {
+                result[result.count - 1].text += "\n\n" + part.text
+            } else {
+                result.append(part)
+            }
+        }
+        return result
     }
 
     static func isToolCall(_ part: Dieter_V1_MessagePart) -> Bool {

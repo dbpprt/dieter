@@ -41,3 +41,11 @@ internal fun resolveConversationCreationPreferences(
         workspaceMode = ConversationWorkspaceMode.resolve(saved.workspaceMode),
     )
 }
+
+internal fun optimisticQuickTaskTitle(story: String): String {
+    val firstLine = story.lineSequence().firstOrNull().orEmpty().trim()
+    if (firstLine.length <= 80) return firstLine
+    val prefix = firstLine.take(80)
+    val boundary = prefix.lastIndexOf(' ')
+    return if (boundary >= 40) prefix.take(boundary) else prefix
+}
