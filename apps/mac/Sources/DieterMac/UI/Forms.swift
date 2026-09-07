@@ -651,16 +651,26 @@ struct EditCardSheet: View {
                             ForEach(ConversationWorkspaceMode.allCases) { mode in Text(mode.title).tag(mode) }
                         }
                         .pickerStyle(.menu)
+                        .foregroundStyle(DieterTheme.text)
                         if workspaceDraft.mode == .worktree {
                             HStack {
                                 TextField("Optional branch", text: $workspaceDraft.branch)
                                 TextField("Optional base branch", text: $workspaceDraft.baseBranch)
                             }
+                            .textFieldStyle(.plain)
+                            .padding(8)
+                            .foregroundStyle(DieterTheme.text)
+                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
                         }
                         TextField("Base remote", text: $workspaceDraft.baseRemote)
+                            .textFieldStyle(.plain)
+                            .padding(8)
+                            .foregroundStyle(DieterTheme.text)
+                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
                         Picker("Publishing", selection: $workspaceDraft.remotePublishMode) {
                             ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
                         }
+                        .foregroundStyle(DieterTheme.text)
                         Text(workspaceDraft.mode.detail).font(.caption).foregroundStyle(DieterTheme.tertiary)
                     } else {
                         Text("\(ConversationWorkspaceMode.projectMode(card.workspace.mode).title) · \(card.workspace.branch)")
@@ -710,7 +720,7 @@ struct EditCardSheet: View {
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             initialPrompt: task.trimmingCharacters(in: .whitespacesAndNewlines)
         )
-        let workspaceUpdated = updated ? (card.workspace.revision.isEmpty ? await store.updateConversationWorkspace(workspaceDraft) : true) : false
+        let workspaceUpdated = updated ? (card.workspace.revision.isEmpty ? await store.updateConversationWorkspace(workspaceDraft, cardID: card.id) : true) : false
         saving = false
         if updated && workspaceUpdated { dismiss() }
     }

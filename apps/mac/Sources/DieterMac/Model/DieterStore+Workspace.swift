@@ -135,8 +135,8 @@ extension DieterStore {
         }
     }
 
-    func updateConversationWorkspace(_ draft: ConversationWorkspaceDraft) async -> Bool {
-        guard let rpc, let cardID = selectedCardID ?? selectedChatID else { return false }
+    func updateConversationWorkspace(_ draft: ConversationWorkspaceDraft, cardID explicitCardID: String? = nil) async -> Bool {
+        guard let rpc, let cardID = explicitCardID ?? selectedCardID ?? selectedChatID else { return false }
         var request = Dieter_V1_UpdateConversationWorkspaceRequest()
         request.cardID = cardID; request.mode = draft.mode.rawValue
         request.branch = draft.mode == .worktree ? draft.branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
