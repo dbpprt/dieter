@@ -944,6 +944,41 @@ func TestRuntimeLeaseAllowsParallelProjectTurnsButSerializesCards(t *testing.T) 
 	}
 }
 
+func TestProjectCheckoutRuntimeLeaseIgnoresWorktreeConversations(t *testing.T) {
+	s, project, _ := setup(t, model.WorkflowReview)
+	worktreeCard, err := s.CreateChat(CreateCardInput{
+		Project: project.ID, Title: "Isolated", WorkspaceMode: model.WorkspaceModeWorktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectCard, err := s.CreateChat(CreateCardInput{
+		Project: project.ID, Title: "Shared", WorkspaceMode: model.WorkspaceModeProject,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktreeLease, err := s.AcquireRuntimeLease(project.ID, worktreeCard.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.ReleaseRuntimeLease(worktreeLease) }()
+	if active, err := s.ProjectCheckoutHasRuntimeLease(project.ID, ""); err != nil || active {
+		t.Fatalf("worktree turn blocked the registered checkout: active=%v err=%v", active, err)
+	}
+	projectLease, err := s.AcquireRuntimeLease(project.ID, projectCard.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.ReleaseRuntimeLease(projectLease) }()
+	if active, err := s.ProjectCheckoutHasRuntimeLease(project.ID, ""); err != nil || !active {
+		t.Fatalf("project-directory turn did not block the registered checkout: active=%v err=%v", active, err)
+	}
+	if active, err := s.ProjectCheckoutHasRuntimeLease(project.ID, projectCard.ID); err != nil || active {
+		t.Fatalf("excepted project-directory turn still blocked itself: active=%v err=%v", active, err)
+	}
+}
+
 func TestForkChatCopiesPrefixWithoutSharingSession(t *testing.T) {
 	s, project, _ := setup(t, model.WorkflowReview)
 	source, err := s.CreateChat(CreateCardInput{Project: project.ID, Title: "Source", Provider: "codex", Model: "gpt-5.6-sol", Effort: "high"})

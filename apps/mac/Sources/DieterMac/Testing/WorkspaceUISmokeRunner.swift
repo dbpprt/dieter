@@ -3,13 +3,15 @@ import AppKit
 import DieterAPI
 import Foundation
 
-/// An in-process end-to-end driver for the card-scoped review surface.
+/// An in-process end-to-end driver for card-scoped worktree review and the
+/// project-scoped local Changes surface.
 ///
 /// Against the isolated gateway fixture it creates a board card with a
 /// worktree workspace, seeds real commits and uncommitted changes through Git,
 /// then exercises the redesigned Changes tab: file list, inline and split
-/// diffs, the commit list, the merge sheet, the full merge flow (commit →
-/// merge → cleanup → card to Done → toast), and the conflict experience.
+/// diffs, the merge sheet, the full merge flow (commit → merge → cleanup
+/// → card to Done → toast), and the conflict experience. It also drives
+/// project-checkout staging, staged-only commit, and safe discard semantics.
 @MainActor
 enum WorkspaceUISmokeRunner {
     static let selectTabNotification = Notification.Name("dieter.smoke.select-tab")
@@ -61,6 +63,8 @@ enum WorkspaceUISmokeRunner {
         await runMergePhase(store: store, window: window, board: board, project: project, results: &results, output: output)
         // Phase B — the blocked path: conflicting histories → conflict UX.
         await runConflictPhase(store: store, window: window, board: board, results: &results, output: output)
+        // Phase C — shared project checkout: inspect → stage → commit → discard.
+        await runProjectChangesPhase(store: store, window: window, project: project, results: &results, output: output)
 
         writeReport(results, to: output)
         progress("runner finished", in: output)
@@ -94,10 +98,10 @@ enum WorkspaceUISmokeRunner {
         try? await DieterTaskSleep.seconds(1)
 
         let changes = store.conversationChangeset
-        results["changeset"] = "\(changes?.files.count ?? 0) files · \(changes?.commits.count ?? 0) commits · dirty=\(store.conversationWorkspace?.dirty == true)"
-        results["changeset-check"] = (changes?.files.count ?? 0) >= 4 && (changes?.commits.count ?? 0) == 2 && store.conversationWorkspace?.dirty == true
+        results["changeset"] = "\(changes?.files.count ?? 0) local files · dirty=\(store.conversationWorkspace?.dirty == true)"
+        results["changeset-check"] = (changes?.files.count ?? 0) >= 2 && (changes?.commits.isEmpty == true) && store.conversationWorkspace?.dirty == true
             ? "passed"
-            : "failed: expected ≥4 files, 2 commits, dirty tree"
+            : "failed: expected local-only files, no commit history, and a dirty tree"
 
         NotificationCenter.default.post(name: selectTabNotification, object: "Changes")
         try? await DieterTaskSleep.seconds(1)
@@ -111,12 +115,6 @@ enum WorkspaceUISmokeRunner {
         try? await DieterTaskSleep.milliseconds(800)
         capture(window, to: output.appending(path: "02-changes-split.png"))
         UserDefaults.standard.set("Inline", forKey: "DieterDiffViewMode")
-
-        if let commit = changes?.commits.first {
-            await store.loadConversationDiff(path: "", commitSHA: commit.sha)
-            try? await DieterTaskSleep.milliseconds(600)
-            capture(window, to: output.appending(path: "03-commit-diff.png"))
-        }
 
         NotificationCenter.default.post(name: openMergeSheetNotification, object: nil)
         let mergeSheet = await waitForSheet(of: window)
@@ -146,6 +144,101 @@ enum WorkspaceUISmokeRunner {
         try? await DieterTaskSleep.seconds(1)
         let lane = store.state.cards.first { $0.id == card.id }?.lane ?? ""
         results["card-lane"] = lane == "done" ? "passed" : "failed: lane is \(lane)"
+    }
+
+    // MARK: Phase C
+
+    private static func runProjectChangesPhase(
+        store: DieterStore,
+        window: NSWindow,
+        project: Dieter_V1_Project,
+        results: inout [String: String],
+        output: URL
+    ) async {
+        guard let rpc = store.rpc else {
+            results["project-changes"] = "failed: RPC unavailable"
+            return
+        }
+        try? "# Isolated E2E\n\nProject checkout local edit.\n".write(toFile: project.path + "/README.md", atomically: true, encoding: .utf8)
+        try? "temporary project note\n".write(toFile: project.path + "/project-scratch.txt", atomically: true, encoding: .utf8)
+        await store.openProjectChanges(project.id)
+        try? await DieterTaskSleep.seconds(1)
+        capture(window, to: output.appending(path: "08-project-changes.png"))
+
+        do {
+            var changes = try await rpc.changeset(projectID: project.id)
+            guard changes.projectID == project.id, changes.cardID.isEmpty,
+                  changes.files.contains(where: { $0.path == "README.md" && $0.unstaged }),
+                  changes.files.contains(where: { $0.path == "project-scratch.txt" && $0.unstaged }) else {
+                results["project-changes"] = "failed: project-scoped files missing"
+                return
+            }
+            var request = Dieter_V1_StartGitOperationRequest()
+            request.projectID = project.id
+            request.kind = "stage"
+            request.expectedRevision = changes.revision
+            request.parameters = ["path": "README.md"]
+            var operation = try await rpc.startGitOperation(request)
+            operation = try await waitForProjectOperation(rpc: rpc, id: operation.id)
+            guard operation.status == "succeeded" else { throw WorkspaceSmokeFailure.operation(operation) }
+
+            changes = try await rpc.changeset(projectID: project.id)
+            guard changes.files.contains(where: { $0.path == "README.md" && $0.staged }) else {
+                results["project-stage"] = "failed: README was not staged"
+                return
+            }
+            request = Dieter_V1_StartGitOperationRequest()
+            request.projectID = project.id
+            request.kind = "commit"
+            request.expectedRevision = changes.revision
+            request.parameters = ["subject": "project checkout smoke", "validate": "false"]
+            operation = try await rpc.startGitOperation(request)
+            operation = try await waitForProjectOperation(rpc: rpc, id: operation.id)
+            guard operation.status == "succeeded" else { throw WorkspaceSmokeFailure.operation(operation) }
+
+            changes = try await rpc.changeset(projectID: project.id)
+            guard changes.files.count == 1, changes.files.first?.path == "project-scratch.txt" else {
+                results["project-commit"] = "failed: commit did not preserve only the unstaged file"
+                return
+            }
+            request = Dieter_V1_StartGitOperationRequest()
+            request.projectID = project.id
+            request.kind = "discard_changes"
+            request.expectedRevision = changes.revision
+            request.parameters = ["path": "project-scratch.txt"]
+            operation = try await rpc.startGitOperation(request)
+            operation = try await waitForProjectOperation(rpc: rpc, id: operation.id)
+            guard operation.status == "succeeded" else { throw WorkspaceSmokeFailure.operation(operation) }
+
+            changes = try await rpc.changeset(projectID: project.id)
+            results["project-changes"] = changes.files.isEmpty ? "passed" : "failed: checkout still has \(changes.files.count) local files"
+            results["project-branch"] = changes.branch
+            // The mutations above deliberately use the public RPC directly.
+            // Recreate the Changes surface so the screenshot proves the app
+            // itself reloads and renders the clean checkout returned by the
+            // server, rather than capturing its pre-mutation state.
+            store.projectFilesMode = "browse"
+            try? await DieterTaskSleep.milliseconds(300)
+            store.projectFilesMode = "changes"
+            try? await DieterTaskSleep.seconds(1)
+            capture(window, to: output.appending(path: "09-project-changes-clean.png"))
+        } catch {
+            results["project-changes"] = "failed: \(error)"
+        }
+    }
+
+    private static func waitForProjectOperation(rpc: DieterRPC, id: String) async throws -> Dieter_V1_GitOperation {
+        for _ in 0..<120 {
+            let operation = try await rpc.gitOperation(id: id)
+            if !GitOperationStatus.active(operation.status) { return operation }
+            try? await DieterTaskSleep.milliseconds(250)
+        }
+        throw WorkspaceSmokeFailure.timeout
+    }
+
+    private enum WorkspaceSmokeFailure: Error {
+        case operation(Dieter_V1_GitOperation)
+        case timeout
     }
 
     // MARK: Phase B

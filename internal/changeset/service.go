@@ -20,6 +20,13 @@ import (
 const maxDiffPageBytes = 1 << 20
 
 var ErrStaleRevision = errors.New("workspace changed; refresh the changeset")
+var ErrProjectChangesRequireProject = errors.New("project-directory changes are project-scoped; request them with project_id")
+
+const (
+	DiffSectionCombined = "combined"
+	DiffSectionStaged   = "staged"
+	DiffSectionUnstaged = "unstaged"
+)
 
 type Service struct {
 	Workspaces *workspace.Manager
@@ -31,60 +38,70 @@ func New(workspaces *workspace.Manager) *Service {
 }
 
 func (s *Service) Get(ctx context.Context, cardID string) (model.Changeset, error) {
-	value, err := s.Workspaces.Refresh(ctx, cardID, false)
+	return s.GetTarget(ctx, cardID, "")
+}
+
+func (s *Service) GetProject(ctx context.Context, projectID string) (model.Changeset, error) {
+	return s.GetTarget(ctx, "", projectID)
+}
+
+func (s *Service) GetTarget(ctx context.Context, cardID, projectID string) (model.Changeset, error) {
+	value, err := s.resolveTarget(ctx, cardID, projectID)
 	if err != nil {
 		return model.Changeset{}, err
 	}
-	comparison, mergeBase := value.BaseSHA, value.BaseSHA
-	currentBase := value.CurrentBaseSHA
-	if currentBase == "" {
-		currentBase = value.BaseSHA
-	}
-	if value.Branch != "" && value.BaseBranch != "" && value.Branch != value.BaseBranch && currentBase != "" && value.HeadSHA != "" {
-		if result, mergeErr := s.Git.Run(ctx, value.Path, "merge-base", currentBase, value.HeadSHA); mergeErr == nil {
-			mergeBase = strings.TrimSpace(string(result.Output))
-			comparison = mergeBase
-		}
-	}
-	if comparison == "" {
-		comparison = "HEAD"
-	}
-	files, additions, deletions, err := s.changedFiles(ctx, value, comparison)
+	files, additions, deletions, err := s.changedFiles(ctx, value)
 	if err != nil {
 		return model.Changeset{}, err
 	}
-	commits, err := s.commits(ctx, value, comparison)
-	if err != nil {
-		return model.Changeset{}, err
+	if value.CardID != "" {
+		value.ChangedFiles, value.Additions, value.Deletions = len(files), additions, deletions
+		_, _ = s.Workspaces.Store.UpdateWorkspaceChangesetStats(value.CardID, len(files), additions, deletions)
 	}
-	value.ChangedFiles, value.Additions, value.Deletions = len(files), additions, deletions
-	_, _ = s.Workspaces.Store.UpdateWorkspaceChangesetStats(value.CardID, len(files), additions, deletions)
 	return model.Changeset{
-		CardID: value.CardID, Revision: value.Revision, BaseBranch: value.BaseBranch,
-		BaseSHA: value.BaseSHA, CurrentBaseSHA: currentBase, MergeBaseSHA: mergeBase,
+		CardID: value.CardID, ProjectID: value.ProjectID, Revision: value.Revision, Branch: value.Branch,
+		BaseBranch: value.BaseBranch, BaseSHA: value.BaseSHA, CurrentBaseSHA: value.CurrentBaseSHA, MergeBaseSHA: value.HeadSHA,
 		HeadSHA: value.HeadSHA, Ahead: value.Ahead, Behind: value.Behind,
-		Additions: additions, Deletions: deletions, Dirty: value.Dirty,
-		Files: files, Commits: commits, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Additions: additions, Deletions: deletions, Dirty: value.Dirty, Conflicted: value.State == model.WorkspaceStateConflicted,
+		CurrentOperationID: value.CurrentOperationID, Files: files, CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}, nil
 }
 
-func (s *Service) changedFiles(ctx context.Context, value model.Workspace, comparison string) ([]model.ChangedFile, int, int, error) {
+func (s *Service) resolveTarget(ctx context.Context, cardID, projectID string) (model.Workspace, error) {
+	cardID, projectID = strings.TrimSpace(cardID), strings.TrimSpace(projectID)
+	if (cardID == "") == (projectID == "") {
+		return model.Workspace{}, errors.New("exactly one of card_id or project_id is required")
+	}
+	if projectID != "" {
+		return s.Workspaces.ProjectCheckout(ctx, projectID, false)
+	}
+	value, err := s.Workspaces.Ensure(ctx, cardID)
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	if value.Mode != model.WorkspaceModeWorktree {
+		return model.Workspace{}, ErrProjectChangesRequireProject
+	}
+	return s.Workspaces.Refresh(ctx, cardID, false)
+}
+
+func (s *Service) changedFiles(ctx context.Context, value model.Workspace) ([]model.ChangedFile, int, int, error) {
+	staged, err := s.diffSection(ctx, value.Path, true, value.HeadSHA != "")
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	unstaged, err := s.diffSection(ctx, value.Path, false, value.HeadSHA != "")
+	if err != nil {
+		return nil, 0, 0, err
+	}
 	byPath := map[string]*model.ChangedFile{}
-	status, err := s.Git.Run(ctx, value.Path, "diff", "--name-status", "-z", "--find-renames", comparison, "--")
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	parseNameStatus(status.Output, byPath)
-	numstat, err := s.Git.Run(ctx, value.Path, "diff", "--numstat", "-z", "--find-renames", comparison, "--")
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	parseNumstat(numstat.Output, byPath)
+	mergeSection(byPath, staged, true)
+	mergeSection(byPath, unstaged, false)
 	porcelain, err := s.Git.Run(ctx, value.Path, "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	parsePorcelain(value.Path, porcelain.Output, byPath)
+	parsePorcelainSections(value.Path, porcelain.Output, byPath)
 	result := make([]model.ChangedFile, 0, len(byPath))
 	additions, deletions := 0, 0
 	for _, file := range byPath {
@@ -93,12 +110,72 @@ func (s *Service) changedFiles(ctx context.Context, value model.Workspace, compa
 				file.HunkCount = strings.Count(string(diff.Output), "@@@")
 			}
 		}
+		file.Additions = file.StagedAdditions + file.UnstagedAdditions
+		file.Deletions = file.StagedDeletions + file.UnstagedDeletions
+		if file.WorktreeStatus != "" {
+			file.Status = file.WorktreeStatus
+		} else if file.IndexStatus != "" {
+			file.Status = file.IndexStatus
+		}
+		if file.Conflicted {
+			file.Status = "conflicted"
+		}
 		additions += file.Additions
 		deletions += file.Deletions
 		result = append(result, *file)
 	}
 	sort.SliceStable(result, func(i, j int) bool { return result[i].Path < result[j].Path })
 	return result, additions, deletions, nil
+}
+
+func (s *Service) diffSection(ctx context.Context, directory string, cached, hasHead bool) (map[string]*model.ChangedFile, error) {
+	files := map[string]*model.ChangedFile{}
+	base := []string{"diff"}
+	if cached {
+		base = append(base, "--cached")
+	}
+	statusArgs := append(append([]string{}, base...), "--name-status", "-z", "--find-renames")
+	if cached && hasHead {
+		statusArgs = append(statusArgs, "HEAD")
+	}
+	statusArgs = append(statusArgs, "--")
+	status, err := s.Git.Run(ctx, directory, statusArgs...)
+	if err != nil {
+		return nil, err
+	}
+	parseNameStatus(status.Output, files)
+	numstatArgs := append(append([]string{}, base...), "--numstat", "-z", "--find-renames")
+	if cached && hasHead {
+		numstatArgs = append(numstatArgs, "HEAD")
+	}
+	numstatArgs = append(numstatArgs, "--")
+	numstat, err := s.Git.Run(ctx, directory, numstatArgs...)
+	if err != nil {
+		return nil, err
+	}
+	parseNumstat(numstat.Output, files)
+	return files, nil
+}
+
+func mergeSection(target, section map[string]*model.ChangedFile, staged bool) {
+	for path, source := range section {
+		file := target[path]
+		if file == nil {
+			file = &model.ChangedFile{Path: path}
+			target[path] = file
+		}
+		if file.PreviousPath == "" {
+			file.PreviousPath = source.PreviousPath
+		}
+		file.Binary = file.Binary || source.Binary
+		if staged {
+			file.Staged, file.IndexStatus = true, source.Status
+			file.StagedAdditions, file.StagedDeletions = source.Additions, source.Deletions
+		} else {
+			file.Unstaged, file.WorktreeStatus = true, source.Status
+			file.UnstagedAdditions, file.UnstagedDeletions = source.Additions, source.Deletions
+		}
+	}
 }
 
 func parseNameStatus(raw []byte, files map[string]*model.ChangedFile) {
@@ -148,7 +225,7 @@ func parseNumstat(raw []byte, files map[string]*model.ChangedFile) {
 	}
 }
 
-func parsePorcelain(root string, raw []byte, files map[string]*model.ChangedFile) {
+func parsePorcelainSections(root string, raw []byte, files map[string]*model.ChangedFile) {
 	fields := zeroFields(raw)
 	for index := 0; index < len(fields); index++ {
 		entry := fields[index]
@@ -161,14 +238,27 @@ func parsePorcelain(root string, raw []byte, files map[string]*model.ChangedFile
 		}
 		file := files[filePath]
 		if file == nil {
-			file = &model.ChangedFile{Path: filePath, Status: statusName(xy)}
+			file = &model.ChangedFile{Path: filePath}
 			files[filePath] = file
 		}
 		file.Conflicted = strings.ContainsRune(xy, 'U') || xy == "AA" || xy == "DD"
 		if xy == "??" {
-			file.Status = "untracked"
+			file.Status, file.WorktreeStatus, file.Unstaged = "untracked", "untracked", true
 			if raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(filePath))); err == nil {
-				file.Additions = countLines(raw)
+				file.UnstagedAdditions = countLines(raw)
+			}
+			continue
+		}
+		if xy[0] != ' ' && xy[0] != '?' {
+			file.Staged = true
+			if file.IndexStatus == "" {
+				file.IndexStatus = statusName(string(xy[0]))
+			}
+		}
+		if xy[1] != ' ' && xy[1] != '?' {
+			file.Unstaged = true
+			if file.WorktreeStatus == "" {
+				file.WorktreeStatus = statusName(string(xy[1]))
 			}
 		}
 	}
@@ -275,6 +365,10 @@ func cleanPath(value string) (string, error) {
 }
 
 func (s *Service) FileDiff(ctx context.Context, cardID, expectedRevision, filePath, commitSHA string, offset, limit int) (model.FileDiff, error) {
+	return s.FileDiffTarget(ctx, cardID, "", expectedRevision, filePath, commitSHA, DiffSectionCombined, offset, limit)
+}
+
+func (s *Service) FileDiffTarget(ctx context.Context, cardID, projectID, expectedRevision, filePath, commitSHA, section string, offset, limit int) (model.FileDiff, error) {
 	// An empty path with a commit produces the whole-commit patch; working-tree
 	// diffs still require a concrete file.
 	if commitSHA == "" || filePath != "" {
@@ -284,22 +378,33 @@ func (s *Service) FileDiff(ctx context.Context, cardID, expectedRevision, filePa
 		}
 		filePath = cleaned
 	}
-	changes, err := s.Get(ctx, cardID)
+	changes, err := s.GetTarget(ctx, cardID, projectID)
 	if err != nil {
 		return model.FileDiff{}, err
 	}
 	if expectedRevision == "" || changes.Revision != expectedRevision {
 		return model.FileDiff{}, ErrStaleRevision
 	}
-	workspaceValue, err := s.Workspaces.Store.Workspace(cardID)
+	workspaceValue, err := s.resolveTarget(ctx, cardID, projectID)
 	if err != nil {
 		return model.FileDiff{}, err
 	}
-	args := []string{"diff", "--no-ext-diff", "--no-color", "--find-renames"}
+	section = strings.ToLower(strings.TrimSpace(section))
+	if section == "" {
+		section = DiffSectionCombined
+	}
+	if section != DiffSectionCombined && section != DiffSectionStaged && section != DiffSectionUnstaged {
+		return model.FileDiff{}, errors.New("diff section must be combined, staged, or unstaged")
+	}
+	args := []string{"diff"}
+	if commitSHA == "" && section == DiffSectionStaged {
+		args = append(args, "--cached")
+	}
+	args = append(args, "--no-ext-diff", "--no-color", "--find-renames")
 	untracked := false
 	if commitSHA == "" {
 		for _, file := range changes.Files {
-			if file.Path == filePath && file.Status == "untracked" {
+			if file.Path == filePath && file.Status == "untracked" && section != DiffSectionStaged {
 				untracked = true
 				break
 			}
@@ -307,21 +412,14 @@ func (s *Service) FileDiff(ctx context.Context, cardID, expectedRevision, filePa
 	}
 	if commitSHA != "" {
 		args = append(args, commitSHA+"^!")
-	} else {
-		comparison := changes.MergeBaseSHA
-		if comparison == "" {
-			comparison = changes.BaseSHA
-		}
-		if comparison == "" {
-			comparison = "HEAD"
-		}
-		args = append(args, comparison)
+	} else if section != DiffSectionUnstaged && changes.HeadSHA != "" {
+		args = append(args, "HEAD")
 	}
 	if filePath != "" {
 		args = append(args, "--", filePath)
 	}
 	var patch []byte
-	if untracked {
+	if untracked || (commitSHA == "" && section == DiffSectionCombined && changes.HeadSHA == "") {
 		result, diffErr := s.Git.Run(ctx, workspaceValue.Path, "diff", "--no-index", "--no-ext-diff", "--no-color", "--", "/dev/null", filePath)
 		var commandErr *gitexec.CommandError
 		if diffErr != nil && (!errors.As(diffErr, &commandErr) || commandErr.ExitCode != 1) {
@@ -350,7 +448,7 @@ func (s *Service) FileDiff(ctx context.Context, cardID, expectedRevision, filePa
 	}
 	binary := strings.Contains(string(patch), "Binary files ") || strings.IndexByte(string(patch), 0) >= 0
 	return model.FileDiff{
-		CardID: cardID, Revision: changes.Revision, Path: filePath, CommitSHA: commitSHA,
+		CardID: cardID, ProjectID: projectID, Revision: changes.Revision, Path: filePath, CommitSHA: commitSHA, Section: section,
 		Patch: string(patch), Binary: binary, Truncated: truncated, NextOffset: next, TotalBytes: total,
 	}, nil
 }
@@ -359,5 +457,5 @@ func (s *Service) CommitDiff(ctx context.Context, cardID, expectedRevision, comm
 	if strings.TrimSpace(commitSHA) == "" {
 		return model.FileDiff{}, fmt.Errorf("commit SHA is required")
 	}
-	return s.FileDiff(ctx, cardID, expectedRevision, filePath, commitSHA, offset, limit)
+	return s.FileDiffTarget(ctx, cardID, "", expectedRevision, filePath, commitSHA, DiffSectionCombined, offset, limit)
 }

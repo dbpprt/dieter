@@ -210,7 +210,7 @@ struct WorkspaceChangesView: View {
                 if roomy, let changes {
                     HStack(spacing: 6) {
                         WorkspaceDeltaLabel(additions: changes.additions, deletions: changes.deletions)
-                        Text("· \(changes.files.count) file\(changes.files.count == 1 ? "" : "s") vs \(baseBranch)")
+                        Text("· \(changes.files.count) local file\(changes.files.count == 1 ? "" : "s")")
                             .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
                     }
                     .lineLimit(1)
@@ -560,9 +560,9 @@ struct WorkspaceChangesView: View {
 
     private func filesSection(compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            WorkspaceSectionHeader(title: "Files · vs \(baseBranch)", count: changes?.files.count ?? 0, additions: changes?.additions, deletions: changes?.deletions)
+            WorkspaceSectionHeader(title: "Local changes", count: changes?.files.count ?? 0, additions: changes?.additions, deletions: changes?.deletions)
             if changes?.files.isEmpty != false {
-                WorkspaceEmptyRow(symbol: "checkmark.circle", title: "No changes against \(baseBranch)")
+                WorkspaceEmptyRow(symbol: "checkmark.circle", title: "Working tree is clean")
             }
             ForEach(changes?.files ?? [], id: \.path) { file in
                 WorkspaceFileRow(

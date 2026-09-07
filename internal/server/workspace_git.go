@@ -44,19 +44,26 @@ func (api *grpcAPI) ListProjectWorkspaces(_ context.Context, request *dieterv1.P
 }
 
 func (api *grpcAPI) GetChangeset(ctx context.Context, request *dieterv1.GetChangesetRequest) (*dieterv1.Changeset, error) {
-	value, err := api.server.changesets.Get(ctx, request.GetCardId())
+	value, err := api.server.changesets.GetTarget(ctx, request.GetCardId(), request.GetProjectId())
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	if active, leaseErr := api.server.store.CardHasRuntimeLease(request.GetCardId()); leaseErr == nil {
+	if request.GetProjectId() != "" {
+		if active, leaseErr := api.server.store.ProjectCheckoutHasRuntimeLease(value.ProjectID, ""); leaseErr == nil {
+			value.Volatile = active
+		}
+		if operation, operationErr := api.server.store.ActiveProjectGitOperation(value.ProjectID); operationErr == nil {
+			value.CurrentOperationID = operation.ID
+		}
+	} else if active, leaseErr := api.server.store.CardHasRuntimeLease(request.GetCardId()); leaseErr == nil {
 		value.Volatile = active
 	}
 	return protoChangeset(value), nil
 }
 
 func (api *grpcAPI) GetFileDiff(ctx context.Context, request *dieterv1.GetDiffRequest) (*dieterv1.FileDiff, error) {
-	value, err := api.server.changesets.FileDiff(
-		ctx, request.GetCardId(), request.GetExpectedRevision(), request.GetPath(), "", int(request.GetOffset()), int(request.GetLimit()),
+	value, err := api.server.changesets.FileDiffTarget(
+		ctx, request.GetCardId(), request.GetProjectId(), request.GetExpectedRevision(), request.GetPath(), "", request.GetSection(), int(request.GetOffset()), int(request.GetLimit()),
 	)
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -65,8 +72,11 @@ func (api *grpcAPI) GetFileDiff(ctx context.Context, request *dieterv1.GetDiffRe
 }
 
 func (api *grpcAPI) GetCommitDiff(ctx context.Context, request *dieterv1.GetDiffRequest) (*dieterv1.FileDiff, error) {
-	value, err := api.server.changesets.CommitDiff(
-		ctx, request.GetCardId(), request.GetExpectedRevision(), request.GetCommitSha(), request.GetPath(), int(request.GetOffset()), int(request.GetLimit()),
+	if strings.TrimSpace(request.GetCommitSha()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "commit SHA is required")
+	}
+	value, err := api.server.changesets.FileDiffTarget(
+		ctx, request.GetCardId(), request.GetProjectId(), request.GetExpectedRevision(), request.GetPath(), request.GetCommitSha(), "combined", int(request.GetOffset()), int(request.GetLimit()),
 	)
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -116,7 +126,7 @@ func (api *grpcAPI) GetSCMCapabilities(ctx context.Context, request *dieterv1.Co
 
 func (api *grpcAPI) StartGitOperation(ctx context.Context, request *dieterv1.StartGitOperationRequest) (*dieterv1.GitOperation, error) {
 	value, err := api.server.gitOperations.Start(ctx, gitops.Request{
-		CardID: request.GetCardId(), Kind: request.GetKind(), ExpectedRevision: request.GetExpectedRevision(),
+		CardID: request.GetCardId(), ProjectID: request.GetProjectId(), Kind: request.GetKind(), ExpectedRevision: request.GetExpectedRevision(),
 		Parameters: cloneProtoStringMap(request.GetParameters()),
 	})
 	if err != nil {

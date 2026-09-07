@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Debug builds may reach an isolated gateway on the Android emulator's
+         host-loopback bridge. Release builds keep the main HTTPS-only policy. -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

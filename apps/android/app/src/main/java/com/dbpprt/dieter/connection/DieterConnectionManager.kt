@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
+import com.dbpprt.dieter.BuildConfig
 import com.dbpprt.dieter.data.DIETER_API_VERSION
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DieterEndpoint
@@ -478,7 +479,7 @@ class DieterConnectionManager(
         require(endpoints.isNotEmpty()) { "At least one Dieter connection is required" }
         require(endpoints.map { it.id }.distinct().size == endpoints.size) { "Connection IDs must be unique" }
         require(endpoints.map { it.address.lowercase() }.distinct().size == endpoints.size) { "Connection addresses must be unique" }
-        require(endpoints.all { it.secure || isLoopbackHost(it.host) }) { "Remote gateways must use HTTPS" }
+        require(endpoints.all { it.secure || isPermittedInsecureGatewayHost(it.host) }) { "Remote gateways must use HTTPS" }
         val nextActive = selectedGatewayId?.takeIf { id -> endpoints.any { it.id == id } }
             ?: activeGatewayId.takeIf { id -> endpoints.any { it.id == id } }
             ?: endpoints.first().id
@@ -1927,7 +1928,7 @@ class DieterConnectionManager(
                     DIETER_ENDPOINTS.firstOrNull { it.credentialId == endpoint.credentialId }
                         ?: endpoint.copy(id = "gateway_$index", label = endpoint.host, daemonId = null)
                 }
-            }.filter { it.secure || isLoopbackHost(it.host) }
+            }.filter { it.secure || isPermittedInsecureGatewayHost(it.host) }
                 .distinctBy { it.credentialId }
                 .ifEmpty { DIETER_ENDPOINTS }
             if (origins != loaded) persistEndpoints(origins)
@@ -2033,3 +2034,8 @@ internal fun projectRouteIsReady(
 
 internal fun isLoopbackHost(host: String): Boolean = host.equals("localhost", ignoreCase = true) ||
     host == "127.0.0.1" || host == "::1"
+
+/** Debug builds may target an isolated gateway on the development host. Keep
+ * remote plaintext endpoints out of release builds. */
+internal fun isPermittedInsecureGatewayHost(host: String): Boolean =
+    isLoopbackHost(host) || BuildConfig.DEBUG

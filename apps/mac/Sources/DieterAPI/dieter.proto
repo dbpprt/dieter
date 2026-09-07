@@ -1119,6 +1119,14 @@ message ChangedFile {
   bool binary = 6;
   bool untracked = 7;
   bool conflicted = 8;
+  string index_status = 9;
+  string worktree_status = 10;
+  bool staged = 11;
+  bool unstaged = 12;
+  int32 staged_additions = 13;
+  int32 staged_deletions = 14;
+  int32 unstaged_additions = 15;
+  int32 unstaged_deletions = 16;
 }
 
 message WorkspaceCommit {
@@ -1145,10 +1153,19 @@ message Changeset {
   int32 deletions = 9;
   bool volatile = 10;
   string generated_at = 11;
+  string project_id = 12;
+  string branch = 13;
+  string base_branch = 14;
+  int32 ahead = 15;
+  int32 behind = 16;
+  bool dirty = 17;
+  bool conflicted = 18;
+  string current_operation_id = 19;
 }
 
 message GetChangesetRequest {
   string card_id = 1;
+  string project_id = 2;
 }
 
 message GetDiffRequest {
@@ -1158,6 +1175,10 @@ message GetDiffRequest {
   string expected_revision = 4;
   int64 offset = 5;
   int32 limit = 6;
+  string project_id = 7;
+  // combined compares HEAD to the working tree, staged compares HEAD to the
+  // index, and unstaged compares the index to the working tree.
+  string section = 8;
 }
 
 message FileDiff {
@@ -1170,6 +1191,8 @@ message FileDiff {
   bool truncated = 7;
   int64 next_offset = 8;
   int64 total_bytes = 9;
+  string project_id = 10;
+  string section = 11;
 }
 
 message ChangeComment {
@@ -1273,6 +1296,7 @@ message StartGitOperationRequest {
   string kind = 2;
   string expected_revision = 3;
   map<string, string> parameters = 4;
+  string project_id = 5;
 }
 
 message GitOperationRef {

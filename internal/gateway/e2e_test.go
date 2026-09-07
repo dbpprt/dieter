@@ -348,7 +348,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	}
 	gitOperation, err := dieterClient.StartGitOperation(routed, &dieterv1.StartGitOperationRequest{
 		CardId: created.GetId(), Kind: "commit", ExpectedRevision: changes.GetRevision(),
-		Parameters: map[string]string{"subject": "relayed workspace", "validate": "false"},
+		Parameters: map[string]string{"subject": "relayed workspace", "validate": "false", "stage_all": "true"},
 	})
 	if err != nil {
 		t.Fatalf("start relayed Git operation: %v", err)

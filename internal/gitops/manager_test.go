@@ -39,7 +39,11 @@ func TestCommitFastForwardMergeAndCleanupEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := gitops.New(data, workspaces, nil)
-	commit, err := manager.Start(context.Background(), gitops.Request{CardID: chat.ID, Kind: "commit", Parameters: map[string]string{"subject": "workspace change", "validate": "false"}})
+	changes, err := manager.Changesets.Get(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := manager.Start(context.Background(), gitops.Request{CardID: chat.ID, Kind: "commit", ExpectedRevision: changes.Revision, Parameters: map[string]string{"subject": "workspace change", "validate": "false", "stage_all": "true"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,6 +274,163 @@ func TestDiscardCreatesRecoveryArtifactsBeforeRemovingWorktree(t *testing.T) {
 	}
 	if _, err := data.Workspace(chat.ID); err == nil {
 		t.Fatal("discard left a workspace record")
+	}
+}
+
+func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
+	repository := testRepository(t)
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("project change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "scratch.txt"), []byte("discard me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	manager := gitops.New(data, workspaces, nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "README.md"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage = waitOperation(t, manager, stage.ID)
+	if stage.Status != model.GitOperationSucceeded || stage.CardID != "" || stage.ProjectID != project.ID {
+		t.Fatalf("project stage failed: %#v", stage)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "commit", ExpectedRevision: changes.Revision,
+		Parameters: map[string]string{"subject": "project change", "validate": "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit = waitOperation(t, manager, commit.ID)
+	if commit.Status != model.GitOperationSucceeded {
+		t.Fatalf("project commit failed: %#v", commit)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes.Files) != 1 || changes.Files[0].Path != "scratch.txt" || changes.Files[0].Staged {
+		t.Fatalf("commit did not preserve the unstaged file: %#v", changes.Files)
+	}
+	discard, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "scratch.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	discard = waitOperation(t, manager, discard.ID)
+	if discard.Status != model.GitOperationSucceeded {
+		t.Fatalf("project discard failed: %#v", discard)
+	}
+	if _, err := os.Stat(filepath.Join(repository, "scratch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("untracked project file was not discarded: %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(data.RecoveryDir(), discard.ID, "RESTORE.txt")); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("project discard did not create recovery instructions: %v", err)
+	}
+}
+
+func TestProjectCheckoutUnstageAndDiscardSupportUnbornRepository(t *testing.T) {
+	repository := filepath.Join(t.TempDir(), "repository")
+	runGit(t, "", "init", "-b", "feature/unborn", repository)
+	runGit(t, repository, "config", "user.name", "Dieter Test")
+	runGit(t, repository, "config", "user.email", "dieter@example.test")
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Unborn", Path: repository, BaseBranch: "feature/unborn"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(repository, "new.txt")
+	if err := os.WriteFile(path, []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspaces := workspace.New(data, nil)
+	manager := gitops.New(data, workspaces, nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage = waitOperation(t, manager, stage.ID); stage.Status != model.GitOperationSucceeded {
+		t.Fatalf("stage in unborn repository failed: %#v", stage)
+	}
+	if err := os.WriteFile(path, []byte("changed after staging\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unstage, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "unstage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unstage = waitOperation(t, manager, unstage.ID); unstage.Status != model.GitOperationSucceeded {
+		t.Fatalf("unstage in unborn repository failed: %#v", unstage)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes.Files) != 1 || changes.Files[0].Staged || !changes.Files[0].Unstaged {
+		t.Fatalf("unborn unstage did not leave a working-tree-only file: %#v", changes.Files)
+	}
+	stage, err = manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "stage", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stage = waitOperation(t, manager, stage.ID); stage.Status != model.GitOperationSucceeded {
+		t.Fatalf("restage in unborn repository failed: %#v", stage)
+	}
+	if err := os.WriteFile(path, []byte("changed before discard\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changes, err = manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discard, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "new.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if discard = waitOperation(t, manager, discard.ID); discard.Status != model.GitOperationSucceeded {
+		t.Fatalf("discard in unborn repository failed: %#v", discard)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("discard left unborn file behind: %v", err)
 	}
 }
 

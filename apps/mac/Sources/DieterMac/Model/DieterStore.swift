@@ -106,6 +106,9 @@ final class DieterStore {
     var workspaceToast: WorkspaceToast?
     var mergeFlowStep: WorkspaceMergeStep?
     var fileScopeCardID: String?
+    /// Selects the project-level surface inside Files. Conversation worktrees
+    /// always browse their own checkout and never use project Changes.
+    var projectFilesMode = "browse"
     var terminalScopeCardID: String?
     var composerText = ""
     var composerAttachments: [Dieter_V1_MessagePart] = []

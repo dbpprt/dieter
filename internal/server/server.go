@@ -155,6 +155,29 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 		}
 		return false
 	}
+	s.gitOperations.BusyPath = func(workspacePath string) bool {
+		if resolved, resolveErr := filepath.EvalSymlinks(workspacePath); resolveErr == nil {
+			workspacePath = resolved
+		}
+		contains := func(workingDirectory string) bool {
+			if resolved, resolveErr := filepath.EvalSymlinks(workingDirectory); resolveErr == nil {
+				workingDirectory = resolved
+			}
+			relative, relErr := filepath.Rel(workspacePath, workingDirectory)
+			return relErr == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+		}
+		for _, session := range s.terminals.List("") {
+			if session.Status == terminal.StatusRunning && contains(session.WorkingDirectory) {
+				return true
+			}
+		}
+		for _, execution := range s.executions.List("", "", remoteexec.StatusRunning) {
+			if contains(execution.WorkingDirectory) {
+				return true
+			}
+		}
+		return false
+	}
 	manager.register(s.mux)
 	path, handler := dieterv1connect.NewDieterServiceHandler(&connectAPI{core: &grpcAPI{server: s}})
 	s.mux.Handle(path, handler)

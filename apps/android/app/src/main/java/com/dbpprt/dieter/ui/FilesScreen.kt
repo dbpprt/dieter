@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,23 +69,43 @@ fun FilesScreen(
     expanded: Boolean,
     contentPadding: PaddingValues,
 ) {
-    if (!expanded && state.fileDocument != null) {
-        FilePreview(state, model, Modifier.padding(contentPadding))
-        return
-    }
-    if (expanded) {
-        Row(Modifier.fillMaxSize().padding(contentPadding)) {
-            FileList(state, model, Modifier.weight(0.43f))
-            HorizontalPaneDivider()
-            val document = state.fileDocument
-            if (document == null) {
-                EmptyDetail("Select a file", "Text files open in a revision-safe editor.", Icons.Outlined.Description, Modifier.weight(0.57f))
-            } else {
-                FilePreview(state, model, Modifier.weight(0.57f), showBack = false)
-            }
+    Column(Modifier.fillMaxSize().padding(contentPadding)) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                modifier = Modifier.testTag("project-files-browse"),
+                selected = state.projectFilesMode == "browse",
+                onClick = { model.setProjectFilesMode("browse") },
+                label = { Text("Browse") },
+            )
+            FilterChip(
+                modifier = Modifier.testTag("project-files-changes"),
+                selected = state.projectFilesMode == "changes",
+                onClick = { model.setProjectFilesMode("changes") },
+                label = { Text("Changes") },
+            )
         }
-    } else {
-        FileList(state, model, Modifier.fillMaxSize().padding(contentPadding))
+        HorizontalDivider(color = DieterOutline)
+        if (state.projectFilesMode == "changes") {
+            ProjectChangesScreen(state, model, expanded, Modifier.weight(1f))
+        } else if (!expanded && state.fileDocument != null) {
+            FilePreview(state, model, Modifier.weight(1f))
+        } else if (expanded) {
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                FileList(state, model, Modifier.weight(0.43f))
+                HorizontalPaneDivider()
+                val document = state.fileDocument
+                if (document == null) {
+                    EmptyDetail("Select a file", "Text files open in a revision-safe editor.", Icons.Outlined.Description, Modifier.weight(0.57f))
+                } else {
+                    FilePreview(state, model, Modifier.weight(0.57f), showBack = false)
+                }
+            }
+        } else {
+            FileList(state, model, Modifier.weight(1f))
+        }
     }
 }
 

@@ -1523,6 +1523,9 @@ func grpcFailure(err error) error {
 	if errors.Is(err, changeset.ErrStaleRevision) {
 		return status.Error(codes.Aborted, err.Error())
 	}
+	if errors.Is(err, changeset.ErrProjectChangesRequireProject) {
+		return status.Error(codes.FailedPrecondition, err.Error())
+	}
 	if errors.Is(err, gitops.ErrWorkspaceBusy) {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}

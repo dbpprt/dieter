@@ -58,6 +58,11 @@ func initTestRepository(t *testing.T, name string) string {
 	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte("initial\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	for key, value := range map[string]string{"user.name": "Dieter Test", "user.email": "dieter@example.test"} {
+		if output, err := exec.Command("git", "-C", path, "config", key, value).CombinedOutput(); err != nil {
+			t.Fatalf("git config %s: %s: %v", key, output, err)
+		}
+	}
 	return path
 }
 
@@ -121,6 +126,25 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	}
 	runDaemonCLI(t, client, output, "card", "comment", "--message", "CLI annotation", card.ID)
 	runDaemonCLI(t, client, output, "workspace", "show", card.ID)
+	changesJSON := runDaemonCLI(t, client, output, "workspace", "changes", "--project", created.Project.ID)
+	var projectChanges struct {
+		ProjectID string `json:"projectId"`
+		Revision  string `json:"revision"`
+		Files     []struct {
+			Path     string `json:"path"`
+			Unstaged bool   `json:"unstaged"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(changesJSON), &projectChanges); err != nil || projectChanges.ProjectID != created.Project.ID || projectChanges.Revision == "" || len(projectChanges.Files) != 1 || projectChanges.Files[0].Path != "README.md" || !projectChanges.Files[0].Unstaged {
+		t.Fatalf("project changes JSON=%q value=%#v err=%v", changesJSON, projectChanges, err)
+	}
+	runDaemonCLI(t, client, output, "workspace", "diff", "--project", created.Project.ID, "--path", "README.md", "--section", "unstaged", "--revision", projectChanges.Revision)
+	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "stage", "--revision", projectChanges.Revision, "--param", "path=README.md", "--wait")
+	changesJSON = runDaemonCLI(t, client, output, "workspace", "changes", "--project", created.Project.ID)
+	if err := json.Unmarshal([]byte(changesJSON), &projectChanges); err != nil || projectChanges.Revision == "" {
+		t.Fatalf("staged project changes JSON=%q err=%v", changesJSON, err)
+	}
+	runDaemonCLI(t, client, output, "workspace", "run", "--project", created.Project.ID, "--kind", "commit", "--revision", projectChanges.Revision, "--param", "subject=initial project commit", "--param", "validate=false", "--wait")
 
 	runDaemonCLI(t, client, output, "file", "create", "--project", created.Project.ID, "--content", "one\n", "notes.txt")
 	if got := runDaemonCLI(t, client, output, "file", "read", "--project", created.Project.ID, "notes.txt"); got != "one\n" {

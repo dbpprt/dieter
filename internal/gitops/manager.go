@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ var (
 
 type Request struct {
 	CardID           string
+	ProjectID        string
 	Kind             string
 	ExpectedRevision string
 	Parameters       map[string]string
@@ -43,6 +45,7 @@ type Manager struct {
 	SCM        scm.Provider
 	Log        *slog.Logger
 	Busy       func(string) bool
+	BusyPath   func(string) bool
 
 	mu      sync.Mutex
 	active  map[string]context.CancelFunc
@@ -60,8 +63,9 @@ func New(data *store.Store, workspaces *workspace.Manager, logger *slog.Logger) 
 }
 
 func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperation, error) {
-	if strings.TrimSpace(request.CardID) == "" || strings.TrimSpace(request.Kind) == "" {
-		return model.GitOperation{}, errors.New("card ID and Git operation kind are required")
+	request.CardID, request.ProjectID = strings.TrimSpace(request.CardID), strings.TrimSpace(request.ProjectID)
+	if (request.CardID == "") == (request.ProjectID == "") || strings.TrimSpace(request.Kind) == "" {
+		return model.GitOperation{}, errors.New("exactly one of card ID or project ID and a Git operation kind are required")
 	}
 	if !supportedOperation(request.Kind) {
 		return model.GitOperation{}, fmt.Errorf("unsupported Git operation %q", request.Kind)
@@ -69,35 +73,52 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if active, err := m.Store.CardHasRuntimeLease(request.CardID); err != nil {
-		return model.GitOperation{}, err
-	} else if active {
-		return model.GitOperation{}, store.ErrCardActive
-	}
-	workspaceValue, err := m.Workspaces.Ensure(ctx, request.CardID)
+	workspaceValue, err := m.resolveTarget(ctx, request.CardID, request.ProjectID)
 	if err != nil {
 		return model.GitOperation{}, err
 	}
-	if m.Busy != nil && m.Busy(workspaceValue.CardID) {
+	if workspaceValue.CardID != "" {
+		if active, leaseErr := m.Store.CardHasRuntimeLease(workspaceValue.CardID); leaseErr != nil {
+			return model.GitOperation{}, leaseErr
+		} else if active {
+			return model.GitOperation{}, store.ErrCardActive
+		}
+	}
+	if workspaceValue.Mode == model.WorkspaceModeProject && !projectCheckoutOperation(request.Kind) {
+		return model.GitOperation{}, fmt.Errorf("Git operation %q is not available from project Changes", request.Kind)
+	}
+	if mutationRequiresRevision(request.Kind) && strings.TrimSpace(request.ExpectedRevision) == "" {
+		return model.GitOperation{}, errors.New("expected revision is required for checkout mutations")
+	}
+	if m.Busy != nil && workspaceValue.CardID != "" && m.Busy(workspaceValue.CardID) {
 		return model.GitOperation{}, fmt.Errorf("%w: active terminal or process", ErrWorkspaceBusy)
 	}
+	if m.BusyPath != nil && m.BusyPath(workspaceValue.Path) {
+		return model.GitOperation{}, fmt.Errorf("%w: active terminal or process in the checkout", ErrWorkspaceBusy)
+	}
 	if workspaceValue.Mode == model.WorkspaceModeProject || request.Kind == "merge_local" {
-		if active, activeErr := m.Store.ProjectHasRuntimeLease(workspaceValue.ProjectID, workspaceValue.CardID); activeErr != nil {
+		if active, activeErr := m.Store.ProjectCheckoutHasRuntimeLease(workspaceValue.ProjectID, workspaceValue.CardID); activeErr != nil {
 			return model.GitOperation{}, activeErr
 		} else if active {
 			return model.GitOperation{}, fmt.Errorf("%w: another conversation is active in the shared checkout", ErrWorkspaceBusy)
 		}
 	}
-	release, err := m.Workspaces.LockWorkspace(ctx, workspaceValue.CardID)
+	release, err := m.lockTarget(ctx, workspaceValue)
 	if err != nil {
 		return model.GitOperation{}, err
 	}
 	defer release()
-	workspaceValue, err = m.Store.Workspace(workspaceValue.CardID)
+	workspaceValue, err = m.resolveTarget(ctx, request.CardID, request.ProjectID)
 	if err != nil {
 		return model.GitOperation{}, err
 	}
-	if workspaceValue.CurrentOperationID != "" {
+	if workspaceValue.Mode == model.WorkspaceModeProject {
+		if current, currentErr := m.Store.ActiveProjectGitOperation(workspaceValue.ProjectID); currentErr == nil {
+			return model.GitOperation{}, fmt.Errorf("project checkout already has active Git operation %s", current.ID)
+		} else if !errors.Is(currentErr, store.ErrNotFound) {
+			return model.GitOperation{}, currentErr
+		}
+	} else if workspaceValue.CurrentOperationID != "" {
 		if current, currentErr := m.Store.GitOperation(workspaceValue.CurrentOperationID); currentErr == nil &&
 			(current.Status == model.GitOperationQueued || current.Status == model.GitOperationRunning || current.Status == model.GitOperationWaitingForResolution) {
 			resolvingConflict := current.Status == model.GitOperationWaitingForResolution &&
@@ -111,7 +132,12 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 			request.Parameters["conflicted_operation_id"] = current.ID
 		}
 	}
-	operation, err := m.Store.CreateGitOperation(request.CardID, request.Kind, request.ExpectedRevision)
+	var operation model.GitOperation
+	if workspaceValue.CardID == "" {
+		operation, err = m.Store.CreateProjectGitOperation(workspaceValue.ProjectID, request.Kind, request.ExpectedRevision)
+	} else {
+		operation, err = m.Store.CreateGitOperation(workspaceValue.CardID, request.Kind, request.ExpectedRevision)
+	}
 	if err != nil {
 		return model.GitOperation{}, err
 	}
@@ -128,9 +154,11 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 	if err != nil {
 		return model.GitOperation{}, err
 	}
-	workspaceValue.CurrentOperationID = operation.ID
-	if _, err := m.Store.SaveWorkspace(workspaceValue); err != nil {
-		return model.GitOperation{}, err
+	if workspaceValue.CardID != "" {
+		workspaceValue.CurrentOperationID = operation.ID
+		if _, err := m.Store.SaveWorkspace(workspaceValue); err != nil {
+			return model.GitOperation{}, err
+		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m.mu.Lock()
@@ -143,8 +171,26 @@ func (m *Manager) Start(ctx context.Context, request Request) (model.GitOperatio
 
 func supportedOperation(value string) bool {
 	switch value {
-	case "commit", "update", "abort_conflict", "continue_conflict", "validate", "merge_local", "push",
+	case "stage", "unstage", "discard_changes", "commit", "update", "abort_conflict", "continue_conflict", "validate", "merge_local", "push",
 		"cleanup", "discard", "adopt", "create_pr", "refresh_pr", "merge_pr":
+		return true
+	default:
+		return false
+	}
+}
+
+func projectCheckoutOperation(value string) bool {
+	switch value {
+	case "stage", "unstage", "discard_changes", "commit", "validate":
+		return true
+	default:
+		return false
+	}
+}
+
+func mutationRequiresRevision(value string) bool {
+	switch value {
+	case "stage", "unstage", "discard_changes", "commit":
 		return true
 	default:
 		return false
@@ -162,16 +208,42 @@ func cloneMap(values map[string]string) map[string]string {
 	return result
 }
 
+func (m *Manager) resolveTarget(ctx context.Context, cardID, projectID string) (model.Workspace, error) {
+	if projectID != "" {
+		return m.Workspaces.ProjectCheckout(ctx, projectID, false)
+	}
+	value, err := m.Workspaces.Ensure(ctx, cardID)
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	if value.Mode == model.WorkspaceModeProject {
+		return model.Workspace{}, changeset.ErrProjectChangesRequireProject
+	}
+	return value, nil
+}
+
+func (m *Manager) lockTarget(ctx context.Context, value model.Workspace) (func(), error) {
+	if value.Mode == model.WorkspaceModeProject {
+		return m.Workspaces.LockCheckout(ctx, value.ProjectID)
+	}
+	return m.Workspaces.LockWorkspace(ctx, value.CardID)
+}
+
 func (m *Manager) run(ctx context.Context, operation model.GitOperation) {
 	operation.Status, operation.StartedAt = model.GitOperationRunning, now()
 	operation, _ = m.Store.SaveGitOperation(operation)
 	m.appendLog(&operation, "operation started: "+operation.Kind)
 	m.notify(operation.ID)
 
-	workspaceValue, err := m.Workspaces.Ensure(ctx, operation.CardID)
+	workspaceValue, err := m.resolveTarget(ctx, operation.CardID, func() string {
+		if operation.CardID == "" {
+			return operation.ProjectID
+		}
+		return ""
+	}())
 	if err == nil {
 		var release func()
-		release, err = m.Workspaces.LockWorkspace(ctx, operation.CardID)
+		release, err = m.lockTarget(ctx, workspaceValue)
 		if err == nil {
 			defer release()
 			err = m.execute(ctx, &operation, workspaceValue)
@@ -192,7 +264,7 @@ func (m *Manager) run(ctx context.Context, operation model.GitOperation) {
 		operation.Status, operation.FinishedAt = model.GitOperationSucceeded, now()
 		m.appendLog(&operation, "operation completed")
 	}
-	if operation.Status != model.GitOperationWaitingForResolution {
+	if operation.Status != model.GitOperationWaitingForResolution && operation.CardID != "" {
 		if latest, workspaceErr := m.Store.Workspace(operation.CardID); workspaceErr == nil && latest.CurrentOperationID == operation.ID {
 			latest.CurrentOperationID = ""
 			_, _ = m.Store.SaveWorkspace(latest)
@@ -207,7 +279,12 @@ func (m *Manager) run(ctx context.Context, operation model.GitOperation) {
 
 func (m *Manager) execute(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
 	if operation.ExpectedRevision != "" {
-		changes, err := m.Changesets.Get(ctx, operation.CardID)
+		changes, err := m.Changesets.GetTarget(ctx, operation.CardID, func() string {
+			if operation.CardID == "" {
+				return operation.ProjectID
+			}
+			return ""
+		}())
 		if err != nil {
 			return err
 		}
@@ -216,6 +293,12 @@ func (m *Manager) execute(ctx context.Context, operation *model.GitOperation, va
 		}
 	}
 	switch operation.Kind {
+	case "stage":
+		return m.stage(ctx, operation, value)
+	case "unstage":
+		return m.unstage(ctx, operation, value)
+	case "discard_changes":
+		return m.discardChanges(ctx, operation, value)
 	case "commit":
 		return m.commit(ctx, operation, value)
 	case "update":
@@ -261,19 +344,168 @@ func (m *Manager) step(operation *model.GitOperation, name string) {
 	m.notify(operation.ID)
 }
 
-func (m *Manager) commit(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
-	includeUntracked := operation.Parameters["include_untracked"] != "false"
-	add := []string{"add", "-u"}
-	if includeUntracked {
-		add = []string{"add", "-A"}
+func operationPath(parameters map[string]string, required bool) (string, error) {
+	value := strings.TrimSpace(parameters["path"])
+	if value == "" {
+		if required {
+			return "", errors.New("operation requires a checkout-relative path")
+		}
+		return "", nil
 	}
-	if _, err := m.Git.Run(ctx, value.Path, add...); err != nil {
+	if strings.ContainsRune(value, '\x00') || strings.Contains(value, "\\") || strings.HasPrefix(value, "/") || filepath.IsAbs(value) {
+		return "", errors.New("checkout path must be relative")
+	}
+	value = path.Clean(value)
+	if value == "." || value == ".." || strings.HasPrefix(value, "../") || value == ".git" || strings.HasPrefix(value, ".git/") {
+		return "", errors.New("checkout path is invalid")
+	}
+	return value, nil
+}
+
+func (m *Manager) stage(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
+	filePath, err := operationPath(operation.Parameters, false)
+	if err != nil {
 		return err
 	}
-	m.step(operation, "staged workspace changes")
+	args := []string{"add", "-A"}
+	if filePath != "" {
+		args = []string{"--literal-pathspecs", "add", "-A", "--", filePath}
+	}
+	if _, err := m.Git.Run(ctx, value.Path, args...); err != nil {
+		return err
+	}
+	message := "staged " + filePath
+	if filePath == "" {
+		message = "staged all checkout changes"
+	}
+	m.step(operation, message)
+	m.refreshTarget(ctx, value)
+	return nil
+}
+
+func (m *Manager) unstage(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
+	filePath, err := operationPath(operation.Parameters, false)
+	if err != nil {
+		return err
+	}
+	var args []string
+	if value.HeadSHA == "" {
+		// An unborn repository has no HEAD for reset to copy into the index.
+		// Removing the cached entry is the equivalent unstage operation; force
+		// is required when the working copy changed after it was staged.
+		args = []string{"rm", "-r", "--cached", "-q", "-f", "--ignore-unmatch", "--", "."}
+		if filePath != "" {
+			args = []string{"--literal-pathspecs", "rm", "-r", "--cached", "-q", "-f", "--ignore-unmatch", "--", filePath}
+		}
+	} else {
+		args = []string{"reset", "-q", "HEAD", "--", "."}
+		if filePath != "" {
+			args = []string{"--literal-pathspecs", "reset", "-q", "HEAD", "--", filePath}
+		}
+	}
+	if _, err := m.Git.Run(ctx, value.Path, args...); err != nil {
+		return err
+	}
+	message := "unstaged " + filePath
+	if filePath == "" {
+		message = "unstaged all checkout changes"
+	}
+	m.step(operation, message)
+	m.refreshTarget(ctx, value)
+	return nil
+}
+
+func (m *Manager) discardChanges(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
+	filePath, err := operationPath(operation.Parameters, true)
+	if err != nil {
+		return err
+	}
+	if err := m.createRecovery(ctx, operation, value); err != nil {
+		return err
+	}
+	inHead := false
+	if value.HeadSHA != "" {
+		headFiles, headErr := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", filePath)
+		if headErr != nil {
+			return headErr
+		}
+		for _, candidate := range strings.Split(string(headFiles.Output), "\x00") {
+			if candidate == filePath {
+				inHead = true
+				break
+			}
+		}
+	}
+	if value.HeadSHA != "" {
+		if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "reset", "-q", "HEAD", "--", filePath); err != nil {
+			return err
+		}
+	} else if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "rm", "--cached", "--ignore-unmatch", "-q", "-f", "--", filePath); err != nil {
+		return err
+	}
+	if inHead {
+		if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "restore", "--source=HEAD", "--worktree", "--", filePath); err != nil {
+			return err
+		}
+	} else {
+		target := filepath.Join(value.Path, filepath.FromSlash(filePath))
+		parent, resolveErr := filepath.EvalSymlinks(filepath.Dir(target))
+		if resolveErr != nil {
+			return resolveErr
+		}
+		relative, relErr := filepath.Rel(value.Path, parent)
+		if relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return errors.New("checkout path leaves the checkout")
+		}
+		info, statErr := os.Lstat(target)
+		if statErr != nil {
+			return statErr
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("only regular untracked files can be discarded")
+		}
+		if err := os.Remove(target); err != nil {
+			return err
+		}
+	}
+	m.step(operation, "discarded "+filePath+" after creating recovery artifacts")
+	m.refreshTarget(ctx, value)
+	return nil
+}
+
+func (m *Manager) refreshTarget(ctx context.Context, value model.Workspace) {
+	if value.CardID != "" {
+		_, _ = m.Workspaces.Refresh(ctx, value.CardID, false)
+	}
+}
+
+func (m *Manager) commit(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
 	subject := strings.TrimSpace(operation.Parameters["subject"])
 	if subject == "" {
 		return errors.New("commit subject is required")
+	}
+	_, legacyAutoStage := operation.Parameters["include_untracked"]
+	if operation.Parameters["stage_all"] == "true" || legacyAutoStage {
+		addMode := "-A"
+		if legacyAutoStage && operation.Parameters["include_untracked"] == "false" {
+			addMode = "-u"
+		}
+		if _, err := m.Git.Run(ctx, value.Path, "add", addMode); err != nil {
+			return err
+		}
+		m.step(operation, "staged checkout changes for commit")
+	}
+	stagedArgs := []string{"diff", "--cached", "--name-only", "-z"}
+	if value.HeadSHA != "" {
+		stagedArgs = append(stagedArgs, "HEAD")
+	}
+	stagedArgs = append(stagedArgs, "--")
+	staged, err := m.Git.Run(ctx, value.Path, stagedArgs...)
+	if err != nil {
+		return err
+	}
+	if len(staged.Output) == 0 {
+		return errors.New("no staged changes to commit")
 	}
 	args := []string{"-c", "commit.gpgSign=false", "commit", "--no-gpg-sign", "-m", subject}
 	if body := strings.TrimSpace(operation.Parameters["body"]); body != "" {
@@ -285,7 +517,7 @@ func (m *Manager) commit(ctx context.Context, operation *model.GitOperation, val
 	head, _ := m.gitOutput(ctx, value.Path, "rev-parse", "HEAD")
 	operation.Result = head
 	m.step(operation, "created commit "+shortSHA(head))
-	_, _ = m.Workspaces.Refresh(ctx, value.CardID, false)
+	m.refreshTarget(ctx, value)
 	return nil
 }
 
@@ -656,7 +888,7 @@ func (m *Manager) createRecovery(ctx context.Context, operation *model.GitOperat
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	if value.Branch != "" {
+	if value.Branch != "" && value.HeadSHA != "" {
 		if _, err := m.Git.Run(ctx, value.Path, "bundle", "create", filepath.Join(directory, "branch.bundle"), value.Branch); err != nil {
 			return fmt.Errorf("create recovery bundle: %w", err)
 		}

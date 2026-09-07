@@ -13,19 +13,22 @@ const workspaceHelp = `Usage: dieter workspace <action>
 Actions:
   show CARD                 Provision and show a conversation workspace
   list [--project PROJECT]  List durable project workspaces
-  changes CARD              Show the current changeset and revision
-  diff --path PATH CARD     Read a revision-checked file or commit diff
+  changes [target]          Show local changes for a worktree card or project
+  diff [target]             Read a staged, unstaged, or combined file diff
   comments CARD             List changeset review comments
   comment [options] CARD    Add a changeset review comment
   scm CARD                  Show daemon-host source-control capabilities
   operation OPERATION       Show a durable Git operation
   watch OPERATION           Stream operation and log frames as JSON Lines
-  run --kind KIND CARD      Start a serialized durable Git operation
+  run --kind KIND [target]  Start a serialized durable Git operation
   cancel OPERATION          Request cancellation of an operation
 
-Operation kinds include commit, update, continue_conflict, abort_conflict,
+Project targets support stage, unstage, discard_changes, commit, and validate.
+Worktree cards additionally support update, continue_conflict, abort_conflict,
 validate, merge_local, push, cleanup, discard, adopt, create_pr, refresh_pr,
-and merge_pr. Repeat --param KEY=VALUE for kind-specific parameters.
+and merge_pr. Commit uses the staged index; pass --param stage_all=true only
+when explicitly committing every local change. Repeat --param KEY=VALUE for
+kind-specific parameters.
 `
 
 func (c *CLI) rpcWorkspace(args []string) error {
@@ -116,13 +119,15 @@ func (c *CLI) rpcWorkspaceList(args []string) error {
 }
 
 func (c *CLI) rpcWorkspaceChanges(args []string) error {
-	const usage = "Usage: dieter workspace changes CARD\n"
-	if wantsHelp(args) {
-		fmt.Fprint(c.Out, usage)
-		return nil
+	const usage = "Usage: dieter workspace changes [--project PROJECT] [CARD]\n"
+	set := flags("workspace changes")
+	projectRef := set.String("project", "", "exact project ID or unique name; inspect its registered checkout")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
 	}
-	if len(args) != 1 {
-		return errors.New("exactly one CARD is required")
+	if (*projectRef == "" && set.NArg() != 1) || (*projectRef != "" && set.NArg() != 0) {
+		return errors.New("provide exactly one worktree CARD or --project PROJECT")
 	}
 	ctx, cancel := c.commandContext()
 	defer cancel()
@@ -130,7 +135,15 @@ func (c *CLI) rpcWorkspaceChanges(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.GetChangeset(rpcCtx, &dieterv1.GetChangesetRequest{CardId: args[0]})
+	cardID := ""
+	if set.NArg() == 1 {
+		cardID = set.Arg(0)
+	}
+	projectID, cardID, err := c.resolveFileScope(ctx, client, rpcCtx, *projectRef, cardID)
+	if err != nil {
+		return err
+	}
+	value, err := client.GetChangeset(rpcCtx, &dieterv1.GetChangesetRequest{CardId: cardID, ProjectId: projectID})
 	if err != nil {
 		return err
 	}
@@ -138,9 +151,11 @@ func (c *CLI) rpcWorkspaceChanges(args []string) error {
 }
 
 func (c *CLI) rpcWorkspaceDiff(args []string) error {
-	const usage = "Usage: dieter workspace diff --path PATH [--revision REVISION] [--commit SHA] [--offset N] [--limit N] CARD\n"
+	const usage = "Usage: dieter workspace diff --path PATH [--project PROJECT] [--section combined|staged|unstaged] [--revision REVISION] [--commit SHA] [--offset N] [--limit N] [CARD]\n"
 	set := flags("workspace diff")
+	projectRef := set.String("project", "", "exact project ID or unique name; inspect its registered checkout")
 	path := set.String("path", "", "workspace-relative file path")
+	section := set.String("section", "combined", "working diff section: combined, staged, or unstaged")
 	revision := set.String("revision", "", "expected changeset revision; current revision when omitted")
 	commit := set.String("commit", "", "commit SHA instead of working-tree diff")
 	offset := set.Int64("offset", 0, "diff byte offset")
@@ -149,8 +164,8 @@ func (c *CLI) rpcWorkspaceDiff(args []string) error {
 	if help || err != nil {
 		return err
 	}
-	if set.NArg() != 1 || strings.TrimSpace(*path) == "" {
-		return errors.New("CARD and --path are required")
+	if strings.TrimSpace(*path) == "" || (*projectRef == "" && set.NArg() != 1) || (*projectRef != "" && set.NArg() != 0) {
+		return errors.New("--path and exactly one worktree CARD or --project PROJECT are required")
 	}
 	ctx, cancel := c.commandContext()
 	defer cancel()
@@ -158,14 +173,22 @@ func (c *CLI) rpcWorkspaceDiff(args []string) error {
 	if err != nil {
 		return err
 	}
+	cardID := ""
+	if set.NArg() == 1 {
+		cardID = set.Arg(0)
+	}
+	projectID, cardID, err := c.resolveFileScope(ctx, client, rpcCtx, *projectRef, cardID)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(*revision) == "" {
-		changes, readErr := client.GetChangeset(rpcCtx, &dieterv1.GetChangesetRequest{CardId: set.Arg(0)})
+		changes, readErr := client.GetChangeset(rpcCtx, &dieterv1.GetChangesetRequest{CardId: cardID, ProjectId: projectID})
 		if readErr != nil {
 			return readErr
 		}
 		*revision = changes.GetRevision()
 	}
-	request := &dieterv1.GetDiffRequest{CardId: set.Arg(0), Path: *path, CommitSha: *commit, ExpectedRevision: *revision, Offset: *offset, Limit: int32(*limit)}
+	request := &dieterv1.GetDiffRequest{CardId: cardID, ProjectId: projectID, Path: *path, CommitSha: *commit, ExpectedRevision: *revision, Offset: *offset, Limit: int32(*limit), Section: *section}
 	var value *dieterv1.FileDiff
 	if strings.TrimSpace(*commit) == "" {
 		value, err = client.GetFileDiff(rpcCtx, request)
@@ -317,8 +340,9 @@ func (c *CLI) rpcWorkspaceWatch(args []string) error {
 }
 
 func (c *CLI) rpcWorkspaceRun(args []string) error {
-	const usage = "Usage: dieter workspace run --kind KIND [--revision REVISION] [--param KEY=VALUE ...] [--wait] CARD\n"
+	const usage = "Usage: dieter workspace run --kind KIND [--project PROJECT] [--revision REVISION] [--param KEY=VALUE ...] [--wait] [CARD]\n"
 	set := flags("workspace run")
+	projectRef := set.String("project", "", "exact project ID or unique name; operate on its registered checkout")
 	kind := set.String("kind", "", "operation kind")
 	revision := set.String("revision", "", "expected changeset revision")
 	wait := set.Bool("wait", false, "stream until the operation reaches a terminal or waiting state")
@@ -328,8 +352,8 @@ func (c *CLI) rpcWorkspaceRun(args []string) error {
 	if help || err != nil {
 		return err
 	}
-	if set.NArg() != 1 || strings.TrimSpace(*kind) == "" {
-		return errors.New("CARD and --kind are required")
+	if strings.TrimSpace(*kind) == "" || (*projectRef == "" && set.NArg() != 1) || (*projectRef != "" && set.NArg() != 0) {
+		return errors.New("--kind and exactly one worktree CARD or --project PROJECT are required")
 	}
 	ctx, cancel := c.commandContext()
 	defer cancel()
@@ -337,7 +361,15 @@ func (c *CLI) rpcWorkspaceRun(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.StartGitOperation(rpcCtx, &dieterv1.StartGitOperationRequest{CardId: set.Arg(0), Kind: *kind, ExpectedRevision: *revision, Parameters: map[string]string(parameters)})
+	cardID := ""
+	if set.NArg() == 1 {
+		cardID = set.Arg(0)
+	}
+	projectID, cardID, err := c.resolveFileScope(ctx, client, rpcCtx, *projectRef, cardID)
+	if err != nil {
+		return err
+	}
+	value, err := client.StartGitOperation(rpcCtx, &dieterv1.StartGitOperationRequest{CardId: cardID, ProjectId: projectID, Kind: *kind, ExpectedRevision: *revision, Parameters: map[string]string(parameters)})
 	if err != nil {
 		return err
 	}

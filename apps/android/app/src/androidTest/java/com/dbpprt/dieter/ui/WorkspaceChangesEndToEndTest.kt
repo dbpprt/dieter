@@ -7,11 +7,14 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -22,7 +25,9 @@ import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.v1.CreateConversationRequest
 import java.io.File
 import java.util.UUID
+import io.grpc.Status
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertNotNull
@@ -107,10 +112,11 @@ class WorkspaceChangesEndToEndTest {
         try {
             // Card-scoped file writes lazily provision the worktree and give the
             // changeset real tracked content without starting an agent turn.
+            val worktreeNote = "android-e2e-${UUID.randomUUID().toString().take(8)}.md"
             runBlocking {
                 repository.createFile(
                     projectId = project.id,
-                    path = "android-e2e-note.md",
+                    path = worktreeNote,
                     kind = "file",
                     content = "# Android workspace E2E\n\nWritten through the card-scoped file API.\n",
                     cardId = fixture.id,
@@ -123,26 +129,28 @@ class WorkspaceChangesEndToEndTest {
                 withTimeout(10_000) { manager.state.first { state -> state.cards.any { it.id == fixture.id } } }
             }
             container.requestOpen(cardId = fixture.id)
-
-            composeRule.waitUntil(20_000) {
-                composeRule.onAllNodesWithText("Changes").fetchSemanticsNodes().isNotEmpty()
-            }
-            composeRule.onNodeWithText("Changes").performClick()
-            composeRule.waitUntil(60_000) {
-                composeRule.onAllNodesWithTag("workspace-changes-list").fetchSemanticsNodes().isNotEmpty()
-            }
-            composeRule.waitUntil(60_000) {
-                composeRule.onAllNodesWithText("android-e2e-note.md").fetchSemanticsNodes().isNotEmpty()
-            }
             val screenshotDirectory = arguments.getString("additionalTestOutputDir")
                 ?.takeIf(String::isNotBlank)
                 ?.let(::File)
                 ?: requireNotNull(instrumentation.targetContext.getExternalFilesDir(null))
             screenshotDirectory.mkdirs()
+
+            composeRule.waitUntil(20_000) {
+                composeRule.onAllNodesWithTag("card-detail-changes").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onAllNodesWithTag("card-detail-changes")[1].performClick()
+            composeRule.waitForIdle()
+            capture(screenshotDirectory, "workspace-tab-opened-e2e.png")
+            composeRule.waitUntil(60_000) {
+                composeRule.onAllNodesWithTag("workspace-changes-list").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.waitUntil(60_000) {
+                composeRule.onAllNodesWithText(worktreeNote).fetchSemanticsNodes().isNotEmpty()
+            }
             capture(screenshotDirectory, "workspace-changes-list-e2e.png")
 
             // Review the unified diff for the untracked file.
-            composeRule.onNodeWithText("android-e2e-note.md").performClick()
+            composeRule.onAllNodesWithText(worktreeNote)[1].performClick()
             composeRule.waitUntil(30_000) {
                 composeRule.onAllNodesWithTag("workspace-diff").fetchSemanticsNodes().isNotEmpty()
             }
@@ -152,36 +160,34 @@ class WorkspaceChangesEndToEndTest {
                     .fetchSemanticsNodes().isNotEmpty()
             }
             capture(screenshotDirectory, "workspace-diff-e2e.png")
-            composeRule.onNodeWithTag("workspace-diff-back").performClick()
+            composeRule.onAllNodesWithTag("workspace-diff-back")[1].performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("workspace-changes-list").fetchSemanticsNodes().isNotEmpty()
             }
 
             // Commit through the durable Git operation flow.
-            composeRule.onNodeWithTag("workspace-commit").performClick()
+            composeRule.onAllNodesWithTag("workspace-commit")[1].performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("commit-subject").fetchSemanticsNodes().isNotEmpty()
             }
             capture(screenshotDirectory, "workspace-commit-sheet-e2e.png")
             composeRule.onNodeWithTag("operation-start").performClick()
-            // The changeset compares against the base branch, so the committed
-            // file stays listed; the commit row appearing proves the durable
-            // operation ran, streamed, and the surface refreshed.
+            // Working Changes is local-only, so a successful commit empties it.
             composeRule.waitUntil(120_000) {
-                composeRule.onAllNodesWithText("COMMITS").fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithText("No local changes.").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithText("COMMITS").assertIsDisplayed()
+            composeRule.onAllNodesWithText("No local changes.")[1].assertIsDisplayed()
             capture(screenshotDirectory, "workspace-committed-e2e.png")
 
             val changeset = runBlocking { repository.changeset(fixture.id) }
-            assertTrue("Commit should appear in the changeset", changeset.commitsCount >= 1)
-            assertTrue("Committed file should still diff against the base", changeset.filesCount == 1)
+            assertTrue("Committed history must not appear in Working Changes", changeset.commitsCount == 0)
+            assertTrue("Committed files must leave Working Changes", changeset.filesCount == 0)
             val workspace = runBlocking { repository.workspace(fixture.id) }
             assertTrue("Working tree should be clean after commit", !workspace.dirty)
 
             // Merge into the base branch through the orchestrated flow:
             // merge_local, cleanup, and the card moving to Done.
-            composeRule.onNodeWithTag("workspace-merge").performClick()
+            composeRule.onAllNodesWithTag("workspace-merge")[1].performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("merge-confirm").fetchSemanticsNodes().isNotEmpty()
             }
@@ -193,8 +199,81 @@ class WorkspaceChangesEndToEndTest {
             capture(screenshotDirectory, "workspace-merged-e2e.png")
             val merged = runBlocking { repository.card(fixture.id).card }
             assertTrue("Card should move to Done after merge, was ${merged.lane}", merged.lane == "done")
+
+            // Project-directory changes live under Files > Changes and are
+            // project-scoped rather than attributed to the card above.
+            val projectNote = "android-project-${UUID.randomUUID().toString().take(8)}.md"
+            runBlocking {
+                repository.createFile(
+                    projectId = project.id,
+                    path = projectNote,
+                    kind = "file",
+                    content = "# Android project Changes\n",
+                )
+            }
+            composeRule.onAllNodesWithContentDescription("Back")[1].performClick()
+            composeRule.waitUntil(20_000) { composeRule.onAllNodesWithText("Files").fetchSemanticsNodes().isNotEmpty() }
+            composeRule.onAllNodesWithText("Files")[0].performClick()
+            composeRule.waitUntil(20_000) { composeRule.onAllNodesWithText("Browse").fetchSemanticsNodes().isNotEmpty() }
+            composeRule.onNodeWithTag("project-files-changes").performClick()
+            composeRule.waitUntil(30_000) { composeRule.onAllNodesWithText(projectNote).fetchSemanticsNodes().isNotEmpty() }
+            capture(screenshotDirectory, "project-changes-list-e2e.png")
+
+            val projectChanges = runBlocking {
+                retryTransient {
+                    manager.ensureProjectRoute(project.id)
+                    repository.projectChangeset(project.id)
+                }
+            }
+            assertTrue("Project changes must carry project scope", projectChanges.projectId == project.id && projectChanges.cardId.isEmpty())
+            assertTrue("Project note must be unstaged", projectChanges.filesList.any { it.path == projectNote && it.unstaged })
+            composeRule.onNodeWithTag("project-changes-stage-all").performClick()
+            composeRule.waitUntil(30_000) {
+                composeRule.onAllNodesWithText("No unstaged changes").fetchSemanticsNodes().isNotEmpty() &&
+                    composeRule.onAllNodesWithTag("project-changes-commit").fetchSemanticsNodes().isNotEmpty()
+            }
+            capture(screenshotDirectory, "project-changes-staged-e2e.png")
+            composeRule.onNodeWithTag("project-changes-commit").performClick()
+            composeRule.waitForIdle()
+            capture(screenshotDirectory, "project-commit-clicked-e2e.png")
+            composeRule.waitUntil(10_000) {
+                composeRule.onAllNodesWithTag("project-commit-subject").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("project-commit-subject").performTextInput("Android project changes E2E")
+            composeRule.onNodeWithTag("project-operation-start").performClick()
+            composeRule.waitUntil(120_000) { composeRule.onAllNodesWithTag("project-changes-clean").fetchSemanticsNodes().isNotEmpty() }
+            capture(screenshotDirectory, "project-changes-committed-e2e.png")
+            val cleanProject = runBlocking {
+                retryTransient {
+                    manager.ensureProjectRoute(project.id)
+                    repository.projectChangeset(project.id)
+                }
+            }
+            assertTrue("Project checkout must be clean after the staged commit", cleanProject.filesCount == 0 && !cleanProject.dirty)
+
+            val discarded = "android-discard-${UUID.randomUUID().toString().take(8)}.txt"
+            runBlocking {
+                retryTransient {
+                    manager.ensureProjectRoute(project.id)
+                    repository.createFile(project.id, discarded, "file", "discard me\n")
+                }
+            }
+            composeRule.onNodeWithContentDescription("Refresh project changes").performClick()
+            composeRule.waitUntil(30_000) { composeRule.onAllNodesWithText(discarded).fetchSemanticsNodes().isNotEmpty() }
+            composeRule.onNodeWithContentDescription("Discard $discarded").performClick()
+            composeRule.onNodeWithText("Discard").performClick()
+            composeRule.waitUntil(120_000) { composeRule.onAllNodesWithTag("project-changes-clean").fetchSemanticsNodes().isNotEmpty() }
+            assertTrue(
+                "Discard must remove the untracked project file",
+                runBlocking {
+                    retryTransient {
+                        manager.ensureProjectRoute(project.id)
+                        repository.projectChangeset(project.id)
+                    }
+                }.filesCount == 0,
+            )
         } finally {
-            runBlocking { repository.archiveCard(fixture.id, true) }
+            runBlocking { runCatching { retryTransient { repository.archiveCard(fixture.id, true) } } }
         }
     }
 
@@ -206,5 +285,17 @@ class WorkspaceChangesEndToEndTest {
                 .asAndroidBitmap()
                 .compress(Bitmap.CompressFormat.PNG, 100, output)
         }
+    }
+
+    private suspend fun <T> retryTransient(block: suspend () -> T): T = withTimeout(30_000) {
+        while (true) {
+            try {
+                return@withTimeout block()
+            } catch (error: Throwable) {
+                if (Status.fromThrowable(error).code !in setOf(Status.Code.UNAVAILABLE, Status.Code.UNAUTHENTICATED)) throw error
+                delay(250)
+            }
+        }
+        error("unreachable")
     }
 }

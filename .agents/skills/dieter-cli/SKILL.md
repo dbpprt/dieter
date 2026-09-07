@@ -145,31 +145,49 @@ dieter file save --card <card-id> --revision auto \
   --file /tmp/replacement.go path/to/file.go
 ```
 
-Inspect the current workspace revision before commenting on or mutating Git
-state:
+Inspect local, uncommitted Git state through exactly one scope. A worktree
+conversation is addressed by card ID. The registered project directory is
+addressed by `--project`; a project-mode card is intentionally rejected because
+that checkout is shared rather than owned by the card:
 
 ```sh
 dieter workspace show <card-id>
-dieter workspace changes <card-id>
-dieter workspace diff --path path/to/file.go <card-id>
+dieter workspace changes <worktree-card-id>
+dieter workspace diff --section unstaged --path path/to/file.go <worktree-card-id>
+dieter workspace changes --project <project-id-or-name>
+dieter workspace diff --project <project-id-or-name> \
+  --section staged --path path/to/file.go
 dieter workspace comments <card-id>
 dieter workspace scm <card-id>
 ```
+
+`changes` separates the staged index from unstaged/untracked working-tree
+edits. A path can appear in both sections. `diff --section` accepts `staged`,
+`unstaged`, or `combined`; always carry the newest returned revision into a
+mutation.
 
 Git operations are daemon-owned, serialized, and durable. Supply the expected
 revision where the operation depends on the changeset, and repeat `--param` for
 kind-specific values:
 
 ```sh
-dieter workspace run --kind validate --revision <revision> --wait <card-id>
+dieter workspace run --kind stage --project <project-id-or-name> \
+  --revision <revision> --param path=path/to/file.go --wait
+dieter workspace run --kind commit --project <project-id-or-name> \
+  --revision <revision> --param subject="Focused change" --wait
+dieter workspace run --kind validate --wait <worktree-card-id>
 dieter workspace operation <operation-id>
 dieter workspace watch <operation-id>
 ```
 
-Kinds include `commit`, `update`, `continue_conflict`, `abort_conflict`,
-`validate`, `merge_local`, `push`, `cleanup`, `discard`, `adopt`, `create_pr`,
-`refresh_pr`, and `merge_pr`. Inspect help and current state before destructive
-or externally visible Git operations.
+Project targets support `stage`, `unstage`, `discard_changes`, `commit`, and
+`validate`. An empty stage/unstage path means all files; `discard_changes`
+requires one path and creates recovery artifacts first. `commit` commits only
+the staged index unless `--param stage_all=true` is explicitly supplied.
+Worktree targets additionally support `update`, `continue_conflict`,
+`abort_conflict`, `merge_local`, `push`, `cleanup`, `discard`, `adopt`,
+`create_pr`, `refresh_pr`, and `merge_pr`. Inspect help and current state before
+destructive or externally visible Git operations.
 
 ## Run commands on a daemon host
 

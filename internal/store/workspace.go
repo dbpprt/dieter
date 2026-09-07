@@ -290,9 +290,21 @@ func (s *Store) CreateGitOperation(cardRef, kind, expectedRevision string) (mode
 	if err != nil {
 		return model.GitOperation{}, err
 	}
+	return s.createGitOperation(card.ID, card.ProjectID, kind, expectedRevision)
+}
+
+func (s *Store) CreateProjectGitOperation(projectRef, kind, expectedRevision string) (model.GitOperation, error) {
+	project, err := s.ResolveProject(projectRef)
+	if err != nil {
+		return model.GitOperation{}, err
+	}
+	return s.createGitOperation("", project.ID, kind, expectedRevision)
+}
+
+func (s *Store) createGitOperation(cardID, projectID, kind, expectedRevision string) (model.GitOperation, error) {
 	now := timestamp()
 	value := model.GitOperation{
-		ID: newID("gitop_"), CardID: card.ID, ProjectID: card.ProjectID, Kind: strings.TrimSpace(kind),
+		ID: newID("gitop_"), CardID: cardID, ProjectID: projectID, Kind: strings.TrimSpace(kind),
 		Status: model.GitOperationQueued, ExpectedRevision: strings.TrimSpace(expectedRevision),
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -303,8 +315,8 @@ func (s *Store) CreateGitOperation(cardRef, kind, expectedRevision string) (mode
 }
 
 func (s *Store) SaveGitOperation(value model.GitOperation) (model.GitOperation, error) {
-	if !validFileID(value.ID) || !validFileID(value.CardID) {
-		return model.GitOperation{}, errors.New("Git operation ID and card ID are required")
+	if !validFileID(value.ID) || !validFileID(value.ProjectID) || (value.CardID != "" && !validFileID(value.CardID)) {
+		return model.GitOperation{}, errors.New("Git operation ID, project ID, and optional card ID are invalid")
 	}
 	value.UpdatedAt = timestamp()
 	release, err := s.beginWrite()
@@ -313,6 +325,24 @@ func (s *Store) SaveGitOperation(value model.GitOperation) (model.GitOperation, 
 	}
 	defer release()
 	return value, writeJSON(filepath.Join(s.gitOperationDir(), value.ID+".json"), value)
+}
+
+func (s *Store) ActiveProjectGitOperation(projectRef string) (model.GitOperation, error) {
+	project, err := s.ResolveProject(projectRef)
+	if err != nil {
+		return model.GitOperation{}, err
+	}
+	values, err := s.ListGitOperations("")
+	if err != nil {
+		return model.GitOperation{}, err
+	}
+	for _, value := range values {
+		if value.ProjectID == project.ID && value.CardID == "" &&
+			(value.Status == model.GitOperationQueued || value.Status == model.GitOperationRunning || value.Status == model.GitOperationWaitingForResolution) {
+			return value, nil
+		}
+	}
+	return model.GitOperation{}, ErrNotFound
 }
 
 func (s *Store) GitOperation(id string) (model.GitOperation, error) {

@@ -150,14 +150,19 @@ func protoWorkspace(value model.Workspace) *dieterv1.Workspace {
 
 func protoChangeset(value model.Changeset) *dieterv1.Changeset {
 	result := &dieterv1.Changeset{
-		CardId: value.CardID, Revision: value.Revision, ComparisonSha: value.MergeBaseSHA,
+		CardId: value.CardID, ProjectId: value.ProjectID, Revision: value.Revision, ComparisonSha: value.MergeBaseSHA,
 		HeadSha: value.HeadSHA, BaseSha: value.CurrentBaseSHA, Additions: int32(value.Additions),
 		Deletions: int32(value.Deletions), Volatile: value.Volatile, GeneratedAt: value.CreatedAt,
+		Branch: value.Branch, BaseBranch: value.BaseBranch, Ahead: int32(value.Ahead), Behind: int32(value.Behind),
+		Dirty: value.Dirty, Conflicted: value.Conflicted, CurrentOperationId: value.CurrentOperationID,
 	}
 	for _, file := range value.Files {
 		result.Files = append(result.Files, &dieterv1.ChangedFile{
 			Path: file.Path, OldPath: file.PreviousPath, Status: file.Status, Additions: int32(file.Additions),
 			Deletions: int32(file.Deletions), Binary: file.Binary, Untracked: file.Status == "untracked", Conflicted: file.Conflicted,
+			IndexStatus: file.IndexStatus, WorktreeStatus: file.WorktreeStatus, Staged: file.Staged, Unstaged: file.Unstaged,
+			StagedAdditions: int32(file.StagedAdditions), StagedDeletions: int32(file.StagedDeletions),
+			UnstagedAdditions: int32(file.UnstagedAdditions), UnstagedDeletions: int32(file.UnstagedDeletions),
 		})
 	}
 	for _, commit := range value.Commits {
@@ -178,7 +183,7 @@ func shortProtoSHA(value string) string {
 
 func protoFileDiff(value model.FileDiff) *dieterv1.FileDiff {
 	return &dieterv1.FileDiff{
-		CardId: value.CardID, Path: value.Path, CommitSha: value.CommitSHA, Revision: value.Revision, Patch: value.Patch,
+		CardId: value.CardID, ProjectId: value.ProjectID, Path: value.Path, CommitSha: value.CommitSHA, Revision: value.Revision, Patch: value.Patch, Section: value.Section,
 		Binary: value.Binary, Truncated: value.Truncated, NextOffset: int64(value.NextOffset), TotalBytes: int64(value.TotalBytes),
 	}
 }

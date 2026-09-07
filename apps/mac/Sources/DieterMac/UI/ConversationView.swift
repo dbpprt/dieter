@@ -63,7 +63,12 @@ struct ConversationView: View {
                 } else if tab == "Comments" {
                     CommentsView()
                 } else if tab == "Changes" {
-                    WorkspaceChangesView()
+                    let card = store.selectedCard ?? store.selectedDetail?.card
+                    if ConversationWorkspaceMode.projectMode(card?.workspaceMode.isEmpty == false ? card?.workspaceMode ?? "" : card?.workspace.mode ?? "project") == .project {
+                        ProjectDirectoryChangesRedirect()
+                    } else {
+                        WorkspaceChangesView()
+                    }
                 } else {
                     ConversationTimeline()
                         .id(store.selectedCardID ?? store.selectedChatID ?? "")
@@ -101,6 +106,26 @@ struct ConversationView: View {
         .attachmentPasteCatcher { pasteboard in
             store.attachPasteboard(pasteboard)
         }
+    }
+}
+
+private struct ProjectDirectoryChangesRedirect: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("Changes belong to the project", systemImage: "folder.badge.gearshape")
+        } description: {
+            Text("This conversation uses the shared project directory. Its local changes are shown once for the checkout, independent of any card.")
+        } actions: {
+            Button("Open Project Changes") {
+                let projectID = (store.selectedCard ?? store.selectedDetail?.card)?.projectID ?? store.selectedProjectID
+                Task { await store.openProjectChanges(projectID) }
+            }
+            .buttonStyle(DieterPrimaryButtonStyle())
+            .accessibilityIdentifier("changes.open-project")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

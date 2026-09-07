@@ -28,6 +28,9 @@ enum class ConversationWorkspaceMode(val wire: String, val title: String, val sh
 
 /** Durable Git operation kinds accepted by StartGitOperation. */
 object GitOperationKinds {
+    const val STAGE = "stage"
+    const val UNSTAGE = "unstage"
+    const val DISCARD_CHANGES = "discard_changes"
     const val COMMIT = "commit"
     const val UPDATE = "update"
     const val VALIDATE = "validate"
@@ -43,6 +46,9 @@ object GitOperationKinds {
     const val DISCARD = "discard"
 
     fun title(kind: String): String = when (kind) {
+        STAGE -> "Stage changes"
+        UNSTAGE -> "Unstage changes"
+        DISCARD_CHANGES -> "Discard local changes"
         COMMIT -> "Commit changes"
         UPDATE -> "Update from base"
         VALIDATE -> "Run validation"
@@ -60,6 +66,22 @@ object GitOperationKinds {
     }
 
     fun destructive(kind: String): Boolean = kind == DISCARD || kind == ABORT_CONFLICT
+}
+
+/** Local, uncommitted Git state for the selected registered project checkout. */
+data class ProjectChangesState(
+    val projectId: String = "",
+    val changeset: Changeset? = null,
+    val selectedPath: String = "",
+    val selectedSection: String = "",
+    val diff: FileDiff? = null,
+    val diffLines: List<UnifiedDiffLine> = emptyList(),
+    val loading: Boolean = false,
+    val diffLoading: Boolean = false,
+    val error: String? = null,
+    val operation: GitOperation? = null,
+) {
+    val operationActive: Boolean get() = operation?.let { GitOperationStatuses.active(it.status) } == true
 }
 
 object GitOperationStatuses {

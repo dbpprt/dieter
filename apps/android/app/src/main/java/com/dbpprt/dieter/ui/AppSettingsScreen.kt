@@ -78,7 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.isLoopbackHost
+import com.dbpprt.dieter.connection.isPermittedInsecureGatewayHost
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.dieterEndpointFromAddress
@@ -133,7 +133,7 @@ fun AppSettingsScreen(
     val validationError = when {
         drafts.isEmpty() -> "Keep at least one connection."
         parsed.any { it.isFailure } -> parsed.first { it.isFailure }.exceptionOrNull()?.message
-        parsed.mapNotNull { it.getOrNull() }.any { !it.secure && !isLoopbackHost(it.host) } -> "Remote gateways must use HTTPS."
+        parsed.mapNotNull { it.getOrNull() }.any { !it.secure && !isPermittedInsecureGatewayHost(it.host) } -> "Remote gateways must use HTTPS."
         parsed.mapNotNull { it.getOrNull()?.address?.lowercase() }.distinct().size != drafts.size -> "Connection addresses must be unique."
         else -> null
     }

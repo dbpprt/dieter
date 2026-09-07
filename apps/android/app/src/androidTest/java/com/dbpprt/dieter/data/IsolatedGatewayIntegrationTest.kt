@@ -270,7 +270,7 @@ class IsolatedGatewayIntegrationTest {
         repository.setAccessToken(origin, token)
         repository.replaceEndpoints(listOf(origin))
         repository.selectEndpoint(origin)
-        val daemon = repository.daemons().daemonsList.single()
+        val daemon = repository.daemons().daemonsList.first { it.apiVersion == DIETER_API_VERSION }
         val endpoint = origin.copy(
             id = "${origin.credentialId}#${daemon.id}",
             label = daemon.name.ifBlank { daemon.id },

@@ -213,15 +213,23 @@ type WorkspaceSummary struct {
 }
 
 type ChangedFile struct {
-	Path         string `json:"path"`
-	PreviousPath string `json:"previousPath,omitempty"`
-	Status       string `json:"status"`
-	Additions    int    `json:"additions,omitempty"`
-	Deletions    int    `json:"deletions,omitempty"`
-	Binary       bool   `json:"binary,omitempty"`
-	Submodule    bool   `json:"submodule,omitempty"`
-	Conflicted   bool   `json:"conflicted,omitempty"`
-	HunkCount    int    `json:"hunkCount,omitempty"`
+	Path              string `json:"path"`
+	PreviousPath      string `json:"previousPath,omitempty"`
+	Status            string `json:"status"`
+	Additions         int    `json:"additions,omitempty"`
+	Deletions         int    `json:"deletions,omitempty"`
+	IndexStatus       string `json:"indexStatus,omitempty"`
+	WorktreeStatus    string `json:"worktreeStatus,omitempty"`
+	Staged            bool   `json:"staged,omitempty"`
+	Unstaged          bool   `json:"unstaged,omitempty"`
+	StagedAdditions   int    `json:"stagedAdditions,omitempty"`
+	StagedDeletions   int    `json:"stagedDeletions,omitempty"`
+	UnstagedAdditions int    `json:"unstagedAdditions,omitempty"`
+	UnstagedDeletions int    `json:"unstagedDeletions,omitempty"`
+	Binary            bool   `json:"binary,omitempty"`
+	Submodule         bool   `json:"submodule,omitempty"`
+	Conflicted        bool   `json:"conflicted,omitempty"`
+	HunkCount         int    `json:"hunkCount,omitempty"`
 }
 
 type WorkspaceCommit struct {
@@ -236,30 +244,36 @@ type WorkspaceCommit struct {
 }
 
 type Changeset struct {
-	CardID         string            `json:"cardId"`
-	Revision       string            `json:"revision"`
-	BaseBranch     string            `json:"baseBranch,omitempty"`
-	BaseSHA        string            `json:"baseSha,omitempty"`
-	CurrentBaseSHA string            `json:"currentBaseSha,omitempty"`
-	MergeBaseSHA   string            `json:"mergeBaseSha,omitempty"`
-	HeadSHA        string            `json:"headSha,omitempty"`
-	Ahead          int               `json:"ahead,omitempty"`
-	Behind         int               `json:"behind,omitempty"`
-	Additions      int               `json:"additions,omitempty"`
-	Deletions      int               `json:"deletions,omitempty"`
-	Dirty          bool              `json:"dirty,omitempty"`
-	Volatile       bool              `json:"volatile,omitempty"`
-	Files          []ChangedFile     `json:"files,omitempty"`
-	Commits        []WorkspaceCommit `json:"commits,omitempty"`
-	CreatedAt      string            `json:"createdAt"`
+	CardID             string            `json:"cardId"`
+	ProjectID          string            `json:"projectId,omitempty"`
+	Revision           string            `json:"revision"`
+	Branch             string            `json:"branch,omitempty"`
+	BaseBranch         string            `json:"baseBranch,omitempty"`
+	BaseSHA            string            `json:"baseSha,omitempty"`
+	CurrentBaseSHA     string            `json:"currentBaseSha,omitempty"`
+	MergeBaseSHA       string            `json:"mergeBaseSha,omitempty"`
+	HeadSHA            string            `json:"headSha,omitempty"`
+	Ahead              int               `json:"ahead,omitempty"`
+	Behind             int               `json:"behind,omitempty"`
+	Additions          int               `json:"additions,omitempty"`
+	Deletions          int               `json:"deletions,omitempty"`
+	Dirty              bool              `json:"dirty,omitempty"`
+	Conflicted         bool              `json:"conflicted,omitempty"`
+	CurrentOperationID string            `json:"currentOperationId,omitempty"`
+	Volatile           bool              `json:"volatile,omitempty"`
+	Files              []ChangedFile     `json:"files,omitempty"`
+	Commits            []WorkspaceCommit `json:"commits,omitempty"`
+	CreatedAt          string            `json:"createdAt"`
 }
 
 type FileDiff struct {
 	CardID       string `json:"cardId"`
+	ProjectID    string `json:"projectId,omitempty"`
 	Revision     string `json:"revision"`
 	Path         string `json:"path"`
 	PreviousPath string `json:"previousPath,omitempty"`
 	CommitSHA    string `json:"commitSha,omitempty"`
+	Section      string `json:"section,omitempty"`
 	Patch        string `json:"patch,omitempty"`
 	Binary       bool   `json:"binary,omitempty"`
 	Truncated    bool   `json:"truncated,omitempty"`

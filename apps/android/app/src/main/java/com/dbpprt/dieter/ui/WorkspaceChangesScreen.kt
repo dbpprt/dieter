@@ -127,6 +127,20 @@ internal fun WorkspaceChangesBody(
 ) {
     val review = state.workspaceReview
     val card = state.conversation?.detail?.card ?: state.selectedCard
+    if (card != null && ConversationWorkspaceMode.resolve(card.workspaceMode.ifBlank { card.workspace.mode }) == ConversationWorkspaceMode.PROJECT) {
+        WorkspaceEmptyState(
+            icon = Icons.Outlined.Folder,
+            title = "Changes belong to the project",
+            detail = "This conversation uses the shared project directory. Its local changes are shown once for the checkout, independent of any card.",
+            action = {
+                Button(onClick = model::openProjectChanges, modifier = Modifier.testTag("changes-open-project")) {
+                    Text("Open project changes")
+                }
+            },
+            modifier = modifier,
+        )
+        return
+    }
     val latestState by rememberUpdatedState(state)
 
     LaunchedEffect(active, card?.id) {
@@ -420,11 +434,11 @@ private fun WorkspaceReviewList(
             }
         }
         val files = changes?.filesList.orEmpty()
-        item(key = "files-header") { WorkspaceSectionHeader("Files", files.size) }
+        item(key = "files-header") { WorkspaceSectionHeader("Local changes", files.size) }
         if (files.isEmpty()) {
             item(key = "files-empty") {
                 Text(
-                    if (changes == null) "Loading changes…" else "No changed files vs $baseBranch.",
+                    if (changes == null) "Loading changes…" else "No local changes.",
                     color = DieterMuted,
                     fontSize = 12.sp,
                     modifier = Modifier.padding(vertical = 6.dp),

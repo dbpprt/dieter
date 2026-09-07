@@ -466,6 +466,11 @@ final class DieterRPC: Sendable {
         return try await service.getChangeset(request: .init(message: request))
     }
 
+    func changeset(projectID: String) async throws -> Dieter_V1_Changeset {
+        var request = Dieter_V1_GetChangesetRequest(); request.projectID = projectID
+        return try await service.getChangeset(request: .init(message: request))
+    }
+
     func fileDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff {
         try await service.getFileDiff(request: .init(message: request))
     }

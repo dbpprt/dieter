@@ -71,6 +71,9 @@ func TestProjectDirectoryChangesetUsesItsCurrentFeatureBranch(t *testing.T) {
 	}
 	runGit(t, repository, "add", "feature.txt")
 	runGit(t, repository, "commit", "-m", "feature commit")
+	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("local project change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
 	if err := data.Ensure(); err != nil {
@@ -89,7 +92,11 @@ func TestProjectDirectoryChangesetUsesItsCurrentFeatureBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	set, err := changeset.New(manager).Get(context.Background(), chat.ID)
+	service := changeset.New(manager)
+	if _, err := service.Get(context.Background(), chat.ID); !errors.Is(err, changeset.ErrProjectChangesRequireProject) {
+		t.Fatalf("project-mode card changes must be rejected, got %v", err)
+	}
+	set, err := service.GetProject(context.Background(), project.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,8 +104,56 @@ func TestProjectDirectoryChangesetUsesItsCurrentFeatureBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.Path != canonicalRepository || value.Branch != "feature/direct" || len(set.Commits) != 1 || set.Commits[0].Subject != "feature commit" {
+	if value.Path != canonicalRepository || set.ProjectID != project.ID || set.CardID != "" || set.Branch != "feature/direct" || len(set.Files) != 1 || set.Files[0].Path != "README.md" || len(set.Commits) != 0 {
 		t.Fatalf("unexpected direct feature-branch changeset: workspace=%#v changes=%#v", value, set)
+	}
+}
+
+func TestChangesetSeparatesStagedAndUnstagedSections(t *testing.T) {
+	repository := testRepository(t)
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.CreateChat(store.CreateCardInput{Project: project.ID, Title: "Sections", Prompt: "work", WorkspaceMode: model.WorkspaceModeWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := workspace.New(data, nil)
+	value, err := manager.Ensure(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(value.Path, "README.md"), []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, value.Path, "add", "README.md")
+	if err := os.WriteFile(filepath.Join(value.Path, "README.md"), []byte("staged\nunstaged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	service := changeset.New(manager)
+	set, err := service.Get(context.Background(), chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Files) != 1 || !set.Files[0].Staged || !set.Files[0].Unstaged || set.Files[0].StagedAdditions != 1 || set.Files[0].UnstagedAdditions != 1 {
+		t.Fatalf("unexpected staged/unstaged split: %#v", set.Files)
+	}
+	staged, err := service.FileDiffTarget(context.Background(), chat.ID, "", set.Revision, "README.md", "", changeset.DiffSectionStaged, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unstaged, err := service.FileDiffTarget(context.Background(), chat.ID, "", set.Revision, "README.md", "", changeset.DiffSectionUnstaged, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(staged.Patch, "+staged") || strings.Contains(staged.Patch, "+unstaged") || !strings.Contains(unstaged.Patch, "+unstaged") {
+		t.Fatalf("section patches were not isolated: staged=%q unstaged=%q", staged.Patch, unstaged.Patch)
 	}
 }
 
@@ -159,10 +214,11 @@ func TestCommitDiffWithoutPathReturnsTheWholeCommitPatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(set.Commits) != 1 {
-		t.Fatalf("expected one commit ahead, got %#v", set.Commits)
+	if len(set.Commits) != 0 || len(set.Files) != 0 {
+		t.Fatalf("working changes must exclude committed history: %#v", set)
 	}
-	diff, err := service.CommitDiff(context.Background(), chat.ID, set.Revision, set.Commits[0].SHA, "", 0, 0)
+	sha := strings.TrimSpace(gitOutput(t, value.Path, "rev-parse", "HEAD"))
+	diff, err := service.CommitDiff(context.Background(), chat.ID, set.Revision, sha, "", 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,4 +228,15 @@ func TestCommitDiffWithoutPathReturnsTheWholeCommitPatch(t *testing.T) {
 	if _, err := service.FileDiff(context.Background(), chat.ID, set.Revision, "", "", 0, 0); err == nil {
 		t.Fatal("working-tree diff without a path must stay rejected")
 	}
+}
+
+func gitOutput(t *testing.T, directory string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Dir = directory
+	output, err := command.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return string(output)
 }

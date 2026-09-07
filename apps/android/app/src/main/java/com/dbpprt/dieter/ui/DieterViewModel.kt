@@ -189,6 +189,8 @@ data class DieterUiState(
     val fileDocument: FileDocument? = null,
     val fileDraft: String = "",
     val fileDirty: Boolean = false,
+    val projectFilesMode: String = "browse",
+    val projectChanges: ProjectChangesState = ProjectChangesState(),
     val terminals: List<Terminal> = emptyList(),
     val selectedTerminalId: String? = null,
     val terminalScreens: Map<String, TerminalScreenState> = emptyMap(),
@@ -349,6 +351,10 @@ class DieterViewModel(
     private var gitOperationLastSequence = 0L
     private var mergeFlowJob: Job? = null
     private var workspaceToastJob: Job? = null
+    private var projectChangesJob: Job? = null
+    private var projectDiffJob: Job? = null
+    private var projectGitOperationJob: Job? = null
+    private var projectGitOperationId: String? = null
     private var spacesJob: Job? = null
     private var connectionDialogGraceJob: Job? = null
     private var connectionDialogManuallyRequested = false
@@ -423,6 +429,9 @@ class DieterViewModel(
         workspaceSurfaceJob?.cancel()
         workspaceDiffJob?.cancel()
         gitOperationJob?.cancel()
+        projectChangesJob?.cancel()
+        projectDiffJob?.cancel()
+        projectGitOperationJob?.cancel()
         spacesJob?.cancel()
         connectionDialogGraceJob?.cancel()
         connectionDialogGraceJob = null
@@ -756,7 +765,7 @@ class DieterViewModel(
             ).preserveConnectionPresentation(current)
         }
         when (_state.value.destination) {
-            Destination.FILES -> viewModelScope.launch { loadFiles() }
+            Destination.FILES -> if (_state.value.projectFilesMode == "changes") loadProjectChanges() else viewModelScope.launch { loadFiles() }
             Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
             Destination.TERMINALS -> if (_state.value.terminals.isEmpty()) loadTerminals()
             else -> Unit
@@ -776,6 +785,7 @@ class DieterViewModel(
                 conversation = null,
                 olderMessages = emptyList(),
                 fileDocument = null,
+                projectFilesMode = if (destination == Destination.FILES) "browse" else it.projectFilesMode,
                 boardOverviewVisible = if (destination == Destination.BOARD) true else it.boardOverviewVisible,
             )
         }
@@ -855,6 +865,8 @@ class DieterViewModel(
                 olderMessages = emptyList(),
                 filePath = "",
                 fileDocument = null,
+                projectFilesMode = "browse",
+                projectChanges = ProjectChangesState(projectId = id),
                 schedules = emptyList(),
                 schedulesTotalCount = 0,
                 schedulesNextPageToken = "",
@@ -1598,6 +1610,241 @@ class DieterViewModel(
         if (_state.value.fileDirty && !force) return false
         _state.update { it.copy(fileDocument = null, fileDraft = "", fileDirty = false) }
         return true
+    }
+
+    fun setProjectFilesMode(mode: String) {
+        val normalized = if (mode == "changes") "changes" else "browse"
+        _state.update { current ->
+            current.copy(
+                projectFilesMode = normalized,
+                fileDocument = if (normalized == "changes") null else current.fileDocument,
+                projectChanges = if (current.projectChanges.projectId == current.selectedProjectId) {
+                    current.projectChanges
+                } else {
+                    ProjectChangesState(projectId = current.selectedProjectId)
+                },
+            )
+        }
+        if (normalized == "changes") loadProjectChanges() else viewModelScope.launch { loadFiles() }
+    }
+
+    fun openProjectChanges() {
+        val current = _state.value
+        val projectId = current.selectedCard?.projectId?.ifBlank { null }
+            ?: current.conversation?.detail?.card?.projectId?.ifBlank { null }
+            ?: current.selectedProjectId
+        if (projectId.isBlank()) return
+        rememberConversation()
+        cancelConversationStream()
+        resetWorkspaceReview(null)
+        _state.update {
+            it.copy(
+                destination = Destination.FILES,
+                selectedProjectId = projectId,
+                selectedCardId = null,
+                conversation = null,
+                olderMessages = emptyList(),
+                detailTab = 0,
+                filePath = "",
+                fileDocument = null,
+                projectFilesMode = "changes",
+                projectChanges = ProjectChangesState(projectId = projectId),
+            )
+        }
+        connectionManager.selectProject(projectId)
+        loadProjectChanges()
+    }
+
+    fun loadProjectChanges() {
+        val projectId = _state.value.selectedProjectId
+        if (projectId.isBlank() || projectChangesJob?.isActive == true) return
+        projectChangesJob = viewModelScope.launch { refreshProjectChanges(projectId) }
+    }
+
+    private suspend fun refreshProjectChanges(projectId: String) {
+        _state.update { current ->
+            if (current.selectedProjectId != projectId) current
+            else current.copy(projectChanges = current.projectChanges.copy(projectId = projectId, loading = true, error = null))
+        }
+        try {
+            connectionManager.ensureProjectRoute(projectId)
+            val changes = repository.projectChangeset(projectId)
+            if (_state.value.selectedProjectId != projectId) return
+            val previous = _state.value.projectChanges
+            val selectionValid = changes.filesList.any { file ->
+                file.path == previous.selectedPath &&
+                    ((previous.selectedSection == "staged" && file.staged) || (previous.selectedSection == "unstaged" && file.unstaged))
+            }
+            val selected = if (selectionValid) {
+                previous.selectedPath to previous.selectedSection
+            } else {
+                "" to ""
+            }
+            _state.update { current ->
+                if (current.selectedProjectId != projectId) current
+                else current.copy(
+                    projectChanges = current.projectChanges.copy(
+                        projectId = projectId,
+                        changeset = changes,
+                        selectedPath = selected.first,
+                        selectedSection = selected.second,
+                        diff = if (selectionValid && previous.changeset?.revision == changes.revision) previous.diff else null,
+                        diffLines = if (selectionValid && previous.changeset?.revision == changes.revision) previous.diffLines else emptyList(),
+                        loading = false,
+                        error = null,
+                    ),
+                )
+            }
+            if (selected.first.isNotEmpty() && (!selectionValid || previous.changeset?.revision != changes.revision)) {
+                loadProjectDiff(false)
+            }
+            if (changes.currentOperationId.isNotEmpty()) {
+                val operation = runCatching { repository.gitOperation(changes.currentOperationId) }.getOrNull()
+                if (operation != null) {
+                    _state.update { current -> current.copy(projectChanges = current.projectChanges.copy(operation = operation)) }
+                    if (GitOperationStatuses.active(operation.status)) monitorProjectGitOperation(projectId, operation.id)
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            _state.update { current ->
+                if (current.selectedProjectId != projectId) current
+                else current.copy(projectChanges = current.projectChanges.copy(loading = false, error = readableError(error)))
+            }
+        } finally {
+            _state.update { current ->
+                if (current.selectedProjectId != projectId) current
+                else current.copy(projectChanges = current.projectChanges.copy(loading = false))
+            }
+        }
+    }
+
+    fun selectProjectChange(path: String, section: String) {
+        val projectId = _state.value.selectedProjectId
+        projectDiffJob?.cancel()
+        _state.update { current ->
+            current.copy(projectChanges = current.projectChanges.copy(
+                selectedPath = path,
+                selectedSection = section,
+                diff = null,
+                diffLines = emptyList(),
+            ))
+        }
+        if (projectId.isNotEmpty() && path.isNotEmpty()) loadProjectDiff(false)
+    }
+
+    fun closeProjectDiff() = selectProjectChange("", "")
+
+    fun loadMoreProjectDiff() = loadProjectDiff(true)
+
+    private fun loadProjectDiff(append: Boolean) {
+        val current = _state.value
+        val projectId = current.selectedProjectId
+        val review = current.projectChanges
+        val changes = review.changeset ?: return
+        if (review.selectedPath.isEmpty() || review.selectedSection.isEmpty()) return
+        val path = review.selectedPath
+        val section = review.selectedSection
+        projectDiffJob?.cancel()
+        projectDiffJob = viewModelScope.launch {
+            _state.update { it.copy(projectChanges = it.projectChanges.copy(diffLoading = true)) }
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+                val request = GetDiffRequest.newBuilder()
+                    .setProjectId(projectId)
+                    .setPath(path)
+                    .setSection(section)
+                    .setExpectedRevision(changes.revision)
+                    .setLimit(1_048_576)
+                    .setOffset(if (append) review.diff?.nextOffset ?: 0 else 0)
+                    .build()
+                val page = repository.fileDiff(request)
+                val latest = _state.value.projectChanges
+                if (latest.selectedPath != path || latest.selectedSection != section) return@launch
+                val merged = if (append && latest.diff != null) {
+                    latest.diff.toBuilder()
+                        .setPatch(latest.diff.patch + page.patch)
+                        .setTruncated(page.truncated)
+                        .setNextOffset(page.nextOffset)
+                        .setTotalBytes(page.totalBytes)
+                        .build()
+                } else page
+                val lines = withContext(Dispatchers.Default) { UnifiedDiffParser.parse(merged.patch) }
+                _state.update { state ->
+                    state.copy(projectChanges = state.projectChanges.copy(diff = merged, diffLines = lines, diffLoading = false))
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { state ->
+                    state.copy(projectChanges = state.projectChanges.copy(diffLoading = false, error = readableError(error)))
+                }
+                if (Status.fromThrowable(error).code == Status.Code.ABORTED) loadProjectChanges()
+            }
+        }
+    }
+
+    fun startProjectGitOperation(kind: String, path: String = "", parameters: Map<String, String> = emptyMap()) {
+        val current = _state.value
+        val projectId = current.selectedProjectId
+        val changes = current.projectChanges.changeset ?: return
+        if (projectId.isBlank() || current.projectChanges.operationActive || changes.volatile) return
+        viewModelScope.launch {
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+                val operation = repository.startProjectGitOperation(
+                    projectId,
+                    kind,
+                    changes.revision,
+                    if (path.isBlank()) parameters else parameters + ("path" to path),
+                )
+                _state.update { state -> state.copy(projectChanges = state.projectChanges.copy(operation = operation, error = null)) }
+                monitorProjectGitOperation(projectId, operation.id)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { state -> state.copy(projectChanges = state.projectChanges.copy(error = readableError(error))) }
+                loadProjectChanges()
+            }
+        }
+    }
+
+    private fun monitorProjectGitOperation(projectId: String, operationId: String) {
+        if (projectGitOperationId == operationId && projectGitOperationJob?.isActive == true) return
+        projectGitOperationJob?.cancel()
+        projectGitOperationId = operationId
+        projectGitOperationJob = viewModelScope.launch {
+            try {
+                while (true) {
+                    val operation = repository.gitOperation(operationId)
+                    _state.update { current ->
+                        if (current.selectedProjectId != projectId) current
+                        else current.copy(projectChanges = current.projectChanges.copy(operation = operation))
+                    }
+                    if (!GitOperationStatuses.active(operation.status)) {
+                        if (operation.status != "succeeded") {
+                            _state.update { current ->
+                                current.copy(projectChanges = current.projectChanges.copy(error = operation.error))
+                            }
+                        }
+                        refreshProjectChanges(projectId)
+                        return@launch
+                    }
+                    delay(300)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { current -> current.copy(projectChanges = current.projectChanges.copy(error = readableError(error))) }
+            } finally {
+                if (projectGitOperationId == operationId) projectGitOperationId = null
+            }
+        }
+    }
+
+    fun clearProjectChangesError() {
+        _state.update { it.copy(projectChanges = it.projectChanges.copy(error = null)) }
     }
 
     fun loadTerminals() {

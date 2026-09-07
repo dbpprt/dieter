@@ -57,6 +57,32 @@ func (s *Store) ProjectHasRuntimeLease(projectID, exceptCardID string) (bool, er
 	return false, nil
 }
 
+// ProjectCheckoutHasRuntimeLease reports only turns that execute in the
+// registered project directory. Worktree turns in the same project do not
+// share its index or working tree and must not block checkout-scoped actions.
+func (s *Store) ProjectCheckoutHasRuntimeLease(projectID, exceptCardID string) (bool, error) {
+	leases, err := activeRuntimeLeases(filepath.Join(s.runtimeDir(), "leases"))
+	if err != nil {
+		return false, err
+	}
+	for _, lease := range leases {
+		if lease.ProjectID != projectID || lease.CardID == exceptCardID {
+			continue
+		}
+		mode := ""
+		if value, workspaceErr := s.WorkspaceByCardID(lease.CardID); workspaceErr == nil {
+			mode = value.Mode
+		} else if card, cardErr := s.ResolveCard(lease.CardID); cardErr == nil {
+			mode = card.WorkspaceMode
+		}
+		canonical, ok := model.CanonicalWorkspaceMode(mode)
+		if ok && canonical == model.WorkspaceModeProject {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string) (RuntimeLease, error) {
 	release, err := s.beginWrite()
 	if err != nil {

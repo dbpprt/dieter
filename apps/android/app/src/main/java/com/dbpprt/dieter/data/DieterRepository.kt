@@ -255,12 +255,14 @@ interface DieterRepository {
     suspend fun workspace(cardId: String): Workspace
     suspend fun projectWorkspaces(projectId: String): WorkspacesResponse
     suspend fun changeset(cardId: String): Changeset
+    suspend fun projectChangeset(projectId: String): Changeset
     suspend fun fileDiff(request: GetDiffRequest): FileDiff
     suspend fun commitDiff(request: GetDiffRequest): FileDiff
     suspend fun addChangeComment(request: AddChangeCommentRequest): ChangeComment
     suspend fun changeComments(cardId: String, revision: String = ""): ChangeCommentsResponse
     suspend fun scmCapabilities(cardId: String): SCMCapabilities
     suspend fun startGitOperation(cardId: String, kind: String, expectedRevision: String, parameters: Map<String, String> = emptyMap()): GitOperation
+    suspend fun startProjectGitOperation(projectId: String, kind: String, expectedRevision: String, parameters: Map<String, String> = emptyMap()): GitOperation
     suspend fun gitOperation(operationId: String): GitOperation
     fun watchGitOperation(operationId: String, afterSequence: Long = 0): Flow<GitOperationFrame>
     suspend fun cancelGitOperation(operationId: String): GitOperation
@@ -720,6 +722,9 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     override suspend fun changeset(cardId: String): Changeset =
         unary(deadlineSeconds = 30).getChangeset(GetChangesetRequest.newBuilder().setCardId(cardId).build())
 
+    override suspend fun projectChangeset(projectId: String): Changeset =
+        unary(deadlineSeconds = 30).getChangeset(GetChangesetRequest.newBuilder().setProjectId(projectId).build())
+
     override suspend fun fileDiff(request: GetDiffRequest): FileDiff = unary(deadlineSeconds = 30).getFileDiff(request)
 
     override suspend fun commitDiff(request: GetDiffRequest): FileDiff = unary(deadlineSeconds = 30).getCommitDiff(request)
@@ -744,6 +749,20 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
     ): GitOperation = unary().startGitOperation(
         StartGitOperationRequest.newBuilder()
             .setCardId(cardId)
+            .setKind(kind)
+            .setExpectedRevision(expectedRevision)
+            .putAllParameters(parameters)
+            .build(),
+    )
+
+    override suspend fun startProjectGitOperation(
+        projectId: String,
+        kind: String,
+        expectedRevision: String,
+        parameters: Map<String, String>,
+    ): GitOperation = unary().startGitOperation(
+        StartGitOperationRequest.newBuilder()
+            .setProjectId(projectId)
             .setKind(kind)
             .setExpectedRevision(expectedRevision)
             .putAllParameters(parameters)

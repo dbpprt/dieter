@@ -213,6 +213,40 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 		value.State = model.WorkspaceStateOrphaned
 		return m.Store.UpdateWorkspaceGitState(value, includeSize)
 	}
+	value = m.refreshGitState(ctx, value, includeSize)
+	return m.Store.UpdateWorkspaceGitState(value, includeSize)
+}
+
+// ProjectCheckout returns live Git state for the registered checkout without
+// creating a card-owned workspace record. Project-directory changes are shared
+// project state; cards in project mode are only execution-location selectors.
+func (m *Manager) ProjectCheckout(ctx context.Context, projectRef string, includeSize bool) (model.Workspace, error) {
+	project, err := m.Store.ResolveProject(projectRef)
+	if err != nil {
+		return model.Workspace{}, err
+	}
+	if _, err := os.Stat(project.Path); err != nil {
+		return model.Workspace{}, err
+	}
+	branch, _ := m.output(ctx, project.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
+	baseBranch := strings.TrimSpace(project.BaseBranch)
+	if baseBranch == "" {
+		baseBranch = branch
+	}
+	baseRef := baseBranch
+	if baseRef == "" {
+		baseRef = "HEAD"
+	}
+	baseSHA, _ := m.output(ctx, project.Path, "rev-parse", "--verify", baseRef+"^{commit}")
+	value := model.Workspace{
+		ProjectID: project.ID, Mode: model.WorkspaceModeProject, Path: project.Path,
+		BaseRemote: strings.TrimSpace(project.BaseRemote), BaseBranch: baseBranch,
+		BaseSHA: baseSHA, CurrentBaseSHA: baseSHA, Branch: branch, State: model.WorkspaceStateReady,
+	}
+	return m.refreshGitState(ctx, value, includeSize), nil
+}
+
+func (m *Manager) refreshGitState(ctx context.Context, value model.Workspace, includeSize bool) model.Workspace {
 	currentBranch, _ := m.output(ctx, value.Path, "symbolic-ref", "--quiet", "--short", "HEAD")
 	head, headErr := m.output(ctx, value.Path, "rev-parse", "--verify", "HEAD^{commit}")
 	if headErr == nil {
@@ -224,6 +258,9 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 	status, statusErr := m.Git.Run(ctx, value.Path, "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	if statusErr == nil {
 		value.Dirty = len(status.Output) > 0
+		if porcelainHasConflict(status.Output) {
+			value.State = model.WorkspaceStateConflicted
+		}
 	}
 	baseRef := value.BaseBranch
 	if baseRef != "" {
@@ -257,7 +294,16 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 	_, _ = hash.Write([]byte(value.HeadSHA))
 	_, _ = hash.Write([]byte{0})
 	_, _ = hash.Write(status.Output)
-	if diff, diffErr := m.Git.Run(ctx, value.Path, "diff", "--no-ext-diff", "--binary", "HEAD", "--"); diffErr == nil {
+	cachedArgs := []string{"diff", "--cached", "--no-ext-diff", "--binary"}
+	if value.HeadSHA != "" {
+		cachedArgs = append(cachedArgs, "HEAD")
+	}
+	cachedArgs = append(cachedArgs, "--")
+	if diff, diffErr := m.Git.Run(ctx, value.Path, cachedArgs...); diffErr == nil {
+		_, _ = hash.Write(diff.Output)
+	}
+	_, _ = hash.Write([]byte{0})
+	if diff, diffErr := m.Git.Run(ctx, value.Path, "diff", "--no-ext-diff", "--binary", "--"); diffErr == nil {
 		_, _ = hash.Write(diff.Output)
 	}
 	if untracked, untrackedErr := m.Git.Run(ctx, value.Path, "ls-files", "--others", "--exclude-standard", "-z"); untrackedErr == nil {
@@ -273,7 +319,7 @@ func (m *Manager) Refresh(ctx context.Context, cardRef string, includeSize bool)
 		value.State = model.WorkspaceStateReady
 	}
 	value.LastActivityAt = time.Now().UTC().Format(time.RFC3339Nano)
-	return m.Store.UpdateWorkspaceGitState(value, includeSize)
+	return value
 }
 
 func bytesZeroFields(raw []byte) []string {
@@ -285,6 +331,19 @@ func bytesZeroFields(raw []byte) []string {
 		}
 	}
 	return result
+}
+
+func porcelainHasConflict(raw []byte) bool {
+	for _, entry := range bytesZeroFields(raw) {
+		if len(entry) < 2 {
+			continue
+		}
+		status := entry[:2]
+		if strings.ContainsRune(status, 'U') || status == "AA" || status == "DD" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) ResolvePath(ctx context.Context, cardRef string) (model.Workspace, error) {

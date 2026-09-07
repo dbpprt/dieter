@@ -8865,17 +8865,25 @@ func (x *WorkspacesResponse) GetWorkspaces() []*Workspace {
 }
 
 type ChangedFile struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Path          string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
-	OldPath       string                 `protobuf:"bytes,2,opt,name=old_path,json=oldPath,proto3" json:"old_path,omitempty"`
-	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
-	Additions     int32                  `protobuf:"varint,4,opt,name=additions,proto3" json:"additions,omitempty"`
-	Deletions     int32                  `protobuf:"varint,5,opt,name=deletions,proto3" json:"deletions,omitempty"`
-	Binary        bool                   `protobuf:"varint,6,opt,name=binary,proto3" json:"binary,omitempty"`
-	Untracked     bool                   `protobuf:"varint,7,opt,name=untracked,proto3" json:"untracked,omitempty"`
-	Conflicted    bool                   `protobuf:"varint,8,opt,name=conflicted,proto3" json:"conflicted,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Path              string                 `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
+	OldPath           string                 `protobuf:"bytes,2,opt,name=old_path,json=oldPath,proto3" json:"old_path,omitempty"`
+	Status            string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Additions         int32                  `protobuf:"varint,4,opt,name=additions,proto3" json:"additions,omitempty"`
+	Deletions         int32                  `protobuf:"varint,5,opt,name=deletions,proto3" json:"deletions,omitempty"`
+	Binary            bool                   `protobuf:"varint,6,opt,name=binary,proto3" json:"binary,omitempty"`
+	Untracked         bool                   `protobuf:"varint,7,opt,name=untracked,proto3" json:"untracked,omitempty"`
+	Conflicted        bool                   `protobuf:"varint,8,opt,name=conflicted,proto3" json:"conflicted,omitempty"`
+	IndexStatus       string                 `protobuf:"bytes,9,opt,name=index_status,json=indexStatus,proto3" json:"index_status,omitempty"`
+	WorktreeStatus    string                 `protobuf:"bytes,10,opt,name=worktree_status,json=worktreeStatus,proto3" json:"worktree_status,omitempty"`
+	Staged            bool                   `protobuf:"varint,11,opt,name=staged,proto3" json:"staged,omitempty"`
+	Unstaged          bool                   `protobuf:"varint,12,opt,name=unstaged,proto3" json:"unstaged,omitempty"`
+	StagedAdditions   int32                  `protobuf:"varint,13,opt,name=staged_additions,json=stagedAdditions,proto3" json:"staged_additions,omitempty"`
+	StagedDeletions   int32                  `protobuf:"varint,14,opt,name=staged_deletions,json=stagedDeletions,proto3" json:"staged_deletions,omitempty"`
+	UnstagedAdditions int32                  `protobuf:"varint,15,opt,name=unstaged_additions,json=unstagedAdditions,proto3" json:"unstaged_additions,omitempty"`
+	UnstagedDeletions int32                  `protobuf:"varint,16,opt,name=unstaged_deletions,json=unstagedDeletions,proto3" json:"unstaged_deletions,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ChangedFile) Reset() {
@@ -8962,6 +8970,62 @@ func (x *ChangedFile) GetConflicted() bool {
 		return x.Conflicted
 	}
 	return false
+}
+
+func (x *ChangedFile) GetIndexStatus() string {
+	if x != nil {
+		return x.IndexStatus
+	}
+	return ""
+}
+
+func (x *ChangedFile) GetWorktreeStatus() string {
+	if x != nil {
+		return x.WorktreeStatus
+	}
+	return ""
+}
+
+func (x *ChangedFile) GetStaged() bool {
+	if x != nil {
+		return x.Staged
+	}
+	return false
+}
+
+func (x *ChangedFile) GetUnstaged() bool {
+	if x != nil {
+		return x.Unstaged
+	}
+	return false
+}
+
+func (x *ChangedFile) GetStagedAdditions() int32 {
+	if x != nil {
+		return x.StagedAdditions
+	}
+	return 0
+}
+
+func (x *ChangedFile) GetStagedDeletions() int32 {
+	if x != nil {
+		return x.StagedDeletions
+	}
+	return 0
+}
+
+func (x *ChangedFile) GetUnstagedAdditions() int32 {
+	if x != nil {
+		return x.UnstagedAdditions
+	}
+	return 0
+}
+
+func (x *ChangedFile) GetUnstagedDeletions() int32 {
+	if x != nil {
+		return x.UnstagedDeletions
+	}
+	return 0
 }
 
 type WorkspaceCommit struct {
@@ -9073,20 +9137,28 @@ func (x *WorkspaceCommit) GetChangedFiles() int32 {
 }
 
 type Changeset struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	Revision      string                 `protobuf:"bytes,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	ComparisonSha string                 `protobuf:"bytes,3,opt,name=comparison_sha,json=comparisonSha,proto3" json:"comparison_sha,omitempty"`
-	HeadSha       string                 `protobuf:"bytes,4,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
-	BaseSha       string                 `protobuf:"bytes,5,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
-	Files         []*ChangedFile         `protobuf:"bytes,6,rep,name=files,proto3" json:"files,omitempty"`
-	Commits       []*WorkspaceCommit     `protobuf:"bytes,7,rep,name=commits,proto3" json:"commits,omitempty"`
-	Additions     int32                  `protobuf:"varint,8,opt,name=additions,proto3" json:"additions,omitempty"`
-	Deletions     int32                  `protobuf:"varint,9,opt,name=deletions,proto3" json:"deletions,omitempty"`
-	Volatile      bool                   `protobuf:"varint,10,opt,name=volatile,proto3" json:"volatile,omitempty"`
-	GeneratedAt   string                 `protobuf:"bytes,11,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	CardId             string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	Revision           string                 `protobuf:"bytes,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	ComparisonSha      string                 `protobuf:"bytes,3,opt,name=comparison_sha,json=comparisonSha,proto3" json:"comparison_sha,omitempty"`
+	HeadSha            string                 `protobuf:"bytes,4,opt,name=head_sha,json=headSha,proto3" json:"head_sha,omitempty"`
+	BaseSha            string                 `protobuf:"bytes,5,opt,name=base_sha,json=baseSha,proto3" json:"base_sha,omitempty"`
+	Files              []*ChangedFile         `protobuf:"bytes,6,rep,name=files,proto3" json:"files,omitempty"`
+	Commits            []*WorkspaceCommit     `protobuf:"bytes,7,rep,name=commits,proto3" json:"commits,omitempty"`
+	Additions          int32                  `protobuf:"varint,8,opt,name=additions,proto3" json:"additions,omitempty"`
+	Deletions          int32                  `protobuf:"varint,9,opt,name=deletions,proto3" json:"deletions,omitempty"`
+	Volatile           bool                   `protobuf:"varint,10,opt,name=volatile,proto3" json:"volatile,omitempty"`
+	GeneratedAt        string                 `protobuf:"bytes,11,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
+	ProjectId          string                 `protobuf:"bytes,12,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Branch             string                 `protobuf:"bytes,13,opt,name=branch,proto3" json:"branch,omitempty"`
+	BaseBranch         string                 `protobuf:"bytes,14,opt,name=base_branch,json=baseBranch,proto3" json:"base_branch,omitempty"`
+	Ahead              int32                  `protobuf:"varint,15,opt,name=ahead,proto3" json:"ahead,omitempty"`
+	Behind             int32                  `protobuf:"varint,16,opt,name=behind,proto3" json:"behind,omitempty"`
+	Dirty              bool                   `protobuf:"varint,17,opt,name=dirty,proto3" json:"dirty,omitempty"`
+	Conflicted         bool                   `protobuf:"varint,18,opt,name=conflicted,proto3" json:"conflicted,omitempty"`
+	CurrentOperationId string                 `protobuf:"bytes,19,opt,name=current_operation_id,json=currentOperationId,proto3" json:"current_operation_id,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Changeset) Reset() {
@@ -9196,9 +9268,66 @@ func (x *Changeset) GetGeneratedAt() string {
 	return ""
 }
 
+func (x *Changeset) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Changeset) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *Changeset) GetBaseBranch() string {
+	if x != nil {
+		return x.BaseBranch
+	}
+	return ""
+}
+
+func (x *Changeset) GetAhead() int32 {
+	if x != nil {
+		return x.Ahead
+	}
+	return 0
+}
+
+func (x *Changeset) GetBehind() int32 {
+	if x != nil {
+		return x.Behind
+	}
+	return 0
+}
+
+func (x *Changeset) GetDirty() bool {
+	if x != nil {
+		return x.Dirty
+	}
+	return false
+}
+
+func (x *Changeset) GetConflicted() bool {
+	if x != nil {
+		return x.Conflicted
+	}
+	return false
+}
+
+func (x *Changeset) GetCurrentOperationId() string {
+	if x != nil {
+		return x.CurrentOperationId
+	}
+	return ""
+}
+
 type GetChangesetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -9240,6 +9369,13 @@ func (x *GetChangesetRequest) GetCardId() string {
 	return ""
 }
 
+func (x *GetChangesetRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
 type GetDiffRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	CardId           string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
@@ -9248,8 +9384,12 @@ type GetDiffRequest struct {
 	ExpectedRevision string                 `protobuf:"bytes,4,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
 	Offset           int64                  `protobuf:"varint,5,opt,name=offset,proto3" json:"offset,omitempty"`
 	Limit            int32                  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	ProjectId        string                 `protobuf:"bytes,7,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// combined compares HEAD to the working tree, staged compares HEAD to the
+	// index, and unstaged compares the index to the working tree.
+	Section       string `protobuf:"bytes,8,opt,name=section,proto3" json:"section,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetDiffRequest) Reset() {
@@ -9324,6 +9464,20 @@ func (x *GetDiffRequest) GetLimit() int32 {
 	return 0
 }
 
+func (x *GetDiffRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *GetDiffRequest) GetSection() string {
+	if x != nil {
+		return x.Section
+	}
+	return ""
+}
+
 type FileDiff struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CardId        string                 `protobuf:"bytes,1,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
@@ -9335,6 +9489,8 @@ type FileDiff struct {
 	Truncated     bool                   `protobuf:"varint,7,opt,name=truncated,proto3" json:"truncated,omitempty"`
 	NextOffset    int64                  `protobuf:"varint,8,opt,name=next_offset,json=nextOffset,proto3" json:"next_offset,omitempty"`
 	TotalBytes    int64                  `protobuf:"varint,9,opt,name=total_bytes,json=totalBytes,proto3" json:"total_bytes,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Section       string                 `protobuf:"bytes,11,opt,name=section,proto3" json:"section,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -9430,6 +9586,20 @@ func (x *FileDiff) GetTotalBytes() int64 {
 		return x.TotalBytes
 	}
 	return 0
+}
+
+func (x *FileDiff) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *FileDiff) GetSection() string {
+	if x != nil {
+		return x.Section
+	}
+	return ""
 }
 
 type ChangeComment struct {
@@ -10314,6 +10484,7 @@ type StartGitOperationRequest struct {
 	Kind             string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	ExpectedRevision string                 `protobuf:"bytes,3,opt,name=expected_revision,json=expectedRevision,proto3" json:"expected_revision,omitempty"`
 	Parameters       map[string]string      `protobuf:"bytes,4,rep,name=parameters,proto3" json:"parameters,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ProjectId        string                 `protobuf:"bytes,5,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -10374,6 +10545,13 @@ func (x *StartGitOperationRequest) GetParameters() map[string]string {
 		return x.Parameters
 	}
 	return nil
+}
+
+func (x *StartGitOperationRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
 }
 
 type GitOperationRef struct {
@@ -16327,7 +16505,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x12WorkspacesResponse\x124\n" +
 	"\n" +
 	"workspaces\x18\x01 \x03(\v2\x14.dieter.v1.WorkspaceR\n" +
-	"workspaces\"\xe6\x01\n" +
+	"workspaces\"\x9a\x04\n" +
 	"\vChangedFile\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x19\n" +
 	"\bold_path\x18\x02 \x01(\tR\aoldPath\x12\x16\n" +
@@ -16338,7 +16516,16 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\tuntracked\x18\a \x01(\bR\tuntracked\x12\x1e\n" +
 	"\n" +
 	"conflicted\x18\b \x01(\bR\n" +
-	"conflicted\"\xa0\x02\n" +
+	"conflicted\x12!\n" +
+	"\findex_status\x18\t \x01(\tR\vindexStatus\x12'\n" +
+	"\x0fworktree_status\x18\n" +
+	" \x01(\tR\x0eworktreeStatus\x12\x16\n" +
+	"\x06staged\x18\v \x01(\bR\x06staged\x12\x1a\n" +
+	"\bunstaged\x18\f \x01(\bR\bunstaged\x12)\n" +
+	"\x10staged_additions\x18\r \x01(\x05R\x0fstagedAdditions\x12)\n" +
+	"\x10staged_deletions\x18\x0e \x01(\x05R\x0fstagedDeletions\x12-\n" +
+	"\x12unstaged_additions\x18\x0f \x01(\x05R\x11unstagedAdditions\x12-\n" +
+	"\x12unstaged_deletions\x18\x10 \x01(\x05R\x11unstagedDeletions\"\xa0\x02\n" +
 	"\x0fWorkspaceCommit\x12\x10\n" +
 	"\x03sha\x18\x01 \x01(\tR\x03sha\x12\x1b\n" +
 	"\tshort_sha\x18\x02 \x01(\tR\bshortSha\x12\x18\n" +
@@ -16350,7 +16537,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"authoredAt\x12\x1c\n" +
 	"\tadditions\x18\a \x01(\x05R\tadditions\x12\x1c\n" +
 	"\tdeletions\x18\b \x01(\x05R\tdeletions\x12#\n" +
-	"\rchanged_files\x18\t \x01(\x05R\fchangedFiles\"\xfc\x02\n" +
+	"\rchanged_files\x18\t \x01(\x05R\fchangedFiles\"\xea\x04\n" +
 	"\tChangeset\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1a\n" +
 	"\brevision\x18\x02 \x01(\tR\brevision\x12%\n" +
@@ -16363,9 +16550,23 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\tdeletions\x18\t \x01(\x05R\tdeletions\x12\x1a\n" +
 	"\bvolatile\x18\n" +
 	" \x01(\bR\bvolatile\x12!\n" +
-	"\fgenerated_at\x18\v \x01(\tR\vgeneratedAt\".\n" +
+	"\fgenerated_at\x18\v \x01(\tR\vgeneratedAt\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\f \x01(\tR\tprojectId\x12\x16\n" +
+	"\x06branch\x18\r \x01(\tR\x06branch\x12\x1f\n" +
+	"\vbase_branch\x18\x0e \x01(\tR\n" +
+	"baseBranch\x12\x14\n" +
+	"\x05ahead\x18\x0f \x01(\x05R\x05ahead\x12\x16\n" +
+	"\x06behind\x18\x10 \x01(\x05R\x06behind\x12\x14\n" +
+	"\x05dirty\x18\x11 \x01(\bR\x05dirty\x12\x1e\n" +
+	"\n" +
+	"conflicted\x18\x12 \x01(\bR\n" +
+	"conflicted\x120\n" +
+	"\x14current_operation_id\x18\x13 \x01(\tR\x12currentOperationId\"M\n" +
 	"\x13GetChangesetRequest\x12\x17\n" +
-	"\acard_id\x18\x01 \x01(\tR\x06cardId\"\xb7\x01\n" +
+	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\"\xf0\x01\n" +
 	"\x0eGetDiffRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1d\n" +
@@ -16373,7 +16574,10 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"commit_sha\x18\x03 \x01(\tR\tcommitSha\x12+\n" +
 	"\x11expected_revision\x18\x04 \x01(\tR\x10expectedRevision\x12\x16\n" +
 	"\x06offset\x18\x05 \x01(\x03R\x06offset\x12\x14\n" +
-	"\x05limit\x18\x06 \x01(\x05R\x05limit\"\x80\x02\n" +
+	"\x05limit\x18\x06 \x01(\x05R\x05limit\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\a \x01(\tR\tprojectId\x12\x18\n" +
+	"\asection\x18\b \x01(\tR\asection\"\xb9\x02\n" +
 	"\bFileDiff\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1d\n" +
@@ -16386,7 +16590,11 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\vnext_offset\x18\b \x01(\x03R\n" +
 	"nextOffset\x12\x1f\n" +
 	"\vtotal_bytes\x18\t \x01(\x03R\n" +
-	"totalBytes\"\x99\x02\n" +
+	"totalBytes\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\n" +
+	" \x01(\tR\tprojectId\x12\x18\n" +
+	"\asection\x18\v \x01(\tR\asection\"\x99\x02\n" +
 	"\rChangeComment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\acard_id\x18\x02 \x01(\tR\x06cardId\x12\x12\n" +
@@ -16486,14 +16694,16 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"updated_at\x18\x13 \x01(\tR\tupdatedAt\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x88\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa7\x02\n" +
 	"\x18StartGitOperationRequest\x12\x17\n" +
 	"\acard_id\x18\x01 \x01(\tR\x06cardId\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12+\n" +
 	"\x11expected_revision\x18\x03 \x01(\tR\x10expectedRevision\x12S\n" +
 	"\n" +
 	"parameters\x18\x04 \x03(\v23.dieter.v1.StartGitOperationRequest.ParametersEntryR\n" +
-	"parameters\x1a=\n" +
+	"parameters\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x05 \x01(\tR\tprojectId\x1a=\n" +
 	"\x0fParametersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"4\n" +

@@ -1,12 +1,12 @@
 # Native Workspaces, Changesets, and Pull Requests
 
-Status: server, daemon, gateway relay, persistence, and CLI are implemented and
-tested. The first macOS and Android product slices (conversation Changes
-surface, diff review, durable Git operations, merge flow, PR actions, and
-workspace-mode selection at creation) are implemented; remaining native work is
-tracked in sections 4–7.
+Status: server, daemon, gateway relay, persistence, CLI, macOS, and Android are
+implemented for both worktree-card changes and project-directory changes. The
+native clients expose project staging, unstaging, staged-only commit, safe
+per-file discard, and section-aware diffs; the worktree conversation continues
+to own its review, integration, and PR lifecycle.
 
-Last reviewed: 2026-08-29.
+Last reviewed: 2026-09-07.
 
 ## 1. Purpose of this document
 
@@ -46,8 +46,16 @@ policy model or allow cards and chats to drift into different implementations.
 ### 2.2 A card and a chat use exactly the same interface
 
 Both `CreateCard` and `CreateChat` accept `CreateConversationRequest`. Both return
-`Card`; a standalone chat is a card with `scope == "chat"`. All workspace,
-changeset, file, terminal, Git-operation, and PR RPCs use that same `card_id`.
+`Card`; a standalone chat is a card with `scope == "chat"`. Workspace selection,
+card-scoped files/terminals, comments, worktree changes, worktree Git operations,
+and PR RPCs use that same `card_id`.
+
+The registered project directory is the one intentional exception: its local
+Git state belongs to the project, not to whichever card happens to use the
+shared directory. `GetChangeset`, `GetFileDiff`, and `StartGitOperation` accept
+exactly one target: a worktree `card_id` or a `project_id`. Passing a
+project-mode card to changes/Git operations is rejected and clients must open
+the project's Files → Changes surface instead.
 
 Native code should therefore build one reusable conversation-workspace feature
 and present it from both the board-card conversation and standalone-chat
@@ -151,13 +159,20 @@ also make destructive or checkout-changing Git operations fail with
 
 ### 3.4 Changesets and review comments
 
-- `GetChangeset` returns the current `revision`, comparison/head/base SHAs,
-  aggregate additions/deletions, changed files, and commits.
-- A changeset includes both commits since the comparison base and current
-  staged, unstaged, and untracked changes.
+- `GetChangeset` targets either a worktree card or the registered project
+  checkout and returns its current revision, branch state, aggregate line
+  counts, operation state, and local changed files.
+- Changesets contain only uncommitted Git state: staged, unstaged, untracked,
+  deleted, renamed, binary, and conflicted files. Commits since a base are
+  history and are deliberately not mixed into the working Changes list.
+- Every changed file has independent index/worktree status and staged/unstaged
+  counts. The same path can legitimately render once in each section.
 - `volatile == true` means an agent turn is currently active and the view may
-  change immediately.
-- `GetFileDiff` returns the complete current file patch in bounded pages.
+  change immediately. For project scope it means a project-directory
+  conversation currently owns a runtime lease; inspection remains available,
+  while checkout mutations are rejected until that turn finishes.
+- `GetFileDiff.section` is `staged` (HEAD to index), `unstaged` (index to working
+  tree), or `combined` (HEAD to working tree), and returns a bounded patch.
 - `GetCommitDiff` uses the same surface for one commit/file.
 - `FileDiff.truncated`, `next_offset`, and `total_bytes` drive pagination. A
   page is at most 1 MiB.
@@ -166,8 +181,8 @@ also make destructive or checkout-changing Git operations fail with
   to card, changeset revision, path, side (`new` or `old`), and optional line.
 
 Always pass the latest changeset revision to diff, comment, and Git mutation
-requests. A revision covers HEAD, base, index, working tree, and untracked file
-content. If the workspace changes, the daemon returns `Aborted`; discard the
+requests. A revision covers HEAD, index, working tree, untracked file content,
+and whether a change is staged or unstaged. If the workspace changes, the daemon returns `Aborted`; discard the
 stale rendering, fetch a new changeset, and preserve any unsent comment text
 locally for the user.
 
@@ -180,11 +195,11 @@ There is currently no edit, delete, resolve, or reply RPC for change comments.
 
 ### 3.5 Durable Git operations
 
-All Git mutations use one interface:
+All Git mutations use one interface and exactly one target:
 
 1. Fetch a fresh `Changeset`.
-2. Call `StartGitOperation` with `card_id`, `kind`, the changeset
-   `expected_revision`, and string parameters.
+2. Call `StartGitOperation` with a worktree `card_id` or project `project_id`,
+   `kind`, the changeset `expected_revision`, and string parameters.
 3. Treat the returned operation as `queued`, not completed.
 4. Open `WatchGitOperation` and render operation snapshots plus ordered logs.
 5. Persist the highest log `sequence`; reconnect using `after_sequence`.
@@ -201,11 +216,11 @@ or canceling `WatchGitOperation` does **not** cancel the Git operation. Only an
 explicit `CancelGitOperation` requests cancellation. A conflicted operation
 cannot be canceled through that RPC; use `abort_conflict`.
 
-The daemon admits only one Git operation per workspace. It also rejects Git
-operations while that card's agent turn or terminal is active. Operations on a
-shared `project` directory are rejected while another project conversation
-is active. Map these failures to a non-destructive “workspace busy” state and
-offer retry.
+The daemon admits only one Git operation per worktree or registered checkout.
+It rejects worktree Git operations while that card's agent turn or terminal is
+active. It rejects project-checkout mutations while a project-mode conversation
+has a runtime lease, and serializes project operations with the checkout lock.
+Map these failures to a non-destructive “workspace busy” state and offer retry.
 
 #### Operation kinds and parameters
 
@@ -214,7 +229,10 @@ All values in `parameters` are strings; booleans are exactly `"true"` or
 
 | Kind | Parameters | Behavior |
 | --- | --- | --- |
-| `commit` | required `subject`; optional `body`; `include_untracked` defaults to `true` | Stages and commits workspace changes; validation is not implicit |
+| `stage` | optional `path`; empty means all | Stages one path or every local change; available for project and worktree targets |
+| `unstage` | optional `path`; empty means all | Restores one path or the complete index to HEAD without touching working files; supports an unborn repository |
+| `discard_changes` | required `path` | Creates recovery artifacts, then restores a tracked path or safely removes a regular untracked file; available for project and worktree targets |
+| `commit` | required `subject`; optional `body`; `stage_all` defaults to `false` | Commits only the staged index unless explicit `stage_all=true`; validation is not implicit. The older `include_untracked` parameter remains compatibility-only |
 | `update` | `fetch` defaults to `true`; `validate` defaults to `true` | Fast-forwards a clean project directory when it is on the base branch; otherwise rebases its current review branch or the worktree branch onto the base |
 | `continue_conflict` | none | Continues the current conflicted rebase after files are resolved |
 | `abort_conflict` | none | Aborts the current rebase/merge and cancels the waiting operation |
@@ -373,17 +391,19 @@ This is required for correctness, not an optional enhancement:
 Without this phase, a worktree conversation could display or edit the registered
 project directory, which is a data-integrity bug.
 
-### Phase D: changeset review
+### Phase D: changeset review (implemented)
 
-Build a conversation-level Changes destination backed by `GetChangeset`:
+The native clients now expose two destinations backed by `GetChangeset`:
 
-- summary counts and comparison base;
-- changed-file list with status, binary/conflict indication, and line counts;
-- inline or split rendering from the unified patch;
-- lazy diff pagination;
-- commit list and commit-specific diffs;
-- revision-scoped line comments; and
-- explicit volatile/stale refresh states.
+- a conversation-level Changes tab only for worktree cards/chats; and
+- Files → Changes for the registered project checkout, shared by all
+  project-directory conversations.
+
+Both render local staged/unstaged state and section-aware unified diffs. The
+project surface additionally exposes stage/unstage all or per file, staged-only
+commit, safe per-file discard, refresh, current branch, and busy state. A
+project-mode conversation links to that shared project surface instead of
+showing misleading per-card changes.
 
 “Viewed” files may be maintained as local client preference keyed by
 `card_id + revision + path`; there is no shared server field for it.
@@ -433,20 +453,19 @@ The Swift protobuf and gRPC sources are already regenerated. Verify them with:
 just mac proto-check
 ```
 
-Recommended integration points:
+Current integration points:
 
-- Add RPC wrappers in
-  `apps/mac/Sources/DieterMac/Networking/DieterRPC.swift`.
-- Put authoritative selection/workspace/changeset/operation state and stream
-  task ownership in
-  `apps/mac/Sources/DieterMac/Model/DieterStore.swift`.
-- Extend both creation flows in `UI/Forms.swift` and/or their current shared
-  creation components; do not implement only board cards.
-- Add `cardID` overloads to the existing Files and Terminal store/RPC methods.
-- Add the conversation-level Changes surface from `UI/ConversationView.swift`.
-- Add project Git integration settings to the existing project management/settings surface.
-- Reuse the app's current endpoint, reconnect, and foreground-refresh behavior.
-  Do not open a second connection specifically for Git operations.
+- `DieterRPC` exposes both card- and project-scoped changesets.
+- `ConversationView` renders worktree changes in the card/chat and redirects a
+  project-mode conversation to the shared project Changes destination.
+- `FilesView` switches between project Browse and Changes without changing the
+  existing card-scoped Files behavior.
+- `ProjectChangesView` renders staged and unstaged copies independently,
+  recovers an active operation from `current_operation_id`, and exposes
+  stage/unstage, staged-only commit, safe discard, and refresh.
+- The packaged `workspace` smoke suite proves the real SwiftUI worktree merge
+  and conflict journey plus the project stage → commit → discard journey
+  against an isolated gateway/daemon fixture.
 
 Swift streaming detail: `WatchGitOperation` is a server stream. Own its task in
 the store, retain the last log sequence, and cancel the local task when selection
@@ -464,24 +483,19 @@ Android compiles protobuf/grpc-kotlin sources directly from `api/proto`, so a
 normal Gradle build already exposes the new generated messages and coroutine
 stub methods.
 
-Recommended integration points:
+Current integration points:
 
-- Extend the `DieterRepository` interface and gRPC implementation in
-  `apps/android/app/src/main/java/com/dbpprt/dieter/data/DieterRepository.kt`.
-- Put durable UI projections and operation-stream ownership in the existing
-  `DieterConnectionManager`/ViewModel boundary; do not let composables own
-  long-running server operations.
-- Add project Git integration settings to the existing `WorkspaceManagementScreen`. Note that
-  this existing screen uses “workspace” to mean Dieter's overall project
-  management area; name Git-specific types and state explicitly to avoid
-  confusing the two concepts.
-- Extend the shared card/chat creation policy and payload builders with mode,
-  branch, and base branch.
-- Add `cardId` to repository file and terminal methods when invoked from a
-  conversation.
-- Build one Changes screen/component that accepts any conversation `Card`.
-- Collect `WatchGitOperation` as a reconnectable `Flow`, deduplicate by
-  sequence, and keep it alive across ordinary Compose recomposition.
+- `DieterRepository` exposes project changesets, section-aware diffs, and
+  project Git-operation admission.
+- `DieterViewModel.ProjectChangesState` owns selection, diff pagination,
+  operation recovery/polling, refresh, and errors across Compose recomposition.
+- `CardDetailScreen`/`WorkspaceChangesScreen` keep worktree changes scoped to
+  the conversation and redirect project-mode conversations to project Changes.
+- `FilesScreen` switches between project Browse and Changes;
+  `ProjectChangesScreen` provides the same index/working-tree actions and
+  safety wording as macOS in compact and expanded layouts.
+- `WorkspaceChangesEndToEndTest` drives both visible journeys through the real
+  app against an isolated gateway/daemon and a real temporary Git repository.
 
 Use lifecycle-aware collection for rendering, but keep the operation recovery
 identity in the connection/state layer so backgrounding the app does not imply
@@ -500,7 +514,7 @@ The screenshots are product references, not exact API promises.
 | Screenshot idea | Available now | Native/client responsibility or gap |
 | --- | --- | --- |
 | Changes tab with file list and unified/split diff | Yes | Render patch, paginate, maintain local viewed state |
-| Commit list and per-commit diff | Yes | Use `Changeset.commits` and `GetCommitDiff` |
+| Commit list and per-commit diff | Not part of Changes | Working Changes intentionally shows only local uncommitted state; build history as a separate surface if desired |
 | Update from main and conflict file list | Yes | Run `update`; render waiting operation conflicts |
 | Resolve with agent | Yes, composed from existing APIs | `SendMessage`, wait for turn, then `continue_conflict` |
 | Pre-merge validation result/log | Yes | Run `merge_local` or `validate`; render operation results/logs |
@@ -556,11 +570,19 @@ dieter card workspace --mode worktree --base-branch main CARD_ID
 
 dieter workspace show CARD_ID
 dieter workspace changes CARD_ID
-dieter workspace diff --path README.md --revision REVISION CARD_ID
+dieter workspace diff --section unstaged --path README.md --revision REVISION CARD_ID
 dieter workspace scm CARD_ID
 
+dieter workspace changes --project PROJECT_ID
+dieter workspace diff --project PROJECT_ID --section staged \
+  --path README.md --revision REVISION
+dieter workspace run --project PROJECT_ID --kind stage --revision REVISION \
+  --param path=README.md --wait
+dieter workspace run --project PROJECT_ID --kind commit --revision REVISION \
+  --param subject="Focused project change" --wait
+
 dieter workspace run --kind commit --revision REVISION \
-  --param subject="Workspace test" CARD_ID
+  --param subject="Workspace test" --param stage_all=true CARD_ID
 dieter workspace run --kind update --revision REVISION CARD_ID
 dieter workspace run --kind validate --revision REVISION CARD_ID
 dieter workspace operation OPERATION_ID
@@ -597,7 +619,8 @@ and a standalone chat:
 5. Create/resume/close a card-scoped terminal and prove Git operations are busy
    while it runs.
 6. Render tracked, staged, unstaged, untracked, renamed, deleted, binary, and
-   conflicted changes.
+   conflicted changes; prove one path can appear in both staged and unstaged
+   sections.
 7. Page a large diff and reject/refresh a stale revision.
 8. Add and reload line comments without waking the agent.
 9. Commit and validate while streaming logs; reconnect the watch by sequence.
@@ -608,6 +631,10 @@ and a standalone chat:
 12. Discard and surface the recovery-artifact log message.
 13. Adopt a leftover worktree into a deferred same-project chat.
 14. Exercise SCM unavailable states without `gh`/auth.
+15. In the registered project checkout, stage one file, commit only the index,
+    prove an unstaged/untracked file remains, then discard it with recovery and
+    prove the checkout is clean. Run this while the checkout is on a non-base
+    branch as well as its configured base branch.
 15. Against a disposable GitHub repository or fake provider fixture, create,
     idempotently recreate, refresh, head-protected merge, and cleanup a PR.
 16. Drop the gateway/watch connection during a running operation and prove the

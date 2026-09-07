@@ -54,6 +54,7 @@ extension DieterStore {
         section = destination
         selectedProjectID = projectID
         fileScopeCardID = nil
+        projectFilesMode = "browse"
         terminalScopeCardID = nil
         if selectedBoardID.isEmpty || boards(for: projectID).contains(where: { $0.id == selectedBoardID }) == false {
             selectedBoardID = boards(for: projectID).first?.id ?? ""
@@ -62,6 +63,12 @@ extension DieterStore {
         await refreshState()
         if destination == .files { await loadFiles() }
         if destination == .schedules { await loadSchedules() }
+    }
+
+    func openProjectChanges(_ projectID: String) async {
+        await openProject(projectID, section: .files)
+        guard selectedProjectID == projectID, section == .files else { return }
+        projectFilesMode = "changes"
     }
 
     func openChats() async {
@@ -82,6 +89,7 @@ extension DieterStore {
         guard await ensureProjectConnection(card.projectID) else { return }
         selectedProjectID = card.projectID
         fileScopeCardID = card.id
+        projectFilesMode = "browse"
         filePath = ""
         fileNavigation.reset()
         fileDocument = nil

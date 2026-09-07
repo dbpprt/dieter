@@ -116,7 +116,12 @@ internal fun CardDetailScreen(
     val subagents = snapshot?.conversation?.subagentsList.orEmpty()
     val activeSubagents = subagents.count { it.status == "running" || it.status == "pending" }
     val serverBacked = isServerConversationId(card.id)
-    val changedFileCount = state.workspaceReview.changeset?.filesCount ?: card.workspace.changedFiles
+    val cardWorkspaceMode = card.workspaceMode.ifBlank { card.workspace.mode }
+    val changedFileCount = if (ConversationWorkspaceMode.resolve(cardWorkspaceMode) == ConversationWorkspaceMode.PROJECT) {
+        0
+    } else {
+        state.workspaceReview.changeset?.filesCount ?: card.workspace.changedFiles
+    }
     val showDetailTabs = !standalone || serverBacked || subagents.isNotEmpty() || commentCount > 0
     val cardOperation = state.cardOperations[card.id]
     val displayRuntime = resolvedCardRuntime(card.runtime, snapshot?.conversation?.status.orEmpty(), cardOperation)
@@ -242,6 +247,7 @@ internal fun CardDetailScreen(
             ) {
                 detailSections.forEachIndexed { index, section ->
                     Tab(
+                        modifier = Modifier.testTag("card-detail-${section.name.lowercase()}"),
                         selected = state.detailTab == index,
                         onClick = { model.selectDetailTab(index) },
                         selectedContentColor = DieterShell,

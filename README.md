@@ -162,6 +162,36 @@ dieter schedule runs <schedule-id> --page-token <token>
 Every Dieter card and standalone chat maps to one durable AI SDK Harness
 conversation in a real Git working tree.
 
+At creation, each conversation explicitly chooses one of two execution modes:
+
+- **New worktree** gives the card/chat its own daemon-managed directory and Git
+  branch. Its local changes are shown inside that conversation.
+- **Project directory** runs in the registered checkout exactly as it currently
+  exists, including its currently checked-out branch. Dieter never calls this
+  mode “main” and does not switch branches. Because the directory is shared,
+  its local changes are shown once under the project's **Files → Changes**
+  surface, not attributed to individual project-mode cards.
+
+The Changes API reports only uncommitted Git state and keeps the index and
+working tree separate. The same path can therefore appear in both **Staged**
+and **Changes**. Commits are history, not working changes. By default a commit
+operation commits only the staged index; explicitly staging all is a separate
+choice. Project-directory staging, unstaging, staged-only commits, per-file
+discard with recovery artifacts, and validation all run on the owning daemon
+and use optimistic changeset revisions.
+
+The CLI exposes the same two scopes:
+
+```sh
+dieter workspace changes WORKTREE_CARD_ID
+dieter workspace diff --section unstaged --path path/to/file.go WORKTREE_CARD_ID
+dieter workspace changes --project PROJECT_ID
+dieter workspace run --project PROJECT_ID --kind stage \
+  --revision REVISION --param path=path/to/file.go --wait
+dieter workspace run --project PROJECT_ID --kind commit \
+  --revision REVISION --param subject="Focused change" --wait
+```
+
 ```mermaid
 flowchart LR
     clients["macOS + Android"]
