@@ -321,7 +321,7 @@ enum ConversationUISmokeRunner {
             : "failed: streamed growth forced a detached viewport back to the tail"
         progress("viewport: detached stream growth recorded", in: output)
 
-        click(window: window, x: 985, distanceFromTop: 626)
+        _ = NativeUIAccessibility.click("conversation.jump-to-latest", in: window)
         progress("viewport: posted Jump to latest click", in: output)
         let jumped = await waitForViewport(
             conversationID: syntheticTailChatFixtureID,
@@ -568,7 +568,7 @@ enum ConversationUISmokeRunner {
         store.composerText = ""
         store.composerAttachments = []
         try? await DieterTaskSleep.milliseconds(500)
-        postClick(window: window, x: 850, distanceFromTop: 690)
+        _ = NativeUIAccessibility.click("conversation.composer", in: window)
         try? await DieterTaskSleep.milliseconds(300)
         progress("paste check focused responder: \(String(describing: window.firstResponder))", in: output)
         pasteboard.clearContents()
@@ -653,7 +653,7 @@ enum ConversationUISmokeRunner {
                 clickCount: type == .mouseMoved ? 0 : 1,
                 pressure: type == .leftMouseDown ? 1 : 0
             ) else { continue }
-            window.sendEvent(event)
+            NSApp.postEvent(event, atStart: false)
         }
     }
 
@@ -885,6 +885,9 @@ enum ConversationUISmokeRunner {
         guard let content = window.contentView else { return }
         window.makeKeyAndOrderFront(nil)
         let location = NSPoint(x: content.bounds.width - 260, y: content.bounds.height * 0.55)
+        var hit = content.hitTest(content.convert(location, from: nil))
+        while hit != nil && !(hit is NSScrollView) { hit = hit?.superview }
+        guard let scroll = hit as? NSScrollView else { return }
         let screenLocation = window.convertPoint(toScreen: location)
         for index in 0..<10 {
             guard let cgEvent = CGEvent(
@@ -902,7 +905,7 @@ enum ConversationUISmokeRunner {
                 value: index == 0 ? 1 : (index == 9 ? 4 : 2)
             )
             if let event = NSEvent(cgEvent: cgEvent) {
-                window.sendEvent(event)
+                scroll.scrollWheel(with: event)
             }
             try? await DieterTaskSleep.milliseconds(20)
         }

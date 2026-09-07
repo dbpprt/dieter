@@ -621,6 +621,7 @@ struct ConversationTimeline: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 12)
                     .accessibilityIdentifier("conversation.jump-to-latest")
+                    .smokeTarget("conversation.jump-to-latest")
                 }
             }
             .onChange(of: showsJumpToLatest) { _, visible in
@@ -1912,6 +1913,7 @@ private struct ConversationComposer: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                     .accessibilityIdentifier("conversation.composer")
+                    .smokeTarget("conversation.composer")
                     .onKeyPress(.return, phases: .down) { press in
                         if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
                             return .ignored
