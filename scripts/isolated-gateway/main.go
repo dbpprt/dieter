@@ -296,6 +296,7 @@ func isolatedMachineCapabilities(context.Context) []machine.OperationCapability 
 	return []machine.OperationCapability{
 		{Operation: machine.OperationRestart, Supported: true, Authorized: true},
 		{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
+		{Operation: machine.OperationUpdate, Supported: true, Authorized: true},
 	}
 }
 

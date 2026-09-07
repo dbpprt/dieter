@@ -29,25 +29,56 @@ enum MachineInformationPresentation {
     }
 }
 
-private enum MachinePowerAction: String, Identifiable {
+private enum MachineAction: String, Identifiable {
     case restart
     case shutdown
+    case update
 
     var id: String { rawValue }
-    var title: String { self == .restart ? "Restart machine" : "Shut down machine" }
-    var buttonTitle: String { self == .restart ? "Restart" : "Shut Down" }
-    var confirmation: String { self == .restart ? "RESTART" : "SHUT DOWN" }
-    var wireAction: Dieter_V1_MachineOperationAction { self == .restart ? .restart : .shutdown }
+    var title: String {
+        switch self {
+        case .restart: "Restart machine"
+        case .shutdown: "Shut down machine"
+        case .update: "Update Dieter daemon"
+        }
+    }
+    var buttonTitle: String {
+        switch self {
+        case .restart: "Restart"
+        case .shutdown: "Shut Down"
+        case .update: "Update"
+        }
+    }
+    var confirmation: String {
+        switch self {
+        case .restart: "RESTART"
+        case .shutdown: "SHUT DOWN"
+        case .update: "UPDATE"
+        }
+    }
+    var wireAction: Dieter_V1_MachineOperationAction {
+        switch self {
+        case .restart: .restart
+        case .shutdown: .shutdown
+        case .update: .updateDaemon
+        }
+    }
+    var role: ButtonRole? { self == .update ? nil : .destructive }
     var explanation: String {
-        self == .restart
-            ? "Active Dieter turns will be suspended while the machine restarts. It will reconnect after Dieter starts again."
-            : "Active Dieter turns will be suspended and the machine will remain offline until somebody turns it on again."
+        switch self {
+        case .restart:
+            "Active Dieter turns will be suspended while the machine restarts. It will reconnect after Dieter starts again."
+        case .shutdown:
+            "Active Dieter turns will be suspended and the machine will remain offline until somebody turns it on again."
+        case .update:
+            "Homebrew will update Dieter without prompting, restart the daemon service, and let this machine reconnect automatically. Active turns will be suspended during the restart."
+        }
     }
 }
 
 struct MachinePopover: View {
     @Environment(DieterStore.self) private var store
-    @State private var pendingPowerAction: MachinePowerAction?
+    @State private var pendingAction: MachineAction?
 
     private var machine: DieterEndpoint? {
         guard let id = store.selectedMachineID else { return store.machines.first }
@@ -81,24 +112,24 @@ struct MachinePopover: View {
         .accessibilityIdentifier("machine.popover")
         .onExitCommand { store.dismissMachinePopover() }
         .confirmationDialog(
-            pendingPowerAction?.title ?? "Machine operation",
+            pendingAction?.title ?? "Machine operation",
             isPresented: Binding(
-                get: { pendingPowerAction != nil },
-                set: { if !$0 { pendingPowerAction = nil } }
+                get: { pendingAction != nil },
+                set: { if !$0 { pendingAction = nil } }
             ),
             titleVisibility: .visible
         ) {
-            if let action = pendingPowerAction {
-                Button(action.buttonTitle, role: .destructive) {
-                    pendingPowerAction = nil
+            if let action = pendingAction {
+                Button(action.buttonTitle, role: action.role) {
+                    pendingAction = nil
                     Task {
                         await store.performMachineOperation(action.wireAction, confirmation: action.confirmation)
                     }
                 }
             }
-            Button("Cancel", role: .cancel) { pendingPowerAction = nil }
+            Button("Cancel", role: .cancel) { pendingAction = nil }
         } message: {
-            Text(pendingPowerAction?.explanation ?? "")
+            Text(pendingAction?.explanation ?? "")
         }
         .alert(
             "Machine operation accepted",
@@ -186,10 +217,14 @@ struct MachinePopover: View {
             .accessibilityIdentifier("machine.refresh")
 
             Menu {
-                Button("Restart…", systemImage: "arrow.clockwise.circle") { pendingPowerAction = .restart }
+                Button("Update Dieter…", systemImage: "arrow.down.circle") { pendingAction = .update }
+                    .disabled(!operationAvailable(.updateDaemon, machine: machine))
+                    .accessibilityIdentifier("machine.update-daemon")
+                Divider()
+                Button("Restart…", systemImage: "arrow.clockwise.circle") { pendingAction = .restart }
                     .disabled(!operationAvailable(.restart, machine: machine))
                     .accessibilityIdentifier("machine.restart")
-                Button("Shut Down…", systemImage: "power") { pendingPowerAction = .shutdown }
+                Button("Shut Down…", systemImage: "power") { pendingAction = .shutdown }
                     .disabled(!operationAvailable(.shutdown, machine: machine))
                     .accessibilityIdentifier("machine.shutdown")
             } label: {
@@ -216,7 +251,11 @@ struct MachinePopover: View {
         if let capability = information.operationCapabilities.first(where: { $0.action == action }) {
             return capability.supported && capability.authorized
         }
-        return action == .restart ? information.supportsRestart : information.supportsShutdown
+        switch action {
+        case .restart: return information.supportsRestart
+        case .shutdown: return information.supportsShutdown
+        default: return false
+        }
     }
 
     private func machineSubtitle(_ machine: DieterEndpoint) -> String {

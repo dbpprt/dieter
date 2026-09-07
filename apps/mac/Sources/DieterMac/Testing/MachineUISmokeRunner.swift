@@ -62,12 +62,20 @@ enum MachineUISmokeRunner {
                 ? "passed" : "failed: gateway build identity was absent",
             "host-controls": information.supportsRestart && information.supportsShutdown
                 ? "passed" : "failed: restart/shutdown were unavailable",
+            "daemon-update-capability": information.operationCapabilities.contains {
+                $0.action == .updateDaemon && $0.supported && $0.authorized
+            } ? "passed" : "failed: daemon update was unavailable",
             "route": store.connectionStatus(for: machine) == nil
                 ? "failed: no authenticated route measurement" : "passed",
         ]
         results["render"] = capture(window: window, to: output.appendingPathComponent("machine-information.png"))
             ? "passed" : "failed: could not capture machine popup"
         if machine.version == "isolated-e2e" {
+            await store.performMachineOperation(.updateDaemon, confirmation: "UPDATE")
+            results["daemon-update"] = store.machineOperationMessage?.contains("reconnect") == true
+                ? "passed" : "failed: isolated daemon update was not accepted"
+            store.machineOperationMessage = nil
+            try? await DieterTaskSleep.seconds(1)
             await store.performMachineOperation(.restart, confirmation: "RESTART")
             results["power-control"] = store.machineOperationMessage?.isEmpty == false
                 ? "passed" : "failed: isolated restart was not accepted"

@@ -109,18 +109,28 @@ host telemetry, including optional Apple, NVIDIA, and AMD GPU data with absent
 sensors kept distinct from real zero values. Native clients use API versions
 to keep compatible machines in a mixed-version fleet available.
 
-Restart and shutdown use the same authenticated local, direct-TLS, or relay
-route as every other machine operation and require exact confirmation phrases:
+Restart, shutdown, and daemon update use the same authenticated local,
+direct-TLS, or relay route as every other machine operation and require exact
+confirmation phrases:
 
 ```sh
 dieter --machine <machine-id> machine restart --confirm RESTART
 dieter --machine <machine-id> machine shutdown --confirm "SHUT DOWN"
+dieter --machine <machine-id> machine update --confirm UPDATE
 ```
 
 macOS uses the signed-in user's normal System Events authorization. Linux uses
 non-interactive systemd-logind authorization and never accepts a sudo password;
 an administrator must grant the daemon user the relevant PolicyKit permission
 before the commands are advertised as available.
+
+Automatic daemon update is intentionally limited to a running
+Homebrew-managed macOS service. Dieter runs `brew update`, upgrades only
+`dbpprt/tap/dieter`, and restarts that service in a detached worker. The worker
+has no terminal or standard input, disables Homebrew ask mode, bounds every
+step, and records output in `~/.dieter/logs/update.log`. A foreground,
+development, Linux, or otherwise externally managed daemon advertises why the
+operation is unavailable and must be updated by its owner instead.
 
 `dieter status` reports daemon-wide active project, board, card, and chat
 counts in one snapshot, including when the selected machine is remote.

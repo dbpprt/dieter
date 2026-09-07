@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,18 @@ func TestMachineInformationIncludesHostAndDaemonProcess(t *testing.T) {
 	if len(information.GetProcesses()) != 1 || information.GetProcesses()[0].GetKind() != "daemon" {
 		t.Fatalf("Dieter process projection=%#v", information.GetProcesses())
 	}
+	foundUpdate := false
+	for _, capability := range information.GetOperationCapabilities() {
+		if capability.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON {
+			foundUpdate = true
+			if capability.GetSupported() || capability.GetUnavailableReason() == "" {
+				t.Fatalf("unexpected update capability for isolated non-Homebrew daemon: %#v", capability)
+			}
+		}
+	}
+	if !foundUpdate {
+		t.Fatal("machine information omitted daemon update capability")
+	}
 }
 
 func TestMachineOperationRequiresExactConfirmationBeforeScheduling(t *testing.T) {
@@ -42,6 +55,52 @@ func TestMachineOperationRequiresExactConfirmationBeforeScheduling(t *testing.T)
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("confirmation error=%v", err)
+	}
+}
+
+func TestDaemonUpdateRequiresExactConfirmation(t *testing.T) {
+	application := New(store.New(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	application.machineCapabilities = testMachineOperationCapabilities
+	_, err := (&grpcAPI{server: application}).PerformMachineOperation(context.Background(), &dieterv1.MachineOperationRequest{
+		Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON, Confirmation: "yes",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("confirmation error=%v", err)
+	}
+}
+
+func TestDaemonUpdateRejectsAnUnsupportedInstallation(t *testing.T) {
+	application := New(store.New(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	_, err := (&grpcAPI{server: application}).PerformMachineOperation(context.Background(), &dieterv1.MachineOperationRequest{
+		Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON, Confirmation: "UPDATE",
+	})
+	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "Homebrew") {
+		t.Fatalf("unsupported update error=%v", err)
+	}
+}
+
+func TestDaemonUpdateSchedulesValidatedUpdater(t *testing.T) {
+	application := New(store.New(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	application.machineDelay = 0
+	application.machineCapabilities = testMachineOperationCapabilities
+	called := make(chan machine.Operation, 1)
+	application.machineAction = func(_ context.Context, operation machine.Operation) error {
+		called <- operation
+		return nil
+	}
+	response, err := (&grpcAPI{server: application}).PerformMachineOperation(context.Background(), &dieterv1.MachineOperationRequest{
+		Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON, Confirmation: "UPDATE", IdempotencyKey: "update-once",
+	})
+	if err != nil || !response.GetAccepted() || !strings.Contains(response.GetMessage(), "reconnect") {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+	select {
+	case operation := <-called:
+		if operation != machine.OperationUpdate {
+			t.Fatalf("operation=%q", operation)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("validated daemon update was not scheduled")
 	}
 }
 
@@ -94,5 +153,6 @@ func testMachineOperationCapabilities(context.Context) []machine.OperationCapabi
 	return []machine.OperationCapability{
 		{Operation: machine.OperationRestart, Supported: true, Authorized: true},
 		{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
+		{Operation: machine.OperationUpdate, Supported: true, Authorized: true},
 	}
 }

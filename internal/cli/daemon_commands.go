@@ -175,10 +175,12 @@ Actions:
   revoke --confirm MACHINE_ID [MACHINE]       Revoke an enrolled machine
   restart --confirm RESTART [MACHINE]
   shutdown --confirm "SHUT DOWN" [MACHINE]
+  update --confirm UPDATE [MACHINE]           Update a Homebrew-managed daemon
   rtc [MACHINE]                              Get signed WebRTC configuration
 
 Pass MACHINE or global --machine to select a remote daemon. Info, restart, and
-shutdown target the local daemon when MACHINE is omitted.
+shutdown and update target the local daemon when MACHINE is omitted. Update is
+non-interactive and available only to a Homebrew-managed macOS daemon service.
 `
 
 func (c *CLI) machineReference(setArguments []string) (string, error) {
@@ -308,7 +310,7 @@ func (c *CLI) machineCommand(args []string) error {
 				return nil
 			}
 		}
-	case "show", "route", "info", "rename", "revoke", "restart", "shutdown", "rtc":
+	case "show", "route", "info", "rename", "revoke", "restart", "shutdown", "update", "rtc":
 		return c.machineAction(args[0], args[1:])
 	default:
 		return fmt.Errorf("unknown machine action %q; run `dieter machine --help`", args[0])
@@ -326,7 +328,7 @@ func (c *CLI) machineAction(action string, args []string) error {
 	}
 	ctx, cancel := c.commandContext()
 	defer cancel()
-	if set.NArg() == 0 && strings.TrimSpace(c.Machine) == "" && (action == "info" || action == "restart" || action == "shutdown") {
+	if set.NArg() == 0 && strings.TrimSpace(c.Machine) == "" && (action == "info" || action == "restart" || action == "shutdown" || action == "update") {
 		client, rpcCtx, err := c.rpc(ctx)
 		if err != nil {
 			return err
@@ -371,7 +373,7 @@ func (c *CLI) machineAction(action string, args []string) error {
 			return err
 		}
 		return protoJSONOut(c.Out, value)
-	case "info", "restart", "shutdown":
+	case "info", "restart", "shutdown", "update":
 		previous := c.Machine
 		c.Machine = machine.GetId()
 		defer func() { c.Machine = previous }()
@@ -393,8 +395,11 @@ func (c *CLI) machineRPCAction(client dieterv1.DieterServiceClient, ctx context.
 		return protoJSONOut(c.Out, value)
 	}
 	wireAction := dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_RESTART
-	if action == "shutdown" {
+	switch action {
+	case "shutdown":
 		wireAction = dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_SHUTDOWN
+	case "update":
+		wireAction = dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON
 	}
 	value, err := client.PerformMachineOperation(ctx, &dieterv1.MachineOperationRequest{Action: wireAction, Confirmation: confirmation})
 	if err != nil {
