@@ -29,7 +29,10 @@ enum SidebarNavigationUISmokeRunner {
             return
         }
 
-        window.setContentSize(NSSize(width: 1_380, height: 870))
+        // The sidebar renders global destinations, projects with expandable children,
+        // and the boards section without scrolling at this height. Fixed row offsets
+        // below assume nothing in that column is clipped.
+        window.setContentSize(NSSize(width: 1_380, height: 1_180))
         window.center()
         window.makeKeyAndOrderFront(nil)
         try? await DieterTaskSleep.milliseconds(500)
@@ -44,6 +47,15 @@ enum SidebarNavigationUISmokeRunner {
         results["machine-sidebar-order"] = sidebarMachineNames == expectedMachineNames
             ? "passed"
             : "failed: \(sidebarMachineNames.joined(separator: ","))"
+        let sidebarBoards = store.sidebarBoards
+        let boardIDs = sidebarBoards.map(\.board.id)
+        results["board-sidebar-order"] = boardIDs == ["b_sidebar_1", "b_sidebar_2", "b_sidebar_3"]
+            ? "passed"
+            : "failed: \(boardIDs.joined(separator: ","))"
+        let boardProjectNames = sidebarBoards.map(\.project.name)
+        results["board-project-labels"] = boardProjectNames == ["Alpha", "Beta", "Gamma"]
+            ? "passed"
+            : "failed: \(boardProjectNames.joined(separator: ","))"
         switch phase {
         case "prepare":
             await prepare(window: window, results: &results)
