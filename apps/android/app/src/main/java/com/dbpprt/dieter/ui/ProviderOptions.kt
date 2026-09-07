@@ -29,9 +29,18 @@ import com.dbpprt.dieter.v1.ProviderOption
 internal fun providerOptionValues(
     harness: Harness?,
     saved: Map<String, String> = emptyMap(),
+    model: String = harness?.defaultModel.orEmpty(),
 ): Map<String, String> = buildMap {
-    harness?.optionsList.orEmpty().forEach { option -> put(option.id, option.defaultValue) }
-    putAll(saved)
+    providerOptionsForModel(harness, model).forEach { option ->
+        put(option.id, saved[option.id] ?: option.defaultValue)
+    }
+}
+
+internal fun providerOptionsForModel(harness: Harness?, model: String): List<ProviderOption> {
+    val selectedModel = model.ifBlank { harness?.defaultModel.orEmpty() }
+    return harness?.optionsList.orEmpty().filter { option ->
+        option.modelsList.isEmpty() || selectedModel in option.modelsList
+    }
 }
 
 internal fun providerOptionValue(

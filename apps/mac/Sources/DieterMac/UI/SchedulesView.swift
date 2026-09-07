@@ -508,7 +508,7 @@ struct ScheduleEditor: View {
                 draft.provider = harness.id
                 draft.model = harness.defaultModel
                 draft.effort = harness.models.first(where: { $0.id == harness.defaultModel })?.defaultEffort ?? ""
-                draft.providerOptions = ProviderOptionValues.defaults(for: harness)
+                draft.providerOptions = ProviderOptionValues.defaults(for: harness, model: draft.model)
             }
         }
         .task(id: previewKey) {

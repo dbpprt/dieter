@@ -112,9 +112,10 @@ dieter card create --project <project-id> --board <board-id> \
 ```
 
 Harness-defined options use repeatable `--provider-option KEY=VALUE` flags.
-For example, Codex chats and tasks can select Fast mode with
-`--provider-option fast_mode=true`; schedules accept the same option and apply
-it to every task they create.
+For example, Codex chats and tasks using GPT-5.4, GPT-5.5, GPT-5.6, or GPT-6
+Astra can select Fast mode with `--provider-option fast_mode=true`; schedules
+accept the same option and apply it to every task they create. GPT-5.3 Codex
+and Spark do not support this option.
 
 `card start` admits a draft's first turn. `card send` admits a human follow-up.
 Both return without waiting for the agent to finish. Do not replay either just

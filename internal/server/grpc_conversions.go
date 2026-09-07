@@ -433,7 +433,7 @@ func protoHarnessCatalog(values []harness.Adapter) *dieterv1.HarnessCatalog {
 			item.Capabilities = append(item.Capabilities, &dieterv1.HarnessCapability{Id: capability.ID, Level: capability.Level})
 		}
 		for _, option := range value.Options {
-			wireOption := &dieterv1.ProviderOption{Id: option.ID, Name: option.Name, Description: option.Description, Type: option.Type, DefaultValue: option.Default, Mutable: option.Mutable}
+			wireOption := &dieterv1.ProviderOption{Id: option.ID, Name: option.Name, Description: option.Description, Type: option.Type, DefaultValue: option.Default, Mutable: option.Mutable, Models: append([]string(nil), option.Models...)}
 			for _, choice := range option.Choices {
 				wireOption.Choices = append(wireOption.Choices, &dieterv1.ProviderOptionChoice{Value: choice.Value, Name: choice.Name})
 			}

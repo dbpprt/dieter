@@ -1392,7 +1392,7 @@ class DieterViewModel(
             provider = defaults.provider,
             model = defaults.model,
             effort = defaults.effort,
-            providerOptions = providerOptionValues(harness),
+            providerOptions = providerOptionValues(harness, model = defaults.model),
             lane = lane,
             labelIds = emptyList(),
             deferStart = !lane.equals("running", ignoreCase = true),

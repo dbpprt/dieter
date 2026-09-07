@@ -176,7 +176,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	// was created, so recovery must trust those persisted values rather than
 	// rejecting a live continuation against the smaller release fallback list.
 	effort := detail.Card.Effort
-	providerOptions, err := harness.ResolveOptions(adapter, detail.Card.ProviderOptions)
+	providerOptions, err := harness.ResolveOptionsForModel(adapter, configuredModel.ID, detail.Card.ProviderOptions)
 	if err != nil {
 		return err
 	}
@@ -437,7 +437,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	if err != nil {
 		return model.Card{}, err
 	}
-	input.ProviderOptions, err = harness.ResolveOptions(adapter, input.ProviderOptions)
+	input.ProviderOptions, err = harness.ResolveOptionsForModel(adapter, configuredModel.ID, input.ProviderOptions)
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -663,12 +663,12 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if requestedOptions == nil {
 		requestedOptions = detail.Card.ProviderOptions
 	}
-	providerOptions, err := harness.ResolveOptions(adapter, requestedOptions)
+	providerOptions, err := harness.ResolveOptionsForModel(adapter, configuredModel.ID, requestedOptions)
 	if err != nil {
 		return nil, err
 	}
 	if !first && requestedOptions != nil {
-		lockedOptions, resolveErr := harness.ResolveOptions(adapter, detail.Card.ProviderOptions)
+		lockedOptions, resolveErr := harness.ResolveOptionsForModel(adapter, configuredModel.ID, detail.Card.ProviderOptions)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
@@ -1288,12 +1288,12 @@ func (s *Service) SubmitCardPartsWithMessageID(ref string, parts []model.UIMessa
 				s.mu.Unlock()
 				return false, fmt.Errorf("unsupported harness %q", card.Provider)
 			}
-			requestedOptions, resolveErr := harness.ResolveOptions(adapter, providerOptions)
+			requestedOptions, resolveErr := harness.ResolveOptionsForModel(adapter, card.Model, providerOptions)
 			if resolveErr != nil {
 				s.mu.Unlock()
 				return false, resolveErr
 			}
-			lockedOptions, resolveErr := harness.ResolveOptions(adapter, card.ProviderOptions)
+			lockedOptions, resolveErr := harness.ResolveOptionsForModel(adapter, card.Model, card.ProviderOptions)
 			if resolveErr != nil {
 				s.mu.Unlock()
 				return false, resolveErr

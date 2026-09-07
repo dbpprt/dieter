@@ -299,10 +299,12 @@ Supported models and provider options live in
 An optional model `defaultEffort` is Dieter's default for new conversations and
 overrides the provider-discovered default when that model supports the selected
 level. Pass `--effort default` to explicitly use the provider's native default.
-Codex advertises a mutable `fast_mode` option: native clients expose it for
-chats, board tasks, and scheduled task templates, while the CLI accepts
-`--provider-option fast_mode=true`. Turning it off explicitly selects the
-standard service tier for that conversation.
+Codex advertises a mutable `fast_mode` option for GPT-5.4, GPT-5.5, GPT-5.6,
+and GPT-6 Astra models: native clients expose it for chats, board tasks, and
+scheduled task templates, while the CLI accepts
+`--provider-option fast_mode=true`. GPT-5.3 Codex and Spark do not expose Fast
+mode. Turning it off explicitly selects the standard service tier for that
+conversation.
 
 ## Development
 

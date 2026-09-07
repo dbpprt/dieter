@@ -204,8 +204,11 @@ extension DieterStore {
         composerModel = snapshot.detail.card.model
         composerEffort = snapshot.detail.card.effort
         let selectedHarness = harnessCatalog.harnesses.first { $0.id == composerProvider }
-        composerProviderOptions = ProviderOptionValues.defaults(for: selectedHarness)
-        composerProviderOptions.merge(snapshot.detail.card.providerOptions) { _, saved in saved }
+        composerProviderOptions = ProviderOptionValues.normalized(
+            for: selectedHarness,
+            model: composerModel,
+            saved: snapshot.detail.card.providerOptions
+        )
         if chat, let card = chats.first(where: { $0.id == snapshot.detail.card.id }) { markChatRead(card) }
         if cache, let refreshedAt {
             await cacheConversation(snapshot, endpointID: endpoint.id, refreshedAt: refreshedAt)

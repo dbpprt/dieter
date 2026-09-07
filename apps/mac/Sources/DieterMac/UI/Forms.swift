@@ -134,13 +134,16 @@ struct NewConversationSheet: View {
                                     Button(item.name) {
                                         provider = item.id; model = item.defaultModel
                                         effort = item.models.first(where: { $0.id == item.defaultModel })?.defaultEffort ?? ""
-                                        providerOptions = ProviderOptionValues.defaults(for: item)
+                                        providerOptions = ProviderOptionValues.defaults(for: item, model: model)
                                     }
                                 }
                             }
                             newCardMenu(title: "Model", value: selectedModel?.name ?? "Agent default", symbol: "terminal") {
                                 ForEach(harness?.models ?? [], id: \.id) { item in
-                                    Button(item.name) { model = item.id; effort = item.defaultEffort }
+                                    Button(item.name) {
+                                        model = item.id; effort = item.defaultEffort
+                                        providerOptions = ProviderOptionValues.normalized(for: harness, model: model, saved: providerOptions)
+                                    }
                                 }
                             }
                             newCardMenu(title: "Reasoning", value: effort.isEmpty ? "Default" : effort.capitalized, symbol: "sparkles") {
@@ -153,9 +156,9 @@ struct NewConversationSheet: View {
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
 
-                    if !(harness?.options ?? []).isEmpty {
+                    if !ProviderOptionValues.options(for: harness, model: model).isEmpty {
                         HStack(spacing: 7) {
-                            ProviderOptionChips(options: harness?.options ?? [], values: $providerOptions)
+                            ProviderOptionChips(options: ProviderOptionValues.options(for: harness, model: model), values: $providerOptions)
                             Spacer()
                         }
                     }
@@ -228,7 +231,7 @@ struct NewConversationSheet: View {
         model = selection.model
         effort = selection.effort
         workspaceDraft.mode = selection.workspaceMode
-        providerOptions = ProviderOptionValues.defaults(for: harness)
+        providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
     }
 
     private var laneTitle: String {
@@ -714,24 +717,43 @@ struct HarnessFields: View {
             ForEach(store.harnessCatalog.harnesses, id: \.id) { Text($0.name).tag($0.id) }
         }.onChange(of: provider) { _, _ in
             model = harness?.defaultModel ?? ""; effort = selectedModel?.defaultEffort ?? ""
-            providerOptions = ProviderOptionValues.defaults(for: harness)
+            providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
         }
         Picker("Model", selection: $model) {
             Text("Agent default").tag("")
             ForEach(harness?.models ?? [], id: \.id) { Text($0.name).tag($0.id) }
-        }.onChange(of: model) { _, _ in effort = selectedModel?.defaultEffort ?? "" }
+        }.onChange(of: model) { _, _ in
+            effort = selectedModel?.defaultEffort ?? ""
+            providerOptions = ProviderOptionValues.normalized(for: harness, model: model, saved: providerOptions)
+        }
         if let efforts = selectedModel?.efforts, !efforts.isEmpty {
             Picker("Reasoning effort", selection: $effort) {
                 ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
             }
         }
-        ProviderOptionFields(options: harness?.options ?? [], values: $providerOptions)
+        ProviderOptionFields(options: ProviderOptionValues.options(for: harness, model: model), values: $providerOptions)
     }
 }
 
 enum ProviderOptionValues {
-    static func defaults(for harness: Dieter_V1_Harness?) -> [String: String] {
-        Dictionary((harness?.options ?? []).map { ($0.id, $0.defaultValue) }, uniquingKeysWith: { first, _ in first })
+    static func options(for harness: Dieter_V1_Harness?, model: String) -> [Dieter_V1_ProviderOption] {
+        guard let harness else { return [] }
+        let selectedModel = model.isEmpty ? harness.defaultModel : model
+        return harness.options.filter { $0.models.isEmpty || $0.models.contains(selectedModel) }
+    }
+
+    static func defaults(for harness: Dieter_V1_Harness?, model: String? = nil) -> [String: String] {
+        normalized(for: harness, model: model ?? harness?.defaultModel ?? "", saved: [:])
+    }
+
+    static func normalized(
+        for harness: Dieter_V1_Harness?,
+        model: String,
+        saved: [String: String]
+    ) -> [String: String] {
+        Dictionary(options(for: harness, model: model).map { option in
+            (option.id, saved[option.id] ?? option.defaultValue)
+        }, uniquingKeysWith: { first, _ in first })
     }
 
     static func isEnabled(_ option: Dieter_V1_ProviderOption, conversationLocked: Bool) -> Bool {

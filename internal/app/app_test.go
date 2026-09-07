@@ -1195,6 +1195,27 @@ func TestCodexFastModePersistsForTasksAndChatsAndCanChangeBetweenTurns(t *testin
 	}
 }
 
+func TestCodexFastModeRejectsUnsupportedModels(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	_, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Spark task", Prompt: "Work quickly", Provider: "codex", Model: "gpt-5.3-codex-spark",
+		ProviderOptions: map[string]string{"fast_mode": "true"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not supported for model") {
+		t.Fatalf("Spark Fast mode err=%v", err)
+	}
+
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Standard Spark task", Prompt: "Work quickly", Provider: "codex", Model: "gpt-5.3-codex-spark",
+		ProviderOptions: map[string]string{"fast_mode": "false"},
+	})
+	if err != nil || len(card.ProviderOptions) != 0 {
+		t.Fatalf("standard Spark card=%#v err=%v", card, err)
+	}
+}
+
 func TestProviderOptionDefaultsDoNotLockLegacyConversation(t *testing.T) {
 	service, fake, project, board := appSetup(t)
 	card, err := service.CreateCard(context.Background(), CardInput{

@@ -628,7 +628,7 @@ private struct StandaloneChatStartView: View {
                             Button(item.name) {
                                 provider = item.id; model = item.defaultModel
                                 effort = item.models.first(where: { $0.id == model })?.defaultEffort ?? item.effort.options.first?.id ?? ""
-                                providerOptions = ProviderOptionValues.defaults(for: item)
+                                providerOptions = ProviderOptionValues.defaults(for: item, model: model)
                             }
                         }
                     } label: { DieterChipLabel(title: harness?.name ?? "Agent", symbol: "cpu") }.menuStyle(.borderlessButton).fixedSize()
@@ -644,13 +644,18 @@ private struct StandaloneChatStartView: View {
                     .help(workspaceDraft.mode.detail)
 
                     Menu {
-                        ForEach(harness?.models ?? [], id: \.id) { item in Button(item.name) { model = item.id; effort = item.defaultEffort } }
+                        ForEach(harness?.models ?? [], id: \.id) { item in
+                            Button(item.name) {
+                                model = item.id; effort = item.defaultEffort
+                                providerOptions = ProviderOptionValues.normalized(for: harness, model: model, saved: providerOptions)
+                            }
+                        }
                     } label: { DieterChipLabel(title: selectedModel?.name ?? "Model", symbol: "terminal", maximumTitleWidth: 190) }.menuStyle(.borderlessButton).fixedSize()
 
                     if let options = selectedModel?.efforts, !options.isEmpty {
                         Menu { ForEach(options, id: \.self) { value in Button(value.capitalized) { effort = value } } } label: { DieterChipLabel(title: effort.isEmpty ? "Default" : effort.capitalized, symbol: "sparkles") }.menuStyle(.borderlessButton).fixedSize()
                     }
-                    ProviderOptionChips(options: harness?.options ?? [], values: $providerOptions)
+                    ProviderOptionChips(options: ProviderOptionValues.options(for: harness, model: model), values: $providerOptions)
                     Spacer()
                 }
                 if !attachments.isEmpty {
@@ -722,7 +727,7 @@ private struct StandaloneChatStartView: View {
         model = selection.model
         effort = selection.effort
         workspaceDraft.mode = selection.workspaceMode
-        providerOptions = ProviderOptionValues.defaults(for: harness)
+        providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
     }
 
     private func submit() async {

@@ -632,7 +632,7 @@ private struct QuickTaskPopover: View {
             provider: resolved?.provider ?? "",
             model: resolved?.model ?? "",
             effort: resolved?.effort ?? "",
-            providerOptions: harness.map { ProviderOptionValues.defaults(for: $0) } ?? [:],
+            providerOptions: harness.map { ProviderOptionValues.defaults(for: $0, model: resolved?.model ?? "") } ?? [:],
             deferred: lane?.id.lowercased() != "running",
             lane: lane?.id ?? "todo",
             workspace: workspace,

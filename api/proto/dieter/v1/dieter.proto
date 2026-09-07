@@ -601,6 +601,7 @@ message ProviderOption {
   string default_value = 5;
   repeated ProviderOptionChoice choices = 6;
   bool mutable = 7;
+  repeated string models = 8;
 }
 
 message ProviderOptionChoice {

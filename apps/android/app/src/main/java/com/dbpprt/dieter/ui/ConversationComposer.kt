@@ -324,11 +324,12 @@ internal fun MessageComposer(
         mutableStateOf(card?.model?.takeIf { it.isNotBlank() } ?: selectedHarness?.defaultModel.orEmpty())
     }
     var effort by remember(card?.id, provider, selectedModel) { mutableStateOf(card?.effort.orEmpty()) }
-    var providerOptions by remember(card?.id, provider, selectedHarness, card?.providerOptionsMap) {
+    var providerOptions by remember(card?.id, provider, selectedHarness, selectedModel, card?.providerOptionsMap) {
         mutableStateOf(
             providerOptionValues(
                 selectedHarness,
                 card?.providerOptionsMap?.takeIf { card.provider == provider }.orEmpty(),
+                selectedModel,
             ),
         )
     }
@@ -405,7 +406,7 @@ internal fun MessageComposer(
                             }
                         }
                     }
-                    selectedHarness?.optionsList.orEmpty().forEach { option ->
+                    providerOptionsForModel(selectedHarness, selectedModel).forEach { option ->
                         ProviderOptionControl(
                             option = option,
                             values = providerOptions,

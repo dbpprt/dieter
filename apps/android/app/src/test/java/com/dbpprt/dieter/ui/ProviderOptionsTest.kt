@@ -39,6 +39,26 @@ class ProviderOptionsTest {
     }
 
     @Test
+    fun modelScopedOptionsOnlyAppearForSupportedModels() {
+        val fastMode = ProviderOption.newBuilder()
+            .setId("fast_mode")
+            .setDefaultValue("false")
+            .addModels("gpt-5.6-sol")
+            .build()
+        val harness = Harness.newBuilder()
+            .setDefaultModel("gpt-5.6-sol")
+            .addOptions(fastMode)
+            .build()
+
+        assertEquals(
+            mapOf("fast_mode" to "true"),
+            providerOptionValues(harness, mapOf("fast_mode" to "true"), "gpt-5.6-sol"),
+        )
+        assertEquals(emptyMap<String, String>(), providerOptionValues(harness, mapOf("fast_mode" to "true"), "gpt-5.3-codex-spark"))
+        assertEquals(emptyList<ProviderOption>(), providerOptionsForModel(harness, "gpt-5.3-codex-spark"))
+    }
+
+    @Test
     fun onlyMutableOptionsRemainEnabledAfterConversationStarts() {
         val fastMode = ProviderOption.newBuilder().setId("fast_mode").setMutable(true).build()
         val sessionMode = ProviderOption.newBuilder().setId("session_mode").build()

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -137,8 +138,20 @@ func TestCatalogIncludesCurrentCodexRegistry(t *testing.T) {
 	if len(codex.Options) != 1 || codex.Options[0].ID != "fast_mode" || codex.Options[0].Type != "boolean" || codex.Options[0].Default != "false" || !codex.Options[0].Mutable {
 		t.Fatalf("codex options=%#v", codex.Options)
 	}
+	if got, want := codex.Options[0].Models, want[:6]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("codex Fast mode models=%#v want %#v", got, want)
+	}
 	if options, err := ResolveOptions(codex, map[string]string{"fast_mode": "true"}); err != nil || options["fast_mode"] != "true" {
 		t.Fatalf("codex Fast mode options=%#v err=%v", options, err)
+	}
+	if options, err := ResolveOptionsForModel(codex, "gpt-5.3-codex-spark", nil); err != nil || len(options) != 0 {
+		t.Fatalf("Spark options=%#v err=%v", options, err)
+	}
+	if options, err := ResolveOptionsForModel(codex, "gpt-5.3-codex-spark", map[string]string{"fast_mode": "false"}); err != nil || len(options) != 0 {
+		t.Fatalf("legacy Spark defaults=%#v err=%v", options, err)
+	}
+	if _, err := ResolveOptionsForModel(codex, "gpt-5.3-codex-spark", map[string]string{"fast_mode": "true"}); err == nil || !strings.Contains(err.Error(), "not supported for model") {
+		t.Fatalf("Spark Fast mode err=%v", err)
 	}
 }
 
@@ -267,6 +280,13 @@ func TestLoadCatalogRejectsUnknownModelEffort(t *testing.T) {
 	_, err := LoadCatalog([]byte("version: 1\nharnesses:\n  - id: x\n    name: X\n    adapter: x\n    defaultModel: one\n    effort:\n      label: Thinking\n      options:\n        - id: low\n          name: Low\n    models:\n      - id: one\n        name: One\n        defaultEffort: max\n"))
 	if err == nil || !strings.Contains(err.Error(), "unknown default effort") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestLoadCatalogRejectsUnknownProviderOptionModel(t *testing.T) {
+	_, err := LoadCatalog([]byte("version: 1\nharnesses:\n  - id: x\n    name: X\n    adapter: x\n    defaultModel: one\n    options:\n      - id: fast_mode\n        name: Fast mode\n        type: boolean\n        models: [missing]\n    models:\n      - id: one\n        name: One\n"))
+	if err == nil || !strings.Contains(err.Error(), "invalid model") {
+		t.Fatalf("unknown provider-option model err=%v", err)
 	}
 }
 

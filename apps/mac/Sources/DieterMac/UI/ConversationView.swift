@@ -1759,7 +1759,7 @@ private struct ConversationComposer: View {
                         store.composerProvider = item.id
                         store.composerModel = item.defaultModel
                         store.composerEffort = item.models.first(where: { $0.id == item.defaultModel })?.defaultEffort ?? ""
-                        store.composerProviderOptions = ProviderOptionValues.defaults(for: item)
+                        store.composerProviderOptions = ProviderOptionValues.defaults(for: item, model: store.composerModel)
                     }
                 }
             } label: {
@@ -1773,6 +1773,11 @@ private struct ConversationComposer: View {
                     Button(item.name) {
                         store.composerModel = item.id
                         store.composerEffort = item.defaultEffort
+                        store.composerProviderOptions = ProviderOptionValues.normalized(
+                            for: harness,
+                            model: store.composerModel,
+                            saved: store.composerProviderOptions
+                        )
                     }
                 }
             } label: {
@@ -1793,7 +1798,7 @@ private struct ConversationComposer: View {
                 .fixedSize()
             }
 
-            ProviderOptionChips(options: harness?.options ?? [], values: Binding(
+            ProviderOptionChips(options: ProviderOptionValues.options(for: harness, model: store.composerModel), values: Binding(
                 get: { store.composerProviderOptions },
                 set: { store.composerProviderOptions = $0 }
             ), conversationLocked: (store.selectedCard ?? store.selectedDetail?.card)?.initialPromptSentAt.isEmpty == false)

@@ -75,7 +75,7 @@ func (m *Manager) validate(input store.ScheduleInput) (store.ScheduleInput, erro
 	if err != nil {
 		return input, err
 	}
-	input.ProviderOptions, err = harness.ResolveOptions(adapter, input.ProviderOptions)
+	input.ProviderOptions, err = harness.ResolveOptionsForModel(adapter, configuredModel.ID, input.ProviderOptions)
 	if err != nil {
 		return input, err
 	}

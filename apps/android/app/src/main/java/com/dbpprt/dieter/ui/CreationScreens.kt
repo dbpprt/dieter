@@ -115,7 +115,9 @@ fun NewConversationScreen(
     val harness = state.harnesses.firstOrNull { it.id == provider } ?: state.harnesses.firstOrNull()
     var selectedModel by remember(creationDefaults) { mutableStateOf(creationDefaults.model) }
     var effort by remember(creationDefaults) { mutableStateOf(creationDefaults.effort) }
-    var providerOptions by remember(provider, harness, creationDefaults) { mutableStateOf(providerOptionValues(harness)) }
+    var providerOptions by remember(provider, harness, creationDefaults, selectedModel) {
+        mutableStateOf(providerOptionValues(harness, model = selectedModel))
+    }
     var lane by remember(state.selectedLane) {
         mutableStateOf(state.selectedLane.ifBlank { state.board?.lanesList?.firstOrNull()?.id.orEmpty() })
     }
@@ -629,11 +631,12 @@ fun ScheduleEditorScreen(
     val harness = state.harnesses.firstOrNull { it.id == provider } ?: state.harnesses.firstOrNull()
     var selectedModel by remember(schedule?.id, provider, harness) { mutableStateOf(schedule?.model?.ifBlank { null } ?: harness?.defaultModel.orEmpty()) }
     var effort by remember(schedule?.id, provider, selectedModel) { mutableStateOf(schedule?.effort.orEmpty()) }
-    var providerOptions by remember(schedule?.id, provider, harness) {
+    var providerOptions by remember(schedule?.id, provider, harness, selectedModel) {
         mutableStateOf(
             providerOptionValues(
                 harness,
                 schedule?.providerOptionsMap?.takeIf { schedule.provider == provider }.orEmpty(),
+                selectedModel,
             ),
         )
     }
@@ -952,7 +955,7 @@ private fun ModelSelectors(
                 modifier = Modifier.testTag("creation-effort"),
             )
         }
-        harness?.optionsList.orEmpty().forEach { option ->
+        providerOptionsForModel(harness, model).forEach { option ->
             ProviderOptionControl(
                 option = option,
                 values = providerOptions,
