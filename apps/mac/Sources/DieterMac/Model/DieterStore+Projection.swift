@@ -203,6 +203,19 @@ extension DieterStore {
         navigationBoards[projectID] ?? (projectID == state.project.id ? state.boards : [])
     }
 
+    var sidebarBoards: [(project: Dieter_V1_Project, board: Dieter_V1_Board)] {
+        projects.filter { !$0.archived }.flatMap { project in
+            boards(for: project.id).map { (project: project, board: $0) }
+        }.sorted {
+            let projectOrder = $0.project.name.localizedCaseInsensitiveCompare($1.project.name)
+            if projectOrder != .orderedSame { return projectOrder == .orderedAscending }
+            let boardOrder = $0.board.name.localizedCaseInsensitiveCompare($1.board.name)
+            if boardOrder != .orderedSame { return boardOrder == .orderedAscending }
+            if $0.project.id != $1.project.id { return $0.project.id < $1.project.id }
+            return $0.board.id < $1.board.id
+        }
+    }
+
     func board(id: String) -> Dieter_V1_Board? {
         guard !id.isEmpty else { return nil }
         if let board = state.boards.first(where: { $0.id == id }) { return board }

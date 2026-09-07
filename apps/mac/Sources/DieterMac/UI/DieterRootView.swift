@@ -356,6 +356,7 @@ struct AppSidebar: View {
 
             ScrollView {
                 if collapsed { collapsedProjects } else { expandedProjects }
+                boardsSection
             }
             sidebarFooter
         }
@@ -513,6 +514,47 @@ struct AppSidebar: View {
                 SidebarProjectRail(project: project)
             }
         }.padding(.vertical, 10)
+    }
+
+    @ViewBuilder private var boardsSection: some View {
+        let boards = store.sidebarBoards
+        if !boards.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                if !collapsed {
+                    HStack(spacing: 6) {
+                        Text("BOARDS").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
+                        Text("· \(boards.count)")
+                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary.opacity(0.7))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12).padding(.top, 2).padding(.bottom, 4)
+                }
+                ForEach(boards, id: \.board.id) { entry in
+                    Group {
+                        if collapsed {
+                            SidebarRailDestination(
+                                title: "\(entry.board.name) · \(entry.project.name)",
+                                symbol: AppSection.board.symbol,
+                                selected: store.section == .board && store.selectedBoardID == entry.board.id
+                            ) { Task { await store.openBoard(entry.board.id, projectID: entry.project.id) } }
+                        } else {
+                            SidebarDestination(
+                                title: entry.board.name,
+                                symbol: AppSection.board.symbol,
+                                selected: store.section == .board && store.selectedBoardID == entry.board.id,
+                                subtitle: entry.project.name
+                            ) { Task { await store.openBoard(entry.board.id, projectID: entry.project.id) } }
+                            .help("\(entry.board.name) · \(entry.project.name)")
+                            .accessibilityLabel("\(entry.board.name), \(entry.project.name)")
+                        }
+                    }
+                    .accessibilityIdentifier("sidebar.boards.\(entry.board.id)")
+                }
+            }
+            .padding(.horizontal, collapsed ? 0 : 8).padding(.top, 6).padding(.bottom, 10)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("sidebar.boards")
+        }
     }
 
     @ViewBuilder private var sidebarFooter: some View {
@@ -1154,6 +1196,7 @@ private struct SidebarDestination: View {
     var badge = 0
     var prominentBadge = false
     var annotation: String?
+    var subtitle: String?
     let action: () -> Void
     @State private var hovering = false
 
@@ -1162,10 +1205,20 @@ private struct SidebarDestination: View {
             HStack(spacing: 9) {
                 Image(systemName: symbol).font(.system(size: 12, weight: .medium)).frame(width: 16)
                     .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
-                Text(title)
-                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
-                    .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
-                    .lineLimit(1)
+                if let subtitle {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title)
+                            .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                            .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
+                            .lineLimit(1)
+                        Text(subtitle).font(DieterFont.meta).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+                    }
+                } else {
+                    Text(title)
+                        .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                        .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
+                        .lineLimit(1)
+                }
                 if let annotation {
                     ExperimentalBadge(text: annotation)
                 }
