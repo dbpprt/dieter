@@ -523,6 +523,8 @@ fun NewBoardScreen(state: DieterUiState, model: DieterViewModel, contentPadding:
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var workflow by remember { mutableStateOf("review") }
+    var baseRemote by remember(state.project?.id) { mutableStateOf(state.project?.baseRemote.orEmpty()) }
+    var remotePublishMode by remember { mutableStateOf("manual") }
     val canCreate = name.isNotBlank() && state.selectedProjectId.isNotBlank() && !state.working
 
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
@@ -533,7 +535,7 @@ fun NewBoardScreen(state: DieterUiState, model: DieterViewModel, contentPadding:
             onClose = model::closeSurface,
             trailing = {
                 Button(
-                    onClick = { model.createBoard(name.trim(), workflow, description.trim(), openAfterCreate = true) },
+                    onClick = { model.createBoard(name.trim(), workflow, description.trim(), openAfterCreate = true, baseRemote = baseRemote, remotePublishMode = remotePublishMode) },
                     enabled = canCreate,
                     modifier = Modifier.testTag("create-board"),
                 ) { Text("Create") }
@@ -579,6 +581,20 @@ fun NewBoardScreen(state: DieterUiState, model: DieterViewModel, contentPadding:
                     color = DieterMuted,
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+            FormSection(Icons.Outlined.AccountTree, "Git publishing") {
+                OutlinedTextField(
+                    value = baseRemote,
+                    onValueChange = { baseRemote = it },
+                    label = { Text("Default remote") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("manual" to "Manual", "pull_request" to "Pull request", "push_base" to "Push base").forEach { (value, label) ->
+                        FilterChip(selected = remotePublishMode == value, onClick = { remotePublishMode = value }, label = { Text(label) })
+                    }
+                }
             }
             Text("Completed conversations are kept until you change this board's retention setting.", color = DieterMuted, fontSize = 12.sp)
         }

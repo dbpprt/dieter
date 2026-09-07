@@ -238,6 +238,15 @@ dieter card create --project PROJECT --board BOARD --lane todo \
   --workspace worktree
 ```
 
+Each board can snapshot its own Git remote into newly created cards and choose
+how reviewed work is published. `manual` keeps remote actions explicit,
+`pull_request` routes delivery through a PR, and `push_base` pushes the
+validated local integration to the configured base branch:
+
+```sh
+dieter board git --base-remote private --remote-publish pull_request BOARD_ID
+```
+
 To reach it through your gateway, enroll the machine once:
 
 ```sh

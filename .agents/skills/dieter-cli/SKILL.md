@@ -97,7 +97,9 @@ Paths passed to project commands are paths on the targeted daemon host:
 ```sh
 dieter project directories /path/on/daemon
 dieter project open --prompt-file prompt.md /path/on/daemon/repo
-dieter board create --project <project-id> --name Delivery --workflow review
+dieter board create --project <project-id> --name Delivery --workflow review \
+  --base-remote origin --remote-publish pull_request
+dieter board git --base-remote private --remote-publish push_base <board-id>
 dieter card create --project <project-id> --board <board-id> \
   --lane todo --title "Implement recovery" --prompt-file task.md \
   --workspace worktree --format id
@@ -173,6 +175,12 @@ Kinds include `commit`, `update`, `continue_conflict`, `abort_conflict`,
 `validate`, `merge_local`, `push`, `cleanup`, `discard`, `adopt`, `create_pr`,
 `refresh_pr`, and `merge_pr`. Inspect help and current state before destructive
 or externally visible Git operations.
+
+New board cards snapshot the board's configured remote and publish mode. The
+`manual` mode preserves explicit local merge, branch push, and PR choices;
+`pull_request` prevents a local base merge; and `push_base` publishes the
+validated integration result to the configured base branch during
+`merge_local`. Existing conversations keep their snapshotted values.
 
 ## Run commands on a daemon host
 

@@ -23,25 +23,31 @@ repository path, call GitHub directly, or read `DIETER_HOME`.
 
 ## 2. Product decisions that are already settled
 
-### 2.1 There is no repository-policy object
+### 2.1 Projects and boards own Git defaults
 
-A project has shared Git integration settings, not a workspace-mode default or
-separate repository policy:
+A project has shared Git integration settings:
 
 - `base_remote`: normally `origin`, but it may be empty for local-only work;
 - `base_branch`: normally `main`, but it is repository-specific; and
 - `validation_commands`: an ordered list of daemon-host commands.
 
-Every board card and every standalone chat must explicitly store its own
-workspace selection:
+Boards may override `base_remote` and select a `remote_publish_mode`: `manual`,
+`pull_request`, or `push_base`. New cards snapshot those board values so a later
+settings change cannot redirect existing work. Standalone chats use the project
+remote and default to `manual`.
+
+Every board card and every standalone chat stores its own workspace selection:
 
 - `workspace_mode`;
-- optional `workspace_branch`; and
-- optional `workspace_base_branch`.
+- optional `workspace_branch`;
+- optional `workspace_base_branch`;
+- `workspace_base_remote`; and
+- `remote_publish_mode`.
 
-The project values are defaults copied/resolved for new work. The per-conversation
-selection is the actual execution choice. Do not introduce a second client-side
-policy model or allow cards and chats to drift into different implementations.
+The project and board values are defaults copied for new work. The
+per-conversation selection is the actual execution choice. Do not introduce a
+second client-side policy model or allow cards and chats to drift into different
+implementations.
 
 ### 2.2 A card and a chat use exactly the same interface
 
@@ -219,7 +225,7 @@ All values in `parameters` are strings; booleans are exactly `"true"` or
 | `continue_conflict` | none | Continues the current conflicted rebase after files are resolved |
 | `abort_conflict` | none | Aborts the current rebase/merge and cancels the waiting operation |
 | `validate` | none | Runs all project validation commands in order |
-| `merge_local` | `strategy`: `squash` (default), `merge_commit`, or `fast_forward`; optional squash `subject`; `validate` defaults to `true` | Prepares and validates in an isolated integration worktree, then fast-forwards the registered base checkout |
+| `merge_local` | `strategy`: `squash` (default), `merge_commit`, or `fast_forward`; optional squash `subject`; `validate` defaults to `true` | Prepares and validates in an isolated integration worktree, then fast-forwards the registered base checkout; `push_base` boards first push the exact result to the configured base remote |
 | `push` | optional `force_with_lease`; required `expected_remote_sha` when forcing | Pushes the conversation branch to the configured base remote |
 | `cleanup` | none | Worktree-only: removes clean and safely integrated work and deletes only Dieter-managed branches |
 | `discard` | none | Worktree-only: creates recovery artifacts, then force-removes the worktree/managed branch; Dieter never discards a user-owned project directory |

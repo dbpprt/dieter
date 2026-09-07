@@ -883,6 +883,10 @@ public nonisolated struct Dieter_V1_Board: Sendable {
 
   public var promptTemplate: String = String()
 
+  public var baseRemote: String = String()
+
+  public var remotePublishMode: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1096,6 +1100,16 @@ public nonisolated struct Dieter_V1_Card: @unchecked Sendable {
   public var hasPullRequest: Bool {_storage._pullRequest != nil}
   /// Clears the value of `pullRequest`. Subsequent reads from it will return its default value.
   public mutating func clearPullRequest() {_uniqueStorage()._pullRequest = nil}
+
+  public var workspaceBaseRemote: String {
+    get {_storage._workspaceBaseRemote}
+    set {_uniqueStorage()._workspaceBaseRemote = newValue}
+  }
+
+  public var remotePublishMode: String {
+    get {_storage._remotePublishMode}
+    set {_uniqueStorage()._remotePublishMode = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2091,6 +2105,8 @@ public nonisolated struct Dieter_V1_CreateProjectRequest: Sendable {
 
   public var validationCommands: [Dieter_V1_ValidationCommand] = []
 
+  public var remotePublishMode: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -2247,6 +2263,10 @@ public nonisolated struct Dieter_V1_CreateBoardRequest: Sendable {
   public var description_p: String = String()
 
   public var doneArchivePolicy: String = String()
+
+  public var baseRemote: String = String()
+
+  public var remotePublishMode: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2454,6 +2474,16 @@ public nonisolated struct Dieter_V1_CreateConversationRequest: @unchecked Sendab
   public var autoGenerateTitle: Bool {
     get {_storage._autoGenerateTitle}
     set {_uniqueStorage()._autoGenerateTitle = newValue}
+  }
+
+  public var workspaceBaseRemote: String {
+    get {_storage._workspaceBaseRemote}
+    set {_uniqueStorage()._workspaceBaseRemote = newValue}
+  }
+
+  public var remotePublishMode: String {
+    get {_storage._remotePublishMode}
+    set {_uniqueStorage()._remotePublishMode = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -2967,6 +2997,10 @@ public nonisolated struct Dieter_V1_UpdateConversationWorkspaceRequest: Sendable
 
   public var baseBranch: String = String()
 
+  public var baseRemote: String = String()
+
+  public var remotePublishMode: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -3161,6 +3195,11 @@ public nonisolated struct Dieter_V1_Workspace: @unchecked Sendable {
   public var dirty: Bool {
     get {_storage._dirty}
     set {_uniqueStorage()._dirty = newValue}
+  }
+
+  public var remotePublishMode: String {
+    get {_storage._remotePublishMode}
+    set {_uniqueStorage()._remotePublishMode = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -5400,6 +5439,22 @@ public nonisolated struct Dieter_V1_ScheduleRunsResponse: Sendable {
   public init() {}
 }
 
+public nonisolated struct Dieter_V1_UpdateBoardGitSettingsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var boardID: String = String()
+
+  public var baseRemote: String = String()
+
+  public var remotePublishMode: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "dieter.v1"
@@ -6741,7 +6796,7 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
 
 nonisolated extension Dieter_V1_Board: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Board"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{1}name\0\u{1}workflow\0\u{1}description\0\u{3}done_archive_policy\0\u{3}created_at\0\u{3}updated_at\0\u{1}labels\0\u{1}lanes\0\u{3}prompt_template\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{1}name\0\u{1}workflow\0\u{1}description\0\u{3}done_archive_policy\0\u{3}created_at\0\u{3}updated_at\0\u{1}labels\0\u{1}lanes\0\u{3}prompt_template\0\u{3}base_remote\0\u{3}remote_publish_mode\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -6760,6 +6815,8 @@ nonisolated extension Dieter_V1_Board: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 9: try { try decoder.decodeRepeatedMessageField(value: &self.labels) }()
       case 10: try { try decoder.decodeRepeatedMessageField(value: &self.lanes) }()
       case 11: try { try decoder.decodeSingularStringField(value: &self.promptTemplate) }()
+      case 12: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
+      case 13: try { try decoder.decodeSingularStringField(value: &self.remotePublishMode) }()
       default: break
       }
     }
@@ -6799,6 +6856,12 @@ nonisolated extension Dieter_V1_Board: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.promptTemplate.isEmpty {
       try visitor.visitSingularStringField(value: self.promptTemplate, fieldNumber: 11)
     }
+    if !self.baseRemote.isEmpty {
+      try visitor.visitSingularStringField(value: self.baseRemote, fieldNumber: 12)
+    }
+    if !self.remotePublishMode.isEmpty {
+      try visitor.visitSingularStringField(value: self.remotePublishMode, fieldNumber: 13)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -6814,6 +6877,8 @@ nonisolated extension Dieter_V1_Board: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.labels != rhs.labels {return false}
     if lhs.lanes != rhs.lanes {return false}
     if lhs.promptTemplate != rhs.promptTemplate {return false}
+    if lhs.baseRemote != rhs.baseRemote {return false}
+    if lhs.remotePublishMode != rhs.remotePublishMode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -6901,7 +6966,7 @@ nonisolated extension Dieter_V1_Lane: SwiftProtobuf.Message, SwiftProtobuf._Mess
 
 nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Card"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{3}comment_count\0\u{1}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{3}comment_count\0\u{1}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -6936,6 +7001,8 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
     var _workspaceBaseBranch: String = String()
     var _workspace: Dieter_V1_WorkspaceSummary? = nil
     var _pullRequest: Dieter_V1_PullRequestSummary? = nil
+    var _workspaceBaseRemote: String = String()
+    var _remotePublishMode: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -6978,6 +7045,8 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       _workspaceBaseBranch = source._workspaceBaseBranch
       _workspace = source._workspace
       _pullRequest = source._pullRequest
+      _workspaceBaseRemote = source._workspaceBaseRemote
+      _remotePublishMode = source._remotePublishMode
     }
   }
 
@@ -7028,6 +7097,8 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         case 30: try { try decoder.decodeSingularStringField(value: &_storage._workspaceBaseBranch) }()
         case 31: try { try decoder.decodeSingularMessageField(value: &_storage._workspace) }()
         case 32: try { try decoder.decodeSingularMessageField(value: &_storage._pullRequest) }()
+        case 33: try { try decoder.decodeSingularStringField(value: &_storage._workspaceBaseRemote) }()
+        case 34: try { try decoder.decodeSingularStringField(value: &_storage._remotePublishMode) }()
         default: break
         }
       }
@@ -7136,6 +7207,12 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       try { if let v = _storage._pullRequest {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 32)
       } }()
+      if !_storage._workspaceBaseRemote.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._workspaceBaseRemote, fieldNumber: 33)
+      }
+      if !_storage._remotePublishMode.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._remotePublishMode, fieldNumber: 34)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -7177,6 +7254,8 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         if _storage._workspaceBaseBranch != rhs_storage._workspaceBaseBranch {return false}
         if _storage._workspace != rhs_storage._workspace {return false}
         if _storage._pullRequest != rhs_storage._pullRequest {return false}
+        if _storage._workspaceBaseRemote != rhs_storage._workspaceBaseRemote {return false}
+        if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -9230,7 +9309,7 @@ nonisolated extension Dieter_V1_DirectoryListing: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateProjectRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{1}path\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}board_name\0\u{1}workflow\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{b}default_workspace_mode\0\u{c}\u{8}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}mode\0\u{1}path\0\u{1}name\0\u{1}summary\0\u{1}prompt\0\u{3}board_name\0\u{1}workflow\0\u{4}\u{2}base_remote\0\u{3}base_branch\0\u{3}validation_commands\0\u{3}remote_publish_mode\0\u{b}default_workspace_mode\0\u{c}\u{8}\u{1}")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -9248,6 +9327,7 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
       case 9: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
       case 10: try { try decoder.decodeSingularStringField(value: &self.baseBranch) }()
       case 11: try { try decoder.decodeRepeatedMessageField(value: &self.validationCommands) }()
+      case 12: try { try decoder.decodeSingularStringField(value: &self.remotePublishMode) }()
       default: break
       }
     }
@@ -9284,6 +9364,9 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
     if !self.validationCommands.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.validationCommands, fieldNumber: 11)
     }
+    if !self.remotePublishMode.isEmpty {
+      try visitor.visitSingularStringField(value: self.remotePublishMode, fieldNumber: 12)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -9298,6 +9381,7 @@ nonisolated extension Dieter_V1_CreateProjectRequest: SwiftProtobuf.Message, Swi
     if lhs.baseRemote != rhs.baseRemote {return false}
     if lhs.baseBranch != rhs.baseBranch {return false}
     if lhs.validationCommands != rhs.validationCommands {return false}
+    if lhs.remotePublishMode != rhs.remotePublishMode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -9571,7 +9655,7 @@ nonisolated extension Dieter_V1_ArchiveProjectRequest: SwiftProtobuf.Message, Sw
 
 nonisolated extension Dieter_V1_CreateBoardRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateBoardRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}workflow\0\u{1}description\0\u{3}done_archive_policy\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}workflow\0\u{1}description\0\u{3}done_archive_policy\0\u{3}base_remote\0\u{3}remote_publish_mode\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -9584,6 +9668,8 @@ nonisolated extension Dieter_V1_CreateBoardRequest: SwiftProtobuf.Message, Swift
       case 3: try { try decoder.decodeSingularStringField(value: &self.workflow) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.description_p) }()
       case 5: try { try decoder.decodeSingularStringField(value: &self.doneArchivePolicy) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.remotePublishMode) }()
       default: break
       }
     }
@@ -9605,6 +9691,12 @@ nonisolated extension Dieter_V1_CreateBoardRequest: SwiftProtobuf.Message, Swift
     if !self.doneArchivePolicy.isEmpty {
       try visitor.visitSingularStringField(value: self.doneArchivePolicy, fieldNumber: 5)
     }
+    if !self.baseRemote.isEmpty {
+      try visitor.visitSingularStringField(value: self.baseRemote, fieldNumber: 6)
+    }
+    if !self.remotePublishMode.isEmpty {
+      try visitor.visitSingularStringField(value: self.remotePublishMode, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -9614,6 +9706,8 @@ nonisolated extension Dieter_V1_CreateBoardRequest: SwiftProtobuf.Message, Swift
     if lhs.workflow != rhs.workflow {return false}
     if lhs.description_p != rhs.description_p {return false}
     if lhs.doneArchivePolicy != rhs.doneArchivePolicy {return false}
+    if lhs.baseRemote != rhs.baseRemote {return false}
+    if lhs.remotePublishMode != rhs.remotePublishMode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -9886,7 +9980,7 @@ nonisolated extension Dieter_V1_EffortOption: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateConversationRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}defer_start\0\u{3}provider_options\0\u{3}client_id\0\u{3}command_id\0\u{1}attachments\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}auto_generate_title\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}title\0\u{1}prompt\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}label_ids\0\u{3}defer_start\0\u{3}provider_options\0\u{3}client_id\0\u{3}command_id\0\u{1}attachments\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{3}auto_generate_title\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0")
 
   fileprivate class _StorageClass {
     var _projectID: String = String()
@@ -9907,6 +10001,8 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
     var _workspaceBranch: String = String()
     var _workspaceBaseBranch: String = String()
     var _autoGenerateTitle: Bool = false
+    var _workspaceBaseRemote: String = String()
+    var _remotePublishMode: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -9935,6 +10031,8 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
       _workspaceBranch = source._workspaceBranch
       _workspaceBaseBranch = source._workspaceBaseBranch
       _autoGenerateTitle = source._autoGenerateTitle
+      _workspaceBaseRemote = source._workspaceBaseRemote
+      _remotePublishMode = source._remotePublishMode
     }
   }
 
@@ -9971,6 +10069,8 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
         case 16: try { try decoder.decodeSingularStringField(value: &_storage._workspaceBranch) }()
         case 17: try { try decoder.decodeSingularStringField(value: &_storage._workspaceBaseBranch) }()
         case 18: try { try decoder.decodeSingularBoolField(value: &_storage._autoGenerateTitle) }()
+        case 19: try { try decoder.decodeSingularStringField(value: &_storage._workspaceBaseRemote) }()
+        case 20: try { try decoder.decodeSingularStringField(value: &_storage._remotePublishMode) }()
         default: break
         }
       }
@@ -10033,6 +10133,12 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
       if _storage._autoGenerateTitle != false {
         try visitor.visitSingularBoolField(value: _storage._autoGenerateTitle, fieldNumber: 18)
       }
+      if !_storage._workspaceBaseRemote.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._workspaceBaseRemote, fieldNumber: 19)
+      }
+      if !_storage._remotePublishMode.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._remotePublishMode, fieldNumber: 20)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -10060,6 +10166,8 @@ nonisolated extension Dieter_V1_CreateConversationRequest: SwiftProtobuf.Message
         if _storage._workspaceBranch != rhs_storage._workspaceBranch {return false}
         if _storage._workspaceBaseBranch != rhs_storage._workspaceBaseBranch {return false}
         if _storage._autoGenerateTitle != rhs_storage._autoGenerateTitle {return false}
+        if _storage._workspaceBaseRemote != rhs_storage._workspaceBaseRemote {return false}
+        if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -11136,7 +11244,7 @@ nonisolated extension Dieter_V1_ConversationRef: SwiftProtobuf.Message, SwiftPro
 
 nonisolated extension Dieter_V1_UpdateConversationWorkspaceRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UpdateConversationWorkspaceRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}mode\0\u{1}branch\0\u{3}base_branch\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}mode\0\u{1}branch\0\u{3}base_branch\0\u{3}base_remote\0\u{3}remote_publish_mode\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -11148,6 +11256,8 @@ nonisolated extension Dieter_V1_UpdateConversationWorkspaceRequest: SwiftProtobu
       case 2: try { try decoder.decodeSingularStringField(value: &self.mode) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.branch) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.baseBranch) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.remotePublishMode) }()
       default: break
       }
     }
@@ -11166,6 +11276,12 @@ nonisolated extension Dieter_V1_UpdateConversationWorkspaceRequest: SwiftProtobu
     if !self.baseBranch.isEmpty {
       try visitor.visitSingularStringField(value: self.baseBranch, fieldNumber: 4)
     }
+    if !self.baseRemote.isEmpty {
+      try visitor.visitSingularStringField(value: self.baseRemote, fieldNumber: 5)
+    }
+    if !self.remotePublishMode.isEmpty {
+      try visitor.visitSingularStringField(value: self.remotePublishMode, fieldNumber: 6)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -11174,6 +11290,8 @@ nonisolated extension Dieter_V1_UpdateConversationWorkspaceRequest: SwiftProtobu
     if lhs.mode != rhs.mode {return false}
     if lhs.branch != rhs.branch {return false}
     if lhs.baseBranch != rhs.baseBranch {return false}
+    if lhs.baseRemote != rhs.baseRemote {return false}
+    if lhs.remotePublishMode != rhs.remotePublishMode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -11271,7 +11389,7 @@ nonisolated extension Dieter_V1_WorkspaceSummary: SwiftProtobuf.Message, SwiftPr
 
 nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Workspace"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}project_id\0\u{1}mode\0\u{1}path\0\u{3}base_remote\0\u{3}base_branch\0\u{3}base_sha\0\u{3}current_base_sha\0\u{1}branch\0\u{3}head_sha\0\u{3}upstream_ref\0\u{3}managed_branch\0\u{3}legacy_unmanaged\0\u{1}state\0\u{1}revision\0\u{3}current_operation_id\0\u{3}previous_card_ids\0\u{3}changed_files\0\u{1}additions\0\u{1}deletions\0\u{1}ahead\0\u{1}behind\0\u{3}size_bytes\0\u{3}created_at\0\u{3}updated_at\0\u{3}integrated_head_sha\0\u{3}integrated_result_sha\0\u{3}integration_strategy\0\u{3}integrated_at\0\u{1}dirty\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}project_id\0\u{1}mode\0\u{1}path\0\u{3}base_remote\0\u{3}base_branch\0\u{3}base_sha\0\u{3}current_base_sha\0\u{1}branch\0\u{3}head_sha\0\u{3}upstream_ref\0\u{3}managed_branch\0\u{3}legacy_unmanaged\0\u{1}state\0\u{1}revision\0\u{3}current_operation_id\0\u{3}previous_card_ids\0\u{3}changed_files\0\u{1}additions\0\u{1}deletions\0\u{1}ahead\0\u{1}behind\0\u{3}size_bytes\0\u{3}created_at\0\u{3}updated_at\0\u{3}integrated_head_sha\0\u{3}integrated_result_sha\0\u{3}integration_strategy\0\u{3}integrated_at\0\u{1}dirty\0\u{3}remote_publish_mode\0")
 
   fileprivate class _StorageClass {
     var _cardID: String = String()
@@ -11304,6 +11422,7 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
     var _integrationStrategy: String = String()
     var _integratedAt: String = String()
     var _dirty: Bool = false
+    var _remotePublishMode: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -11344,6 +11463,7 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
       _integrationStrategy = source._integrationStrategy
       _integratedAt = source._integratedAt
       _dirty = source._dirty
+      _remotePublishMode = source._remotePublishMode
     }
   }
 
@@ -11392,6 +11512,7 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
         case 28: try { try decoder.decodeSingularStringField(value: &_storage._integrationStrategy) }()
         case 29: try { try decoder.decodeSingularStringField(value: &_storage._integratedAt) }()
         case 30: try { try decoder.decodeSingularBoolField(value: &_storage._dirty) }()
+        case 31: try { try decoder.decodeSingularStringField(value: &_storage._remotePublishMode) }()
         default: break
         }
       }
@@ -11490,6 +11611,9 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
       if _storage._dirty != false {
         try visitor.visitSingularBoolField(value: _storage._dirty, fieldNumber: 30)
       }
+      if !_storage._remotePublishMode.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._remotePublishMode, fieldNumber: 31)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -11529,6 +11653,7 @@ nonisolated extension Dieter_V1_Workspace: SwiftProtobuf.Message, SwiftProtobuf.
         if _storage._integrationStrategy != rhs_storage._integrationStrategy {return false}
         if _storage._integratedAt != rhs_storage._integratedAt {return false}
         if _storage._dirty != rhs_storage._dirty {return false}
+        if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -16407,6 +16532,46 @@ nonisolated extension Dieter_V1_ScheduleRunsResponse: SwiftProtobuf.Message, Swi
   public static func ==(lhs: Dieter_V1_ScheduleRunsResponse, rhs: Dieter_V1_ScheduleRunsResponse) -> Bool {
     if lhs.runs != rhs.runs {return false}
     if lhs.nextPageToken != rhs.nextPageToken {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_UpdateBoardGitSettingsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".UpdateBoardGitSettingsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}board_id\0\u{3}base_remote\0\u{3}remote_publish_mode\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.boardID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.remotePublishMode) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.boardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.boardID, fieldNumber: 1)
+    }
+    if !self.baseRemote.isEmpty {
+      try visitor.visitSingularStringField(value: self.baseRemote, fieldNumber: 2)
+    }
+    if !self.remotePublishMode.isEmpty {
+      try visitor.visitSingularStringField(value: self.remotePublishMode, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_UpdateBoardGitSettingsRequest, rhs: Dieter_V1_UpdateBoardGitSettingsRequest) -> Bool {
+    if lhs.boardID != rhs.boardID {return false}
+    if lhs.baseRemote != rhs.baseRemote {return false}
+    if lhs.remotePublishMode != rhs.remotePublishMode {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

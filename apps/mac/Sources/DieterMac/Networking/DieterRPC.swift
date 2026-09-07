@@ -346,6 +346,10 @@ final class DieterRPC: Sendable {
         try await service.setBoardArchivePolicy(request: .init(message: request))
     }
 
+    func updateBoardGitSettings(_ request: Dieter_V1_UpdateBoardGitSettingsRequest) async throws -> Dieter_V1_Board {
+        try await service.updateBoardGitSettings(request: .init(message: request))
+    }
+
     func archivedCards(boardID: String) async throws -> Dieter_V1_CardsResponse {
         var request = Dieter_V1_BoardRef(); request.boardID = boardID
         return try await service.listArchivedCards(request: .init(message: request))

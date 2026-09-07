@@ -346,6 +346,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "UpdateBoardGitSettings" metadata.
+        public enum UpdateBoardGitSettings: Sendable {
+            /// Request type for "UpdateBoardGitSettings".
+            public typealias Input = Dieter_V1_UpdateBoardGitSettingsRequest
+            /// Response type for "UpdateBoardGitSettings".
+            public typealias Output = Dieter_V1_Board
+            /// Descriptor for "UpdateBoardGitSettings".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "UpdateBoardGitSettings",
+                type: .unary
+            )
+        }
         /// Namespace for "ListArchivedCards" metadata.
         public enum ListArchivedCards: Sendable {
             /// Request type for "ListArchivedCards".
@@ -1309,6 +1322,7 @@ public enum Dieter_V1_DieterService: Sendable {
             CreateBoard.descriptor,
             RenameBoard.descriptor,
             SetBoardArchivePolicy.descriptor,
+            UpdateBoardGitSettings.descriptor,
             ListArchivedCards.descriptor,
             CreateBoardLabel.descriptor,
             UpdateBoardLabel.descriptor,
@@ -1881,6 +1895,25 @@ extension Dieter_V1_DieterService {
         func setBoardArchivePolicy<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetBoardArchivePolicyRequest>,
             serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetBoardArchivePolicyRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UpdateBoardGitSettings" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateBoardGitSettingsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateBoardGitSettingsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateBoardGitSettings<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateBoardGitSettingsRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
@@ -4043,6 +4076,36 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.SetBoardArchivePolicy.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "UpdateBoardGitSettings" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateBoardGitSettingsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateBoardGitSettingsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateBoardGitSettings<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateBoardGitSettingsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.UpdateBoardGitSettings.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -6859,6 +6922,31 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "UpdateBoardGitSettings" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_UpdateBoardGitSettingsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateBoardGitSettings<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateBoardGitSettings(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateBoardGitSettingsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Board>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListArchivedCards" method.
     ///
     /// - Parameters:
@@ -9401,6 +9489,35 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.setBoardArchivePolicy(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateBoardGitSettings" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateBoardGitSettings<Result>(
+        _ message: Dieter_V1_UpdateBoardGitSettingsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateBoardGitSettings(
             request: request,
             options: options,
             onResponse: handleResponse

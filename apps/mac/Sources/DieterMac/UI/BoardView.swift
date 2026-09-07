@@ -404,7 +404,7 @@ struct BoardHeader: View {
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
 
                 Button { store.archivePolicyPresented = true } label: {
-                    DieterChipLabel(title: retentionTitle, symbol: "archivebox")
+                    DieterChipLabel(title: "Board settings", symbol: "gearshape")
                 }
                 .buttonStyle(.plain)
 
@@ -468,7 +468,7 @@ struct BoardHeader: View {
                             Button(runtime.capitalized) { store.runtimeFilter = runtime }
                         }
                         Divider()
-                        Button(retentionTitle) { store.archivePolicyPresented = true }
+                        Button("Board settings…") { store.archivePolicyPresented = true }
                         Button("Manage labels…") { store.labelsPresented = true }
                     } label: {
                         DieterChipLabel(

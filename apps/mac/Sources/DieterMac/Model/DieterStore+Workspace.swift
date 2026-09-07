@@ -116,6 +116,8 @@ extension DieterStore {
         request.cardID = cardID; request.mode = draft.mode.rawValue
         request.branch = draft.mode == .worktree ? draft.branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         request.baseBranch = draft.mode == .worktree ? draft.baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        request.baseRemote = draft.baseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.remotePublishMode = draft.remotePublishMode
         do {
             let card = try await rpc.updateConversationWorkspace(request)
             acceptWorkspaceCard(card)
@@ -509,14 +511,16 @@ extension DieterStore {
         do { _ = try await rpc.updateProject(request); projectContextPresented = false; await refreshState() } catch { show(error) }
     }
 
-    func createBoard(name: String, workflow: String, description: String, doneArchivePolicy: String) async {
+    func createBoard(name: String, workflow: String, description: String, doneArchivePolicy: String, baseRemote: String, remotePublishMode: String) async {
         do {
             guard let board = try await createBoard(
                 projectID: selectedProjectID,
                 name: name,
                 workflow: workflow,
                 description: description,
-                doneArchivePolicy: doneArchivePolicy
+                doneArchivePolicy: doneArchivePolicy,
+                baseRemote: baseRemote,
+                remotePublishMode: remotePublishMode
             ) else { return }
             createBoardPresented = false
             selectedBoardID = board.id
@@ -531,7 +535,9 @@ extension DieterStore {
         name: String,
         workflow: String,
         description: String = "",
-        doneArchivePolicy: String
+        doneArchivePolicy: String,
+        baseRemote: String = "",
+        remotePublishMode: String = RemotePublishMode.manual.rawValue
     ) async throws -> Dieter_V1_Board? {
         guard let rpc else { return nil }
         var request = Dieter_V1_CreateBoardRequest()
@@ -540,6 +546,8 @@ extension DieterStore {
         request.workflow = workflow
         request.description_p = description
         request.doneArchivePolicy = doneArchivePolicy
+        request.baseRemote = baseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.remotePublishMode = remotePublishMode
         return try await rpc.createBoard(request)
     }
 
@@ -571,6 +579,22 @@ extension DieterStore {
         guard let rpc else { return }
         var request = Dieter_V1_SetBoardArchivePolicyRequest(); request.boardID = selectedBoardID; request.doneArchivePolicy = policy
         do { _ = try await rpc.setBoardArchivePolicy(request); archivePolicyPresented = false; await refreshState() } catch { show(error) }
+    }
+
+    func updateBoardGitSettings(remote: String, publishMode: String) async -> Bool {
+        guard let rpc else { return false }
+        var request = Dieter_V1_UpdateBoardGitSettingsRequest()
+        request.boardID = selectedBoardID
+        request.baseRemote = remote.trimmingCharacters(in: .whitespacesAndNewlines)
+        request.remotePublishMode = publishMode
+        do {
+            acceptBoard(try await rpc.updateBoardGitSettings(request))
+            await refreshState()
+            return true
+        } catch {
+            show(error)
+            return false
+        }
     }
 
     func createLabel(name: String, color: String, instructions: String = "") async {

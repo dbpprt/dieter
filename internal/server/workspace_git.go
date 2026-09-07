@@ -14,8 +14,21 @@ import (
 )
 
 func (api *grpcAPI) UpdateConversationWorkspace(_ context.Context, request *dieterv1.UpdateConversationWorkspaceRequest) (*dieterv1.Card, error) {
+	current, err := api.server.store.ResolveCard(request.GetCardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	baseRemote := request.GetBaseRemote()
+	if strings.TrimSpace(baseRemote) == "" {
+		baseRemote = current.WorkspaceBaseRemote
+	}
+	remotePublishMode := request.GetRemotePublishMode()
+	if strings.TrimSpace(remotePublishMode) == "" {
+		remotePublishMode = current.RemotePublishMode
+	}
 	card, err := api.server.store.UpdateCardWorkspaceSelection(
-		request.GetCardId(), request.GetMode(), request.GetBranch(), request.GetBaseBranch(), false,
+		request.GetCardId(), request.GetMode(), request.GetBranch(), request.GetBaseBranch(),
+		baseRemote, remotePublishMode, false,
 	)
 	if err != nil {
 		return nil, grpcFailure(err)

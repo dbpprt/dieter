@@ -42,6 +42,7 @@ service DieterService {
   rpc CreateBoard(CreateBoardRequest) returns (Board);
   rpc RenameBoard(RenameBoardRequest) returns (Board);
   rpc SetBoardArchivePolicy(SetBoardArchivePolicyRequest) returns (Board);
+  rpc UpdateBoardGitSettings(UpdateBoardGitSettingsRequest) returns (Board);
   rpc ListArchivedCards(BoardRef) returns (CardsResponse);
   rpc CreateBoardLabel(CreateBoardLabelRequest) returns (Board);
   rpc UpdateBoardLabel(UpdateBoardLabelRequest) returns (Board);
@@ -360,6 +361,8 @@ message Board {
   repeated Label labels = 9;
   repeated Lane lanes = 10;
   string prompt_template = 11;
+  string base_remote = 12;
+  string remote_publish_mode = 13;
 }
 
 message Label {
@@ -407,6 +410,8 @@ message Card {
   string workspace_base_branch = 30;
   WorkspaceSummary workspace = 31;
   PullRequestSummary pull_request = 32;
+  string workspace_base_remote = 33;
+  string remote_publish_mode = 34;
 }
 
 message CardOrigin {
@@ -717,6 +722,7 @@ message CreateProjectRequest {
   string base_remote = 9;
   string base_branch = 10;
   repeated ValidationCommand validation_commands = 11;
+  string remote_publish_mode = 12;
 }
 
 message CreateProjectResponse {
@@ -762,6 +768,8 @@ message CreateBoardRequest {
   string workflow = 3;
   string description = 4;
   string done_archive_policy = 5;
+  string base_remote = 6;
+  string remote_publish_mode = 7;
 }
 
 message RenameBoardRequest {
@@ -824,6 +832,8 @@ message CreateConversationRequest {
   // Generate a 4–6 word persisted title from prompt with Dieter's fast title model.
   // Clients may still send a local placeholder in title for optimistic UI.
   bool auto_generate_title = 18;
+  string workspace_base_remote = 19;
+  string remote_publish_mode = 20;
 }
 
 message ListChatsRequest {
@@ -990,6 +1000,8 @@ message UpdateConversationWorkspaceRequest {
   string mode = 2;
   string branch = 3;
   string base_branch = 4;
+  string base_remote = 5;
+  string remote_publish_mode = 6;
 }
 
 message WorkspaceSummary {
@@ -1039,6 +1051,7 @@ message Workspace {
   string integration_strategy = 28;
   string integrated_at = 29;
   bool dirty = 30;
+  string remote_publish_mode = 31;
 }
 
 message WorkspacesResponse {
@@ -1764,4 +1777,10 @@ message ScheduleRun {
 message ScheduleRunsResponse {
   repeated ScheduleRun runs = 1;
   string next_page_token = 2;
+}
+
+message UpdateBoardGitSettingsRequest {
+  string board_id = 1;
+  string base_remote = 2;
+  string remote_publish_mode = 3;
 }

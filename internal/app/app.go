@@ -371,6 +371,7 @@ func (s *Service) RegisterProject(ctx context.Context, input ProjectInput) (mode
 type CardInput struct {
 	Project, Board, Lane, Title, Prompt, Provider, Model, Effort string
 	WorkspaceMode, WorkspaceBranch, WorkspaceBaseBranch          string
+	WorkspaceBaseRemote, RemotePublishMode                       string
 	LabelIDs                                                     []string
 	ProviderOptions                                              map[string]string
 	DeferStart, AutoGenerateTitle                                bool
@@ -446,7 +447,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 			return model.Card{}, err
 		}
 	}
-	createInput := store.CreateCardInput{Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch}
+	createInput := store.CreateCardInput{Project: project.ID, Board: input.Board, ID: input.ID, Lane: input.Lane, Title: input.Title, Prompt: input.Prompt, Provider: provider, Model: input.Model, Effort: input.Effort, ProviderOptions: input.ProviderOptions, LabelIDs: input.LabelIDs, Origin: input.Origin, WorkspaceMode: input.WorkspaceMode, WorkspaceBranch: input.WorkspaceBranch, WorkspaceBaseBranch: input.WorkspaceBaseBranch, WorkspaceBaseRemote: input.WorkspaceBaseRemote, RemotePublishMode: input.RemotePublishMode}
 	var card model.Card
 	if scope == model.ConversationScopeChat {
 		card, err = s.Store.CreateChat(createInput)

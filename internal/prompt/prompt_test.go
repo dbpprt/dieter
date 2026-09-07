@@ -69,7 +69,7 @@ func TestResolveForWorkspaceMakesAssignedWorktreeAuthoritative(t *testing.T) {
 	detail.Project.PromptTemplate = "Working tree: {{project.path}}\nRegistered: {{project.registered_path}}\n{{project.instructions_block}}\n{{labels.instructions_block}}"
 	workspace := model.Workspace{
 		Mode: model.WorkspaceModeWorktree, Path: "/dieter/worktrees/c_one", Branch: "dieter/c-one",
-		BaseBranch: "main", BaseSHA: "abc123",
+		BaseBranch: "main", BaseRemote: "private", BaseSHA: "abc123", RemotePublishMode: model.RemotePublishPullRequest,
 	}
 	resolved, err := ResolveForWorkspace(NormalizeSettings(model.Settings{}), detail, detail.Card.LabelIDs, workspace)
 	if err != nil {
@@ -81,6 +81,8 @@ func TestResolveForWorkspaceMakesAssignedWorktreeAuthoritative(t *testing.T) {
 		workspaceBoundaryHeader,
 		"Authoritative working tree: /dieter/worktrees/c_one",
 		"Assigned branch: dieter/c-one",
+		"Configured base remote: private",
+		"Remote publish mode: pull_request",
 		"registered checkout is outside this conversation's workspace",
 	} {
 		if !strings.Contains(resolved.Instructions, expected) {

@@ -43,6 +43,10 @@ const (
 	DoneArchiveAfter7Days  = "after_7_days"
 	DoneArchiveAfter30Days = "after_30_days"
 	DoneArchiveAfter90Days = "after_90_days"
+
+	RemotePublishManual      = "manual"
+	RemotePublishPullRequest = "pull_request"
+	RemotePublishPushBase    = "push_base"
 )
 
 // CanonicalWorkspaceMode keeps old durable data and older clients readable
@@ -108,6 +112,8 @@ type Board struct {
 	Description       string  `json:"description,omitempty" yaml:"-"`
 	PromptTemplate    string  `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
 	DoneArchivePolicy string  `json:"doneArchivePolicy" yaml:"done_archive_policy,omitempty"`
+	BaseRemote        string  `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	RemotePublishMode string  `json:"remotePublishMode" yaml:"remote_publish_mode,omitempty"`
 	CreatedAt         string  `json:"createdAt" yaml:"created_at"`
 	UpdatedAt         string  `json:"updatedAt" yaml:"updated_at"`
 	Labels            []Label `json:"labels,omitempty" yaml:"labels,omitempty"`
@@ -151,6 +157,8 @@ type Card struct {
 	WorkspaceMode       string              `json:"workspaceMode,omitempty" yaml:"workspace_mode,omitempty"`
 	WorkspaceBranch     string              `json:"workspaceBranch,omitempty" yaml:"workspace_branch,omitempty"`
 	WorkspaceBaseBranch string              `json:"workspaceBaseBranch,omitempty" yaml:"workspace_base_branch,omitempty"`
+	WorkspaceBaseRemote string              `json:"workspaceBaseRemote,omitempty" yaml:"workspace_base_remote,omitempty"`
+	RemotePublishMode   string              `json:"remotePublishMode,omitempty" yaml:"remote_publish_mode,omitempty"`
 	Workspace           *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
 	PullRequest         *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
 }
@@ -164,6 +172,7 @@ type Workspace struct {
 	Mode                string   `json:"mode"`
 	Path                string   `json:"path"`
 	BaseRemote          string   `json:"baseRemote,omitempty"`
+	RemotePublishMode   string   `json:"remotePublishMode,omitempty"`
 	BaseBranch          string   `json:"baseBranch,omitempty"`
 	BaseSHA             string   `json:"baseSha,omitempty"`
 	CurrentBaseSHA      string   `json:"currentBaseSha,omitempty"`

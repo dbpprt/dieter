@@ -184,6 +184,10 @@ func (api *connectAPI) SetBoardArchivePolicy(ctx context.Context, request *conne
 	return connectUnary(ctx, request, api.core.SetBoardArchivePolicy)
 }
 
+func (api *connectAPI) UpdateBoardGitSettings(ctx context.Context, request *connect.Request[dieterv1.UpdateBoardGitSettingsRequest]) (*connect.Response[dieterv1.Board], error) {
+	return connectUnary(ctx, request, api.core.UpdateBoardGitSettings)
+}
+
 func (api *connectAPI) ListArchivedCards(ctx context.Context, request *connect.Request[dieterv1.BoardRef]) (*connect.Response[dieterv1.CardsResponse], error) {
 	return connectUnary(ctx, request, api.core.ListArchivedCards)
 }

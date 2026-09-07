@@ -106,6 +106,9 @@ const (
 	// DieterServiceSetBoardArchivePolicyProcedure is the fully-qualified name of the DieterService's
 	// SetBoardArchivePolicy RPC.
 	DieterServiceSetBoardArchivePolicyProcedure = "/dieter.v1.DieterService/SetBoardArchivePolicy"
+	// DieterServiceUpdateBoardGitSettingsProcedure is the fully-qualified name of the DieterService's
+	// UpdateBoardGitSettings RPC.
+	DieterServiceUpdateBoardGitSettingsProcedure = "/dieter.v1.DieterService/UpdateBoardGitSettings"
 	// DieterServiceListArchivedCardsProcedure is the fully-qualified name of the DieterService's
 	// ListArchivedCards RPC.
 	DieterServiceListArchivedCardsProcedure = "/dieter.v1.DieterService/ListArchivedCards"
@@ -346,6 +349,7 @@ type DieterServiceClient interface {
 	CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error)
 	RenameBoard(context.Context, *connect.Request[v1.RenameBoardRequest]) (*connect.Response[v1.Board], error)
 	SetBoardArchivePolicy(context.Context, *connect.Request[v1.SetBoardArchivePolicyRequest]) (*connect.Response[v1.Board], error)
+	UpdateBoardGitSettings(context.Context, *connect.Request[v1.UpdateBoardGitSettingsRequest]) (*connect.Response[v1.Board], error)
 	ListArchivedCards(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.CardsResponse], error)
 	CreateBoardLabel(context.Context, *connect.Request[v1.CreateBoardLabelRequest]) (*connect.Response[v1.Board], error)
 	UpdateBoardLabel(context.Context, *connect.Request[v1.UpdateBoardLabelRequest]) (*connect.Response[v1.Board], error)
@@ -589,6 +593,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceSetBoardArchivePolicyProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("SetBoardArchivePolicy")),
+			connect.WithClientOptions(opts...),
+		),
+		updateBoardGitSettings: connect.NewClient[v1.UpdateBoardGitSettingsRequest, v1.Board](
+			httpClient,
+			baseURL+DieterServiceUpdateBoardGitSettingsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("UpdateBoardGitSettings")),
 			connect.WithClientOptions(opts...),
 		),
 		listArchivedCards: connect.NewClient[v1.BoardRef, v1.CardsResponse](
@@ -1053,6 +1063,7 @@ type dieterServiceClient struct {
 	createBoard                    *connect.Client[v1.CreateBoardRequest, v1.Board]
 	renameBoard                    *connect.Client[v1.RenameBoardRequest, v1.Board]
 	setBoardArchivePolicy          *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
+	updateBoardGitSettings         *connect.Client[v1.UpdateBoardGitSettingsRequest, v1.Board]
 	listArchivedCards              *connect.Client[v1.BoardRef, v1.CardsResponse]
 	createBoardLabel               *connect.Client[v1.CreateBoardLabelRequest, v1.Board]
 	updateBoardLabel               *connect.Client[v1.UpdateBoardLabelRequest, v1.Board]
@@ -1250,6 +1261,11 @@ func (c *dieterServiceClient) RenameBoard(ctx context.Context, req *connect.Requ
 // SetBoardArchivePolicy calls dieter.v1.DieterService.SetBoardArchivePolicy.
 func (c *dieterServiceClient) SetBoardArchivePolicy(ctx context.Context, req *connect.Request[v1.SetBoardArchivePolicyRequest]) (*connect.Response[v1.Board], error) {
 	return c.setBoardArchivePolicy.CallUnary(ctx, req)
+}
+
+// UpdateBoardGitSettings calls dieter.v1.DieterService.UpdateBoardGitSettings.
+func (c *dieterServiceClient) UpdateBoardGitSettings(ctx context.Context, req *connect.Request[v1.UpdateBoardGitSettingsRequest]) (*connect.Response[v1.Board], error) {
+	return c.updateBoardGitSettings.CallUnary(ctx, req)
 }
 
 // ListArchivedCards calls dieter.v1.DieterService.ListArchivedCards.
@@ -1644,6 +1660,7 @@ type DieterServiceHandler interface {
 	CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error)
 	RenameBoard(context.Context, *connect.Request[v1.RenameBoardRequest]) (*connect.Response[v1.Board], error)
 	SetBoardArchivePolicy(context.Context, *connect.Request[v1.SetBoardArchivePolicyRequest]) (*connect.Response[v1.Board], error)
+	UpdateBoardGitSettings(context.Context, *connect.Request[v1.UpdateBoardGitSettingsRequest]) (*connect.Response[v1.Board], error)
 	ListArchivedCards(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.CardsResponse], error)
 	CreateBoardLabel(context.Context, *connect.Request[v1.CreateBoardLabelRequest]) (*connect.Response[v1.Board], error)
 	UpdateBoardLabel(context.Context, *connect.Request[v1.UpdateBoardLabelRequest]) (*connect.Response[v1.Board], error)
@@ -1883,6 +1900,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceSetBoardArchivePolicyProcedure,
 		svc.SetBoardArchivePolicy,
 		connect.WithSchema(dieterServiceMethods.ByName("SetBoardArchivePolicy")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceUpdateBoardGitSettingsHandler := connect.NewUnaryHandler(
+		DieterServiceUpdateBoardGitSettingsProcedure,
+		svc.UpdateBoardGitSettings,
+		connect.WithSchema(dieterServiceMethods.ByName("UpdateBoardGitSettings")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceListArchivedCardsHandler := connect.NewUnaryHandler(
@@ -2369,6 +2392,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceRenameBoardHandler.ServeHTTP(w, r)
 		case DieterServiceSetBoardArchivePolicyProcedure:
 			dieterServiceSetBoardArchivePolicyHandler.ServeHTTP(w, r)
+		case DieterServiceUpdateBoardGitSettingsProcedure:
+			dieterServiceUpdateBoardGitSettingsHandler.ServeHTTP(w, r)
 		case DieterServiceListArchivedCardsProcedure:
 			dieterServiceListArchivedCardsHandler.ServeHTTP(w, r)
 		case DieterServiceCreateBoardLabelProcedure:
@@ -2620,6 +2645,10 @@ func (UnimplementedDieterServiceHandler) RenameBoard(context.Context, *connect.R
 
 func (UnimplementedDieterServiceHandler) SetBoardArchivePolicy(context.Context, *connect.Request[v1.SetBoardArchivePolicyRequest]) (*connect.Response[v1.Board], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SetBoardArchivePolicy is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) UpdateBoardGitSettings(context.Context, *connect.Request[v1.UpdateBoardGitSettingsRequest]) (*connect.Response[v1.Board], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateBoardGitSettings is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) ListArchivedCards(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.CardsResponse], error) {

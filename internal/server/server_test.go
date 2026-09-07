@@ -388,11 +388,17 @@ func TestBoardNamingConnectEndToEnd(t *testing.T) {
 	if renamed.Msg.GetId() != board.GetId() || renamed.Msg.GetName() != "Product delivery" {
 		t.Fatalf("renamed board=%#v", renamed.Msg)
 	}
+	configured, err := client.UpdateBoardGitSettings(ctx, connect.NewRequest(&dieterv1.UpdateBoardGitSettingsRequest{
+		BoardId: board.GetId(), BaseRemote: "private", RemotePublishMode: model.RemotePublishPullRequest,
+	}))
+	if err != nil || configured.Msg.GetBaseRemote() != "private" || configured.Msg.GetRemotePublishMode() != model.RemotePublishPullRequest {
+		t.Fatalf("configured board=%#v err=%v", configured, err)
+	}
 	state, err := client.GetState(ctx, connect.NewRequest(&dieterv1.GetStateRequest{ProjectId: workspace.Msg.GetProject().GetId()}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(state.Msg.GetBoards()) != 1 || state.Msg.GetBoards()[0].GetName() != "Product delivery" {
+	if len(state.Msg.GetBoards()) != 1 || state.Msg.GetBoards()[0].GetName() != "Product delivery" || state.Msg.GetBoards()[0].GetBaseRemote() != "private" {
 		t.Fatalf("persisted boards=%#v", state.Msg.GetBoards())
 	}
 }

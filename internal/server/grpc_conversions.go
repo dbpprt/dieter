@@ -75,6 +75,7 @@ func protoBoard(value model.Board) *dieterv1.Board {
 		Workflow: value.Workflow, Description: value.Description,
 		DoneArchivePolicy: value.DoneArchivePolicy, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, PromptTemplate: value.PromptTemplate,
+		BaseRemote: value.BaseRemote, RemotePublishMode: value.RemotePublishMode,
 	}
 	for _, item := range value.Labels {
 		result.Labels = append(result.Labels, &dieterv1.Label{Id: item.ID, Name: item.Name, Color: item.Color, Instructions: item.Instructions})
@@ -99,6 +100,7 @@ func protoCard(value model.Card) *dieterv1.Card {
 		Pinned: value.Pinned, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		LabelIds: append([]string(nil), value.LabelIDs...), CommentCount: int32(value.CommentCount),
 		WorkspaceMode: value.WorkspaceMode, WorkspaceBranch: value.WorkspaceBranch, WorkspaceBaseBranch: value.WorkspaceBaseBranch,
+		WorkspaceBaseRemote: value.WorkspaceBaseRemote, RemotePublishMode: value.RemotePublishMode,
 	}
 	if value.Workspace != nil {
 		result.Workspace = protoWorkspaceSummary(*value.Workspace)
@@ -144,7 +146,7 @@ func protoWorkspace(value model.Workspace) *dieterv1.Workspace {
 		Behind: int32(value.Behind), SizeBytes: value.SizeBytes, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		IntegratedHeadSha: value.IntegratedHeadSHA, IntegratedResultSha: value.IntegratedResultSHA,
 		IntegrationStrategy: value.IntegrationStrategy, IntegratedAt: value.IntegratedAt,
-		Dirty: value.Dirty,
+		Dirty: value.Dirty, RemotePublishMode: value.RemotePublishMode,
 	}
 }
 

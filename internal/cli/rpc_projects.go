@@ -82,6 +82,7 @@ Options:
   --workflow direct|review    Initial board workflow
   --base-remote REMOTE        Git base remote
   --base-branch BRANCH        Git base branch
+  --remote-publish MODE       Initial board mode: manual, pull_request, or push_base
   --validation-file FILE      Validation command JSON
   --format json|id            Output format
 `, mode)
@@ -94,6 +95,7 @@ Options:
 	workflow := set.String("workflow", "review", "initial board workflow")
 	baseRemote := set.String("base-remote", "", "Git base remote")
 	baseBranch := set.String("base-branch", "", "Git base branch")
+	remotePublish := set.String("remote-publish", "manual", "initial board remote publish mode")
 	validationFile := set.String("validation-file", "", "validation command JSON")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, usage, c.Out)
@@ -120,7 +122,7 @@ Options:
 	response, err := client.CreateProject(rpcCtx, &dieterv1.CreateProjectRequest{
 		Mode: mode, Path: set.Arg(0), Name: *name, Summary: *summary, Prompt: promptValue,
 		BoardName: *boardName, Workflow: *workflow, BaseRemote: *baseRemote, BaseBranch: *baseBranch,
-		ValidationCommands: validation,
+		ValidationCommands: validation, RemotePublishMode: *remotePublish,
 	})
 	if err != nil {
 		return err
@@ -396,6 +398,7 @@ Actions:
   show BOARD           Show one board
   rename BOARD         Rename a board
   retention BOARD      Configure automatic Done-card archiving
+  git BOARD            Configure the default remote and publishing mode
   label add            Create a board label
   label list           List board labels
   label update LABEL   Update label name, color, or instructions
@@ -418,6 +421,8 @@ func (c *CLI) rpcBoard(args []string) error {
 		return c.rpcBoardRename(args[1:])
 	case "retention":
 		return c.rpcBoardRetention(args[1:])
+	case "git":
+		return c.rpcBoardGit(args[1:])
 	case "label", "labels":
 		return c.rpcBoardLabel(args[1:])
 	default:
@@ -458,13 +463,15 @@ func (c *CLI) boardState(ctx context.Context, reference string) (*dieterv1.Board
 }
 
 func (c *CLI) rpcBoardCreate(args []string) error {
-	const usage = "Usage: dieter board create --project PROJECT --name NAME [--workflow direct|review] [--description TEXT] [--archive-done POLICY]\n"
+	const usage = "Usage: dieter board create --project PROJECT --name NAME [--workflow direct|review] [--description TEXT] [--archive-done POLICY] [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base]\n"
 	set := flags("board create")
 	project := set.String("project", "", "project ID or name")
 	name := set.String("name", "", "board name")
 	workflow := set.String("workflow", "review", "direct or review")
 	description := set.String("description", "", "board description")
 	archiveDone := set.String("archive-done", "never", "Done-card archive policy")
+	baseRemote := set.String("base-remote", "", "default Git remote; inherits the project remote when empty")
+	remotePublish := set.String("remote-publish", "manual", "manual, pull_request, or push_base")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -485,6 +492,44 @@ func (c *CLI) rpcBoardCreate(args []string) error {
 	value, err := client.CreateBoard(rpcCtx, &dieterv1.CreateBoardRequest{
 		ProjectId: projectValue.GetId(), Name: *name, Workflow: *workflow,
 		Description: *description, DoneArchivePolicy: *archiveDone,
+		BaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
+	})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
+}
+
+func (c *CLI) rpcBoardGit(args []string) error {
+	const usage = "Usage: dieter board git [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base] BOARD\n\nmanual preserves explicit Git actions, pull_request requires PR publishing, and push_base pushes validated local integrations to the configured base branch.\n"
+	set := flags("board git")
+	baseRemote := set.String("base-remote", "", "default Git remote for new conversations")
+	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 {
+		return errors.New("exactly one BOARD is required")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	board, _, err := c.boardState(ctx, set.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *baseRemote == "" {
+		*baseRemote = board.GetBaseRemote()
+	}
+	if *remotePublish == "" {
+		*remotePublish = board.GetRemotePublishMode()
+	}
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.UpdateBoardGitSettings(rpcCtx, &dieterv1.UpdateBoardGitSettingsRequest{
+		BoardId: board.GetId(), BaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
 	})
 	if err != nil {
 		return err

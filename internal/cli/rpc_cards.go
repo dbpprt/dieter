@@ -153,6 +153,8 @@ Options:
   --workspace MODE          project or worktree
   --branch BRANCH           Optional worktree branch
   --base-branch BRANCH      Optional worktree base branch
+  --base-remote REMOTE      Optional board/project remote override
+  --remote-publish MODE     manual, pull_request, or push_base
   --format json|id          Output format
 `
 	if chat {
@@ -178,6 +180,8 @@ Options:
 	workspaceMode := set.String("workspace", "", "project or worktree")
 	branch := set.String("branch", "", "worktree branch")
 	baseBranch := set.String("base-branch", "", "worktree base branch")
+	baseRemote := set.String("base-remote", "", "base remote override")
+	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -227,6 +231,7 @@ Options:
 		LabelIds: splitCSV(*labels), DeferStart: !chat && *lane != "running", Attachments: messageParts(attachments),
 		ClientId: "dieter-cli", CommandId: commandID, WorkspaceMode: *workspaceMode,
 		WorkspaceBranch: *branch, WorkspaceBaseBranch: *baseBranch, AutoGenerateTitle: *autoTitle,
+		WorkspaceBaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
 	}
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {
@@ -829,11 +834,13 @@ func (c *CLI) rpcCardArchive(args []string, archived bool) error {
 }
 
 func (c *CLI) rpcCardWorkspace(args []string) error {
-	const usage = "Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] CARD\n"
+	const usage = "Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base] CARD\n"
 	set := flags("card workspace")
 	mode := set.String("mode", "", "project or worktree")
 	branch := set.String("branch", "", "worktree branch")
 	baseBranch := set.String("base-branch", "", "worktree base branch")
+	baseRemote := set.String("base-remote", "", "base remote override")
+	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -847,7 +854,10 @@ func (c *CLI) rpcCardWorkspace(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.UpdateConversationWorkspace(rpcCtx, &dieterv1.UpdateConversationWorkspaceRequest{CardId: set.Arg(0), Mode: *mode, Branch: *branch, BaseBranch: *baseBranch})
+	value, err := client.UpdateConversationWorkspace(rpcCtx, &dieterv1.UpdateConversationWorkspaceRequest{
+		CardId: set.Arg(0), Mode: *mode, Branch: *branch, BaseBranch: *baseBranch,
+		BaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
+	})
 	if err != nil {
 		return err
 	}

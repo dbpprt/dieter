@@ -2602,7 +2602,14 @@ class DieterViewModel(
         refreshStateOnce()
     }
 
-    fun createBoard(name: String, workflow: String, description: String, openAfterCreate: Boolean = false) = action {
+    fun createBoard(
+        name: String,
+        workflow: String,
+        description: String,
+        openAfterCreate: Boolean = false,
+        baseRemote: String = _state.value.project?.baseRemote.orEmpty(),
+        remotePublishMode: String = "manual",
+    ) = action {
         val board = repository.createBoard(
             CreateBoardRequest.newBuilder()
                 .setProjectId(_state.value.selectedProjectId)
@@ -2610,6 +2617,8 @@ class DieterViewModel(
                 .setWorkflow(workflow)
                 .setDescription(description)
                 .setDoneArchivePolicy("never")
+                .setBaseRemote(baseRemote.trim())
+                .setRemotePublishMode(remotePublishMode)
                 .build(),
         )
         _state.update {
@@ -2625,6 +2634,11 @@ class DieterViewModel(
 
     fun setBoardArchivePolicy(policy: String) = action {
         repository.setBoardArchivePolicy(_state.value.selectedBoardId, policy)
+        refreshStateOnce()
+    }
+
+    fun updateBoardGitSettings(baseRemote: String, remotePublishMode: String) = action {
+        repository.updateBoardGitSettings(_state.value.selectedBoardId, baseRemote, remotePublishMode)
         refreshStateOnce()
     }
 

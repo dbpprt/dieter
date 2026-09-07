@@ -229,6 +229,47 @@ func TestConversationCardLifecycle(t *testing.T) {
 	}
 }
 
+func TestNewCardsSnapshotBoardGitDefaults(t *testing.T) {
+	s, project, board := setup(t, model.WorkflowReview)
+	if _, err := s.UpdateProjectWorkspaceSettings(project.ID, "origin", "main", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateBoardGitSettings(board.ID, "private", model.RemotePublishPullRequest); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.CreateCard(CreateCardInput{
+		Project: project.ID, Board: board.ID, Title: "First", WorkspaceMode: model.WorkspaceModeWorktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.WorkspaceBaseRemote != "private" || first.RemotePublishMode != model.RemotePublishPullRequest {
+		t.Fatalf("first card did not snapshot board defaults: %#v", first)
+	}
+	if _, err := s.UpdateBoardGitSettings(board.ID, "origin", model.RemotePublishPushBase); err != nil {
+		t.Fatal(err)
+	}
+	first, err = s.ResolveCard(first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.WorkspaceBaseRemote != "private" || first.RemotePublishMode != model.RemotePublishPullRequest {
+		t.Fatalf("existing card changed with board defaults: %#v", first)
+	}
+	second, err := s.CreateCard(CreateCardInput{
+		Project: project.ID, Board: board.ID, Title: "Second", WorkspaceMode: model.WorkspaceModeWorktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.WorkspaceBaseRemote != "origin" || second.RemotePublishMode != model.RemotePublishPushBase {
+		t.Fatalf("second card did not snapshot updated defaults: %#v", second)
+	}
+	if _, err := s.UpdateBoardGitSettings(board.ID, "private", "unexpected"); err == nil {
+		t.Fatal("invalid remote publish mode was accepted")
+	}
+}
+
 func TestConversationEventDoesNotOverwriteConcurrentLaneMove(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
 	card, err := s.CreateCard(CreateCardInput{
