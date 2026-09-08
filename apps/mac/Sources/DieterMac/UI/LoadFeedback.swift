@@ -1,20 +1,21 @@
 import SwiftUI
 
 /// Shared feedback for cold loads, cached refreshes, and recoverable failures.
-/// Selection and the label appear immediately; only the spinner is deferred.
+/// Keep this view synchronous: short reads can remove it during the same display
+/// cycle, so an attached delayed task would be canceled while SwiftUI tears down
+/// the view hierarchy.
 struct LoadFeedback: View {
     let title: String
     var error: String? = nil
     var retry: (() -> Void)? = nil
     var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showActivity = false
 
     var body: some View {
         HStack(spacing: 9) {
             if error != nil {
                 Image(systemName: "exclamationmark.circle").foregroundStyle(DieterTheme.amber)
-            } else if showActivity {
+            } else {
                 if reduceMotion {
                     Image(systemName: "hourglass")
                 } else {
@@ -30,9 +31,5 @@ struct LoadFeedback: View {
         .padding(compact ? 8 : 20)
         .frame(maxWidth: compact ? nil : .infinity, maxHeight: compact ? nil : .infinity)
         .accessibilityElement(children: .contain)
-        .task {
-            try? await Task.sleep(for: .milliseconds(120))
-            if !Task.isCancelled { showActivity = true }
-        }
     }
 }

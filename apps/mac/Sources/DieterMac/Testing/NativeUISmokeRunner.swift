@@ -277,6 +277,21 @@ enum NativeUISmokeRunner {
             await captureAppearances(window, named: "\(step.name).png", in: output)
         }
 
+        // Fast local reads can mount and remove the compact loading feedback in
+        // one display cycle. Exercise that lifetime repeatedly because a task
+        // attached to the feedback view previously aborted during cancellation.
+        var allChatsChurnPassed = true
+        for _ in 0..<12 {
+            store.section = .board
+            try? await DieterTaskSleep.milliseconds(20)
+            await store.openChats()
+            try? await DieterTaskSleep.milliseconds(20)
+            allChatsChurnPassed = allChatsChurnPassed && store.section == .chats
+        }
+        results["02a-all-chats-loading-churn"] = allChatsChurnPassed
+            ? "passed"
+            : "failed: navigation became unstable"
+
         click(window: window, x: 500, distanceFromTop: 65)
         try? await DieterTaskSleep.seconds(1)
         results["03-standalone-chat"] = store.section == .chats && store.newChatProjectID == project.id
