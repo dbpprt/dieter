@@ -52,3 +52,22 @@ import Testing
     #expect(CaptureBrowserContext(url: "https://app.example.com:8443/path", browser: true).matchingBoards([board]).map(\.id) == ["board"])
     #expect(CaptureBrowserContext(url: "https://other.example.com", browser: true).matchingBoards([board]).isEmpty)
 }
+
+@Test @MainActor func quickTaskDraftResetsForSubmissionAndNewAppSession() {
+    let draft = QuickTaskFormState()
+    draft.story = "Investigate this page"
+    draft.sourceURL = "https://example.com/issue"
+    draft.draftProjectID = "project"
+    draft.draftBoardID = "board"
+    draft.rememberHostname = true
+    draft.providerOptions = ["fast_mode": "true"]
+    draft.initialized = true
+    let image = Dieter_V1_MessagePart()
+    draft.attachments = [image]
+    let newSession = QuickTaskFormState()
+    #expect(newSession.story.isEmpty && newSession.attachments.isEmpty)
+    draft.reset()
+    #expect(draft.story.isEmpty && draft.sourceURL.isEmpty && draft.attachments.isEmpty)
+    #expect(draft.draftProjectID.isEmpty && draft.draftBoardID.isEmpty)
+    #expect(draft.providerOptions.isEmpty && !draft.rememberHostname && !draft.initialized)
+}

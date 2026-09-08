@@ -506,7 +506,7 @@ struct BoardHeader: View {
         .accessibilityIdentifier("board.quick-task")
         .smokeTarget("board.quick-task")
         .popover(isPresented: $quickTaskPresented, arrowEdge: .top) {
-            QuickTaskPopover(isPresented: $quickTaskPresented)
+            QuickTaskPopover(isPresented: $quickTaskPresented, draft: store.quickTaskForm)
                 .environment(store)
         }
     }
@@ -529,32 +529,75 @@ struct QuickTaskDraft {
     }
 }
 
+@Observable
+final class QuickTaskFormState {
+    var story: String = ""
+    var provider: String = ""
+    var model: String = ""
+    var effort: String = ""
+    var providerOptions: [String: String] = [:]
+    var attachments: [Dieter_V1_MessagePart] = []
+    var initialized: Bool = false
+    var rememberHostname: Bool = false
+    var sourceURL: String = ""
+    var draftProjectID: String = ""
+    var draftBoardID: String = ""
+
+    func reset() {
+        story = ""
+        provider = ""
+        model = ""
+        effort = ""
+        providerOptions = [:]
+        attachments = []
+        initialized = false
+        rememberHostname = false
+        sourceURL = ""
+        draftProjectID = ""
+        draftBoardID = ""
+    }
+}
+
 struct QuickTaskPopover: View {
     @Environment(DieterStore.self) private var store
     @Binding var isPresented: Bool
-    @State private var story = ""
+    @Binding private var story: String
+    @Binding private var provider: String
+    @Binding private var model: String
+    @Binding private var effort: String
+    @Binding private var providerOptions: [String: String]
+    @Binding private var attachments: [Dieter_V1_MessagePart]
+    @Binding private var initialized: Bool
+    @Binding private var rememberHostname: Bool
+    @Binding private var sourceURL: String
+    @Binding private var draftProjectID: String
+    @Binding private var draftBoardID: String
     @State private var submitting = false
     @State private var settingsPresented = false
-    @State private var provider = ""
-    @State private var model = ""
-    @State private var effort = ""
-    @State private var providerOptions: [String: String] = [:]
-    @State private var attachments: [Dieter_V1_MessagePart] = []
     @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
-    @State private var initialized = false
-    @State private var rememberHostname = false
     @State private var submissionError: String?
-    @State private var sourceURL: String
+    private let formDraft: QuickTaskFormState
     private let capturedBrowser: Bool
     private let chooseDestination: Bool
-    @State private var draftProjectID = ""
-    @State private var draftBoardID = ""
 
-    init(isPresented: Binding<Bool>, initialAttachments: [Dieter_V1_MessagePart] = [], sourceURL: String = "", capturedBrowser: Bool = false, chooseDestination: Bool = false) {
+    init(isPresented: Binding<Bool>, draft: QuickTaskFormState? = nil, initialAttachments: [Dieter_V1_MessagePart] = [], sourceURL: String = "", capturedBrowser: Bool = false, chooseDestination: Bool = false) {
         _isPresented = isPresented
-        _attachments = State(initialValue: initialAttachments)
-        _sourceURL = State(initialValue: sourceURL)
+        let state = draft ?? QuickTaskFormState()
+        if draft == nil { state.attachments = initialAttachments; state.sourceURL = sourceURL }
+        formDraft = state
+        let bindings = Bindable(state)
+        _story = bindings.story
+        _provider = bindings.provider
+        _model = bindings.model
+        _effort = bindings.effort
+        _providerOptions = bindings.providerOptions
+        _attachments = bindings.attachments
+        _initialized = bindings.initialized
+        _rememberHostname = bindings.rememberHostname
+        _sourceURL = bindings.sourceURL
+        _draftProjectID = bindings.draftProjectID
+        _draftBoardID = bindings.draftBoardID
         self.capturedBrowser = capturedBrowser
         self.chooseDestination = chooseDestination
     }
@@ -583,21 +626,6 @@ struct QuickTaskPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Save to").font(.caption.weight(.semibold))
-                Picker("Project", selection: Binding(get: { draftProjectID }, set: { id in
-                    draftProjectID = id
-                    draftBoardID = ""
-                })) {
-                    Text("Choose project").tag("")
-                    ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
-                }.accessibilityIdentifier("quick-task.project")
-                Picker("Board", selection: $draftBoardID) {
-                    Text("Choose board").tag("")
-                    ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
-                }.accessibilityIdentifier("quick-task.board")
-            }.disabled(submitting)
-            if let submissionError { Text(submissionError).font(.caption).foregroundStyle(.orange) }
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 14, weight: .semibold))
@@ -605,8 +633,8 @@ struct QuickTaskPopover: View {
                     .frame(width: 30, height: 30)
                     .background(DieterTheme.shellDeep.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Quick task").font(.system(size: 15, weight: .semibold))
-                    Text("Enter the story. GPT Spark writes a 4–6 word title.")
+                    Text("Quick task").font(.system(size: 18, weight: .semibold)).smokeTarget("quick-task.title")
+                    Text("Describe the task. A short title is created automatically.")
                         .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
@@ -637,6 +665,26 @@ struct QuickTaskPopover: View {
                     .environment(store)
                 }
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("DESTINATION").font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary)
+                Picker("Project", selection: Binding(get: { draftProjectID }, set: { id in
+                    draftProjectID = id
+                    draftBoardID = ""
+                })) {
+                    Text("Choose project").tag("")
+                    ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
+                }.accessibilityIdentifier("quick-task.project")
+                Picker("Board", selection: $draftBoardID) {
+                    Text("Choose board").tag("")
+                    ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
+                }.accessibilityIdentifier("quick-task.board")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
+            .disabled(submitting)
+            if let submissionError { Text(submissionError).font(.caption).foregroundStyle(.orange) }
 
             TextField("What should the agent accomplish?", text: $story, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -672,7 +720,9 @@ struct QuickTaskPopover: View {
 
             Group {
                 TextField("Page URL (optional)", text: $sourceURL)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .padding(10)
+                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
                     .accessibilityIdentifier("quick-task.source-url")
                     .smokeTarget("quick-task.source-url")
                 if let host = CaptureBrowserContext.hostname(sourceURL) {
@@ -694,8 +744,10 @@ struct QuickTaskPopover: View {
             .font(.system(size: 10.5, weight: .medium))
             .foregroundStyle(DieterTheme.tertiary)
 
+            Divider()
             HStack(spacing: 9) {
                 Button("Cancel") { isPresented = false }
+                    .smokeTarget("quick-task.cancel")
                     .buttonStyle(DieterSecondaryButtonStyle())
                 Spacer()
                 Button {
@@ -711,10 +763,13 @@ struct QuickTaskPopover: View {
                 .disabled(cleanStory.isEmpty || submitting || draftProjectID.isEmpty || draftBoardID.isEmpty)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .accessibilityIdentifier("quick-task.create")
+                .smokeTarget("quick-task.create")
             }
         }
-        .padding(17)
-        .frame(width: 390)
+        .padding(20)
+        .frame(width: 430)
+        .fixedSize(horizontal: false, vertical: true)
+        .smokeTarget("quick-task.content")
         .background(DieterTheme.background)
         .attachmentIntake(store: store, importerPresented: $fileImporterPresented, attachments: $attachments)
         .task {
@@ -776,6 +831,7 @@ struct QuickTaskPopover: View {
             autoGenerateTitle: true
         )
         submitting = false
+        formDraft.reset()
         isPresented = false
     }
 }

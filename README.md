@@ -549,7 +549,9 @@ Users can edit URLs/hostnames in Board settings or remember a captured URL's
 hostname for the selected board when saving a Quick Task. Global Quick Task is
 available in the sidebar and always shows project and board selectors. Unmatched
 or ambiguous captures stage a draft with no destination until the user chooses.
-Tasks are saved as drafts; capture does not start an agent.
+Tasks are saved as drafts; capture does not start an agent. The sidebar and board
+Quick Task popovers keep their draft in memory when dismissed, including attachments
+and agent settings. Submitting or restarting the app clears the form.
 
 ```sh
 dieter board hostnames --hostname app.example.com BOARD_ID

@@ -223,10 +223,10 @@ final class CaptureTaskController {
     }
 
     func present(parts: [Dieter_V1_MessagePart], browser: CaptureBrowserContext) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 424, height: 640), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 454, height: 640), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.title = "Capture task"
         window.isReleasedWhenClosed = false
-        window.contentMinSize = NSSize(width: 424, height: 400)
+        window.contentMinSize = NSSize(width: 454, height: 400)
         window.contentView = NSHostingView(rootView: CapturedTaskDraftView(parts: parts, browser: browser, dismiss: { [weak self] in self?.window?.close(); self?.window = nil }).environment(store))
         self.window = window
         window.center()
@@ -240,10 +240,21 @@ struct CapturedTaskDraftView: View {
     let browser: CaptureBrowserContext
     let dismiss: () -> Void
     @State private var presented = true
+    @State private var draft: QuickTaskFormState
+
+    init(parts: [Dieter_V1_MessagePart], browser: CaptureBrowserContext, dismiss: @escaping () -> Void) {
+        self.parts = parts
+        self.browser = browser
+        self.dismiss = dismiss
+        let draft = QuickTaskFormState()
+        draft.attachments = parts
+        draft.sourceURL = browser.url
+        _draft = State(initialValue: draft)
+    }
 
     var body: some View {
         ScrollView {
-            QuickTaskPopover(isPresented: $presented, initialAttachments: parts, sourceURL: browser.url, capturedBrowser: browser.browser)
+            QuickTaskPopover(isPresented: $presented, draft: draft, capturedBrowser: browser.browser)
         }
         .background(DieterTheme.background)
         .onChange(of: presented) { _, value in if !value { dismiss() } }

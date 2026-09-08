@@ -248,6 +248,43 @@ enum NativeUISmokeRunner {
                 preview.close()
                 window.makeKeyAndOrderFront(nil)
             }
+            _ = NativeUIAccessibility.click("sidebar.quick-task", in: window)
+            try? await DieterTaskSleep.milliseconds(500)
+            if let content = NativeUIAccessibility.find("quick-task.content", in: window),
+               let sheet = content.recordedWindow,
+               let contentFrame = content.recordedFrame,
+               let titleFrame = NativeUIAccessibility.find("quick-task.title", in: sheet)?.recordedFrame,
+               let storyFrame = NativeUIAccessibility.find("quick-task.story", in: sheet)?.recordedFrame,
+               let createFrame = NativeUIAccessibility.find("quick-task.create", in: sheet)?.recordedFrame {
+                let sheetFrame = sheet.convertToScreen(sheet.contentLayoutRect)
+                // Catch the former 700-point shell around a short, narrower form.
+                let compact = abs(sheetFrame.height - contentFrame.height) < 48
+                    && abs(sheetFrame.width - contentFrame.width) < 48
+                    && contentFrame.height < 580
+                    && createFrame.minY - contentFrame.minY < 40
+                    && titleFrame.minY > storyFrame.maxY
+                results["global-quick-task-layout"] = compact ? "passed" : "failed: excess shell space or misplaced title/footer; shell=\(sheetFrame), content=\(contentFrame)"
+                capture(sheet, to: output.appending(path: "global-quick-task-layout.png"))
+                _ = NativeUIAccessibility.click("quick-task.story", in: sheet)
+                try? await DieterTaskSleep.milliseconds(100)
+                await NativeUIAccessibility.type("Keep this draft after clicking outside", in: sheet)
+                click(window: window, x: window.frame.width - 60, distanceFromTop: 100)
+                try? await DieterTaskSleep.milliseconds(300)
+                let dismissed = !sheet.isVisible
+                _ = NativeUIAccessibility.click("sidebar.quick-task", in: window)
+                try? await DieterTaskSleep.milliseconds(400)
+                let reopened = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
+                let retained = reopened != nil && store.quickTaskForm.story == "Keep this draft after clicking outside"
+                if let reopened {
+                    capture(reopened, to: output.appending(path: "global-quick-task-restored.png"))
+                }
+                results["global-quick-task-retains-draft"] = dismissed && retained ? "passed" : "failed: outside dismissal=\(dismissed), restored content=\(retained), story=\(store.quickTaskForm.story)"
+                if let reopened { _ = NativeUIAccessibility.click("quick-task.cancel", in: reopened) }
+                try? await DieterTaskSleep.milliseconds(300)
+                store.quickTaskForm.reset()
+            } else {
+                results["global-quick-task-layout"] = "failed: global Quick Task sheet or layout anchors absent"
+            }
             _ = NativeUIAccessibility.click("board.quick-task", in: window)
             try? await DieterTaskSleep.milliseconds(400)
             if let target = NativeUIAccessibility.find("quick-task.story", in: window),

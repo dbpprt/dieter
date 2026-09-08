@@ -354,8 +354,7 @@ struct AppSidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader
             if collapsed {
-                SidebarUtilityButton(symbol: "square.and.pencil", help: "Quick task") { globalQuickTaskPresented = true }
-                    .accessibilityIdentifier("sidebar.quick-task")
+                globalQuickTaskButton
             }
             searchControl
             allChatsControl
@@ -365,15 +364,21 @@ struct AppSidebar: View {
             }
             sidebarFooter
         }
-        .sheet(isPresented: $globalQuickTaskPresented) {
-            ScrollView { QuickTaskPopover(isPresented: $globalQuickTaskPresented, chooseDestination: true).environment(store) }
-                .frame(width: 430, height: 700)
-        }
         .background(DieterTheme.sidebar)
         .clipped()
         // Extend the sidebar tone up behind the traffic lights so the title-bar
         // strip matches the nav instead of showing the darker window background.
         .background(DieterTheme.sidebar.ignoresSafeArea(.container, edges: .top))
+    }
+
+    private var globalQuickTaskButton: some View {
+        SidebarUtilityButton(symbol: "square.and.pencil", help: "Quick task") { globalQuickTaskPresented = true }
+            .accessibilityIdentifier("sidebar.quick-task")
+            .smokeTarget("sidebar.quick-task")
+            .popover(isPresented: $globalQuickTaskPresented, arrowEdge: .trailing) {
+                QuickTaskPopover(isPresented: $globalQuickTaskPresented, draft: store.quickTaskForm, chooseDestination: true)
+                    .environment(store)
+            }
     }
 
     @ViewBuilder private var sidebarHeader: some View {
@@ -393,8 +398,7 @@ struct AppSidebar: View {
                 SidebarUtilityButton(symbol: "sidebar.left", help: "Collapse navigation (⌃⌘S)") { collapsed = true }
                     .keyboardShortcut("s", modifiers: [.command, .control])
                     .accessibilityIdentifier("sidebar.toggle")
-                SidebarUtilityButton(symbol: "square.and.pencil", help: "Quick task") { globalQuickTaskPresented = true }
-                    .accessibilityIdentifier("sidebar.quick-task")
+                globalQuickTaskButton
             }
             .padding(.horizontal, 12).padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
         }

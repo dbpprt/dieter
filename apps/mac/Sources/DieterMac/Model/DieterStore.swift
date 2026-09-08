@@ -229,6 +229,7 @@ final class DieterStore {
     var schedulesLoadedProjectID = ""
     var newChatProjectID = ""
 
+    let quickTaskForm = QuickTaskFormState()
     var commandPalettePresented = false
     var createConversationPresented = false
     var createProjectPresented = false
