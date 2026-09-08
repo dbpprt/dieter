@@ -47,6 +47,10 @@ class AppPreferences(
     val notificationSettings: StateFlow<DieterNotificationSettings> = _notificationSettings.asStateFlow()
     private val _projectOrder = MutableStateFlow(if (loadAsync) emptyList() else readProjectOrder())
     val projectOrder: StateFlow<List<String>> = _projectOrder.asStateFlow()
+    private val _collapsedChatProjectIds = MutableStateFlow(if (loadAsync) emptySet() else readCollapsedChatProjectIds())
+    val collapsedChatProjectIds: StateFlow<Set<String>> = _collapsedChatProjectIds.asStateFlow()
+    private val _expandedChatProjectIds = MutableStateFlow(if (loadAsync) emptySet() else readExpandedChatProjectIds())
+    val expandedChatProjectIds: StateFlow<Set<String>> = _expandedChatProjectIds.asStateFlow()
     private val _pinnedChatOrder = MutableStateFlow(if (loadAsync) emptyList() else readPinnedChatOrder())
     val pinnedChatOrder: StateFlow<List<String>> = _pinnedChatOrder.asStateFlow()
     private val _conversationCreation = MutableStateFlow(
@@ -70,6 +74,8 @@ class AppPreferences(
         val notificationBoardIds = readNotificationBoardIds()
         val notificationSettings = readNotificationSettings()
         val projectOrder = readProjectOrder()
+        val collapsedChatProjectIds = readCollapsedChatProjectIds()
+        val expandedChatProjectIds = readExpandedChatProjectIds()
         val pinnedChatOrder = readPinnedChatOrder()
         val conversationCreation = readConversationCreationPreferences()
         if (mutationVersion.get() != expectedVersion) return
@@ -79,6 +85,8 @@ class AppPreferences(
         _notificationBoardIds.value = notificationBoardIds
         _notificationSettings.value = notificationSettings
         _projectOrder.value = projectOrder
+        _collapsedChatProjectIds.value = collapsedChatProjectIds
+        _expandedChatProjectIds.value = expandedChatProjectIds
         _pinnedChatOrder.value = pinnedChatOrder
         _conversationCreation.value = conversationCreation
         DieterLauncherIcon.apply(appContext, _palette.value)
@@ -154,6 +162,26 @@ class AppPreferences(
         _projectOrder.value = updated
     }
 
+    fun setChatProjectCollapsed(projectId: String, collapsed: Boolean) {
+        if (projectId.isBlank()) return
+        markMutation()
+        val updated = _collapsedChatProjectIds.value.toMutableSet().apply {
+            if (collapsed) add(projectId) else remove(projectId)
+        }.toSet()
+        preferences.edit().putStringSet(KEY_COLLAPSED_CHAT_PROJECT_IDS, updated).apply()
+        _collapsedChatProjectIds.value = updated
+    }
+
+    fun setChatProjectExpanded(projectId: String, expanded: Boolean) {
+        if (projectId.isBlank()) return
+        markMutation()
+        val updated = _expandedChatProjectIds.value.toMutableSet().apply {
+            if (expanded) add(projectId) else remove(projectId)
+        }.toSet()
+        preferences.edit().putStringSet(KEY_EXPANDED_CHAT_PROJECT_IDS, updated).apply()
+        _expandedChatProjectIds.value = updated
+    }
+
     fun setPinnedChatOrder(chatIds: List<String>) {
         markMutation()
         val updated = chatIds.filter(String::isNotBlank).distinct()
@@ -213,6 +241,14 @@ class AppPreferences(
         }.distinct()
     }.getOrDefault(emptyList())
 
+    private fun readCollapsedChatProjectIds(): Set<String> =
+        preferences.getStringSet(KEY_COLLAPSED_CHAT_PROJECT_IDS, emptySet()).orEmpty()
+            .filterTo(mutableSetOf(), String::isNotBlank)
+
+    private fun readExpandedChatProjectIds(): Set<String> =
+        preferences.getStringSet(KEY_EXPANDED_CHAT_PROJECT_IDS, emptySet()).orEmpty()
+            .filterTo(mutableSetOf(), String::isNotBlank)
+
     private fun readPinnedChatOrder(): List<String> = runCatching {
         val encoded = preferences.getString(KEY_PINNED_CHAT_ORDER, null) ?: return@runCatching emptyList()
         val array = JSONArray(encoded)
@@ -246,6 +282,8 @@ class AppPreferences(
         private const val KEY_RESULT_PREVIEWS_ENABLED = "result_previews_enabled"
         private const val KEY_LIVE_STATUS_ACTIVITY_ENABLED = "live_status_activity_enabled"
         private const val KEY_PROJECT_ORDER = "project_order"
+        private const val KEY_COLLAPSED_CHAT_PROJECT_IDS = "collapsed_chat_project_ids"
+        private const val KEY_EXPANDED_CHAT_PROJECT_IDS = "expanded_chat_project_ids"
         private const val KEY_PINNED_CHAT_ORDER = "pinned_chat_order"
         private const val KEY_CONVERSATION_CREATION_PROVIDER = "conversation_creation_provider"
         private const val KEY_CONVERSATION_CREATION_MODEL = "conversation_creation_model"

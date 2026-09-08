@@ -5,8 +5,10 @@ enum SchedulesPresentationState: Equatable {
     case loading
     case empty
     case loaded
+    case failed(String)
 
-    static func resolve(isLoaded: Bool, isLoading: Bool, hasSchedules: Bool) -> Self {
+    static func resolve(isLoaded: Bool, isLoading: Bool, hasSchedules: Bool, error: String? = nil) -> Self {
+        if let error, !hasSchedules, !isLoading { return .failed(error) }
         if !isLoaded || (isLoading && !hasSchedules) { return .loading }
         return hasSchedules ? .loaded : .empty
     }
@@ -25,7 +27,7 @@ struct SchedulesView: View {
                             title: "Schedules",
                             subtitle: store.schedulesAreLoaded
                                 ? "\(store.schedulesTotalCount) automation\(store.schedulesTotalCount == 1 ? "" : "s")"
-                                : "Loading automations…",
+                                : (store.schedulesError == nil ? "Loading automations…" : "Automations unavailable"),
                             symbol: "calendar.badge.clock",
                             prominent: true
                         )
@@ -39,25 +41,21 @@ struct SchedulesView: View {
                         .buttonStyle(DieterIconButtonStyle())
                         .disabled(store.schedulesLoading)
                         Button { editorPresentation = ScheduleEditorPresentation(schedule: nil) } label: { Label("New", systemImage: "plus") }
-                            .buttonStyle(DieterPrimaryButtonStyle()).accessibilityIdentifier("schedules.new")
+                            .buttonStyle(DieterPrimaryButtonStyle()).accessibilityIdentifier("schedules.new").disabled(!store.selectedProjectIsLive)
                     }
                 }
                 switch SchedulesPresentationState.resolve(
                     isLoaded: store.schedulesAreLoaded,
                     isLoading: store.schedulesLoading,
-                    hasSchedules: !store.schedules.isEmpty
+                    hasSchedules: !store.schedules.isEmpty,
+                    error: store.schedulesError
                 ) {
                 case .loading:
-                    VStack(spacing: 10) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading schedules…")
-                            .font(DieterFont.meta)
-                            .foregroundStyle(DieterTheme.tertiary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Loading schedules")
-                    .accessibilityIdentifier("schedules.loading")
+                    LoadFeedback(title: "Loading schedules…")
+                        .accessibilityIdentifier("schedules.loading")
+                case .failed(let error):
+                    LoadFeedback(title: "Schedules", error: error, retry: { Task { await store.loadSchedules() } })
+                        .accessibilityIdentifier("schedules.error")
                 case .empty:
                     ContentUnavailableView("No schedules", systemImage: "calendar.badge.plus", description: Text("Automate cards and chats with cron schedules."))
                         .accessibilityIdentifier("schedules.empty")
@@ -105,7 +103,15 @@ struct SchedulesView: View {
                 }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await store.loadSchedules() }
+        .task(id: store.selectedProjectID) {
+            let projectID = store.selectedProjectID
+            guard await store.ensureProjectConnection(projectID, reportOffline: false),
+                  !Task.isCancelled, store.selectedProjectID == projectID, store.section == .schedules else {
+                if !Task.isCancelled { store.schedulesError = "This machine is unavailable. Reconnect and retry." }
+                return
+            }
+            await store.loadSchedules()
+        }
         .sheet(item: $editorPresentation) { presentation in
             ScheduleEditor(schedule: presentation.schedule).environment(store)
         }
@@ -150,10 +156,12 @@ struct ScheduleDetail: View {
                         subtitle: schedule.description_p.isEmpty ? "Scheduled \(schedule.action.replacingOccurrences(of: "_", with: " "))" : schedule.description_p,
                         symbol: "calendar.badge.clock"
                     )
+                    Group {
                     Toggle("Enabled", isOn: Binding(get: { schedule.enabled }, set: { _ in Task { await store.toggleSchedule(schedule) } }))
                         .labelsHidden().toggleStyle(.switch).controlSize(.small)
                     Button("Edit", action: edit).buttonStyle(DieterSecondaryButtonStyle())
                     Button("Run now") { Task { await store.runSchedule(schedule) } }.buttonStyle(DieterPrimaryButtonStyle())
+                    }.disabled(!store.selectedProjectIsLive)
                 }
             } secondary: {
                 HStack(spacing: 8) {
@@ -181,7 +189,7 @@ struct ScheduleDetail: View {
                     HStack { StatusPill(text: schedule.provider); StatusPill(text: schedule.model); StatusPill(text: schedule.effort) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(14).dieterSurface(radius: 10)
-                HStack { Text("Recent runs").font(.system(size: 13, weight: .semibold)); Spacer(); Button("Delete schedule", role: .destructive) { Task { await store.deleteSchedule(schedule) } } }
+                HStack { Text("Recent runs").font(.system(size: 13, weight: .semibold)); Spacer(); Button("Delete schedule", role: .destructive) { Task { await store.deleteSchedule(schedule) } }.disabled(!store.selectedProjectIsLive) }
                 if store.scheduleRunsLoading && store.scheduleRuns.isEmpty {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)

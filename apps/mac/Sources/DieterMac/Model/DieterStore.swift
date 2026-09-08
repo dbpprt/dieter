@@ -37,6 +37,7 @@ final class DieterStore {
         }
     }
     var harnessCatalog = Dieter_V1_HarnessCatalog()
+    var harnessCatalogsByEndpoint: [String: Dieter_V1_HarnessCatalog] = [:]
     var boardSettings = Dieter_V1_Settings()
     var settingsOptions = Dieter_V1_SettingsOptions()
     var chats: [Dieter_V1_Card] = [] {
@@ -88,6 +89,10 @@ final class DieterStore {
     var conversationHistoryHasMore = false
     var conversationHistoryLoading = false
     var selectedDetail: Dieter_V1_CardDetail?
+    @ObservationIgnored let snapshotDecoder = DieterSnapshotDecoder()
+    @ObservationIgnored let conversationRead = OwnedRead<Dieter_V1_ConversationSnapshot>()
+    var conversationSelectionGeneration: UInt64 = 0
+    var conversationError: String?
     var conversationLoading = false
     var conversationSyncing = false
     var conversationLastRefreshedAt: Date?
@@ -107,6 +112,8 @@ final class DieterStore {
     var mergeFlowStep: WorkspaceMergeStep?
     var fileScopeCardID: String?
     let projectChanges = ProjectChangesModel()
+    var fileSurfaceOwner = ""
+    var fileEditorSession = FileEditorSession()
     var fileScopeGeneration: UInt64 = 0
     var fileListingGeneration: UInt64 = 0
     var fileReadGeneration: UInt64 = 0
@@ -175,6 +182,10 @@ final class DieterStore {
         )
     }
 
+    var selectedProjectIsLive: Bool {
+        workspaceIsLive && (projectEndpointIDs[selectedProjectID] ?? endpoint.id) == endpoint.id
+    }
+
     var workspaceIsLive: Bool {
         workspaceFreshness.isLive
     }
@@ -201,6 +212,24 @@ final class DieterStore {
         conversationPresentationRevision &+= 1
     }
 
+    @ObservationIgnored let fileListingRead = OwnedRead<Dieter_V1_FileList>()
+    @ObservationIgnored let fileContentRead = OwnedRead<Dieter_V1_FileDocument>()
+    @ObservationIgnored let chatsRead = OwnedRead<Dieter_V1_ChatsResponse>()
+    @ObservationIgnored let schedulesRead = OwnedRead<Dieter_V1_SchedulesResponse>()
+    @ObservationIgnored let terminalsRead = OwnedRead<Dieter_V1_TerminalsResponse>()
+    var filesLoading = false
+    var filesError: String?
+    var fileLoading = false
+    var fileError: String?
+    var selectedFilePath = ""
+    var chatsLoading = false
+    var chatsError: String?
+    var archiveLoading = false
+    var archiveError: String?
+    var archiveRequestGeneration: UInt64 = 0
+    var terminalRequestGeneration: UInt64 = 0
+    var terminalError: String?
+    var schedulesError: String?
     var files: [Dieter_V1_FileEntry] = []
     var filePath = ""
     var fileNavigation = ProjectFileNavigation()
@@ -250,6 +279,7 @@ final class DieterStore {
     var machineDirectoryTask: Task<Void, Never>?
     var machinePresenceLeaseTask: Task<Void, Never>?
     var machineTelemetryTask: Task<Void, Never>?
+    var machineInformationGeneration: UInt64 = 0
     var syncRestoreTask: Task<Void, Never>?
     var stateTask: Task<Void, Never>?
     var conversationTask: Task<Void, Never>?

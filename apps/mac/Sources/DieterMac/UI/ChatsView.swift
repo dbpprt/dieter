@@ -40,8 +40,9 @@ struct ChatsView: View {
     @Environment(DieterStore.self) private var store
     @State private var search = ""
     @State private var showArchived = false
-    @State private var expandedProjects: Set<String> = []
-    @State private var collapsedProjects: Set<String> = []
+    @State private var projectDisclosure = ChatProjectDisclosurePreferences.load(
+        from: DieterAppearance.applicationDefaults()
+    )
     @State private var pinnedPageIndex = 0
     @State private var pinnedChatNavigation = PinnedChatNavigationPreferences.load(
         from: DieterAppearance.applicationDefaults()
@@ -88,6 +89,11 @@ struct ChatsView: View {
                     DieterSearchField(text: $search, placeholder: "Search chats")
                 }
 
+                if store.chatsLoading || store.chatsError != nil {
+                    LoadFeedback(title: "Refreshing chats…", error: store.chatsError,
+                                 retry: { Task { await store.refreshChats() } }, compact: true)
+                        .accessibilityIdentifier("chats.load-feedback")
+                }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         let pinned = projection.pinned
@@ -116,15 +122,15 @@ struct ChatsView: View {
                                     project: project,
                                     chats: projectChats,
                                     showArchived: showArchived,
-                                    expanded: expandedProjects.contains(project.id),
-                                    collapsed: collapsedProjects.contains(project.id),
-                                    toggleExpanded: { toggle(project.id, in: &expandedProjects) },
-                                    toggleCollapsed: { toggle(project.id, in: &collapsedProjects) }
+                                    expanded: projectDisclosure.isExpanded(project.id),
+                                    collapsed: projectDisclosure.isCollapsed(project.id),
+                                    toggleExpanded: { toggleExpanded(project.id) },
+                                    toggleCollapsed: { toggleCollapsed(project.id) }
                                 )
                             }
                         }
 
-                        if projection.visible.isEmpty {
+                        if projection.visible.isEmpty && !store.chatsLoading && store.chatsError == nil {
                             ContentUnavailableView(
                                 search.isEmpty ? (showArchived ? "No archived chats" : "No chats yet") : "No matching chats",
                                 systemImage: showArchived ? "archivebox" : "bubble.left.and.bubble.right",
@@ -160,8 +166,14 @@ struct ChatsView: View {
         .onChange(of: projection.pinned.count) { _, _ in pinnedPageIndex = pinnedPage.page }
     }
 
-    private func toggle(_ id: String, in values: inout Set<String>) {
-        if values.contains(id) { values.remove(id) } else { values.insert(id) }
+    private func toggleExpanded(_ projectID: String) {
+        projectDisclosure.toggleExpanded(projectID)
+        projectDisclosure.save(to: DieterAppearance.applicationDefaults())
+    }
+
+    private func toggleCollapsed(_ projectID: String) {
+        projectDisclosure.toggleCollapsed(projectID)
+        projectDisclosure.save(to: DieterAppearance.applicationDefaults())
     }
 
     private func initializePinnedChatOrderIfNeeded() {
@@ -206,7 +218,12 @@ private struct ChatProjectGroup: View {
                         Text(project.name.uppercased()).font(DieterFont.sectionLabel).tracking(0.8).lineLimit(1).foregroundStyle(DieterTheme.subtle)
                         Text("· \(chats.count)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                     }
-                }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .help(collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats")
+                .accessibilityLabel(collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats")
+                .accessibilityIdentifier("chats.project.\(project.id).toggle")
+                .smokeTarget("chats.project.\(project.id).toggle")
                 Spacer()
                 if !showArchived {
                     Button { store.beginStandaloneChat(projectID: project.id) } label: { Image(systemName: "plus").font(.system(size: 9, weight: .bold)) }
@@ -447,6 +464,7 @@ struct ChatRow: View {
             }
         }
         .accessibilityIdentifier("chat.\(card.id)")
+        .smokeTarget("chat.\(card.id)")
         .sheet(isPresented: $renamePresented) {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Rename chat").font(.title2.weight(.bold))
@@ -564,6 +582,9 @@ private struct StandaloneChatStartView: View {
     @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
     @State private var workspaceDraft = ConversationWorkspaceDraft()
+    @State private var destinationHarnesses: [Dieter_V1_Harness] = []
+    @State private var harnessCatalogLoading = false
+    @State private var harnessCatalogError: String?
 
     private let suggestions = [
         ("Explore the codebase", "Explore this codebase and explain its architecture, important entry points, and current risks."),
@@ -580,7 +601,7 @@ private struct StandaloneChatStartView: View {
         ProjectDestinationCatalog.destination(projectID: projectID, in: destinationGroups)
     }
     private var project: Dieter_V1_Project? { destination?.project }
-    private var harness: Dieter_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == provider } }
+    private var harness: Dieter_V1_Harness? { destinationHarnesses.first { $0.id == provider } }
     private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
     var body: some View {
         VStack(spacing: 0) {
@@ -646,7 +667,7 @@ private struct StandaloneChatStartView: View {
                     .accessibilityValue(destination?.title ?? "No project selected")
 
                     Menu {
-                        ForEach(store.harnessCatalog.harnesses, id: \.id) { item in
+                        ForEach(destinationHarnesses, id: \.id) { item in
                             Button(item.name) {
                                 provider = item.id; model = item.defaultModel
                                 effort = item.models.first(where: { $0.id == model })?.defaultEffort ?? item.effort.options.first?.id ?? ""
@@ -654,6 +675,7 @@ private struct StandaloneChatStartView: View {
                             }
                         }
                     } label: { DieterChipLabel(title: harness?.name ?? "Agent", symbol: "cpu") }.menuStyle(.borderlessButton).fixedSize()
+                        .disabled(destinationHarnesses.isEmpty)
 
                     Menu {
                         ForEach(ConversationWorkspaceMode.allCases) { mode in
@@ -689,6 +711,18 @@ private struct StandaloneChatStartView: View {
                     .padding(.horizontal, 4)
                     .accessibilityIdentifier("chats.new.destination")
                 }
+                if harnessCatalogLoading {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading models from this project's machine…")
+                    }
+                    .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                    .accessibilityIdentifier("chats.new.harness-loading")
+                } else if let harnessCatalogError {
+                    Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
+                        .font(.caption2).foregroundStyle(DieterTheme.coral)
+                        .accessibilityIdentifier("chats.new.harness-error")
+                }
                 if !attachments.isEmpty {
                     AttachmentPreviewStrip(attachments: $attachments)
                         .padding(.horizontal, 4)
@@ -709,7 +743,7 @@ private struct StandaloneChatStartView: View {
                             if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
                                 return .ignored
                             }
-                            if !submitting, !projectID.isEmpty,
+                            if !submitting, !harnessCatalogLoading, harnessCatalogError == nil, harness != nil, !projectID.isEmpty,
                                !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty {
                                 Task { await submit() }
                             }
@@ -730,7 +764,7 @@ private struct StandaloneChatStartView: View {
                             .shadow(color: DieterTheme.shellDeep.opacity(0.28), radius: 8, y: 2)
                     }
                     .buttonStyle(.plain)
-                    .disabled(submitting || projectID.isEmpty || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty))
+                    .disabled(submitting || harnessCatalogLoading || harnessCatalogError != nil || harness == nil || projectID.isEmpty || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty))
                     .accessibilityIdentifier("chats.new.send")
                 }
             }
@@ -742,30 +776,62 @@ private struct StandaloneChatStartView: View {
             importerPresented: $fileImporterPresented,
             attachments: $attachments
         )
-        .onAppear { chooseDefaults() }
+        .onAppear { chooseProject() }
         .onChange(of: store.newChatProjectID) { _, value in if !value.isEmpty { projectID = value } }
+        .task(id: projectID) { await loadDestinationHarnesses(for: projectID) }
     }
 
-    private func chooseDefaults() {
+    private func chooseProject() {
         if projectID.isEmpty {
             projectID = store.newChatProjectID.isEmpty
                 ? (store.selectedProjectID.isEmpty ? (availableProjects.first?.id ?? "") : store.selectedProjectID)
                 : store.newChatProjectID
         }
-        let preferences = ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
-        guard provider.isEmpty,
-              let selection = preferences.resolved(in: store.harnessCatalog.harnesses),
-              let harness = store.harnessCatalog.harnesses.first(where: { $0.id == selection.provider }) else { return }
+    }
+
+    private func loadDestinationHarnesses(for requestedProjectID: String) async {
+        guard !requestedProjectID.isEmpty else {
+            destinationHarnesses = []
+            return
+        }
+        harnessCatalogLoading = true
+        harnessCatalogError = nil
+        defer { if projectID == requestedProjectID { harnessCatalogLoading = false } }
+        let catalog: Dieter_V1_HarnessCatalog
+        do {
+            catalog = try await store.loadHarnessCatalog(forProjectID: requestedProjectID)
+        } catch {
+            guard projectID == requestedProjectID else { return }
+            destinationHarnesses = []
+            harnessCatalogError = DieterRPCFailure.message(for: error)
+            return
+        }
+        guard projectID == requestedProjectID else { return }
+        destinationHarnesses = catalog.harnesses
+        let initializing = provider.isEmpty
+        let preferences = initializing
+            ? ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
+            : ConversationCreationPreferences(provider: provider, model: model, effort: effort, workspaceMode: workspaceDraft.mode)
+        guard let selection = preferences.resolved(in: destinationHarnesses),
+              let harness = destinationHarnesses.first(where: { $0.id == selection.provider }) else {
+            harnessCatalogError = "This machine did not advertise any usable agent models."
+            return
+        }
+        let previousProvider = provider
         provider = selection.provider
         model = selection.model
         effort = selection.effort
-        workspaceDraft.mode = selection.workspaceMode
-        providerOptions = ProviderOptionValues.defaults(for: harness)
+        if initializing { workspaceDraft.mode = selection.workspaceMode }
+        providerOptions = ProviderOptionValues.resolved(
+            for: harness,
+            existing: previousProvider == selection.provider ? providerOptions : [:]
+        )
     }
 
     private func submit() async {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (!text.isEmpty || !attachments.isEmpty), !projectID.isEmpty else { return }
+        guard (!text.isEmpty || !attachments.isEmpty), !projectID.isEmpty,
+              !harnessCatalogLoading, harnessCatalogError == nil, harness != nil else { return }
         submitting = true
         ConversationCreationPreferences(
             provider: provider,

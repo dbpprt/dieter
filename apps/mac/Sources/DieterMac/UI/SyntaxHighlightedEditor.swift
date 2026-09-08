@@ -158,7 +158,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         textView.importsGraphics = false
         textView.allowsUndo = true
         textView.drawsBackground = false
-        textView.insertionPointColor = .white
+        textView.insertionPointColor = .textColor
         textView.textContainerInset = NSSize(width: 14, height: 12)
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -187,6 +187,14 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             context.coordinator.highlight(force: false)
         }
         container.needsLayout = true
+    }
+
+    static func dismantleNSView(_ container: SyntaxEditorContainer, coordinator: Coordinator) {
+        if container.window?.firstResponder === container.textView {
+            container.window?.makeFirstResponder(nil)
+        }
+        coordinator.parent.session.detach(container.textView)
+        container.textView.delegate = nil
     }
 
     @MainActor
@@ -349,14 +357,14 @@ private enum FileSyntaxHighlighter {
     static let backgroundFullHighlightLimit = 180_000
     static let baseFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
     static let boldFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
-    static let foreground = NSColor(calibratedWhite: 0.87, alpha: 1)
-    static let keyword = NSColor(calibratedRed: 0.77, green: 0.57, blue: 1, alpha: 1)
-    static let string = NSColor(calibratedRed: 0.63, green: 0.83, blue: 0.56, alpha: 1)
-    static let comment = NSColor(calibratedRed: 0.49, green: 0.52, blue: 0.57, alpha: 1)
-    static let number = NSColor(calibratedRed: 0.93, green: 0.68, blue: 0.42, alpha: 1)
-    static let function = NSColor(calibratedRed: 0.43, green: 0.76, blue: 0.98, alpha: 1)
-    static let type = NSColor(calibratedRed: 0.48, green: 0.83, blue: 0.80, alpha: 1)
-    static let property = NSColor(calibratedRed: 0.90, green: 0.58, blue: 0.76, alpha: 1)
+    static let foreground = NSColor.textColor
+    static let keyword = NSColor.systemPurple
+    static let string = NSColor.systemGreen
+    static let comment = NSColor.secondaryLabelColor
+    static let number = NSColor.systemOrange
+    static let function = NSColor.systemBlue
+    static let type = NSColor.systemTeal
+    static let property = NSColor.systemPink
 
     static var baseAttributes: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()

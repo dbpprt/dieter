@@ -144,6 +144,13 @@ internal fun resolveConversationId(
     resolutions: Map<String, String>,
 ): String? = conversationId?.let { resolutions[it] ?: it }
 
+internal fun conversationCreationFailure(entries: List<AndroidOutboxEntry>, id: String): String? =
+    entries.firstOrNull {
+        (it.optimisticId == id || it.serverId == id) &&
+            it.kind in setOf(OutboxKind.CREATE_CARD, OutboxKind.CREATE_CHAT) &&
+            it.state == OutboxState.FAILED
+    }?.lastError
+
 internal fun optimisticConversationId(entry: AndroidOutboxEntry): String = entry.serverId ?: entry.optimisticId
 
 internal fun optimisticInitialMessageId(entry: AndroidOutboxEntry): String? {

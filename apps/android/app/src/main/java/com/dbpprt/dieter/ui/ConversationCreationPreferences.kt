@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.v1.Harness
 
@@ -9,6 +10,24 @@ internal data class ResolvedConversationCreationPreferences(
     val effort: String,
     val workspaceMode: ConversationWorkspaceMode,
 )
+
+internal fun harnessCatalogMatchesProject(
+    projectId: String,
+    catalogEndpointId: String?,
+    projectHosts: Map<String, ProjectHost>,
+): Boolean {
+    if (projectId.isBlank() || catalogEndpointId.isNullOrBlank()) return false
+    return projectHosts[projectId]?.endpointId?.let(catalogEndpointId::equals) ?: true
+}
+
+internal fun harnessCatalogSupportsSelection(
+    harnesses: List<Harness>,
+    provider: String,
+    model: String,
+): Boolean = harnesses.firstOrNull { it.id == provider }
+    ?.modelsList
+    ?.any { it.id == model }
+    ?: false
 
 internal fun resolveConversationCreationPreferences(
     saved: ConversationCreationPreferences,

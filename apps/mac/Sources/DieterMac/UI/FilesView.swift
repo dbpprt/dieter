@@ -10,12 +10,12 @@ struct FilesView: View {
     @State private var newDirectory = false
     @State private var movingEntry: Dieter_V1_FileEntry?
     @State private var moveDestination = ""
-    @State private var editorSession = FileEditorSession()
+    private var editorSession: FileEditorSession { store.fileEditorSession }
 
     var body: some View {
         @Bindable var store = store
         VStack(spacing: 0) {
-                HSplitView {
+                FilePaneSplit {
             VStack(spacing: 0) {
                 FluidPaneChrome(background: DieterTheme.sidebar, spacing: 9) {
                     HStack(spacing: 8) {
@@ -42,8 +42,8 @@ struct FilesView: View {
                             prominent: true
                         )
                         Menu {
-                            Button("New file…") { newDirectory = false; createPresented = true }
-                            Button("New folder…") { newDirectory = true; createPresented = true }
+                            Button("New file…") { newDirectory = false; createPresented = true }.disabled(!store.selectedProjectIsLive)
+                            Button("New folder…") { newDirectory = true; createPresented = true }.disabled(!store.selectedProjectIsLive)
                             if store.fileScopeCardID != nil {
                                 Divider()
                                 Button("Return to project root") {
@@ -64,6 +64,11 @@ struct FilesView: View {
                         Spacer()
                         if store.showHiddenFiles { Text("Hidden files").font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.shell) }
                     }
+                }
+                if store.filesLoading || store.filesError != nil {
+                    LoadFeedback(title: "Loading files…", error: store.filesError,
+                                 retry: { Task { await store.loadFiles() } }, compact: true)
+                        .accessibilityIdentifier("files.list-feedback")
                 }
                 List {
                     if !store.filePath.isEmpty {
@@ -95,24 +100,34 @@ struct FilesView: View {
                                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                                 }
                             }
-                            .font(.system(size: 12, weight: store.fileDocument?.path == entry.path ? .semibold : .regular))
+                            .font(.system(size: 12, weight: store.selectedFilePath == entry.path ? .semibold : .regular))
                             .padding(.horizontal, 8).frame(minHeight: 30)
-                            .background(store.fileDocument?.path == entry.path ? DieterTheme.selection : .clear, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+                            .background(store.selectedFilePath == entry.path ? DieterTheme.selection : .clear, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("files.row.\(entry.path)")
+                        .smokeTarget("files.row.\(entry.path)")
                         .disabled(entry.kind == "directory" && store.fileNavigationLoading)
                         .listRowInsets(EdgeInsets(top: 1, leading: 6, bottom: 1, trailing: 6))
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                        .contextMenu { Button("Move or rename…") { movingEntry = entry; moveDestination = entry.path }; Button("Delete", role: .destructive) { Task { await store.deleteFile(path: entry.path, recursive: entry.kind == "directory") } } }
+                        .contextMenu {
+                            Button("Move or rename…") { movingEntry = entry; moveDestination = entry.path }.disabled(!store.selectedProjectIsLive)
+                            Button("Delete", role: .destructive) { Task { await store.deleteFile(path: entry.path, recursive: entry.kind == "directory") } }.disabled(!store.selectedProjectIsLive)
+                        }
                     }
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-            }.frame(minWidth: 260, idealWidth: 340, maxWidth: 440).background(DieterTheme.sidebar)
-
-            if let document = store.fileDocument {
+            }.frame(maxHeight: .infinity, alignment: .top).background(DieterTheme.sidebar)
+            } preview: {
+            VStack(spacing: 0) {
+            if (store.fileLoading || store.fileError != nil) && store.fileDocument == nil {
+                LoadFeedback(title: "Loading \(store.selectedFilePath)…", error: store.fileError,
+                             retry: { Task { await store.openFile(path: store.selectedFilePath) } })
+                    .accessibilityIdentifier("files.preview-feedback")
+            } else if let document = store.fileDocument {
                 VStack(spacing: 0) {
                     FluidPaneChrome(background: DieterTheme.sidebar, spacing: 8) {
                         HStack(spacing: 9) {
@@ -125,7 +140,8 @@ struct FilesView: View {
                             Button("Save") { Task { await save(document) } }
                                 .buttonStyle(DieterPrimaryButtonStyle())
                                 .keyboardShortcut("s", modifiers: .command)
-                                .disabled(document.binary || !editorSession.isDirty)
+                                .accessibilityIdentifier("files.save").smokeTarget("files.save")
+                                .disabled(document.binary || !editorSession.isDirty || !store.selectedProjectIsLive)
                         }
                     } secondary: {
                         HStack(spacing: 8) {
@@ -136,6 +152,10 @@ struct FilesView: View {
                             if !document.binary { Text("Editable") }
                         }
                         .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                    }
+                    if store.fileLoading || store.fileError != nil {
+                        LoadFeedback(title: "Refreshing \(document.name)…", error: store.fileError,
+                                     retry: { Task { await store.openFile(path: document.path) } }, compact: true)
                     }
                     if let image = previewImage(document) {
                         ProjectImagePreview(image: image)
@@ -174,9 +194,10 @@ struct FilesView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onChange(of: store.fileDocument?.revision) { _, _ in
+        .onChange(of: store.fileDocument.map { "\($0.path):\($0.revision)" }) { _, _ in
             guard let document = store.fileDocument else { return }
             editorSession.prepare(
                 documentKey: "\(document.path):\(document.revision)",

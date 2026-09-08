@@ -1517,6 +1517,9 @@ func grpcFailure(err error) error {
 	if errors.Is(err, store.ErrCapacity) || errors.Is(err, app.ErrInsufficientStorage) {
 		return status.Error(codes.ResourceExhausted, err.Error())
 	}
+	if errors.Is(err, harness.ErrCatalogUnavailable) {
+		return status.Error(codes.Unavailable, err.Error())
+	}
 	if errors.Is(err, store.ErrCardActive) {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	}

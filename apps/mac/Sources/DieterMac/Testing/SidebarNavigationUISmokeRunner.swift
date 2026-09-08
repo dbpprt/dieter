@@ -3,15 +3,16 @@ import AppKit
 import Foundation
 import DieterAPI
 
-/// A direct native-app smoke driver for sidebar ordering and persistence.
+/// A direct native-app smoke driver for sidebar and chat-project persistence.
 ///
 /// The shell runner launches the packaged app twice with one isolated defaults
 /// suite. The first launch clicks the real SwiftUI controls, records an accepted
-/// project drop, and drags the sidebar divider. The second launch proves those
-/// states were reconstructed in the rendered sidebar.
+/// project drop, drags the sidebar divider, and collapses a project in Chats.
+/// The second launch proves those states were reconstructed in the rendered UI.
 @MainActor
 enum SidebarNavigationUISmokeRunner {
     private static let projectIDs = ["p_sidebar_one", "p_sidebar_two", "p_sidebar_three"]
+    private static let chatIDs = ["c_sidebar_one", "c_sidebar_two", "c_sidebar_three"]
     private static let expectedMachineNames = ["alpha", "Beta", "Zulu"]
 
     static func run(store: DieterStore) async {
@@ -46,9 +47,9 @@ enum SidebarNavigationUISmokeRunner {
             : "failed: \(sidebarMachineNames.joined(separator: ","))"
         switch phase {
         case "prepare":
-            await prepare(window: window, results: &results)
+            await prepare(store: store, window: window, results: &results)
         case "verify":
-            await verify(window: window, results: &results)
+            await verify(store: store, window: window, results: &results)
         default:
             results["phase"] = "failed: unknown phase \(phase)"
         }
@@ -62,7 +63,7 @@ enum SidebarNavigationUISmokeRunner {
     private static let firstRowTop: CGFloat = 271
     private static let secondRowTop: CGFloat = 314
 
-    private static func prepare(window: NSWindow, results: inout [String: String]) async {
+    private static func prepare(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
         click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
         try? await DieterTaskSleep.milliseconds(450)
         var preferences = loadPreferences()
@@ -111,9 +112,20 @@ enum SidebarNavigationUISmokeRunner {
         } else {
             results["resize-drag"] = "native resize passed: saved \(resizedWidth)"
         }
+
+        await showChats(store: store, window: window)
+        let chatWasVisible = NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) != nil
+        let clicked = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
+        let saved = await NativeUIAccessibility.wait {
+            loadChatPreferences().isCollapsed(projectIDs[0])
+        }
+        results["chat-collapse-click"] = clicked && saved ? "passed" : "failed: collapsed state was not saved"
+        results["chat-collapse-rendered"] = chatWasVisible && NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) == nil
+            ? "passed"
+            : "failed: project chat rows did not collapse"
     }
 
-    private static func verify(window: NSWindow, results: inout [String: String]) async {
+    private static func verify(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
         let restored = loadPreferences()
         results["restored-order"] = restored.orderedIDs(from: projectIDs) == [projectIDs[2], projectIDs[0], projectIDs[1]] ? "passed" : "failed"
         results["restored-expand"] = restored.isExpanded(projectIDs[0]) ? "passed" : "failed"
@@ -133,6 +145,21 @@ enum SidebarNavigationUISmokeRunner {
         // The saved-expanded project renders second; collapsing it clears the flag.
         click(window: window, x: chevronX(), distanceFromTop: secondRowTop)
         try? await DieterTaskSleep.milliseconds(350)
+
+        await showChats(store: store, window: window)
+        let restoredChatPreferences = loadChatPreferences()
+        results["chat-restored-collapse"] = restoredChatPreferences.isCollapsed(projectIDs[0]) &&
+            NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) == nil
+            ? "passed"
+            : "failed: collapsed Chats project was not restored"
+        let clicked = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
+        let expanded = await NativeUIAccessibility.wait {
+            !loadChatPreferences().isCollapsed(projectIDs[0]) &&
+                NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) != nil
+        }
+        results["chat-expand-in-relaunched-ui"] = clicked && expanded ? "passed" : "failed"
+        _ = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
+        _ = await NativeUIAccessibility.wait { loadChatPreferences().isCollapsed(projectIDs[0]) }
         interacted = loadPreferences()
         results["expand-in-relaunched-ui"] = !interacted.isExpanded(projectIDs[0]) ? "passed" : "failed: saved expanded project was not rendered second"
         click(window: window, x: chevronX(), distanceFromTop: secondRowTop)
@@ -193,8 +220,18 @@ enum SidebarNavigationUISmokeRunner {
         store.machineConnectionStatuses = Dictionary(uniqueKeysWithValues: machines.map {
             ($0.id, MachineConnectionStatus(route: .local, latencyMilliseconds: 3))
         })
-        store.chats = []
-        store.chatProjects = []
+        var chats: [Dieter_V1_Card] = []
+        for (index, projectID) in projectIDs.enumerated() {
+            var chat = Dieter_V1_Card()
+            chat.id = chatIDs[index]
+            chat.projectID = projectID
+            chat.scope = "chat"
+            chat.title = "\(names[index]) planning"
+            chat.updatedAt = "2026-09-08T06:00:0\(index)Z"
+            chats.append(chat)
+        }
+        store.chats = chats
+        store.chatProjects = projects
         store.state.project = projects[0]
         store.state.projects = projects
         store.state.boards = boardsByProject[projectIDs[0]] ?? []
@@ -255,6 +292,18 @@ enum SidebarNavigationUISmokeRunner {
 
     private static func loadPreferences() -> SidebarProjectNavigationPreferences {
         SidebarProjectNavigationPreferences.load(from: SidebarProjectNavigationPreferences.applicationDefaults())
+    }
+
+    private static func loadChatPreferences() -> ChatProjectDisclosurePreferences {
+        ChatProjectDisclosurePreferences.load(from: DieterAppearance.applicationDefaults())
+    }
+
+    private static func showChats(store: DieterStore, window: NSWindow) async {
+        store.closeConversation()
+        store.section = .chats
+        _ = await NativeUIAccessibility.wait {
+            NativeUIAccessibility.find("chats.project.\(projectIDs[0]).toggle", in: window) != nil
+        }
     }
 
     private static func persistedSidebarWidth() -> CGFloat {

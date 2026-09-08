@@ -20,17 +20,21 @@ struct NewConversationSheet: View {
     @State private var attachmentDropTargeted = false
     @State private var submitting = false
     @State private var workspaceDraft = ConversationWorkspaceDraft()
+    @State private var destinationHarnesses: [Dieter_V1_Harness] = []
+    @State private var harnessCatalogLoading = false
+    @State private var harnessCatalogError: String?
     @FocusState private var focusedField: Field?
 
     private enum Field { case title, prompt }
 
-    private var harness: Dieter_V1_Harness? { store.harnessCatalog.harnesses.first { $0.id == provider } }
+    private var harness: Dieter_V1_Harness? { destinationHarnesses.first { $0.id == provider } }
     private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
     private var selectedLane: Dieter_V1_Lane? { store.selectedBoard?.lanes.first { $0.id == lane } }
     private var project: Dieter_V1_Project? { store.selectedProject }
     private var deferred: Bool { lane.lowercased() != "running" }
     private var canSubmit: Bool {
-        !submitting && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !submitting && !harnessCatalogLoading && harnessCatalogError == nil && harness != nil &&
+            !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -130,7 +134,7 @@ struct NewConversationSheet: View {
                             }
                             newCardWorkspaceButton
                             newCardMenu(title: "Provider", value: harness?.name ?? "Server default", symbol: "cpu") {
-                                ForEach(store.harnessCatalog.harnesses, id: \.id) { item in
+                                ForEach(destinationHarnesses, id: \.id) { item in
                                     Button(item.name) {
                                         provider = item.id; model = item.defaultModel
                                         effort = item.models.first(where: { $0.id == item.defaultModel })?.defaultEffort ?? ""
@@ -158,6 +162,16 @@ struct NewConversationSheet: View {
                             ProviderOptionChips(options: harness?.options ?? [], values: $providerOptions)
                             Spacer()
                         }
+                    }
+
+                    if harnessCatalogLoading {
+                        Label("Loading models from this project's machine…", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                            .accessibilityIdentifier("new-card.harness-loading")
+                    } else if let harnessCatalogError {
+                        Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(DieterTheme.coral)
+                            .accessibilityIdentifier("new-card.harness-error")
                     }
 
                     HStack(spacing: 10) {
@@ -204,24 +218,41 @@ struct NewConversationSheet: View {
             attachments: $attachments
         )
         .task {
-            chooseDefaults()
+            await loadDestinationHarnesses()
             await Task.yield()
             focusedField = .title
         }
     }
 
-    private func chooseDefaults() {
+    private func loadDestinationHarnesses() async {
         if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
         if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
-        let preferences = ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
-        guard provider.isEmpty,
-              let selection = preferences.resolved(in: store.harnessCatalog.harnesses),
-              let harness = store.harnessCatalog.harnesses.first(where: { $0.id == selection.provider }) else { return }
+        guard let projectID = project?.id, !projectID.isEmpty else { return }
+        harnessCatalogLoading = true
+        harnessCatalogError = nil
+        defer { harnessCatalogLoading = false }
+        do {
+            destinationHarnesses = try await store.loadHarnessCatalog(forProjectID: projectID).harnesses
+        } catch {
+            harnessCatalogError = DieterRPCFailure.message(for: error)
+            destinationHarnesses = []
+            return
+        }
+        let initializing = provider.isEmpty
+        let preferences = initializing
+            ? ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
+            : ConversationCreationPreferences(provider: provider, model: model, effort: effort, workspaceMode: workspaceDraft.mode)
+        guard let selection = preferences.resolved(in: destinationHarnesses),
+              let harness = destinationHarnesses.first(where: { $0.id == selection.provider }) else { return }
+        let previousProvider = provider
         provider = selection.provider
         model = selection.model
         effort = selection.effort
-        workspaceDraft.mode = selection.workspaceMode
-        providerOptions = ProviderOptionValues.defaults(for: harness)
+        if initializing { workspaceDraft.mode = selection.workspaceMode }
+        providerOptions = ProviderOptionValues.resolved(
+            for: harness,
+            existing: previousProvider == selection.provider ? providerOptions : [:]
+        )
     }
 
     private var laneTitle: String {
@@ -699,6 +730,12 @@ struct HarnessFields: View {
 enum ProviderOptionValues {
     static func defaults(for harness: Dieter_V1_Harness?) -> [String: String] {
         Dictionary((harness?.options ?? []).map { ($0.id, $0.defaultValue) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    static func resolved(for harness: Dieter_V1_Harness?, existing: [String: String]) -> [String: String] {
+        Dictionary((harness?.options ?? []).map { option in
+            (option.id, existing[option.id] ?? option.defaultValue)
+        }, uniquingKeysWith: { first, _ in first })
     }
 }
 

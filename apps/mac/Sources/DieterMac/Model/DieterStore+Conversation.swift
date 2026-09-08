@@ -12,8 +12,13 @@ extension DieterStore {
         guard let rpc else { return }
         chatsRequestGeneration &+= 1
         let generation = chatsRequestGeneration
+        chatsLoading = true
+        chatsError = nil
+        defer { if generation == chatsRequestGeneration { chatsLoading = false } }
         do {
-            let response = try await rpc.chats(includeArchived: includeArchived)
+            let response = try await chatsRead.value(key: "\(ObjectIdentifier(rpc)):\(includeArchived)") {
+                try await rpc.chats(includeArchived: includeArchived)
+            }
             guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
             let refreshedChats = reconcilePendingChatPins(response.chats)
             for card in refreshedChats {
@@ -28,11 +33,11 @@ extension DieterStore {
                 projectDirectory[project.id] = project
                 projectEndpointIDs[project.id] = endpoint.id
             }
-            chats.removeAll { previousProjectIDs.contains($0.projectID) }
-            chats.append(contentsOf: refreshedChats)
-            chats = Array(chats.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
+            let combined = chats.filter { !previousProjectIDs.contains($0.projectID) } + refreshedChats
+            let nextChats = Array(combined.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
                 ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt)
             }
+            if chats != nextChats { chats = nextChats }
             chatProjects = projects
             updateSelectedState()
             rebuildOutboxOverlays()
@@ -41,11 +46,15 @@ extension DieterStore {
             }
         } catch {
             guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
-            show(error)
+            if !Self.isExpectedCancellation(error) { chatsError = DieterRPCFailure.message(for: error) }
         }
     }
 
     func openConversation(cardID: String, chat: Bool = false) async {
+        conversationSelectionGeneration &+= 1
+        let selectionGeneration = conversationSelectionGeneration
+        conversationError = nil
+        conversationRead.cancel()
         let knownChat = chats.first(where: { $0.id == cardID })
             ?? state.chats.first(where: { $0.id == cardID })
         let card = knownChat
@@ -87,14 +96,14 @@ extension DieterStore {
                 snapshot.conversation.draftAttachments = request.attachments
                 conversation = snapshot
                 selectedDetail = snapshot.detail
-                if entry.state == .failed, let failure = entry.lastError {
-                    errorMessage = "Could not create this conversation: \(failure)"
-                }
             }
             return
         }
 
-        if let cached = projectedConversation(cardID: cardID, endpointID: endpointID) {
+        conversationLoading = true
+        let cached = await projectedConversation(cardID: cardID, endpointID: endpointID)
+        guard selectionGeneration == conversationSelectionGeneration else { return }
+        if let cached {
             await acceptConversation(
                 cached,
                 chat: opensChat,
@@ -105,17 +114,20 @@ extension DieterStore {
         } else {
             conversationLoading = true
         }
+        guard selectionGeneration == conversationSelectionGeneration else { return }
         conversationSyncing = true
         if !projectID.isEmpty, !(await ensureProjectConnection(projectID, reportOffline: false)) {
-            guard (selectedCardID ?? selectedChatID) == cardID else { return }
+            guard selectionGeneration == conversationSelectionGeneration, (selectedCardID ?? selectedChatID) == cardID else { return }
             conversationLoading = false
             conversationSyncing = false
+            conversationError = "This machine is unavailable. Cached messages remain readable."
             return
         }
-        guard (selectedCardID ?? selectedChatID) == cardID else { return }
+        guard selectionGeneration == conversationSelectionGeneration, (selectedCardID ?? selectedChatID) == cardID else { return }
         guard let rpc else {
             conversationLoading = false
             conversationSyncing = false
+            conversationError = "This machine is unavailable. Reconnect and retry."
             return
         }
         await fetchConversation(cardID: cardID, chat: opensChat, rpc: rpc)
@@ -127,19 +139,26 @@ extension DieterStore {
         rpc: DieterRPC,
         cancellationRetries: Int = 0
     ) async {
+        let selectionGeneration = conversationSelectionGeneration
         do {
-            let snapshot = try await rpc.conversation(cardID: cardID, limit: conversationPageSize)
-            guard (selectedCardID ?? selectedChatID) == cardID else { return }
+            let snapshot = try await conversationRead.value(key: "\(ObjectIdentifier(rpc)):\(cardID)") {
+                try await rpc.conversation(cardID: cardID, limit: conversationPageSize)
+            }
+            guard self.rpc === rpc else { return }
+            guard selectionGeneration == conversationSelectionGeneration, (selectedCardID ?? selectedChatID) == cardID else { return }
             await acceptConversation(snapshot, chat: chat)
+            guard self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
+                  (selectedCardID ?? selectedChatID) == cardID else { return }
             let after = snapshot.conversation.lastSeq
             conversationTask = Task { [weak self] in
                 do {
                     try await rpc.watchConversation(cardID: cardID, after: after) { [weak self] update in
-                        await self?.applyConversationUpdate(update, cardID: cardID)
+                        await self?.applyConversationUpdate(update, cardID: cardID, client: rpc, selectionGeneration: selectionGeneration)
                     }
                 } catch where Self.isExpectedCancellation(error) { }
                 catch {
-                    guard let self, (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
+                    guard let self, self.rpc === rpc, selectionGeneration == self.conversationSelectionGeneration,
+                          (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
                     self.conversationSyncing = false
                     if DieterRPCFailure.isTransient(error) {
                         self.connectionStopped(error, client: rpc)
@@ -151,7 +170,7 @@ extension DieterStore {
         } catch {
             switch DieterConversationOpenFailurePolicy.disposition(
                 for: error,
-                selectionMatches: (selectedCardID ?? selectedChatID) == cardID,
+                selectionMatches: selectionGeneration == conversationSelectionGeneration && self.rpc === rpc && (selectedCardID ?? selectedChatID) == cardID,
                 cancellationRetries: cancellationRetries
             ) {
             case .ignore:
@@ -159,7 +178,7 @@ extension DieterStore {
             case .retry:
                 Task { @MainActor [weak self] in
                     await Task.yield()
-                    guard let self,
+                    guard let self, selectionGeneration == self.conversationSelectionGeneration,
                           (self.selectedCardID ?? self.selectedChatID) == cardID else { return }
                     guard let currentRPC = self.rpc else {
                         self.conversationLoading = false
@@ -174,12 +193,13 @@ extension DieterStore {
                     )
                 }
             case .report:
+                conversationError = DieterRPCFailure.message(for: error)
                 conversationLoading = false
                 conversationSyncing = false
                 if DieterRPCFailure.isTransient(error) {
                     connectionStopped(error, client: rpc)
                 } else {
-                    errorMessage = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
+                    conversationError = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
                 }
             }
         }
@@ -197,6 +217,7 @@ extension DieterStore {
         }
         if selectedDetail != snapshot.detail { selectedDetail = snapshot.detail }
         conversationLoading = false
+        conversationError = nil
         conversationSyncing = false
         conversationLastRefreshedAt = refreshedAt
         composerProvider = snapshot.detail.card.provider
@@ -266,7 +287,10 @@ extension DieterStore {
         conversationHistoryLoading = false
     }
 
-    func applyConversationUpdate(_ update: Dieter_V1_ConversationUpdate, cardID: String) async {
+    func applyConversationUpdate(_ update: Dieter_V1_ConversationUpdate, cardID: String,
+                                 client: DieterRPC? = nil, selectionGeneration: UInt64? = nil) async {
+        if let client, rpc !== client { return }
+        if let selectionGeneration, selectionGeneration != conversationSelectionGeneration { return }
         guard (selectedCardID ?? selectedChatID) == cardID else { return }
         apply(update)
         conversationSyncing = false
@@ -276,6 +300,8 @@ extension DieterStore {
     }
 
     func closeConversation() {
+        conversationSelectionGeneration &+= 1
+        conversationRead.cancel()
         if let selectedChatID, let card = chats.first(where: { $0.id == selectedChatID }) { markChatRead(card) }
         conversationTask?.cancel(); conversationTask = nil
         gitOperationTask?.cancel(); gitOperationTask = nil
@@ -691,7 +717,7 @@ extension DieterStore {
     }
 
     func move(_ card: Dieter_V1_Card, lane: String, position: Int64? = nil) async {
-        guard let rpc else { return }
+        guard selectedProjectIsLive, let rpc else { return }
         let original = state.cards.first(where: { $0.id == card.id }) ?? card
         let optimisticPosition = position ?? ((boardCards.filter { $0.id != card.id && $0.lane == lane }.map(\.position).max() ?? 0) + 1_024)
 
@@ -848,11 +874,12 @@ extension DieterStore {
     }
 
     func cancel(_ card: Dieter_V1_Card) async {
+        guard await ensureProjectConnection(card.projectID), workspaceIsLive else { return }
         do { try await rpc?.cancelCard(id: card.id); await refreshState() } catch { show(error) }
     }
 
     func setLabels(_ card: Dieter_V1_Card, ids: [String]) async {
-        guard let rpc else { return }
+        guard selectedProjectIsLive, let rpc else { return }
         let normalized = ids.reduce(into: [String]()) { result, id in
             if !result.contains(id) { result.append(id) }
         }
@@ -893,10 +920,24 @@ extension DieterStore {
 
     func loadArchive() async {
         guard let rpc else { return }
+        archiveRequestGeneration &+= 1
+        let generation = archiveRequestGeneration
+        let boardID = selectedBoardID
+        archiveLoading = true
+        archiveError = nil
+        defer { if generation == archiveRequestGeneration { archiveLoading = false } }
         do {
-            archivedProjects = try await rpc.archivedProjects().projects
-            if !selectedBoardID.isEmpty { archivedCards = try await rpc.archivedCards(boardID: selectedBoardID).cards }
+            async let projects = rpc.archivedProjects().projects
+            let cards = boardID.isEmpty ? [] : try await rpc.archivedCards(boardID: boardID).cards
+            let loadedProjects = try await projects
+            guard self.rpc === rpc, generation == archiveRequestGeneration, boardID == selectedBoardID else { return }
+            archivedProjects = loadedProjects
+            archivedCards = cards
             await refreshChats(includeArchived: true)
-        } catch { show(error) }
+            if generation == archiveRequestGeneration { archiveError = chatsError }
+        } catch {
+            guard self.rpc === rpc, generation == archiveRequestGeneration else { return }
+            if !Self.isExpectedCancellation(error) { archiveError = DieterRPCFailure.message(for: error) }
+        }
     }
 }

@@ -940,6 +940,9 @@ struct WorkspaceDiffContent: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .overlay {
+            if builtKey.isEmpty { LoadFeedback(title: "Preparing diff…") }
+        }
         .task(id: buildKey) {
             guard builtKey != buildKey else { return }
             let key = buildKey
@@ -948,7 +951,7 @@ struct WorkspaceDiffContent: View {
             let commitSHA = diff.commitSha
             let split = split
             let comments = comments
-            let next = await Task.detached(priority: .userInitiated) {
+            guard let next = try? await BackgroundPreparation.run({
                 WorkspaceDiffProjection.build(
                     patch: patch,
                     path: path,
@@ -956,7 +959,7 @@ struct WorkspaceDiffContent: View {
                     split: split,
                     comments: comments
                 )
-            }.value
+            }) else { return }
             guard !Task.isCancelled, buildKey == key else { return }
             projection = next
             builtKey = key

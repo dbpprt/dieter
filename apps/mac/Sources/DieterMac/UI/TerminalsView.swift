@@ -37,25 +37,25 @@ struct TerminalsView: View {
                     .foregroundStyle(.white)
                     .background(DieterTheme.shellDeep, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     .keyboardShortcut("t", modifiers: [.command, .shift])
-                    .accessibilityIdentifier("terminals.new")
+                    .accessibilityIdentifier("terminals.new").disabled(!store.workspaceIsLive)
                 }
             }
 
             Divider().overlay(DieterTheme.border)
 
+            if !store.terminals.isEmpty, store.terminalLoading || store.terminalError != nil {
+                LoadFeedback(title: "Refreshing terminals…", error: store.terminalError,
+                             retry: { Task { await store.loadTerminals() } }, compact: true)
+            }
             if !store.terminals.isEmpty {
                 terminalTabs
                 Divider().overlay(DieterTheme.border)
             }
 
             if store.terminalLoading && store.terminals.isEmpty {
-                VStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading persistent terminals…")
-                        .font(DieterFont.meta)
-                        .foregroundStyle(DieterTheme.tertiary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                LoadFeedback(title: "Loading persistent terminals…")
+            } else if let error = store.terminalError, store.terminals.isEmpty {
+                LoadFeedback(title: "Terminals", error: error, retry: { Task { await store.loadTerminals() } })
             } else if let selected {
                 terminalWorkspace(selected)
             } else {
@@ -93,9 +93,7 @@ struct TerminalsView: View {
         } message: {
             Text("Use a short name that describes what is running in this session.")
         }
-        .task {
-            if store.terminals.isEmpty { await store.loadTerminals() }
-        }
+        .task { await store.loadTerminals() }
     }
 
     private var terminalTabs: some View {

@@ -33,24 +33,28 @@ struct ArchiveView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
             }
+            if store.archiveLoading || store.archiveError != nil {
+                LoadFeedback(title: "Loading archive…", error: store.archiveError,
+                             retry: { Task { await store.loadArchive() } }, compact: true)
+            }
             List {
                 if scope == "Cards" {
                     ForEach(store.archivedCards, id: \.id) { card in
-                        HStack { VStack(alignment: .leading) { Text(card.title).fontWeight(.semibold); Text(card.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2) }; Spacer(); Button("Restore") { Task { await store.archive(card, archived: false); await store.loadArchive() } }.buttonStyle(DieterSecondaryButtonStyle()) }
+                        HStack { VStack(alignment: .leading) { Text(card.title).fontWeight(.semibold); Text(card.summary).font(.caption).foregroundStyle(.secondary).lineLimit(2) }; Spacer(); Button("Restore") { Task { await store.archive(card, archived: false); await store.loadArchive() } }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.workspaceIsLive) }
                             .padding(11).background(DieterTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
                             .listRowSeparator(.hidden).listRowBackground(Color.clear)
                     }
                 } else if scope == "Chats" {
                     ForEach(store.chats.filter(\.archived), id: \.id) { card in
-                        HStack { VStack(alignment: .leading) { Text(card.title).fontWeight(.semibold); Text(card.updatedAt).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await store.archive(card, archived: false); await store.loadArchive() } }.buttonStyle(DieterSecondaryButtonStyle()) }
+                        HStack { VStack(alignment: .leading) { Text(card.title).fontWeight(.semibold); Text(card.updatedAt).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await store.archive(card, archived: false); await store.loadArchive() } }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.workspaceIsLive) }
                             .padding(11).background(DieterTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
                             .listRowSeparator(.hidden).listRowBackground(Color.clear)
                     }
                 } else {
                     ForEach(store.archivedProjects, id: \.id) { project in
-                        HStack { VStack(alignment: .leading) { Text(project.name).fontWeight(.semibold); Text(project.path).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await store.setProjectArchived(id: project.id, archived: false) } }.buttonStyle(DieterSecondaryButtonStyle()) }
+                        HStack { VStack(alignment: .leading) { Text(project.name).fontWeight(.semibold); Text(project.path).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await store.setProjectArchived(id: project.id, archived: false) } }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.workspaceIsLive) }
                             .padding(11).background(DieterTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
                             .listRowSeparator(.hidden).listRowBackground(Color.clear)

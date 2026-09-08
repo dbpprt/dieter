@@ -199,9 +199,9 @@ import Testing
 
 @Test func conversationRenderWindowBoundsTheLiveView() {
     #expect(ConversationRenderWindow.range(messageCount: 20, requestedStart: nil) == 0..<20)
-    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: nil) == 320..<500)
-    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: 0) == 0..<180)
-    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: 450) == 320..<500)
+    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: nil) == 440..<500)
+    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: 0) == 0..<60)
+    #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: 450) == 440..<500)
 }
 
 @Test func diffProjectionIndexesCommentsWhileBuildingRows() {

@@ -48,6 +48,17 @@ class ConversationOutboxPolicyTest {
     }
 
     @Test
+    fun `failed creation is distinguished from a failed message`() {
+        val create = outboxEntry(OutboxKind.CREATE_CHAT, byteArrayOf(), "local_chat", null)
+            .copy(state = OutboxState.FAILED, lastError = "model is unavailable")
+        val message = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "local_message", null)
+            .copy(state = OutboxState.FAILED, lastError = "turn failed")
+
+        assertEquals("model is unavailable", conversationCreationFailure(listOf(create, message), "local_chat"))
+        assertNull(conversationCreationFailure(listOf(create, message), "local_message"))
+    }
+
+    @Test
     fun `backed off head does not block ready entry`() {
         val delayed = outboxEntry(OutboxKind.SEND_MESSAGE, byteArrayOf(), "msg_delayed", null)
             .copy(state = OutboxState.RETRYING, nextAttemptAtMillis = 200)
@@ -109,6 +120,11 @@ class ConversationOutboxPolicyTest {
         assertFalse(isServerConversationId("local_chat"))
         assertTrue(isServerConversationId("c_server"))
         assertTrue(outboxFailureIsPermanent(error))
+        assertFalse(
+            outboxFailureIsPermanent(
+                Status.UNAVAILABLE.withDescription("catalog refresh failed").asRuntimeException(),
+            ),
+        )
         assertEquals("gRPC NOT_FOUND: card missing", readableRpcError(error))
     }
 

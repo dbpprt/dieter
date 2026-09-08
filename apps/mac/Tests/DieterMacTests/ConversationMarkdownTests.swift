@@ -45,6 +45,11 @@ import Testing
     )
     .frame(width: 320)
 
+    _ = try? ConversationRenderCache.prepare("""
+        | Node | CPU | GPU | Unified RAM |
+        |---|---:|---:|---|
+        | gx10-c674 | ~6% | 96% | 115.7 / 121.6 GiB (95.2%) |
+        """)
     let renderer = ImageRenderer(content: view)
     renderer.proposedSize = .init(width: 320, height: 180)
     #expect(renderer.nsImage != nil)

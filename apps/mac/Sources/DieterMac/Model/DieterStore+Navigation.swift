@@ -61,16 +61,18 @@ extension DieterStore {
         }
         resetFileSurface()
         updateSelectedState()
-        guard await ensureProjectConnection(projectID), generation == boardSelectionGeneration,
-              selectedProjectID == projectID, section == destination else { return }
-        // Changes owns its reads; opening it must not fetch the Files directory
-        // or round-trip the full board state before presenting the destination.
+        // Schedules owns connection preparation and its paginated reads.
+        if destination == .schedules { return }
+        guard await ensureProjectConnection(projectID, reportOffline: false), generation == boardSelectionGeneration,
+              selectedProjectID == projectID, section == destination else {
+            if generation == boardSelectionGeneration, destination == .files {
+                filesError = "This machine is unavailable. Reconnect and retry."
+            }
+            return
+        }
         if destination == .changes { return }
-        await refreshState()
-        guard generation == boardSelectionGeneration, selectedProjectID == projectID,
-              section == destination else { return }
         if destination == .files { await loadFiles() }
-        if destination == .schedules { await loadSchedules() }
+        else { await refreshState() }
     }
 
     func openProjectChanges(_ projectID: String) async {
@@ -81,14 +83,12 @@ extension DieterStore {
         stopTerminalWatch()
         closeConversation()
         section = .chats
-        await refreshChats()
     }
 
     func openTerminals() async {
         terminalScopeCardID = nil
         closeConversation()
         section = .terminals
-        await loadTerminals()
     }
 
     func openWorkspaceFiles(card: Dieter_V1_Card, opening path: String? = nil) async {
@@ -143,9 +143,11 @@ extension DieterStore {
             dismissMachinePopover()
             return
         }
+        stopMachineTelemetry()
         selectedMachineID = machine.id
         machineInformationError = nil
         await refreshMachineInformation(machineID: machine.id)
+        guard selectedMachineID == machine.id else { return }
         startMachineTelemetry(machineID: machine.id)
     }
 
@@ -178,6 +180,9 @@ extension DieterStore {
     }
 
     func refreshMachineInformation(machineID: String) async {
+        guard selectedMachineID == machineID else { return }
+        machineInformationGeneration &+= 1
+        let generation = machineInformationGeneration
         guard let machine = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil) else {
             machineInformationError = "This machine is no longer enrolled."
             return
@@ -191,7 +196,7 @@ extension DieterStore {
 			return
 		}
         machineInformationLoading = machineInformation[machineID] == nil
-        defer { machineInformationLoading = false }
+        defer { if generation == machineInformationGeneration { machineInformationLoading = false } }
 
         var borrowedPlane: DataPlaneConnection?
         do {
@@ -209,7 +214,7 @@ extension DieterStore {
                 borrowedPlane?.rpc.shutdown()
             }
             let information = try await client.machineInformation()
-            guard selectedMachineID == machineID else { return }
+            guard selectedMachineID == machineID, generation == machineInformationGeneration else { return }
             machineInformation[machineID] = information
             var history = machineCPUHistory[machineID, default: []]
             history.append(information.cpuUsagePercent)
@@ -228,8 +233,8 @@ extension DieterStore {
             machineInformationError = nil
         } catch is CancellationError {
         } catch {
-            guard selectedMachineID == machineID else { return }
-            machineInformationError = error.localizedDescription
+            guard selectedMachineID == machineID, generation == machineInformationGeneration else { return }
+            machineInformationError = DieterRPCFailure.message(for: error)
         }
     }
 
@@ -289,26 +294,33 @@ extension DieterStore {
 
     func loadTerminals() async {
         guard let rpc else { return }
+        terminalRequestGeneration &+= 1
+        let generation = terminalRequestGeneration
+        let scope = terminalScopeCardID
+        let projectID = scope == nil ? "" : selectedProjectID
         terminalLoading = true
-        defer { terminalLoading = false }
+        terminalError = nil
+        defer { if generation == terminalRequestGeneration { terminalLoading = false } }
         do {
-            let values: [Dieter_V1_Terminal]
-            if let terminalScopeCardID {
-                values = try await rpc.terminals(projectID: selectedProjectID, cardID: terminalScopeCardID).terminals
-            } else {
-                values = try await rpc.terminals().terminals
+            let response = try await terminalsRead.value(key: "\(ObjectIdentifier(rpc)):\(projectID):\(scope ?? "")") {
+                try await rpc.terminals(projectID: projectID, cardID: scope ?? "")
             }
+            guard self.rpc === rpc, generation == terminalRequestGeneration,
+                  terminalScopeCardID == scope, scope == nil || selectedProjectID == projectID else { return }
+            let values = response.terminals
             terminals = values
             let liveIDs = Set(values.map(\.id))
             terminalScreens = terminalScreens.filter { liveIDs.contains($0.key) }
             terminalSequences = terminalSequences.filter { liveIDs.contains($0.key) }
             await terminalOutputAccumulator.retain(terminalIDs: liveIDs)
+            guard self.rpc === rpc, generation == terminalRequestGeneration else { return }
             if selectedTerminalID.flatMap({ id in values.first(where: { $0.id == id }) }) == nil {
                 selectedTerminalID = values.first?.id
             }
             startTerminalWatch()
         } catch {
-            show(error)
+            guard self.rpc === rpc, generation == terminalRequestGeneration else { return }
+            if !Self.isExpectedCancellation(error) { terminalError = DieterRPCFailure.message(for: error) }
         }
     }
 

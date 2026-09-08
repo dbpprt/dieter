@@ -44,7 +44,7 @@ import Testing
     #expect(!refreshing.blocksInteraction)
 }
 
-@Test func unavailableWorkspaceUsesAReadOnlyCachedSurface() {
+@Test func unavailableWorkspaceKeepsCachedNavigationInteractive() {
     for freshness in [WorkspaceFreshnessState.reconnecting, .offline] {
         let treatment = WorkspaceSurfaceTreatment.resolve(
             showsSynchronizedWorkspace: true,
@@ -52,7 +52,7 @@ import Testing
             freshness: freshness
         )
         #expect(treatment == .unavailable)
-        #expect(treatment.blocksInteraction)
+        #expect(!treatment.blocksInteraction)
     }
     #expect(WorkspaceSurfaceTreatment.resolve(
         showsSynchronizedWorkspace: false,

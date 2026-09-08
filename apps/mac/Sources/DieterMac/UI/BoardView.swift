@@ -822,6 +822,7 @@ struct BoardCardView: View {
                 Divider()
             }
             Button("Open conversation") { Task { await store.openConversation(cardID: card.id) } }
+            Group {
             if BoardCardEditingPolicy.canEditDraft(card) {
                 Button("Edit card…") { editPresented = true }
             }
@@ -841,6 +842,7 @@ struct BoardCardView: View {
             if ["running", "waiting", "review"].contains(card.runtime) { Button("Cancel turn", role: .destructive) { Task { await store.cancel(card) } } }
             Divider()
             Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
+            }.disabled(!store.projectIsAvailable(card.projectID))
         }
         .accessibilityIdentifier("card.\(card.id)")
         .sheet(isPresented: $renamePresented) {

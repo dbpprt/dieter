@@ -298,6 +298,11 @@ enum NativeUISmokeRunner {
             results[step.name] = store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
             await captureAppearances(window, named: "\(step.name).png", in: output)
 
+            if step.section == .files {
+                await assessFileResponsiveness(store: store, projectID: project.id, boardID: board.id,
+                                               window: window, output: output, results: &results)
+            }
+
             if step.section == .schedules {
                 results["05-project-schedules-data"] = store.schedulesAreLoaded &&
                     scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) } == true
@@ -816,6 +821,85 @@ enum NativeUISmokeRunner {
             try? await DieterTaskSleep.milliseconds(intervalMilliseconds)
         }
         return condition()
+    }
+
+    private static func assessFileResponsiveness(
+        store: DieterStore, projectID: String, boardID: String, window: NSWindow,
+        output: URL, results: inout [String: String]
+    ) async {
+        guard let rpc = store.rpc else { results["files-editor-lifecycle"] = "failed: no RPC"; return }
+        let documents = [("responsiveness-a.md", "# File A\nVisible editor content.\n"),
+                         ("responsiveness-b.md", "# File B\nAnother document.\n")]
+        do {
+            for (path, content) in documents {
+                var create = Dieter_V1_CreateFileRequest()
+                create.projectID = projectID; create.path = path; create.kind = "file"
+                _ = try await rpc.createFile(create)
+                var read = Dieter_V1_ReadFileRequest(); read.projectID = projectID; read.path = path
+                let blank = try await rpc.readFile(read)
+                var save = Dieter_V1_SaveFileRequest()
+                save.projectID = projectID; save.path = path; save.content = content; save.revision = blank.revision
+                _ = try await rpc.saveFile(save)
+            }
+            await store.loadFiles()
+            try? await DieterTaskSleep.milliseconds(250)
+            var latencies: [Double] = []
+            var feedbackLatencies: [Double] = []
+            for (path, content) in [documents[0], documents[1], documents[0]] {
+                let start = ContinuousClock.now
+                let clicked = NativeUIAccessibility.click("files.row.\(path)", in: window)
+                let acknowledged = await waitUntil(timeout: 5, intervalMilliseconds: 5) { store.selectedFilePath == path }
+                let feedbackTime = start.duration(to: .now)
+                feedbackLatencies.append(Double(feedbackTime.components.attoseconds) / 1e15 + Double(feedbackTime.components.seconds) * 1_000)
+                let loaded = await waitUntil(timeout: 5, intervalMilliseconds: 5) {
+                    store.selectedFilePath == path && store.fileDocument?.content == content
+                        && nativeTextViews(in: window.contentView).contains { $0.string == content }
+                }
+                latencies.append(Double(start.duration(to: .now).components.attoseconds) / 1e15
+                                 + Double(start.duration(to: .now).components.seconds) * 1_000)
+                guard clicked && acknowledged && loaded else {
+                    results["files-editor-lifecycle"] = "failed: \(path) did not display its nonempty document"
+                    return
+                }
+            }
+            results["files-editor-lifecycle"] = "passed"
+            results["files-click-to-selection-ms"] = feedbackLatencies.map { String(format: "%.1f", $0) }.joined(separator: ", ")
+            results["files-open-to-content-ms"] = latencies.map { String(format: "%.1f", $0) }.joined(separator: ", ")
+            guard let editor = nativeTextViews(in: window.contentView).first(where: { $0.string == documents[0].1 }) else {
+                results["files-edit-save"] = "failed: native editor missing"; return
+            }
+            window.makeFirstResponder(editor)
+            editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+            await NativeUIAccessibility.type("Saved through the native editor.\n", in: window)
+            let expected = documents[0].1 + "Saved through the native editor.\n"
+            let edited = await waitUntil(timeout: 5) { store.fileEditorSession.isDirty && editor.string == expected }
+            let saved = NativeUIAccessibility.click("files.save", in: window)
+            let persisted = await waitUntil(timeout: 5) { store.fileDocument?.content == expected && !store.fileEditorSession.isDirty }
+            results["files-edit-save"] = edited && saved && persisted ? "passed" : "failed: native edit/save did not persist"
+            await store.openBoard(boardID, projectID: projectID)
+            await store.openProject(projectID, section: .files)
+            let revisited = await waitUntil(timeout: 5) { nativeTextViews(in: window.contentView).contains { $0.string == expected } }
+            results["files-warm-revisit"] = revisited ? "passed" : "failed: saved editor was blank on revisit"
+            await captureAppearances(window, named: "04a-loaded-editor.png", in: output)
+            await store.openFile(path: "missing-responsiveness-file.txt")
+            results["files-failed-read-ends-loading"] = !store.fileLoading && store.fileError != nil ? "passed" : "failed: read did not settle into an error"
+            await captureAppearances(window, named: "04b-file-read-error.png", in: output)
+            let row = NativeUIAccessibility.find("files.row.responsiveness-b.md", in: window)
+            let frame = row?.recordedFrame ?? row?.frame ?? .zero
+            let recover = NativeUIAccessibility.click("files.row.responsiveness-b.md", in: window)
+            let recovered = await waitUntil(timeout: 5) {
+                store.fileError == nil && nativeTextViews(in: window.contentView).contains { $0.string == documents[1].1 }
+            }
+            results["files-list-remains-usable-after-error"] = frame.height > 0 && recover && recovered
+                ? "passed" : "failed: file navigator error recovery; frame=\(frame), clicked=\(recover), selected=\(store.selectedFilePath), recovered=\(recovered)"
+        } catch {
+            results["files-editor-lifecycle"] = "failed: \(error)"
+        }
+    }
+
+    private static func nativeTextViews(in view: NSView?) -> [NSTextView] {
+        guard let view else { return [] }
+        return (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap { nativeTextViews(in: $0) }
     }
 
     private static func outputDirectory() -> URL {

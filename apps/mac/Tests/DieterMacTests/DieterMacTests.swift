@@ -1582,6 +1582,69 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     ))
 }
 
+@Test func conversationHarnessCatalogDirectoryUsesTheProjectsMachine() throws {
+    var localHarness = Dieter_V1_Harness()
+    localHarness.id = "local"
+    var localCatalog = Dieter_V1_HarnessCatalog()
+    localCatalog.harnesses = [localHarness]
+    var remoteHarness = Dieter_V1_Harness()
+    remoteHarness.id = "remote"
+    var remoteCatalog = Dieter_V1_HarnessCatalog()
+    remoteCatalog.harnesses = [remoteHarness]
+
+    let endpointID = ConversationHarnessCatalogDirectory.endpointID(
+        projectID: "p_remote",
+        activeEndpointID: "machine-local",
+        projectEndpointIDs: ["p_remote": "machine-remote"]
+    )
+    #expect(endpointID == "machine-remote")
+    let selected = try #require(ConversationHarnessCatalogDirectory.catalog(
+        endpointID: endpointID,
+        activeEndpointID: "machine-local",
+        activeCatalog: localCatalog,
+        catalogsByEndpoint: ["machine-remote": remoteCatalog]
+    ))
+    #expect(selected.harnesses.map(\.id) == ["remote"])
+    #expect(ConversationHarnessCatalogDirectory.catalog(
+        endpointID: "machine-unknown",
+        activeEndpointID: "machine-local",
+        activeCatalog: localCatalog,
+        catalogsByEndpoint: [:]
+    ) == nil)
+}
+
+@Test func providerOptionsDropValuesUnsupportedByTheDestinationHarness() {
+    var advisor = Dieter_V1_ProviderOption()
+    advisor.id = "advisor"
+    advisor.defaultValue = "false"
+    var harness = Dieter_V1_Harness()
+    harness.options = [advisor]
+
+    #expect(ProviderOptionValues.resolved(
+        for: harness,
+        existing: ["advisor": "true", "local-only": "secret"]
+    ) == ["advisor": "true"])
+}
+
+@Test @MainActor func failedCreationIsDistinguishedFromAFailedTurn() {
+    let store = DieterStore(restoreSync: false)
+    store.syncDiskState.outbox = [
+        DieterOutboxEntry(
+            commandID: "create", clientID: "mac", endpointID: "gateway#daemon",
+            kind: .createChat, request: Data(), optimisticID: "local_chat", attempts: 1,
+            lastError: "model is not supported by this daemon", state: .failed, createdAt: Date()
+        ),
+        DieterOutboxEntry(
+            commandID: "send", clientID: "mac", endpointID: "gateway#daemon",
+            kind: .sendMessage, request: Data(), optimisticID: "local_message", attempts: 1,
+            lastError: "turn failed", state: .failed, createdAt: Date()
+        ),
+    ]
+
+    #expect(store.failedCreationError("local_chat") == "model is not supported by this daemon")
+    #expect(store.failedCreationError("local_message") == nil)
+}
+
 @Test func appearancePreferenceDefaultsToSystemAndRecognizesEveryStoredMode() {
     #expect(DieterAppearance.resolve(nil) == .system)
     #expect(DieterAppearance.resolve("unknown") == .system)
@@ -2614,6 +2677,23 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     #expect(restored.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_three", "p_one", "p_two"])
     #expect(restored.isExpanded("p_two"))
     #expect(!restored.isExpanded("p_one"))
+}
+
+@Test func chatProjectDisclosurePersistsCollapseAndExpansion() throws {
+    let suite = "dieter-chat-project-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    var preferences = ChatProjectDisclosurePreferences()
+    preferences.toggleCollapsed("p_collapsed")
+    preferences.toggleExpanded("p_expanded")
+    preferences.save(to: defaults)
+
+    let restored = ChatProjectDisclosurePreferences.load(from: defaults)
+    #expect(restored.isCollapsed("p_collapsed"))
+    #expect(!restored.isCollapsed("p_expanded"))
+    #expect(restored.isExpanded("p_expanded"))
+    #expect(!restored.isExpanded("p_collapsed"))
 }
 
 @Test func sidebarProjectDragPayloadRejectsOtherStringDrops() {

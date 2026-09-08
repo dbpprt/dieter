@@ -169,6 +169,43 @@ enum ConversationUISmokeRunner {
         results["markdown-table"] = tables.first?.rows.count == 2
             ? "passed"
             : "failed: model pipe table was not promoted to a table block"
+
+        text.text = "| Row | Content |\n| --- | --- |\n" + (0..<500).map {
+            "| Row \($0) | **Formatted content** for large-table responsiveness testing. |"
+        }.joined(separator: "\n")
+        assistant.id = "message_large_markdown_table"
+        assistant.parts = [text]
+        snapshot.conversation.messages = [assistant]
+        store.conversation = snapshot
+        let prepared = await NativeUIAccessibility.wait {
+            NativeUIAccessibility.find("conversation.table.next-rows", in: window) != nil
+        }
+        // Preparation mounts the table before the transcript's tail-follow
+        // layout finishes. Wait for that layout before resolving click geometry.
+        try? await DieterTaskSleep.milliseconds(350)
+        capture(window, to: output.appending(path: "03c-large-markdown-table-before.png"))
+        let advanced = prepared && NativeUIAccessibility.click("conversation.table.next-rows", in: window)
+        let rowPage = await NativeUIAccessibility.wait {
+            NativeUIAccessibility.find("conversation.table.rows.1", in: window) != nil
+        }
+        results["large-markdown-table-pagination"] = advanced && rowPage ? "passed" : "failed: next table page unavailable"
+        capture(window, to: output.appending(path: "03c-large-markdown-table.png"))
+        let opened = NativeUIAccessibility.click("conversation.full-text", in: window)
+        let fullText = await NativeUIAccessibility.wait {
+            guard let sheet = window.attachedSheet else { return false }
+            return nativeTextViews(in: sheet.contentView).contains { $0.string == text.text && $0.isSelectable }
+        }
+        results["large-message-full-text"] = opened && fullText ? "passed" : "failed: complete message unavailable"
+        if let sheet = window.attachedSheet {
+            capture(sheet, to: output.appending(path: "03d-full-message.png"))
+            _ = NativeUIAccessibility.click("conversation.full-text.done", in: sheet)
+            _ = await NativeUIAccessibility.wait { window.attachedSheet == nil }
+        }
+    }
+
+    private static func nativeTextViews(in view: NSView?) -> [NSTextView] {
+        guard let view else { return [] }
+        return (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap { nativeTextViews(in: $0) }
     }
 
     /// Renders the complete terminal failure affordance in the packaged app

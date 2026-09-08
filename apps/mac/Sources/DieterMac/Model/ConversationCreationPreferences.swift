@@ -87,3 +87,25 @@ struct ConversationCreationSelection: Equatable {
     var effort: String
     var workspaceMode: ConversationWorkspaceMode
 }
+
+enum ConversationHarnessCatalogDirectory {
+    static func endpointID(
+        projectID: String,
+        activeEndpointID: String,
+        projectEndpointIDs: [String: String]
+    ) -> String {
+        projectEndpointIDs[projectID] ?? activeEndpointID
+    }
+
+    static func catalog(
+        endpointID: String,
+        activeEndpointID: String,
+        activeCatalog: Dieter_V1_HarnessCatalog,
+        catalogsByEndpoint: [String: Dieter_V1_HarnessCatalog]
+    ) -> Dieter_V1_HarnessCatalog? {
+        if let catalog = catalogsByEndpoint[endpointID], !catalog.harnesses.isEmpty {
+            return catalog
+        }
+        return endpointID == activeEndpointID && !activeCatalog.harnesses.isEmpty ? activeCatalog : nil
+    }
+}

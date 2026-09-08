@@ -13,12 +13,16 @@ final class FileEditorSession {
     private(set) var lineCount = 1
     private(set) var revision = 0
     @ObservationIgnored private weak var textView: NSTextView?
+    @ObservationIgnored private var detachedText = ""
 
     func attach(_ textView: NSTextView, documentKey: String, initialText: String) {
+        let current = currentText()
+        let sameDocument = self.documentKey == documentKey
         self.textView = textView
-        guard self.documentKey != documentKey else { return }
+        textView.string = sameDocument ? current : initialText
+        guard !sameDocument else { return }
         self.documentKey = documentKey
-        textView.string = initialText
+        detachedText = initialText
         isDirty = false
         lineCount = Self.countLines(in: initialText)
         revision &+= 1
@@ -27,6 +31,7 @@ final class FileEditorSession {
     func prepare(documentKey: String, text: String) {
         guard self.documentKey != documentKey else { return }
         self.documentKey = documentKey
+        detachedText = text
         if textView?.string != text { textView?.string = text }
         isDirty = false
         lineCount = Self.countLines(in: text)
@@ -40,11 +45,18 @@ final class FileEditorSession {
     }
 
     func currentText() -> String {
-        textView?.string ?? ""
+        textView?.string ?? detachedText
+    }
+
+    func detach(_ view: NSTextView) {
+        guard textView === view else { return }
+        detachedText = view.string
+        textView = nil
     }
 
     func markSaved(documentKey: String, text: String) {
         self.documentKey = documentKey
+        detachedText = text
         if textView?.string != text { textView?.string = text }
         isDirty = false
         lineCount = Self.countLines(in: text)

@@ -27,14 +27,15 @@ final class DieterRPC: Sendable {
     let service: Service
     let gatewayService: GatewayService
 
-    private static func attachmentCallOptions() -> CallOptions {
+    static func attachmentCallOptions(bounded: Bool = false) -> CallOptions {
         var options = CallOptions.defaults
+        if bounded { options.timeout = .seconds(15) }
         options.maxRequestMessageBytes = 16 * 1_024 * 1_024
         options.maxResponseMessageBytes = 16 * 1_024 * 1_024
         return options
     }
 
-    private static func boundedUnaryCallOptions() -> CallOptions {
+    static func boundedUnaryCallOptions() -> CallOptions {
         var options = CallOptions.defaults
         options.timeout = .seconds(15)
         return options
@@ -232,7 +233,7 @@ final class DieterRPC: Sendable {
     }
 
     func promptSettings() async throws -> Dieter_V1_PromptSettings {
-        try await service.getPromptSettings(request: .init(message: Google_Protobuf_Empty()))
+        try await service.getPromptSettings(request: .init(message: Google_Protobuf_Empty()), options: Self.boundedUnaryCallOptions())
     }
 
     func updatePromptSettings(_ request: Dieter_V1_UpdatePromptSettingsRequest) async throws -> Dieter_V1_PromptSettings {
@@ -248,7 +249,7 @@ final class DieterRPC: Sendable {
     }
 
     func previewPrompt(_ request: Dieter_V1_PreviewPromptRequest) async throws -> Dieter_V1_PromptPreview {
-        try await service.previewPrompt(request: .init(message: request))
+        try await service.previewPrompt(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func state(_ request: Dieter_V1_GetStateRequest = .init()) async throws -> Dieter_V1_State {
@@ -328,7 +329,7 @@ final class DieterRPC: Sendable {
     }
 
     func archivedProjects() async throws -> Dieter_V1_ProjectsResponse {
-        try await service.listArchivedProjects(request: .init(message: Google_Protobuf_Empty()))
+        try await service.listArchivedProjects(request: .init(message: Google_Protobuf_Empty()), options: Self.boundedUnaryCallOptions())
     }
 
     func createBoard(_ request: Dieter_V1_CreateBoardRequest) async throws -> Dieter_V1_Board {
@@ -345,7 +346,7 @@ final class DieterRPC: Sendable {
 
     func archivedCards(boardID: String) async throws -> Dieter_V1_CardsResponse {
         var request = Dieter_V1_BoardRef(); request.boardID = boardID
-        return try await service.listArchivedCards(request: .init(message: request))
+        return try await service.listArchivedCards(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func createBoardLabel(_ request: Dieter_V1_CreateBoardLabelRequest) async throws -> Dieter_V1_Board {
@@ -382,13 +383,13 @@ final class DieterRPC: Sendable {
 
     func card(id: String) async throws -> Dieter_V1_CardDetail {
         var request = Dieter_V1_GetCardRequest(); request.cardID = id
-        return try await service.getCard(request: .init(message: request))
+        return try await service.getCard(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func conversation(cardID: String, limit: Int32 = 30, before: Int32? = nil) async throws -> Dieter_V1_ConversationSnapshot {
         var request = Dieter_V1_GetConversationRequest(); request.cardID = cardID; request.limit = limit
         if let before { request.before = before }
-        return try await service.getConversation(request: .init(message: request), options: Self.attachmentCallOptions())
+        return try await service.getConversation(request: .init(message: request), options: Self.attachmentCallOptions(bounded: true))
     }
 
     func watchConversation(
@@ -407,7 +408,7 @@ final class DieterRPC: Sendable {
     }
 
     func toolOutput(_ request: Dieter_V1_GetToolOutputRequest) async throws -> Dieter_V1_ToolOutput {
-        try await service.getToolOutput(request: .init(message: request))
+        try await service.getToolOutput(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func sendMessage(_ request: Dieter_V1_SendMessageRequest) async throws -> Dieter_V1_SendMessageResponse {
@@ -523,11 +524,11 @@ final class DieterRPC: Sendable {
     }
 
     func listFiles(_ request: Dieter_V1_ListFilesRequest) async throws -> Dieter_V1_FileList {
-        try await service.listFiles(request: .init(message: request))
+        try await service.listFiles(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func readFile(_ request: Dieter_V1_ReadFileRequest) async throws -> Dieter_V1_FileDocument {
-        try await service.readFile(request: .init(message: request))
+        try await service.readFile(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func saveFile(_ request: Dieter_V1_SaveFileRequest) async throws -> Dieter_V1_FileDocument {
@@ -548,7 +549,7 @@ final class DieterRPC: Sendable {
 
     func terminals(projectID: String = "", cardID: String = "") async throws -> Dieter_V1_TerminalsResponse {
         var request = Dieter_V1_ListTerminalsRequest(); request.projectID = projectID; request.cardID = cardID
-        return try await service.listTerminals(request: .init(message: request))
+        return try await service.listTerminals(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws -> Dieter_V1_Terminal {
@@ -633,11 +634,11 @@ final class DieterRPC: Sendable {
 
     func schedules(projectID: String, pageSize: Int32 = 50, pageToken: String = "") async throws -> Dieter_V1_SchedulesResponse {
         var request = Dieter_V1_ListSchedulesRequest(); request.projectID = projectID; request.pageSize = pageSize; request.pageToken = pageToken
-        return try await service.listSchedules(request: .init(message: request))
+        return try await service.listSchedules(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func previewSchedule(_ request: Dieter_V1_PreviewScheduleRequest) async throws -> Dieter_V1_SchedulePreview {
-        try await service.previewSchedule(request: .init(message: request))
+        try await service.previewSchedule(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     func createSchedule(_ request: Dieter_V1_SaveScheduleRequest) async throws -> Dieter_V1_Schedule {
@@ -665,7 +666,7 @@ final class DieterRPC: Sendable {
 
     func scheduleRuns(id: String, pageSize: Int32 = 50, pageToken: String = "") async throws -> Dieter_V1_ScheduleRunsResponse {
         var request = Dieter_V1_ListScheduleRunsRequest(); request.scheduleID = id; request.pageSize = pageSize; request.pageToken = pageToken
-        return try await service.listScheduleRuns(request: .init(message: request))
+        return try await service.listScheduleRuns(request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 }
 

@@ -21,7 +21,7 @@ enum WorkspaceSurfaceTreatment: Equatable {
     }
 
     var showsNotice: Bool { self != .current }
-    var blocksInteraction: Bool { self == .unavailable }
+    var blocksInteraction: Bool { false }
 }
 
 enum SidebarSizing {
@@ -142,9 +142,7 @@ struct DieterRootView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .saturation(workspaceSurfaceTreatment == .unavailable ? 0.72 : 1)
-                .opacity(workspaceSurfaceTreatment == .unavailable ? 0.82 : 1)
-                .disabled(workspaceSurfaceTreatment.blocksInteraction)
+
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -195,6 +193,7 @@ struct DieterRootView: View {
 }
 
 struct WorkspaceFreshnessBanner: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let freshness: WorkspaceFreshnessState
     let lastSyncedAt: Date?
 
@@ -232,10 +231,11 @@ struct WorkspaceFreshnessBanner: View {
                     .fill(accent.opacity(0.12))
                     .frame(width: 24, height: 24)
                 if isWorking {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(accent)
-                        .accessibilityHidden(true)
+                    if reduceMotion {
+                        Image(systemName: "hourglass").font(.system(size: 10)).foregroundStyle(accent)
+                    } else {
+                        ProgressView().controlSize(.mini).accessibilityLabel(title)
+                    }
                 } else {
                     Image(systemName: "wifi.slash")
                         .font(.system(size: 10, weight: .semibold))

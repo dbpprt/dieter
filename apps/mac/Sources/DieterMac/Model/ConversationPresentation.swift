@@ -126,7 +126,28 @@ struct ConversationPresentationKey: Hashable {
 }
 
 enum ConversationRenderWindow {
-    static let maximumMessages = 180
+    static let maximumMessages = 60
+    static let maximumTextBytes = 16_000
+    static let maximumParts = 160
+
+    static func range(messages: [Dieter_V1_UiMessage], requestedStart: Int?) -> Range<Int> {
+        guard !messages.isEmpty else { return 0..<0 }
+        let forward = requestedStart != nil
+        let start = min(max(0, requestedStart ?? (messages.count - 1)), messages.count - 1)
+        var lower = start, upper = start, bytes = 0, parts = 0
+        let candidates = forward ? Array(start..<min(messages.count, start + maximumMessages))
+            : Array(max(0, start - maximumMessages + 1)...start).reversed().map { $0 }
+        for index in candidates {
+            let message = messages[index]
+            let cost = message.parts.reduce(0) { $0 + min($1.text.utf8.count, ConversationRenderCache.maximumPreviewCharacters) }
+            if upper > lower && (bytes + cost > maximumTextBytes || parts + message.parts.count > maximumParts) { break }
+            bytes += cost
+            parts += message.parts.count
+            lower = min(lower, index)
+            upper = max(upper, index + 1)
+        }
+        return lower..<upper
+    }
 
     static func range(messageCount: Int, requestedStart: Int?) -> Range<Int> {
         guard messageCount > maximumMessages else { return 0..<messageCount }

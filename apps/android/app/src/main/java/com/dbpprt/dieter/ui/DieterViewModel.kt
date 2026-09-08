@@ -156,8 +156,11 @@ data class DieterUiState(
     val error: String? = null,
     val runtimeStatus: RuntimeStatus? = null,
     val harnesses: List<Harness> = emptyList(),
+    val harnessesEndpointId: String? = null,
     val projects: List<Project> = emptyList(),
     val projectOrder: List<String> = emptyList(),
+    val collapsedChatProjectIds: Set<String> = emptySet(),
+    val expandedChatProjectIds: Set<String> = emptySet(),
     val pinnedChatOrder: List<String> = emptyList(),
     val projectHosts: Map<String, ProjectHost> = emptyMap(),
     val boards: List<Board> = emptyList(),
@@ -399,6 +402,16 @@ class DieterViewModel(
             }
         }
         viewModelScope.launch {
+            appPreferences.collapsedChatProjectIds.collectLatest { projectIds ->
+                _state.update { it.copy(collapsedChatProjectIds = projectIds) }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.expandedChatProjectIds.collectLatest { projectIds ->
+                _state.update { it.copy(expandedChatProjectIds = projectIds) }
+            }
+        }
+        viewModelScope.launch {
             appPreferences.pinnedChatOrder.collectLatest { pinnedChatOrder ->
                 _state.update { it.copy(pinnedChatOrder = pinnedChatOrder) }
             }
@@ -629,6 +642,7 @@ class DieterViewModel(
                 loading = connection.desiredConnected && remote == null && connection.phase != ConnectionPhase.UNAVAILABLE,
                 runtimeStatus = connection.runtimeStatus,
                 harnesses = connection.harnesses,
+                harnessesEndpointId = connection.harnessesEndpointId,
                 chats = connection.chats,
                 projects = orderedProjects(connection.projects, current.projectOrder),
                 projectHosts = connection.projectHosts,
@@ -817,6 +831,16 @@ class DieterViewModel(
         updatedOrder?.let(appPreferences::setProjectOrder)
     }
 
+    fun toggleChatProjectCollapsed(projectId: String) {
+        val collapsed = projectId in appPreferences.collapsedChatProjectIds.value
+        appPreferences.setChatProjectCollapsed(projectId, !collapsed)
+    }
+
+    fun toggleChatProjectExpanded(projectId: String) {
+        val expanded = projectId in appPreferences.expandedChatProjectIds.value
+        appPreferences.setChatProjectExpanded(projectId, !expanded)
+    }
+
     fun movePinnedChat(chatId: String, targetChatId: String) {
         var updatedOrder: List<String>? = null
         _state.update { current ->
@@ -968,6 +992,7 @@ class DieterViewModel(
     fun isPendingMessage(id: String): Boolean = id in _state.value.pendingMessageIds
     fun isAcceptedOutboxItem(id: String): Boolean = id in _state.value.acceptedOutboxIds
     fun isFailedOutboxItem(id: String): Boolean = id in _state.value.failedOutboxIds
+    fun conversationCreationFailure(id: String): String? = connectionManager.conversationCreationFailure(id)
 
     fun retryOutboxItem(id: String) {
         connectionManager.retryOutboxItem(id)

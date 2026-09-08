@@ -9,10 +9,17 @@ import UserNotifications
 
 extension DieterStore {
     func resetFileSurface() {
+        let owner = "\(projectEndpointIDs[selectedProjectID] ?? endpoint.id):\(selectedProjectID):\(fileScopeCardID ?? "")"
+        guard fileSurfaceOwner != owner else { return }
+        fileSurfaceOwner = owner
+        fileEditorSession = FileEditorSession()
         fileScopeGeneration &+= 1
         fileListingGeneration &+= 1
         fileReadGeneration &+= 1
         fileNavigationLoading = false
+        fileListingRead.cancel(); fileContentRead.cancel()
+        filesLoading = false; fileLoading = false
+        filesError = nil; fileError = nil; selectedFilePath = ""
         filePath = ""; files = []; fileDocument = nil; fileNavigation.reset()
     }
 
@@ -24,8 +31,14 @@ extension DieterStore {
         request.cardID = fileScopeCardID ?? ""
         fileListingGeneration &+= 1
         let generation = fileListingGeneration
+        filesLoading = true
+        filesError = nil
+        defer { if generation == fileListingGeneration { filesLoading = false } }
+        let readRequest = request
         do {
-            let listing = try await rpc.listFiles(request)
+            let listing = try await fileListingRead.value(key: "\(ObjectIdentifier(rpc)):\(request.projectID):\(request.cardID):\(destination):\(request.showHidden)") {
+                try await rpc.listFiles(readRequest)
+            }
             guard self.rpc === rpc, fileListingGeneration == generation,
                   selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID else { return false }
             files = listing.entries
@@ -34,7 +47,7 @@ extension DieterStore {
         } catch {
             guard self.rpc === rpc, fileListingGeneration == generation,
                   selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID else { return false }
-            show(error)
+            if !Self.isExpectedCancellation(error) { filesError = DieterRPCFailure.message(for: error) }
             return false
         }
     }
@@ -74,16 +87,27 @@ extension DieterStore {
         var request = Dieter_V1_ReadFileRequest(); request.projectID = selectedProjectID; request.path = path; request.cardID = fileScopeCardID ?? ""
         fileReadGeneration &+= 1
         let generation = fileReadGeneration
-        fileDocument = nil
+        if selectedFilePath != path { fileDocument = nil }
+        selectedFilePath = path
+        fileLoading = true
+        fileError = nil
+        defer { if generation == fileReadGeneration { fileLoading = false } }
+        let readRequest = request
         do {
-            let document = try await rpc.readFile(request)
+            let document = try await fileContentRead.value(key: "\(ObjectIdentifier(rpc)):\(request.projectID):\(request.cardID):\(path)") {
+                try await rpc.readFile(readRequest)
+            }
             guard self.rpc === rpc, generation == fileReadGeneration, selectedProjectID == request.projectID,
                   (fileScopeCardID ?? "") == request.cardID else { return }
             fileDocument = document
         } catch {
             guard self.rpc === rpc, generation == fileReadGeneration, selectedProjectID == request.projectID,
                   (fileScopeCardID ?? "") == request.cardID else { return }
-            show(error)
+            if let rpcError = error as? RPCError, rpcError.code == .notFound {
+                fileError = "“\((path as NSString).lastPathComponent)” could not be found. Refresh the folder or select another file."
+            } else if !Self.isExpectedCancellation(error) {
+                fileError = DieterRPCFailure.message(for: error)
+            }
         }
     }
 
@@ -136,6 +160,7 @@ extension DieterStore {
         schedulesRequestGeneration &+= 1
         let generation = schedulesRequestGeneration
         schedulesLoading = true
+        schedulesError = nil
         schedulesLoadingMore = false
         schedulesNextPageToken = ""
         if !schedulesAreLoaded {
@@ -145,7 +170,9 @@ extension DieterStore {
         }
 
         do {
-            let response = try await client.schedules(projectID: projectID, pageSize: schedulePageSize, pageToken: "")
+            let response = try await schedulesRead.value(key: "\(connectionGeneration):\(endpointID):\(projectID)") {
+                try await client.schedules(projectID: projectID, pageSize: schedulePageSize, pageToken: "")
+            }
             guard generation == schedulesRequestGeneration,
                   selectedProjectID == projectID, endpoint.id == endpointID else { return }
             schedules = response.schedules
@@ -168,7 +195,7 @@ extension DieterStore {
             guard generation == schedulesRequestGeneration,
                   selectedProjectID == projectID, endpoint.id == endpointID else { return }
             schedulesLoading = false
-            show(error)
+            if !Self.isExpectedCancellation(error) { schedulesError = DieterRPCFailure.message(for: error) }
         }
     }
 

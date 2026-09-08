@@ -18,20 +18,18 @@ extension DieterStore {
         lastSyncedAt = restored.projections[endpoint.id]?.refreshedAt
             ?? deploymentProjections.compactMap(\.value.refreshedAt).max()
         for (endpointID, projection) in deploymentProjections {
-            if let raw = projection.snapshot,
-               let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) {
+            if let snapshot = await snapshotDecoder.snapshot(endpointID: endpointID, data: projection.snapshot) {
                 applyGlobalSnapshot(snapshot, endpointID: endpointID)
             }
         }
         if deploymentProjections.isEmpty,
-           let raw = restored.snapshot,
-           let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) {
+           let snapshot = await snapshotDecoder.snapshot(endpointID: endpoint.id, data: restored.snapshot) {
             applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
         }
         rebuildOutboxOverlays()
     }
 
-    func activateSyncProjection(for endpoint: DieterEndpoint) {
+    func activateSyncProjection(for endpoint: DieterEndpoint, decodedSnapshot: Dieter_V1_GlobalSnapshot?, decodedData: Data?) {
         if let persisted = syncDiskState.projections[endpoint.id] {
             syncProjection = persisted
         } else {
@@ -40,9 +38,10 @@ extension DieterStore {
             syncDiskState.cursor = nil
             syncDiskState.snapshot = nil
         }
-        syncSnapshot = syncProjection.snapshot.flatMap {
-            try? Dieter_V1_GlobalSnapshot(serializedBytes: $0)
-        }.map { snapshot in
+        // Metadata refresh may replace this endpoint while decoding is suspended.
+        // Never pair that newer cursor with a snapshot decoded from older bytes.
+        let matchingSnapshot = syncProjection.snapshot == decodedData ? decodedSnapshot : nil
+        syncSnapshot = matchingSnapshot.map { snapshot in
             var next = snapshot
             next.schedules = []
             next.scheduleRuns = []
@@ -290,14 +289,12 @@ extension DieterStore {
         }
     }
 
-    func projectedConversation(cardID: String, endpointID: String) -> Dieter_V1_ConversationSnapshot? {
+    func projectedConversation(cardID: String, endpointID: String) async -> Dieter_V1_ConversationSnapshot? {
         if endpointID == endpoint.id, let syncSnapshot {
             return syncSnapshot.conversations.first { $0.detail.card.id == cardID }
         }
         let projection = syncDiskState.projections[endpointID]
-        guard let raw = projection?.snapshot,
-              let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: raw) else { return nil }
-        return snapshot.conversations.first { $0.detail.card.id == cardID }
+        return await snapshotDecoder.conversation(cardID: cardID, endpointID: endpointID, data: projection?.snapshot)
     }
 
     func conversationRefreshDate(cardID: String, endpointID: String) -> Date? {
@@ -366,10 +363,19 @@ extension DieterStore {
         acceptedOutboxIDs = Set(syncDiskState.outbox.filter { $0.serverID != nil }.flatMap { [$0.optimisticID, $0.serverID!] })
         failedOutboxIDs = Set(syncDiskState.outbox.filter { $0.state == .failed }.map { $0.serverID ?? $0.optimisticID })
         machineOutboxSummaries = MachineOutboxSummary.summaries(for: syncDiskState.outbox)
+        var projectedChats = chats
+        let orphanedIDs = Set(syncDiskState.outbox.compactMap { entry -> String? in
+            guard entry.kind == .createChat,
+                  let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request),
+                  projectDirectory[request.projectID] == nil else { return nil }
+            return entry.serverID ?? entry.optimisticID
+        })
+        projectedChats.removeAll { orphanedIDs.contains($0.id) }
         for entry in syncDiskState.outbox {
             switch entry.kind {
             case .createCard, .createChat:
-                guard let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request) else { continue }
+                guard let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request),
+                      projectDirectory[request.projectID] != nil else { continue }
                 var card = Dieter_V1_Card()
                 card.id = entry.serverID ?? entry.optimisticID
                 card.scope = entry.kind == .createChat ? "chat" : "board"
@@ -388,7 +394,7 @@ extension DieterStore {
                 card.createdAt = DieterTimestamp.string(from: entry.createdAt)
                 card.updatedAt = card.createdAt
                 if entry.kind == .createChat {
-                    if !chats.contains(where: { $0.id == card.id }) { chats.insert(card, at: 0) }
+                    if !projectedChats.contains(where: { $0.id == card.id }) { projectedChats.insert(card, at: 0) }
                 } else if card.projectID == selectedProjectID, !state.cards.contains(where: { $0.id == card.id }) {
                     state.cards.append(card)
                     navigationCards[card.projectID, default: []].append(card)
@@ -406,6 +412,7 @@ extension DieterStore {
                 conversation = snapshot
             }
         }
+        if chats != projectedChats { chats = projectedChats }
     }
 
     func reconcileOutboxWithProjection() {

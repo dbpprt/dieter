@@ -260,7 +260,8 @@ struct MachinePopover: View {
 
     private func machineSubtitle(_ machine: DieterEndpoint) -> String {
         guard let information else {
-            return machine.online ? "Connecting…" : MachinePresenceText.lastSeen(machine.lastSeenAt)
+            if store.machineInformationError != nil { return "Machine information unavailable" }
+            return machine.online ? "Loading machine information…" : MachinePresenceText.lastSeen(machine.lastSeenAt)
         }
         var parts: [String] = []
         let hardware = [information.hardwareModel, information.processor]

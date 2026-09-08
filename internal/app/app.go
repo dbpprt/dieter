@@ -408,7 +408,7 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	if provider == "" {
 		provider = "codex"
 	}
-	adapter, configuredModel, err := harness.ResolveSelection(provider, input.Model, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
+	adapter, configuredModel, err := harness.ResolveSelectionWithRefresh(ctx, provider, input.Model, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -543,7 +543,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if effort == "" && !explicitDefaultEffort {
 		effort = detail.Card.Effort
 	}
-	adapter, configuredModel, err := harness.ResolveSelection(provider, modelName, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
+	adapter, configuredModel, err := harness.ResolveSelectionWithRefresh(context.Background(), provider, modelName, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
 	if err != nil {
 		return nil, err
 	}

@@ -1,10 +1,13 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
 import com.dbpprt.dieter.v1.EffortOption
 import com.dbpprt.dieter.v1.Harness
 import com.dbpprt.dieter.v1.HarnessModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationCreationPreferencesTest {
@@ -64,5 +67,24 @@ class ConversationCreationPreferencesTest {
             ResolvedConversationCreationPreferences("codex", "sol", "", ConversationWorkspaceMode.WORKTREE),
             resolved,
         )
+    }
+
+    @Test
+    fun catalogMustBelongToTheSelectedProjectsDaemon() {
+        val hosts = mapOf(
+            "project-a" to ProjectHost("gateway#mac", "mac", "Studio Mac", true),
+            "project-b" to ProjectHost("gateway#server", "server", "Build server", true),
+        )
+
+        assertTrue(harnessCatalogMatchesProject("project-a", "gateway#mac", hosts))
+        assertFalse(harnessCatalogMatchesProject("project-b", "gateway#mac", hosts))
+        assertFalse(harnessCatalogMatchesProject("project-b", null, hosts))
+    }
+
+    @Test
+    fun selectedModelMustExistInTheDestinationCatalog() {
+        assertTrue(harnessCatalogSupportsSelection(listOf(codex), "codex", "sol"))
+        assertFalse(harnessCatalogSupportsSelection(listOf(codex), "codex", "retired"))
+        assertFalse(harnessCatalogSupportsSelection(listOf(codex), "claude", "sol"))
     }
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,12 +20,28 @@ import (
 
 const discoveryTTL = 5 * time.Minute
 
+var ErrCatalogUnavailable = errors.New("harness model catalog is temporarily unavailable")
+
 var (
 	discoveryMu      sync.Mutex
 	discoveryUpdated time.Time
 	runDiscovery     = runDiscoveryCommand
 	runDSHDiscovery  = runDSHDiscoveryCommand
+	discoverProvider = discoverModels
+	targetedMu       sync.Mutex
+	targetedCalls    = map[string]*targetedDiscoveryCall{}
 )
+
+type discoveryResult struct {
+	id     string
+	models []Model
+	err    error
+}
+
+type targetedDiscoveryCall struct {
+	done chan struct{}
+	err  error
+}
 
 // RefreshCatalog asks each installed harness for its current model and
 // reasoning capabilities. The YAML registry remains the compatibility and
@@ -35,19 +52,41 @@ func RefreshCatalog(ctx context.Context, includeMock bool) []Adapter {
 	if time.Since(discoveryUpdated) < discoveryTTL && len(discoveredCatalog) > 0 {
 		return Catalog(includeMock)
 	}
+	refreshCatalogLocked(ctx)
+	return Catalog(includeMock)
+}
 
-	catalogMu.RLock()
-	base := make([]Adapter, len(configuredCatalog))
-	for index, item := range configuredCatalog {
-		base[index] = cloneAdapter(item)
+// ResolveSelectionWithRefresh validates a selection against the current
+// catalog and performs one bounded, provider-only discovery when a dynamic
+// model is missing. This closes the gap between a catalog advertised to a
+// client and a later create/resume request without weakening strict model
+// validation.
+func ResolveSelectionWithRefresh(ctx context.Context, providerID, modelID string, includeMock bool) (Adapter, Model, error) {
+	adapter, model, err := ResolveSelection(providerID, modelID, includeMock)
+	if err == nil || strings.TrimSpace(modelID) == "" {
+		return adapter, model, err
 	}
-	catalogMu.RUnlock()
+	if _, ok := ResolveAdapter(strings.TrimSpace(providerID), includeMock); !ok {
+		return adapter, model, err
+	}
 
-	type result struct {
-		id     string
-		models []Model
+	refreshErr := refreshAdapterOnce(ctx, strings.TrimSpace(providerID))
+	if refreshErr != nil {
+		if ctx.Err() != nil {
+			return adapter, model, ctx.Err()
+		}
+		return adapter, model, fmt.Errorf(
+			"%w: could not refresh %q before validating model %q: %v",
+			ErrCatalogUnavailable, strings.TrimSpace(providerID), strings.TrimSpace(modelID), refreshErr,
+		)
 	}
-	results := make(chan result, len(base))
+	return ResolveSelection(providerID, modelID, includeMock)
+}
+
+func refreshCatalogLocked(ctx context.Context) {
+	base := configuredCatalogSnapshot()
+
+	results := make(chan discoveryResult, len(base))
 	var wait sync.WaitGroup
 	for _, adapter := range base {
 		adapter := adapter
@@ -57,38 +96,141 @@ func RefreshCatalog(ctx context.Context, includeMock bool) []Adapter {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			// Pi needs two native RPC rounds (models, then per-model levels), and
-			// provider CLIs can contend for startup I/O when refreshed together.
-			timeout := 30 * time.Second
-			// The first DSH discovery prepares the same pinned AI SDK ACP
-			// implementation a turn will use. Subsequent refreshes reuse it.
-			if adapter.ID == "dsh" {
-				timeout = 10 * time.Minute
-			}
-			commandCtx, cancel := context.WithTimeout(ctx, timeout)
-			defer cancel()
-			models, err := discoverModels(commandCtx, adapter.ID)
-			if err == nil && len(models) > 0 {
-				results <- result{id: adapter.ID, models: models}
-			}
+			results <- discoverAdapter(ctx, adapter.ID)
 		}()
 	}
 	wait.Wait()
 	close(results)
-	byID := map[string][]Model{}
+	byID := map[string]discoveryResult{}
 	for item := range results {
-		byID[item.id] = item.models
+		byID[item.id] = item
 	}
+	// Snapshot at publication time so a successful provider-only recovery that
+	// completed while this full refresh was running cannot be overwritten by a
+	// slower failure from the full refresh.
+	previous := catalogByID(discoveredCatalogSnapshot())
 	for index := range base {
-		if models := byID[base[index].ID]; len(models) > 0 {
-			base[index] = mergeDiscoveredAdapter(base[index], models)
+		result := byID[base[index].ID]
+		if result.err == nil && len(result.models) > 0 {
+			base[index] = mergeDiscoveredAdapter(base[index], result.models)
+			continue
+		}
+		if retained, ok := previous[base[index].ID]; ok {
+			base[index] = retained
+			slog.Warn("harness model discovery failed; retaining last-known-good catalog", "harness", base[index].ID, "error", result.err)
+		} else if result.err != nil {
+			slog.Debug("harness model discovery failed; using configured catalog", "harness", base[index].ID, "error", result.err)
 		}
 	}
 	catalogMu.Lock()
 	discoveredCatalog = base
 	discoveryUpdated = time.Now()
 	catalogMu.Unlock()
-	return Catalog(includeMock)
+}
+
+func refreshAdapterOnce(ctx context.Context, providerID string) error {
+	targetedMu.Lock()
+	if call := targetedCalls[providerID]; call != nil {
+		targetedMu.Unlock()
+		select {
+		case <-call.done:
+			return call.err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	call := &targetedDiscoveryCall{done: make(chan struct{})}
+	targetedCalls[providerID] = call
+	targetedMu.Unlock()
+
+	call.err = refreshAdapter(ctx, providerID)
+	targetedMu.Lock()
+	delete(targetedCalls, providerID)
+	close(call.done)
+	targetedMu.Unlock()
+	return call.err
+}
+
+func refreshAdapter(ctx context.Context, providerID string) error {
+	base := configuredCatalogSnapshot()
+	var configured Adapter
+	found := false
+	for _, adapter := range base {
+		if adapter.ID == providerID {
+			configured, found = adapter, true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("unsupported harness %q", providerID)
+	}
+	result := discoverAdapter(ctx, providerID)
+	if result.err != nil {
+		slog.Warn("targeted harness model discovery failed", "harness", providerID, "error", result.err)
+		return result.err
+	}
+
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	source := discoveredCatalog
+	if len(source) == 0 {
+		source = configuredCatalog
+	}
+	next := make([]Adapter, len(source))
+	for index, adapter := range source {
+		next[index] = cloneAdapter(adapter)
+		if adapter.ID == providerID {
+			next[index] = mergeDiscoveredAdapter(configured, result.models)
+		}
+	}
+	discoveredCatalog = next
+	return nil
+}
+
+func discoverAdapter(ctx context.Context, providerID string) discoveryResult {
+	// Pi needs two native RPC rounds (models, then per-model levels), and
+	// provider CLIs can contend for startup I/O when refreshed together.
+	timeout := 30 * time.Second
+	// The first DSH discovery prepares the same pinned AI SDK ACP
+	// implementation a turn will use. Subsequent refreshes reuse it.
+	if providerID == "dsh" {
+		timeout = 10 * time.Minute
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	models, err := discoverProvider(commandCtx, providerID)
+	if err == nil && len(models) == 0 {
+		err = errors.New("discovery returned no models")
+	}
+	return discoveryResult{id: providerID, models: models, err: err}
+}
+
+func configuredCatalogSnapshot() []Adapter {
+	catalogMu.RLock()
+	defer catalogMu.RUnlock()
+	result := make([]Adapter, len(configuredCatalog))
+	for index, adapter := range configuredCatalog {
+		result[index] = cloneAdapter(adapter)
+	}
+	return result
+}
+
+func discoveredCatalogSnapshot() []Adapter {
+	catalogMu.RLock()
+	defer catalogMu.RUnlock()
+	result := make([]Adapter, len(discoveredCatalog))
+	for index, adapter := range discoveredCatalog {
+		result[index] = cloneAdapter(adapter)
+	}
+	return result
+}
+
+func catalogByID(values []Adapter) map[string]Adapter {
+	result := make(map[string]Adapter, len(values))
+	for _, adapter := range values {
+		result[adapter.ID] = adapter
+	}
+	return result
 }
 
 func discoverModels(ctx context.Context, provider string) ([]Model, error) {

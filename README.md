@@ -348,6 +348,11 @@ DeepSeek Harness is installed lazily at its exact tested version through the
 AI SDK ACP bootstrap; a global `dsh` installation is not required. DSH owns its
 provider and credential configuration. Dieter discovers the models advertised
 by DSH's standard ACP session options and returns only those models to clients.
+Model catalogs are machine-local: native clients load the catalog from the
+daemon that owns the selected project and never reuse another machine's model
+list. A daemon retains its last successfully discovered catalog across
+transient refresh failures and performs one bounded provider refresh when a
+create or resume request names a model that is not in its current catalog.
 See the [DSH integration proposal and operational notes](docs/deepseek-dsh-harness.md).
 
 ## Development

@@ -152,6 +152,8 @@ extension DieterStore {
             gatewayRPC = nil
 
             try? await saveSyncPersistence()
+            let cachedData = syncDiskState.projections[prepared.target.id]?.snapshot ?? syncDiskState.snapshot
+            let decodedSnapshot = await snapshotDecoder.snapshot(endpointID: prepared.target.id, data: cachedData)
             guard ConnectionAttemptOwnership.mayMutateSharedState(
                 attemptGeneration: generation,
                 currentGeneration: connectionGeneration
@@ -173,7 +175,7 @@ extension DieterStore {
 			endpoints = (discoveredDirectory ?? []).map { $0.id == prepared.target.id ? prepared.target : $0 }
 			machineConnectionStatuses[prepared.target.id] = prepared.plane.connection
 			machineConnectionErrors.removeValue(forKey: prepared.target.id)
-			activateSyncProjection(for: prepared.target)
+			activateSyncProjection(for: prepared.target, decodedSnapshot: decodedSnapshot, decodedData: cachedData)
 			persistEndpoints()
 			startMachinePresenceLeaseMonitor()
 			if let expiresAt = prepared.plane.directTokenExpiresAt {
@@ -183,6 +185,7 @@ extension DieterStore {
 			self.runtime = prepared.initial.runtime
 			acceptState(prepared.initial.state)
 			self.harnessCatalog = prepared.initial.harnesses
+			self.harnessCatalogsByEndpoint[prepared.target.id] = prepared.initial.harnesses
 			self.boardSettings = prepared.initial.settings
 			self.settingsOptions = prepared.initial.options
 			errorMessage = nil
@@ -584,6 +587,7 @@ extension DieterStore {
         state = Dieter_V1_State()
         projectDirectory.removeAll()
         projectEndpointIDs.removeAll()
+        harnessCatalogsByEndpoint.removeAll()
         navigationBoards.removeAll()
         navigationCards.removeAll()
         chats.removeAll()
@@ -603,6 +607,13 @@ extension DieterStore {
         scheduleRunsRequestGeneration &+= 1
         selectedProjectID = ""
         selectedBoardID = ""
+        resetFileSurface()
+        schedulesRead.cancel(); chatsRead.cancel(); terminalsRead.cancel()
+        chatsRequestGeneration &+= 1
+        terminalRequestGeneration &+= 1
+        archiveRequestGeneration &+= 1
+        chatsLoading = false; terminalLoading = false; archiveLoading = false
+        chatsError = nil; terminalError = nil; archiveError = nil; schedulesError = nil
         closeConversation()
         syncProjection = .empty
         syncSnapshot = nil
@@ -666,6 +677,51 @@ extension DieterStore {
         return phase.isConnected && endpoint.id == target.id
     }
 
+    func cachedHarnessCatalog(forProjectID projectID: String) -> Dieter_V1_HarnessCatalog? {
+        let endpointID = ConversationHarnessCatalogDirectory.endpointID(
+            projectID: projectID,
+            activeEndpointID: endpoint.id,
+            projectEndpointIDs: projectEndpointIDs
+        )
+        return ConversationHarnessCatalogDirectory.catalog(
+            endpointID: endpointID,
+            activeEndpointID: endpoint.id,
+            activeCatalog: harnessCatalog,
+            catalogsByEndpoint: harnessCatalogsByEndpoint
+        )
+    }
+
+    func loadHarnessCatalog(forProjectID projectID: String) async throws -> Dieter_V1_HarnessCatalog {
+        let endpointID = ConversationHarnessCatalogDirectory.endpointID(
+            projectID: projectID,
+            activeEndpointID: endpoint.id,
+            projectEndpointIDs: projectEndpointIDs
+        )
+        if let cached = harnessCatalogsByEndpoint[endpointID], !cached.harnesses.isEmpty {
+            return cached
+        }
+        if endpointID == endpoint.id {
+            guard let rpc else {
+                throw NSError(domain: "DieterHarnessCatalog", code: 1, userInfo: [NSLocalizedDescriptionKey: "This machine is unavailable."])
+            }
+            let catalog = try await rpc.harnesses()
+            harnessCatalog = catalog
+            harnessCatalogsByEndpoint[endpointID] = catalog
+            return catalog
+        }
+        guard let machine = endpoints.first(where: { $0.id == endpointID }), machine.online else {
+            throw NSError(domain: "DieterHarnessCatalog", code: 2, userInfo: [NSLocalizedDescriptionKey: "The project's machine is offline."])
+        }
+        let plane = try await selectDirectoryDataPlane(for: machine)
+        defer {
+            plane.task.cancel()
+            plane.rpc.shutdown()
+        }
+        let catalog = try await plane.rpc.harnesses()
+        harnessCatalogsByEndpoint[endpointID] = catalog
+        return catalog
+    }
+
     func refreshMachineDirectory(includeArchivedChats: Bool = false) async {
         // The active machine is owned by WatchSync. Polling it here used to
         // replace the live snapshot while retaining its cursor, so later
@@ -715,6 +771,7 @@ extension DieterStore {
         if chats != next.chats { chats = next.chats }
         let nextChatProjects = next.sortedProjects
         if chatProjects != nextChatProjects { chatProjects = nextChatProjects }
+        rebuildOutboxOverlays()
         if current != next { updateSelectedState() }
         if let selectedChatID, let selected = chats.first(where: { $0.id == selectedChatID }) {
             markChatRead(selected)

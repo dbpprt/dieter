@@ -54,10 +54,12 @@ struct ConversationView: View {
 
             Group {
                 if store.conversationLoading {
-                    VStack(spacing: 10) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading conversation…").font(.caption).foregroundStyle(DieterTheme.tertiary)
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    LoadFeedback(title: "Loading conversation…")
+                } else if let error = store.conversationError, store.conversation == nil {
+                    LoadFeedback(title: "Conversation", error: error, retry: {
+                        guard let id = store.selectedCardID ?? store.selectedChatID else { return }
+                        Task { await store.openConversation(cardID: id, chat: standalone) }
+                    })
                 } else if tab == "Subagents" {
                     SubagentsView()
                 } else if tab == "Comments" {
@@ -322,7 +324,7 @@ struct ConversationTimeline: View {
     private var queuedMessages: [Dieter_V1_QueuedMessage] { store.conversation?.conversation.queue ?? [] }
     private var timelineRows: [ConversationTimelineRowContent] { projection.rows }
     private var renderRange: Range<Int> {
-        ConversationRenderWindow.range(messageCount: messages.count, requestedStart: renderWindowStart)
+        ConversationRenderWindow.range(messages: messages, requestedStart: renderWindowStart)
     }
     private var projectionKey: ConversationPresentationKey {
         ConversationPresentationKey(
@@ -359,6 +361,9 @@ struct ConversationTimeline: View {
             cardRuntime: card?.runtime ?? ""
         )
     }
+    private var creationFailure: String? {
+        store.failedCreationError(conversationID)
+    }
     private var showsJumpToLatest: Bool {
         ConversationScrollBehavior.showsJumpToLatest(viewportMode: viewportMode)
     }
@@ -379,6 +384,16 @@ struct ConversationTimeline: View {
                 // anchor-translation cycle that can trap AttributeGraph in one
                 // transaction indefinitely.
                 VStack(alignment: .leading, spacing: 15) {
+                    if projectionConversationID != conversationID && !messages.isEmpty {
+                        LoadFeedback(title: "Preparing conversation…", compact: true)
+                            .accessibilityIdentifier("conversation.preparing")
+                    }
+                    if renderRange.lowerBound > 0 {
+                        Button("Show earlier messages") {
+                            viewportMode = .detached
+                            renderWindowStart = max(0, renderRange.lowerBound - 30)
+                        }.buttonStyle(.borderless).frame(maxWidth: .infinity)
+                    }
                     if store.conversationHistoryLoading {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
@@ -434,7 +449,14 @@ struct ConversationTimeline: View {
                         ConversationAgentWorkingIndicator(hasPendingTool: !pendingTools.isEmpty)
                             .id("conversation.agent-working")
                     }
-                    if let turnFailure {
+                    if let creationFailure {
+                        CreationFailureBanner(
+                            failure: creationFailure,
+                            onRetry: { Task { await store.retryOutboxItem(conversationID) } },
+                            onDiscard: { Task { await store.discardOutboxItem(conversationID) } }
+                        )
+                        .id("conversation.creation-failure")
+                    } else if let turnFailure {
                         TurnFailureBanner(
                             failure: turnFailure,
                             retrying: retryingFailureLog == turnFailure.log,
@@ -450,6 +472,12 @@ struct ConversationTimeline: View {
                             }
                         )
                         .id("conversation.turn-failure")
+                    }
+                    if renderRange.upperBound < messages.count {
+                        Button("Show later messages") {
+                            viewportMode = .detached
+                            renderWindowStart = renderRange.upperBound
+                        }.buttonStyle(.borderless).frame(maxWidth: .infinity)
                     }
                     Color.clear.frame(height: 17).id(ConversationScrollBehavior.bottomID)
                 }
@@ -536,8 +564,14 @@ struct ConversationTimeline: View {
                 let subagents = subagents
                 let queue = queuedMessages
                 let showReasoning = store.showReasoning
-                let next = await Task.detached(priority: .userInitiated) {
-                    ConversationTimelineProjection.build(
+                guard let next = try? await BackgroundPreparation.run({
+                    for message in source {
+                        for part in message.parts where !part.text.isEmpty {
+                            try Task.checkCancellation()
+                            _ = try ConversationRenderCache.prepare(ConversationRenderCache.preview(part.text))
+                        }
+                    }
+                    return ConversationTimelineProjection.build(
                         messages: source,
                         allMessageIDs: allMessageIDs,
                         plans: plans,
@@ -545,7 +579,7 @@ struct ConversationTimeline: View {
                         queue: queue,
                         showReasoning: showReasoning
                     )
-                }.value
+                }) else { return }
                 guard !Task.isCancelled,
                       key == projectionKey,
                       key.conversationID == conversationID else { return }
@@ -682,6 +716,56 @@ struct TurnFailureBanner: View {
         .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation.turn-failure")
+    }
+}
+
+struct CreationFailureBanner: View {
+    let failure: String
+    let onRetry: () -> Void
+    let onDiscard: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Conversation was not created")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(DieterTheme.text)
+                    Text(failure)
+                        .font(.callout)
+                        .foregroundStyle(DieterTheme.coral.opacity(0.9))
+                        .textSelection(.enabled)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(DieterTheme.coral)
+                    .accessibilityHidden(true)
+            }
+            Text("Nothing was started on the daemon. Retry the same idempotent request, or discard it and choose another model.")
+                .font(.caption)
+                .foregroundStyle(DieterTheme.tertiary)
+            HStack(spacing: 10) {
+                Label("Creation failed", systemImage: "circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(DieterTheme.coral)
+                    .padding(.horizontal, 11)
+                    .frame(height: 29)
+                    .background(DieterTheme.coral.opacity(0.13), in: Capsule())
+                Spacer(minLength: 10)
+                Button("Discard", role: .destructive, action: onDiscard)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("conversation.creation-failure.discard")
+                Button("Retry creation", action: onRetry)
+                    .buttonStyle(.borderedProminent)
+                    .tint(DieterTheme.elevated)
+                    .foregroundStyle(DieterTheme.text)
+                    .accessibilityIdentifier("conversation.creation-failure.retry")
+            }
+        }
+        .padding(16)
+        .background(DieterTheme.coral.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(DieterTheme.coral.opacity(0.45)))
     }
 }
 

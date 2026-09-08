@@ -124,6 +124,12 @@ extension DieterStore {
     func isPendingMessage(_ id: String) -> Bool { pendingMessageIDs.contains(id) }
     func isAcceptedOutboxItem(_ id: String) -> Bool { acceptedOutboxIDs.contains(id) }
     func isFailedOutboxItem(_ id: String) -> Bool { failedOutboxIDs.contains(id) }
+    func failedCreationError(_ id: String) -> String? {
+        syncDiskState.outbox.first { entry in
+            (entry.optimisticID == id || entry.serverID == id) && entry.state == .failed &&
+                (entry.kind == .createCard || entry.kind == .createChat)
+        }?.lastError
+    }
 
     var failedOutboxItems: [DieterFailedOutboxItem] {
         syncDiskState.outbox.compactMap { entry in
