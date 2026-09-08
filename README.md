@@ -536,3 +536,10 @@ Capture task uses the browser URL to select a project when exactly one active
 project matches. Multiple matches require a manual destination choice; no match
 keeps the current destination editable. The user still reviews and submits the
 Quick Task. Mappings do not grant access to a website or start any task.
+
+Local Mac builds automatically use the sole available Apple Development signing
+identity, so macOS privacy grants can survive rebuilds. Set
+`DIETER_MAC_SIGNING_IDENTITY` to a specific certificate fingerprint when multiple
+identities are installed, or `-` for ad-hoc signing. CI and machines without a
+single development identity retain ad-hoc signing. Switching from an old ad-hoc
+build may require granting Screen Recording to the newly signed Dieter app once.
