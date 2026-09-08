@@ -42,6 +42,33 @@ enum IslandUISmokeRunner {
             capture(window, to: output.appending(path: "island-expanded-empty.png"))
         }
 
+        let captureDirectory = output.appending(path: "capture-input")
+        try? FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
+        let captureFile = captureDirectory.appending(path: "capture.png")
+        let image = NSImage(size: NSSize(width: 180, height: 90))
+        image.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: 180, height: 90).fill()
+        image.unlockFocus()
+        if let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff), let png = bitmap.representation(using: .png, properties: [:]) {
+            try? png.write(to: captureFile)
+        }
+        controller.installCaptureFixture(file: captureFile, browser: CaptureBrowserContext(url: "https://example.com/capture", browser: true))
+        let captureClicked = controller.islandWindow.map { NativeUIAccessibility.click("island.capture-task", in: $0) } ?? false
+        let captureOpened = await waitUntil {
+            guard let window = NSApp.windows.first(where: { $0.title == "Capture task" && $0.isVisible }) else { return false }
+            return NativeUIAccessibility.find("quick-task.attachments", in: window) != nil && NativeUIAccessibility.find("quick-task.source-url", in: window) != nil
+        }
+        var captureAttachment = false
+        var captureURL = false
+        if let draftWindow = NSApp.windows.first(where: { $0.title == "Capture task" && $0.isVisible }) {
+            captureAttachment = NativeUIAccessibility.find("quick-task.attachments", in: draftWindow) != nil
+            captureURL = NativeUIAccessibility.find("quick-task.source-url", in: draftWindow) != nil
+            try? NativeUIAccessibility.elements(in: draftWindow).map(\.text).joined(separator: "\n").write(to: output.appending(path: "capture-draft-accessibility.txt"), atomically: true, encoding: .utf8)
+            capture(draftWindow, to: output.appending(path: "capture-task-draft.png"))
+            draftWindow.close()
+        }
+
         DieterIslandPreferences.setEnabled(false, in: defaults)
         controller.setEnabled(false)
         try? await DieterTaskSleep.milliseconds(150)
@@ -72,6 +99,9 @@ enum IslandUISmokeRunner {
         }
 
         writeReport([
+            "capture-task-button": captureClicked ? "passed" : "failed: capture button did not dispatch",
+            "capture-task-draft": captureOpened && captureAttachment && captureURL ? "passed" : "failed: screenshot or URL draft absent",
+            "capture-temp-cleanup": !FileManager.default.fileExists(atPath: captureFile.path) ? "passed" : "failed: capture file retained",
             "collapsed-window": appeared ? "passed" : "failed: island window did not appear",
             "expanded-window": expanded ? "passed" : "failed: island did not expand to its activity panel",
             "single-activity-layout": singleItemExpanded ? "passed" : "failed: single activity did not use the roomy minimum layout",

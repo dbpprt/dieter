@@ -108,6 +108,7 @@ private struct DieterIslandThemeRoot<Content: View>: View {
 final class DieterIslandController: NSObject {
     private let store: DieterStore
     private let presentation = DieterIslandPresentation()
+    private lazy var captureTask = CaptureTaskController(store: store)
     private var panel: DieterIslandPanel?
     private var geometry: DieterIslandDisplayGeometry?
     private var globalPointerMonitor: Any?
@@ -125,6 +126,12 @@ final class DieterIslandController: NSObject {
     init(store: DieterStore) {
         self.store = store
     }
+
+#if DIETER_UI_SMOKE
+    func installCaptureFixture(file: URL, browser: CaptureBrowserContext) {
+        captureTask.fixtureCapture = (file, browser)
+    }
+#endif
 
     var islandWindow: NSWindow? { panel }
     var isVisible: Bool { panel?.isVisible == true }
@@ -192,6 +199,7 @@ final class DieterIslandController: NSObject {
     }
 
     private func updateVisibility() {
+        guard !captureTask.capturing else { return }
         guard enabled else {
             closeTask?.cancel()
             presentation.expanded = false
@@ -243,7 +251,18 @@ final class DieterIslandController: NSObject {
                 rootView: DieterIslandThemeRoot(store: store) {
                     DieterIslandView(
                         presentation: presentation,
-                        onRequestExpansion: { [weak self] expanded in self?.setExpanded(expanded) }
+                        onRequestExpansion: { [weak self] expanded in self?.setExpanded(expanded) },
+                        onCaptureTask: { [weak self] in
+                            guard let self else { return }
+                            self.captureTask.capture(hideIsland: {
+                                self.closeTask?.cancel()
+                                self.removePointerMonitors()
+                                self.panel?.orderOut(nil)
+                            }, restoreIsland: { [weak self] in
+                                self?.setExpanded(false, animated: false)
+                                self?.updateVisibility()
+                            })
+                        }
                     )
                         .environment(store)
                 }

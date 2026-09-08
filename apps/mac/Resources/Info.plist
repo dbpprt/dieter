@@ -19,6 +19,7 @@
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>NSHumanReadableCopyright</key><string>Dieter</string>
     <key>NSLocalNetworkUsageDescription</key><string>Dieter connects to a Dieter server on this Mac or a trusted private network.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Dieter reads the active browser tab URL when you capture a task, so you can include it with your screenshot.</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSSupportsAutomaticTermination</key><false/>
     <key>NSSupportsSuddenTermination</key><false/>

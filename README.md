@@ -500,3 +500,17 @@ Draft agent settings can be changed in Edit card or with
 `dieter card update --provider codex --model MODEL --effort high --provider-option fast_mode=true CARD`.
 Settings are locked once the initial request has been sent. These commands also
 support the global `--machine ID|NAME` option for direct TLS or gateway relay.
+
+### Capture a Quick Task on macOS
+
+Use **Capture task** in the expanded Dieter Island, then drag to select a screen
+area (Escape cancels). The screenshot opens in a Quick Task draft with project
+and board selection, the usual agent controls, and an editable page URL when
+the foreground app is a supported browser. Nothing is submitted until **Add
+task**. Safari and Chromium browsers can request macOS Automation access to read
+the current tab; Firefox uses existing Accessibility access. If the URL cannot
+be read, paste it into the draft. Screen capture requires macOS Screen Recording
+permission. Temporary capture files are removed after attachment import.
+
+This uses the existing card-creation API; CLI automation can create the same
+request with `dieter card create --project PROJECT --board BOARD --auto-title --prompt TEXT --attach SCREENSHOT` and include the page URL in the prompt.

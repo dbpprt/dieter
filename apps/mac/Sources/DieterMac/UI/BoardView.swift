@@ -529,7 +529,7 @@ struct QuickTaskDraft {
     }
 }
 
-private struct QuickTaskPopover: View {
+struct QuickTaskPopover: View {
     @Environment(DieterStore.self) private var store
     @Binding var isPresented: Bool
     @State private var story = ""
@@ -543,6 +543,15 @@ private struct QuickTaskPopover: View {
     @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
     @State private var initialized = false
+    @State private var sourceURL: String
+    private let capturedBrowser: Bool
+
+    init(isPresented: Binding<Bool>, initialAttachments: [Dieter_V1_MessagePart] = [], sourceURL: String = "", capturedBrowser: Bool = false) {
+        _isPresented = isPresented
+        _attachments = State(initialValue: initialAttachments)
+        _sourceURL = State(initialValue: sourceURL)
+        self.capturedBrowser = capturedBrowser
+    }
     @FocusState private var storyFocused: Bool
 
     private var cleanStory: String { story.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -640,6 +649,17 @@ private struct QuickTaskPopover: View {
                     .smokeTarget("quick-task.attachments")
             }
 
+            if capturedBrowser {
+                TextField("Page URL (optional)", text: $sourceURL)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("quick-task.source-url")
+                    .smokeTarget("quick-task.source-url")
+                if sourceURL.isEmpty {
+                    Text("The browser URL couldn’t be read. You can paste it here.")
+                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                }
+            }
+
             HStack(spacing: 7) {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 10, weight: .semibold))
@@ -698,7 +718,7 @@ private struct QuickTaskPopover: View {
         workspace.baseBranch = store.selectedProject?.baseBranch ?? ""
         await store.createConversation(
             title: QuickTaskDraft.optimisticTitle(from: story),
-            prompt: story,
+            prompt: story + (sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\nPage URL: " + sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)),
             attachments: attachments,
             chat: false,
             provider: resolved?.provider ?? "",

@@ -1,0 +1,207 @@
+import AppKit
+import ApplicationServices
+import DieterAPI
+import SwiftUI
+
+struct CaptureBrowserContext: Sendable {
+    let url: String
+    let browser: Bool
+
+    static func validatedURL(_ value: String?) -> String? {
+        guard let value, let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { return nil }
+        return url.absoluteString
+    }
+
+    static func read(bundleID: String?, pid: pid_t?) async -> Self {
+        guard let bundleID else { return Self(url: "", browser: false) }
+        let chromium = ["com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac", "com.brave.Browser", "com.vivaldi.Vivaldi", "company.thebrowser.Browser", "com.operasoftware.Opera"]
+        let safari = ["com.apple.Safari", "com.apple.SafariTechnologyPreview"]
+        let browser = chromium.contains(bundleID) || safari.contains(bundleID) || bundleID.hasPrefix("org.mozilla.firefox")
+        guard browser else { return Self(url: "", browser: false) }
+        // Read browser chrome only, never page text or browsing history.
+        if let pid, let url = accessibilityURL(pid: pid) { return Self(url: url, browser: true) }
+        guard chromium.contains(bundleID) || safari.contains(bundleID) else { return Self(url: "", browser: true) }
+        let expression = safari.contains(bundleID) ? "URL of current tab of front window" : "URL of active tab of front window"
+        let value = await Task.detached {
+            let script = NSAppleScript(source: "with timeout of 10 seconds\ntell application id \"\(bundleID)\" to get \(expression)\nend timeout")
+            var error: NSDictionary?
+            return script?.executeAndReturnError(&error).stringValue
+        }.value
+        return Self(url: validatedURL(value) ?? "", browser: true)
+    }
+
+    private static func accessibilityURL(pid: pid_t) -> String? {
+        guard AXIsProcessTrusted() else { return nil }
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.2)
+        var window: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &window) == .success,
+              let window, CFGetTypeID(window) == AXUIElementGetTypeID() else { return nil }
+        let root = unsafeDowncast(window, to: AXUIElement.self)
+        func string(_ node: AXUIElement, _ key: String) -> String? {
+            var value: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(node, key as CFString, &value) == .success else { return nil }
+            return value as? String
+        }
+        if let url = validatedURL(string(root, kAXDocumentAttribute)) { return url }
+        var nodes: [(AXUIElement, Int)] = [(root, 0)]
+        var visited = 0
+        let deadline = Date().addingTimeInterval(1)
+        while !nodes.isEmpty && visited < 160 && Date() < deadline {
+            let (node, depth) = nodes.removeFirst(); visited += 1
+            AXUIElementSetMessagingTimeout(node, 0.05)
+            let role = string(node, kAXRoleAttribute) ?? ""
+            if role == "AXWebArea" {
+                if let url = validatedURL(string(node, "AXURL")) { return url }
+                continue
+            }
+            let label = (string(node, kAXDescriptionAttribute) ?? "").lowercased()
+            if role == kAXTextFieldRole && (label.contains("address") || label.contains("adresse") || label.contains("url")),
+               let url = validatedURL(string(node, kAXValueAttribute)) { return url }
+            guard depth < 8 else { continue }
+            var children: CFTypeRef?
+            if AXUIElementCopyAttributeValue(node, kAXChildrenAttribute as CFString, &children) == .success,
+               let children = children as? [AXUIElement] {
+                nodes.append(contentsOf: children.prefix(max(0, 160 - visited - nodes.count)).map { ($0, depth + 1) })
+            }
+        }
+        return nil
+    }
+}
+
+enum CaptureTaskError: LocalizedError {
+    case screenPermission
+    var errorDescription: String? {
+        "Allow Dieter in System Settings → Privacy & Security → Screen & System Audio Recording, then try Capture task again."
+    }
+}
+
+enum TaskScreenCapture {
+    static func region() async throws -> URL? {
+        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else { throw CaptureTaskError.screenPermission }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dieter-capture-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let file = directory.appendingPathComponent("Screen capture.png")
+        do {
+            let status = try await Task.detached {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+                process.arguments = ["-i", "-s", "-x", "-t", "png", file.path]
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                try process.run(); process.waitUntilExit()
+                return process.terminationStatus
+            }.value
+            guard status == 0, FileManager.default.fileExists(atPath: file.path) else {
+                try? FileManager.default.removeItem(at: directory)
+                return nil // Escape cancels the native region selector.
+            }
+            return file
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+}
+
+@MainActor
+final class CaptureTaskController {
+    private let store: DieterStore
+    private var window: NSWindow?
+#if DIETER_UI_SMOKE
+    var fixtureCapture: (URL, CaptureBrowserContext)?
+#endif
+    private(set) var capturing = false
+
+    init(store: DieterStore) { self.store = store }
+
+    func capture(hideIsland: () -> Void, restoreIsland: @escaping () -> Void) {
+        guard !capturing else { return }
+        if let window, window.isVisible {
+            NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil); return
+        }
+        capturing = true
+        let source = NSWorkspace.shared.frontmostApplication
+        hideIsland()
+        Task {
+            defer { capturing = false; restoreIsland() }
+            do {
+                let browser: CaptureBrowserContext
+                let capture: URL?
+#if DIETER_UI_SMOKE
+                if let fixtureCapture {
+                    browser = fixtureCapture.1
+                    capture = fixtureCapture.0
+                    self.fixtureCapture = nil
+                } else {
+                    browser = await CaptureBrowserContext.read(bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
+                    capture = try await TaskScreenCapture.region()
+                }
+#else
+                browser = await CaptureBrowserContext.read(bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
+                capture = try await TaskScreenCapture.region()
+#endif
+                guard let file = capture else { return }
+                defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+                let parts = try await store.attachmentParts([file])
+                present(parts: parts, browser: browser)
+            } catch {
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert(error: error)
+                alert.runModal()
+            }
+        }
+    }
+
+    func present(parts: [Dieter_V1_MessagePart], browser: CaptureBrowserContext) {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 424, height: 640), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = "Capture task"
+        window.isReleasedWhenClosed = false
+        window.contentMinSize = NSSize(width: 424, height: 400)
+        window.contentView = NSHostingView(rootView: CapturedTaskDraftView(parts: parts, browser: browser, dismiss: { [weak self] in self?.window?.close(); self?.window = nil }).environment(store))
+        self.window = window
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+}
+
+struct CapturedTaskDraftView: View {
+    @Environment(DieterStore.self) private var store
+    let parts: [Dieter_V1_MessagePart]
+    let browser: CaptureBrowserContext
+    let dismiss: () -> Void
+    @State private var presented = true
+    @State private var changingDestination = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Destination").font(.caption.weight(.semibold))
+                    Picker("Project", selection: Binding(get: { store.selectedProjectID }, set: { id in
+                        changingDestination = true
+                        Task { await store.selectProject(id); changingDestination = false }
+                    })) {
+                        Text("Choose project").tag("")
+                        ForEach(store.projects, id: \.id) { Text($0.name).tag($0.id) }
+                    }
+                    Picker("Board", selection: Binding(get: { store.selectedBoardID }, set: { id in
+                        changingDestination = true
+                        Task { await store.selectBoard(id); changingDestination = false }
+                    })) {
+                        Text("Choose board").tag("")
+                        ForEach(store.boards(for: store.selectedProjectID), id: \.id) { Text($0.name).tag($0.id) }
+                    }
+                }
+                .padding(.horizontal, 17).padding(.top, 17)
+                .disabled(changingDestination)
+                QuickTaskPopover(isPresented: $presented, initialAttachments: parts, sourceURL: browser.url, capturedBrowser: browser.browser)
+                    .disabled(changingDestination)
+            }
+        }
+        .background(DieterTheme.background)
+        .onChange(of: presented) { _, value in if !value { dismiss() } }
+    }
+}
