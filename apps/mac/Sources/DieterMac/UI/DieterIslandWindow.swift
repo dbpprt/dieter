@@ -100,7 +100,6 @@ private struct DieterIslandThemeRoot<Content: View>: View {
                 palette: store.themeSelection.palette,
                 appearance: store.themeSelection.appearance
             )
-            .preferredColorScheme(store.themeSelection.appearance.colorScheme)
     }
 }
 

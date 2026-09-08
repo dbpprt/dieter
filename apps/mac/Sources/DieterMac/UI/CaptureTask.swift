@@ -71,29 +71,36 @@ struct CaptureBrowserContext: Sendable {
 }
 
 enum CaptureTaskError: LocalizedError {
-    case screenPermission
+    case failed(String)
     var errorDescription: String? {
-        "Allow Dieter in System Settings → Privacy & Security → Screen & System Audio Recording, then try Capture task again."
+        switch self {
+        case .failed(let detail): "Screen capture failed: \(detail)"
+        }
     }
 }
 
 enum TaskScreenCapture {
     static func region() async throws -> URL? {
-        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else { throw CaptureTaskError.screenPermission }
+        // Native interactive capture handles authorization itself; preflight can
+        // disagree with that service after the application has been rebuilt.
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dieter-capture-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let file = directory.appendingPathComponent("Screen capture.png")
         do {
-            let status = try await Task.detached {
+            let result = try await Task.detached {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
                 process.arguments = ["-i", "-s", "-x", "-t", "png", file.path]
                 process.standardOutput = FileHandle.nullDevice
-                process.standardError = FileHandle.nullDevice
-                try process.run(); process.waitUntilExit()
-                return process.terminationStatus
+                let errors = Pipe()
+                process.standardError = errors
+                try process.run()
+                let diagnostics = errors.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                return (process.terminationStatus, String(decoding: diagnostics, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
             }.value
-            guard status == 0, FileManager.default.fileExists(atPath: file.path) else {
+            guard result.0 == 0, FileManager.default.fileExists(atPath: file.path) else {
+                if !result.1.isEmpty { throw CaptureTaskError.failed(result.1) }
                 try? FileManager.default.removeItem(at: directory)
                 return nil // Escape cancels the native region selector.
             }

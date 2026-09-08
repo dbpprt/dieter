@@ -30,7 +30,6 @@ struct DieterMacApp: App {
                     palette: store.themeSelection.palette,
                     appearance: store.themeSelection.appearance
                 )
-                .preferredColorScheme(store.themeSelection.appearance.colorScheme)
                 .onAppear {
                     store.themeSelection = DieterThemeSelection(
                         appearance: DieterAppearance.resolve(appearanceValue),
@@ -238,7 +237,6 @@ struct MenuBarContent: View {
             palette: store.themeSelection.palette,
             appearance: store.themeSelection.appearance
         )
-        .preferredColorScheme(store.themeSelection.appearance.colorScheme)
     }
 
     private var header: some View {

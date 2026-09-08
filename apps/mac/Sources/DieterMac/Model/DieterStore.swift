@@ -308,7 +308,9 @@ final class DieterStore {
         syncPersistence = syncPersistenceOverride ?? DieterSyncPersistence()
         let themeDefaults = themeDefaultsOverride ?? DieterAppearance.applicationDefaults()
         self.themeDefaults = themeDefaults
-        themeSelection = DieterThemeSelection.load(from: themeDefaults)
+        let initialTheme = DieterThemeSelection.load(from: themeDefaults)
+        themeSelection = initialTheme
+        DieterTheme.install(selection: initialTheme)
         let arguments = ProcessInfo.processInfo.arguments
         if let flag = arguments.firstIndex(of: "--dieter-access-token-file"), arguments.indices.contains(flag + 1),
            let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)
