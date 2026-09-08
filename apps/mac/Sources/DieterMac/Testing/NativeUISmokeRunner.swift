@@ -215,12 +215,16 @@ enum NativeUISmokeRunner {
         if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
             let boardCards = store.state.cards.filter { $0.boardID == board.id }
             let largestLane = Dictionary(grouping: boardCards, by: \.lane).values.map(\.count).max() ?? 0
-            results["board-stress-total-cards"] = boardCards.count == 78
+            results["board-stress-total-cards"] = boardCards.count == 100
                 ? "passed"
-                : "failed: expected 78 cards, received \(boardCards.count)"
-            results["board-stress-largest-lane"] = largestLane == 65
+                : "failed: expected 100 cards, received \(boardCards.count)"
+            results["board-stress-largest-lane"] = largestLane == 85
                 ? "passed"
-                : "failed: expected 65 cards, received \(largestLane)"
+                : "failed: expected 85 cards, received \(largestLane)"
+        }
+        if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
+            await runBoardOpeningChecks(store: store, window: window, board: board, project: project, results: &results, output: output)
+            await runNavigationResponsivenessChecks(store: store, window: window, board: board, project: project, results: &results, output: output)
         }
         if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
             writeReport(results, to: output)
@@ -910,6 +914,102 @@ enum NativeUISmokeRunner {
         } catch {
             results["files-editor-lifecycle"] = "failed: \(error)"
         }
+    }
+
+    private static func runBoardOpeningChecks(store: DieterStore, window: NSWindow, board: Dieter_V1_Board,
+        project: Dieter_V1_Project, results: inout [String: String], output: URL) async {
+        var selection: [Double] = [], display: [Double] = []
+        for _ in 0..<3 {
+            store.openScreens()
+            try? await DieterTaskSleep.milliseconds(150)
+            let start = Date()
+            await store.openBoard(board.id, projectID: project.id)
+            let selected = Date()
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            selection.append(selected.timeIntervalSince(start) * 1_000)
+            display.append(Date().timeIntervalSince(selected) * 1_000)
+            try? await DieterTaskSleep.milliseconds(150)
+        }
+        results["board-open-selection-ms"] = selection.map { String(format: "%.1f", $0) }.joined(separator: ", ")
+        results["board-open-layout-display-ms"] = display.map { String(format: "%.1f", $0) }.joined(separator: ", ")
+        let tables = nativeTables(in: window.contentView)
+        let mounted = tables.reduce(0) { count, table in
+            var rows = 0
+            table.enumerateAvailableRowViews { _, _ in rows += 1 }
+            return count + rows
+        }
+        results["board-mounted-card-rows"] = "\(mounted) of \(tables.reduce(0) { $0 + $1.numberOfRows })"
+        results["board-virtualized"] = tables.reduce(0) { $0 + $1.numberOfRows } == 100 && mounted < 40
+            ? "passed" : "failed: offscreen cards were mounted or missing"
+        guard let table = tables.first(where: { $0.numberOfRows == 85 }) else {
+            results["board-scroll-to-last-card"] = "failed: Todo lane missing"; return
+        }
+        table.scrollRowToVisible(84)
+        try? await DieterTaskSleep.milliseconds(200)
+        let last = BoardCardOrdering.sorted(store.displayedCards.filter { $0.lane == "todo" }).last
+        let lastVisible = last.map { NativeUIAccessibility.find("card.\($0.id)", in: window) != nil } ?? false
+        results["board-scroll-to-last-card"] = lastVisible ? "passed" : "failed: last card unavailable"
+        capture(window, to: output.appending(path: "02-board-scrolled-to-last.png"))
+        if let last {
+            let clicked = NativeUIAccessibility.click("card.\(last.id)", in: window)
+            let opened = await NativeUIAccessibility.wait { store.selectedCardID == last.id }
+            results["board-scrolled-card-click"] = clicked && opened ? "passed" : "failed: recycled card opened the wrong conversation"
+            store.closeConversation()
+        }
+        table.scrollRowToVisible(0)
+        try? await DieterTaskSleep.milliseconds(200)
+        capture(window, to: output.appending(path: "03-board-returned-to-top.png"))
+    }
+
+    private static func runNavigationResponsivenessChecks(store: DieterStore, window: NSWindow,
+        board: Dieter_V1_Board, project: Dieter_V1_Project, results: inout [String: String], output: URL) async {
+        if NativeUIAccessibility.find("sidebar.board.\(board.id)", in: window) == nil {
+            let expanded = NativeUIAccessibility.click("sidebar.project.\(project.id).toggle", in: window)
+            guard expanded, await NativeUIAccessibility.wait(until: {
+                NativeUIAccessibility.find("sidebar.board.\(board.id)", in: window) != nil
+            }) else {
+                results["navigation-controls"] = "failed: project destinations did not expand"
+                return
+            }
+            try? await DieterTaskSleep.milliseconds(250)
+        }
+        let destinations: [(AppSection, String)] = [
+            (.board, "sidebar.board.\(board.id)"), (.chats, "sidebar.all-chats"),
+            (.files, "sidebar.files.\(project.id)"), (.changes, "sidebar.changes.\(project.id)"),
+            (.schedules, "sidebar.schedules.\(project.id)"), (.terminals, "sidebar.terminals"),
+            (.settings, "sidebar.settings"), (.screens, "sidebar.screens"),
+        ]
+        for (section, control) in destinations {
+            var samples: [String] = []
+            for repetition in 0..<3 {
+                if section == .screens { store.openSettings() } else { store.openScreens() }
+                try? await DieterTaskSleep.milliseconds(300)
+                let probe = NativeUINavigationProbe(window: window, section: section)
+                probe.start()
+                let clicked = NativeUIAccessibility.click(control, in: window)
+                // Do not force layout/display or traverse accessibility inside
+                // the measured interval. Let the real event/run loop advance.
+                for _ in 0..<200 {
+                    if probe.firstDrawMS != nil || !clicked { break }
+                    try? await DieterTaskSleep.milliseconds(10)
+                }
+                try? await DieterTaskSleep.milliseconds(150)
+                probe.stop()
+                if clicked, store.section == section, let update = probe.firstDrawMS {
+                    samples.append(String(format: "event %.1f / draw %.1f / max-gap %.1f ms",
+                        probe.mouseDownMS ?? -1, update, probe.maximumMainLoopGapMS))
+                } else { samples.append("failed: click \(clicked), section \(store.section.rawValue), draw \(probe.firstDrawMS != nil)") }
+                if repetition == 0 { capture(window, to: output.appending(path: "navigation-\(section.rawValue.lowercased()).png")) }
+            }
+            results["navigation-\(section.rawValue.lowercased())"] = samples.joined(separator: "; ")
+        }
+        results["navigation-metric-definition"] = "Native click invocation to first destination drawing callback; includes target lookup. Not compositor presentation or data-ready time. Event = mouse-down delivery; max-gap = largest main-run-loop timer interval (8 ms target). Three samples, debug fixture."
+    }
+
+    private static func nativeTables(in view: NSView?) -> [NSTableView] {
+        guard let view else { return [] }
+        return (view as? NSTableView).map { [$0] } ?? view.subviews.flatMap { nativeTables(in: $0) }
     }
 
     private static func nativeTextViews(in view: NSView?) -> [NSTextView] {

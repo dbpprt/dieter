@@ -237,7 +237,7 @@ private actor ChatPinRPCStub: DieterChatPinRPC {
     run.id = "sr_morning"
     run.scheduleID = schedule.id
     let rpc = ScheduleRPCStub(schedules: [schedule], runs: [run])
-    let store = DieterStore(scheduleRPCOverride: rpc)
+    let store = DieterStore(scheduleRPCOverride: rpc, restoreSync: false)
     store.selectedProjectID = schedule.projectID
 
     await store.loadSchedules()
@@ -271,7 +271,7 @@ private actor ChatPinRPCStub: DieterChatPinRPC {
         schedulePages: ["": firstSchedules, "s-next": secondSchedules],
         runPages: ["": firstRuns, "r-next": secondRuns]
     )
-    let store = DieterStore(scheduleRPCOverride: rpc)
+    let store = DieterStore(scheduleRPCOverride: rpc, restoreSync: false)
     store.selectedProjectID = morning.projectID
 
     await store.loadSchedules()

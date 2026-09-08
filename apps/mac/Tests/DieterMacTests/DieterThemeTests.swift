@@ -14,6 +14,37 @@ private let macPackageRoot = URL(fileURLWithPath: #filePath)
 
 @Suite(.serialized)
 struct DieterThemePerformanceTests {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_BOARD_PROFILE"] == "1"))
+    @MainActor func boardOpeningStageDiagnostic() throws {
+        for counts in [[10, 0, 0, 0], [100, 0, 0, 0], [25, 25, 25, 25]] {
+            for sample in 1...3 {
+                let start = Date()
+                let fixture = makeProductionBoardFixture(laneCounts: counts)
+                let projected = Date()
+                let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
+                let hosted = Date()
+                view.frame = NSRect(x: 0, y: 0, width: 1_140, height: 710)
+                view.layoutSubtreeIfNeeded()
+                let laidOut = Date()
+                let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let drawn = Date()
+                print("BOARD_PROFILE counts=\(counts) sample=\(sample) projection_ms=\(projected.timeIntervalSince(start)*1000) host_ms=\(hosted.timeIntervalSince(projected)*1000) layout_ms=\(laidOut.timeIntervalSince(hosted)*1000) draw_ms=\(drawn.timeIntervalSince(laidOut)*1000)")
+                var pending: [NSView] = [view]
+                var mountedRows = 0
+                while let next = pending.popLast() {
+                    pending.append(contentsOf: next.subviews)
+                    if let table = next as? NSTableView {
+                        table.enumerateAvailableRowViews { _, _ in mountedRows += 1 }
+                    }
+                }
+                print("BOARD_PROFILE mounted_rows=\(mountedRows)")
+                if sample == 3, counts == [25, 25, 25, 25] {
+                    try bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/tmp/dieter-board-profile.png"))
+                }
+            }
+        }
+    }
     @Test func productionThemeAndStatusViewsAvoidContinuousSwiftUIDrivers() throws {
         let sourceRoot = macPackageRoot.appendingPathComponent("Sources/DieterMac")
         let sourceURLs = try #require(FileManager.default.enumerator(
@@ -145,18 +176,25 @@ struct DieterThemePerformanceTests {
         #expect(accessibilityStart.duration(to: .now) < .seconds(2))
     }
 
-    @Test func productionBoardLaneRetainsTheEagerStackWorkaround() throws {
-        let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/BoardView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let start = try #require(source.range(of: "struct LaneColumn: View"))
-        let end = try #require(source.range(
-            of: "private struct LaneInsertionTarget: View",
-            range: start.upperBound..<source.endIndex
-        ))
-        let implementation = source[start.lowerBound..<end.lowerBound]
-
-        #expect(implementation.contains("VStack(spacing: 0)"))
-        #expect(!implementation.contains("LazyVStack"))
+    @Test @MainActor func boardOnlyMountsVisibleCardsAndScrollsBeyondTheOldPageLimit() {
+        let fixture = makeProductionBoardFixture(laneCounts: [100, 0, 0, 0])
+        let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
+        view.frame = NSRect(x: 0, y: 0, width: 1_140, height: 710)
+        view.layoutSubtreeIfNeeded()
+        var pending: [NSView] = [view]
+        var tables: [NSTableView] = []
+        while let next = pending.popLast() {
+            pending.append(contentsOf: next.subviews)
+            if let table = next as? NSTableView { tables.append(table) }
+        }
+        guard let table = tables.first else { Issue.record("Native lane missing"); return }
+        #expect(table.numberOfRows == 100)
+        var mounted = 0
+        table.enumerateAvailableRowViews { _, _ in mounted += 1 }
+        #expect(mounted > 0 && mounted < 15)
+        table.scrollRowToVisible(99)
+        view.layoutSubtreeIfNeeded()
+        #expect(NSLocationInRange(99, table.rows(in: table.visibleRect)))
     }
 
     @Test func productionProjectSidebarRetainsTheEagerStackWorkaround() throws {
@@ -294,7 +332,7 @@ struct DieterThemePerformanceTests {
     }
 
     @MainActor
-    private func makeProductionBoardFixture() -> (
+    private func makeProductionBoardFixture(laneCounts: [Int] = [65, 5, 4, 4]) -> (
         store: DieterStore,
         board: Dieter_V1_Board,
         total: Int,
@@ -309,7 +347,6 @@ struct DieterThemePerformanceTests {
         board.id = "board-performance"
         board.projectID = project.id
         board.name = "Board performance fixture"
-        let laneCounts = [65, 5, 4, 4]
         let laneIDs = ["todo", "running", "review", "done"]
         board.lanes = zip(laneIDs, ["Todo", "Running", "Review", "Done"]).map { id, name in
             var lane = Dieter_V1_Lane()

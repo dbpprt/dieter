@@ -552,15 +552,6 @@ struct LaneColumn: View {
     let sortDirection: BoardCardSortDirection
     let onToggleSort: () -> Void
     @State private var isDropTargeted = false
-    @State private var pageIndex = 0
-
-    private var page: LaneCardPage {
-        LaneCardPage.resolve(total: cards.count, requestedPage: pageIndex)
-    }
-
-    private var visibleCards: ArraySlice<Dieter_V1_Card> {
-        cards[page.lowerBound..<page.upperBound]
-    }
 
     private var laneTint: Color {
         switch lane.id.lowercased() {
@@ -592,48 +583,17 @@ struct LaneColumn: View {
                 .accessibilityIdentifier("lane-sort.\(lane.id)")
                 Button { store.createConversationPresented = true } label: { Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary) }.buttonStyle(.plain)
             }.padding(.horizontal, 6).padding(.top, 2)
-            ScrollView {
-                // Board lanes are intentionally bounded and use an eager stack.
-                // On macOS, lazy placement can enter an anchor-translation loop
-                // when variable-height cards carry menus, sheets, and drop targets.
-                VStack(spacing: 0) {
-                    ForEach(visibleCards, id: \.id) { card in
-                        LaneInsertionTarget(laneID: lane.id, beforeCardID: card.id, cards: cards)
-                        BoardCardView(card: card)
-                            .opacity(store.movingCardIDs.contains(card.id) ? 0.48 : 1)
-                            .help("Drag to move \(card.title) to another lane")
-                    }
-                    LaneInsertionTarget(laneID: lane.id, beforeCardID: nil, cards: cards)
-                    if cards.isEmpty {
-                        VStack(spacing: 7) {
-                            Image(systemName: isDropTargeted ? "arrow.down.circle.fill" : "arrow.down.circle").font(.system(size: 17))
-                            Text(isDropTargeted ? "Release to move" : "Drop cards here")
-                        }
-                            .font(.caption).foregroundStyle(isDropTargeted ? DieterTheme.shell : DieterTheme.tertiary)
-                            .frame(maxWidth: .infinity).padding(.vertical, 28)
-                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(isDropTargeted ? DieterTheme.shell.opacity(0.55) : DieterTheme.border, style: .init(dash: [5])))
-                    }
+            if cards.isEmpty {
+                VStack(spacing: 7) {
+                    Image(systemName: isDropTargeted ? "arrow.down.circle.fill" : "arrow.down.circle").font(.system(size: 17))
+                    Text(isDropTargeted ? "Release to move" : "Drop cards here")
                 }
-            }
-            if page.pageCount > 1 {
-                HStack(spacing: 8) {
-                    Button { pageIndex = max(0, page.page - 1) } label: {
-                        Image(systemName: "chevron.left")
-                    }
-                    .disabled(!page.canGoBackward)
-                    .accessibilityLabel("Previous \(lane.name) cards")
-                    Text(page.rangeLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(DieterTheme.tertiary)
-                        .frame(maxWidth: .infinity)
-                    Button { pageIndex = min(page.pageCount - 1, page.page + 1) } label: {
-                        Image(systemName: "chevron.right")
-                    }
-                    .disabled(!page.canGoForward)
-                    .accessibilityLabel("Next \(lane.name) cards")
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 6)
+                .font(.caption).foregroundStyle(isDropTargeted ? DieterTheme.shell : DieterTheme.tertiary)
+                .frame(maxWidth: .infinity).padding(.vertical, 28)
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border, style: .init(dash: [5])))
+                Spacer(minLength: 0)
+            } else {
+                BoardLaneList(laneID: lane.id, cards: cards, sortDirection: sortDirection)
             }
         }
         .padding(10)
@@ -648,16 +608,13 @@ struct LaneColumn: View {
             Task { await store.move(card, lane: lane.id) }
             return true
         } isTargeted: { isDropTargeted = $0 }
-        .onChange(of: cards.count) { _, _ in pageIndex = page.page }
-        .onChange(of: sortDirection) { _, _ in pageIndex = 0 }
     }
 }
 
-private struct LaneInsertionTarget: View {
+struct LaneInsertionTarget: View {
     @Environment(DieterStore.self) private var store
     let laneID: String
     let beforeCardID: String?
-    let cards: [Dieter_V1_Card]
     @State private var targeted = false
 
     var body: some View {
@@ -679,7 +636,8 @@ private struct LaneInsertionTarget: View {
             if payload.sourceLane == laneID, beforeCardID == payload.cardID { return true }
             let position: Int64?
             if let beforeCardID {
-                position = BoardDropOrdering.position(before: beforeCardID, movingCardID: payload.cardID, cards: cards)
+                position = BoardDropOrdering.position(before: beforeCardID, movingCardID: payload.cardID,
+                    cards: store.boardProjection.displayedCardsByLane[laneID] ?? [])
             } else {
                 position = nil
             }
@@ -845,6 +803,7 @@ struct BoardCardView: View {
             }.disabled(!store.projectIsAvailable(card.projectID))
         }
         .accessibilityIdentifier("card.\(card.id)")
+        .smokeTarget("card.\(card.id)")
         .sheet(isPresented: $renamePresented) {
             VStack(alignment: .leading, spacing: 14) { Text("Rename card").font(.title2.weight(.bold)); TextField("Title", text: $renameText); HStack { Spacer(); Button("Cancel") { renamePresented = false }; Button("Rename") { Task { await store.rename(card, title: renameText); renamePresented = false } }.buttonStyle(.borderedProminent).disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty) } }.padding(22).frame(width: 440)
         }

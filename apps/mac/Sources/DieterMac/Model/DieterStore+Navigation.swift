@@ -20,7 +20,7 @@ extension DieterStore {
 
     func selectBoard(_ id: String) async {
         selectedBoardID = id
-        await refreshState()
+        if !hasLiveBoardProjection(projectID: selectedProjectID) { await refreshState() }
     }
 
     func openBoard(_ boardID: String, projectID: String) async {
@@ -35,7 +35,14 @@ extension DieterStore {
         guard await ensureProjectConnection(projectID, reportOffline: false) else { return }
         guard generation == boardSelectionGeneration, section == .board else { return }
         selectCachedBoard(boardID, projectID: projectID)
-        await refreshState()
+        // WatchSync already owns this live project's state. A board click must
+        // not fetch and republish the same project (including every card/chat).
+        if !hasLiveBoardProjection(projectID: projectID) { await refreshState() }
+    }
+
+    func hasLiveBoardProjection(projectID: String) -> Bool {
+        workspaceIsLive && (projectEndpointIDs[projectID] ?? endpoint.id) == endpoint.id &&
+            syncSnapshot?.state.projects.contains(where: { $0.id == projectID }) == true
     }
 
     /// Board navigation is backed by the synchronized projection. Selecting it

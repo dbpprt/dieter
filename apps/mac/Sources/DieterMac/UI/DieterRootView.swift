@@ -142,9 +142,9 @@ struct DieterRootView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationSmokeDestination(store.section)
         }
         .animation(.snappy(duration: 0.24), value: navigationCollapsed)
         .animation(.easeOut(duration: 0.18), value: workspaceSurfaceTreatment)
@@ -422,7 +422,7 @@ struct AppSidebar: View {
                 badge: activeChats.count
             ) { Task { await store.openChats() } }
             .padding(.top, 9)
-            .accessibilityIdentifier("sidebar.all-chats")
+            .accessibilityIdentifier("sidebar.all-chats").smokeTarget("sidebar.all-chats")
         } else {
             SidebarDestination(
                 title: "All chats",
@@ -432,7 +432,7 @@ struct AppSidebar: View {
                 prominentBadge: true
             ) { Task { await store.openChats() } }
             .padding(.horizontal, 8).padding(.top, 9)
-            .accessibilityIdentifier("sidebar.all-chats")
+            .accessibilityIdentifier("sidebar.all-chats").smokeTarget("sidebar.all-chats")
         }
 
         if collapsed {
@@ -442,7 +442,7 @@ struct AppSidebar: View {
                 selected: store.section == .terminals,
                 badge: store.terminals.filter { $0.status == "running" }.count
             ) { Task { await store.openTerminals() } }
-            .accessibilityIdentifier("sidebar.terminals")
+            .accessibilityIdentifier("sidebar.terminals").smokeTarget("sidebar.terminals")
         } else {
             SidebarDestination(
                 title: "Terminals",
@@ -451,7 +451,7 @@ struct AppSidebar: View {
                 badge: store.terminals.filter { $0.status == "running" }.count
             ) { Task { await store.openTerminals() } }
             .padding(.horizontal, 8)
-            .accessibilityIdentifier("sidebar.terminals")
+            .accessibilityIdentifier("sidebar.terminals").smokeTarget("sidebar.terminals")
         }
 
 		if collapsed {
@@ -461,7 +461,7 @@ struct AppSidebar: View {
 				selected: store.section == .screens,
 				annotation: "Experimental"
 			) { store.openScreens() }
-			.accessibilityIdentifier("sidebar.screens")
+			.accessibilityIdentifier("sidebar.screens").smokeTarget("sidebar.screens")
 		} else {
 			SidebarDestination(
 				title: "Screens",
@@ -470,7 +470,7 @@ struct AppSidebar: View {
 				annotation: "Experimental"
 			) { store.openScreens() }
 			.padding(.horizontal, 8)
-			.accessibilityIdentifier("sidebar.screens")
+			.accessibilityIdentifier("sidebar.screens").smokeTarget("sidebar.screens")
 		}
     }
 
@@ -542,7 +542,7 @@ struct AppSidebar: View {
                     .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
                 }
                 SidebarRailDestination(title: "Settings", symbol: "gearshape", selected: store.section == .settings) { store.openSettings() }
-                    .accessibilityIdentifier("sidebar.settings")
+                    .accessibilityIdentifier("sidebar.settings").smokeTarget("sidebar.settings")
                 SidebarRailDestination(title: "Add a Git project", symbol: "plus", selected: false) { store.createProjectPresented = true }
             }.frame(maxWidth: .infinity).padding(.vertical, 9)
         } else {
@@ -592,7 +592,7 @@ struct AppSidebar: View {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
 
                 SidebarDestination(title: "Settings", symbol: "gearshape", selected: store.section == .settings) { store.openSettings() }
-                    .accessibilityIdentifier("sidebar.settings")
+                    .accessibilityIdentifier("sidebar.settings").smokeTarget("sidebar.settings")
                 SidebarFooterButton(title: "Add a Git project", symbol: "plus") { store.createProjectPresented = true }
             }.padding(8)
         }
