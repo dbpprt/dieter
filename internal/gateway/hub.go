@@ -22,6 +22,7 @@ const (
 	maxRelayPayload               = 16 << 20
 	defaultRelayFrameBuffer       = 4
 	remoteDesktopRelayFrameBuffer = 128
+	heartbeatAckCapability        = "heartbeat_ack_v1"
 )
 
 const (
@@ -48,6 +49,7 @@ type daemonLink struct {
 	id         string
 	generation uint64
 	send       chan *gatewayv1.DaemonLinkFrame
+	control    chan *gatewayv1.DaemonLinkFrame
 	done       chan struct{}
 	closeOnce  sync.Once
 	mu         sync.RWMutex
@@ -99,7 +101,11 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	if err := h.store.MarkDaemonSeen(identity, hello.GetVersion(), hello.GetApiVersion(), routes, remoteDesktop); err != nil {
 		return status.Error(codes.Unauthenticated, "daemon is revoked")
 	}
-	link := &daemonLink{id: identity, generation: record.Generation, send: make(chan *gatewayv1.DaemonLinkFrame, 8), done: make(chan struct{}), streams: map[uint64]chan *gatewayv1.DaemonLinkFrame{}}
+	link := &daemonLink{
+		id: identity, generation: record.Generation,
+		send: make(chan *gatewayv1.DaemonLinkFrame, 8), control: make(chan *gatewayv1.DaemonLinkFrame, 4),
+		done: make(chan struct{}), streams: map[uint64]chan *gatewayv1.DaemonLinkFrame{},
+	}
 	link.markSeen(time.Now())
 	h.register(link)
 	defer h.unregister(link)
@@ -111,6 +117,23 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 			case <-link.done:
 				sendErr <- nil
 				return
+			case frame := <-link.control:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
+				continue
+			default:
+			}
+			select {
+			case <-link.done:
+				sendErr <- nil
+				return
+			case frame := <-link.control:
+				if err := stream.Send(frame); err != nil {
+					sendErr <- err
+					return
+				}
 			case frame := <-link.send:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
@@ -119,7 +142,11 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 			}
 		}
 	}()
-	link.sendFrame(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK, DaemonId: identity, Generation: record.Generation, Version: "1"})
+	link.sendControlFrame(&gatewayv1.DaemonLinkFrame{
+		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
+		DaemonId: identity, Generation: record.Generation, Version: "1",
+		Capabilities: []string{heartbeatAckCapability},
+	})
 
 	recvErr := make(chan error, 1)
 	go func() {
@@ -143,8 +170,17 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 					return
 				}
 				h.signalChanged()
+				if frame.GetRequestId() != "" {
+					if err := link.sendControlFrame(&gatewayv1.DaemonLinkFrame{
+						Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG,
+						DaemonId: identity, RequestId: frame.GetRequestId(),
+					}); err != nil {
+						recvErr <- err
+						return
+					}
+				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING:
-				link.sendFrame(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG})
+				link.sendControlFrame(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: identity, RequestId: frame.GetRequestId()})
 			default:
 				link.dispatch(frame)
 			}
@@ -303,6 +339,15 @@ func (l *daemonLink) sendFrame(frame *gatewayv1.DaemonLinkFrame) error {
 	case <-l.done:
 		return errors.New("daemon link is closed")
 	case l.send <- frame:
+		return nil
+	}
+}
+
+func (l *daemonLink) sendControlFrame(frame *gatewayv1.DaemonLinkFrame) error {
+	select {
+	case <-l.done:
+		return errors.New("daemon link is closed")
+	case l.control <- frame:
 		return nil
 	}
 }

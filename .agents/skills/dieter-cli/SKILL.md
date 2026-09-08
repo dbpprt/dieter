@@ -21,6 +21,9 @@ dieter project list --format jsonl
 
 `dieter status` returns daemon-wide active project, board, card, and chat
 counts; it is the cheapest bounded directory overview for one machine.
+Use `dieter daemon status` when diagnosing this machine's process and gateway
+tunnel. Its `gatewayLastAcknowledgedAt` value is bidirectional liveness proof;
+a reconnect affects relay transports only and does not stop a running agent.
 
 For another enrolled machine, authenticate once and pass its exact ID or unique
 name as a global option before the command:

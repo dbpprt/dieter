@@ -157,6 +157,7 @@ type daemonStatusView struct {
 	GatewayURL           string `json:"gatewayUrl,omitempty"`
 	GatewayState         string `json:"gatewayState"`
 	GatewayConnectedAt   string `json:"gatewayConnectedAt,omitempty"`
+	GatewayLastAckAt     string `json:"gatewayLastAcknowledgedAt,omitempty"`
 	GatewayLastError     string `json:"gatewayLastError,omitempty"`
 	CertificateExpiresAt string `json:"certificateExpiresAt,omitempty"`
 	Projects             int    `json:"projects"`
@@ -199,6 +200,7 @@ func (c *CLI) daemonStatus(args []string) error {
 		view.ListenAddress = runtimeStatus.ListenAddress
 		view.GatewayState = runtimeStatus.GatewayState
 		view.GatewayConnectedAt = runtimeStatus.GatewayConnectedAt
+		view.GatewayLastAckAt = runtimeStatus.GatewayLastAckAt
 		view.GatewayLastError = runtimeStatus.GatewayLastError
 		if runtimeStatus.LogPath != "" {
 			view.LogPath = runtimeStatus.LogPath
@@ -245,6 +247,9 @@ func (c *CLI) daemonStatus(args []string) error {
 	if view.Enrolled {
 		fmt.Fprintf(c.Out, "  Machine:  %s · %s\n", view.DaemonName, view.DaemonID)
 		fmt.Fprintf(c.Out, "  Gateway:  %s · %s\n", view.GatewayURL, view.GatewayState)
+		if view.GatewayLastAckAt != "" {
+			fmt.Fprintf(c.Out, "  Last ack: %s\n", view.GatewayLastAckAt)
+		}
 		if view.GatewayLastError != "" {
 			fmt.Fprintf(c.Out, "  Last error: %s\n", view.GatewayLastError)
 		}

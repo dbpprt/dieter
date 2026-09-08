@@ -7,6 +7,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -16,6 +17,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +27,7 @@ import (
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
@@ -136,7 +141,14 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	publicURL, _ := url.Parse("http://" + gatewayListener.Addr().String())
+	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tunnelProxy := newPauseProxy(proxyListener, gatewayListener.Addr().String())
+	go tunnelProxy.Serve()
+	defer tunnelProxy.Close()
+	publicURL, _ := url.Parse("http://" + proxyListener.Addr().String())
 	config := gateway.Config{
 		Root: t.TempDir(), Address: gatewayListener.Addr().String(), PublicURL: publicURL,
 		GitHubClientID: "test", GitHubSecret: "test", AllowedUserID: 7000188, AllowedLogin: "owner",
@@ -219,12 +231,27 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	boardHTTP := &http.Server{Handler: server.NewWithRemoteDesktop(boardStore, logger, nil, remoteDesktop).Handler()}
+	runner := newTunnelSurvivalRunner()
+	boardHTTP := &http.Server{Handler: server.NewWithRemoteDesktop(boardStore, logger, runner, remoteDesktop).Handler()}
 	go boardHTTP.Serve(boardListener)
 	defer boardHTTP.Close()
+	defer runner.Release()
 
+	gatewayEvents := make(chan daemon.GatewayEvent, 16)
 	tunnel := &daemon.GatewayClient{
 		Identity: identity, LocalTarget: boardListener.Addr().String(), Version: "test", APIVersion: server.APIVersion, Log: logger,
+		OnStatus: func(event daemon.GatewayEvent) {
+			select {
+			case gatewayEvents <- event:
+			default:
+			}
+		},
+		Timing: daemon.GatewayTiming{
+			HeartbeatActiveInterval: 100 * time.Millisecond, HeartbeatIdleMaxInterval: 100 * time.Millisecond,
+			HeartbeatAckTimeout: 350 * time.Millisecond, HandshakeTimeout: 200 * time.Millisecond,
+			ReconnectInitialBackoff: 20 * time.Millisecond, ReconnectMaximumBackoff: 50 * time.Millisecond,
+			ReconnectStableAfter: 200 * time.Millisecond,
+		},
 		RemoteDesktopPresence: func() *gatewayv1.RemoteDesktopPresence {
 			return remoteDesktop.Presence(true, false)
 		},
@@ -248,6 +275,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if !gatewayServer.Hub.Online(identity.ID) {
 		t.Fatal("daemon did not establish its reverse tunnel")
 	}
+	waitForGatewayEvent(t, gatewayEvents, daemon.GatewayConnected, 2*time.Second)
 
 	routed := metadata.AppendToOutgoingContext(authorized, "x-dieter-daemon-id", identity.ID)
 	dieterClient := dieterv1.NewDieterServiceClient(connection)
@@ -518,27 +546,97 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatalf("direct authenticated health=%#v err=%v", directHealth, err)
 	}
 
-	// A tunnel can be dropped by an idle proxy or a gateway-side transport
-	// failure while both processes remain healthy. The daemon must establish a
-	// fresh authenticated link and make relayed RPCs usable again.
-	gatewayServer.Hub.CloseDaemon(identity.ID)
-	deadline = time.Now().Add(5 * time.Second)
-	for gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	// Start a daemon-owned turn before making the tunnel half-open. Losing and
+	// replacing the transport must cancel only relay RPCs, never this worker.
+	startedTurn, err := dieterClient.SendMessage(routed, &dieterv1.SendMessageRequest{
+		CardId: created.GetId(), Provider: "mock", Model: "mock",
+		Parts:    []*dieterv1.MessagePart{{Type: "text", Text: "keep working while the tunnel reconnects"}},
+		ClientId: "gateway-e2e-client", CommandId: "start-survival-turn",
+	})
+	if err != nil || !startedTurn.GetSent() {
+		t.Fatalf("start tunnel-survival turn=%#v err=%v", startedTurn, err)
 	}
-	if gatewayServer.Hub.Online(identity.ID) {
-		t.Fatal("daemon tunnel did not disconnect")
+	select {
+	case <-runner.Started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("daemon-owned turn did not start")
 	}
-	deadline = time.Now().Add(5 * time.Second)
-	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
+
+	// Pause bytes in both directions without sending FIN or RST. gRPC Send and
+	// Recv can remain pending in this state, which is the failure a clean
+	// gateway-side CloseDaemon test cannot reproduce.
+	tunnelProxy.Pause()
+	disconnected := waitForGatewayEvent(t, gatewayEvents, daemon.GatewayDisconnected, 2*time.Second)
+	if !strings.Contains(disconnected.Error, "heartbeat acknowledgement timed out") {
+		t.Fatalf("half-open tunnel error=%q", disconnected.Error)
 	}
+	handshakeFailure := waitForGatewayEvent(t, gatewayEvents, daemon.GatewayDisconnected, 2*time.Second)
+	if !strings.Contains(handshakeFailure.Error, "gateway handshake timed out") {
+		t.Fatalf("blackholed reconnect error=%q", handshakeFailure.Error)
+	}
+	if running, resolveErr := boardStore.ResolveCard(created.GetId()); resolveErr != nil || running.Runtime != "running" {
+		t.Fatalf("tunnel loss changed daemon-owned turn runtime=%q err=%v", running.Runtime, resolveErr)
+	}
+	select {
+	case <-runner.Canceled:
+		t.Fatal("tunnel loss canceled the daemon-owned agent turn")
+	default:
+	}
+
+	tunnelProxy.Resume()
+	waitForGatewayEvent(t, gatewayEvents, daemon.GatewayConnected, 3*time.Second)
 	if !gatewayServer.Hub.Online(identity.ID) {
-		t.Fatal("daemon did not reconnect its reverse tunnel")
+		t.Fatal("daemon did not register its reconnected reverse tunnel")
 	}
 	reconnectedHealth, err := dieterv1.NewDieterServiceClient(connection).Health(routed, &emptypb.Empty{})
 	if err != nil || reconnectedHealth.GetStorePath() != boardStore.Root {
 		t.Fatalf("reconnected relay health=%#v err=%v", reconnectedHealth, err)
+	}
+	queuedRequest := &dieterv1.SendMessageRequest{
+		CardId: created.GetId(), Provider: "mock", Model: "mock",
+		Parts:    []*dieterv1.MessagePart{{Type: "text", Text: "deliver once after reconnect"}},
+		ClientId: "gateway-e2e-client", CommandId: "post-reconnect-message",
+	}
+	queued, err := dieterClient.SendMessage(routed, queuedRequest)
+	if err != nil || !queued.GetQueued() || queued.GetMessageId() == "" {
+		t.Fatalf("queue post-reconnect message=%#v err=%v", queued, err)
+	}
+	repeatedQueue, err := dieterClient.SendMessage(routed, queuedRequest)
+	if err != nil || repeatedQueue.GetMessageId() != queued.GetMessageId() || !repeatedQueue.GetQueued() {
+		t.Fatalf("repeat post-reconnect message first=%#v repeated=%#v err=%v", queued, repeatedQueue, err)
+	}
+	conversation, err := boardStore.Conversation(created.GetId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	queuedCopies := 0
+	for _, message := range conversation.Queue {
+		if message.ID == queued.GetMessageId() {
+			queuedCopies++
+		}
+	}
+	if queuedCopies != 1 {
+		t.Fatalf("post-reconnect message copies=%d, want 1", queuedCopies)
+	}
+	select {
+	case <-runner.Canceled:
+		t.Fatal("reconnection canceled the daemon-owned agent turn")
+	default:
+	}
+	runner.Release()
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		resolved, resolveErr := boardStore.ResolveCard(created.GetId())
+		latestConversation, conversationErr := boardStore.Conversation(created.GetId())
+		if resolveErr == nil && conversationErr == nil && resolved.Runtime == "idle" && len(latestConversation.Queue) == 0 && runner.Completed.Load() >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	resolved, resolveErr := boardStore.ResolveCard(created.GetId())
+	conversation, conversationErr := boardStore.Conversation(created.GetId())
+	if resolveErr != nil || conversationErr != nil || resolved.Runtime != "idle" || len(conversation.Queue) != 0 || runner.Completed.Load() < 2 {
+		t.Fatalf("daemon-owned turns did not finish after release: runtime=%q queue=%d completed=%d resolveErr=%v conversationErr=%v", resolved.Runtime, len(conversation.Queue), runner.Completed.Load(), resolveErr, conversationErr)
 	}
 
 	if _, err := gatewayClient.UnenrollDaemon(ctx, &gatewayv1.UnenrollDaemonRequest{
@@ -728,6 +826,175 @@ func TestGatewayRoutesMultipleDaemonsAndTracksPresenceIndependently(t *testing.T
 	}
 	if gatewayServer.Hub.Online(machines[0].identity.ID) || !gatewayServer.Hub.Online(machines[1].identity.ID) {
 		t.Fatalf("daemon presence was not independent")
+	}
+}
+
+type pauseProxy struct {
+	listener net.Listener
+	target   string
+	paused   atomic.Bool
+	done     chan struct{}
+	close    sync.Once
+	mu       sync.Mutex
+	conns    map[net.Conn]struct{}
+}
+
+func newPauseProxy(listener net.Listener, target string) *pauseProxy {
+	return &pauseProxy{listener: listener, target: target, done: make(chan struct{}), conns: map[net.Conn]struct{}{}}
+}
+
+func (p *pauseProxy) Serve() {
+	for {
+		client, err := p.listener.Accept()
+		if err != nil {
+			return
+		}
+		go p.handle(client)
+	}
+}
+
+func (p *pauseProxy) handle(client net.Conn) {
+	upstream, err := net.Dial("tcp", p.target)
+	if err != nil {
+		_ = client.Close()
+		return
+	}
+	p.track(client, upstream)
+	defer p.untrack(client, upstream)
+	finished := make(chan struct{}, 2)
+	go func() {
+		p.forward(upstream, client)
+		finished <- struct{}{}
+	}()
+	go func() {
+		p.forward(client, upstream)
+		finished <- struct{}{}
+	}()
+	<-finished
+	_ = client.Close()
+	_ = upstream.Close()
+	<-finished
+}
+
+func (p *pauseProxy) forward(destination, source net.Conn) {
+	buffer := make([]byte, 32<<10)
+	for {
+		count, err := source.Read(buffer)
+		if count > 0 {
+			for p.paused.Load() {
+				select {
+				case <-p.done:
+					return
+				case <-time.After(2 * time.Millisecond):
+				}
+			}
+			written := 0
+			for written < count {
+				n, writeErr := destination.Write(buffer[written:count])
+				if writeErr != nil {
+					return
+				}
+				written += n
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (p *pauseProxy) track(connections ...net.Conn) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, connection := range connections {
+		p.conns[connection] = struct{}{}
+	}
+}
+
+func (p *pauseProxy) untrack(connections ...net.Conn) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, connection := range connections {
+		delete(p.conns, connection)
+	}
+}
+
+func (p *pauseProxy) Pause()  { p.paused.Store(true) }
+func (p *pauseProxy) Resume() { p.paused.Store(false) }
+
+func (p *pauseProxy) Close() {
+	p.close.Do(func() {
+		close(p.done)
+		_ = p.listener.Close()
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		for connection := range p.conns {
+			_ = connection.Close()
+		}
+	})
+}
+
+type tunnelSurvivalRunner struct {
+	Started   chan struct{}
+	Canceled  chan struct{}
+	Completed atomic.Int32
+	release   chan struct{}
+	start     sync.Once
+	cancel    sync.Once
+	finish    sync.Once
+}
+
+func newTunnelSurvivalRunner() *tunnelSurvivalRunner {
+	return &tunnelSurvivalRunner{Started: make(chan struct{}), Canceled: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (r *tunnelSurvivalRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	defer r.Completed.Add(1)
+	for _, chunk := range []string{
+		`{"type":"start","messageId":"` + request.ResponseMessageID + `"}`,
+		`{"type":"text-start","id":"text_live"}`,
+		`{"type":"text-delta","id":"text_live","delta":"working"}`,
+	} {
+		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
+			return err
+		}
+	}
+	r.start.Do(func() { close(r.Started) })
+	select {
+	case <-ctx.Done():
+		r.cancel.Do(func() { close(r.Canceled) })
+		return ctx.Err()
+	case <-r.release:
+		for _, chunk := range []string{
+			`{"type":"text-end","id":"text_live"}`,
+			`{"type":"finish","finishReason":"stop"}`,
+		} {
+			if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(chunk)}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func (r *tunnelSurvivalRunner) Release() {
+	r.finish.Do(func() { close(r.release) })
+}
+
+func waitForGatewayEvent(t *testing.T, events <-chan daemon.GatewayEvent, state string, timeout time.Duration) daemon.GatewayEvent {
+	t.Helper()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case event := <-events:
+			if event.State == state {
+				return event
+			}
+		case <-timer.C:
+			t.Fatalf("gateway did not report state %q within %s", state, timeout)
+			return daemon.GatewayEvent{}
+		}
 	}
 }
 

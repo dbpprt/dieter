@@ -33,6 +33,7 @@ type RuntimeStatus struct {
 	GatewayURL         string `json:"gatewayUrl,omitempty"`
 	GatewayState       string `json:"gatewayState"`
 	GatewayConnectedAt string `json:"gatewayConnectedAt,omitempty"`
+	GatewayLastAckAt   string `json:"gatewayLastAcknowledgedAt,omitempty"`
 	GatewayLastError   string `json:"gatewayLastError,omitempty"`
 }
 
@@ -90,11 +91,24 @@ func (w *StatusWriter) Stop() error {
 func (w *StatusWriter) Gateway(event GatewayEvent) {
 	_ = w.Update(func(value *RuntimeStatus) {
 		value.GatewayState = event.State
-		value.GatewayLastError = event.Error
+		if event.Error != "" {
+			value.GatewayLastError = event.Error
+		} else if event.State == GatewayConnected {
+			value.GatewayLastError = ""
+		}
 		if event.State == GatewayConnected {
 			value.GatewayConnectedAt = time.Now().UTC().Format(time.RFC3339Nano)
 		}
 	})
+}
+
+// GatewayAcknowledged records transport liveness in memory. The existing
+// five-second status heartbeat persists it, avoiding an atomic filesystem
+// write for every tunnel heartbeat acknowledgement.
+func (w *StatusWriter) GatewayAcknowledged(at time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.value.GatewayLastAckAt = at.UTC().Format(time.RFC3339Nano)
 }
 
 func (w *StatusWriter) writeLocked() error {

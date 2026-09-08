@@ -85,6 +85,11 @@ dieter daemon permissions --check
 brew services restart dieter
 ```
 
+`dieter daemon status` reports the gateway tunnel state and the most recent
+acknowledged tunnel heartbeat. A healthy local API remains available while a
+failed gateway tunnel reconnects; reconnecting the transport does not stop a
+running agent turn.
+
 The same `dieter` binary is a complete daemon client. Local commands use the
 running daemon on this machine. To control another enrolled machine, sign in
 once and select it globally; the CLI prefers verified direct TLS and falls back
