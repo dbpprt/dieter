@@ -514,3 +514,25 @@ permission. Temporary capture files are removed after attachment import.
 
 This uses the existing card-creation API; CLI automation can create the same
 request with `dieter card create --project PROJECT --board BOARD --auto-title --prompt TEXT --attach SCREENSHOT` and include the page URL in the prompt.
+
+### Browser capture project routing
+
+Agents can maintain exact browser hostnames on a project through the daemon:
+
+```sh
+dieter project update --hostname app.example.com --hostname localhost PROJECT_ID
+dieter project show PROJECT_ID
+dieter project update --clear-hostnames PROJECT_ID
+```
+
+`--hostname` is repeatable and replaces the complete list; omitting both hostname
+flags preserves it. Use `--machine ID|NAME` for projects on another daemon.
+Hostnames are lowercase, deduplicated, and stored centrally with project metadata.
+Use bare DNS names (punycode for international names) or IP addresses, without
+URLs, ports, paths, or wildcards. Up to 64 names are allowed. URL ports and schemes
+do not affect matching; subdomains require their own entries.
+
+Capture task uses the browser URL to select a project when exactly one active
+project matches. Multiple matches require a manual destination choice; no match
+keeps the current destination editable. The user still reviews and submits the
+Quick Task. Mappings do not grant access to a website or start any task.

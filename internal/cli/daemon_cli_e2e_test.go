@@ -295,6 +295,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	runDaemonCLI(t, client, output, "prompt", "preview", "--card", card.ID)
 	runDaemonCLI(t, client, output, "screen", "capabilities")
 
+	assertProjectHostnameCLI(t, client, output, created.Project.ID)
 	relocated := initTestRepository(t, "relocated")
 	updated := runDaemonCLI(t, client, output, "project", "update", "--path", relocated, created.Project.ID)
 	if !strings.Contains(updated, filepath.Base(relocated)) {
@@ -607,6 +608,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	}
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
 	first.Close()
 
 	directRoute.server.Stop()
@@ -647,6 +649,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	}
 	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)
 }
 
 func assertMachineOperationAccepted(t *testing.T, raw []byte) {
@@ -692,5 +695,26 @@ func TestDaemonCLICardTokenUsage(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(raw), &context); err != nil || context.Usage.Total != 125 {
 		t.Fatalf("context: %s %v", raw, err)
+	}
+}
+
+func assertProjectHostnameCLI(t *testing.T, client *CLI, output *bytes.Buffer, projectID string) {
+	t.Helper()
+	result := runDaemonCLI(t, client, output, "project", "update", "--hostname", "APP.Example.com.", "--hostname", "localhost", projectID)
+	var project dieterv1.Project
+	if err := protojson.Unmarshal([]byte(result), &project); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(project.Hostnames, ",") != "app.example.com,localhost" {
+		t.Fatalf("hostnames=%v", project.Hostnames)
+	}
+	result = runDaemonCLI(t, client, output, "project", "show", projectID)
+	if !strings.Contains(result, "app.example.com") {
+		t.Fatalf("mapping not discoverable: %s", result)
+	}
+	result = runDaemonCLI(t, client, output, "project", "update", "--clear-hostnames", projectID)
+	project.Reset()
+	if err := protojson.Unmarshal([]byte(result), &project); err != nil || len(project.Hostnames) != 0 {
+		t.Fatalf("clear=%s err=%v", result, err)
 	}
 }

@@ -78,6 +78,7 @@ func WorkflowLanes(workflow string) []Lane {
 }
 
 type Project struct {
+	Hostnames          []string            `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
 	ID                 string              `json:"id" yaml:"id"`
 	Name               string              `json:"name" yaml:"name"`
 	Path               string              `json:"path" yaml:"path"`

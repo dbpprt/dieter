@@ -375,7 +375,12 @@ func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateP
 }
 
 func (api *grpcAPI) UpdateProject(_ context.Context, request *dieterv1.UpdateProjectRequest) (*dieterv1.Project, error) {
-	value, err := api.server.store.UpdateProject(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path)
+	var hostnames *[]string
+	if request.Hostnames != nil {
+		values := request.Hostnames.GetValues()
+		hostnames = &values
+	}
+	value, err := api.server.store.UpdateProjectWithHostnames(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path, hostnames)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}

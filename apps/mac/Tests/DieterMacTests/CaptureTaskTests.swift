@@ -1,4 +1,5 @@
 import AppKit
+import DieterAPI
 import Testing
 @testable import DieterMac
 
@@ -31,4 +32,17 @@ import Testing
     board.clearContents()
     board.setString("Unrelated clipboard text", forType: .string)
     #expect(TaskScreenCapture.capturedPNG(from: board, after: count) == nil)
+}
+
+@Test func captureRoutesOnlyExactUnambiguousHostnames() {
+    var project = Dieter_V1_Project(); project.id = "one"; project.hostnames = ["app.example.com", "localhost"]
+    let browser = CaptureBrowserContext(url: "https://APP.example.com.:8443/path", browser: true)
+    #expect(browser.matchingProjects([project]).map(\.id) == ["one"])
+    #expect(CaptureBrowserContext(url: "https://app.example.com.evil.test", browser: true).matchingProjects([project]).isEmpty)
+    #expect(CaptureBrowserContext(url: "https://example.com", browser: true).matchingProjects([project]).isEmpty)
+    #expect(CaptureBrowserContext(url: "file:///app.example.com", browser: true).matchingProjects([project]).isEmpty)
+    var other = project; other.id = "two"
+    #expect(browser.matchingProjects([project, other]).count == 2)
+    other.archived = true
+    #expect(browser.matchingProjects([project, other]).map(\.id) == ["one"])
 }

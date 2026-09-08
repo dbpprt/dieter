@@ -42,6 +42,10 @@ enum IslandUISmokeRunner {
             capture(window, to: output.appending(path: "island-expanded-empty.png"))
         }
 
+        let captureDestination = installNavigationFixture(in: store)
+        store.projectDirectory[captureDestination.projectID]?.hostnames = ["example.com"]
+        store.selectedProjectID = ""
+        store.selectedBoardID = ""
         let captureDirectory = output.appending(path: "capture-input")
         try? FileManager.default.createDirectory(at: captureDirectory, withIntermediateDirectories: true)
         let captureFile = captureDirectory.appending(path: "capture.png")
@@ -59,6 +63,7 @@ enum IslandUISmokeRunner {
             guard let window = NSApp.windows.first(where: { $0.title == "Capture task" && $0.isVisible }) else { return false }
             return NativeUIAccessibility.find("quick-task.attachments", in: window) != nil && NativeUIAccessibility.find("quick-task.source-url", in: window) != nil
         }
+        let captureRouted = store.selectedProjectID == captureDestination.projectID && store.selectedBoardID == captureDestination.boardID
         var captureAttachment = false
         var captureURL = false
         if let draftWindow = NSApp.windows.first(where: { $0.title == "Capture task" && $0.isVisible }) {
@@ -99,6 +104,7 @@ enum IslandUISmokeRunner {
         }
 
         writeReport([
+            "capture-hostname-routing": captureRouted ? "passed" : "failed: browser hostname did not select project and board",
             "capture-task-button": captureClicked ? "passed" : "failed: capture button did not dispatch",
             "capture-task-draft": captureOpened && captureAttachment && captureURL ? "passed" : "failed: screenshot or URL draft absent",
             "capture-temp-cleanup": !FileManager.default.fileExists(atPath: captureFile.path) ? "passed" : "failed: capture file retained",

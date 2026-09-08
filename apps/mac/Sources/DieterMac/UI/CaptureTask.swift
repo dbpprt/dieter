@@ -13,6 +13,14 @@ struct CaptureBrowserContext: Sendable {
         return url.absoluteString
     }
 
+    func matchingProjects(_ projects: [Dieter_V1_Project]) -> [Dieter_V1_Project] {
+        guard let value = Self.validatedURL(url), let host = URL(string: value)?.host else { return [] }
+        var normalized = host.lowercased()
+        if normalized.hasSuffix(".") { normalized.removeLast() }
+        if normalized.hasPrefix("["), normalized.hasSuffix("]") { normalized = String(normalized.dropFirst().dropLast()) }
+        return projects.filter { !$0.archived && $0.hostnames.contains(normalized) }
+    }
+
     static func read(bundleID: String?, pid: pid_t?) async -> Self {
         guard let bundleID else { return Self(url: "", browser: false) }
         let chromium = ["com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac", "com.brave.Browser", "com.vivaldi.Vivaldi", "company.thebrowser.Browser", "com.operasoftware.Opera"]
@@ -179,6 +187,13 @@ final class CaptureTaskController {
 #endif
                 guard let file = capture else { return }
                 defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+                let matches = browser.matchingProjects(store.projects)
+                if matches.count == 1, let target = matches.first, target.id != store.selectedProjectID {
+                    await store.selectProject(target.id)
+                    guard store.selectedProjectID == target.id, store.phase.isConnected else {
+                        throw CaptureTaskError.failed("Could not connect to the project for this hostname. Please try again.")
+                    }
+                }
                 let parts = try await store.attachmentParts([file])
                 present(parts: parts, browser: browser)
             } catch {
@@ -209,15 +224,27 @@ struct CapturedTaskDraftView: View {
     let dismiss: () -> Void
     @State private var presented = true
     @State private var changingDestination = false
+    @State private var destinationConfirmed = false
+
+    private var ambiguousHostname: Bool { browser.matchingProjects(store.projects).count > 1 }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Destination").font(.caption.weight(.semibold))
+                    if ambiguousHostname && !destinationConfirmed {
+                        Text("This hostname belongs to multiple projects. Choose a project to continue.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Button("Use selected project") { destinationConfirmed = true }
+                            .disabled(store.selectedProjectID.isEmpty)
+                    } else if browser.matchingProjects(store.projects).first?.id == store.selectedProjectID {
+                        Text("Project matched from browser hostname")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Picker("Project", selection: Binding(get: { store.selectedProjectID }, set: { id in
                         changingDestination = true
-                        Task { await store.selectProject(id); changingDestination = false }
+                        Task { await store.selectProject(id); destinationConfirmed = store.selectedProjectID == id; changingDestination = false }
                     })) {
                         Text("Choose project").tag("")
                         ForEach(store.projects, id: \.id) { Text($0.name).tag($0.id) }
@@ -233,7 +260,7 @@ struct CapturedTaskDraftView: View {
                 .padding(.horizontal, 17).padding(.top, 17)
                 .disabled(changingDestination)
                 QuickTaskPopover(isPresented: $presented, initialAttachments: parts, sourceURL: browser.url, capturedBrowser: browser.browser)
-                    .disabled(changingDestination)
+                    .disabled(changingDestination || (ambiguousHostname && !destinationConfirmed))
             }
         }
         .background(DieterTheme.background)

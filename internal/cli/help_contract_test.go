@@ -83,3 +83,18 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectUpdateHelpDiscoversHostnames(t *testing.T) {
+	c := New(store.New(t.TempDir()))
+	c.DaemonMode = true
+	var output bytes.Buffer
+	c.Out = &output
+	if err := c.Run([]string{"project", "update", "--help"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{"--hostname", "--clear-hostnames"} {
+		if !strings.Contains(output.String(), flag) {
+			t.Fatalf("missing %s in %s", flag, output.String())
+		}
+	}
+}

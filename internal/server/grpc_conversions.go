@@ -40,7 +40,7 @@ func protoProject(value model.Project) *dieterv1.Project {
 		Prompt: value.Prompt, Archived: value.Archived, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, BoardCount: int32(value.BoardCount),
 		CardCount: int32(value.CardCount), ChatCount: int32(value.ChatCount), PromptTemplate: value.PromptTemplate,
-		BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch,
+		BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch, Hostnames: append([]string(nil), value.Hostnames...),
 	}
 	for _, command := range value.ValidationCommands {
 		result.ValidationCommands = append(result.ValidationCommands, protoValidationCommand(command))

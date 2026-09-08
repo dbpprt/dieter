@@ -421,6 +421,7 @@ message Project {
   string base_remote = 14;
   string base_branch = 15;
   repeated ValidationCommand validation_commands = 16;
+  repeated string hostnames = 17;
 }
 
 message Board {
@@ -822,6 +823,11 @@ message UpdateProjectRequest {
   optional string summary = 3;
   optional string prompt = 4;
   optional string path = 5;
+  ProjectHostnames hostnames = 6; // Absent preserves mappings; empty values clears them.
+}
+
+message ProjectHostnames {
+  repeated string values = 1;
 }
 
 message ValidationCommand {

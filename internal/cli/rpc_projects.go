@@ -20,7 +20,7 @@ Actions:
   directories PATH  Browse daemon-host directories and Git repositories
   list              List active projects; use --removed for archived projects
   show PROJECT      Show project metadata
-  update PROJECT    Update project path, name, summary, or prompt
+  update PROJECT    Update project path, name, summary, prompt, or browser hostnames
   workspace PROJECT Update Git base and validation commands
   remove PROJECT    Archive a project
   restore PROJECT   Restore an archived project
@@ -257,7 +257,7 @@ func (c *CLI) rpcProjectShow(args []string) error {
 }
 
 func (c *CLI) rpcProjectUpdate(args []string) error {
-	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] PROJECT\n"
+	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST ...|--clear-hostnames] PROJECT\n\nRepeat --hostname to replace the complete list of exact browser hosts (no URL, port, or wildcard).\nUse --clear-hostnames to remove all mappings; omit both flags to preserve them.\n"
 	set := flags("project update")
 	path, name, summary, prompt := &optional{}, &optional{}, &optional{}, &optional{}
 	set.Var(path, "path", "new canonical Git working-tree path on the daemon host")
@@ -265,12 +265,22 @@ func (c *CLI) rpcProjectUpdate(args []string) error {
 	set.Var(summary, "summary", "project summary")
 	set.Var(prompt, "prompt", "project instructions")
 	promptFile := set.String("prompt-file", "", "project instructions file")
+	var hostnames repeatedStrings
+	set.Var(&hostnames, "hostname", "exact browser hostname; repeat to replace the complete hostname list (no URL, port, or wildcard)")
+	clearHostnames := set.Bool("clear-hostnames", false, "remove all browser hostname mappings")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
 	}
 	if set.NArg() != 1 {
 		return errors.New("exactly one PROJECT is required")
+	}
+	if *clearHostnames && len(hostnames) > 0 {
+		return errors.New("--hostname and --clear-hostnames are mutually exclusive")
+	}
+	var hostnameValues *dieterv1.ProjectHostnames
+	if *clearHostnames || len(hostnames) > 0 {
+		hostnameValues = &dieterv1.ProjectHostnames{Values: hostnames}
 	}
 	var promptValue *string
 	if *promptFile != "" {
@@ -293,7 +303,7 @@ func (c *CLI) rpcProjectUpdate(args []string) error {
 		return err
 	}
 	value, err := client.UpdateProject(rpcCtx, &dieterv1.UpdateProjectRequest{
-		ProjectId: project.GetId(), Name: name.ptr(), Summary: summary.ptr(), Prompt: promptValue, Path: path.ptr(),
+		ProjectId: project.GetId(), Name: name.ptr(), Summary: summary.ptr(), Prompt: promptValue, Path: path.ptr(), Hostnames: hostnameValues,
 	})
 	if err != nil {
 		return err

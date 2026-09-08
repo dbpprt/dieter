@@ -214,6 +214,14 @@ func (s *Store) ArchiveProject(ref string, archived bool) (model.Project, error)
 }
 
 func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths ...*string) (model.Project, error) {
+	var path *string
+	if len(paths) > 0 {
+		path = paths[0]
+	}
+	return s.UpdateProjectWithHostnames(ref, name, summary, prompt, path, nil)
+}
+
+func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, path *string, hostnames *[]string) (model.Project, error) {
 	release, err := s.beginWrite()
 	if err != nil {
 		return model.Project{}, err
@@ -232,8 +240,8 @@ func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths .
 	if prompt != nil {
 		project.Prompt = strings.TrimSpace(*prompt)
 	}
-	if len(paths) > 0 && paths[0] != nil {
-		path, normalizeErr := normalizePath(*paths[0])
+	if path != nil {
+		path, normalizeErr := normalizePath(*path)
 		if normalizeErr != nil {
 			return model.Project{}, normalizeErr
 		}
@@ -247,6 +255,13 @@ func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths .
 			}
 		}
 		project.Path = path
+	}
+	if hostnames != nil {
+		normalized, err := normalizeProjectHostnames(*hostnames)
+		if err != nil {
+			return model.Project{}, err
+		}
+		project.Hostnames = normalized
 	}
 	project.UpdatedAt = timestamp()
 	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
