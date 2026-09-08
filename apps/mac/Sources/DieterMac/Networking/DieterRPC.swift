@@ -457,6 +457,10 @@ final class DieterRPC: Sendable {
         try await service.renameCard(request: .init(message: request))
     }
 
+    func mergeCard(_ request: Dieter_V1_MergeCardRequest) async throws -> Dieter_V1_Card {
+        try await service.mergeCard(request: .init(message: request))
+    }
+
     func updateCard(_ request: Dieter_V1_UpdateCardRequest) async throws -> Dieter_V1_Card {
         try await service.updateCard(request: .init(message: request))
     }

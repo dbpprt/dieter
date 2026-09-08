@@ -139,6 +139,9 @@ type TokenUsage struct {
 }
 
 type Card struct {
+	MergedIntoCardID    string              `json:"mergedIntoCardId,omitempty" yaml:"merged_into_card_id,omitempty"`
+	MergePending        bool                `json:"-" yaml:"merge_pending,omitempty"`
+	MergeParts          []UIMessagePart     `json:"-" yaml:"merge_parts,omitempty"`
 	TokenUsage          *TokenUsage         `json:"tokenUsage,omitempty" yaml:"-"`
 	ID                  string              `json:"id" yaml:"id"`
 	Scope               string              `json:"scope" yaml:"scope,omitempty"`
@@ -498,6 +501,7 @@ type Author struct {
 // opaque Session value is produced by AI SDK HarnessAgent.stop and is passed
 // back untouched on the next turn.
 type Conversation struct {
+	MergedSourceIDs   []string    `json:"mergedSourceIds,omitempty"`
 	ProjectionVersion int         `json:"projectionVersion"`
 	CardID            string      `json:"cardId"`
 	Status            string      `json:"status"`
@@ -643,10 +647,11 @@ type PendingTool struct {
 }
 
 type QueuedMessage struct {
-	ID        string          `json:"id"`
-	Text      string          `json:"text"`
-	Parts     []UIMessagePart `json:"parts,omitempty"`
-	CreatedAt string          `json:"createdAt"`
+	MergeSourceID string          `json:"mergeSourceId,omitempty"`
+	ID            string          `json:"id"`
+	Text          string          `json:"text"`
+	Parts         []UIMessagePart `json:"parts,omitempty"`
+	CreatedAt     string          `json:"createdAt"`
 }
 
 type ConversationEvent struct {

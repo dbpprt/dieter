@@ -1,6 +1,7 @@
 import AppKit
 import DieterAPI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BoardCardDragPayload: Sendable {
     let cardID: String
@@ -52,6 +53,7 @@ enum BoardLabelAssignment {
 enum BoardCardEditingPolicy {
     static func canEditDraft(_ card: Dieter_V1_Card) -> Bool {
         card.lane.caseInsensitiveCompare("todo") == .orderedSame &&
+            card.mergedIntoCardID.isEmpty &&
             card.initialPromptSentAt.isEmpty &&
             !card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -71,6 +73,7 @@ enum BoardCardStartPolicy {
     ) -> Bool {
         card.scope == "board" &&
             card.lane.caseInsensitiveCompare("todo") == .orderedSame &&
+            card.mergedIntoCardID.isEmpty &&
             card.initialPromptSentAt.isEmpty &&
             (!card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || hasDraftAttachments) &&
             runningLaneID(in: board) != nil
@@ -1035,9 +1038,44 @@ struct BoardCardView: View {
     @State private var editPresented = false
     @State private var renameText = ""
     @State private var hovering = false
-    @State private var labelDropTargeted = false
+    @State private var cardDrop = BoardCardDropState()
+    private var labelDropTargeted: Bool { cardDrop.targeted && cardDrop.payload.flatMap(BoardLabelDragPayload.init) != nil }
+
+    init(card: Dieter_V1_Card, dropState: BoardCardDropState = BoardCardDropState()) {
+        self.card = card
+        _cardDrop = State(initialValue: dropState)
+    }
 
     var labels: [Dieter_V1_Label] { store.selectedBoard?.labels.filter { card.labelIds.contains($0.id) } ?? [] }
+    private func canMergePayload(_ value: String) -> Bool {
+        guard let payload = BoardCardDragPayload(value),
+              let source = store.state.cards.first(where: { $0.id == payload.cardID }) else { return false }
+        return BoardCardMergePolicy.canMerge(source, into: card)
+    }
+
+    private func performCardDrop(_ value: String, merge: Bool) -> Bool {
+        if let payload = BoardLabelDragPayload(value) {
+            guard payload.boardID == store.selectedBoardID,
+                  store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true else { return false }
+            let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
+            guard ids != card.labelIds else { return true }
+            Task { await store.setLabels(card, ids: ids) }
+            return true
+        }
+        guard let payload = BoardCardDragPayload(value),
+              payload.boardID == store.selectedBoardID,
+              let dragged = store.state.cards.first(where: { $0.id == payload.cardID }) else { return false }
+        guard payload.cardID != card.id else { return true }
+        if merge {
+            Task { await store.merge(dragged, into: card) }
+            return true
+        }
+        let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted { $0.position < $1.position }
+        let position = BoardDropOrdering.position(before: card.id, movingCardID: payload.cardID, cards: laneCards)
+        Task { await store.move(dragged, lane: card.lane, position: position) }
+        return true
+    }
+
     private var starting: Bool { store.pendingCardStarts[card.id] != nil }
     private var canStart: Bool { BoardCardStartPolicy.canStart(card, board: store.selectedBoard) }
     private var showsRunAction: Bool { canStart || starting }
@@ -1084,6 +1122,7 @@ struct BoardCardView: View {
                 }
             }
             .padding(12)
+            .padding(.bottom, card.mergedIntoCardID.isEmpty ? 0 : 28)
             .background(
                 store.selectedCardID == card.id ? DieterTheme.elevated.opacity(0.82) : (hovering ? DieterTheme.raised.opacity(0.9) : DieterTheme.surface),
                 in: RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
@@ -1120,28 +1159,41 @@ struct BoardCardView: View {
             .draggable(BoardCardDragPayload(cardID: card.id, boardID: card.boardID, sourceLane: card.lane).encoded) {
                 BoardCardDragPreview(card: card)
             }
-            .dropDestination(for: String.self) { values, _ in
-                guard let value = values.first else { return false }
-                if let payload = BoardLabelDragPayload(value) {
-                    guard payload.boardID == store.selectedBoardID,
-                          store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true else { return false }
-                    let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
-                    guard ids != card.labelIds else { return true }
-                    Task { await store.setLabels(card, ids: ids) }
-                    return true
+            .onDrop(of: [.text], delegate: BoardCardDropDelegate(state: cardDrop, eligible: canMergePayload, drop: performCardDrop))
+            .overlay {
+                if cardDrop.mergeReady {
+                    VStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.merge")
+                            .font(.system(size: 26, weight: .semibold))
+                        Text("Release to merge request").font(.caption.weight(.semibold))
+                        Text("Move source to Done").font(.caption2)
+                    }
+                    .foregroundStyle(DieterTheme.text)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(DieterTheme.background.opacity(0.95), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(DieterTheme.eyes, lineWidth: 2))
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("Release to merge the initial request and move the source to Done")
+                    .accessibilityIdentifier("card-merge.\(card.id)")
                 }
-                guard let payload = BoardCardDragPayload(value),
-                      payload.boardID == store.selectedBoardID,
-                      let dragged = store.state.cards.first(where: { $0.id == payload.cardID }) else { return false }
-                guard payload.cardID != card.id else { return true }
-                let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted { $0.position < $1.position }
-                let position = BoardDropOrdering.position(before: card.id, movingCardID: payload.cardID, cards: laneCards)
-                Task { await store.move(dragged, lane: card.lane, position: position) }
-                return true
-            } isTargeted: { labelDropTargeted = $0 }
+            }
+            .onDisappear { cardDrop.reset() }
             .animation(.easeOut(duration: 0.14), value: labelDropTargeted)
             }
             .buttonStyle(BoardCardClickStyle(edit: openEditor))
+            if !card.mergedIntoCardID.isEmpty {
+                Button {
+                    Task { await store.openConversation(cardID: card.mergedIntoCardID) }
+                } label: {
+                    Label("Merged into task", systemImage: "arrow.triangle.merge").font(.caption2)
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+                .background(DieterTheme.background, in: Capsule())
+                .help("Open the task that received this request")
+                .accessibilityIdentifier("card-merge-link.\(card.id)")
+                .padding(6)
+            }
             if showsRunAction && hovering {
                 Button {
                     Task { await store.start(card) }

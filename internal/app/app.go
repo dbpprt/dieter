@@ -105,6 +105,10 @@ func (s *Service) ensureStartStorage(paths ...string) error {
 // interrupted; its prompt is never replayed because that could duplicate file
 // edits or external side effects.
 func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
+	targets, mergeErr := s.Store.RecoverCardMerges()
+	if mergeErr != nil {
+		return nil, mergeErr
+	}
 	cards, err := s.Store.OrphanedTurnCards()
 	if err != nil {
 		return nil, err
@@ -139,6 +143,9 @@ func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
 			recovered = append(recovered, card.ID)
 			s.startNextQueued(card.ID)
 		}
+	}
+	for _, target := range targets {
+		s.startNextQueued(target)
 	}
 	return recovered, errors.Join(recoveryErrors...)
 }
@@ -1172,6 +1179,14 @@ func (s *Service) turnIsSuspending(cardID, turnID string) bool {
 	defer s.mu.Unlock()
 	current := s.active[cardID]
 	return current != nil && current.cardID == cardID && current.turnID == turnID && current.suspend
+}
+
+func (s *Service) MergeCard(source, target string) (model.Card, error) {
+	card, err := s.Store.MergeCard(source, target)
+	if err == nil {
+		s.startNextQueued(card.MergedIntoCardID)
+	}
+	return card, err
 }
 
 func (s *Service) startNextQueued(cardID string) {

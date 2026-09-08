@@ -156,6 +156,8 @@ const (
 	DieterServiceAddCommentProcedure = "/dieter.v1.DieterService/AddComment"
 	// DieterServiceMoveCardProcedure is the fully-qualified name of the DieterService's MoveCard RPC.
 	DieterServiceMoveCardProcedure = "/dieter.v1.DieterService/MoveCard"
+	// DieterServiceMergeCardProcedure is the fully-qualified name of the DieterService's MergeCard RPC.
+	DieterServiceMergeCardProcedure = "/dieter.v1.DieterService/MergeCard"
 	// DieterServiceStartCardProcedure is the fully-qualified name of the DieterService's StartCard RPC.
 	DieterServiceStartCardProcedure = "/dieter.v1.DieterService/StartCard"
 	// DieterServiceSetCardLabelsProcedure is the fully-qualified name of the DieterService's
@@ -373,6 +375,7 @@ type DieterServiceClient interface {
 	RemoveQueuedMessage(context.Context, *connect.Request[v1.RemoveQueuedMessageRequest]) (*connect.Response[v1.QueuedMessage], error)
 	AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error)
 	MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error)
+	MergeCard(context.Context, *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error)
 	// StartCard is an idempotent admission command. It durably admits the
 	// initial turn and returns the fresh card projection without waiting for
 	// the agent turn to finish.
@@ -708,6 +711,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceMoveCardProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("MoveCard")),
+			connect.WithClientOptions(opts...),
+		),
+		mergeCard: connect.NewClient[v1.MergeCardRequest, v1.Card](
+			httpClient,
+			baseURL+DieterServiceMergeCardProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("MergeCard")),
 			connect.WithClientOptions(opts...),
 		),
 		startCard: connect.NewClient[v1.StartCardRequest, v1.StartCardResponse](
@@ -1094,6 +1103,7 @@ type dieterServiceClient struct {
 	removeQueuedMessage            *connect.Client[v1.RemoveQueuedMessageRequest, v1.QueuedMessage]
 	addComment                     *connect.Client[v1.AddCommentRequest, v1.Comment]
 	moveCard                       *connect.Client[v1.MoveCardRequest, v1.Card]
+	mergeCard                      *connect.Client[v1.MergeCardRequest, v1.Card]
 	startCard                      *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
 	setCardLabels                  *connect.Client[v1.SetCardLabelsRequest, v1.Card]
 	cancelCard                     *connect.Client[v1.GetCardRequest, emptypb.Empty]
@@ -1365,6 +1375,11 @@ func (c *dieterServiceClient) AddComment(ctx context.Context, req *connect.Reque
 // MoveCard calls dieter.v1.DieterService.MoveCard.
 func (c *dieterServiceClient) MoveCard(ctx context.Context, req *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error) {
 	return c.moveCard.CallUnary(ctx, req)
+}
+
+// MergeCard calls dieter.v1.DieterService.MergeCard.
+func (c *dieterServiceClient) MergeCard(ctx context.Context, req *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error) {
+	return c.mergeCard.CallUnary(ctx, req)
 }
 
 // StartCard calls dieter.v1.DieterService.StartCard.
@@ -1700,6 +1715,7 @@ type DieterServiceHandler interface {
 	RemoveQueuedMessage(context.Context, *connect.Request[v1.RemoveQueuedMessageRequest]) (*connect.Response[v1.QueuedMessage], error)
 	AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error)
 	MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error)
+	MergeCard(context.Context, *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error)
 	// StartCard is an idempotent admission command. It durably admits the
 	// initial turn and returns the fresh card projection without waiting for
 	// the agent turn to finish.
@@ -2031,6 +2047,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceMoveCardProcedure,
 		svc.MoveCard,
 		connect.WithSchema(dieterServiceMethods.ByName("MoveCard")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceMergeCardHandler := connect.NewUnaryHandler(
+		DieterServiceMergeCardProcedure,
+		svc.MergeCard,
+		connect.WithSchema(dieterServiceMethods.ByName("MergeCard")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceStartCardHandler := connect.NewUnaryHandler(
@@ -2457,6 +2479,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceAddCommentHandler.ServeHTTP(w, r)
 		case DieterServiceMoveCardProcedure:
 			dieterServiceMoveCardHandler.ServeHTTP(w, r)
+		case DieterServiceMergeCardProcedure:
+			dieterServiceMergeCardHandler.ServeHTTP(w, r)
 		case DieterServiceStartCardProcedure:
 			dieterServiceStartCardHandler.ServeHTTP(w, r)
 		case DieterServiceSetCardLabelsProcedure:
@@ -2748,6 +2772,10 @@ func (UnimplementedDieterServiceHandler) AddComment(context.Context, *connect.Re
 
 func (UnimplementedDieterServiceHandler) MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.MoveCard is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) MergeCard(context.Context, *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.MergeCard is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) StartCard(context.Context, *connect.Request[v1.StartCardRequest]) (*connect.Response[v1.StartCardResponse], error) {

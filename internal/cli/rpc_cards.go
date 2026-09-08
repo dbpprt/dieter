@@ -31,6 +31,7 @@ Actions:
   send         Submit a human message to the daemon-owned turn lifecycle
   queue        Manage messages waiting behind the active turn
   comment      Add a non-triggering annotation
+  merge        Add an idle card’s initial request to a started task; mark source Done
   move         Move a card between workflow lanes
   start        Start a draft card idempotently
   labels       Replace board-label assignments
@@ -86,6 +87,11 @@ func (c *CLI) rpcCard(args []string, chat bool) error {
 		return c.rpcCardQueue(args[1:])
 	case "comment":
 		return c.rpcCardComment(args[1:])
+	case "merge":
+		if chat {
+			return errors.New("only board cards can be merged")
+		}
+		return c.rpcCardMerge(args[1:])
 	case "move":
 		if chat {
 			return errors.New("standalone chats do not have board lanes")
@@ -689,6 +695,30 @@ func (c *CLI) rpcCardComment(args []string) error {
 	return protoJSONOut(c.Out, comment)
 }
 
+func (c *CLI) rpcCardMerge(args []string) error {
+	const usage = "Usage: dieter card merge --into TARGET CARD\n\nQueue CARD's initial request and attachments in a started target on the same board. The source must be idle with an empty queue. Move it to Done and link it to TARGET. Retries are idempotent; conversations and workspaces are preserved.\n"
+	set := flags("card merge")
+	target := set.String("into", "", "target card ID")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 || *target == "" {
+		return errors.New("CARD and --into TARGET are required")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.MergeCard(rpcCtx, &dieterv1.MergeCardRequest{CardId: set.Arg(0), TargetCardId: *target})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
+}
+
 func (c *CLI) rpcCardMove(args []string) error {
 	const usage = "Usage: dieter card move --lane todo|running|review|done [--position N] CARD\n"
 	set := flags("card move")
@@ -812,8 +842,14 @@ func (c *CLI) rpcCardRename(args []string) error {
 }
 
 func (c *CLI) rpcCardUpdate(args []string) error {
-	const usage = "Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] CARD\n"
+	const usage = "Usage: dieter card update [--title TITLE] [--prompt TEXT|--prompt-file FILE] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\nAgent settings are editable only before the initial task is sent.\n"
 	set := flags("card update")
+	provider, modelName, effort := &optional{}, &optional{}, &optional{}
+	set.Var(provider, "provider", "draft agent")
+	set.Var(modelName, "model", "draft model")
+	set.Var(effort, "effort", "draft reasoning effort; default for provider default")
+	options := parameterFlags{}
+	set.Var(&options, "provider-option", "draft provider option KEY=VALUE; repeat to replace options")
 	title, prompt := &optional{}, &optional{}
 	set.Var(title, "title", "title")
 	set.Var(prompt, "prompt", "initial prompt")
@@ -848,7 +884,33 @@ func (c *CLI) rpcCardUpdate(args []string) error {
 	if err != nil {
 		return err
 	}
-	value, err := client.UpdateCard(rpcCtx, &dieterv1.UpdateCardRequest{CardId: detail.GetCard().GetId(), Title: titleValue, InitialPrompt: promptValue})
+	request := &dieterv1.UpdateCardRequest{CardId: detail.GetCard().GetId(), Title: titleValue, InitialPrompt: promptValue}
+	if provider.set || modelName.set || effort.set || len(options) > 0 {
+		card := detail.GetCard()
+		config := &dieterv1.DraftAgentSettings{Provider: card.Provider, Model: card.Model, Effort: card.Effort, ProviderOptions: card.ProviderOptions}
+		if config.Effort == "" {
+			config.Effort = "default"
+		}
+		if provider.set {
+			config.Provider = provider.value
+			config.Model = ""
+			config.Effort = ""
+			config.ProviderOptions = nil
+		}
+		if modelName.set {
+			config.Model = modelName.value
+			config.Effort = ""
+			config.ProviderOptions = nil
+		}
+		if effort.set {
+			config.Effort = effort.value
+		}
+		if len(options) > 0 {
+			config.ProviderOptions = options
+		}
+		request.AgentSettings = config
+	}
+	value, err := client.UpdateCard(rpcCtx, request)
 	if err != nil {
 		return err
 	}

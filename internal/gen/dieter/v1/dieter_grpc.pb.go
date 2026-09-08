@@ -63,6 +63,7 @@ const (
 	DieterService_RemoveQueuedMessage_FullMethodName            = "/dieter.v1.DieterService/RemoveQueuedMessage"
 	DieterService_AddComment_FullMethodName                     = "/dieter.v1.DieterService/AddComment"
 	DieterService_MoveCard_FullMethodName                       = "/dieter.v1.DieterService/MoveCard"
+	DieterService_MergeCard_FullMethodName                      = "/dieter.v1.DieterService/MergeCard"
 	DieterService_StartCard_FullMethodName                      = "/dieter.v1.DieterService/StartCard"
 	DieterService_SetCardLabels_FullMethodName                  = "/dieter.v1.DieterService/SetCardLabels"
 	DieterService_CancelCard_FullMethodName                     = "/dieter.v1.DieterService/CancelCard"
@@ -176,6 +177,7 @@ type DieterServiceClient interface {
 	RemoveQueuedMessage(ctx context.Context, in *RemoveQueuedMessageRequest, opts ...grpc.CallOption) (*QueuedMessage, error)
 	AddComment(ctx context.Context, in *AddCommentRequest, opts ...grpc.CallOption) (*Comment, error)
 	MoveCard(ctx context.Context, in *MoveCardRequest, opts ...grpc.CallOption) (*Card, error)
+	MergeCard(ctx context.Context, in *MergeCardRequest, opts ...grpc.CallOption) (*Card, error)
 	// StartCard is an idempotent admission command. It durably admits the
 	// initial turn and returns the fresh card projection without waiting for
 	// the agent turn to finish.
@@ -703,6 +705,16 @@ func (c *dieterServiceClient) MoveCard(ctx context.Context, in *MoveCardRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Card)
 	err := c.cc.Invoke(ctx, DieterService_MoveCard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) MergeCard(ctx context.Context, in *MergeCardRequest, opts ...grpc.CallOption) (*Card, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Card)
+	err := c.cc.Invoke(ctx, DieterService_MergeCard_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1360,6 +1372,7 @@ type DieterServiceServer interface {
 	RemoveQueuedMessage(context.Context, *RemoveQueuedMessageRequest) (*QueuedMessage, error)
 	AddComment(context.Context, *AddCommentRequest) (*Comment, error)
 	MoveCard(context.Context, *MoveCardRequest) (*Card, error)
+	MergeCard(context.Context, *MergeCardRequest) (*Card, error)
 	// StartCard is an idempotent admission command. It durably admits the
 	// initial turn and returns the fresh card projection without waiting for
 	// the agent turn to finish.
@@ -1564,6 +1577,9 @@ func (UnimplementedDieterServiceServer) AddComment(context.Context, *AddCommentR
 }
 func (UnimplementedDieterServiceServer) MoveCard(context.Context, *MoveCardRequest) (*Card, error) {
 	return nil, status.Error(codes.Unimplemented, "method MoveCard not implemented")
+}
+func (UnimplementedDieterServiceServer) MergeCard(context.Context, *MergeCardRequest) (*Card, error) {
+	return nil, status.Error(codes.Unimplemented, "method MergeCard not implemented")
 }
 func (UnimplementedDieterServiceServer) StartCard(context.Context, *StartCardRequest) (*StartCardResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartCard not implemented")
@@ -2503,6 +2519,24 @@ func _DieterService_MoveCard_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).MoveCard(ctx, req.(*MoveCardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_MergeCard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MergeCardRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).MergeCard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_MergeCard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).MergeCard(ctx, req.(*MergeCardRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3653,6 +3687,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MoveCard",
 			Handler:    _DieterService_MoveCard_Handler,
+		},
+		{
+			MethodName: "MergeCard",
+			Handler:    _DieterService_MergeCard_Handler,
 		},
 		{
 			MethodName: "StartCard",

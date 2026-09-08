@@ -176,7 +176,7 @@ Commands:
   harness      List target daemon harnesses, models, and options
   project      Create, browse, open, relocate, archive, and restore projects
   board        Manage boards, retention, workflows, and board labels
-  card         Fully manage durable board conversations
+  card         Create, edit, merge, and manage durable board conversations
   chat         Fully manage standalone durable conversations
   workspace    Inspect changes and run durable Git/SCM operations
   file         Browse and edit project/workspace files with revision checks
@@ -1221,7 +1221,7 @@ Options:
 		Project: *project, Board: *board, Lane: *lane, Title: *title, Prompt: value,
 		Provider: *provider, Model: *modelName, Effort: *effort, LabelIDs: splitCSV(*labels), Attachments: parts,
 		WorkspaceMode: *workspaceMode, WorkspaceBranch: *workspaceBranch, WorkspaceBaseBranch: *workspaceBaseBranch,
-		AutoGenerateTitle: *autoTitle,
+		AutoGenerateTitle:   *autoTitle,
 		WorkspaceBaseRemote: *workspaceBaseRemote, RemotePublishMode: *remotePublish,
 	})
 	if err != nil {

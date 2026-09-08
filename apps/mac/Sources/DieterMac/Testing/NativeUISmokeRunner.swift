@@ -223,6 +223,31 @@ enum NativeUISmokeRunner {
                 : "failed: expected 65 cards, received \(largestLane)"
         }
         if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
+            if var draft = store.state.cards.first(where: { $0.boardID == board.id }) {
+                draft.initialPromptSentAt = ""
+                draft.lane = "todo"
+                let editor = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 620, height: 700), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                editor.isReleasedWhenClosed = false
+                editor.contentView = NSHostingView(rootView: EditCardSheet(card: draft).environment(store))
+                editor.makeKeyAndOrderFront(nil)
+                try? await DieterTaskSleep.milliseconds(500)
+                results["draft-agent-settings"] = NativeUIAccessibility.find("edit-card.agent-settings", in: editor) != nil ? "passed" : "failed: draft agent controls absent"
+                capture(editor, to: output.appending(path: "draft-agent-settings.png"))
+                editor.close()
+                draft.initialPromptSentAt = "started"
+                let hover = BoardCardDropState()
+                let preview = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 310, height: 210), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                preview.isReleasedWhenClosed = false
+                preview.contentView = NSHostingView(rootView: BoardCardView(card: draft, dropState: hover).environment(store).padding())
+                preview.makeKeyAndOrderFront(nil)
+                hover.enter(NSItemProvider(object: "board-card|board|todo|source" as NSString)) { _ in true }
+                try? await DieterTaskSleep.milliseconds(2400)
+                results["card-merge-hover-icon"] = hover.mergeReady ? "passed" : "failed: merge hover did not arm"
+                capture(preview, to: output.appending(path: "card-merge-hover-icon.png"))
+                hover.reset()
+                preview.close()
+                window.makeKeyAndOrderFront(nil)
+            }
             _ = NativeUIAccessibility.click("board.quick-task", in: window)
             try? await DieterTaskSleep.milliseconds(400)
             if let target = NativeUIAccessibility.find("quick-task.story", in: window),

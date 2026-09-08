@@ -14,7 +14,7 @@ import (
 	"github.com/dbpprt/dieter/internal/model"
 )
 
-const conversationProjectionVersion = 4
+const conversationProjectionVersion = 5
 
 const maxConversationEventBytes = 16 << 20
 
@@ -538,6 +538,9 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 		var queued model.QueuedMessage
 		if json.Unmarshal(event.Data, &queued) == nil {
 			conversation.Queue = append(conversation.Queue, queued)
+			if queued.MergeSourceID != "" {
+				conversation.MergedSourceIDs = append(conversation.MergedSourceIDs, queued.MergeSourceID)
+			}
 		}
 	case "remove-queued-message":
 		var removed model.QueuedMessage

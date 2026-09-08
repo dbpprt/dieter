@@ -325,3 +325,20 @@ fetching transcripts. Fields are `inputTokens`, `outputTokens`, `totalTokens`,
 `reportedMessages`, `missingMessages`, and `partial`. Treat partial counts as
 incomplete provider data. Copied fork history and separate subagent counters
 are excluded; the summary is not a billing estimate.
+
+### Merge a card's request into another task
+
+`dieter card merge --into TARGET CARD` queues the source card's initial request
+and attachments in a started target on the same board, moves the idle source to
+Done, and saves its `mergedIntoCardId` link. The source must have no active turn
+or queued messages. Retrying the same merge is safe. Both conversations and
+workspaces are retained; this operation does not merge Git branches.
+
+On macOS, drag a card over a started task and hold for two seconds. A merge icon
+and “Release to merge request” appear; dropping then performs the merge.
+Dropping earlier keeps the usual card ordering behavior.
+
+Draft agent settings can be changed in Edit card or with
+`dieter card update --provider codex --model MODEL --effort high --provider-option fast_mode=true CARD`.
+Settings are locked once the initial request has been sent. These commands also
+support the global `--machine ID|NAME` option for direct TLS or gateway relay.

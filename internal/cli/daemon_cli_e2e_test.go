@@ -606,6 +606,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 		t.Fatalf("direct remote exec output=%q err=%v", firstOutput.String(), err)
 	}
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	first.Close()
 
 	directRoute.server.Stop()
@@ -645,6 +646,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 		t.Fatalf("relay remote exec output=%q err=%v", secondOutput.String(), err)
 	}
 	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 }
 
 func assertMachineOperationAccepted(t *testing.T, raw []byte) {

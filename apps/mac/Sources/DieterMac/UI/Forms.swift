@@ -559,6 +559,10 @@ struct EditCardSheet: View {
     @State private var title: String
     @State private var task: String
     @State private var workspaceDraft: ConversationWorkspaceDraft
+    @State private var provider: String
+    @State private var model: String
+    @State private var effort: String
+    @State private var providerOptions: [String: String]
     @State private var saving = false
     @FocusState private var focusedField: Field?
 
@@ -567,6 +571,10 @@ struct EditCardSheet: View {
     init(card: Dieter_V1_Card, availableHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800) {
         self.card = card
         self.availableHeight = availableHeight
+        _provider = State(initialValue: card.provider)
+        _model = State(initialValue: card.model)
+        _effort = State(initialValue: card.effort)
+        _providerOptions = State(initialValue: card.providerOptions)
         _title = State(initialValue: card.title)
         _task = State(initialValue: card.initialPrompt)
         _workspaceDraft = State(initialValue: .init(
@@ -579,7 +587,7 @@ struct EditCardSheet: View {
     }
 
     private var hasChanges: Bool {
-        title != card.title || task != card.initialPrompt || workspaceDraft != ConversationWorkspaceDraft(
+        provider != card.provider || model != card.model || effort != card.effort || providerOptions != card.providerOptions || title != card.title || task != card.initialPrompt || workspaceDraft != ConversationWorkspaceDraft(
             mode: ConversationWorkspaceMode.selectable(card.workspaceMode),
             branch: card.workspaceBranch, baseBranch: card.workspaceBaseBranch,
             baseRemote: card.workspaceBaseRemote, remotePublishMode: card.remotePublishMode.isEmpty ? RemotePublishMode.manual.rawValue : card.remotePublishMode)
@@ -643,6 +651,12 @@ struct EditCardSheet: View {
                         ))
                         .accessibilityIdentifier("edit-card.task")
 
+                    Divider().overlay(DieterTheme.border)
+                    Text("Agent settings")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+                    HarnessFields(provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions)
+                        .accessibilityIdentifier("edit-card.agent-settings")
+                        .smokeTarget("edit-card.agent-settings")
                     Divider().overlay(DieterTheme.border)
                     Text("Agent workspace")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
@@ -715,10 +729,14 @@ struct EditCardSheet: View {
     private func save() async {
         guard canSave else { return }
         saving = true
+        var settings = Dieter_V1_DraftAgentSettings()
+        settings.provider = provider; settings.model = model; settings.effort = effort.isEmpty ? "default" : effort
+        settings.providerOptions = providerOptions
         let updated = await store.update(
             card,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            initialPrompt: task.trimmingCharacters(in: .whitespacesAndNewlines)
+            initialPrompt: task.trimmingCharacters(in: .whitespacesAndNewlines),
+            agentSettings: settings
         )
         let workspaceUpdated = updated ? (card.workspace.revision.isEmpty ? await store.updateConversationWorkspace(workspaceDraft, cardID: card.id) : true) : false
         saving = false
@@ -753,6 +771,7 @@ struct HarnessFields: View {
         }
         if let efforts = selectedModel?.efforts, !efforts.isEmpty {
             Picker("Reasoning effort", selection: $effort) {
+                Text("Agent default").tag("")
                 ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
             }
         }

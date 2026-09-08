@@ -849,13 +849,21 @@ extension DieterStore {
         do { _ = try await rpc.renameCard(request); await refreshState(); await refreshChats() } catch { show(error) }
     }
 
+    func merge(_ source: Dieter_V1_Card, into target: Dieter_V1_Card) async {
+        guard await ensureProjectConnection(source.projectID), let rpc else { return }
+        var request = Dieter_V1_MergeCardRequest()
+        request.cardID = source.id; request.targetCardID = target.id
+        do { _ = try await rpc.mergeCard(request); await refreshState() } catch { show(error) }
+    }
+
     @discardableResult
-    func update(_ card: Dieter_V1_Card, title: String, initialPrompt: String) async -> Bool {
+    func update(_ card: Dieter_V1_Card, title: String, initialPrompt: String, agentSettings: Dieter_V1_DraftAgentSettings? = nil) async -> Bool {
         guard await ensureProjectConnection(card.projectID), let rpc else { return false }
         var request = Dieter_V1_UpdateCardRequest()
         request.cardID = card.id
         request.title = title
         request.initialPrompt = initialPrompt
+        if let agentSettings { request.agentSettings = agentSettings }
         do {
             _ = try await rpc.updateCard(request)
             await refreshState()

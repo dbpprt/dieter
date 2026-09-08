@@ -1240,7 +1240,12 @@ func (s *Store) RenameCard(ref, title string) (model.Card, error) {
 	return item, s.writeCard(item)
 }
 
-func (s *Store) UpdateCard(ref, title, initialPrompt string) (model.Card, error) {
+type DraftAgentSettings struct {
+	Provider, Model, Effort string
+	ProviderOptions         map[string]string
+}
+
+func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAgentSettings) (model.Card, error) {
 	title, initialPrompt = strings.TrimSpace(title), strings.TrimSpace(initialPrompt)
 	if title == "" {
 		return model.Card{}, errors.New("title is required")
@@ -1260,7 +1265,21 @@ func (s *Store) UpdateCard(ref, title, initialPrompt string) (model.Card, error)
 	if initialPrompt != item.InitialPrompt && item.InitialPromptSentAt != "" {
 		return model.Card{}, errors.New("agent task can only be edited before it is sent")
 	}
-	if title == item.Title && initialPrompt == item.InitialPrompt {
+	if item.MergePending {
+		return model.Card{}, errors.New("card merge is pending")
+	}
+	if len(settings) > 0 {
+		active, leaseErr := s.CardHasRuntimeLease(item.ID)
+		if leaseErr != nil {
+			return model.Card{}, leaseErr
+		}
+		if item.InitialPromptSentAt != "" || active {
+			return model.Card{}, errors.New("agent settings can only be edited before the initial task is sent")
+		}
+		config := settings[0]
+		item.Provider, item.Model, item.Effort, item.ProviderOptions = config.Provider, config.Model, config.Effort, config.ProviderOptions
+	}
+	if len(settings) == 0 && title == item.Title && initialPrompt == item.InitialPrompt {
 		return item, nil
 	}
 	if item.LastActivityAt == "" {

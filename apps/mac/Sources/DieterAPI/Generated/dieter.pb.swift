@@ -1457,6 +1457,11 @@ public nonisolated struct Dieter_V1_Card: @unchecked Sendable {
   /// Clears the value of `tokenUsage`. Subsequent reads from it will return its default value.
   public mutating func clearTokenUsage() {_uniqueStorage()._tokenUsage = nil}
 
+  public var mergedIntoCardID: String {
+    get {_storage._mergedIntoCardID}
+    set {_uniqueStorage()._mergedIntoCardID = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -3264,6 +3269,38 @@ public nonisolated struct Dieter_V1_RenameCardRequest: Sendable {
   public init() {}
 }
 
+public nonisolated struct Dieter_V1_MergeCardRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var cardID: String = String()
+
+  public var targetCardID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_DraftAgentSettings: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var provider: String = String()
+
+  public var model: String = String()
+
+  public var effort: String = String()
+
+  public var providerOptions: Dictionary<String,String> = [:]
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Dieter_V1_UpdateCardRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -3275,9 +3312,20 @@ public nonisolated struct Dieter_V1_UpdateCardRequest: Sendable {
 
   public var initialPrompt: String = String()
 
+  public var agentSettings: Dieter_V1_DraftAgentSettings {
+    get {_agentSettings ?? Dieter_V1_DraftAgentSettings()}
+    set {_agentSettings = newValue}
+  }
+  /// Returns true if `agentSettings` has been explicitly set.
+  public var hasAgentSettings: Bool {self._agentSettings != nil}
+  /// Clears the value of `agentSettings`. Subsequent reads from it will return its default value.
+  public mutating func clearAgentSettings() {self._agentSettings = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _agentSettings: Dieter_V1_DraftAgentSettings? = nil
 }
 
 public nonisolated struct Dieter_V1_ArchiveCardRequest: Sendable {
@@ -7798,7 +7846,7 @@ nonisolated extension Dieter_V1_TokenUsage: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Card"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{3}comment_count\0\u{1}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}token_usage\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}scope\0\u{3}project_id\0\u{3}board_id\0\u{1}lane\0\u{1}position\0\u{1}title\0\u{3}initial_prompt\0\u{3}initial_prompt_sent_at\0\u{3}phase_changed_at\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{1}runtime\0\u{1}summary\0\u{3}runtime_updated_at\0\u{3}last_activity_at\0\u{1}archived\0\u{3}done_archive_exempt\0\u{1}pinned\0\u{3}created_at\0\u{3}updated_at\0\u{3}label_ids\0\u{3}comment_count\0\u{1}origin\0\u{3}active_subagents\0\u{3}provider_options\0\u{3}workspace_mode\0\u{3}workspace_branch\0\u{3}workspace_base_branch\0\u{1}workspace\0\u{3}pull_request\0\u{3}workspace_base_remote\0\u{3}remote_publish_mode\0\u{3}token_usage\0\u{3}merged_into_card_id\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -7836,6 +7884,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
     var _workspaceBaseRemote: String = String()
     var _remotePublishMode: String = String()
     var _tokenUsage: Dieter_V1_TokenUsage? = nil
+    var _mergedIntoCardID: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -7881,6 +7930,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       _workspaceBaseRemote = source._workspaceBaseRemote
       _remotePublishMode = source._remotePublishMode
       _tokenUsage = source._tokenUsage
+      _mergedIntoCardID = source._mergedIntoCardID
     }
   }
 
@@ -7934,6 +7984,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         case 33: try { try decoder.decodeSingularStringField(value: &_storage._workspaceBaseRemote) }()
         case 34: try { try decoder.decodeSingularStringField(value: &_storage._remotePublishMode) }()
         case 35: try { try decoder.decodeSingularMessageField(value: &_storage._tokenUsage) }()
+        case 36: try { try decoder.decodeSingularStringField(value: &_storage._mergedIntoCardID) }()
         default: break
         }
       }
@@ -8051,6 +8102,9 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
       try { if let v = _storage._tokenUsage {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 35)
       } }()
+      if !_storage._mergedIntoCardID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._mergedIntoCardID, fieldNumber: 36)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -8095,6 +8149,7 @@ nonisolated extension Dieter_V1_Card: SwiftProtobuf.Message, SwiftProtobuf._Mess
         if _storage._workspaceBaseRemote != rhs_storage._workspaceBaseRemote {return false}
         if _storage._remotePublishMode != rhs_storage._remotePublishMode {return false}
         if _storage._tokenUsage != rhs_storage._tokenUsage {return false}
+        if _storage._mergedIntoCardID != rhs_storage._mergedIntoCardID {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -11916,9 +11971,89 @@ nonisolated extension Dieter_V1_RenameCardRequest: SwiftProtobuf.Message, SwiftP
   }
 }
 
+nonisolated extension Dieter_V1_MergeCardRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MergeCardRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{3}target_card_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.targetCardID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.cardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
+    }
+    if !self.targetCardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.targetCardID, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MergeCardRequest, rhs: Dieter_V1_MergeCardRequest) -> Bool {
+    if lhs.cardID != rhs.cardID {return false}
+    if lhs.targetCardID != rhs.targetCardID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_DraftAgentSettings: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".DraftAgentSettings"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}provider_options\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.provider) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.model) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.effort) }()
+      case 4: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.providerOptions) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.provider.isEmpty {
+      try visitor.visitSingularStringField(value: self.provider, fieldNumber: 1)
+    }
+    if !self.model.isEmpty {
+      try visitor.visitSingularStringField(value: self.model, fieldNumber: 2)
+    }
+    if !self.effort.isEmpty {
+      try visitor.visitSingularStringField(value: self.effort, fieldNumber: 3)
+    }
+    if !self.providerOptions.isEmpty {
+      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.providerOptions, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_DraftAgentSettings, rhs: Dieter_V1_DraftAgentSettings) -> Bool {
+    if lhs.provider != rhs.provider {return false}
+    if lhs.model != rhs.model {return false}
+    if lhs.effort != rhs.effort {return false}
+    if lhs.providerOptions != rhs.providerOptions {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Dieter_V1_UpdateCardRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UpdateCardRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}title\0\u{3}initial_prompt\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}title\0\u{3}initial_prompt\0\u{3}agent_settings\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -11929,12 +12064,17 @@ nonisolated extension Dieter_V1_UpdateCardRequest: SwiftProtobuf.Message, SwiftP
       case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.title) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.initialPrompt) }()
+      case 4: try { try decoder.decodeSingularMessageField(value: &self._agentSettings) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.cardID.isEmpty {
       try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 1)
     }
@@ -11944,6 +12084,9 @@ nonisolated extension Dieter_V1_UpdateCardRequest: SwiftProtobuf.Message, SwiftP
     if !self.initialPrompt.isEmpty {
       try visitor.visitSingularStringField(value: self.initialPrompt, fieldNumber: 3)
     }
+    try { if let v = self._agentSettings {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -11951,6 +12094,7 @@ nonisolated extension Dieter_V1_UpdateCardRequest: SwiftProtobuf.Message, SwiftP
     if lhs.cardID != rhs.cardID {return false}
     if lhs.title != rhs.title {return false}
     if lhs.initialPrompt != rhs.initialPrompt {return false}
+    if lhs._agentSettings != rhs._agentSettings {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

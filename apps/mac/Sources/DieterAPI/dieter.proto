@@ -64,6 +64,7 @@ service DieterService {
   rpc RemoveQueuedMessage(RemoveQueuedMessageRequest) returns (QueuedMessage);
   rpc AddComment(AddCommentRequest) returns (Comment);
   rpc MoveCard(MoveCardRequest) returns (Card);
+  rpc MergeCard(MergeCardRequest) returns (Card);
   // StartCard is an idempotent admission command. It durably admits the
   // initial turn and returns the fresh card projection without waiting for
   // the agent turn to finish.
@@ -495,6 +496,7 @@ message Card {
   string workspace_base_remote = 33;
   string remote_publish_mode = 34;
   TokenUsage token_usage = 35;
+  string merged_into_card_id = 36;
 }
 
 message CardOrigin {
@@ -1055,10 +1057,23 @@ message RenameCardRequest {
   string title = 2;
 }
 
+message MergeCardRequest {
+  string card_id = 1;
+  string target_card_id = 2;
+}
+
+message DraftAgentSettings {
+  string provider = 1;
+  string model = 2;
+  string effort = 3;
+  map<string, string> provider_options = 4;
+}
+
 message UpdateCardRequest {
   string card_id = 1;
   string title = 2;
   string initial_prompt = 3;
+  DraftAgentSettings agent_settings = 4;
 }
 
 message ArchiveCardRequest {

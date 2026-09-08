@@ -1148,8 +1148,40 @@ func (api *grpcAPI) RenameCard(_ context.Context, request *dieterv1.RenameCardRe
 	return protoCard(value), nil
 }
 
+func (api *grpcAPI) MergeCard(_ context.Context, request *dieterv1.MergeCardRequest) (*dieterv1.Card, error) {
+	value, err := api.server.app.MergeCard(request.GetCardId(), request.GetTargetCardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoCard(value), nil
+}
+
 func (api *grpcAPI) UpdateCard(_ context.Context, request *dieterv1.UpdateCardRequest) (*dieterv1.Card, error) {
-	value, err := api.server.store.UpdateCard(request.GetCardId(), request.GetTitle(), request.GetInitialPrompt())
+	var settings []store.DraftAgentSettings
+	if config := request.GetAgentSettings(); config != nil {
+		provider := config.GetProvider()
+		if provider == "" {
+			provider = "codex"
+		}
+		adapter, selected, err := harness.ResolveSelection(provider, config.GetModel(), os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
+		if err != nil {
+			return nil, grpcFailure(err)
+		}
+		effort := config.GetEffort()
+		if effort == "" {
+			effort = selected.DefaultEffort
+		}
+		effort, err = harness.ResolveEffort(adapter, selected, effort)
+		if err != nil {
+			return nil, grpcFailure(err)
+		}
+		options, err := harness.ResolveOptionsForModel(adapter, selected.ID, config.GetProviderOptions())
+		if err != nil {
+			return nil, grpcFailure(err)
+		}
+		settings = append(settings, store.DraftAgentSettings{Provider: adapter.ID, Model: selected.ID, Effort: effort, ProviderOptions: options})
+	}
+	value, err := api.server.store.UpdateCard(request.GetCardId(), request.GetTitle(), request.GetInitialPrompt(), settings...)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}

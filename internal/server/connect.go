@@ -272,6 +272,10 @@ func (api *connectAPI) RenameCard(ctx context.Context, request *connect.Request[
 	return connectUnary(ctx, request, api.core.RenameCard)
 }
 
+func (api *connectAPI) MergeCard(ctx context.Context, request *connect.Request[dieterv1.MergeCardRequest]) (*connect.Response[dieterv1.Card], error) {
+	return connectUnary(ctx, request, api.core.MergeCard)
+}
+
 func (api *connectAPI) UpdateCard(ctx context.Context, request *connect.Request[dieterv1.UpdateCardRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.UpdateCard)
 }

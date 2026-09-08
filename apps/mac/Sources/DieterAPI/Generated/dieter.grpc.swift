@@ -580,6 +580,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "MergeCard" metadata.
+        public enum MergeCard: Sendable {
+            /// Request type for "MergeCard".
+            public typealias Input = Dieter_V1_MergeCardRequest
+            /// Response type for "MergeCard".
+            public typealias Output = Dieter_V1_Card
+            /// Descriptor for "MergeCard".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "MergeCard",
+                type: .unary
+            )
+        }
         /// Namespace for "StartCard" metadata.
         public enum StartCard: Sendable {
             /// Request type for "StartCard".
@@ -1353,6 +1366,7 @@ public enum Dieter_V1_DieterService: Sendable {
             RemoveQueuedMessage.descriptor,
             AddComment.descriptor,
             MoveCard.descriptor,
+            MergeCard.descriptor,
             StartCard.descriptor,
             SetCardLabels.descriptor,
             CancelCard.descriptor,
@@ -2257,6 +2271,25 @@ extension Dieter_V1_DieterService {
         func moveCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MoveCardRequest>,
             serializer: some GRPCCore.MessageSerializer<Dieter_V1_MoveCardRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "MergeCard" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_MergeCardRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MergeCardRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func mergeCard<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MergeCardRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
@@ -4659,6 +4692,36 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.MoveCard.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "MergeCard" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_MergeCardRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MergeCardRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func mergeCard<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MergeCardRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.MergeCard.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -7451,6 +7514,31 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "MergeCard" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_MergeCardRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func mergeCard<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.mergeCard(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_MergeCardRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Card>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "StartCard" method.
     ///
     /// > Source IDL Documentation:
@@ -10121,6 +10209,35 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.moveCard(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MergeCard" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func mergeCard<Result>(
+        _ message: Dieter_V1_MergeCardRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.mergeCard(
             request: request,
             options: options,
             onResponse: handleResponse
