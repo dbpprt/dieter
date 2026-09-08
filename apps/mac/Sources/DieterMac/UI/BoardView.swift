@@ -501,6 +501,7 @@ struct BoardHeader: View {
         .buttonStyle(DieterPrimaryButtonStyle())
         .help("Create a task from its story")
         .accessibilityIdentifier("board.quick-task")
+        .smokeTarget("board.quick-task")
         .popover(isPresented: $quickTaskPresented, arrowEdge: .top) {
             QuickTaskPopover(isPresented: $quickTaskPresented)
                 .environment(store)
@@ -530,14 +531,22 @@ private struct QuickTaskPopover: View {
     @Binding var isPresented: Bool
     @State private var story = ""
     @State private var submitting = false
+    @State private var settingsPresented = false
+    @State private var provider = ""
+    @State private var model = ""
+    @State private var effort = ""
+    @State private var providerOptions: [String: String] = [:]
+    @State private var attachments: [Dieter_V1_MessagePart] = []
+    @State private var fileImporterPresented = false
+    @State private var attachmentDropTargeted = false
+    @State private var initialized = false
     @FocusState private var storyFocused: Bool
 
     private var cleanStory: String { story.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var lane: Dieter_V1_Lane? { store.selectedBoard?.lanes.first }
     private var selection: ConversationCreationSelection? {
-        ConversationCreationPreferences
-            .load(from: DieterAppearance.applicationDefaults())
-            .resolved(in: store.harnessCatalog.harnesses)
+        guard !provider.isEmpty else { return nil }
+        return ConversationCreationSelection(provider: provider, model: model, effort: effort, workspaceMode: preferences.workspaceMode)
     }
     private var preferences: ConversationCreationPreferences {
         ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
@@ -550,7 +559,8 @@ private struct QuickTaskPopover: View {
               let model = harness.models.first(where: { $0.id == selection.model }) else {
             return "\(laneName) · \(workspace) · Agent defaults"
         }
-        return "\(laneName) · \(workspace) · \(harness.name) / \(model.name)"
+        let fastMode = ProviderOptionValues.normalized(for: harness, model: model.id, saved: providerOptions)["fast_mode"] == "true"
+        return "\(laneName) · \(workspace) · \(harness.name) / \(model.name)" + (fastMode ? " · Fast" : "")
     }
 
     var body: some View {
@@ -567,6 +577,32 @@ private struct QuickTaskPopover: View {
                         .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
+                Button { settingsPresented.toggle() } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 14))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Task agent settings")
+                .accessibilityLabel("Task agent settings")
+                .accessibilityIdentifier("quick-task.settings")
+                .disabled(submitting)
+                .popover(isPresented: $settingsPresented, arrowEdge: .trailing) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Task agent").font(.headline)
+                        HarnessFields(provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions)
+                        HStack {
+                            Spacer()
+                            Button("Done") { settingsPresented = false }
+                                .buttonStyle(DieterSecondaryButtonStyle())
+                        }
+                    }
+                    .padding(16)
+                    .frame(width: 310)
+                    .background(DieterTheme.background)
+                    .environment(store)
+                }
             }
 
             TextField("What should the agent accomplish?", text: $story, axis: .vertical)
@@ -578,11 +614,33 @@ private struct QuickTaskPopover: View {
                 .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
                 .overlay(RoundedRectangle(cornerRadius: 9).stroke(storyFocused ? DieterTheme.shellDeep : DieterTheme.strongBorder, lineWidth: storyFocused ? 1.5 : 1))
                 .accessibilityIdentifier("quick-task.story")
+                .smokeTarget("quick-task.story")
+                .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                    Task {
+                        do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
+                        catch { store.show(error) }
+                    }
+                }
+
+            HStack(spacing: 8) {
+                Button { fileImporterPresented = true } label: {
+                    Label("Attach", systemImage: "paperclip")
+                }
+                .buttonStyle(DieterSecondaryButtonStyle())
+                .accessibilityIdentifier("quick-task.attach")
+                Text("Paste or drop screenshots · 4 files, 6 MB total")
+                    .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+            }
+            if !attachments.isEmpty {
+                AttachmentPreviewStrip(attachments: $attachments)
+                    .accessibilityIdentifier("quick-task.attachments")
+                    .smokeTarget("quick-task.attachments")
+            }
 
             HStack(spacing: 7) {
                 Image(systemName: "slider.horizontal.3")
                     .font(.system(size: 10, weight: .semibold))
-                Text(defaultsSummary).lineLimit(1)
+                Text(defaultsSummary).lineLimit(2)
             }
             .font(.system(size: 10.5, weight: .medium))
             .foregroundStyle(DieterTheme.tertiary)
@@ -609,7 +667,17 @@ private struct QuickTaskPopover: View {
         .padding(17)
         .frame(width: 390)
         .background(DieterTheme.background)
+        .attachmentIntake(store: store, importerPresented: $fileImporterPresented, attachments: $attachments)
         .task {
+            if !initialized {
+                let initial = preferences.resolved(in: store.harnessCatalog.harnesses)
+                provider = initial?.provider ?? ""
+                model = initial?.model ?? ""
+                effort = initial?.effort ?? ""
+                let harness = store.harnessCatalog.harnesses.first { $0.id == provider }
+                providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
+                initialized = true
+            }
             await Task.yield()
             storyFocused = true
         }
@@ -628,11 +696,12 @@ private struct QuickTaskPopover: View {
         await store.createConversation(
             title: QuickTaskDraft.optimisticTitle(from: story),
             prompt: story,
+            attachments: attachments,
             chat: false,
             provider: resolved?.provider ?? "",
             model: resolved?.model ?? "",
             effort: resolved?.effort ?? "",
-            providerOptions: harness.map { ProviderOptionValues.defaults(for: $0, model: resolved?.model ?? "") } ?? [:],
+            providerOptions: ProviderOptionValues.normalized(for: harness, model: resolved?.model ?? "", saved: providerOptions),
             deferred: lane?.id.lowercased() != "running",
             lane: lane?.id ?? "todo",
             workspace: workspace,
@@ -879,6 +948,35 @@ private struct LaneInsertionTarget: View {
     }
 }
 
+enum BoardAgentStatus: Equatable {
+    case running, failed, idle
+
+    static func resolve(_ card: Dieter_V1_Card) -> Self {
+        let active = Set(["starting", "running", "active", "working", "streaming", "cancelling"])
+        let status = card.runtime.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if active.contains(status) || card.activeSubagents.contains(where: { active.contains($0.status.lowercased()) }) {
+            return .running
+        }
+        return ["failed", "error"].contains(status) ? .failed : .idle
+    }
+
+    var color: Color {
+        switch self {
+        case .running: .green
+        case .failed: .orange
+        case .idle: .white
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .running: "Agent running"
+        case .failed: "Agent turn failed"
+        case .idle: "No agent work in progress"
+        }
+    }
+}
+
 private struct BoardCardDragPreview: View {
     let card: Dieter_V1_Card
 
@@ -888,7 +986,7 @@ private struct BoardCardDragPreview: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 12, weight: .semibold)).lineLimit(2)
                 HStack(spacing: 6) {
-                    Circle().fill(runtimeColor(card.runtime)).frame(width: 5, height: 5)
+                    Circle().fill(BoardAgentStatus.resolve(card).color).frame(width: 5, height: 5)
                     Text(card.runtime.capitalized).font(.system(size: 9, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
                 }
             }
@@ -955,7 +1053,9 @@ struct BoardCardView: View {
                 HStack(alignment: .top) {
                     Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.leading).lineLimit(3)
                     Spacer(minLength: 4)
-                    Circle().fill(runtimeColor(card.runtime)).frame(width: 6, height: 6).padding(.top, 5)
+                    Circle().fill(BoardAgentStatus.resolve(card).color).frame(width: 6, height: 6).padding(.top, 5)
+                        .help(BoardAgentStatus.resolve(card).label)
+                        .accessibilityLabel(BoardAgentStatus.resolve(card).label)
                 }
                 if card.hasTokenUsage { TaskTokenUsageBadge(usage: card.tokenUsage) }
                 if !card.summary.isEmpty { Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle).lineLimit(3).multilineTextAlignment(.leading) }

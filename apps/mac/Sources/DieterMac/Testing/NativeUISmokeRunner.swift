@@ -223,6 +223,43 @@ enum NativeUISmokeRunner {
                 : "failed: expected 65 cards, received \(largestLane)"
         }
         if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
+            _ = NativeUIAccessibility.click("board.quick-task", in: window)
+            try? await DieterTaskSleep.milliseconds(400)
+            if let target = NativeUIAccessibility.find("quick-task.story", in: window),
+               let popover = target.recordedWindow {
+                _ = NativeUIAccessibility.click("quick-task.story", in: popover)
+                try? await DieterTaskSleep.milliseconds(200)
+                let pasteboard = NSPasteboard.general
+                let saved = (pasteboard.pasteboardItems ?? []).map { item in
+                    item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in values[type] = item.data(forType: type) }
+                }
+                let image = NSImage(size: NSSize(width: 24, height: 24))
+                image.lockFocus()
+                NSColor.systemGreen.setFill()
+                NSRect(x: 0, y: 0, width: 24, height: 24).fill()
+                image.unlockFocus()
+                pasteboard.clearContents()
+                pasteboard.writeObjects([image])
+                if let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: popover.windowNumber, context: nil,
+                    characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9) {
+                    NSApp.postEvent(event, atStart: false)
+                }
+                let attached = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("quick-task.attachments", in: popover) != nil
+                }
+                results["quick-task-paste-screenshot"] = attached ? "passed" : "failed: pasted screenshot preview was absent"
+                capture(popover, to: output.appending(path: "quick-task-pasted-screenshot.png"))
+                pasteboard.clearContents()
+                let items = saved.map { values in
+                    let item = NSPasteboardItem()
+                    for (type, data) in values { item.setData(data, forType: type) }
+                    return item
+                }
+                if !items.isEmpty { pasteboard.writeObjects(items) }
+            } else {
+                results["quick-task-paste-screenshot"] = "failed: Quick Task popover was absent"
+            }
             writeReport(results, to: output)
             NSApp.terminate(nil)
             return
