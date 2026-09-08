@@ -1042,6 +1042,7 @@ private struct BoardCardClickStyle: PrimitiveButtonStyle {
                     }
             )
             .focusable()
+            .focusEffectDisabled()
             .onKeyPress(keys: [.return, .space]) { _ in
                 configuration.trigger()
                 return .handled
