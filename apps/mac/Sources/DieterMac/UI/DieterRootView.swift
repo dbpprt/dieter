@@ -354,7 +354,7 @@ struct AppSidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader
             if collapsed {
-                SidebarUtilityButton(symbol: "sparkles", help: "Quick task") { globalQuickTaskPresented = true }
+                SidebarUtilityButton(symbol: "square.and.pencil", help: "Quick task") { globalQuickTaskPresented = true }
                     .accessibilityIdentifier("sidebar.quick-task")
             }
             searchControl
@@ -393,9 +393,8 @@ struct AppSidebar: View {
                 SidebarUtilityButton(symbol: "sidebar.left", help: "Collapse navigation (⌃⌘S)") { collapsed = true }
                     .keyboardShortcut("s", modifiers: [.command, .control])
                     .accessibilityIdentifier("sidebar.toggle")
-                SidebarUtilityButton(symbol: "sparkles", help: "Quick task") { globalQuickTaskPresented = true }
+                SidebarUtilityButton(symbol: "square.and.pencil", help: "Quick task") { globalQuickTaskPresented = true }
                     .accessibilityIdentifier("sidebar.quick-task")
-                SidebarUtilityButton(symbol: "plus", help: "Add Git project") { store.createProjectPresented = true }
             }
             .padding(.horizontal, 12).padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
         }
