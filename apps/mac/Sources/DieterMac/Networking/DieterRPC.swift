@@ -347,6 +347,10 @@ final class DieterRPC: Sendable {
         try await service.setBoardArchivePolicy(request: .init(message: request))
     }
 
+    func updateBoardHostnames(_ request: Dieter_V1_UpdateBoardHostnamesRequest) async throws -> Dieter_V1_Board {
+        try await service.updateBoardHostnames(request: .init(message: request))
+    }
+
     func updateBoardGitSettings(_ request: Dieter_V1_UpdateBoardGitSettingsRequest) async throws -> Dieter_V1_Board {
         try await service.updateBoardGitSettings(request: .init(message: request))
     }

@@ -106,19 +106,20 @@ type ValidationCommand struct {
 }
 
 type Board struct {
-	ID                string  `json:"id" yaml:"id"`
-	ProjectID         string  `json:"projectId" yaml:"project_id"`
-	Name              string  `json:"name" yaml:"name"`
-	Workflow          string  `json:"workflow" yaml:"workflow"`
-	Description       string  `json:"description,omitempty" yaml:"-"`
-	PromptTemplate    string  `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	DoneArchivePolicy string  `json:"doneArchivePolicy" yaml:"done_archive_policy,omitempty"`
-	BaseRemote        string  `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
-	RemotePublishMode string  `json:"remotePublishMode" yaml:"remote_publish_mode,omitempty"`
-	CreatedAt         string  `json:"createdAt" yaml:"created_at"`
-	UpdatedAt         string  `json:"updatedAt" yaml:"updated_at"`
-	Labels            []Label `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Lanes             []Lane  `json:"lanes" yaml:"-"`
+	Hostnames         []string `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
+	ID                string   `json:"id" yaml:"id"`
+	ProjectID         string   `json:"projectId" yaml:"project_id"`
+	Name              string   `json:"name" yaml:"name"`
+	Workflow          string   `json:"workflow" yaml:"workflow"`
+	Description       string   `json:"description,omitempty" yaml:"-"`
+	PromptTemplate    string   `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	DoneArchivePolicy string   `json:"doneArchivePolicy" yaml:"done_archive_policy,omitempty"`
+	BaseRemote        string   `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	RemotePublishMode string   `json:"remotePublishMode" yaml:"remote_publish_mode,omitempty"`
+	CreatedAt         string   `json:"createdAt" yaml:"created_at"`
+	UpdatedAt         string   `json:"updatedAt" yaml:"updated_at"`
+	Labels            []Label  `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Lanes             []Lane   `json:"lanes" yaml:"-"`
 }
 
 type Label struct {

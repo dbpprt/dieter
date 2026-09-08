@@ -1613,3 +1613,11 @@ func grpcFailure(err error) error {
 	}
 	return status.Error(codes.InvalidArgument, err.Error())
 }
+
+func (api *grpcAPI) UpdateBoardHostnames(_ context.Context, request *dieterv1.UpdateBoardHostnamesRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.UpdateBoardHostnames(request.GetBoardId(), request.GetHostnames(), request.GetAppend())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
+}

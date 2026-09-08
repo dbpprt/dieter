@@ -37,3 +37,26 @@ func TestProjectHostnamesAreValidatedAndPersistedAtomically(t *testing.T) {
 		t.Fatalf("not cleared: %+v", cleared.Hostnames)
 	}
 }
+
+func TestBoardHostnamesAppendAndClear(t *testing.T) {
+	s, _, board := setup(t, model.WorkflowDirect)
+	_, err := s.UpdateBoardHostnames(board.ID, []string{"ONE.example"}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := s.UpdateBoardHostnames(board.ID, []string{"two.example", "one.example"}, true)
+	if err != nil || !reflect.DeepEqual(updated.Hostnames, []string{"one.example", "two.example"}) {
+		t.Fatalf("%+v %v", updated, err)
+	}
+	if _, err := s.UpdateBoardHostnames(board.ID, []string{"bad/path"}, false); err == nil {
+		t.Fatal("accepted invalid hostname")
+	}
+	persisted, _ := s.ResolveBoard("", board.ID)
+	if !reflect.DeepEqual(persisted.Hostnames, updated.Hostnames) {
+		t.Fatal("invalid update changed mappings")
+	}
+	cleared, err := s.UpdateBoardHostnames(board.ID, nil, false)
+	if err != nil || len(cleared.Hostnames) != 0 {
+		t.Fatalf("%+v %v", cleared, err)
+	}
+}

@@ -42,6 +42,7 @@ service DieterService {
   rpc CreateBoard(CreateBoardRequest) returns (Board);
   rpc RenameBoard(RenameBoardRequest) returns (Board);
   rpc SetBoardArchivePolicy(SetBoardArchivePolicyRequest) returns (Board);
+  rpc UpdateBoardHostnames(UpdateBoardHostnamesRequest) returns (Board);
   rpc UpdateBoardGitSettings(UpdateBoardGitSettingsRequest) returns (Board);
   rpc ListArchivedCards(BoardRef) returns (CardsResponse);
   rpc CreateBoardLabel(CreateBoardLabelRequest) returns (Board);
@@ -438,6 +439,7 @@ message Board {
   string prompt_template = 11;
   string base_remote = 12;
   string remote_publish_mode = 13;
+  repeated string hostnames = 14;
 }
 
 message Label {
@@ -1917,4 +1919,10 @@ message UpdateBoardGitSettingsRequest {
 message RemoveQueuedMessageRequest {
   string card_id = 1;
   string message_id = 2;
+}
+
+message UpdateBoardHostnamesRequest {
+ string board_id = 1;
+ repeated string hostnames = 2;
+ bool append = 3;
 }

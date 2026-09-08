@@ -335,6 +335,7 @@ enum SidebarMachineOrdering {
 }
 
 struct AppSidebar: View {
+    @State private var globalQuickTaskPresented = false
     @Environment(DieterStore.self) private var store
     @Binding var collapsed: Bool
     @State private var projectNavigation = SidebarProjectNavigationPreferences.load(from: SidebarProjectNavigationPreferences.applicationDefaults())
@@ -352,6 +353,10 @@ struct AppSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader
+            if collapsed {
+                SidebarUtilityButton(symbol: "sparkles", help: "Quick task") { globalQuickTaskPresented = true }
+                    .accessibilityIdentifier("sidebar.quick-task")
+            }
             searchControl
             allChatsControl
 
@@ -359,6 +364,10 @@ struct AppSidebar: View {
                 if collapsed { collapsedProjects } else { expandedProjects }
             }
             sidebarFooter
+        }
+        .sheet(isPresented: $globalQuickTaskPresented) {
+            ScrollView { QuickTaskPopover(isPresented: $globalQuickTaskPresented, chooseDestination: true).environment(store) }
+                .frame(width: 430, height: 700)
         }
         .background(DieterTheme.sidebar)
         .clipped()
@@ -384,6 +393,8 @@ struct AppSidebar: View {
                 SidebarUtilityButton(symbol: "sidebar.left", help: "Collapse navigation (⌃⌘S)") { collapsed = true }
                     .keyboardShortcut("s", modifiers: [.command, .control])
                     .accessibilityIdentifier("sidebar.toggle")
+                SidebarUtilityButton(symbol: "sparkles", help: "Quick task") { globalQuickTaskPresented = true }
+                    .accessibilityIdentifier("sidebar.quick-task")
                 SidebarUtilityButton(symbol: "plus", help: "Add Git project") { store.createProjectPresented = true }
             }
             .padding(.horizontal, 12).padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)

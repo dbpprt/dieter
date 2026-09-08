@@ -1936,11 +1936,18 @@ struct ArchivePolicySheet: View {
     @State private var baseRemote = ""
     @State private var remotePublishMode = RemotePublishMode.manual.rawValue
     @State private var saving = false
+    @State private var browserURLs = ""
+    @State private var saveError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Board settings").font(.title2.weight(.bold))
             Text("Choose how new conversations publish Git work and when completed cards are archived.").foregroundStyle(.secondary)
+            Text("Browser URLs or hostnames").font(.headline)
+            TextEditor(text: $browserURLs).frame(height: 70)
+                .accessibilityIdentifier("board.hostnames")
+            Text("One per line. Routing uses the exact hostname, across all URL paths and ports.").font(.caption).foregroundStyle(.secondary)
+            if let saveError { Text(saveError).foregroundStyle(.orange) }
             TextField("Default Git remote", text: $baseRemote)
             Picker("Remote publishing", selection: $remotePublishMode) {
                 ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
@@ -1952,6 +1959,7 @@ struct ArchivePolicySheet: View {
             }.pickerStyle(.radioGroup)
             HStack { Spacer(); Button("Cancel") { dismiss() }; Button(saving ? "Saving…" : "Save") { Task { await save() } }.buttonStyle(.borderedProminent).disabled(saving) }
         }.padding(24).frame(width: 520).onAppear {
+            browserURLs = store.selectedBoard?.hostnames.joined(separator: "\n") ?? ""
             policy = store.selectedBoard?.doneArchivePolicy ?? "never"
             let boardRemote = store.selectedBoard?.baseRemote ?? ""
             baseRemote = boardRemote.isEmpty ? (store.selectedProject?.baseRemote ?? "") : boardRemote
@@ -1962,6 +1970,13 @@ struct ArchivePolicySheet: View {
 
     private func save() async {
         saving = true
+        saveError = nil
+        let hosts = browserURLs.split(whereSeparator: { $0.isNewline }).map {
+            let value = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            return CaptureBrowserContext.hostname(value) ?? value
+        }.filter { !$0.isEmpty }
+        do { try await store.updateBoardHostnames(hosts) }
+        catch { saveError = error.localizedDescription; saving = false; return }
         guard await store.updateBoardGitSettings(remote: baseRemote, publishMode: remotePublishMode) else {
             saving = false
             return

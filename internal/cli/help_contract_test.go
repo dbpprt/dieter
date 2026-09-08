@@ -13,7 +13,8 @@ import (
 // RPC must have an equivalent, documented CLI entry point. Adding an RPC makes
 // this test fail until the feature team wires and documents its CLI operation.
 var rpcCommand = map[string]string{
-	"Health": "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
+	"UpdateBoardHostnames": "board hostnames",
+	"Health":               "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
 	"GetState": "status", "WatchState": "watch state", "WatchSync": "watch sync", "GetHarnesses": "harness list",
 	"GetSettings": "settings show", "GetSettingsOptions": "settings options", "UpdateSettings": "settings update",
 	"GetPromptSettings": "prompt show", "UpdatePromptSettings": "prompt update", "SetProjectPromptTemplate": "prompt project", "SetBoardPromptTemplate": "prompt board", "PreviewPrompt": "prompt preview",
@@ -54,7 +55,7 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"machine", "machine list", "machine gateway", "machine watch", "machine show", "machine route", "machine info", "machine rename", "machine revoke", "machine restart", "machine shutdown", "machine rtc",
 		"status", "storage", "harness", "harness list", "watch", "watch state", "watch sync",
 		"project", "project create", "project open", "project directories", "project list", "project show", "project update", "project workspace", "project remove", "project restore",
-		"board", "board create", "board list", "board show", "board rename", "board retention", "board git", "board label", "board label add", "board label list", "board label update", "board label remove",
+		"board", "board hostnames", "board create", "board list", "board show", "board rename", "board retention", "board git", "board label", "board label add", "board label list", "board label update", "board label remove",
 		"card", "card create", "card list", "card show", "card context", "card transcript", "card poll", "card watch", "card tool-output", "card fork", "card send", "card queue", "card queue remove", "card comment", "card merge", "card move", "card start", "card labels", "card cancel", "card rename", "card update", "card archive", "card unarchive", "card workspace",
 		"chat", "chat create", "chat list", "chat show", "chat context", "chat transcript", "chat poll", "chat watch", "chat tool-output", "chat fork", "chat send", "chat queue", "chat queue remove", "chat comment", "chat start", "chat labels", "chat cancel", "chat rename", "chat update", "chat archive", "chat unarchive", "chat workspace", "chat pin", "chat unpin",
 		"workspace", "workspace show", "workspace list", "workspace changes", "workspace diff", "workspace comments", "workspace comment", "workspace scm", "workspace operation", "workspace watch", "workspace run", "workspace cancel",

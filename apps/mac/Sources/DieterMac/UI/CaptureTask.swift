@@ -13,12 +13,22 @@ struct CaptureBrowserContext: Sendable {
         return url.absoluteString
     }
 
-    func matchingProjects(_ projects: [Dieter_V1_Project]) -> [Dieter_V1_Project] {
-        guard let value = Self.validatedURL(url), let host = URL(string: value)?.host else { return [] }
+    static func hostname(_ value: String) -> String? {
+        guard let value = validatedURL(value), let host = URL(string: value)?.host else { return nil }
         var normalized = host.lowercased()
         if normalized.hasSuffix(".") { normalized.removeLast() }
         if normalized.hasPrefix("["), normalized.hasSuffix("]") { normalized = String(normalized.dropFirst().dropLast()) }
-        return projects.filter { !$0.archived && $0.hostnames.contains(normalized) }
+        return normalized
+    }
+
+    func matchingProjects(_ projects: [Dieter_V1_Project]) -> [Dieter_V1_Project] {
+        guard let host = Self.hostname(url) else { return [] }
+        return projects.filter { !$0.archived && $0.hostnames.contains(host) }
+    }
+
+    func matchingBoards(_ boards: [Dieter_V1_Board]) -> [Dieter_V1_Board] {
+        guard let host = Self.hostname(url) else { return [] }
+        return boards.filter { $0.hostnames.contains(host) }
     }
 
     static func read(bundleID: String?, pid: pid_t?) async -> Self {
@@ -187,12 +197,20 @@ final class CaptureTaskController {
 #endif
                 guard let file = capture else { return }
                 defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
-                let matches = browser.matchingProjects(store.projects)
-                if matches.count == 1, let target = matches.first, target.id != store.selectedProjectID {
-                    await store.selectProject(target.id)
-                    guard store.selectedProjectID == target.id, store.phase.isConnected else {
-                        throw CaptureTaskError.failed("Could not connect to the project for this hostname. Please try again.")
-                    }
+                let boards = store.projects.filter { !$0.archived }.flatMap { store.boards(for: $0.id) }
+                let boardMatches = browser.matchingBoards(boards)
+                let projectMatches = browser.matchingProjects(store.projects)
+                if boardMatches.count == 1, let board = boardMatches.first {
+                    await store.selectProject(board.projectID)
+                    if store.selectedProjectID == board.projectID, store.phase.isConnected {
+                        await store.selectBoard(board.id)
+                    } else { store.selectedProjectID = ""; store.selectedBoardID = "" }
+                } else if boardMatches.isEmpty, projectMatches.count == 1, let project = projectMatches.first {
+                    await store.selectProject(project.id)
+                } else {
+                    // Stage the capture without guessing a destination.
+                    store.selectedProjectID = ""
+                    store.selectedBoardID = ""
                 }
                 let parts = try await store.attachmentParts([file])
                 present(parts: parts, browser: browser)
@@ -218,50 +236,14 @@ final class CaptureTaskController {
 }
 
 struct CapturedTaskDraftView: View {
-    @Environment(DieterStore.self) private var store
     let parts: [Dieter_V1_MessagePart]
     let browser: CaptureBrowserContext
     let dismiss: () -> Void
     @State private var presented = true
-    @State private var changingDestination = false
-    @State private var destinationConfirmed = false
-
-    private var ambiguousHostname: Bool { browser.matchingProjects(store.projects).count > 1 }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Destination").font(.caption.weight(.semibold))
-                    if ambiguousHostname && !destinationConfirmed {
-                        Text("This hostname belongs to multiple projects. Choose a project to continue.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Button("Use selected project") { destinationConfirmed = true }
-                            .disabled(store.selectedProjectID.isEmpty)
-                    } else if browser.matchingProjects(store.projects).first?.id == store.selectedProjectID {
-                        Text("Project matched from browser hostname")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Picker("Project", selection: Binding(get: { store.selectedProjectID }, set: { id in
-                        changingDestination = true
-                        Task { await store.selectProject(id); destinationConfirmed = store.selectedProjectID == id; changingDestination = false }
-                    })) {
-                        Text("Choose project").tag("")
-                        ForEach(store.projects, id: \.id) { Text($0.name).tag($0.id) }
-                    }
-                    Picker("Board", selection: Binding(get: { store.selectedBoardID }, set: { id in
-                        changingDestination = true
-                        Task { await store.selectBoard(id); changingDestination = false }
-                    })) {
-                        Text("Choose board").tag("")
-                        ForEach(store.boards(for: store.selectedProjectID), id: \.id) { Text($0.name).tag($0.id) }
-                    }
-                }
-                .padding(.horizontal, 17).padding(.top, 17)
-                .disabled(changingDestination)
-                QuickTaskPopover(isPresented: $presented, initialAttachments: parts, sourceURL: browser.url, capturedBrowser: browser.browser)
-                    .disabled(changingDestination || (ambiguousHostname && !destinationConfirmed))
-            }
+            QuickTaskPopover(isPresented: $presented, initialAttachments: parts, sourceURL: browser.url, capturedBrowser: browser.browser)
         }
         .background(DieterTheme.background)
         .onChange(of: presented) { _, value in if !value { dismiss() } }

@@ -629,6 +629,15 @@ extension DieterStore {
         do { _ = try await rpc.setBoardArchivePolicy(request); archivePolicyPresented = false; await refreshState() } catch { show(error) }
     }
 
+    func updateBoardHostnames(_ hostnames: [String], append: Bool = false) async throws {
+        guard let board = selectedBoard, await ensureProjectConnection(board.projectID), let rpc else {
+            throw CaptureTaskError.failed("Choose an available project and board first.")
+        }
+        var request = Dieter_V1_UpdateBoardHostnamesRequest()
+        request.boardID = board.id; request.hostnames = hostnames; request.append = append
+        acceptBoard(try await rpc.updateBoardHostnames(request))
+    }
+
     func updateBoardGitSettings(remote: String, publishMode: String) async -> Bool {
         guard let rpc else { return false }
         var request = Dieter_V1_UpdateBoardGitSettingsRequest()

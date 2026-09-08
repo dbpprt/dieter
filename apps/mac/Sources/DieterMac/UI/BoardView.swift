@@ -543,19 +543,25 @@ struct QuickTaskPopover: View {
     @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
     @State private var initialized = false
+    @State private var rememberHostname = false
+    @State private var submissionError: String?
     @State private var sourceURL: String
     private let capturedBrowser: Bool
+    private let chooseDestination: Bool
+    @State private var draftProjectID = ""
+    @State private var draftBoardID = ""
 
-    init(isPresented: Binding<Bool>, initialAttachments: [Dieter_V1_MessagePart] = [], sourceURL: String = "", capturedBrowser: Bool = false) {
+    init(isPresented: Binding<Bool>, initialAttachments: [Dieter_V1_MessagePart] = [], sourceURL: String = "", capturedBrowser: Bool = false, chooseDestination: Bool = false) {
         _isPresented = isPresented
         _attachments = State(initialValue: initialAttachments)
         _sourceURL = State(initialValue: sourceURL)
         self.capturedBrowser = capturedBrowser
+        self.chooseDestination = chooseDestination
     }
     @FocusState private var storyFocused: Bool
 
     private var cleanStory: String { story.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var lane: Dieter_V1_Lane? { store.selectedBoard?.lanes.first }
+    private var lane: Dieter_V1_Lane? { store.boards(for: draftProjectID).first { $0.id == draftBoardID }?.lanes.first }
     private var selection: ConversationCreationSelection? {
         guard !provider.isEmpty else { return nil }
         return ConversationCreationSelection(provider: provider, model: model, effort: effort, workspaceMode: preferences.workspaceMode)
@@ -577,6 +583,21 @@ struct QuickTaskPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Save to").font(.caption.weight(.semibold))
+                Picker("Project", selection: Binding(get: { draftProjectID }, set: { id in
+                    draftProjectID = id
+                    draftBoardID = ""
+                })) {
+                    Text("Choose project").tag("")
+                    ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
+                }.accessibilityIdentifier("quick-task.project")
+                Picker("Board", selection: $draftBoardID) {
+                    Text("Choose board").tag("")
+                    ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
+                }.accessibilityIdentifier("quick-task.board")
+            }.disabled(submitting)
+            if let submissionError { Text(submissionError).font(.caption).foregroundStyle(.orange) }
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: "sparkles")
                     .font(.system(size: 14, weight: .semibold))
@@ -649,12 +670,17 @@ struct QuickTaskPopover: View {
                     .smokeTarget("quick-task.attachments")
             }
 
-            if capturedBrowser {
+            Group {
                 TextField("Page URL (optional)", text: $sourceURL)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("quick-task.source-url")
                     .smokeTarget("quick-task.source-url")
-                if sourceURL.isEmpty {
+                if let host = CaptureBrowserContext.hostname(sourceURL) {
+                    Toggle("Remember \(host) for this board", isOn: $rememberHostname)
+                        .font(.caption)
+                        .accessibilityIdentifier("quick-task.remember-hostname")
+                }
+                if capturedBrowser && sourceURL.isEmpty {
                     Text("The browser URL couldn’t be read. You can paste it here.")
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 }
@@ -682,7 +708,7 @@ struct QuickTaskPopover: View {
                     }
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
-                .disabled(cleanStory.isEmpty || submitting || store.selectedProject == nil || store.selectedBoard == nil)
+                .disabled(cleanStory.isEmpty || submitting || draftProjectID.isEmpty || draftBoardID.isEmpty)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .accessibilityIdentifier("quick-task.create")
             }
@@ -693,6 +719,10 @@ struct QuickTaskPopover: View {
         .attachmentIntake(store: store, importerPresented: $fileImporterPresented, attachments: $attachments)
         .task {
             if !initialized {
+                if !chooseDestination {
+                    draftProjectID = store.selectedProjectID
+                    draftBoardID = store.selectedBoardID
+                }
                 let initial = preferences.resolved(in: store.harnessCatalog.harnesses)
                 provider = initial?.provider ?? ""
                 model = initial?.model ?? ""
@@ -711,6 +741,21 @@ struct QuickTaskPopover: View {
         let story = cleanStory
         guard !story.isEmpty else { return }
         submitting = true
+        submissionError = nil
+        await store.selectProject(draftProjectID)
+        guard store.selectedProjectID == draftProjectID, store.phase.isConnected else {
+            submissionError = "This project is unavailable. Choose another destination or try again."
+            submitting = false; return
+        }
+        await store.selectBoard(draftBoardID)
+        guard store.selectedBoard?.id == draftBoardID else {
+            submissionError = "This board is unavailable. Choose another board."
+            submitting = false; return
+        }
+        if rememberHostname, let host = CaptureBrowserContext.hostname(sourceURL) {
+            do { try await store.updateBoardHostnames([host], append: true) }
+            catch { submissionError = error.localizedDescription; submitting = false; return }
+        }
         let resolved = selection
         let harness = resolved.flatMap { value in store.harnessCatalog.harnesses.first { $0.id == value.provider } }
         var workspace = ConversationWorkspaceDraft()
@@ -725,7 +770,7 @@ struct QuickTaskPopover: View {
             model: resolved?.model ?? "",
             effort: resolved?.effort ?? "",
             providerOptions: ProviderOptionValues.normalized(for: harness, model: resolved?.model ?? "", saved: providerOptions),
-            deferred: lane?.id.lowercased() != "running",
+            deferred: true,
             lane: lane?.id ?? "todo",
             workspace: workspace,
             autoGenerateTitle: true

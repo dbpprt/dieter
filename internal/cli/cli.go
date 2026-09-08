@@ -175,7 +175,7 @@ Commands:
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
   project      Create, browse, map hostnames, relocate, archive, and restore projects
-  board        Manage boards, retention, workflows, and board labels
+  board        Manage boards, hostnames, retention, workflows, and labels
   card         Create, edit, merge, and manage durable board conversations
   chat         Fully manage standalone durable conversations
   workspace    Inspect changes and run durable Git/SCM operations

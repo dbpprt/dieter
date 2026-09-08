@@ -1204,6 +1204,8 @@ public nonisolated struct Dieter_V1_Board: Sendable {
 
   public var remotePublishMode: String = String()
 
+  public var hostnames: [String] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -5995,6 +5997,22 @@ public nonisolated struct Dieter_V1_RemoveQueuedMessageRequest: Sendable {
   public init() {}
 }
 
+public nonisolated struct Dieter_V1_UpdateBoardHostnamesRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var boardID: String = String()
+
+  public var hostnames: [String] = []
+
+  public var append: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "dieter.v1"
@@ -7651,7 +7669,7 @@ nonisolated extension Dieter_V1_Project: SwiftProtobuf.Message, SwiftProtobuf._M
 
 nonisolated extension Dieter_V1_Board: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Board"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{1}name\0\u{1}workflow\0\u{1}description\0\u{3}done_archive_policy\0\u{3}created_at\0\u{3}updated_at\0\u{1}labels\0\u{1}lanes\0\u{3}prompt_template\0\u{3}base_remote\0\u{3}remote_publish_mode\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}project_id\0\u{1}name\0\u{1}workflow\0\u{1}description\0\u{3}done_archive_policy\0\u{3}created_at\0\u{3}updated_at\0\u{1}labels\0\u{1}lanes\0\u{3}prompt_template\0\u{3}base_remote\0\u{3}remote_publish_mode\0\u{1}hostnames\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -7672,6 +7690,7 @@ nonisolated extension Dieter_V1_Board: SwiftProtobuf.Message, SwiftProtobuf._Mes
       case 11: try { try decoder.decodeSingularStringField(value: &self.promptTemplate) }()
       case 12: try { try decoder.decodeSingularStringField(value: &self.baseRemote) }()
       case 13: try { try decoder.decodeSingularStringField(value: &self.remotePublishMode) }()
+      case 14: try { try decoder.decodeRepeatedStringField(value: &self.hostnames) }()
       default: break
       }
     }
@@ -7717,6 +7736,9 @@ nonisolated extension Dieter_V1_Board: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if !self.remotePublishMode.isEmpty {
       try visitor.visitSingularStringField(value: self.remotePublishMode, fieldNumber: 13)
     }
+    if !self.hostnames.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.hostnames, fieldNumber: 14)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -7734,6 +7756,7 @@ nonisolated extension Dieter_V1_Board: SwiftProtobuf.Message, SwiftProtobuf._Mes
     if lhs.promptTemplate != rhs.promptTemplate {return false}
     if lhs.baseRemote != rhs.baseRemote {return false}
     if lhs.remotePublishMode != rhs.remotePublishMode {return false}
+    if lhs.hostnames != rhs.hostnames {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -17842,6 +17865,46 @@ nonisolated extension Dieter_V1_RemoveQueuedMessageRequest: SwiftProtobuf.Messag
   public static func ==(lhs: Dieter_V1_RemoveQueuedMessageRequest, rhs: Dieter_V1_RemoveQueuedMessageRequest) -> Bool {
     if lhs.cardID != rhs.cardID {return false}
     if lhs.messageID != rhs.messageID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_UpdateBoardHostnamesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".UpdateBoardHostnamesRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}board_id\0\u{1}hostnames\0\u{1}append\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.boardID) }()
+      case 2: try { try decoder.decodeRepeatedStringField(value: &self.hostnames) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.append) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.boardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.boardID, fieldNumber: 1)
+    }
+    if !self.hostnames.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.hostnames, fieldNumber: 2)
+    }
+    if self.append != false {
+      try visitor.visitSingularBoolField(value: self.append, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_UpdateBoardHostnamesRequest, rhs: Dieter_V1_UpdateBoardHostnamesRequest) -> Bool {
+    if lhs.boardID != rhs.boardID {return false}
+    if lhs.hostnames != rhs.hostnames {return false}
+    if lhs.append != rhs.append {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

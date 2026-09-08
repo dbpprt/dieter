@@ -411,3 +411,7 @@ func connectCode(code codes.Code) connect.Code {
 		return connect.CodeUnknown
 	}
 }
+
+func (api *connectAPI) UpdateBoardHostnames(ctx context.Context, request *connect.Request[dieterv1.UpdateBoardHostnamesRequest]) (*connect.Response[dieterv1.Board], error) {
+	return connectUnary(ctx, request, api.core.UpdateBoardHostnames)
+}

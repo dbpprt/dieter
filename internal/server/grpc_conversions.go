@@ -75,7 +75,7 @@ func protoBoard(value model.Board) *dieterv1.Board {
 		Workflow: value.Workflow, Description: value.Description,
 		DoneArchivePolicy: value.DoneArchivePolicy, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, PromptTemplate: value.PromptTemplate,
-		BaseRemote: value.BaseRemote, RemotePublishMode: value.RemotePublishMode,
+		BaseRemote: value.BaseRemote, RemotePublishMode: value.RemotePublishMode, Hostnames: append([]string(nil), value.Hostnames...),
 	}
 	for _, item := range value.Labels {
 		result.Labels = append(result.Labels, &dieterv1.Label{Id: item.ID, Name: item.Name, Color: item.Color, Instructions: item.Instructions})

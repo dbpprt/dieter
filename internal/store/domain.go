@@ -1719,3 +1719,24 @@ func cloneState(value model.State) model.State {
 	}
 	return result
 }
+
+func (s *Store) UpdateBoardHostnames(ref string, values []string, appendValues bool) (model.Board, error) {
+	release, err := s.beginWrite()
+	if err != nil {
+		return model.Board{}, err
+	}
+	defer release()
+	board, err := s.ResolveBoard("", ref)
+	if err != nil {
+		return model.Board{}, err
+	}
+	if appendValues {
+		values = append(append([]string(nil), board.Hostnames...), values...)
+	}
+	board.Hostnames, err = normalizeProjectHostnames(values)
+	if err != nil {
+		return model.Board{}, err
+	}
+	board.UpdatedAt = timestamp()
+	return board, writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+}

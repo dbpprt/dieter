@@ -46,3 +46,9 @@ import Testing
     other.archived = true
     #expect(browser.matchingProjects([project, other]).map(\.id) == ["one"])
 }
+
+@Test func captureMatchesBoardHostnamesAcrossPathsAndPorts() {
+    var board = Dieter_V1_Board(); board.id = "board"; board.hostnames = ["app.example.com"]
+    #expect(CaptureBrowserContext(url: "https://app.example.com:8443/path", browser: true).matchingBoards([board]).map(\.id) == ["board"])
+    #expect(CaptureBrowserContext(url: "https://other.example.com", browser: true).matchingBoards([board]).isEmpty)
+}

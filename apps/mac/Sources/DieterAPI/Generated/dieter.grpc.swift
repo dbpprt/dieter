@@ -346,6 +346,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "UpdateBoardHostnames" metadata.
+        public enum UpdateBoardHostnames: Sendable {
+            /// Request type for "UpdateBoardHostnames".
+            public typealias Input = Dieter_V1_UpdateBoardHostnamesRequest
+            /// Response type for "UpdateBoardHostnames".
+            public typealias Output = Dieter_V1_Board
+            /// Descriptor for "UpdateBoardHostnames".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "UpdateBoardHostnames",
+                type: .unary
+            )
+        }
         /// Namespace for "UpdateBoardGitSettings" metadata.
         public enum UpdateBoardGitSettings: Sendable {
             /// Request type for "UpdateBoardGitSettings".
@@ -1348,6 +1361,7 @@ public enum Dieter_V1_DieterService: Sendable {
             CreateBoard.descriptor,
             RenameBoard.descriptor,
             SetBoardArchivePolicy.descriptor,
+            UpdateBoardHostnames.descriptor,
             UpdateBoardGitSettings.descriptor,
             ListArchivedCards.descriptor,
             CreateBoardLabel.descriptor,
@@ -1923,6 +1937,25 @@ extension Dieter_V1_DieterService {
         func setBoardArchivePolicy<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_SetBoardArchivePolicyRequest>,
             serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetBoardArchivePolicyRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UpdateBoardHostnames" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateBoardHostnamesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateBoardHostnamesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateBoardHostnames<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateBoardHostnamesRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
@@ -4148,6 +4181,36 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.SetBoardArchivePolicy.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "UpdateBoardHostnames" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateBoardHostnamesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateBoardHostnamesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateBoardHostnames<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateBoardHostnamesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.UpdateBoardHostnames.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -7060,6 +7123,31 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "UpdateBoardHostnames" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_UpdateBoardHostnamesRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateBoardHostnames<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateBoardHostnames(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateBoardHostnamesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Board>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "UpdateBoardGitSettings" method.
     ///
     /// - Parameters:
@@ -9683,6 +9771,35 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.setBoardArchivePolicy(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateBoardHostnames" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateBoardHostnames<Result>(
+        _ message: Dieter_V1_UpdateBoardHostnamesRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateBoardHostnames(
             request: request,
             options: options,
             onResponse: handleResponse

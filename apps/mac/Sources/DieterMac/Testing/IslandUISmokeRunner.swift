@@ -43,7 +43,10 @@ enum IslandUISmokeRunner {
         }
 
         let captureDestination = installNavigationFixture(in: store)
-        store.projectDirectory[captureDestination.projectID]?.hostnames = ["example.com"]
+        store.projectDirectory[captureDestination.projectID]?.hostnames = []
+        var captureBoards = store.navigationBoards[captureDestination.projectID] ?? []
+        captureBoards[0].hostnames = ["example.com"]
+        store.navigationBoards[captureDestination.projectID] = captureBoards
         store.selectedProjectID = ""
         store.selectedBoardID = ""
         let captureDirectory = output.appending(path: "capture-input")

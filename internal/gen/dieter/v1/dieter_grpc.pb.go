@@ -45,6 +45,7 @@ const (
 	DieterService_CreateBoard_FullMethodName                    = "/dieter.v1.DieterService/CreateBoard"
 	DieterService_RenameBoard_FullMethodName                    = "/dieter.v1.DieterService/RenameBoard"
 	DieterService_SetBoardArchivePolicy_FullMethodName          = "/dieter.v1.DieterService/SetBoardArchivePolicy"
+	DieterService_UpdateBoardHostnames_FullMethodName           = "/dieter.v1.DieterService/UpdateBoardHostnames"
 	DieterService_UpdateBoardGitSettings_FullMethodName         = "/dieter.v1.DieterService/UpdateBoardGitSettings"
 	DieterService_ListArchivedCards_FullMethodName              = "/dieter.v1.DieterService/ListArchivedCards"
 	DieterService_CreateBoardLabel_FullMethodName               = "/dieter.v1.DieterService/CreateBoardLabel"
@@ -156,6 +157,7 @@ type DieterServiceClient interface {
 	CreateBoard(ctx context.Context, in *CreateBoardRequest, opts ...grpc.CallOption) (*Board, error)
 	RenameBoard(ctx context.Context, in *RenameBoardRequest, opts ...grpc.CallOption) (*Board, error)
 	SetBoardArchivePolicy(ctx context.Context, in *SetBoardArchivePolicyRequest, opts ...grpc.CallOption) (*Board, error)
+	UpdateBoardHostnames(ctx context.Context, in *UpdateBoardHostnamesRequest, opts ...grpc.CallOption) (*Board, error)
 	UpdateBoardGitSettings(ctx context.Context, in *UpdateBoardGitSettingsRequest, opts ...grpc.CallOption) (*Board, error)
 	ListArchivedCards(ctx context.Context, in *BoardRef, opts ...grpc.CallOption) (*CardsResponse, error)
 	CreateBoardLabel(ctx context.Context, in *CreateBoardLabelRequest, opts ...grpc.CallOption) (*Board, error)
@@ -516,6 +518,16 @@ func (c *dieterServiceClient) SetBoardArchivePolicy(ctx context.Context, in *Set
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Board)
 	err := c.cc.Invoke(ctx, DieterService_SetBoardArchivePolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) UpdateBoardHostnames(ctx context.Context, in *UpdateBoardHostnamesRequest, opts ...grpc.CallOption) (*Board, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Board)
+	err := c.cc.Invoke(ctx, DieterService_UpdateBoardHostnames_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1351,6 +1363,7 @@ type DieterServiceServer interface {
 	CreateBoard(context.Context, *CreateBoardRequest) (*Board, error)
 	RenameBoard(context.Context, *RenameBoardRequest) (*Board, error)
 	SetBoardArchivePolicy(context.Context, *SetBoardArchivePolicyRequest) (*Board, error)
+	UpdateBoardHostnames(context.Context, *UpdateBoardHostnamesRequest) (*Board, error)
 	UpdateBoardGitSettings(context.Context, *UpdateBoardGitSettingsRequest) (*Board, error)
 	ListArchivedCards(context.Context, *BoardRef) (*CardsResponse, error)
 	CreateBoardLabel(context.Context, *CreateBoardLabelRequest) (*Board, error)
@@ -1523,6 +1536,9 @@ func (UnimplementedDieterServiceServer) RenameBoard(context.Context, *RenameBoar
 }
 func (UnimplementedDieterServiceServer) SetBoardArchivePolicy(context.Context, *SetBoardArchivePolicyRequest) (*Board, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetBoardArchivePolicy not implemented")
+}
+func (UnimplementedDieterServiceServer) UpdateBoardHostnames(context.Context, *UpdateBoardHostnamesRequest) (*Board, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateBoardHostnames not implemented")
 }
 func (UnimplementedDieterServiceServer) UpdateBoardGitSettings(context.Context, *UpdateBoardGitSettingsRequest) (*Board, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateBoardGitSettings not implemented")
@@ -2202,6 +2218,24 @@ func _DieterService_SetBoardArchivePolicy_Handler(srv interface{}, ctx context.C
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).SetBoardArchivePolicy(ctx, req.(*SetBoardArchivePolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_UpdateBoardHostnames_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateBoardHostnamesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).UpdateBoardHostnames(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_UpdateBoardHostnames_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).UpdateBoardHostnames(ctx, req.(*UpdateBoardHostnamesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3619,6 +3653,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetBoardArchivePolicy",
 			Handler:    _DieterService_SetBoardArchivePolicy_Handler,
+		},
+		{
+			MethodName: "UpdateBoardHostnames",
+			Handler:    _DieterService_UpdateBoardHostnames_Handler,
 		},
 		{
 			MethodName: "UpdateBoardGitSettings",

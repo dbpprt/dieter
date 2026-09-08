@@ -360,7 +360,25 @@ Use bare DNS names (punycode for international names) or IP addresses, without
 URLs, ports, paths, or wildcards. Up to 64 names are allowed. URL ports and schemes
 do not affect matching; subdomains require their own entries.
 
-Capture task uses the browser URL to select a project when exactly one active
-project matches. Multiple matches require a manual destination choice; no match
-keeps the current destination editable. The user still reviews and submits the
+Capture task first tries board mappings, then uses the browser URL to select a
+project when exactly one active project matches. Multiple matches require a manual destination choice; no match
+asks for a destination. The user still reviews and submits the
 Quick Task. Mappings do not grant access to a website or start any task.
+
+Board hostname mappings take priority over project mappings for Capture task.
+Users can edit URLs/hostnames in Board settings or remember a captured URL's
+hostname for the selected board when saving a Quick Task. Global Quick Task is
+available in the sidebar and always shows project and board selectors. Unmatched
+or ambiguous captures stage a draft with no destination until the user chooses.
+Tasks are saved as drafts; capture does not start an agent.
+
+```sh
+dieter board hostnames --hostname app.example.com BOARD_ID
+dieter board hostnames --append --hostname preview.example.com BOARD_ID
+dieter board hostnames --clear BOARD_ID
+dieter board show BOARD_ID
+```
+
+The default replaces the full list; `--append` adds atomically and deduplicates.
+CLI inputs are bare hostnames; Board settings also accepts HTTP(S) URLs and stores
+only their hostname. The same exact-host matching and 64-host limit apply.

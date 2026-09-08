@@ -700,6 +700,18 @@ func TestDaemonCLICardTokenUsage(t *testing.T) {
 
 func assertProjectHostnameCLI(t *testing.T, client *CLI, output *bytes.Buffer, projectID string) {
 	t.Helper()
+	boardID := strings.Fields(runDaemonCLI(t, client, output, "board", "list", "--project", projectID, "--format", "ids"))[0]
+	runDaemonCLI(t, client, output, "board", "hostnames", "--hostname", "one.example", boardID)
+	boardJSON := runDaemonCLI(t, client, output, "board", "hostnames", "--append", "--hostname", "two.example", boardID)
+	var board dieterv1.Board
+	if err := protojson.Unmarshal([]byte(boardJSON), &board); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(board.Hostnames, ",") != "one.example,two.example" {
+		t.Fatalf("board hostnames=%v", board.Hostnames)
+	}
+	runDaemonCLI(t, client, output, "board", "hostnames", "--clear", boardID)
+
 	result := runDaemonCLI(t, client, output, "project", "update", "--hostname", "APP.Example.com.", "--hostname", "localhost", projectID)
 	var project dieterv1.Project
 	if err := protojson.Unmarshal([]byte(result), &project); err != nil {

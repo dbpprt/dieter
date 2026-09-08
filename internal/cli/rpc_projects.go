@@ -402,6 +402,8 @@ func (c *CLI) rpcProjectArchive(args []string, archived bool) error {
 
 const boardHelp = `Usage: dieter board <action>
 
+  hostnames BOARD  Replace, append, or clear exact browser hosts
+
 Actions:
   create              Create a fixed direct or review workflow board
   list                List boards
@@ -431,6 +433,8 @@ func (c *CLI) rpcBoard(args []string) error {
 		return c.rpcBoardRename(args[1:])
 	case "retention":
 		return c.rpcBoardRetention(args[1:])
+	case "hostnames":
+		return c.rpcBoardHostnames(args[1:])
 	case "git":
 		return c.rpcBoardGit(args[1:])
 	case "label", "labels":
@@ -777,4 +781,35 @@ Actions:
 	default:
 		return fmt.Errorf("unknown board label action %q", action)
 	}
+}
+
+func (c *CLI) rpcBoardHostnames(args []string) error {
+	const usage = "Usage: dieter board hostnames [--hostname HOST ...] [--append|--clear] BOARD\n\nReplaces the complete list by default. --append adds without replacing; --clear removes all.\n"
+	set := flags("board hostnames")
+	var hosts repeatedStrings
+	set.Var(&hosts, "hostname", "exact hostname (repeatable)")
+	add := set.Bool("append", false, "append hostnames")
+	clear := set.Bool("clear", false, "clear all hostnames")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 || (*clear && (*add || len(hosts) > 0)) || (!*clear && len(hosts) == 0) {
+		return errors.New("provide BOARD and --hostname or --clear")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	board, _, err := c.boardState(ctx, set.Arg(0))
+	if err != nil {
+		return err
+	}
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.UpdateBoardHostnames(rpcCtx, &dieterv1.UpdateBoardHostnamesRequest{BoardId: board.GetId(), Hostnames: hosts, Append: *add})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
 }
