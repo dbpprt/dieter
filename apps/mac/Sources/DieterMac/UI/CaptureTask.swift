@@ -79,18 +79,26 @@ enum CaptureTaskError: LocalizedError {
     }
 }
 
+@MainActor
 enum TaskScreenCapture {
     static func region() async throws -> URL? {
-        // Native interactive capture handles authorization itself; preflight can
-        // disagree with that service after the application has been rebuilt.
+        // Tahoe can fail when interactive capture writes directly to a file.
+        // Receive the native selection through the clipboard, then encode it here.
+        let pasteboard = NSPasteboard.general
+        let saved = (pasteboard.pasteboardItems ?? []).map { item in
+            item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+        }
+        let initialChangeCount = pasteboard.changeCount
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dieter-capture-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let file = directory.appendingPathComponent("Screen capture.png")
+        var keepFile = false
+        defer { if !keepFile { try? FileManager.default.removeItem(at: directory) } }
         do {
             let result = try await Task.detached {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-                process.arguments = ["-i", "-s", "-x", "-t", "png", file.path]
+                process.arguments = ["-i", "-s", "-x", "-c", "-t", "png"]
                 process.standardOutput = FileHandle.nullDevice
                 let errors = Pipe()
                 process.standardError = errors
@@ -99,16 +107,36 @@ enum TaskScreenCapture {
                 process.waitUntilExit()
                 return (process.terminationStatus, String(decoding: diagnostics, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
             }.value
-            guard result.0 == 0, FileManager.default.fileExists(atPath: file.path) else {
+            guard result.0 == 0 else {
                 if !result.1.isEmpty { throw CaptureTaskError.failed(result.1) }
-                try? FileManager.default.removeItem(at: directory)
                 return nil // Escape cancels the native region selector.
             }
+            guard let png = capturedPNG(from: pasteboard, after: initialChangeCount) else {
+                if pasteboard.changeCount == initialChangeCount { return nil }
+                throw CaptureTaskError.failed("The selection did not return an image. Please try again.")
+            }
+            // Restore only after consuming a new capture, never on cancellation.
+            pasteboard.clearContents()
+            let restored = saved.map { values in
+                let item = NSPasteboardItem()
+                for (type, data) in values { item.setData(data, forType: type) }
+                return item
+            }
+            if !restored.isEmpty { pasteboard.writeObjects(restored) }
+            try png.write(to: file, options: .atomic)
+            keepFile = true
             return file
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
+    }
+
+    static func capturedPNG(from pasteboard: NSPasteboard, after changeCount: Int) -> Data? {
+        guard pasteboard.changeCount != changeCount else { return nil }
+        if let data = pasteboard.data(forType: .png), NSBitmapImageRep(data: data) != nil { return data }
+        guard let data = pasteboard.data(forType: .tiff), let bitmap = NSBitmapImageRep(data: data) else { return nil }
+        return bitmap.representation(using: .png, properties: [:])
     }
 }
 
