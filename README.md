@@ -551,7 +551,9 @@ available in the sidebar and always shows project and board selectors. Unmatched
 or ambiguous captures stage a draft with no destination until the user chooses.
 Tasks are saved as drafts; capture does not start an agent. The sidebar and board
 Quick Task popovers keep their draft in memory when dismissed, including attachments
-and agent settings. Submitting or restarting the app clears the form.
+and agent settings. Submitting or restarting clears task text and attachments,
+while the last project, board per project, and agent settings are remembered.
+Projects without a previous board selection default to their first board.
 
 ```sh
 dieter board hostnames --hostname app.example.com BOARD_ID

@@ -529,32 +529,65 @@ struct QuickTaskDraft {
     }
 }
 
-@Observable
+@MainActor @Observable
 final class QuickTaskFormState {
-    var story: String = ""
-    var provider: String = ""
-    var model: String = ""
-    var effort: String = ""
-    var providerOptions: [String: String] = [:]
+    private struct Choices: Codable {
+        var project: String
+        var boards: [String: String]
+        var provider: String
+        var model: String
+        var effort: String
+        var options: [String: String]
+    }
+    private let defaults: UserDefaults
+    private static let key = "quickTask.lastChoices"
+    private var boards: [String: String] = [:]
+    var story = ""
+    var provider = "" { didSet { saveChoices() } }
+    var model = "" { didSet { saveChoices() } }
+    var effort = "" { didSet { saveChoices() } }
+    var providerOptions: [String: String] = [:] { didSet { saveChoices() } }
     var attachments: [Dieter_V1_MessagePart] = []
-    var initialized: Bool = false
-    var rememberHostname: Bool = false
-    var sourceURL: String = ""
-    var draftProjectID: String = ""
-    var draftBoardID: String = ""
+    var initialized = false
+    var rememberHostname = false
+    var sourceURL = ""
+    var draftProjectID = "" { didSet { saveChoices() } }
+    var draftBoardID = "" {
+        didSet {
+            if !draftProjectID.isEmpty && !draftBoardID.isEmpty { boards[draftProjectID] = draftBoardID }
+            saveChoices()
+        }
+    }
+
+    init(defaults: UserDefaults = DieterAppearance.applicationDefaults()) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: Self.key), let saved = try? JSONDecoder().decode(Choices.self, from: data) {
+            boards = saved.boards
+            draftProjectID = saved.project
+            draftBoardID = saved.boards[saved.project] ?? ""
+            provider = saved.provider
+            model = saved.model
+            effort = saved.effort
+            providerOptions = saved.options
+        }
+    }
+
+    func selectProject(_ id: String, boardIDs: [String]) {
+        draftProjectID = id
+        let remembered = boards[id] ?? ""
+        draftBoardID = boardIDs.contains(remembered) ? remembered : (boardIDs.first ?? "")
+    }
+
+    private func saveChoices() {
+        let choices = Choices(project: draftProjectID, boards: boards, provider: provider, model: model, effort: effort, options: providerOptions)
+        if let data = try? JSONEncoder().encode(choices) { defaults.set(data, forKey: Self.key) }
+    }
 
     func reset() {
         story = ""
-        provider = ""
-        model = ""
-        effort = ""
-        providerOptions = [:]
         attachments = []
-        initialized = false
         rememberHostname = false
         sourceURL = ""
-        draftProjectID = ""
-        draftBoardID = ""
     }
 }
 
@@ -669,8 +702,7 @@ struct QuickTaskPopover: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("DESTINATION").font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary)
                 Picker("Project", selection: Binding(get: { draftProjectID }, set: { id in
-                    draftProjectID = id
-                    draftBoardID = ""
+                    formDraft.selectProject(id, boardIDs: store.boards(for: id).map(\.id))
                 })) {
                     Text("Choose project").tag("")
                     ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
@@ -774,17 +806,22 @@ struct QuickTaskPopover: View {
         .attachmentIntake(store: store, importerPresented: $fileImporterPresented, attachments: $attachments)
         .task {
             if !initialized {
-                if !chooseDestination {
+                if !chooseDestination && (draftProjectID.isEmpty || capturedBrowser) {
                     draftProjectID = store.selectedProjectID
                     draftBoardID = store.selectedBoardID
                 }
-                let initial = preferences.resolved(in: store.harnessCatalog.harnesses)
-                provider = initial?.provider ?? ""
-                model = initial?.model ?? ""
-                effort = initial?.effort ?? ""
-                let harness = store.harnessCatalog.harnesses.first { $0.id == provider }
-                providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
+                if provider.isEmpty {
+                    let initial = preferences.resolved(in: store.harnessCatalog.harnesses)
+                    provider = initial?.provider ?? ""
+                    model = initial?.model ?? ""
+                    effort = initial?.effort ?? ""
+                    let harness = store.harnessCatalog.harnesses.first { $0.id == provider }
+                    providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
+                }
                 initialized = true
+            }
+            if !draftProjectID.isEmpty {
+                formDraft.selectProject(draftProjectID, boardIDs: store.boards(for: draftProjectID).map(\.id))
             }
             await Task.yield()
             storyFocused = true

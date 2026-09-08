@@ -54,20 +54,35 @@ import Testing
 }
 
 @Test @MainActor func quickTaskDraftResetsForSubmissionAndNewAppSession() {
-    let draft = QuickTaskFormState()
+    let defaults = UserDefaults(suiteName: "quick-task-tests-" + UUID().uuidString)!
+    let draft = QuickTaskFormState(defaults: defaults)
     draft.story = "Investigate this page"
     draft.sourceURL = "https://example.com/issue"
     draft.draftProjectID = "project"
     draft.draftBoardID = "board"
     draft.rememberHostname = true
+    draft.provider = "codex"
+    draft.model = "gpt-5.6-sol"
+    draft.effort = "high"
     draft.providerOptions = ["fast_mode": "true"]
     draft.initialized = true
     let image = Dieter_V1_MessagePart()
     draft.attachments = [image]
-    let newSession = QuickTaskFormState()
+    let newSession = QuickTaskFormState(defaults: defaults)
+    #expect(newSession.draftProjectID == "project" && newSession.draftBoardID == "board")
+    #expect(newSession.providerOptions["fast_mode"] == "true")
+    #expect(newSession.provider == "codex" && newSession.model == "gpt-5.6-sol" && newSession.effort == "high")
     #expect(newSession.story.isEmpty && newSession.attachments.isEmpty)
     draft.reset()
     #expect(draft.story.isEmpty && draft.sourceURL.isEmpty && draft.attachments.isEmpty)
-    #expect(draft.draftProjectID.isEmpty && draft.draftBoardID.isEmpty)
-    #expect(draft.providerOptions.isEmpty && !draft.rememberHostname && !draft.initialized)
+    #expect(draft.draftProjectID == "project" && draft.draftBoardID == "board")
+    #expect(draft.providerOptions["fast_mode"] == "true" && !draft.rememberHostname && draft.initialized)
+    draft.selectProject("second", boardIDs: ["first", "other"])
+    #expect(draft.draftBoardID == "first")
+    draft.draftBoardID = "other"
+    draft.selectProject("project", boardIDs: ["board"])
+    draft.selectProject("second", boardIDs: ["first", "other"])
+    #expect(draft.draftBoardID == "other")
+    draft.selectProject("second", boardIDs: ["first"])
+    #expect(draft.draftBoardID == "first")
 }
