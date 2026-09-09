@@ -278,7 +278,6 @@ struct BoardHeader: View {
                         Text(store.selectedBoard?.name ?? "Board")
                             .font(DieterFont.paneTitle).lineLimit(1)
                         Menu {
-                            Button("Create board…") { store.createBoardPresented = true }
                             Button("Rename board…") {
                                 if let board = store.selectedBoard { store.presentRenameBoard(boardID: board.id) }
                             }
@@ -288,7 +287,10 @@ struct BoardHeader: View {
                                 .font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
                                 .frame(width: 16, height: 16)
                         }
-                        .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
+                        .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden)
+                        .buttonBorderShape(.circle).controlSize(.small).fixedSize()
+                        .help("Board actions")
+                        .accessibilityIdentifier("board.actions")
                     }
                     Text(boardMetadata)
                         .font(DieterFont.subtitle)
@@ -299,9 +301,11 @@ struct BoardHeader: View {
                 Button {
                     store.projectContextPresented = true
                 } label: {
-                    Image(systemName: "ellipsis")
+                    Image(systemName: "text.book.closed")
+                        .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.glass).buttonBorderShape(.circle).help("Project context")
+                .accessibilityLabel("Project context")
             }
         } secondary: {
             GlassEffectContainer(spacing: 7) {
@@ -368,15 +372,9 @@ struct BoardHeader: View {
                         Button {
                             store.labelsPresented = true
                         } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "tag").font(.system(size: 10, weight: .semibold))
-                                Text("Labels")
-                            }
-                            .font(.caption2.weight(.medium)).foregroundStyle(DieterTheme.subtle)
-                            .padding(.horizontal, 9).frame(height: 28)
-                            .glassEffect(.regular.interactive(), in: Capsule())
+                            Label("Labels", systemImage: "tag")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.glass)
                         .help("Manage board labels")
 
                         Button {
@@ -460,6 +458,8 @@ struct BoardHeader: View {
                         quickTaskButton(compact: true)
                     }
                 }
+                .controlSize(.regular)
+                .buttonBorderShape(.capsule)
             }
         }
     }
