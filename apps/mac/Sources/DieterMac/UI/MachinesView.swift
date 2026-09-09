@@ -29,25 +29,56 @@ enum MachineInformationPresentation {
     }
 }
 
-private enum MachinePowerAction: String, Identifiable {
+private enum MachineAction: String, Identifiable {
     case restart
     case shutdown
+    case update
 
     var id: String { rawValue }
-    var title: String { self == .restart ? "Restart machine" : "Shut down machine" }
-    var buttonTitle: String { self == .restart ? "Restart" : "Shut Down" }
-    var confirmation: String { self == .restart ? "RESTART" : "SHUT DOWN" }
-    var wireAction: Dieter_V1_MachineOperationAction { self == .restart ? .restart : .shutdown }
+    var title: String {
+        switch self {
+        case .restart: "Restart machine"
+        case .shutdown: "Shut down machine"
+        case .update: "Update Dieter daemon"
+        }
+    }
+    var buttonTitle: String {
+        switch self {
+        case .restart: "Restart"
+        case .shutdown: "Shut Down"
+        case .update: "Update"
+        }
+    }
+    var confirmation: String {
+        switch self {
+        case .restart: "RESTART"
+        case .shutdown: "SHUT DOWN"
+        case .update: "UPDATE"
+        }
+    }
+    var wireAction: Dieter_V1_MachineOperationAction {
+        switch self {
+        case .restart: .restart
+        case .shutdown: .shutdown
+        case .update: .updateDaemon
+        }
+    }
+    var role: ButtonRole? { self == .update ? nil : .destructive }
     var explanation: String {
-        self == .restart
-            ? "Active Dieter turns will be suspended while the machine restarts. It will reconnect after Dieter starts again."
-            : "Active Dieter turns will be suspended and the machine will remain offline until somebody turns it on again."
+        switch self {
+        case .restart:
+            "Active Dieter turns will be suspended while the machine restarts. It will reconnect after Dieter starts again."
+        case .shutdown:
+            "Active Dieter turns will be suspended and the machine will remain offline until somebody turns it on again."
+        case .update:
+            "Homebrew will update Dieter without prompting, restart the daemon service, and let this machine reconnect automatically. Active turns will be suspended during the restart."
+        }
     }
 }
 
 struct MachinePopover: View {
     @Environment(DieterStore.self) private var store
-    @State private var pendingPowerAction: MachinePowerAction?
+    @State private var pendingAction: MachineAction?
 
     private var machine: DieterEndpoint? {
         guard let id = store.selectedMachineID else { return store.machines.first }
@@ -81,24 +112,24 @@ struct MachinePopover: View {
         .accessibilityIdentifier("machine.popover")
         .onExitCommand { store.dismissMachinePopover() }
         .confirmationDialog(
-            pendingPowerAction?.title ?? "Machine operation",
+            pendingAction?.title ?? "Machine operation",
             isPresented: Binding(
-                get: { pendingPowerAction != nil },
-                set: { if !$0 { pendingPowerAction = nil } }
+                get: { pendingAction != nil },
+                set: { if !$0 { pendingAction = nil } }
             ),
             titleVisibility: .visible
         ) {
-            if let action = pendingPowerAction {
-                Button(action.buttonTitle, role: .destructive) {
-                    pendingPowerAction = nil
+            if let action = pendingAction {
+                Button(action.buttonTitle, role: action.role) {
+                    pendingAction = nil
                     Task {
                         await store.performMachineOperation(action.wireAction, confirmation: action.confirmation)
                     }
                 }
             }
-            Button("Cancel", role: .cancel) { pendingPowerAction = nil }
+            Button("Cancel", role: .cancel) { pendingAction = nil }
         } message: {
-            Text(pendingPowerAction?.explanation ?? "")
+            Text(pendingAction?.explanation ?? "")
         }
         .alert(
             "Machine operation accepted",
@@ -161,7 +192,8 @@ struct MachinePopover: View {
                 HStack(spacing: 9) {
                     Text(machine.name).font(.system(size: 22, weight: .bold))
                     HStack(spacing: 5) {
-                        Circle().fill(machine.online ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 6, height: 6)
+                        Circle().fill(machine.online ? DieterTheme.eyes : DieterTheme.tertiary).frame(
+                            width: 6, height: 6)
                         Text(machine.online ? "Online" : "Offline")
                     }
                     .font(.system(size: 11, weight: .semibold))
@@ -186,10 +218,14 @@ struct MachinePopover: View {
             .accessibilityIdentifier("machine.refresh")
 
             Menu {
-                Button("Restart…", systemImage: "arrow.clockwise.circle") { pendingPowerAction = .restart }
+                Button("Update Dieter…", systemImage: "arrow.down.circle") { pendingAction = .update }
+                    .disabled(!operationAvailable(.updateDaemon, machine: machine))
+                    .accessibilityIdentifier("machine.update-daemon")
+                Divider()
+                Button("Restart…", systemImage: "arrow.clockwise.circle") { pendingAction = .restart }
                     .disabled(!operationAvailable(.restart, machine: machine))
                     .accessibilityIdentifier("machine.restart")
-                Button("Shut Down…", systemImage: "power") { pendingPowerAction = .shutdown }
+                Button("Shut Down…", systemImage: "power") { pendingAction = .shutdown }
                     .disabled(!operationAvailable(.shutdown, machine: machine))
                     .accessibilityIdentifier("machine.shutdown")
             } label: {
@@ -216,12 +252,17 @@ struct MachinePopover: View {
         if let capability = information.operationCapabilities.first(where: { $0.action == action }) {
             return capability.supported && capability.authorized
         }
-        return action == .restart ? information.supportsRestart : information.supportsShutdown
+        switch action {
+        case .restart: return information.supportsRestart
+        case .shutdown: return information.supportsShutdown
+        default: return false
+        }
     }
 
     private func machineSubtitle(_ machine: DieterEndpoint) -> String {
         guard let information else {
-            return machine.online ? "Connecting…" : MachinePresenceText.lastSeen(machine.lastSeenAt)
+            if store.machineInformationError != nil { return "Machine information unavailable" }
+            return machine.online ? "Loading machine information…" : MachinePresenceText.lastSeen(machine.lastSeenAt)
         }
         var parts: [String] = []
         let hardware = [information.hardwareModel, information.processor]
@@ -246,13 +287,17 @@ struct MachinePopover: View {
                     .font(.system(size: 23, weight: .bold, design: .monospaced))
                     .foregroundStyle(DieterTheme.shell)
             }
-            MachineCPUHistory(values: information.cpuCoreUsagePercent.isEmpty
-                ? store.machineCPUHistory[machineID, default: [information.cpuUsagePercent]]
-                : information.cpuCoreUsagePercent)
-                .frame(height: 48)
-            Text("\(information.logicalCpuCount) cores  ·  load \(information.load1, specifier: "%.1f") / \(information.load5, specifier: "%.1f") / \(information.load15, specifier: "%.1f")")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(DieterTheme.tertiary)
+            MachineCPUHistory(
+                values: information.cpuCoreUsagePercent.isEmpty
+                    ? store.machineCPUHistory[machineID, default: [information.cpuUsagePercent]]
+                    : information.cpuCoreUsagePercent
+            )
+            .frame(height: 48)
+            Text(
+                "\(information.logicalCpuCount) cores  ·  load \(information.load1, specifier: "%.1f") / \(information.load5, specifier: "%.1f") / \(information.load15, specifier: "%.1f")"
+            )
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
+            .foregroundStyle(DieterTheme.tertiary)
         }
     }
 
@@ -264,7 +309,8 @@ struct MachinePopover: View {
                 Text(MachineInformationPresentation.bytes(information.memoryUsedBytes))
                     .font(.system(size: 18, weight: .bold, design: .monospaced)).foregroundStyle(DieterTheme.eyes)
                 Text("/ \(MachineInformationPresentation.bytes(information.memoryTotalBytes))")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(
+                        DieterTheme.tertiary)
             }
             MachineMemoryBar(information: information).frame(height: 16)
             HStack(spacing: 18) {
@@ -295,16 +341,22 @@ struct MachinePopover: View {
                     Text("GPU").font(DieterFont.sectionLabel).tracking(1).foregroundStyle(DieterTheme.tertiary)
                     Spacer()
                     if !information.gpu.devices.isEmpty {
-                        Text("\(information.gpu.devices.count) \(information.gpu.devices.count == 1 ? "device" : "devices")")
-                            .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                            .foregroundStyle(DieterTheme.tertiary)
+                        Text(
+                            "\(information.gpu.devices.count) \(information.gpu.devices.count == 1 ? "device" : "devices")"
+                        )
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(DieterTheme.tertiary)
                     }
                 }
                 if information.gpu.devices.isEmpty {
-                    Text(information.gpu.unavailableReason.isEmpty ? "No supported GPU telemetry is available." : information.gpu.unavailableReason)
-                        .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
-                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Text(
+                        information.gpu.unavailableReason.isEmpty
+                            ? "No supported GPU telemetry is available." : information.gpu.unavailableReason
+                    )
+                    .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
+                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 } else {
                     ForEach(information.gpu.devices, id: \.id) { device in
                         gpuPanel(device, history: store.machineGPUHistory[machineID]?[device.id] ?? [])
@@ -320,15 +372,23 @@ struct MachinePopover: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(device.name.isEmpty ? "GPU" : device.name)
                         .font(.system(size: 14, weight: .bold))
-                    Text([gpuVendor(device.vendor), device.id, device.driverVersion.isEmpty ? nil : "driver \(device.driverVersion)"]
-                        .compactMap { $0 }.joined(separator: "  ·  "))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+                    Text(
+                        [
+                            gpuVendor(device.vendor), device.id,
+                            device.driverVersion.isEmpty ? nil : "driver \(device.driverVersion)",
+                        ]
+                        .compactMap { $0 }.joined(separator: "  ·  ")
+                    )
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                 }
                 Spacer()
-                Text(device.hasUtilizationPercent ? MachineInformationPresentation.percentage(device.utilizationPercent) : "—")
-                    .font(.system(size: 23, weight: .bold, design: .monospaced))
-                    .foregroundStyle(device.hasUtilizationPercent ? DieterTheme.shell : DieterTheme.tertiary)
+                Text(
+                    device.hasUtilizationPercent
+                        ? MachineInformationPresentation.percentage(device.utilizationPercent) : "—"
+                )
+                .font(.system(size: 23, weight: .bold, design: .monospaced))
+                .foregroundStyle(device.hasUtilizationPercent ? DieterTheme.shell : DieterTheme.tertiary)
             }
             if device.hasUtilizationPercent {
                 MachineCPUHistory(values: history.isEmpty ? [device.utilizationPercent] : history).frame(height: 38)
@@ -354,11 +414,16 @@ struct MachinePopover: View {
     private func gpuMemory(_ device: Dieter_V1_GPUDevice) -> some View {
         let title = device.memoryKind == .unified ? "unified" : "VRAM"
         if device.hasMemoryUsedBytes && device.hasMemoryTotalBytes {
-            Label("\(MachineInformationPresentation.bytes(device.memoryUsedBytes)) / \(MachineInformationPresentation.bytes(device.memoryTotalBytes)) \(title)", systemImage: "memorychip")
+            Label(
+                "\(MachineInformationPresentation.bytes(device.memoryUsedBytes)) / \(MachineInformationPresentation.bytes(device.memoryTotalBytes)) \(title)",
+                systemImage: "memorychip")
         } else if device.hasMemoryUsedBytes {
-            Label("\(MachineInformationPresentation.bytes(device.memoryUsedBytes)) allocated \(title)", systemImage: "memorychip")
+            Label(
+                "\(MachineInformationPresentation.bytes(device.memoryUsedBytes)) allocated \(title)",
+                systemImage: "memorychip")
         } else if device.hasMemoryTotalBytes {
-            Label("\(MachineInformationPresentation.bytes(device.memoryTotalBytes)) \(title)", systemImage: "memorychip")
+            Label(
+                "\(MachineInformationPresentation.bytes(device.memoryTotalBytes)) \(title)", systemImage: "memorychip")
         }
     }
 
@@ -377,16 +442,22 @@ struct MachinePopover: View {
             VStack(spacing: 0) {
                 softwareRow(
                     name: "Dieter daemon",
-                    version: information.daemonBuild.releaseVersion.isEmpty ? machine.version : information.daemonBuild.releaseVersion,
-                    apiVersion: information.daemonBuild.apiVersion.isEmpty ? machine.apiVersion : information.daemonBuild.apiVersion,
+                    version: information.daemonBuild.releaseVersion.isEmpty
+                        ? machine.version : information.daemonBuild.releaseVersion,
+                    apiVersion: information.daemonBuild.apiVersion.isEmpty
+                        ? machine.apiVersion : information.daemonBuild.apiVersion,
                     revision: information.daemonBuild.sourceRevision,
                     systemImage: "server.rack"
                 )
                 Divider().overlay(DieterTheme.border).padding(.leading, 38)
                 if let gateway = store.gatewayInformation[machine.credentialID] {
-                    softwareRow(name: "Dieter gateway", version: gateway.releaseVersion, apiVersion: gateway.apiVersion, revision: gateway.sourceRevision, systemImage: "network")
+                    softwareRow(
+                        name: "Dieter gateway", version: gateway.releaseVersion, apiVersion: gateway.apiVersion,
+                        revision: gateway.sourceRevision, systemImage: "network")
                 } else {
-                    softwareRow(name: "Dieter gateway", version: machine.daemonID == nil ? "Local connection" : "Unavailable", apiVersion: "", revision: "", systemImage: "network")
+                    softwareRow(
+                        name: "Dieter gateway", version: machine.daemonID == nil ? "Local connection" : "Unavailable",
+                        apiVersion: "", revision: "", systemImage: "network")
                 }
             }
             .background(DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -394,15 +465,21 @@ struct MachinePopover: View {
         }
     }
 
-    private func softwareRow(name: String, version: String, apiVersion: String, revision: String, systemImage: String) -> some View {
+    private func softwareRow(name: String, version: String, apiVersion: String, revision: String, systemImage: String)
+        -> some View
+    {
         HStack(spacing: 11) {
             Image(systemName: systemImage).foregroundStyle(DieterTheme.tertiary).frame(width: 22)
             Text(name).font(.system(size: 13, weight: .semibold))
             Spacer()
             let shownVersion = version.isEmpty ? "Unknown" : version
-            Text([shownVersion, apiVersion.isEmpty ? nil : "API \(apiVersion)", shortRevision(revision)].compactMap { $0 }.joined(separator: "  ·  "))
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(DieterTheme.subtle)
+            Text(
+                [shownVersion, apiVersion.isEmpty ? nil : "API \(apiVersion)", shortRevision(revision)].compactMap {
+                    $0
+                }.joined(separator: "  ·  ")
+            )
+            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+            .foregroundStyle(DieterTheme.subtle)
         }
         .padding(.horizontal, 12).padding(.vertical, 11)
     }
@@ -417,7 +494,8 @@ struct MachinePopover: View {
             HStack {
                 Text("DIETER PROCESSES").font(DieterFont.sectionLabel).tracking(1).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
-                Circle().fill(information.activeAgentCount > 0 ? DieterTheme.shell : DieterTheme.tertiary).frame(width: 6, height: 6)
+                Circle().fill(information.activeAgentCount > 0 ? DieterTheme.shell : DieterTheme.tertiary).frame(
+                    width: 6, height: 6)
                 Text("\(information.activeAgentCount) \(information.activeAgentCount == 1 ? "agent" : "agents") active")
                     .font(.system(size: 11, weight: .semibold)).foregroundStyle(DieterTheme.shell)
             }
@@ -436,7 +514,9 @@ struct MachinePopover: View {
 
     private func machineFooter(_ information: Dieter_V1_MachineInformation, machine: DieterEndpoint) -> some View {
         HStack(spacing: 18) {
-            Label("disk \(MachineInformationPresentation.bytes(information.diskFreeBytes)) free", systemImage: "internaldrive")
+            Label(
+                "disk \(MachineInformationPresentation.bytes(information.diskFreeBytes)) free",
+                systemImage: "internaldrive")
             Label(
                 "↓ \(MachineInformationPresentation.rate(information.networkReceiveBytesPerSecond))  ↑ \(MachineInformationPresentation.rate(information.networkSendBytesPerSecond))",
                 systemImage: "network"
@@ -461,8 +541,11 @@ struct MachinePopover: View {
 
     private func machineUnavailable(_ machine: DieterEndpoint) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: machine.online ? "exclamationmark.triangle" : "desktopcomputer.trianglebadge.exclamationmark")
-                .font(.system(size: 24)).foregroundStyle(machine.online ? DieterTheme.amber : DieterTheme.tertiary)
+            Image(
+                systemName: machine.online
+                    ? "exclamationmark.triangle" : "desktopcomputer.trianglebadge.exclamationmark"
+            )
+            .font(.system(size: 24)).foregroundStyle(machine.online ? DieterTheme.amber : DieterTheme.tertiary)
             Text(store.machineInformationError ?? "Machine information is unavailable.")
                 .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
                 .multilineTextAlignment(.center)
@@ -500,7 +583,10 @@ private struct MachineCPUHistory: View {
             HStack(alignment: .bottom, spacing: spacing) {
                 ForEach(Array(values.enumerated()), id: \.offset) { index, value in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(DieterTheme.shell.opacity(index == values.count - 1 ? 0.95 : 0.42 + (Double(index) / Double(count) * 0.25)))
+                        .fill(
+                            DieterTheme.shell.opacity(
+                                index == values.count - 1 ? 0.95 : 0.42 + (Double(index) / Double(count) * 0.25))
+                        )
                         .frame(width: width, height: max(5, geometry.size.height * min(max(value, 0), 100) / 100))
                 }
             }
@@ -516,7 +602,8 @@ private struct MachineMemoryBar: View {
         GeometryReader { geometry in
             let total = max(Double(information.memoryTotalBytes), 1)
             let usedWidth = geometry.size.width * min(Double(information.memoryUsedBytes) / total, 1)
-            let cacheWidth = min(geometry.size.width - usedWidth, geometry.size.width * Double(information.memoryCachedBytes) / total)
+            let cacheWidth = min(
+                geometry.size.width - usedWidth, geometry.size.width * Double(information.memoryCachedBytes) / total)
             HStack(spacing: 0) {
                 Rectangle().fill(DieterTheme.eyes).frame(width: usedWidth)
                 Rectangle().fill(DieterTheme.shell.opacity(0.66)).frame(width: max(0, cacheWidth))
@@ -550,10 +637,13 @@ private struct MachineProcessRow: View {
                 .foregroundStyle(process.kind == "agent" ? DieterTheme.eyes : DieterTheme.subtle)
                 .frame(minWidth: 58, alignment: .trailing)
             if process.gpuUsage.contains(where: \.hasMemoryBytes) {
-                Text(MachineInformationPresentation.bytes(process.gpuUsage.filter(\.hasMemoryBytes).reduce(UInt64(0)) { $0 + $1.memoryBytes }))
-                    .foregroundStyle(DieterTheme.shell)
-                    .frame(minWidth: 58, alignment: .trailing)
-                    .help("GPU memory")
+                Text(
+                    MachineInformationPresentation.bytes(
+                        process.gpuUsage.filter(\.hasMemoryBytes).reduce(UInt64(0)) { $0 + $1.memoryBytes })
+                )
+                .foregroundStyle(DieterTheme.shell)
+                .frame(minWidth: 58, alignment: .trailing)
+                .help("GPU memory")
             }
         }
         .font(.system(size: 11, weight: .semibold, design: .monospaced))

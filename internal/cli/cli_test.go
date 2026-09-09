@@ -34,6 +34,28 @@ func (f *fakeRunner) Run(_ context.Context, request harness.Request, emit func(h
 	return emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"threadId":"cli"}}`)})
 }
 
+func TestMainDispatchesTheDetachedDaemonUpdateWorkerBeforeNormalCLISetup(t *testing.T) {
+	directory := t.TempDir()
+	brew := filepath.Join(directory, "brew")
+	trace := filepath.Join(directory, "trace")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >>\"$DIETER_UPDATE_TEST_TRACE\"\n"
+	if err := os.WriteFile(brew, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIETER_UPDATE_TEST_TRACE", trace)
+	if code := Main([]string{"__daemon-update-worker", "--brew", brew}); code != 0 {
+		t.Fatalf("worker exit code=%d", code)
+	}
+	raw, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "update\nupgrade dbpprt/tap/dieter\nservices restart dbpprt/tap/dieter\n"
+	if string(raw) != want {
+		t.Fatalf("worker commands=%q want=%q", raw, want)
+	}
+}
+
 func TestCLIConversationWorkflowAndHelp(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "repo")
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {

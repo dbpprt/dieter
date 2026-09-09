@@ -28,9 +28,10 @@ final class OutsideClickSheetView: NSView {
         guard window != nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self, let sheet = self.window, let parent = sheet.sheetParent,
-                  sheet.attachedSheet == nil,
-                  Self.shouldDismiss(enabled: self.dismissEnabled, belongsToParent: event.window === parent,
-                                     point: parent.convertPoint(toScreen: event.locationInWindow), sheetFrame: sheet.frame)
+                sheet.attachedSheet == nil,
+                Self.shouldDismiss(
+                    enabled: self.dismissEnabled, belongsToParent: event.window === parent,
+                    point: parent.convertPoint(toScreen: event.locationInWindow), sheetFrame: sheet.frame)
             else { return event }
             self.dismiss()
             return nil

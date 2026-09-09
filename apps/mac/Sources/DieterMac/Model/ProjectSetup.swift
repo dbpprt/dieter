@@ -42,9 +42,9 @@ struct ProjectSetupDraft: Equatable, Sendable {
     var validationCommands: [Dieter_V1_ValidationCommand] = []
 
     var canSubmit: Bool {
-        !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            !boardName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            !baseBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !boardName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !baseBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func request() -> Dieter_V1_CreateProjectRequest {
@@ -96,8 +96,7 @@ enum RemoteProjectPath {
 
     static func validDirectoryName(_ name: String) -> Bool {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !name.isEmpty && name != "." && name != ".." &&
-            !name.contains("/") && !name.contains("\\")
+        return !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\\")
     }
 
     static func updatingSuggestedName(

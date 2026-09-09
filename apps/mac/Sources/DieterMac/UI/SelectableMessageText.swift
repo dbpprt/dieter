@@ -89,16 +89,21 @@ final class MessageTextView: NSTextView {
             case .paragraph(let text):
                 result.append(inlineText(source: text, color: color))
             case .heading(let level, let text):
-                result.append(inlineText(source: text, color: color,
-                                         size: level == 1 ? 17 : 15, bold: true))
+                result.append(
+                    inlineText(
+                        source: text, color: color,
+                        size: level == 1 ? 17 : 15, bold: true))
             case .bullet(let text):
                 result.append(inlineText(source: "• " + text, color: color))
             case .code(let text):
-                result.append(NSAttributedString(string: text, attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
-                    .foregroundColor: color,
-                    .backgroundColor: NSColor(DieterTheme.raised),
-                ]))
+                result.append(
+                    NSAttributedString(
+                        string: text,
+                        attributes: [
+                            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                            .foregroundColor: color,
+                            .backgroundColor: NSColor(DieterTheme.raised),
+                        ]))
             case .table(let table):
                 append(table: table, to: result, color: color)
             }
@@ -106,8 +111,10 @@ final class MessageTextView: NSTextView {
         return result
     }
 
-    private static func append(table: ConversationMarkdownTable,
-                               to result: NSMutableAttributedString, color: NSColor) {
+    private static func append(
+        table: ConversationMarkdownTable,
+        to result: NSMutableAttributedString, color: NSColor
+    ) {
         let nativeTable = NSTextTable()
         nativeTable.numberOfColumns = table.headers.count
         nativeTable.layoutAlgorithm = .fixedLayoutAlgorithm
@@ -115,8 +122,9 @@ final class MessageTextView: NSTextView {
         nativeTable.setValue(100, type: .percentageValueType, for: .width)
         for (row, cells) in ([table.headers] + table.rows).enumerated() {
             for column in table.headers.indices {
-                let cell = NSTextTableBlock(table: nativeTable, startingRow: row, rowSpan: 1,
-                                            startingColumn: column, columnSpan: 1)
+                let cell = NSTextTableBlock(
+                    table: nativeTable, startingRow: row, rowSpan: 1,
+                    startingColumn: column, columnSpan: 1)
                 cell.setValue(100 / CGFloat(table.headers.count), type: .percentageValueType, for: .width)
                 cell.setWidth(7, type: .absoluteValueType, for: .padding)
                 cell.setWidth(1, type: .absoluteValueType, for: .border)
@@ -129,25 +137,30 @@ final class MessageTextView: NSTextView {
                 case .center: style.alignment = .center
                 case .trailing: style.alignment = .right
                 }
-                let content = NSMutableAttributedString(attributedString: inlineText(
-                    source: column < cells.count ? cells[column] : "", color: color, size: 12, bold: row == 0))
+                let content = NSMutableAttributedString(
+                    attributedString: inlineText(
+                        source: column < cells.count ? cells[column] : "", color: color, size: 12, bold: row == 0))
                 content.append(NSAttributedString(string: "\n"))
-                content.addAttribute(.paragraphStyle, value: style,
-                                     range: NSRange(location: 0, length: content.length))
+                content.addAttribute(
+                    .paragraphStyle, value: style,
+                    range: NSRange(location: 0, length: content.length))
                 result.append(content)
             }
         }
     }
 
-    private static func inlineText(source: String, color: NSColor,
-                                   size: CGFloat = 13, bold: Bool = false) -> NSAttributedString {
+    private static func inlineText(
+        source: String, color: NSColor,
+        size: CGFloat = 13, bold: Bool = false
+    ) -> NSAttributedString {
         let markdown = ConversationRenderCache.markdown(source)
         let result = NSMutableAttributedString()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 4
         for run in markdown.runs {
             let intent = run.inlinePresentationIntent ?? []
-            var font = intent.contains(.code)
+            var font =
+                intent.contains(.code)
                 ? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
                 : NSFont.systemFont(ofSize: size)
             if bold || intent.contains(.stronglyEmphasized) {

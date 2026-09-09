@@ -8,5 +8,8 @@ import Testing
 
 @Test func subagentUsageOmitsUnavailableMeasurements() {
     #expect(SubagentUsagePresentation.resolve(tokens: 0, contextTokens: 0, contextWindow: 0).metrics.isEmpty)
-    #expect(SubagentUsagePresentation.resolve(tokens: 1_200, contextTokens: 0, contextWindow: 0).metrics == ["1.2k processed"])
+    #expect(
+        SubagentUsagePresentation.resolve(tokens: 1_200, contextTokens: 0, contextWindow: 0).metrics == [
+            "1.2k processed"
+        ])
 }

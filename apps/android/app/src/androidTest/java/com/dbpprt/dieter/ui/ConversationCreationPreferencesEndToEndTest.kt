@@ -68,7 +68,8 @@ class ConversationCreationPreferencesEndToEndTest {
             withTimeout(30_000) {
                 manager.state.first { state ->
                     state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() &&
-                        state.boards.isNotEmpty() && state.harnesses.any { it.modelsCount > 0 }
+                        state.boards.isNotEmpty() && state.harnesses.any { it.modelsCount > 0 } &&
+                        state.harnessesEndpointId == state.endpoint?.id
                 }
             }
         }

@@ -223,4 +223,5 @@ message DaemonLinkFrame {
   repeated DirectCandidate direct_candidates = 16;
   RemoteDesktopPresence remote_desktop = 17;
   string api_version = 18;
+  repeated string capabilities = 19;
 }

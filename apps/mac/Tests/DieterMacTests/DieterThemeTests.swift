@@ -14,14 +14,51 @@ private let macPackageRoot = URL(fileURLWithPath: #filePath)
 
 @Suite(.serialized)
 struct DieterThemePerformanceTests {
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_BOARD_PROFILE"] == "1"))
+    @MainActor func boardOpeningStageDiagnostic() throws {
+        for counts in [[10, 0, 0, 0], [100, 0, 0, 0], [25, 25, 25, 25]] {
+            for sample in 1...3 {
+                let start = Date()
+                let fixture = makeProductionBoardFixture(laneCounts: counts)
+                let projected = Date()
+                let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
+                let hosted = Date()
+                view.frame = NSRect(x: 0, y: 0, width: 1_140, height: 710)
+                view.layoutSubtreeIfNeeded()
+                let laidOut = Date()
+                let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let drawn = Date()
+                print(
+                    "BOARD_PROFILE counts=\(counts) sample=\(sample) projection_ms=\(projected.timeIntervalSince(start)*1000) host_ms=\(hosted.timeIntervalSince(projected)*1000) layout_ms=\(laidOut.timeIntervalSince(hosted)*1000) draw_ms=\(drawn.timeIntervalSince(laidOut)*1000)"
+                )
+                var pending: [NSView] = [view]
+                var mountedRows = 0
+                while let next = pending.popLast() {
+                    pending.append(contentsOf: next.subviews)
+                    if let table = next as? NSTableView {
+                        table.enumerateAvailableRowViews { _, _ in mountedRows += 1 }
+                    }
+                }
+                print("BOARD_PROFILE mounted_rows=\(mountedRows)")
+                if sample == 3, counts == [25, 25, 25, 25] {
+                    try bitmap.representation(using: .png, properties: [:])?.write(
+                        to: URL(fileURLWithPath: "/tmp/dieter-board-profile.png"))
+                }
+            }
+        }
+    }
     @Test func productionThemeAndStatusViewsAvoidContinuousSwiftUIDrivers() throws {
         let sourceRoot = macPackageRoot.appendingPathComponent("Sources/DieterMac")
-        let sourceURLs = try #require(FileManager.default.enumerator(
-            at: sourceRoot,
-            includingPropertiesForKeys: nil
-        )?.allObjects as? [URL])
-            .filter { $0.pathExtension == "swift" }
-        let productionSource = try sourceURLs.map { try String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+        let sourceURLs = try #require(
+            FileManager.default.enumerator(
+                at: sourceRoot,
+                includingPropertiesForKeys: nil
+            )?.allObjects as? [URL]
+        )
+        .filter { $0.pathExtension == "swift" }
+        let productionSource = try sourceURLs.map { try String(contentsOf: $0, encoding: .utf8) }.joined(
+            separator: "\n")
         let themeSource = try String(
             contentsOf: sourceRoot.appendingPathComponent("UI/DieterTheme.swift"),
             encoding: .utf8
@@ -36,10 +73,11 @@ struct DieterThemePerformanceTests {
         let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/DieterTheme.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
         let start = try #require(source.range(of: "struct DieterActivityIndicator: View"))
-        let end = try #require(source.range(
-            of: "struct DieterIconButtonStyle: ButtonStyle",
-            range: start.upperBound..<source.endIndex
-        ))
+        let end = try #require(
+            source.range(
+                of: "struct DieterIconButtonStyle: ButtonStyle",
+                range: start.upperBound..<source.endIndex
+            ))
         let implementation = source[start.lowerBound..<end.lowerBound]
 
         #expect(!implementation.contains("TimelineView"))
@@ -145,28 +183,36 @@ struct DieterThemePerformanceTests {
         #expect(accessibilityStart.duration(to: .now) < .seconds(2))
     }
 
-    @Test func productionBoardLaneRetainsTheEagerStackWorkaround() throws {
-        let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/BoardView.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let start = try #require(source.range(of: "struct LaneColumn: View"))
-        let end = try #require(source.range(
-            of: "private struct LaneInsertionTarget: View",
-            range: start.upperBound..<source.endIndex
-        ))
-        let implementation = source[start.lowerBound..<end.lowerBound]
-
-        #expect(implementation.contains("VStack(spacing: 0)"))
-        #expect(!implementation.contains("LazyVStack"))
+    @Test @MainActor func boardOnlyMountsVisibleCardsAndScrollsBeyondTheOldPageLimit() {
+        let fixture = makeProductionBoardFixture(laneCounts: [100, 0, 0, 0])
+        let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
+        view.frame = NSRect(x: 0, y: 0, width: 1_140, height: 710)
+        view.layoutSubtreeIfNeeded()
+        var pending: [NSView] = [view]
+        var tables: [NSTableView] = []
+        while let next = pending.popLast() {
+            pending.append(contentsOf: next.subviews)
+            if let table = next as? NSTableView { tables.append(table) }
+        }
+        guard let table = tables.first else { Issue.record("Native lane missing"); return }
+        #expect(table.numberOfRows == 100)
+        var mounted = 0
+        table.enumerateAvailableRowViews { _, _ in mounted += 1 }
+        #expect(mounted > 0 && mounted < 15)
+        table.scrollRowToVisible(99)
+        view.layoutSubtreeIfNeeded()
+        #expect(NSLocationInRange(99, table.rows(in: table.visibleRect)))
     }
 
     @Test func productionProjectSidebarRetainsTheEagerStackWorkaround() throws {
         let sourceURL = macPackageRoot.appendingPathComponent("Sources/DieterMac/UI/DieterRootView.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
         let start = try #require(source.range(of: "struct AppSidebar: View"))
-        let end = try #require(source.range(
-            of: "private struct MachineQueueBanner: View",
-            range: start.upperBound..<source.endIndex
-        ))
+        let end = try #require(
+            source.range(
+                of: "private struct MachineQueueBanner: View",
+                range: start.upperBound..<source.endIndex
+            ))
         let implementation = source[start.lowerBound..<end.lowerBound]
 
         #expect(implementation.contains("VStack(alignment: .leading, spacing: 0)"))
@@ -177,14 +223,16 @@ struct DieterThemePerformanceTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_RUN_LIVE_WINDOW_SMOKE"] == "1"))
     @MainActor func productionChatListLiveWindowSmokeTest() {
         let fixture = makeProductionChatListFixture()
-        let rootController = NSHostingController(rootView: DieterRootView()
-            .environment(fixture.store)
-            .dieterThemeRoot(palette: .monochrome)
-            .preferredColorScheme(.dark))
-        let islandController = NSHostingController(rootView: DieterIslandView(
-            presentation: DieterIslandPresentation(),
-            onRequestExpansion: { _ in }
-        )
+        let rootController = NSHostingController(
+            rootView: DieterRootView()
+                .environment(fixture.store)
+                .dieterThemeRoot(palette: .monochrome)
+                .preferredColorScheme(.dark))
+        let islandController = NSHostingController(
+            rootView: DieterIslandView(
+                presentation: DieterIslandPresentation(),
+                onRequestExpansion: { _ in }
+            )
             .environment(fixture.store)
             .dieterThemeRoot(palette: .monochrome)
             .preferredColorScheme(.dark))
@@ -252,18 +300,19 @@ struct DieterThemePerformanceTests {
         let cpuPercent = (processCPUTime() - baselineCPU) / wallTime * 100
         let finalFootprint = physicalFootprint()
         let footprintGrowth = finalFootprint > baselineFootprint ? finalFootprint - baselineFootprint : 0
-        print(String(
-            format: "Dieter live-window result: CPU %.2f%%, footprint growth %.1f MiB",
-            cpuPercent,
-            Double(footprintGrowth) / 1_048_576
-        ))
+        print(
+            String(
+                format: "Dieter live-window result: CPU %.2f%%, footprint growth %.1f MiB",
+                cpuPercent,
+                Double(footprintGrowth) / 1_048_576
+            ))
         #expect(cpuPercent <= 5)
         #expect(footprintGrowth <= 10 * 1_048_576)
     }
 
     @MainActor
     private func makeProductionChatListFixture() -> (store: DieterStore, running: Int, total: Int) {
-        let store = DieterStore()
+        let store = DieterStore(restoreSync: false)
         var chats: [Dieter_V1_Card] = []
         var running = 0
         for projectIndex in 0..<20 {
@@ -294,7 +343,7 @@ struct DieterThemePerformanceTests {
     }
 
     @MainActor
-    private func makeProductionBoardFixture() -> (
+    private func makeProductionBoardFixture(laneCounts: [Int] = [65, 5, 4, 4]) -> (
         store: DieterStore,
         board: Dieter_V1_Board,
         total: Int,
@@ -309,7 +358,6 @@ struct DieterThemePerformanceTests {
         board.id = "board-performance"
         board.projectID = project.id
         board.name = "Board performance fixture"
-        let laneCounts = [65, 5, 4, 4]
         let laneIDs = ["todo", "running", "review", "done"]
         board.lanes = zip(laneIDs, ["Todo", "Running", "Review", "Done"]).map { id, name in
             var lane = Dieter_V1_Lane()
@@ -335,10 +383,12 @@ struct DieterThemePerformanceTests {
                 card.boardID = board.id
                 card.lane = laneID
                 card.position = Int64(cardIndex + 1) * 1_024
-                card.title = globalIndex.isMultiple(of: 3)
+                card.title =
+                    globalIndex.isMultiple(of: 3)
                     ? "Variable-height board card \(globalIndex) with a title that wraps across multiple lines"
                     : "Board card \(globalIndex)"
-                card.summary = globalIndex.isMultiple(of: 2)
+                card.summary =
+                    globalIndex.isMultiple(of: 2)
                     ? "A mixed-content summary exercises the production card's variable-height text and menu graph."
                     : ""
                 card.runtime = globalIndex.isMultiple(of: 7) ? "running" : "idle"
@@ -410,8 +460,7 @@ struct DieterThemePerformanceTests {
     private func contrastRatio(_ first: NSColor, _ second: NSColor) -> CGFloat {
         let firstLuminance = relativeLuminance(first)
         let secondLuminance = relativeLuminance(second)
-        return (max(firstLuminance, secondLuminance) + 0.05) /
-            (min(firstLuminance, secondLuminance) + 0.05)
+        return (max(firstLuminance, secondLuminance) + 0.05) / (min(firstLuminance, secondLuminance) + 0.05)
     }
 
     private func relativeLuminance(_ color: NSColor) -> CGFloat {
@@ -420,8 +469,7 @@ struct DieterThemePerformanceTests {
                 ? component / 12.92
                 : pow((component + 0.055) / 1.055, 2.4)
         }
-        return (0.2126 * linearize(color.redComponent)) +
-            (0.7152 * linearize(color.greenComponent)) +
-            (0.0722 * linearize(color.blueComponent))
+        return (0.2126 * linearize(color.redComponent)) + (0.7152 * linearize(color.greenComponent))
+            + (0.0722 * linearize(color.blueComponent))
     }
 }

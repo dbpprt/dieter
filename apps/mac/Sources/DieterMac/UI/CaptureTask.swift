@@ -9,7 +9,8 @@ struct CaptureBrowserContext: Sendable {
 
     static func validatedURL(_ value: String?) -> String? {
         guard let value, let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
-              ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else { return nil }
+            ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil
+        else { return nil }
         return url.absoluteString
     }
 
@@ -17,7 +18,9 @@ struct CaptureBrowserContext: Sendable {
         guard let value = validatedURL(value), let host = URL(string: value)?.host else { return nil }
         var normalized = host.lowercased()
         if normalized.hasSuffix(".") { normalized.removeLast() }
-        if normalized.hasPrefix("["), normalized.hasSuffix("]") { normalized = String(normalized.dropFirst().dropLast()) }
+        if normalized.hasPrefix("["), normalized.hasSuffix("]") {
+            normalized = String(normalized.dropFirst().dropLast())
+        }
         return normalized
     }
 
@@ -33,16 +36,23 @@ struct CaptureBrowserContext: Sendable {
 
     static func read(bundleID: String?, pid: pid_t?) async -> Self {
         guard let bundleID else { return Self(url: "", browser: false) }
-        let chromium = ["com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac", "com.brave.Browser", "com.vivaldi.Vivaldi", "company.thebrowser.Browser", "com.operasoftware.Opera"]
+        let chromium = [
+            "com.google.Chrome", "com.google.Chrome.canary", "com.microsoft.edgemac", "com.brave.Browser",
+            "com.vivaldi.Vivaldi", "company.thebrowser.Browser", "com.operasoftware.Opera",
+        ]
         let safari = ["com.apple.Safari", "com.apple.SafariTechnologyPreview"]
-        let browser = chromium.contains(bundleID) || safari.contains(bundleID) || bundleID.hasPrefix("org.mozilla.firefox")
+        let browser =
+            chromium.contains(bundleID) || safari.contains(bundleID) || bundleID.hasPrefix("org.mozilla.firefox")
         guard browser else { return Self(url: "", browser: false) }
         // Read browser chrome only, never page text or browsing history.
         if let pid, let url = accessibilityURL(pid: pid) { return Self(url: url, browser: true) }
         guard chromium.contains(bundleID) || safari.contains(bundleID) else { return Self(url: "", browser: true) }
-        let expression = safari.contains(bundleID) ? "URL of current tab of front window" : "URL of active tab of front window"
+        let expression =
+            safari.contains(bundleID) ? "URL of current tab of front window" : "URL of active tab of front window"
         let value = await Task.detached {
-            let script = NSAppleScript(source: "with timeout of 10 seconds\ntell application id \"\(bundleID)\" to get \(expression)\nend timeout")
+            let script = NSAppleScript(
+                source:
+                    "with timeout of 10 seconds\ntell application id \"\(bundleID)\" to get \(expression)\nend timeout")
             var error: NSDictionary?
             return script?.executeAndReturnError(&error).stringValue
         }.value
@@ -55,7 +65,8 @@ struct CaptureBrowserContext: Sendable {
         AXUIElementSetMessagingTimeout(app, 0.2)
         var window: CFTypeRef?
         guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &window) == .success,
-              let window, CFGetTypeID(window) == AXUIElementGetTypeID() else { return nil }
+            let window, CFGetTypeID(window) == AXUIElementGetTypeID()
+        else { return nil }
         let root = unsafeDowncast(window, to: AXUIElement.self)
         func string(_ node: AXUIElement, _ key: String) -> String? {
             var value: CFTypeRef?
@@ -75,12 +86,17 @@ struct CaptureBrowserContext: Sendable {
                 continue
             }
             let label = (string(node, kAXDescriptionAttribute) ?? "").lowercased()
-            if role == kAXTextFieldRole && (label.contains("address") || label.contains("adresse") || label.contains("url")),
-               let url = validatedURL(string(node, kAXValueAttribute)) { return url }
+            if role == kAXTextFieldRole
+                && (label.contains("address") || label.contains("adresse") || label.contains("url")),
+                let url = validatedURL(string(node, kAXValueAttribute))
+            {
+                return url
+            }
             guard depth < 8 else { continue }
             var children: CFTypeRef?
             if AXUIElementCopyAttributeValue(node, kAXChildrenAttribute as CFString, &children) == .success,
-               let children = children as? [AXUIElement] {
+                let children = children as? [AXUIElement]
+            {
                 nodes.append(contentsOf: children.prefix(max(0, 160 - visited - nodes.count)).map { ($0, depth + 1) })
             }
         }
@@ -107,8 +123,10 @@ enum TaskScreenCapture {
             item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
         }
         let initialChangeCount = pasteboard.changeCount
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dieter-capture-" + UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "dieter-capture-" + UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let file = directory.appendingPathComponent("Screen capture.png")
         var keepFile = false
         defer { if !keepFile { try? FileManager.default.removeItem(at: directory) } }
@@ -123,11 +141,14 @@ enum TaskScreenCapture {
                 try process.run()
                 let diagnostics = errors.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
-                return (process.terminationStatus, String(decoding: diagnostics, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+                return (
+                    process.terminationStatus,
+                    String(decoding: diagnostics, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                )
             }.value
             guard result.0 == 0 else {
                 if !result.1.isEmpty { throw CaptureTaskError.failed(result.1) }
-                return nil // Escape cancels the native region selector.
+                return nil  // Escape cancels the native region selector.
             }
             guard let png = capturedPNG(from: pasteboard, after: initialChangeCount) else {
                 if pasteboard.changeCount == initialChangeCount { return nil }
@@ -162,9 +183,9 @@ enum TaskScreenCapture {
 final class CaptureTaskController {
     private let store: DieterStore
     private var window: NSWindow?
-#if DIETER_UI_SMOKE
-    var fixtureCapture: (URL, CaptureBrowserContext)?
-#endif
+    #if DIETER_UI_SMOKE
+        var fixtureCapture: (URL, CaptureBrowserContext)?
+    #endif
     private(set) var capturing = false
 
     init(store: DieterStore) { self.store = store }
@@ -182,19 +203,21 @@ final class CaptureTaskController {
             do {
                 let browser: CaptureBrowserContext
                 let capture: URL?
-#if DIETER_UI_SMOKE
-                if let fixtureCapture {
-                    browser = fixtureCapture.1
-                    capture = fixtureCapture.0
-                    self.fixtureCapture = nil
-                } else {
-                    browser = await CaptureBrowserContext.read(bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
+                #if DIETER_UI_SMOKE
+                    if let fixtureCapture {
+                        browser = fixtureCapture.1
+                        capture = fixtureCapture.0
+                        self.fixtureCapture = nil
+                    } else {
+                        browser = await CaptureBrowserContext.read(
+                            bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
+                        capture = try await TaskScreenCapture.region()
+                    }
+                #else
+                    browser = await CaptureBrowserContext.read(
+                        bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
                     capture = try await TaskScreenCapture.region()
-                }
-#else
-                browser = await CaptureBrowserContext.read(bundleID: source?.bundleIdentifier, pid: source?.processIdentifier)
-                capture = try await TaskScreenCapture.region()
-#endif
+                #endif
                 guard let file = capture else { return }
                 defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
                 let boards = store.projects.filter { !$0.archived }.flatMap { store.boards(for: $0.id) }
@@ -204,7 +227,9 @@ final class CaptureTaskController {
                     await store.selectProject(board.projectID)
                     if store.selectedProjectID == board.projectID, store.phase.isConnected {
                         await store.selectBoard(board.id)
-                    } else { store.selectedProjectID = ""; store.selectedBoardID = "" }
+                    } else {
+                        store.selectedProjectID = ""; store.selectedBoardID = ""
+                    }
                 } else if boardMatches.isEmpty, projectMatches.count == 1, let project = projectMatches.first {
                     await store.selectProject(project.id)
                 } else {
@@ -223,11 +248,19 @@ final class CaptureTaskController {
     }
 
     func present(parts: [Dieter_V1_MessagePart], browser: CaptureBrowserContext) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 454, height: 640), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 454, height: 640), styleMask: [.titled, .closable, .resizable],
+            backing: .buffered, defer: false)
         window.title = "Capture task"
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 454, height: 400)
-        window.contentView = NSHostingView(rootView: CapturedTaskDraftView(parts: parts, browser: browser, dismiss: { [weak self] in self?.window?.close(); self?.window = nil }).environment(store))
+        window.contentView = NSHostingView(
+            rootView: CapturedTaskDraftView(
+                parts: parts, browser: browser,
+                dismiss: { [weak self] in
+                    self?.window?.close(); self?.window = nil
+                }
+            ).environment(store))
         self.window = window
         window.center()
         NSApp.activate(ignoringOtherApps: true)

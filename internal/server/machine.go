@@ -138,10 +138,14 @@ func protoGPUMemoryKind(value machine.GPUMemoryKind) dieterv1.GPUMemoryKind {
 }
 
 func protoMachineOperation(value machine.Operation) dieterv1.MachineOperationAction {
-	if value == machine.OperationShutdown {
+	switch value {
+	case machine.OperationShutdown:
 		return dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_SHUTDOWN
+	case machine.OperationUpdate:
+		return dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON
+	default:
+		return dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_RESTART
 	}
-	return dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_RESTART
 }
 
 func (api *grpcAPI) machineProcessDescriptors() []machine.ProcessDescriptor {
@@ -203,8 +207,10 @@ func (api *grpcAPI) PerformMachineOperation(ctx context.Context, request *dieter
 		operation, confirmation, message = machine.OperationRestart, "RESTART", "Restarting the machine."
 	case dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_SHUTDOWN:
 		operation, confirmation, message = machine.OperationShutdown, "SHUT DOWN", "Shutting down the machine."
+	case dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON:
+		operation, confirmation, message = machine.OperationUpdate, "UPDATE", "Updating the Dieter daemon. This machine will reconnect automatically."
 	default:
-		return nil, status.Error(codes.InvalidArgument, "select restart or shutdown")
+		return nil, status.Error(codes.InvalidArgument, "select restart, shutdown, or update daemon")
 	}
 	if request.GetConfirmation() != confirmation {
 		return nil, status.Errorf(codes.InvalidArgument, "confirmation must be exactly %q", confirmation)

@@ -37,7 +37,7 @@ func main() {
 	address := flag.String("addr", "127.0.0.1:14243", "loopback listen address for the gateway copy")
 	home := flag.String("home", "", "state root (default: a fresh temporary directory)")
 	offlineTrigger := flag.String("offline-trigger", "", "optional file whose creation disconnects the enrolled daemon while leaving the gateway online")
-	boardStressFixture := flag.Bool("board-stress-fixture", false, "seed a 78-card board with 65 variable-height cards in one lane")
+	boardStressFixture := flag.Bool("board-stress-fixture", false, "seed a 100-card board with 85 variable-height cards in one lane")
 	flag.Parse()
 	if err := run(*address, *home, *offlineTrigger, *boardStressFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -296,6 +296,7 @@ func isolatedMachineCapabilities(context.Context) []machine.OperationCapability 
 	return []machine.OperationCapability{
 		{Operation: machine.OperationRestart, Supported: true, Authorized: true},
 		{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
+		{Operation: machine.OperationUpdate, Supported: true, Authorized: true},
 	}
 }
 
@@ -319,10 +320,10 @@ func seedBoardStressFixture(data *boardstore.Store, project model.Project, board
 		lane  string
 		count int
 	}{
-		{lane: model.LaneTodo, count: 65},
+		{lane: model.LaneTodo, count: 85},
 		{lane: model.LaneRunning, count: 5},
-		{lane: model.LaneReview, count: 4},
-		{lane: model.LaneDone, count: 4},
+		{lane: model.LaneReview, count: 5},
+		{lane: model.LaneDone, count: 5},
 	}
 	cardIndex := 0
 	for _, laneFixture := range laneCounts {

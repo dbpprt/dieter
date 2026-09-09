@@ -24,7 +24,8 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
     var detail: String {
         switch self {
         case .worktree: "Create a new isolated Git worktree and branch for this conversation."
-        case .project: "Use the registered project directory on whichever branch it currently has checked out."
+        case .project:
+            "Use the registered project directory on whichever branch it currently has checked out."
         }
     }
 
@@ -53,8 +54,10 @@ struct ConversationWorkspaceDraft: Equatable, Sendable {
 
     func apply(to request: inout Dieter_V1_CreateConversationRequest) {
         request.workspaceMode = mode.rawValue
-        request.workspaceBranch = mode == .worktree ? branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        request.workspaceBaseBranch = mode == .worktree ? baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        request.workspaceBranch =
+            mode == .worktree ? branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        request.workspaceBaseBranch =
+            mode == .worktree ? baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         request.workspaceBaseRemote = baseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
         request.remotePublishMode = remotePublishMode
     }
@@ -100,7 +103,9 @@ struct ValidationCommandDraft: Identifiable, Equatable, Sendable {
         executable = value.executable
         arguments = value.arguments.joined(separator: "\n")
         workingDirectory = value.workingDirectory
-        environment = value.environment.keys.sorted().map { "\($0)=\(value.environment[$0] ?? "")" }.joined(separator: "\n")
+        environment = value.environment.keys.sorted().map { "\($0)=\(value.environment[$0] ?? "")" }
+            .joined(
+                separator: "\n")
         timeoutSeconds = value.timeoutSeconds
     }
 
@@ -175,7 +180,8 @@ enum GitOperationReconciliation {
     ) -> String? {
         if !workspaceOperationID.isEmpty { return workspaceOperationID }
         guard let observedOperationID, !observedOperationID.isEmpty,
-              let observedStatus, GitOperationStatus.active(observedStatus) else { return nil }
+            let observedStatus, GitOperationStatus.active(observedStatus)
+        else { return nil }
         return observedOperationID
     }
 }
@@ -202,7 +208,8 @@ struct WorkspaceActionAvailability: Equatable {
     /// blocked explanation instead of hiding the entry point.
     var allowsMergeFlow: Bool {
         guard !agentActive, !operationActive, workspaceMode == "worktree",
-              remotePublishMode != RemotePublishMode.pullRequest.rawValue else { return false }
+            remotePublishMode != RemotePublishMode.pullRequest.rawValue
+        else { return false }
         if remotePublishMode == RemotePublishMode.pushBase.rawValue && !hasRemote { return false }
         return hasCommits || changedFiles > 0 || workspaceState == "conflicted"
     }
@@ -219,9 +226,13 @@ struct WorkspaceActionAvailability: Equatable {
         return switch kind {
         case .commit: dirty || changedFiles > 0
         case .update, .validate: true
-        case .mergeLocal: workspaceMode == "worktree" && hasCommits && changedFiles == 0 && remotePublishMode != RemotePublishMode.pullRequest.rawValue
+        case .mergeLocal:
+            workspaceMode == "worktree" && hasCommits && changedFiles == 0
+                && remotePublishMode != RemotePublishMode.pullRequest.rawValue
         case .push: hasReviewBranch && hasRemote && hasCommits
-        case .createPullRequest: hasReviewBranch && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest && remotePublishMode != RemotePublishMode.pushBase.rawValue
+        case .createPullRequest:
+            hasReviewBranch && hasRemote && hasCommits && scmAuthenticated && !hasPullRequest
+                && remotePublishMode != RemotePublishMode.pushBase.rawValue
         case .refreshPullRequest, .mergePullRequest: hasPullRequest && scmAuthenticated
         case .continueConflict, .abortConflict: false
         case .adopt: workspaceMode == "worktree"
@@ -253,7 +264,9 @@ enum UnifiedDiffParser {
         var result: [UnifiedDiffLine] = []
         var oldLine: Int?
         var newLine: Int?
-        for (index, raw) in patch.split(separator: "\n", omittingEmptySubsequences: false).map(String.init).enumerated() {
+        for (index, raw) in patch.split(separator: "\n", omittingEmptySubsequences: false).map(
+            String.init
+        ).enumerated() {
             // Every hunk line has a prefix, including a blank context line
             // (" "). A bare empty string is a separator or final newline.
             guard !raw.isEmpty else { continue }
@@ -277,7 +290,8 @@ enum UnifiedDiffParser {
                 result.append(.init(id: index, kind: .deletion, text: raw, oldLine: oldLine, newLine: nil))
                 oldLine = oldLine.map { $0 + 1 }
             } else {
-                result.append(.init(id: index, kind: .context, text: raw, oldLine: oldLine, newLine: newLine))
+                result.append(
+                    .init(id: index, kind: .context, text: raw, oldLine: oldLine, newLine: newLine))
                 oldLine = oldLine.map { $0 + 1 }
                 newLine = newLine.map { $0 + 1 }
             }

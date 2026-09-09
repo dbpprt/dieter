@@ -41,7 +41,8 @@ import Testing
 }
 
 @Test @MainActor func messageTextPreservesFormattingAndFitsNarrowLayouts() throws {
-    let source = "**Bold** *italic* `code` [link](https://example.com)\n\n" + String(repeating: "Wrapping text. ", count: 25)
+    let source =
+        "**Bold** *italic* `code` [link](https://example.com)\n\n" + String(repeating: "Wrapping text. ", count: 25)
     let view = MessageTextView()
     view.update(source: source, color: .white)
     let storage = try #require(view.textStorage)
@@ -78,7 +79,8 @@ import Testing
         message.id = "selection-test"
         message.role = role
         message.parts = Array(parts.prefix(2))
-        let host = NSHostingView(rootView: MessageView(message: message).environment(DieterStore()))
+        let store = DieterStore(restoreSync: false)
+        let host = NSHostingView(rootView: MessageView(message: message).environment(store.conversationContext))
         host.frame = NSRect(x: 0, y: 0, width: 600, height: 300)
         host.layoutSubtreeIfNeeded()
         func textViews(_ view: NSView) -> [MessageTextView] {
@@ -95,7 +97,8 @@ import Testing
 }
 
 @Test @MainActor func messageSelectionIncludesUpstreamMarkdownBlocks() throws {
-    let source = "# Heading\n\nFirst paragraph.\n\n- Item\n\n```swift\nlet value = 1\n```\n\n| Name | Value |\n| --- | ---: |\n| Alpha | 42 |\n\nLast paragraph."
+    let source =
+        "# Heading\n\nFirst paragraph.\n\n- Item\n\n```swift\nlet value = 1\n```\n\n| Name | Value |\n| --- | ---: |\n| Alpha | 42 |\n\nLast paragraph."
     let view = MessageTextView()
     view.update(source: source, color: .labelColor)
     view.frame = NSRect(origin: .zero, size: view.fittingSize(width: 420))
@@ -107,7 +110,8 @@ import Testing
     let heading = try #require(storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
     #expect(heading.pointSize == 17)
     let cellIndex = (view.string as NSString).range(of: "42").location
-    let style = try #require(storage.attribute(.paragraphStyle, at: cellIndex, effectiveRange: nil) as? NSParagraphStyle)
+    let style = try #require(
+        storage.attribute(.paragraphStyle, at: cellIndex, effectiveRange: nil) as? NSParagraphStyle)
     #expect(style.alignment == .right)
     #expect(style.textBlocks.first is NSTextTableBlock)
     view.selectAll(nil)

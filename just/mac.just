@@ -60,8 +60,17 @@ test filter="":
     if [[ -n "{{ filter }}" ]]; then arguments+=(--filter "{{ filter }}"); fi
     swift "${arguments[@]}"
 
-# Verify generated clients, run tests, and package the debug app.
+# Format handwritten Swift; generated clients and vendored sources are excluded.
+format:
+    bash apps/mac/scripts/format-swift.sh --write
+
+# Enforce the repository's handwritten Swift formatting policy.
+format-check:
+    bash apps/mac/scripts/format-swift.sh --check
+
+# Verify generated clients, formatting, tests, and the debug bundle.
 check:
+    just mac format-check
     just mac proto-check
     just mac test
     just mac build

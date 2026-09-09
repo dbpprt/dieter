@@ -88,6 +88,11 @@ dieter daemon permissions --check
 brew services restart dieter
 ```
 
+`dieter daemon status` reports the gateway tunnel state and the most recent
+acknowledged tunnel heartbeat. A healthy local API remains available while a
+failed gateway tunnel reconnects; reconnecting the transport does not stop a
+running agent turn.
+
 The same `dieter` binary is a complete daemon client. Local commands use the
 running daemon on this machine. To control another enrolled machine, sign in
 once and select it globally; the CLI prefers verified direct TLS and falls back
@@ -112,12 +117,14 @@ host telemetry, including optional Apple, NVIDIA, and AMD GPU data with absent
 sensors kept distinct from real zero values. Native clients use API versions
 to keep compatible machines in a mixed-version fleet available.
 
-Restart and shutdown use the same authenticated local, direct-TLS, or relay
-route as every other machine operation and require exact confirmation phrases:
+Restart, shutdown, and daemon update use the same authenticated local,
+direct-TLS, or relay route as every other machine operation and require exact
+confirmation phrases:
 
 ```sh
 dieter --machine <machine-id> machine restart --confirm RESTART
 dieter --machine <machine-id> machine shutdown --confirm "SHUT DOWN"
+dieter --machine <machine-id> machine update --confirm UPDATE
 ```
 
 macOS uses the signed-in user's normal System Events authorization. Linux uses
@@ -133,6 +140,14 @@ payload (including attachments) as JSON:
 ```sh
 dieter card queue remove --message <message-id> <card-id>
 ```
+
+Automatic daemon update is intentionally limited to a running
+Homebrew-managed macOS service. Dieter runs `brew update`, upgrades only
+`dbpprt/tap/dieter`, and restarts that service in a detached worker. The worker
+has no terminal or standard input, disables Homebrew ask mode, bounds every
+step, and records output in `~/.dieter/logs/update.log`. A foreground,
+development, Linux, or otherwise externally managed daemon advertises why the
+operation is unavailable and must be updated by its owner instead.
 
 `dieter status` reports daemon-wide active project, board, card, and chat
 counts in one snapshot, including when the selected machine is remote.
@@ -368,6 +383,11 @@ DeepSeek Harness is installed lazily at its exact tested version through the
 AI SDK ACP bootstrap; a global `dsh` installation is not required. DSH owns its
 provider and credential configuration. Dieter discovers the models advertised
 by DSH's standard ACP session options and returns only those models to clients.
+Model catalogs are machine-local: native clients load the catalog from the
+daemon that owns the selected project and never reuse another machine's model
+list. A daemon retains its last successfully discovered catalog across
+transient refresh failures and performs one bounded provider refresh when a
+create or resume request names a model that is not in its current catalog.
 See the [DSH integration proposal and operational notes](docs/deepseek-dsh-harness.md).
 An optional model `defaultEffort` is Dieter's default for new conversations and
 overrides the provider-discovered default when that model supports the selected

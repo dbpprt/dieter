@@ -26,11 +26,13 @@ private func writePNG(_ image: NSImage, scale: CGFloat, to path: String) throws 
     let size = image.size
     let pixelWide = Int(size.width * scale)
     let pixelHigh = Int(size.height * scale)
-    guard let rep = NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: pixelWide, pixelsHigh: pixelHigh, bitsPerSample: 8,
-        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-        bytesPerRow: 0, bitsPerPixel: 0,
-    ) else { Issue.record("Could not create bitmap rep"); return }
+    guard
+        let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: pixelWide, pixelsHigh: pixelHigh, bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0,
+        )
+    else { Issue.record("Could not create bitmap rep"); return }
     rep.size = size
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
@@ -57,11 +59,13 @@ private func writePNG(_ image: NSImage, scale: CGFloat, to path: String) throws 
 }
 
 @Test @MainActor func renderMenuBarPopoverPreview() throws {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     store.phase = .connected(version: "1.0.0")
 
     let miniHome = DieterEndpoint(name: "mac-mini", host: "100.121.53.82", port: 4242, daemonID: "d1", online: true)
-    let laptop = DieterEndpoint(name: "macbook-pro", host: "192.168.254.70", port: 4242, daemonID: "d2", online: false, lastSeenAt: isoDate(secondsAgo: 7_200))
+    let laptop = DieterEndpoint(
+        name: "macbook-pro", host: "192.168.254.70", port: 4242, daemonID: "d2", online: false,
+        lastSeenAt: isoDate(secondsAgo: 7_200))
     store.endpoints = [miniHome, laptop]
     store.endpoint = miniHome
     store.machineConnectionStatuses[miniHome.id] = MachineConnectionStatus(route: .local, latencyMilliseconds: 23)
@@ -74,7 +78,8 @@ private func writePNG(_ image: NSImage, scale: CGFloat, to path: String) throws 
     review.id = "c1"; review.title = "Lets understand the code"; review.lane = "review"; review.boardID = "b1"
     review.runtimeUpdatedAt = isoDate(secondsAgo: 18 * 60)
     var finished = Dieter_V1_Card()
-    finished.id = "c2"; finished.title = "start 3 sub agents for testing"; finished.lane = "done"; finished.boardID = "b2"
+    finished.id = "c2"; finished.title = "start 3 sub agents for testing"; finished.lane = "done";
+    finished.boardID = "b2"
     finished.runtime = "completed"; finished.runtimeUpdatedAt = isoDate(secondsAgo: 2 * 60)
     store.state.cards = [review, finished]
 

@@ -126,7 +126,6 @@ fun ChatsScreen(
 @Composable
 internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
     var query by remember { mutableStateOf("") }
-    var expandedProjects by remember { mutableStateOf(emptySet<String>()) }
     val pinnedChatDragState = remember { PinnedChatDragState() }
     val haptic = LocalHapticFeedback.current
     val chats = remember(state.chats, query) {
@@ -209,10 +208,23 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                     }
                     chatProjects.forEach { project ->
                         val projectChats = unpinnedByProject[project.id].orEmpty()
-                        val expanded = project.id in expandedProjects
+                        val collapsed = project.id in state.collapsedChatProjectIds
+                        val expanded = project.id in state.expandedChatProjectIds
                         val visibleProjectChats = if (expanded) projectChats else projectChats.take(PROJECT_CHAT_PREVIEW_COUNT)
                         item(key = "project-chat-header-${project.id}") {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { model.toggleChatProjectCollapsed(project.id) },
+                                    modifier = Modifier.size(36.dp).testTag("project-chat-toggle-${project.id}")
+                                        .semantics { stateDescription = if (collapsed) "Collapsed" else "Expanded" },
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.KeyboardArrowDown,
+                                        if (collapsed) "Expand ${project.name} chats" else "Collapse ${project.name} chats",
+                                        tint = DieterMuted,
+                                        modifier = Modifier.size(18.dp).rotate(if (collapsed) -90f else 0f),
+                                    )
+                                }
                                 ListSectionLabel(
                                     buildString {
                                         append(project.name)
@@ -226,41 +238,37 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                 }
                             }
                         }
-                        if (projectChats.isEmpty() && query.isBlank()) {
-                            item(key = "project-chat-empty-${project.id}") {
-                                Text(
-                                    "No chats yet",
-                                    color = DieterMuted,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                )
-                            }
-                        } else {
-                            items(visibleProjectChats, key = { it.id }) { chat -> ChatRow(chat, model) }
-                            if (projectChats.size > PROJECT_CHAT_PREVIEW_COUNT) {
-                                item(key = "project-chat-more-${project.id}") {
-                                    TextButton(
-                                        onClick = {
-                                            expandedProjects = if (expanded) {
-                                                expandedProjects - project.id
-                                            } else {
-                                                expandedProjects + project.id
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth().testTag("project-chat-more-${project.id}"),
-                                    ) {
-                                        Text(
-                                            if (expanded) "Show less" else "Show ${projectChats.size - PROJECT_CHAT_PREVIEW_COUNT} more",
-                                            color = DieterShell,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        Spacer(Modifier.width(4.dp))
-                                        Icon(
-                                            Icons.Outlined.KeyboardArrowDown,
-                                            contentDescription = null,
-                                            tint = DieterShell,
-                                            modifier = Modifier.size(18.dp).rotate(if (expanded) 180f else 0f),
-                                        )
+                        if (!collapsed) {
+                            if (projectChats.isEmpty() && query.isBlank()) {
+                                item(key = "project-chat-empty-${project.id}") {
+                                    Text(
+                                        "No chats yet",
+                                        color = DieterMuted,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                    )
+                                }
+                            } else {
+                                items(visibleProjectChats, key = { it.id }) { chat -> ChatRow(chat, model) }
+                                if (projectChats.size > PROJECT_CHAT_PREVIEW_COUNT) {
+                                    item(key = "project-chat-more-${project.id}") {
+                                        TextButton(
+                                            onClick = { model.toggleChatProjectExpanded(project.id) },
+                                            modifier = Modifier.fillMaxWidth().testTag("project-chat-more-${project.id}"),
+                                        ) {
+                                            Text(
+                                                if (expanded) "Show less" else "Show ${projectChats.size - PROJECT_CHAT_PREVIEW_COUNT} more",
+                                                color = DieterShell,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Icon(
+                                                Icons.Outlined.KeyboardArrowDown,
+                                                contentDescription = null,
+                                                tint = DieterShell,
+                                                modifier = Modifier.size(18.dp).rotate(if (expanded) 180f else 0f),
+                                            )
+                                        }
                                     }
                                 }
                             }

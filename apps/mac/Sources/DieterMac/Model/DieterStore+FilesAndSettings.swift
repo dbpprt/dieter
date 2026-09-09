@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterCore
 import Foundation
 import GRPCCore
 import Observation
@@ -9,319 +10,75 @@ import UserNotifications
 
 extension DieterStore {
     func resetFileSurface() {
-        fileScopeGeneration &+= 1
-        fileListingGeneration &+= 1
-        fileReadGeneration &+= 1
-        fileNavigationLoading = false
-        filePath = ""; files = []; fileDocument = nil; fileNavigation.reset()
+        filesModel.bind(
+            target: WorkspaceTarget(
+                endpointID: projectEndpointIDs[selectedProjectID] ?? endpoint.id,
+                projectID: selectedProjectID, conversationID: fileScopeCardID ?? ""),
+            client: rpc
+        )
+        filesModel.projectName = selectedProject?.name ?? "Project"
+        filesModel.projectPath = selectedProject?.path ?? ""
+        filesModel.isLive = selectedProjectIsLive
     }
 
-    @discardableResult
-    func loadFiles(path: String? = nil) async -> Bool {
-        guard let rpc, !selectedProjectID.isEmpty else { return false }
-        let destination = path ?? filePath
-        var request = Dieter_V1_ListFilesRequest(); request.projectID = selectedProjectID; request.path = destination; request.showHidden = showHiddenFiles
-        request.cardID = fileScopeCardID ?? ""
-        fileListingGeneration &+= 1
-        let generation = fileListingGeneration
-        do {
-            let listing = try await rpc.listFiles(request)
-            guard self.rpc === rpc, fileListingGeneration == generation,
-                  selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID else { return false }
-            files = listing.entries
-            filePath = listing.path
-            return true
-        } catch {
-            guard self.rpc === rpc, fileListingGeneration == generation,
-                  selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID else { return false }
-            show(error)
-            return false
-        }
+    @discardableResult func loadFiles(path: String? = nil) async -> Bool {
+        resetFileSurface()
+        return await filesModel.loadFiles(path: path)
     }
-
-    func navigateFiles(to destination: String) async {
-        guard destination != filePath, !fileNavigationLoading else { return }
-        fileNavigationLoading = true
-        let scope = fileScopeGeneration
-        defer { if scope == fileScopeGeneration { fileNavigationLoading = false } }
-        let previousNavigation = fileNavigation
-        fileNavigation.recordNavigation(from: filePath, to: destination)
-        if !(await loadFiles(path: destination)), scope == fileScopeGeneration { fileNavigation = previousNavigation }
+    func navigateFiles(to path: String) async { resetFileSurface(); await filesModel.navigateFiles(to: path) }
+    func navigateFilesBack() async { resetFileSurface(); await filesModel.navigateFilesBack() }
+    func navigateFilesForward() async { resetFileSurface(); await filesModel.navigateFilesForward() }
+    func openFile(path: String) async { resetFileSurface(); await filesModel.openFile(path: path) }
+    @discardableResult func saveFile(content: String) async -> Dieter_V1_FileDocument? {
+        resetFileSurface(); return await filesModel.saveFile(content: content)
     }
-
-    func navigateFilesBack() async {
-        guard !fileNavigationLoading else { return }
-        fileNavigationLoading = true
-        let scope = fileScopeGeneration
-        defer { if scope == fileScopeGeneration { fileNavigationLoading = false } }
-        let previousNavigation = fileNavigation
-        guard let destination = fileNavigation.goBack(from: filePath) else { return }
-        if !(await loadFiles(path: destination)), scope == fileScopeGeneration { fileNavigation = previousNavigation }
-    }
-
-    func navigateFilesForward() async {
-        guard !fileNavigationLoading else { return }
-        fileNavigationLoading = true
-        let scope = fileScopeGeneration
-        defer { if scope == fileScopeGeneration { fileNavigationLoading = false } }
-        let previousNavigation = fileNavigation
-        guard let destination = fileNavigation.goForward(from: filePath) else { return }
-        if !(await loadFiles(path: destination)), scope == fileScopeGeneration { fileNavigation = previousNavigation }
-    }
-
-    func openFile(path: String) async {
-        guard let rpc else { return }
-        var request = Dieter_V1_ReadFileRequest(); request.projectID = selectedProjectID; request.path = path; request.cardID = fileScopeCardID ?? ""
-        fileReadGeneration &+= 1
-        let generation = fileReadGeneration
-        fileDocument = nil
-        do {
-            let document = try await rpc.readFile(request)
-            guard self.rpc === rpc, generation == fileReadGeneration, selectedProjectID == request.projectID,
-                  (fileScopeCardID ?? "") == request.cardID else { return }
-            fileDocument = document
-        } catch {
-            guard self.rpc === rpc, generation == fileReadGeneration, selectedProjectID == request.projectID,
-                  (fileScopeCardID ?? "") == request.cardID else { return }
-            show(error)
-        }
-    }
-
-    @discardableResult
-    func saveFile(content: String) async -> Dieter_V1_FileDocument? {
-        guard let rpc, let doc = fileDocument else { return nil }
-        var request = Dieter_V1_SaveFileRequest(); request.projectID = selectedProjectID; request.path = doc.path; request.cardID = fileScopeCardID ?? ""
-        request.content = content; request.revision = doc.revision
-        let generation = fileReadGeneration
-        do {
-            var saved = try await rpc.saveFile(request)
-            guard self.rpc === rpc, generation == fileReadGeneration,
-                  selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID,
-                  fileDocument?.path == doc.path else { return nil }
-            if saved.mimeType.isEmpty { saved.mimeType = doc.mimeType }
-            fileDocument = saved
-            return saved
-        } catch {
-            guard self.rpc === rpc, generation == fileReadGeneration,
-                  selectedProjectID == request.projectID, (fileScopeCardID ?? "") == request.cardID else { return nil }
-            show(error)
-            return nil
-        }
-    }
-
     func createFile(path: String, directory: Bool) async {
-        guard let rpc else { return }
-        var request = Dieter_V1_CreateFileRequest(); request.projectID = selectedProjectID; request.path = path; request.kind = directory ? "directory" : "file"; request.cardID = fileScopeCardID ?? ""
-        do { _ = try await rpc.createFile(request); await loadFiles() } catch { show(error) }
+        resetFileSurface(); await filesModel.createFile(path: path, directory: directory)
     }
-
     func deleteFile(path: String, recursive: Bool) async {
-        guard let rpc else { return }
-        var request = Dieter_V1_DeleteFileRequest(); request.projectID = selectedProjectID; request.path = path; request.recursive = recursive; request.cardID = fileScopeCardID ?? ""
-        do { try await rpc.deleteFile(request); fileDocument = nil; await loadFiles() } catch { show(error) }
+        resetFileSurface(); await filesModel.deleteFile(path: path, recursive: recursive)
     }
-
     func moveFile(source: String, destination: String) async {
-        guard let rpc else { return }
-        var request = Dieter_V1_MoveFileRequest(); request.projectID = selectedProjectID; request.source = source; request.destination = destination; request.cardID = fileScopeCardID ?? ""
-        do { _ = try await rpc.moveFile(request); fileDocument = nil; await loadFiles() } catch { show(error) }
+        resetFileSurface(); await filesModel.moveFile(source: source, destination: destination)
     }
 
-    func loadSchedules() async {
-        guard !selectedProjectID.isEmpty else { return }
-        let projectID = selectedProjectID
-        let endpointID = endpoint.id
-        guard let client = scheduleRPCOverride ?? rpc else { return }
-
-        schedulesRequestGeneration &+= 1
-        let generation = schedulesRequestGeneration
-        schedulesLoading = true
-        schedulesLoadingMore = false
-        schedulesNextPageToken = ""
-        if !schedulesAreLoaded {
-            schedules = []
-            scheduleRuns = []
-            selectedScheduleID = nil
-        }
-
-        do {
-            let response = try await client.schedules(projectID: projectID, pageSize: schedulePageSize, pageToken: "")
-            guard generation == schedulesRequestGeneration,
-                  selectedProjectID == projectID, endpoint.id == endpointID else { return }
-            schedules = response.schedules
-            schedulesTotalCount = Int(response.totalCount)
-            schedulesNextPageToken = response.nextPageToken
-            schedulesLoadedProjectID = projectID
-            schedulesLoadedEndpointID = endpointID
-            schedulesLoading = false
-            if selectedScheduleID == nil || !schedules.contains(where: { $0.id == selectedScheduleID }) {
-                selectedScheduleID = schedules.first?.id
-            }
-            guard let selectedScheduleID else {
-                scheduleRunsRequestGeneration &+= 1
-                scheduleRuns = []
-                scheduleRunsLoading = false
-                return
-            }
-            await loadScheduleRuns(for: selectedScheduleID)
-        } catch {
-            guard generation == schedulesRequestGeneration,
-                  selectedProjectID == projectID, endpoint.id == endpointID else { return }
-            schedulesLoading = false
-            show(error)
-        }
+    func bindSchedules() {
+        schedulesModel.bind(
+            target: WorkspaceTarget(endpointID: endpoint.id, projectID: selectedProjectID),
+            reader: scheduleRPCOverride ?? rpc, writer: rpc
+        )
+        schedulesModel.isLive = selectedProjectIsLive
     }
 
-    func loadMoreSchedules() async {
-        guard schedulesAreLoaded, !schedulesLoading, !schedulesLoadingMore,
-              !schedulesNextPageToken.isEmpty,
-              let client = scheduleRPCOverride ?? rpc else { return }
-        let projectID = selectedProjectID
-        let endpointID = endpoint.id
-        let pageToken = schedulesNextPageToken
-        let generation = schedulesRequestGeneration
-        schedulesLoadingMore = true
-        do {
-            let response = try await client.schedules(projectID: projectID, pageSize: schedulePageSize, pageToken: pageToken)
-            guard generation == schedulesRequestGeneration,
-                  selectedProjectID == projectID, endpoint.id == endpointID else { return }
-            let existing = Set(schedules.map(\.id))
-            schedules.append(contentsOf: response.schedules.filter { !existing.contains($0.id) })
-            schedulesTotalCount = Int(response.totalCount)
-            schedulesNextPageToken = response.nextPageToken
-            schedulesLoadingMore = false
-        } catch {
-            guard generation == schedulesRequestGeneration,
-                  selectedProjectID == projectID, endpoint.id == endpointID else { return }
-            schedulesLoadingMore = false
-            show(error)
-        }
+    var scheduleEditorContext: ScheduleEditorContext {
+        ScheduleEditorContext(
+            target: schedulesModel.target, projectName: selectedProject?.name ?? "Project",
+            boards: state.boards.filter { $0.projectID == selectedProjectID },
+            selectedBoardID: selectedBoardID, harnessCatalog: harnessCatalog)
     }
 
-    func selectSchedule(_ id: String) async {
-        guard schedulesAreLoaded, schedules.contains(where: { $0.id == id }) else { return }
-        selectedScheduleID = id
-        await loadScheduleRuns(for: id)
+    func loadSchedules() async { bindSchedules(); await schedulesModel.loadSchedules() }
+    func loadMoreSchedules() async { bindSchedules(); await schedulesModel.loadMoreSchedules() }
+    func selectSchedule(_ id: String) async { bindSchedules(); await schedulesModel.selectSchedule(id) }
+    func loadScheduleRuns(for id: String, appending: Bool = false) async {
+        bindSchedules(); await schedulesModel.loadScheduleRuns(for: id, appending: appending)
     }
-
-    func loadScheduleRuns(for scheduleID: String, appending: Bool = false) async {
-        guard let client = scheduleRPCOverride ?? rpc else { return }
-        let projectID = selectedProjectID
-        let endpointID = endpoint.id
-        if !appending { scheduleRunsRequestGeneration &+= 1 }
-        let generation = scheduleRunsRequestGeneration
-        let pageToken = appending ? scheduleRunsNextPageToken : ""
-        if appending {
-            guard !scheduleRunsLoading, !scheduleRunsLoadingMore, !pageToken.isEmpty else { return }
-            scheduleRunsLoadingMore = true
-        } else {
-            scheduleRuns.removeAll()
-            scheduleRunsNextPageToken = ""
-            scheduleRunsLoading = true
-            scheduleRunsLoadingMore = false
-        }
-        do {
-            let response = try await client.scheduleRuns(id: scheduleID, pageSize: schedulePageSize, pageToken: pageToken)
-            guard generation == scheduleRunsRequestGeneration,
-                  selectedProjectID == projectID, endpoint.id == endpointID,
-                  selectedScheduleID == scheduleID else { return }
-            if appending {
-                let existing = Set(scheduleRuns.map(\.id))
-                scheduleRuns.append(contentsOf: response.runs.filter { !existing.contains($0.id) })
-            } else {
-                scheduleRuns = response.runs
-            }
-            scheduleRunsNextPageToken = response.nextPageToken
-            scheduleRunsLoading = false
-            scheduleRunsLoadingMore = false
-        } catch {
-            guard generation == scheduleRunsRequestGeneration,
-                  selectedProjectID == projectID, endpoint.id == endpointID,
-                  selectedScheduleID == scheduleID else { return }
-            scheduleRunsLoading = false
-            scheduleRunsLoadingMore = false
-            show(error)
-        }
+    func loadMoreScheduleRuns() async { bindSchedules(); await schedulesModel.loadMoreScheduleRuns() }
+    func upsertLoadedSchedule(_ schedule: Dieter_V1_Schedule) { schedulesModel.upsertLoadedSchedule(schedule) }
+    @discardableResult func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft) async -> Bool {
+        bindSchedules(); return await schedulesModel.saveSchedule(id: id, draft: draft)
     }
-
-    func loadMoreScheduleRuns() async {
-        guard let selectedScheduleID else { return }
-        await loadScheduleRuns(for: selectedScheduleID, appending: true)
-    }
-
-    func upsertLoadedSchedule(_ schedule: Dieter_V1_Schedule) {
-        let existingIndex = schedules.firstIndex(where: { $0.id == schedule.id })
-        if let existingIndex {
-            schedules[existingIndex] = schedule
-        } else {
-            schedules.append(schedule)
-            schedulesTotalCount += 1
-        }
-        schedules.sort {
-            let nameOrder = $0.name.localizedCaseInsensitiveCompare($1.name)
-            return nameOrder == .orderedSame ? $0.id < $1.id : nameOrder == .orderedAscending
-        }
-    }
-
-    @discardableResult
-    func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft) async -> Bool {
-        guard let rpc else { return false }
-        var request = Dieter_V1_SaveScheduleRequest(); request.scheduleID = id ?? ""; request.schedule = draft
-        do {
-            let saved = try await (id == nil ? rpc.createSchedule(request) : rpc.updateSchedule(request))
-            upsertLoadedSchedule(saved)
-            selectedScheduleID = saved.id
-            await loadScheduleRuns(for: saved.id)
-            return true
-        } catch {
-            show(error)
-            return false
-        }
-    }
-
     func toggleSchedule(_ schedule: Dieter_V1_Schedule) async {
-        guard let rpc else { return }
-        do { upsertLoadedSchedule(try await rpc.setScheduleEnabled(id: schedule.id, enabled: !schedule.enabled)) } catch { show(error) }
+        bindSchedules(); await schedulesModel.toggleSchedule(schedule)
     }
-
     func runSchedule(_ schedule: Dieter_V1_Schedule) async {
-        guard let rpc else { return }
-        do {
-            _ = try await rpc.runSchedule(id: schedule.id)
-            selectedScheduleID = schedule.id
-            await loadScheduleRuns(for: schedule.id)
-        } catch { show(error) }
+        bindSchedules(); await schedulesModel.runSchedule(schedule)
     }
-
     func deleteSchedule(_ schedule: Dieter_V1_Schedule) async {
-        guard let rpc else { return }
-        do {
-            try await rpc.deleteSchedule(id: schedule.id)
-            let removed = schedules.contains { $0.id == schedule.id }
-            schedules.removeAll { $0.id == schedule.id }
-            if removed { schedulesTotalCount = max(0, schedulesTotalCount - 1) }
-            if selectedScheduleID == schedule.id {
-                selectedScheduleID = schedules.first?.id
-                scheduleRuns = []
-                scheduleRunsNextPageToken = ""
-            }
-            if schedules.isEmpty && !schedulesNextPageToken.isEmpty {
-                await loadMoreSchedules()
-                selectedScheduleID = schedules.first?.id
-            }
-            if let selectedScheduleID, scheduleRuns.isEmpty {
-                await loadScheduleRuns(for: selectedScheduleID)
-            }
-        } catch { show(error) }
+        bindSchedules(); await schedulesModel.deleteSchedule(schedule)
     }
-
     func previewSchedule(cron: String, timezone: String, count: Int32 = 5) async throws -> [String]? {
-        guard let rpc, !cron.isEmpty, !timezone.isEmpty else { return nil }
-        var request = Dieter_V1_PreviewScheduleRequest()
-        request.cron = cron
-        request.timezone = timezone
-        request.count = count
-        return try await rpc.previewSchedule(request).times
+        bindSchedules(); return try await schedulesModel.previewSchedule(cron: cron, timezone: timezone, count: count)
     }
 
     func loadPromptSettings() async throws -> Dieter_V1_PromptSettings? {
@@ -385,7 +142,9 @@ extension DieterStore {
 
     func updateLimits(global: Int, agents: [String: Int], boards: [String: Int]) async {
         guard let rpc else { return }
-        var settings = boardSettings; settings.globalParallelLimit = Int32(global); settings.agentParallelLimits = agents.mapValues(Int32.init); settings.boardParallelLimits = boards.mapValues(Int32.init)
+        var settings = boardSettings; settings.globalParallelLimit = Int32(global);
+        settings.agentParallelLimits = agents.mapValues(Int32.init);
+        settings.boardParallelLimits = boards.mapValues(Int32.init)
         var request = Dieter_V1_UpdateSettingsRequest(); request.settings = settings
         do { boardSettings = try await rpc.updateSettings(request) } catch { show(error) }
     }
@@ -394,10 +153,18 @@ extension DieterStore {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
+    func notifyTransitions(_ cards: [Dieter_V1_Card], endpointID: String) {
+        for card in activityTransitions.accept(cards, endpointID: endpointID) {
+            notify(title: card.title, body: "Status changed to \(card.runtime)")
+        }
+    }
+
     func notify(title: String, body: String) {
-        guard UserDefaults.standard.bool(forKey: "DieterNotifications") else { return }
-        let content = UNMutableNotificationContent(); content.title = title; content.body = body; content.sound = .default
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        guard environment.defaults.bool(forKey: "DieterNotifications") else { return }
+        let content = UNMutableNotificationContent(); content.title = title; content.body = body;
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
     func show(_ error: Error) {

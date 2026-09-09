@@ -124,6 +124,13 @@ installation is unnecessary. Discovery starts only after `DSH_HOME` (default
 `~/.dsh`) exists, so an uninitialized machine does not download a harness merely
 because a client opened a model picker.
 
+After at least one successful probe, a transient discovery failure keeps the
+daemon's last-known-good DSH model list instead of replacing it with the
+compatibility entry. Conversation creation and resume also perform one bounded
+DSH-only refresh before rejecting an opaque model selector that is absent from
+the current catalog. Each client obtains this catalog from the daemon that owns
+the selected project; catalogs are not shared between machines.
+
 The probe disables telemetry and overrides DSH's session and storage rows with
 Dieter-owned catalog-only paths. It therefore does not add a catalog-only
 conversation to the operator's DSH session history. The child receives the

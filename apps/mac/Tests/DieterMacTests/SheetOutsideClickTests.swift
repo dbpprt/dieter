@@ -7,9 +7,13 @@ import Testing
 @Test @MainActor func outsideSheetClickOnlyDismissesAnUnchangedDraftInItsParent() {
     let frame = NSRect(x: 100, y: 100, width: 620, height: 600)
     #expect(OutsideClickSheetView.shouldDismiss(enabled: true, belongsToParent: true, point: .zero, sheetFrame: frame))
-    #expect(!OutsideClickSheetView.shouldDismiss(enabled: false, belongsToParent: true, point: .zero, sheetFrame: frame))
-    #expect(!OutsideClickSheetView.shouldDismiss(enabled: true, belongsToParent: false, point: .zero, sheetFrame: frame))
-    #expect(!OutsideClickSheetView.shouldDismiss(enabled: true, belongsToParent: true, point: NSPoint(x: 200, y: 200), sheetFrame: frame))
+    #expect(
+        !OutsideClickSheetView.shouldDismiss(enabled: false, belongsToParent: true, point: .zero, sheetFrame: frame))
+    #expect(
+        !OutsideClickSheetView.shouldDismiss(enabled: true, belongsToParent: false, point: .zero, sheetFrame: frame))
+    #expect(
+        !OutsideClickSheetView.shouldDismiss(
+            enabled: true, belongsToParent: true, point: NSPoint(x: 200, y: 200), sheetFrame: frame))
 }
 
 @Test @MainActor func editCardSheetFitsSmallScreensWithScrollableFields() throws {

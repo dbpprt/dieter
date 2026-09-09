@@ -27,6 +27,7 @@ import (
 	dieterdaemon "github.com/dbpprt/dieter/internal/daemon"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/scheduler"
@@ -58,6 +59,13 @@ func New(data *store.Store) *CLI {
 func (c *CLI) service() *app.Service { return app.New(c.Store, c.Runner) }
 
 func Main(args []string) int {
+	if len(args) > 0 && args[0] == "__daemon-update-worker" {
+		if err := machine.RunDaemonUpdateWorker(args[1:], os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		return 0
+	}
 	global := flag.NewFlagSet("dieter", flag.ContinueOnError)
 	global.SetOutput(io.Discard)
 	root := global.String("store", store.DefaultRoot(), "DIETER_HOME data directory")
@@ -464,7 +472,8 @@ add an optional LAN, Tailscale, or public route.
 		go func() {
 			client := &dieterdaemon.GatewayClient{
 				Identity: identity, LocalTarget: *addr, Version: Version, APIVersion: server.APIVersion, Routes: routes,
-				Log: logger, OnStatus: statusWriter.Gateway, RemoteDesktopPresence: remoteDesktopPresence,
+				Log: logger, OnStatus: statusWriter.Gateway, OnAcknowledged: statusWriter.GatewayAcknowledged,
+				RemoteDesktopPresence: remoteDesktopPresence,
 			}
 			if tunnelErr := client.Run(ctx); tunnelErr != nil && ctx.Err() == nil {
 				logger.Error("gateway tunnel stopped", "error", tunnelErr)

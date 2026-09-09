@@ -182,9 +182,10 @@ func (GPUMemoryKind) EnumDescriptor() ([]byte, []int) {
 type MachineOperationAction int32
 
 const (
-	MachineOperationAction_MACHINE_OPERATION_ACTION_UNSPECIFIED MachineOperationAction = 0
-	MachineOperationAction_MACHINE_OPERATION_ACTION_RESTART     MachineOperationAction = 1
-	MachineOperationAction_MACHINE_OPERATION_ACTION_SHUTDOWN    MachineOperationAction = 2
+	MachineOperationAction_MACHINE_OPERATION_ACTION_UNSPECIFIED   MachineOperationAction = 0
+	MachineOperationAction_MACHINE_OPERATION_ACTION_RESTART       MachineOperationAction = 1
+	MachineOperationAction_MACHINE_OPERATION_ACTION_SHUTDOWN      MachineOperationAction = 2
+	MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON MachineOperationAction = 3
 )
 
 // Enum value maps for MachineOperationAction.
@@ -193,11 +194,13 @@ var (
 		0: "MACHINE_OPERATION_ACTION_UNSPECIFIED",
 		1: "MACHINE_OPERATION_ACTION_RESTART",
 		2: "MACHINE_OPERATION_ACTION_SHUTDOWN",
+		3: "MACHINE_OPERATION_ACTION_UPDATE_DAEMON",
 	}
 	MachineOperationAction_value = map[string]int32{
-		"MACHINE_OPERATION_ACTION_UNSPECIFIED": 0,
-		"MACHINE_OPERATION_ACTION_RESTART":     1,
-		"MACHINE_OPERATION_ACTION_SHUTDOWN":    2,
+		"MACHINE_OPERATION_ACTION_UNSPECIFIED":   0,
+		"MACHINE_OPERATION_ACTION_RESTART":       1,
+		"MACHINE_OPERATION_ACTION_SHUTDOWN":      2,
+		"MACHINE_OPERATION_ACTION_UPDATE_DAEMON": 3,
 	}
 )
 
@@ -17861,11 +17864,12 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\rGPUMemoryKind\x12\x1f\n" +
 	"\x1bGPU_MEMORY_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17GPU_MEMORY_KIND_UNIFIED\x10\x01\x12\x1d\n" +
-	"\x19GPU_MEMORY_KIND_DEDICATED\x10\x02*\x8f\x01\n" +
+	"\x19GPU_MEMORY_KIND_DEDICATED\x10\x02*\xbb\x01\n" +
 	"\x16MachineOperationAction\x12(\n" +
 	"$MACHINE_OPERATION_ACTION_UNSPECIFIED\x10\x00\x12$\n" +
 	" MACHINE_OPERATION_ACTION_RESTART\x10\x01\x12%\n" +
-	"!MACHINE_OPERATION_ACTION_SHUTDOWN\x10\x02*\xa3\x01\n" +
+	"!MACHINE_OPERATION_ACTION_SHUTDOWN\x10\x02\x12*\n" +
+	"&MACHINE_OPERATION_ACTION_UPDATE_DAEMON\x10\x03*\xa3\x01\n" +
 	"\x0fExecutionStream\x12 \n" +
 	"\x1cEXECUTION_STREAM_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17EXECUTION_STREAM_STDOUT\x10\x01\x12\x1b\n" +

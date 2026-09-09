@@ -5,10 +5,10 @@ import UniformTypeIdentifiers
 
 enum BoardCardMergePolicy {
     static func canMerge(_ source: Dieter_V1_Card, into target: Dieter_V1_Card) -> Bool {
-        source.id != target.id && !source.boardID.isEmpty && source.boardID == target.boardID &&
-        source.projectID == target.projectID && !source.archived && !target.archived &&
-        source.mergedIntoCardID.isEmpty && target.mergedIntoCardID.isEmpty &&
-        BoardAgentStatus.resolve(source) != .running && !target.initialPromptSentAt.isEmpty
+        source.id != target.id && !source.boardID.isEmpty && source.boardID == target.boardID
+            && source.projectID == target.projectID && !source.archived && !target.archived
+            && source.mergedIntoCardID.isEmpty && target.mergedIntoCardID.isEmpty
+            && BoardAgentStatus.resolve(source) != .running && !target.initialPromptSentAt.isEmpty
     }
 }
 

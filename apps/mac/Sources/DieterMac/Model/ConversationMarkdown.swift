@@ -1,18 +1,29 @@
 import Foundation
 
-enum ConversationMarkdownAlignment: Equatable {
+enum ConversationMarkdownAlignment: Equatable, Sendable {
     case leading
     case center
     case trailing
 }
 
-struct ConversationMarkdownTable: Equatable {
+struct ConversationMarkdownTable: Equatable, Sendable {
     let headers: [String]
     let alignments: [ConversationMarkdownAlignment]
     let rows: [[String]]
+    let columnWidths: [Double]
+
+    init(headers: [String], alignments: [ConversationMarkdownAlignment], rows: [[String]]) {
+        self.headers = headers
+        self.alignments = alignments
+        self.rows = rows
+        columnWidths = headers.indices.map { column in
+            let longest = rows.reduce(headers[column].count) { max($0, column < $1.count ? $1[column].count : 0) }
+            return Double(min(max(longest, 8), 28) * 7 + 24)
+        }
+    }
 }
 
-enum ConversationMarkdownBlock: Equatable {
+enum ConversationMarkdownBlock: Equatable, Sendable {
     case paragraph(String)
     case heading(level: Int, text: String)
     case bullet(String)
@@ -46,10 +57,10 @@ enum ConversationMarkdownParser {
             }
 
             if !inCode,
-               index + 1 < lines.count,
-               let headers = tableCells(lines[index]),
-               let alignments = tableDelimiter(lines[index + 1]),
-               headers.count == alignments.count
+                index + 1 < lines.count,
+                let headers = tableCells(lines[index]),
+                let alignments = tableDelimiter(lines[index + 1]),
+                headers.count == alignments.count
             {
                 flush()
                 index += 2

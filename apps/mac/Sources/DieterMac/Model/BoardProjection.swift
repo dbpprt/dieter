@@ -29,11 +29,10 @@ struct BoardProjection: Equatable, Sendable {
             for labelID in card.labelIds { labelCounts[labelID, default: 0] += 1 }
         }
         let displayed = boardCards.filter { card in
-            (runtimeFilter.isEmpty || card.runtime == runtimeFilter) &&
-                (labelFilter.isEmpty || card.labelIds.contains(labelFilter)) &&
-                (query.isEmpty ||
-                    card.title.localizedCaseInsensitiveContains(query) ||
-                    card.summary.localizedCaseInsensitiveContains(query))
+            (runtimeFilter.isEmpty || card.runtime == runtimeFilter)
+                && (labelFilter.isEmpty || card.labelIds.contains(labelFilter))
+                && (query.isEmpty || card.title.localizedCaseInsensitiveContains(query)
+                    || card.summary.localizedCaseInsensitiveContains(query))
         }
         return BoardProjection(
             cards: boardCards,

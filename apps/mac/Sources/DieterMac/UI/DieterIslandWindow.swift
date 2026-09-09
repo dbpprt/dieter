@@ -116,21 +116,21 @@ final class DieterIslandController: NSObject {
     private var screenObserver: NSObjectProtocol?
     private var enabled = false
     private var started = false
-#if DIETER_UI_SMOKE
-    private let automaticHoverEnabled = !ProcessInfo.processInfo.arguments.contains("--island-ui-smoke")
-#else
-    private let automaticHoverEnabled = true
-#endif
+    #if DIETER_UI_SMOKE
+        private let automaticHoverEnabled = !ProcessInfo.processInfo.arguments.contains("--island-ui-smoke")
+    #else
+        private let automaticHoverEnabled = true
+    #endif
 
     init(store: DieterStore) {
         self.store = store
     }
 
-#if DIETER_UI_SMOKE
-    func installCaptureFixture(file: URL, browser: CaptureBrowserContext) {
-        captureTask.fixtureCapture = (file, browser)
-    }
-#endif
+    #if DIETER_UI_SMOKE
+        func installCaptureFixture(file: URL, browser: CaptureBrowserContext) {
+            captureTask.fixtureCapture = (file, browser)
+        }
+    #endif
 
     var islandWindow: NSWindow? { panel }
     var isVisible: Bool { panel?.isVisible == true }
@@ -190,7 +190,8 @@ final class DieterIslandController: NSObject {
             closeTask = Task { @MainActor [weak self] in
                 try? await DieterTaskSleep.milliseconds(360)
                 guard !Task.isCancelled, let self, let panel = self.panel,
-                      !panel.frame.insetBy(dx: -5, dy: -5).contains(NSEvent.mouseLocation) else { return }
+                    !panel.frame.insetBy(dx: -5, dy: -5).contains(NSEvent.mouseLocation)
+                else { return }
                 self.closeTask = nil
                 self.setExpanded(false)
             }
@@ -253,17 +254,19 @@ final class DieterIslandController: NSObject {
                         onRequestExpansion: { [weak self] expanded in self?.setExpanded(expanded) },
                         onCaptureTask: { [weak self] in
                             guard let self else { return }
-                            self.captureTask.capture(hideIsland: {
-                                self.closeTask?.cancel()
-                                self.removePointerMonitors()
-                                self.panel?.orderOut(nil)
-                            }, restoreIsland: { [weak self] in
-                                self?.setExpanded(false, animated: false)
-                                self?.updateVisibility()
-                            })
+                            self.captureTask.capture(
+                                hideIsland: {
+                                    self.closeTask?.cancel()
+                                    self.removePointerMonitors()
+                                    self.panel?.orderOut(nil)
+                                },
+                                restoreIsland: { [weak self] in
+                                    self?.setExpanded(false, animated: false)
+                                    self?.updateVisibility()
+                                })
                         }
                     )
-                        .environment(store)
+                    .environment(store)
                 }
             )
             panel.ignoresMouseEvents = true
@@ -277,7 +280,8 @@ final class DieterIslandController: NSObject {
     private func selectedScreen() -> NSScreen? {
         NSScreen.screens.first(where: { screen in
             guard screen.safeAreaInsets.top > 0,
-                  let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return false }
+                let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            else { return false }
             return CGDisplayIsBuiltin(displayID) != 0
         }) ?? NSScreen.main ?? NSScreen.screens.first
     }
@@ -291,10 +295,12 @@ final class DieterIslandController: NSObject {
 
     private func installPointerMonitors() {
         guard automaticHoverEnabled, globalPointerMonitor == nil, localPointerMonitor == nil else { return }
-        globalPointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) { [weak self] _ in
+        globalPointerMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) {
+            [weak self] _ in
             Task { @MainActor [weak self] in self?.checkPointerLocation() }
         }
-        localPointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) { [weak self] event in
+        localPointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown]) {
+            [weak self] event in
             self?.checkPointerLocation()
             return event
         }

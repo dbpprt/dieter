@@ -123,6 +123,9 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     val conversation = state.conversation?.conversation
     val queuedMessages = conversation?.queueList.orEmpty()
     val card = state.conversation?.detail?.card ?: state.selectedCard
+    val creationFailure = card?.id
+        ?.takeIf(state.failedOutboxIds::contains)
+        ?.let(model::conversationCreationFailure)
     val unsentTask = card?.unsentTaskText()
     val draftAttachments = conversation?.draftAttachmentsList.orEmpty()
     val hasUnsentDraft = card?.initialPromptSentAt?.isBlank() == true &&
@@ -333,6 +336,13 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         }
     }
     Column(modifier) {
+        creationFailure?.let { failure ->
+            CreationFailureBanner(
+                failure = failure,
+                onRetry = { model.retryOutboxItem(card.id) },
+                onDiscard = { model.discardOutboxItem(card.id) },
+            )
+        }
         if (!hasUnsentDraft && messages.isEmpty() && !showAgentWorking && queuedMessages.isEmpty()) {
             if (state.conversation == null) LoadingState(Modifier.weight(1f))
             else EmptyList("Conversation is ready", "Send a message to resume the same durable harness session.", Icons.Outlined.ChatBubbleOutline, Modifier.weight(1f))
@@ -509,6 +519,45 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     }
     presentedFailureLog?.let { log ->
         TurnFailureLogDialog(log = log, onDismiss = { presentedFailureLog = null })
+    }
+}
+
+@Composable
+internal fun CreationFailureBanner(
+    failure: String,
+    onRetry: () -> Unit,
+    onDiscard: () -> Unit,
+) {
+    Surface(
+        color = DieterSurfaceHigh.copy(alpha = 0.94f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.48f)),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag("creation-failure"),
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Conversation was not created", fontWeight = FontWeight.SemiBold)
+            SelectionContainer {
+                Text(
+                    failure,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+            Text(
+                "No work started on the daemon. Retry this creation or discard the local draft.",
+                color = DieterMuted,
+                fontSize = 12.sp,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onRetry, modifier = Modifier.testTag("creation-failure-retry")) {
+                    Text("Retry creation")
+                }
+                TextButton(onClick = onDiscard, modifier = Modifier.testTag("creation-failure-discard")) {
+                    Text("Discard")
+                }
+            }
+        }
     }
 }
 

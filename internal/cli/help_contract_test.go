@@ -52,7 +52,7 @@ func TestEveryDaemonRPCMapsToCLICommand(t *testing.T) {
 func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 	paths := []string{
 		"auth", "auth login", "auth status", "auth logout",
-		"machine", "machine list", "machine gateway", "machine watch", "machine show", "machine route", "machine info", "machine rename", "machine revoke", "machine restart", "machine shutdown", "machine rtc",
+		"machine", "machine list", "machine gateway", "machine watch", "machine show", "machine route", "machine info", "machine rename", "machine revoke", "machine restart", "machine shutdown", "machine update", "machine rtc",
 		"status", "storage", "harness", "harness list", "watch", "watch state", "watch sync",
 		"project", "project create", "project open", "project directories", "project list", "project show", "project update", "project workspace", "project remove", "project restore",
 		"board", "board hostnames", "board create", "board list", "board show", "board rename", "board retention", "board git", "board label", "board label add", "board label list", "board label update", "board label remove",

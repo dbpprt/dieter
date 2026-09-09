@@ -75,15 +75,15 @@ final class WindowTitleBarDoubleClickView: NSView {
         windowButtonFrames: [NSRect]
     ) -> Bool {
         guard eventType == .leftMouseDown,
-              clickCount == 2,
-              eventBelongsToWindow,
-              styleMask.contains(.titled),
-              styleMask.contains(.resizable),
-              !styleMask.contains(.fullScreen),
-              !isSheet,
-              zoomButtonEnabled,
-              !zoomButtonHidden,
-              location.y >= contentLayoutMaxY
+            clickCount == 2,
+            eventBelongsToWindow,
+            styleMask.contains(.titled),
+            styleMask.contains(.resizable),
+            !styleMask.contains(.fullScreen),
+            !isSheet,
+            zoomButtonEnabled,
+            !zoomButtonHidden,
+            location.y >= contentLayoutMaxY
         else { return false }
 
         return !windowButtonFrames.contains {

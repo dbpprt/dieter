@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/url"
@@ -36,7 +37,9 @@ type GatewayClient struct {
 	Routes                []*gatewayv1.DirectCandidate
 	Log                   *slog.Logger
 	OnStatus              func(GatewayEvent)
+	OnAcknowledged        func(time.Time)
 	RemoteDesktopPresence func() *gatewayv1.RemoteDesktopPresence
+	Timing                GatewayTiming
 }
 
 func (c *GatewayClient) remoteDesktopPresence() *gatewayv1.RemoteDesktopPresence {
@@ -49,31 +52,100 @@ func (c *GatewayClient) remoteDesktopPresence() *gatewayv1.RemoteDesktopPresence
 const (
 	gatewayHeartbeatActiveInterval  = 5 * time.Second
 	gatewayHeartbeatIdleMaxInterval = 20 * time.Second
+	gatewayHeartbeatAckTimeout      = 45 * time.Second
+	gatewayHandshakeTimeout         = 15 * time.Second
 	gatewayReconnectInitialBackoff  = time.Second
 	gatewayReconnectMaximumBackoff  = 30 * time.Second
 	gatewayReconnectStableAfter     = 30 * time.Second
+	gatewayHeartbeatAckCapability   = "heartbeat_ack_v1"
 )
 
+// GatewayTiming exposes bounded timing overrides for isolated integration
+// tests. Production callers leave it zero-valued and receive the defaults
+// above.
+type GatewayTiming struct {
+	HeartbeatActiveInterval  time.Duration
+	HeartbeatIdleMaxInterval time.Duration
+	HeartbeatAckTimeout      time.Duration
+	HandshakeTimeout         time.Duration
+	ReconnectInitialBackoff  time.Duration
+	ReconnectMaximumBackoff  time.Duration
+	ReconnectStableAfter     time.Duration
+}
+
+func (c *GatewayClient) timing() GatewayTiming {
+	value := c.Timing
+	if value.HeartbeatActiveInterval <= 0 {
+		value.HeartbeatActiveInterval = gatewayHeartbeatActiveInterval
+	}
+	if value.HeartbeatIdleMaxInterval < value.HeartbeatActiveInterval {
+		value.HeartbeatIdleMaxInterval = gatewayHeartbeatIdleMaxInterval
+	}
+	if value.HeartbeatAckTimeout <= value.HeartbeatIdleMaxInterval {
+		value.HeartbeatAckTimeout = gatewayHeartbeatAckTimeout
+	}
+	if value.HandshakeTimeout <= 0 {
+		value.HandshakeTimeout = gatewayHandshakeTimeout
+	}
+	if value.ReconnectInitialBackoff <= 0 {
+		value.ReconnectInitialBackoff = gatewayReconnectInitialBackoff
+	}
+	if value.ReconnectMaximumBackoff < value.ReconnectInitialBackoff {
+		value.ReconnectMaximumBackoff = gatewayReconnectMaximumBackoff
+	}
+	if value.ReconnectStableAfter <= 0 {
+		value.ReconnectStableAfter = gatewayReconnectStableAfter
+	}
+	return value
+}
+
 func nextGatewayHeartbeatInterval(current time.Duration, active bool) time.Duration {
-	if active || current < gatewayHeartbeatActiveInterval {
-		return gatewayHeartbeatActiveInterval
+	return nextGatewayHeartbeatIntervalWithin(current, active, gatewayHeartbeatActiveInterval, gatewayHeartbeatIdleMaxInterval)
+}
+
+func nextGatewayHeartbeatIntervalWithin(current time.Duration, active bool, activeInterval, maximumInterval time.Duration) time.Duration {
+	if active || current < activeInterval {
+		return activeInterval
 	}
 	next := current * 2
-	if next > gatewayHeartbeatIdleMaxInterval {
-		return gatewayHeartbeatIdleMaxInterval
+	if next > maximumInterval {
+		return maximumInterval
 	}
 	return next
 }
 
 func gatewayReconnectBackoff(current, connectedFor time.Duration) (time.Duration, time.Duration) {
-	if current <= 0 || connectedFor >= gatewayReconnectStableAfter {
-		current = gatewayReconnectInitialBackoff
+	return gatewayReconnectBackoffWithin(current, connectedFor, gatewayReconnectInitialBackoff, gatewayReconnectMaximumBackoff, gatewayReconnectStableAfter)
+}
+
+func gatewayReconnectBackoffWithin(current, connectedFor, initial, maximum, stableAfter time.Duration) (time.Duration, time.Duration) {
+	if current <= 0 || connectedFor >= stableAfter {
+		current = initial
 	}
 	next := current * 2
-	if next > gatewayReconnectMaximumBackoff {
-		next = gatewayReconnectMaximumBackoff
+	if next > maximum {
+		next = maximum
 	}
 	return current, next
+}
+
+func supportsGatewayCapability(frame *gatewayv1.DaemonLinkFrame, capability string) bool {
+	for _, value := range frame.GetCapabilities() {
+		if value == capability {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesGatewayHeartbeatAck(frame *gatewayv1.DaemonLinkFrame, daemonID, requestID string) bool {
+	return requestID != "" &&
+		frame.GetKind() == gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG &&
+		frame.GetDaemonId() == daemonID && frame.GetRequestId() == requestID
+}
+
+func gatewayFrameMarksRelayActivity(frame *gatewayv1.DaemonLinkFrame) bool {
+	return frame.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG
 }
 
 func (c *GatewayClient) report(state string, err error) {
@@ -94,14 +166,15 @@ func (c *GatewayClient) Run(ctx context.Context) error {
 	if c.Log == nil {
 		c.Log = slog.Default()
 	}
-	backoff := gatewayReconnectInitialBackoff
+	timing := c.timing()
+	backoff := timing.ReconnectInitialBackoff
 	for ctx.Err() == nil {
 		c.report(GatewayConnecting, nil)
 		connectedFor, err := c.runOnce(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
-		delay, nextBackoff := gatewayReconnectBackoff(backoff, connectedFor)
+		delay, nextBackoff := gatewayReconnectBackoffWithin(backoff, connectedFor, timing.ReconnectInitialBackoff, timing.ReconnectMaximumBackoff, timing.ReconnectStableAfter)
 		c.report(GatewayDisconnected, err)
 		c.Log.Warn("gateway tunnel disconnected", "error", err, "retry", delay)
 		timer := time.NewTimer(delay)
@@ -117,32 +190,58 @@ func (c *GatewayClient) Run(ctx context.Context) error {
 }
 
 func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
+	timing := c.timing()
 	connection, err := dialGateway(ctx, c.Identity, true)
 	if err != nil {
 		return 0, err
 	}
 	defer connection.Close()
-	stream, err := gatewayv1.NewDaemonLinkServiceClient(connection).Connect(ctx)
+	linkCtx, cancelLink := context.WithCancel(ctx)
+	defer cancelLink()
+	handshakeExpired := atomic.Bool{}
+	handshakeTimer := time.AfterFunc(timing.HandshakeTimeout, func() {
+		handshakeExpired.Store(true)
+		cancelLink()
+	})
+	defer handshakeTimer.Stop()
+	handshakeFailure := func(err error) error {
+		if handshakeExpired.Load() && ctx.Err() == nil {
+			return fmt.Errorf("gateway handshake timed out after %s", timing.HandshakeTimeout)
+		}
+		return err
+	}
+	stream, err := gatewayv1.NewDaemonLinkServiceClient(connection).Connect(linkCtx)
 	if err != nil {
-		return 0, err
+		return 0, handshakeFailure(err)
 	}
 	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}); err != nil {
-		return 0, err
+		return 0, handshakeFailure(err)
 	}
 	challenge, err := stream.Recv()
-	if err != nil || challenge.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING || challenge.GetDaemonId() != c.Identity.ID || len(challenge.GetPayload()) != 32 {
+	if err != nil {
+		return 0, handshakeFailure(err)
+	}
+	if challenge.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING || challenge.GetDaemonId() != c.Identity.ID || len(challenge.GetPayload()) != 32 {
 		return 0, errors.New("gateway did not provide a valid daemon challenge")
 	}
 	proof := linkauth.Sign(c.Identity.PrivateKey, c.Identity.GatewayURL, c.Identity.ID, challenge.GetPayload())
 	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: c.Identity.ID, RequestId: challenge.GetRequestId(), Payload: proof}); err != nil {
-		return 0, err
+		return 0, handshakeFailure(err)
 	}
 	first, err := stream.Recv()
-	if err != nil || first.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK || first.GetDaemonId() != c.Identity.ID || first.GetGeneration() != c.Identity.Generation {
+	if err != nil {
+		return 0, handshakeFailure(err)
+	}
+	if first.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK || first.GetDaemonId() != c.Identity.ID || first.GetGeneration() != c.Identity.Generation {
 		return 0, errors.New("gateway rejected the daemon hello")
 	}
-	c.report(GatewayConnected, nil)
+	handshakeTimer.Stop()
 	connectedAt := time.Now()
+	c.report(GatewayConnected, nil)
+	heartbeatAcknowledged := supportsGatewayCapability(first, gatewayHeartbeatAckCapability)
+	if heartbeatAcknowledged && c.OnAcknowledged != nil {
+		c.OnAcknowledged(connectedAt)
+	}
 	finish := func(err error) (time.Duration, error) { return time.Since(connectedAt), err }
 	local, err := grpc.NewClient(c.LocalTarget, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.ForceCodec(rpcraw.Codec{}), grpc.MaxCallRecvMsgSize(16<<20), grpc.MaxCallSendMsgSize(16<<20)))
 	if err != nil {
@@ -155,8 +254,6 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 	// leaving capture reconciliation to the much slower session lease. Canceling
 	// the link scope tears all relays down immediately; a reconnected tunnel
 	// creates fresh streams explicitly.
-	linkCtx, cancelLink := context.WithCancel(ctx)
-	defer cancelLink()
 	prioritySend := make(chan *gatewayv1.DaemonLinkFrame, 16)
 	streamSend := make(chan *gatewayv1.DaemonLinkFrame, 8)
 	var relayActive atomic.Bool
@@ -175,6 +272,16 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			return true
 		}
 	}
+	tryEnqueuePriority := func(frame *gatewayv1.DaemonLinkFrame) bool {
+		select {
+		case <-linkCtx.Done():
+			return false
+		case prioritySend <- frame:
+			return true
+		default:
+			return false
+		}
+	}
 	sendErr := make(chan error, 1)
 	go func() {
 		for {
@@ -182,6 +289,9 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			// traffic before another streaming data frame. This keeps a busy
 			// WatchSync/WatchConversation call from hiding a unary admission ack.
 			select {
+			case <-linkCtx.Done():
+				sendErr <- linkCtx.Err()
+				return
 			case frame := <-prioritySend:
 				if err := stream.Send(frame); err != nil {
 					sendErr <- err
@@ -208,9 +318,18 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 		}
 	}()
 	var calls sync.Map
-	heartbeatInterval := gatewayHeartbeatActiveInterval
+	heartbeatInterval := timing.HeartbeatActiveInterval
 	heartbeat := time.NewTimer(heartbeatInterval)
 	defer heartbeat.Stop()
+	var heartbeatSequence uint64
+	var outstandingHeartbeat string
+	var heartbeatWatchdog *time.Timer
+	var heartbeatWatchdogC <-chan time.Time
+	if heartbeatAcknowledged {
+		heartbeatWatchdog = time.NewTimer(timing.HeartbeatAckTimeout)
+		heartbeatWatchdogC = heartbeatWatchdog.C
+		defer heartbeatWatchdog.Stop()
+	}
 	recv := make(chan *gatewayv1.DaemonLinkFrame, 8)
 	recvErr := make(chan error, 1)
 	go func() {
@@ -220,7 +339,11 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 				recvErr <- err
 				return
 			}
-			recv <- frame
+			select {
+			case recv <- frame:
+			case <-linkCtx.Done():
+				return
+			}
 		}
 	}()
 	for {
@@ -231,12 +354,31 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			return finish(err)
 		case err := <-recvErr:
 			return finish(err)
+		case <-heartbeatWatchdogC:
+			return finish(fmt.Errorf("gateway heartbeat acknowledgement timed out after %s", timing.HeartbeatAckTimeout))
 		case <-heartbeat.C:
-			enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}, true)
-			heartbeatInterval = nextGatewayHeartbeatInterval(heartbeatInterval, relayActive.Swap(false))
+			frame := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HEARTBEAT, DaemonId: c.Identity.ID, Version: c.Version, ApiVersion: c.APIVersion, DirectCandidates: c.Routes, RemoteDesktop: c.remoteDesktopPresence()}
+			if !heartbeatAcknowledged {
+				if !enqueue(frame, true) {
+					return finish(linkCtx.Err())
+				}
+			} else if outstandingHeartbeat == "" {
+				heartbeatSequence++
+				outstandingHeartbeat = fmt.Sprintf("hb_%d", heartbeatSequence)
+				frame.RequestId = outstandingHeartbeat
+				if !tryEnqueuePriority(frame) {
+					return finish(errors.New("gateway heartbeat control queue is stalled"))
+				}
+			}
+			heartbeatInterval = nextGatewayHeartbeatIntervalWithin(heartbeatInterval, relayActive.Swap(false), timing.HeartbeatActiveInterval, timing.HeartbeatIdleMaxInterval)
 			heartbeat.Reset(heartbeatInterval)
 		case frame := <-recv:
-			relayActive.Store(true)
+			// A heartbeat acknowledgement proves liveness but is not relay
+			// activity. Counting it here would pin an otherwise idle tunnel to
+			// the five-second active heartbeat forever.
+			if gatewayFrameMarksRelayActivity(frame) {
+				relayActive.Store(true)
+			}
 			switch frame.GetKind() {
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC:
 				callCtx, cancel := context.WithCancel(linkCtx)
@@ -250,7 +392,22 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 					value.(context.CancelFunc)()
 				}
 			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING:
-				enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG}, true)
+				enqueue(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: c.Identity.ID, RequestId: frame.GetRequestId()}, true)
+			case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG:
+				if heartbeatAcknowledged && matchesGatewayHeartbeatAck(frame, c.Identity.ID, outstandingHeartbeat) {
+					outstandingHeartbeat = ""
+					acknowledgedAt := time.Now()
+					if c.OnAcknowledged != nil {
+						c.OnAcknowledged(acknowledgedAt)
+					}
+					if !heartbeatWatchdog.Stop() {
+						select {
+						case <-heartbeatWatchdog.C:
+						default:
+						}
+					}
+					heartbeatWatchdog.Reset(timing.HeartbeatAckTimeout)
+				}
 			}
 		}
 	}

@@ -1478,6 +1478,7 @@ type DaemonLinkFrame struct {
 	DirectCandidates    []*DirectCandidate     `protobuf:"bytes,16,rep,name=direct_candidates,json=directCandidates,proto3" json:"direct_candidates,omitempty"`
 	RemoteDesktop       *RemoteDesktopPresence `protobuf:"bytes,17,opt,name=remote_desktop,json=remoteDesktop,proto3" json:"remote_desktop,omitempty"`
 	ApiVersion          string                 `protobuf:"bytes,18,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
+	Capabilities        []string               `protobuf:"bytes,19,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -1638,6 +1639,13 @@ func (x *DaemonLinkFrame) GetApiVersion() string {
 	return ""
 }
 
+func (x *DaemonLinkFrame) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 var File_dieter_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
@@ -1758,7 +1766,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x10operator_subject\x18\x05 \x01(\tR\x0foperatorSubject\x12)\n" +
 	"\x10configuration_id\x18\x06 \x01(\tR\x0fconfigurationId\x12+\n" +
 	"\x11daemon_generation\x18\a \x01(\x04R\x10daemonGeneration\x12\x1b\n" +
-	"\tissued_at\x18\b \x01(\tR\bissuedAt\"\xd7\x06\n" +
+	"\tissued_at\x18\b \x01(\tR\bissuedAt\"\xfb\x06\n" +
 	"\x0fDaemonLinkFrame\x12:\n" +
 	"\x04kind\x18\x01 \x01(\x0e2&.dieter.gateway.v1.DaemonLinkFrameKindR\x04kind\x12\x1b\n" +
 	"\tstream_id\x18\x02 \x01(\x04R\bstreamId\x12\x1b\n" +
@@ -1783,7 +1791,8 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x11direct_candidates\x18\x10 \x03(\v2\".dieter.gateway.v1.DirectCandidateR\x10directCandidates\x12O\n" +
 	"\x0eremote_desktop\x18\x11 \x01(\v2(.dieter.gateway.v1.RemoteDesktopPresenceR\rremoteDesktop\x12\x1f\n" +
 	"\vapi_version\x18\x12 \x01(\tR\n" +
-	"apiVersion\x1a;\n" +
+	"apiVersion\x12\"\n" +
+	"\fcapabilities\x18\x13 \x03(\tR\fcapabilities\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x82\x05\n" +

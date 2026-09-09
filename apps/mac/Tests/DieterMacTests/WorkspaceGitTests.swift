@@ -1,5 +1,6 @@
 import DieterAPI
 import Testing
+
 @testable import DieterMac
 
 @Test func conversationWorkspaceDraftPopulatesCreateRequest() {
@@ -59,7 +60,8 @@ import Testing
 
 @Test func projectDirectoryDraftDoesNotSendWorktreeBranchOverrides() {
     var request = Dieter_V1_CreateConversationRequest()
-    ConversationWorkspaceDraft(mode: .project, branch: "stale", baseBranch: "main").apply(to: &request)
+    ConversationWorkspaceDraft(mode: .project, branch: "stale", baseBranch: "main").apply(
+        to: &request)
 
     #expect(request.workspaceMode == "project")
     #expect(request.workspaceBranch.isEmpty)
@@ -67,15 +69,16 @@ import Testing
 }
 
 @Test func unifiedDiffParserTracksBothSidesOfAHunk() {
-    let lines = UnifiedDiffParser.parse("""
-    diff --git a/a.swift b/a.swift
-    @@ -10,3 +10,4 @@
-     context
-    -old
-    +new
-    +extra
-     tail
-    """)
+    let lines = UnifiedDiffParser.parse(
+        """
+        diff --git a/a.swift b/a.swift
+        @@ -10,3 +10,4 @@
+         context
+        -old
+        +new
+        +extra
+         tail
+        """)
 
     let deletion = lines.first { $0.kind == .deletion }
     let additions = lines.filter { $0.kind == .addition }
@@ -144,21 +147,24 @@ import Testing
 }
 
 @Test func activeGitOperationIsReconciledAfterWorkspaceClearsItsOperationID() {
-    #expect(GitOperationReconciliation.operationID(
-        workspaceOperationID: "",
-        observedOperationID: "gitop_stale",
-        observedStatus: "running"
-    ) == "gitop_stale")
-    #expect(GitOperationReconciliation.operationID(
-        workspaceOperationID: "",
-        observedOperationID: "gitop_finished",
-        observedStatus: "succeeded"
-    ) == nil)
-    #expect(GitOperationReconciliation.operationID(
-        workspaceOperationID: "gitop_current",
-        observedOperationID: nil,
-        observedStatus: nil
-    ) == "gitop_current")
+    #expect(
+        GitOperationReconciliation.operationID(
+            workspaceOperationID: "",
+            observedOperationID: "gitop_stale",
+            observedStatus: "running"
+        ) == "gitop_stale")
+    #expect(
+        GitOperationReconciliation.operationID(
+            workspaceOperationID: "",
+            observedOperationID: "gitop_finished",
+            observedStatus: "succeeded"
+        ) == nil)
+    #expect(
+        GitOperationReconciliation.operationID(
+            workspaceOperationID: "gitop_current",
+            observedOperationID: nil,
+            observedStatus: nil
+        ) == "gitop_current")
 }
 
 @Test func validationCommandDraftRoundTripsLiteralArgumentsAndEnvironment() {
@@ -218,24 +224,27 @@ import Testing
 }
 
 @Test func workspaceReviewSelectionSurvivesRefreshAndFallsBackSafely() {
-    #expect(WorkspaceReviewSelectionResolver.resolve(
-        currentPath: "Sources/App.swift",
-        currentCommitSHA: "",
-        filePaths: ["README.md", "Sources/App.swift"],
-        commitSHAs: ["abc"]
-    ) == .init(path: "Sources/App.swift", commitSHA: ""))
-    #expect(WorkspaceReviewSelectionResolver.resolve(
-        currentPath: "Removed.swift",
-        currentCommitSHA: "",
-        filePaths: [],
-        commitSHAs: ["abc"]
-    ) == .init(path: "", commitSHA: "abc"))
-    #expect(WorkspaceReviewSelectionResolver.resolve(
-        currentPath: "Removed.swift",
-        currentCommitSHA: "old",
-        filePaths: [],
-        commitSHAs: []
-    ) == .init(path: "", commitSHA: ""))
+    #expect(
+        WorkspaceReviewSelectionResolver.resolve(
+            currentPath: "Sources/App.swift",
+            currentCommitSHA: "",
+            filePaths: ["README.md", "Sources/App.swift"],
+            commitSHAs: ["abc"]
+        ) == .init(path: "Sources/App.swift", commitSHA: ""))
+    #expect(
+        WorkspaceReviewSelectionResolver.resolve(
+            currentPath: "Removed.swift",
+            currentCommitSHA: "",
+            filePaths: [],
+            commitSHAs: ["abc"]
+        ) == .init(path: "", commitSHA: "abc"))
+    #expect(
+        WorkspaceReviewSelectionResolver.resolve(
+            currentPath: "Removed.swift",
+            currentCommitSHA: "old",
+            filePaths: [],
+            commitSHAs: []
+        ) == .init(path: "", commitSHA: ""))
 }
 
 @Test func unifiedDiffDoesNotInventALineFromThePatchTerminator() {

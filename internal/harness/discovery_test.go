@@ -2,11 +2,176 @@ package harness
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func installDiscoveryTestCatalog(t *testing.T, discover func(context.Context, string) ([]Model, error)) {
+	t.Helper()
+	discoveryMu.Lock()
+	catalogMu.Lock()
+	previousConfigured := configuredCatalog
+	previousSource := configuredCatalogSource
+	previousDiscovered := discoveredCatalog
+	previousUpdated := discoveryUpdated
+	previousDiscover := discoverProvider
+	configuredCatalog = []Adapter{{
+		ID: "dynamic", Name: "Dynamic", Runtime: "dynamic", DefaultModel: "default",
+		Models: []Model{{ID: "default", Name: "Configured default"}},
+	}}
+	configuredCatalogSource = "test"
+	discoveredCatalog = nil
+	discoveryUpdated = time.Time{}
+	discoverProvider = discover
+	catalogMu.Unlock()
+	discoveryMu.Unlock()
+	t.Cleanup(func() {
+		discoveryMu.Lock()
+		catalogMu.Lock()
+		configuredCatalog = previousConfigured
+		configuredCatalogSource = previousSource
+		discoveredCatalog = previousDiscovered
+		discoveryUpdated = previousUpdated
+		discoverProvider = previousDiscover
+		catalogMu.Unlock()
+		discoveryMu.Unlock()
+	})
+}
+
+func expireDiscoveryCache() {
+	discoveryMu.Lock()
+	discoveryUpdated = time.Time{}
+	discoveryMu.Unlock()
+}
+
+func TestRefreshCatalogRetainsLastKnownGoodProviderModels(t *testing.T) {
+	calls := 0
+	installDiscoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
+		calls++
+		if calls == 1 {
+			return []Model{{ID: "dynamic/model", Name: "Dynamic model", Efforts: []string{"high"}}}, nil
+		}
+		return nil, errors.New("provider temporarily unavailable")
+	})
+
+	RefreshCatalog(context.Background(), false)
+	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+		t.Fatalf("initial dynamic selection: %v", err)
+	}
+	expireDiscoveryCache()
+	RefreshCatalog(context.Background(), false)
+	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+		t.Fatalf("selection after failed refresh: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("discovery calls=%d, want 2", calls)
+	}
+}
+
+func TestResolveSelectionWithRefreshRecoversDynamicMiss(t *testing.T) {
+	calls := 0
+	installDiscoveryTestCatalog(t, func(_ context.Context, provider string) ([]Model, error) {
+		calls++
+		if provider != "dynamic" {
+			t.Fatalf("provider=%q", provider)
+		}
+		return []Model{{ID: "dynamic/model", Name: "Dynamic model", DefaultEffort: "high", Efforts: []string{"high"}}}, nil
+	})
+
+	adapter, model, err := ResolveSelectionWithRefresh(context.Background(), "dynamic", "dynamic/model", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if adapter.ID != "dynamic" || adapter.DefaultModel != "dynamic/model" || model.ID != "dynamic/model" {
+		t.Fatalf("adapter=%#v model=%#v", adapter, model)
+	}
+	if calls != 1 {
+		t.Fatalf("discovery calls=%d, want 1", calls)
+	}
+}
+
+func TestResolveSelectionWithRefreshReportsDiscoveryFailureAsTemporary(t *testing.T) {
+	installDiscoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
+		return nil, errors.New("provider is starting")
+	})
+
+	_, _, err := ResolveSelectionWithRefresh(context.Background(), "dynamic", "dynamic/model", false)
+	if !errors.Is(err, ErrCatalogUnavailable) {
+		t.Fatalf("error=%v, want ErrCatalogUnavailable", err)
+	}
+}
+
+func TestRefreshCatalogPublishesAtomicallyAcrossFailure(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	calls := 0
+	installDiscoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
+		calls++
+		if calls == 1 {
+			return []Model{{ID: "dynamic/model", Name: "Dynamic model"}}, nil
+		}
+		close(started)
+		<-release
+		return nil, errors.New("provider temporarily unavailable")
+	})
+
+	RefreshCatalog(context.Background(), false)
+	expireDiscoveryCache()
+	done := make(chan struct{})
+	go func() {
+		RefreshCatalog(context.Background(), false)
+		close(done)
+	}()
+	<-started
+	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+		t.Fatalf("selection during refresh: %v", err)
+	}
+	close(release)
+	<-done
+	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+		t.Fatalf("selection after failed refresh: %v", err)
+	}
+}
+
+func TestTargetedRefreshDoesNotWaitForStalledFullCatalogRefresh(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	installDiscoveryTestCatalog(t, func(context.Context, string) ([]Model, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+			<-release
+			return nil, errors.New("full refresh stalled and failed")
+		}
+		return []Model{{ID: "dynamic/model", Name: "Dynamic model"}}, nil
+	})
+
+	done := make(chan struct{})
+	go func() {
+		RefreshCatalog(context.Background(), false)
+		close(done)
+	}()
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	_, model, resolveErr := ResolveSelectionWithRefresh(ctx, "dynamic", "dynamic/model", false)
+	cancel()
+	close(release)
+	<-done
+
+	if resolveErr != nil {
+		t.Fatal(resolveErr)
+	}
+	if model.ID != "dynamic/model" {
+		t.Fatalf("model=%#v", model)
+	}
+	if _, _, err := ResolveSelection("dynamic", "dynamic/model", false); err != nil {
+		t.Fatalf("full refresh overwrote targeted recovery: %v", err)
+	}
+}
 
 func TestLiveProviderDiscovery(t *testing.T) {
 	if os.Getenv("DIETER_TEST_LIVE_DISCOVERY") != "1" {

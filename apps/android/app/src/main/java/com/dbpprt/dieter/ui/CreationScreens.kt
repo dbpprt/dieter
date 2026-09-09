@@ -108,11 +108,17 @@ fun NewConversationScreen(
 ) {
     var title by remember { mutableStateOf("") }
     var prompt by remember { mutableStateOf("") }
-    val creationDefaults = remember(state.harnesses) {
-        resolveConversationCreationPreferences(model.conversationCreationPreferences, state.harnesses)
+    val catalogReady = harnessCatalogMatchesProject(
+        projectId = state.selectedProjectId,
+        catalogEndpointId = state.harnessesEndpointId,
+        projectHosts = state.projectHosts,
+    )
+    val destinationHarnesses = if (catalogReady) state.harnesses else emptyList()
+    val creationDefaults = remember(destinationHarnesses) {
+        resolveConversationCreationPreferences(model.conversationCreationPreferences, destinationHarnesses)
     }
     var provider by remember(creationDefaults) { mutableStateOf(creationDefaults.provider) }
-    val harness = state.harnesses.firstOrNull { it.id == provider } ?: state.harnesses.firstOrNull()
+    val harness = destinationHarnesses.firstOrNull { it.id == provider } ?: destinationHarnesses.firstOrNull()
     var selectedModel by remember(creationDefaults) { mutableStateOf(creationDefaults.model) }
     var effort by remember(creationDefaults) { mutableStateOf(creationDefaults.effort) }
     var providerOptions by remember(provider, harness, creationDefaults, selectedModel) {
@@ -147,7 +153,7 @@ fun NewConversationScreen(
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> addPickedAttachments(uris, imagesOnly = false) }
-    val canSubmit = canCreateConversation(
+    val canSubmit = catalogReady && harnessCatalogSupportsSelection(destinationHarnesses, provider, selectedModel) && canCreateConversation(
         projectId = state.project?.id.orEmpty(),
         provider = provider,
         model = selectedModel,
@@ -192,6 +198,20 @@ fun NewConversationScreen(
             },
         )
         SurfaceErrorBanner(state.error, model::clearError)
+        if (!catalogReady) {
+            val destination = state.projectHosts[state.selectedProjectId]?.hostname
+                ?.takeIf(String::isNotBlank)
+                ?: state.project?.name
+                ?: "the selected project"
+            Text(
+                "Loading models from $destination…",
+                color = DieterMuted,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .testTag("creation-model-catalog-loading"),
+            )
+        }
         attachmentError?.let { message ->
             Text(
                 message,
@@ -207,7 +227,7 @@ fun NewConversationScreen(
                 state = state,
                 onProjectChange = model::selectProject,
                 provider = provider,
-                onProviderChange = { next -> provider = next; selectedModel = state.harnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
+                onProviderChange = { next -> provider = next; selectedModel = destinationHarnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
                 harness = harness,
                 model = selectedModel,
                 onModelChange = { selectedModel = it; effort = "" },
@@ -215,6 +235,7 @@ fun NewConversationScreen(
                 onEffortChange = { effort = it },
                 providerOptions = providerOptions,
                 onProviderOptionChange = { id, value -> providerOptions = providerOptions + (id to value) },
+                harnesses = destinationHarnesses,
                 canSubmit = canSubmit && !state.working,
                 workspaceMode = workspaceMode,
                 onWorkspaceModeChange = { workspaceMode = it },
@@ -247,7 +268,7 @@ fun NewConversationScreen(
                 prompt = prompt,
                 onPromptChange = { prompt = it },
                 provider = provider,
-                onProviderChange = { next -> provider = next; selectedModel = state.harnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
+                onProviderChange = { next -> provider = next; selectedModel = destinationHarnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
                 harness = harness,
                 model = selectedModel,
                 onModelChange = { selectedModel = it; effort = "" },
@@ -255,6 +276,7 @@ fun NewConversationScreen(
                 onEffortChange = { effort = it },
                 providerOptions = providerOptions,
                 onProviderOptionChange = { id, value -> providerOptions = providerOptions + (id to value) },
+                harnesses = destinationHarnesses,
                 lane = lane,
                 onLaneChange = { lane = it },
                 labelIds = labelIds,
@@ -296,6 +318,7 @@ private fun NewChatBody(
     onEffortChange: (String) -> Unit,
     providerOptions: Map<String, String>,
     onProviderOptionChange: (String, String) -> Unit,
+    harnesses: List<Harness>,
     canSubmit: Boolean,
     workspaceMode: ConversationWorkspaceMode,
     onWorkspaceModeChange: (ConversationWorkspaceMode) -> Unit,
@@ -363,7 +386,7 @@ private fun NewChatBody(
         )
         Spacer(Modifier.height(8.dp))
         ModelSelectors(
-            state, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
+            harnesses, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
             providerOptions, onProviderOptionChange,
         )
         Spacer(Modifier.height(8.dp))
@@ -426,6 +449,7 @@ private fun NewCardBody(
     onEffortChange: (String) -> Unit,
     providerOptions: Map<String, String>,
     onProviderOptionChange: (String, String) -> Unit,
+    harnesses: List<Harness>,
     lane: String,
     onLaneChange: (String) -> Unit,
     labelIds: MutableList<String>,
@@ -490,7 +514,7 @@ private fun NewCardBody(
         }
         FormSection(Icons.Outlined.Bolt, "Agent") {
             ModelSelectors(
-                state, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
+                harnesses, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
                 providerOptions, onProviderOptionChange,
             )
         }
@@ -849,7 +873,7 @@ fun ScheduleEditorScreen(
             }
             FormSection(Icons.Outlined.Bolt, "Agent") {
                 ModelSelectors(
-                    state, provider,
+                    state.harnesses, provider,
                     { next -> provider = next; selectedModel = state.harnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
                     harness, selectedModel, { selectedModel = it; effort = "" }, effort, { effort = it },
                     providerOptions, { id, value -> providerOptions = providerOptions + (id to value) },
@@ -922,7 +946,7 @@ private fun FormSection(
 
 @Composable
 private fun ModelSelectors(
-    state: DieterUiState,
+    harnesses: List<Harness>,
     provider: String,
     onProviderChange: (String) -> Unit,
     harness: Harness?,
@@ -937,7 +961,7 @@ private fun ModelSelectors(
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SelectorChip(
             value = harness?.name ?: "Agent",
-            options = state.harnesses.map { it.id to it.name },
+            options = harnesses.map { it.id to it.name },
             onSelect = onProviderChange,
             modifier = Modifier.testTag("creation-provider"),
         )

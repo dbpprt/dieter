@@ -40,7 +40,8 @@ enum ProjectDestinationCatalog {
         let fallbackMachine = fallbackEndpoint.daemonID == nil ? nil : fallbackEndpoint
         let destinations = projects.map { project in
             let mappedID = projectEndpointIDs[project.id]
-            let machine = mappedID.flatMap { endpointByID[$0] }
+            let machine =
+                mappedID.flatMap { endpointByID[$0] }
                 ?? (mappedID == fallbackMachine?.id || mappedID == nil ? fallbackMachine : nil)
             return ProjectDestination(
                 project: project,

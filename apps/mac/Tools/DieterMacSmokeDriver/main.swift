@@ -125,7 +125,8 @@ private final class SmokeRun {
     init(options: Options) throws {
         self.options = options
         repository = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
-        guard FileManager.default.fileExists(atPath: repository.appendingPathComponent("apps/mac/Package.swift").path) else {
+        guard FileManager.default.fileExists(atPath: repository.appendingPathComponent("apps/mac/Package.swift").path)
+        else {
             throw SmokeError.failed("run the smoke driver from the repository root")
         }
         guard FileManager.default.isExecutableFile(atPath: options.app.path) else {
@@ -181,7 +182,8 @@ private final class SmokeRun {
                 ]
             )
         case .terminal:
-            let common = try gatewayArguments(endpoint: endpoint, tokenFile: tokenFile)
+            let common =
+                try gatewayArguments(endpoint: endpoint, tokenFile: tokenFile)
                 + baseArguments(state: output.appendingPathComponent("state"))
                 + ["--ui-smoke-output", output.path]
             try runApp(
@@ -208,7 +210,8 @@ private final class SmokeRun {
                 ]
             )
         case .core, .board, .conversation, .machine, .workspace:
-            var arguments = try gatewayArguments(endpoint: endpoint, tokenFile: tokenFile)
+            var arguments =
+                try gatewayArguments(endpoint: endpoint, tokenFile: tokenFile)
                 + baseArguments(state: output.appendingPathComponent("state"))
             switch options.suite {
             case .core:
@@ -240,7 +243,8 @@ private final class SmokeRun {
 
         gateway?.stop()
         gateway = nil
-        let disposableRuntime = output
+        let disposableRuntime =
+            output
             .appendingPathComponent("fixture-home/dieter/runtime", isDirectory: true)
         if FileManager.default.fileExists(atPath: disposableRuntime.path) {
             try FileManager.default.removeItem(at: disposableRuntime)
@@ -307,8 +311,9 @@ private final class SmokeRun {
             Thread.sleep(forTimeInterval: 0.1)
         }
         guard values["READY"] == "",
-              let address = values["DIETER_ISOLATED_ADDR"],
-              let token = values["DIETER_ISOLATED_TOKEN"] else {
+            let address = values["DIETER_ISOLATED_ADDR"],
+            let token = values["DIETER_ISOLATED_TOKEN"]
+        else {
             throw SmokeError.failed("isolated gateway did not become ready; see \(gatewayLog.path)")
         }
         let tokenFile = output.appendingPathComponent("session-token")
@@ -370,7 +375,8 @@ private final class SmokeRun {
             app?.stop()
         }
         if app?.process.isRunning == true {
-            throw SmokeError.failed("smoke phase \(phase) wrote a report but PID \(appPID) refused targeted termination")
+            throw SmokeError.failed(
+                "smoke phase \(phase) wrote a report but PID \(appPID) refused targeted termination")
         }
         app = nil
         if !failures.isEmpty {
@@ -423,7 +429,9 @@ private final class SmokeRun {
     private static func runCommand(executable: URL, arguments: [String], directory: URL? = nil) throws -> String {
         let result = try captureCommand(executable: executable, arguments: arguments, directory: directory)
         guard result.status == 0 else {
-            throw SmokeError.failed("command failed (\(result.status)): \(([executable.path] + arguments).joined(separator: " "))\n\(result.output)")
+            throw SmokeError.failed(
+                "command failed (\(result.status)): \(([executable.path] + arguments).joined(separator: " "))\n\(result.output)"
+            )
         }
         return result.output
     }

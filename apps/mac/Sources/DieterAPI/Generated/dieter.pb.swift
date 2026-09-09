@@ -156,6 +156,7 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
   case unspecified // = 0
   case restart // = 1
   case shutdown // = 2
+  case updateDaemon // = 3
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -167,6 +168,7 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     case 0: self = .unspecified
     case 1: self = .restart
     case 2: self = .shutdown
+    case 3: self = .updateDaemon
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -176,6 +178,7 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     case .unspecified: return 0
     case .restart: return 1
     case .shutdown: return 2
+    case .updateDaemon: return 3
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -185,6 +188,7 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     .unspecified,
     .restart,
     .shutdown,
+    .updateDaemon,
   ]
 
 }
@@ -6030,7 +6034,7 @@ nonisolated extension Dieter_V1_GPUMemoryKind: SwiftProtobuf._ProtoNameProviding
 }
 
 nonisolated extension Dieter_V1_MachineOperationAction: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MACHINE_OPERATION_ACTION_UNSPECIFIED\0\u{1}MACHINE_OPERATION_ACTION_RESTART\0\u{1}MACHINE_OPERATION_ACTION_SHUTDOWN\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MACHINE_OPERATION_ACTION_UNSPECIFIED\0\u{1}MACHINE_OPERATION_ACTION_RESTART\0\u{1}MACHINE_OPERATION_ACTION_SHUTDOWN\0\u{1}MACHINE_OPERATION_ACTION_UPDATE_DAEMON\0")
 }
 
 nonisolated extension Dieter_V1_ExecutionStream: SwiftProtobuf._ProtoNameProviding {

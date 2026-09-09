@@ -43,41 +43,11 @@ struct ConversationCreationPreferences: Equatable {
     }
 
     func resolved(in harnesses: [Dieter_V1_Harness]) -> ConversationCreationSelection? {
-        guard let harness = harnesses.first(where: { $0.id == provider }) ?? harnesses.first else {
-            return nil
-        }
-        guard let selectedModel = harness.models.first(where: { $0.id == model })
-            ?? harness.models.first(where: { $0.id == harness.defaultModel })
-            ?? harness.models.first else {
-            return ConversationCreationSelection(
-                provider: harness.id,
-                model: "",
-                effort: "",
-                workspaceMode: workspaceMode
-            )
-        }
-
-        let allowedEfforts = harness.effort.options.filter {
-            selectedModel.efforts.isEmpty || selectedModel.efforts.contains($0.id)
-        }
-        let resolvedEffort: String
-        if harness.id == provider,
-           selectedModel.id == model,
-           (effort.isEmpty || allowedEfforts.contains(where: { $0.id == effort })) {
-            resolvedEffort = effort
-        } else if !selectedModel.defaultEffort.isEmpty,
-                  allowedEfforts.isEmpty || allowedEfforts.contains(where: { $0.id == selectedModel.defaultEffort }) {
-            resolvedEffort = selectedModel.defaultEffort
-        } else {
-            resolvedEffort = allowedEfforts.first?.id ?? ""
-        }
-
+        guard let selection = HarnessSelection(provider: provider, model: model, effort: effort).resolved(in: harnesses)
+        else { return nil }
         return ConversationCreationSelection(
-            provider: harness.id,
-            model: selectedModel.id,
-            effort: resolvedEffort,
-            workspaceMode: workspaceMode
-        )
+            provider: selection.provider, model: selection.model,
+            effort: selection.effort, workspaceMode: workspaceMode)
     }
 }
 
@@ -86,4 +56,26 @@ struct ConversationCreationSelection: Equatable {
     var model: String
     var effort: String
     var workspaceMode: ConversationWorkspaceMode
+}
+
+enum ConversationHarnessCatalogDirectory {
+    static func endpointID(
+        projectID: String,
+        activeEndpointID: String,
+        projectEndpointIDs: [String: String]
+    ) -> String {
+        projectEndpointIDs[projectID] ?? activeEndpointID
+    }
+
+    static func catalog(
+        endpointID: String,
+        activeEndpointID: String,
+        activeCatalog: Dieter_V1_HarnessCatalog,
+        catalogsByEndpoint: [String: Dieter_V1_HarnessCatalog]
+    ) -> Dieter_V1_HarnessCatalog? {
+        if let catalog = catalogsByEndpoint[endpointID], !catalog.harnesses.isEmpty {
+            return catalog
+        }
+        return endpointID == activeEndpointID && !activeCatalog.harnesses.isEmpty ? activeCatalog : nil
+    }
 }

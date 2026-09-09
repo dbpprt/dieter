@@ -107,7 +107,13 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
 		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(), executions: remoteexec.New(),
 		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
-		machine:       machine.NewCollector(data.Root), machineAction: machine.ExecuteOperation, machineCapabilities: machine.OperationCapabilities,
+		machine:       machine.NewCollector(data.Root),
+		machineAction: func(ctx context.Context, operation machine.Operation) error {
+			return machine.ExecuteOperationAtRoot(ctx, data.Root, operation)
+		},
+		machineCapabilities: func(ctx context.Context) []machine.OperationCapability {
+			return machine.OperationCapabilitiesAtRoot(ctx, data.Root)
+		},
 		machineDelay: 750 * time.Millisecond, machineOperations: map[string]acceptedMachineOperation{},
 	}
 	s.changesets = changeset.New(s.workspaces)

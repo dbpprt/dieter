@@ -120,6 +120,9 @@ data class DieterConnectionState(
     val endpointConnections: List<EndpointConnection>,
     val runtimeStatus: RuntimeStatus? = null,
     val harnesses: List<Harness> = emptyList(),
+    /** Endpoint that supplied [harnesses]. Prevents a catalog from one daemon
+     * being used to create a conversation on another daemon. */
+    val harnessesEndpointId: String? = null,
     val selectedState: State? = null,
     val projects: List<Project> = emptyList(),
     val projectHosts: Map<String, ProjectHost> = emptyMap(),
@@ -728,6 +731,7 @@ class DieterConnectionManager(
                         phase = ConnectionPhase.SYNCING,
                         runtimeStatus = runtime,
                         harnesses = catalog.harnessesList,
+                        harnessesEndpointId = repository.activeEndpoint.id,
                         error = null,
                     )
                 }
@@ -1832,6 +1836,10 @@ class DieterConnectionManager(
         outbox.firstOrNull {
             (it.optimisticId == id || it.serverId == id) && it.state == OutboxState.FAILED
         }?.lastError
+    }
+
+    fun conversationCreationFailure(id: String): String? = synchronized(outbox) {
+        conversationCreationFailure(outbox, id)
     }
 
     fun discardOutboxItem(id: String) {

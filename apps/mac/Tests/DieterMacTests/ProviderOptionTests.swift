@@ -13,17 +13,19 @@ struct ProviderOptionTests {
         harness.options = [fastMode]
 
         #expect(ProviderOptionValues.options(for: harness, model: "gpt-5.6-sol").map(\.id) == ["fast_mode"])
-        #expect(ProviderOptionValues.normalized(
-            for: harness,
-            model: "gpt-5.6-sol",
-            saved: ["fast_mode": "true"]
-        ) == ["fast_mode": "true"])
+        #expect(
+            ProviderOptionValues.normalized(
+                for: harness,
+                model: "gpt-5.6-sol",
+                saved: ["fast_mode": "true"]
+            ) == ["fast_mode": "true"])
         #expect(ProviderOptionValues.options(for: harness, model: "gpt-5.3-codex-spark").isEmpty)
-        #expect(ProviderOptionValues.normalized(
-            for: harness,
-            model: "gpt-5.3-codex-spark",
-            saved: ["fast_mode": "true"]
-        ).isEmpty)
+        #expect(
+            ProviderOptionValues.normalized(
+                for: harness,
+                model: "gpt-5.3-codex-spark",
+                saved: ["fast_mode": "true"]
+            ).isEmpty)
     }
 
     @Test func onlyMutableOptionsRemainEnabledAfterConversationStarts() {

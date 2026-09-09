@@ -37,11 +37,12 @@ extension View {
         importerPresented: Binding<Bool>,
         attachments: Binding<[Dieter_V1_MessagePart]>
     ) -> some View {
-        modifier(AttachmentIntakeModifier(
-            store: store,
-            importerPresented: importerPresented,
-            attachments: attachments
-        ))
+        modifier(
+            AttachmentIntakeModifier(
+                store: store,
+                importerPresented: importerPresented,
+                attachments: attachments
+            ))
     }
 }
 
@@ -58,8 +59,9 @@ private struct AttachmentIntakeModifier: ViewModifier {
                 allowsMultipleSelection: true
             ) { result in
                 Task {
-                    do { attachments = try await store.attachmentParts(try result.get(), appendingTo: attachments) }
-                    catch { store.show(error) }
+                    do {
+                        attachments = try await store.attachmentParts(try result.get(), appendingTo: attachments)
+                    } catch { store.show(error) }
                 }
             }
             // Keep keyboard paste on the AppKit monitor below. Installing a
@@ -68,8 +70,9 @@ private struct AttachmentIntakeModifier: ViewModifier {
             .attachmentPasteCatcher { pasteboard in
                 guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
                 Task {
-                    do { attachments = try await store.attachmentParts(input, appendingTo: attachments) }
-                    catch { store.show(error) }
+                    do { attachments = try await store.attachmentParts(input, appendingTo: attachments) } catch {
+                        store.show(error)
+                    }
                 }
                 return true
             }
@@ -108,9 +111,10 @@ private struct AttachmentPasteMonitor: NSViewRepresentable {
             guard box.token == nil else { return }
             box.token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self, let window = self.window, event.window === window,
-                      event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
-                      event.charactersIgnoringModifiers?.lowercased() == "v",
-                      self.paste?(NSPasteboard.general) == true else { return event }
+                    event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+                    event.charactersIgnoringModifiers?.lowercased() == "v",
+                    self.paste?(NSPasteboard.general) == true
+                else { return event }
                 return nil
             }
         }
@@ -180,13 +184,15 @@ struct AttachmentPreviewTile: View {
         .accessibilityAction(named: "Preview") {
             if thumbnail != nil { previewPresented = true }
         }
-#if DIETER_UI_SMOKE
-        .onReceive(NotificationCenter.default.publisher(for: ConversationUISmokeRunner.openAttachmentPreviewNotification)) { note in
-            if note.object as? String == part.filename, thumbnail != nil {
-                previewPresented = true
+        #if DIETER_UI_SMOKE
+            .onReceive(
+                NotificationCenter.default.publisher(for: ConversationUISmokeRunner.openAttachmentPreviewNotification)
+            ) { note in
+                if note.object as? String == part.filename, thumbnail != nil {
+                    previewPresented = true
+                }
             }
-        }
-#endif
+        #endif
         .sheet(isPresented: $previewPresented) {
             if let thumbnail {
                 AttachmentImagePreview(part: part, image: thumbnail)
@@ -267,7 +273,9 @@ struct AttachmentPreviewTile: View {
     }
 
     private var thumbnail: NSImage? {
-        guard part.mediaType.hasPrefix("image/") || part.type.caseInsensitiveCompare("image") == .orderedSame else { return nil }
+        guard part.mediaType.hasPrefix("image/") || part.type.caseInsensitiveCompare("image") == .orderedSame else {
+            return nil
+        }
         return AttachmentImagePayload.image(from: part)
     }
 }
@@ -317,11 +325,15 @@ struct AttachmentImagePreview: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(part.filename.isEmpty ? "Image attachment" : part.filename)
                         .font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                    Text("\(Int(image.size.width)) × \(Int(image.size.height))  ·  \(AttachmentSizeText.format(part.data.count))")
-                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                    Text(
+                        "\(Int(image.size.width)) × \(Int(image.size.height))  ·  \(AttachmentSizeText.format(part.data.count))"
+                    )
+                    .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
-                Button { dismiss() } label: {
+                Button {
+                    dismiss()
+                } label: {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
                 }
                 .buttonStyle(DieterIconButtonStyle()).help("Close preview")

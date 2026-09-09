@@ -66,6 +66,31 @@ class TurnFailureBannerTest {
         compose.runOnIdle { assertEquals(1, retries) }
     }
 
+    @Test
+    fun failedCreationOffersRetryAndDiscardWithoutClaimingATurnFailed() {
+        var retries = 0
+        var discards = 0
+        compose.setContent {
+            DieterTheme(darkTheme = true) {
+                CreationFailureBanner(
+                    failure = "model is not supported by this daemon",
+                    onRetry = { retries += 1 },
+                    onDiscard = { discards += 1 },
+                )
+            }
+        }
+
+        compose.onNodeWithTag("creation-failure").assertIsDisplayed()
+        compose.onNodeWithText("Conversation was not created").assertIsDisplayed()
+        compose.onNodeWithText("No work started on the daemon", substring = true).assertIsDisplayed()
+        compose.onNodeWithTag("creation-failure-retry").performClick()
+        compose.onNodeWithTag("creation-failure-discard").performClick()
+        compose.runOnIdle {
+            assertEquals(1, retries)
+            assertEquals(1, discards)
+        }
+    }
+
     private fun capture(name: String) {
         compose.waitForIdle()
         val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation

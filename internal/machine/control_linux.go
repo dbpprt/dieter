@@ -9,18 +9,20 @@ import (
 	"strings"
 )
 
-func operationCapabilities(ctx context.Context) []OperationCapability {
+func operationCapabilities(ctx context.Context, _ string) []OperationCapability {
 	path, err := exec.LookPath("busctl")
 	if err != nil {
 		reason := "systemd-logind busctl client is unavailable"
 		return []OperationCapability{
 			{Operation: OperationRestart, UnavailableReason: reason},
 			{Operation: OperationShutdown, UnavailableReason: reason},
+			{Operation: OperationUpdate, UnavailableReason: "automatic daemon updates currently require a Homebrew-managed macOS installation"},
 		}
 	}
 	return []OperationCapability{
 		logindCapability(ctx, path, OperationRestart, "CanReboot"),
 		logindCapability(ctx, path, OperationShutdown, "CanPowerOff"),
+		{Operation: OperationUpdate, UnavailableReason: "automatic daemon updates currently require a Homebrew-managed macOS installation"},
 	}
 }
 
@@ -42,7 +44,10 @@ func logindCapability(ctx context.Context, path string, operation Operation, met
 	}
 }
 
-func executeOperation(ctx context.Context, operation Operation) error {
+func executeOperation(ctx context.Context, _ string, operation Operation) error {
+	if operation == OperationUpdate {
+		return ErrOperationUnsupported
+	}
 	path, err := exec.LookPath("busctl")
 	if err != nil {
 		return ErrOperationUnsupported

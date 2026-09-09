@@ -4,9 +4,14 @@ import Testing
 @testable import DieterMac
 
 @Test func captureBrowserURLKeepsOnlyWebPageURLs() {
-    #expect(CaptureBrowserContext.validatedURL(" https://example.com/path?q=task#issue ") == "https://example.com/path?q=task#issue")
+    #expect(
+        CaptureBrowserContext.validatedURL(" https://example.com/path?q=task#issue ")
+            == "https://example.com/path?q=task#issue")
     #expect(CaptureBrowserContext.validatedURL("http://localhost:3000/issue") == "http://localhost:3000/issue")
-    for value in ["", "Search or enter address", "file:///private/data", "javascript:alert(1)", "chrome://settings", "https://", "not a URL"] {
+    for value in [
+        "", "Search or enter address", "file:///private/data", "javascript:alert(1)", "chrome://settings", "https://",
+        "not a URL",
+    ] {
         #expect(CaptureBrowserContext.validatedURL(value) == nil)
     }
 }
@@ -20,7 +25,9 @@ import Testing
 @Test @MainActor func captureDoesNotReuseClipboardImageOnCancel() {
     let board = NSPasteboard.withUniqueName()
     defer { board.releaseGlobally() }
-    let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 2, pixelsHigh: 2, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+        isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     board.setData(bitmap.representation(using: .png, properties: [:])!, forType: .png)
     let count = board.changeCount
     #expect(TaskScreenCapture.capturedPNG(from: board, after: count) == nil)
@@ -38,7 +45,9 @@ import Testing
     var project = Dieter_V1_Project(); project.id = "one"; project.hostnames = ["app.example.com", "localhost"]
     let browser = CaptureBrowserContext(url: "https://APP.example.com.:8443/path", browser: true)
     #expect(browser.matchingProjects([project]).map(\.id) == ["one"])
-    #expect(CaptureBrowserContext(url: "https://app.example.com.evil.test", browser: true).matchingProjects([project]).isEmpty)
+    #expect(
+        CaptureBrowserContext(url: "https://app.example.com.evil.test", browser: true).matchingProjects([project])
+            .isEmpty)
     #expect(CaptureBrowserContext(url: "https://example.com", browser: true).matchingProjects([project]).isEmpty)
     #expect(CaptureBrowserContext(url: "file:///app.example.com", browser: true).matchingProjects([project]).isEmpty)
     var other = project; other.id = "two"
@@ -49,7 +58,9 @@ import Testing
 
 @Test func captureMatchesBoardHostnamesAcrossPathsAndPorts() {
     var board = Dieter_V1_Board(); board.id = "board"; board.hostnames = ["app.example.com"]
-    #expect(CaptureBrowserContext(url: "https://app.example.com:8443/path", browser: true).matchingBoards([board]).map(\.id) == ["board"])
+    #expect(
+        CaptureBrowserContext(url: "https://app.example.com:8443/path", browser: true).matchingBoards([board]).map(\.id)
+            == ["board"])
     #expect(CaptureBrowserContext(url: "https://other.example.com", browser: true).matchingBoards([board]).isEmpty)
 }
 

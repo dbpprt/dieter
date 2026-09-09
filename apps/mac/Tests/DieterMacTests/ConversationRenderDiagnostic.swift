@@ -37,7 +37,7 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     let messages = [user, assistant]
 
     for showReasoning in [true, false] {
-        let store = DieterStore()
+        let store = DieterStore(restoreSync: false)
         store.showReasoning = showReasoning
         var conversation = Dieter_V1_ConversationSnapshot()
         conversation.detail.card.id = "c_render"
@@ -48,7 +48,7 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
 
         let timeline = ConversationTimeline()
             .frame(width: 700, height: 600)
-            .environment(store)
+            .environment(store).environment(store.conversationContext)
 
         let renderer = ImageRenderer(content: timeline)
         renderer.proposedSize = .init(width: 700, height: 600)
@@ -72,7 +72,7 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
 }
 
 @Test @MainActor func conversationViewSettlesAfterUnrelatedMachineDirectoryInvalidation() {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     var activeProject = Dieter_V1_Project()
     activeProject.id = "project-active"
     activeProject.name = "Active"
@@ -105,7 +105,8 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     store.conversation = conversation
     store.selectedDetail = conversation.detail
 
-    let hostingView = NSHostingView(rootView: ConversationView().environment(store))
+    let hostingView = NSHostingView(
+        rootView: ConversationView().environment(store).environment(store.conversationContext))
     hostingView.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
     hostingView.layoutSubtreeIfNeeded()
 
@@ -160,7 +161,9 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     store.conversation = conversation
     store.selectedDetail = conversation.detail
 
-    let hostingView = NSHostingView(rootView: ConversationView().environment(store).preferredColorScheme(.dark))
+    let hostingView = NSHostingView(
+        rootView: ConversationView().environment(store).environment(store.conversationContext).preferredColorScheme(
+            .dark))
     hostingView.frame = NSRect(x: 0, y: 0, width: 760, height: 640)
     hostingView.layoutSubtreeIfNeeded()
     let bitmap = try #require(hostingView.bitmapImageRepForCachingDisplay(in: hostingView.bounds))

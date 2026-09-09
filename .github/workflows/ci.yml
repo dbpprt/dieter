@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
 
 permissions:
   contents: read
@@ -44,7 +47,7 @@ jobs:
   macos:
     name: macOS client
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,6 +66,37 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-dieter-mac-check-v3-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
       - name: Check macOS client
         run: just mac check
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/harness/runtime/package-lock.json
+      - name: Install isolated smoke fixture runtime
+        run: just harness install
+      - name: Native core gate
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+        run: just mac smoke core
+      - name: Native navigation gate
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+        run: just mac smoke board
+      - name: Complete native qualification
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: just mac smoke-all
+      - name: Retain native reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-native-evidence
+          path: |
+            apps/mac/.build/smoke/**/*.json
+            apps/mac/.build/smoke/**/*.png
+            apps/mac/.build/smoke/**/*.log
+          if-no-files-found: ignore
+          retention-days: 14
 
   android:
     name: Android client

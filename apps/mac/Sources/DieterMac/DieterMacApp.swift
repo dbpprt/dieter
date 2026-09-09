@@ -6,6 +6,8 @@ struct DieterMacApp: App {
     @State private var store: DieterStore
     private let islandController: DieterIslandController
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openWindow) private var openWindow
+    @State private var didStartSmoke = false
     @AppStorage(DieterAppearance.storageKey, store: DieterAppearance.applicationDefaults())
     private var appearanceValue = DieterAppearance.defaultValue.rawValue
     @AppStorage(DieterPalette.storageKey, store: DieterAppearance.applicationDefaults())
@@ -17,13 +19,13 @@ struct DieterMacApp: App {
         let store = DieterStore()
         _store = State(initialValue: store)
         islandController = DieterIslandController(store: store)
-#if DIETER_UI_SMOKE
-        NativeUISmokeRunner.prepareWindowIfNeeded()
-#endif
+        #if DIETER_UI_SMOKE
+            NativeUISmokeRunner.prepareWindowIfNeeded()
+        #endif
     }
 
     var body: some Scene {
-        WindowGroup("Dieter") {
+        Window("Dieter", id: "workspace") {
             DieterRootView()
                 .environment(store)
                 .dieterThemeRoot(
@@ -31,6 +33,7 @@ struct DieterMacApp: App {
                     appearance: store.themeSelection.appearance
                 )
                 .onAppear {
+                    store.reopenWorkspaceWindow = { openWindow(id: "workspace") }
                     store.themeSelection = DieterThemeSelection(
                         appearance: DieterAppearance.resolve(appearanceValue),
                         palette: DieterPalette.resolve(paletteValue)
@@ -54,65 +57,76 @@ struct DieterMacApp: App {
                 }
                 .onOpenURL { store.completeAuthentication(url: $0) }
                 .task {
-#if DIETER_UI_SMOKE
-                    let arguments = ProcessInfo.processInfo.arguments
-                    // Normal app startup is owned by the always-present menu
-                    // bar label below. Keep this window task only for smoke
-                    // modes, which install their own isolated test state.
-                    guard arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) else { return }
-                    if arguments.contains("--island-ui-smoke") {
-                        await IslandUISmokeRunner.run(store: store, controller: islandController)
-                        return
-                    }
-                    if arguments.contains("--sidebar-ui-smoke") {
-                        await SidebarNavigationUISmokeRunner.run(store: store)
-                        return
-                    }
-                    let conversationSmoke = arguments.contains("--conversation-ui-smoke")
-                    if conversationSmoke {
-                        ConversationUISmokeRunner.progress("task fired, connecting", in: ConversationUISmokeRunner.outputDirectory())
-                    }
-                    await store.connect()
-                    if arguments.contains("--machine-ui-smoke") {
-                        await MachineUISmokeRunner.run(store: store)
-                        return
-                    }
-                    if arguments.contains("--terminal-ui-smoke") {
-                        await TerminalUISmokeRunner.run(store: store)
-                        return
-                    }
-                    if arguments.contains("--workspace-ui-smoke") {
-                        await WorkspaceUISmokeRunner.run(store: store)
-                        return
-                    }
-                    if arguments.contains("--ui-smoke") {
-                        await NativeUISmokeRunner.run(store: store)
-                    }
-                    if conversationSmoke {
-                        await ConversationUISmokeRunner.run(store: store)
-                    }
-#endif
+                    #if DIETER_UI_SMOKE
+                        let arguments = ProcessInfo.processInfo.arguments
+                        // Normal app startup is owned by the always-present menu
+                        // bar label below. Keep this window task only for smoke
+                        // modes, which install their own isolated test state.
+                        guard arguments.contains(where: { $0.hasSuffix("-ui-smoke") }), !didStartSmoke else { return }
+                        didStartSmoke = true
+                        if arguments.contains("--island-ui-smoke") {
+                            await IslandUISmokeRunner.run(store: store, controller: islandController)
+                            return
+                        }
+                        if arguments.contains("--sidebar-ui-smoke") {
+                            await SidebarNavigationUISmokeRunner.run(store: store)
+                            return
+                        }
+                        let conversationSmoke = arguments.contains("--conversation-ui-smoke")
+                        if conversationSmoke {
+                            ConversationUISmokeRunner.progress(
+                                "task fired, connecting", in: ConversationUISmokeRunner.outputDirectory())
+                        }
+                        await store.connect()
+                        if arguments.contains("--machine-ui-smoke") {
+                            await MachineUISmokeRunner.run(store: store)
+                            return
+                        }
+                        if arguments.contains("--terminal-ui-smoke") {
+                            await TerminalUISmokeRunner.run(store: store)
+                            return
+                        }
+                        if arguments.contains("--workspace-ui-smoke") {
+                            await WorkspaceUISmokeRunner.run(store: store)
+                            return
+                        }
+                        if arguments.contains("--ui-smoke") {
+                            await NativeUISmokeRunner.run(store: store)
+                        }
+                        if conversationSmoke {
+                            await ConversationUISmokeRunner.run(store: store)
+                        }
+                    #endif
                 }
                 .frame(minWidth: 1_080, minHeight: 680)
         }
+        .defaultLaunchBehavior(.presented)
         .defaultSize(width: 1_380, height: 870)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {
+                    openWindow(id: "workspace")
                     NSApp.activate(ignoringOtherApps: true)
                     store.openSettings()
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
             CommandMenu("Dieter") {
-                Button("Command Palette…") { store.commandPalettePresented = true }
-                    .keyboardShortcut("k", modifiers: .command)
-                Button("New Card…") { store.createConversationPresented = true }
-                    .keyboardShortcut("n", modifiers: .command)
-                Button("New Standalone Chat") { store.beginStandaloneChat() }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                Button("Command Palette…") {
+                    openWindow(id: "workspace"); store.commandPalettePresented = true
+                }
+                .keyboardShortcut("k", modifiers: .command)
+                Button("New Card…") {
+                    openWindow(id: "workspace"); store.createConversationPresented = true
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                Button("New Standalone Chat") {
+                    openWindow(id: "workspace"); store.beginStandaloneChat()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
                 Button("New Terminal…") {
+                    openWindow(id: "workspace")
                     Task {
                         await store.openTerminals()
                         store.createTerminalPresented = true
@@ -136,6 +150,7 @@ struct DieterMacApp: App {
                     // MenuBarExtra survives when macOS restores Dieter without
                     // a workspace window, so it owns the island and sync
                     // lifetime rather than waiting for DieterRootView to open.
+                    store.reopenWorkspaceWindow = { openWindow(id: "workspace") }
                     islandController.start(enabled: islandEnabled)
                 }
                 .onChange(of: islandEnabled) { _, enabled in
@@ -149,10 +164,10 @@ struct DieterMacApp: App {
                     }
                 }
                 .task {
-#if DIETER_UI_SMOKE
-                    let arguments = ProcessInfo.processInfo.arguments
-                    guard !arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) else { return }
-#endif
+                    #if DIETER_UI_SMOKE
+                        let arguments = ProcessInfo.processInfo.arguments
+                        guard !arguments.contains(where: { $0.hasSuffix("-ui-smoke") }) else { return }
+                    #endif
                     await store.connect()
                 }
         }
@@ -163,11 +178,13 @@ struct DieterMacApp: App {
 @MainActor
 enum DieterAppIcon {
     static func apply(_ palette: DieterPalette) {
-        guard let url = Bundle.main.url(
-            forResource: palette.rawValue,
-            withExtension: "png",
-            subdirectory: "PaletteIcons"
-        ), let image = NSImage(contentsOf: url) else { return }
+        guard
+            let url = Bundle.main.url(
+                forResource: palette.rawValue,
+                withExtension: "png",
+                subdirectory: "PaletteIcons"
+            ), let image = NSImage(contentsOf: url)
+        else { return }
         NSApp.applicationIconImage = image
     }
 }
@@ -182,15 +199,22 @@ enum MenuBarIcon {
             NSColor.black.setStroke()
             NSColor.black.setFill()
             let center = CGPoint(x: 12 * scale, y: 12 * scale)
-            let ring = NSBezierPath(ovalIn: CGRect(x: center.x - 9.3 * scale, y: center.y - 9.3 * scale, width: 18.6 * scale, height: 18.6 * scale))
+            let ring = NSBezierPath(
+                ovalIn: CGRect(
+                    x: center.x - 9.3 * scale, y: center.y - 9.3 * scale, width: 18.6 * scale, height: 18.6 * scale))
             ring.lineWidth = 1.8 * scale
             ring.stroke()
-            NSBezierPath(ovalIn: CGRect(x: center.x - 1.5 * scale, y: center.y - 1.5 * scale, width: 3 * scale, height: 3 * scale)).fill()
+            NSBezierPath(
+                ovalIn: CGRect(
+                    x: center.x - 1.5 * scale, y: center.y - 1.5 * scale, width: 3 * scale, height: 3 * scale)
+            ).fill()
             for rotation in [0.0, 120.0, 240.0] {
                 let transform = NSAffineTransform()
                 transform.translateX(by: center.x, yBy: center.y)
                 transform.rotate(byDegrees: rotation)
-                let card = NSBezierPath(roundedRect: CGRect(x: -2.7 * scale, y: 3.2 * scale, width: 5.4 * scale, height: 3.6 * scale), xRadius: 0.9 * scale, yRadius: 0.9 * scale)
+                let card = NSBezierPath(
+                    roundedRect: CGRect(x: -2.7 * scale, y: 3.2 * scale, width: 5.4 * scale, height: 3.6 * scale),
+                    xRadius: 0.9 * scale, yRadius: 0.9 * scale)
                 card.transform(using: transform as AffineTransform)
                 card.fill()
             }
@@ -203,6 +227,7 @@ enum MenuBarIcon {
 
 struct MenuBarContent: View {
     @Environment(DieterStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -225,6 +250,7 @@ struct MenuBarContent: View {
                     if store.phase.isConnected { store.disconnect() } else { Task { await store.connect() } }
                 }
                 MenuBarActionButton(title: "Open Dieter", tint: .white, background: DieterTheme.primary) {
+                    openWindow(id: "workspace")
                     NSApp.activate(ignoringOtherApps: true)
                 }
             }
@@ -330,7 +356,9 @@ struct MenuBarContent: View {
                 MenuBarChip(text: "\(reviewCount) review\(reviewCount == 1 ? "" : "s")", color: DieterTheme.amber)
             }
             if subagentCount > 0 {
-                MenuBarChip(text: "\(subagentCount) subagent\(subagentCount == 1 ? "" : "s")", color: DieterTheme.shellDeep, showDot: true)
+                MenuBarChip(
+                    text: "\(subagentCount) subagent\(subagentCount == 1 ? "" : "s")", color: DieterTheme.shellDeep,
+                    showDot: true)
             }
             Spacer(minLength: 0)
         }
@@ -339,6 +367,7 @@ struct MenuBarContent: View {
     private var footer: some View {
         HStack {
             Button {
+                openWindow(id: "workspace")
                 NSApp.activate(ignoringOtherApps: true)
                 store.openSettings()
             } label: {
@@ -369,23 +398,27 @@ struct MenuBarContent: View {
     }
 
     private var events: [MenuBarEvent] {
-        let boardNames = Dictionary(store.state.boards.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let boardNames = Dictionary(
+            store.state.boards.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
         var rows: [MenuBarEvent] = []
         for card in store.state.cards where card.lane.caseInsensitiveCompare("review") == .orderedSame {
-            rows.append(MenuBarEvent(
-                id: "review-\(card.id)",
-                symbol: "exclamationmark.circle",
-                tint: DieterTheme.amber,
-                title: "Ready for review",
-                subtitle: [card.title, boardNames[card.boardID] ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
-                timestamp: MenuBarEvent.parse(card.runtimeUpdatedAt) ?? MenuBarEvent.parse(card.updatedAt),
-                cardID: card.id,
-            ))
+            rows.append(
+                MenuBarEvent(
+                    id: "review-\(card.id)",
+                    symbol: "exclamationmark.circle",
+                    tint: DieterTheme.amber,
+                    title: "Ready for review",
+                    subtitle: [card.title, boardNames[card.boardID] ?? ""].filter { !$0.isEmpty }.joined(
+                        separator: " · "),
+                    timestamp: MenuBarEvent.parse(card.runtimeUpdatedAt) ?? MenuBarEvent.parse(card.updatedAt),
+                    cardID: card.id,
+                ))
         }
         for card in store.state.cards + store.chats where card.lane.caseInsensitiveCompare("review") != .orderedSame {
             let (symbol, tint, title): (String, Color, String)
             switch card.runtime.lowercased() {
-            case "waiting_for_user", "needs_input": (symbol, tint, title) = ("questionmark.circle", DieterTheme.amber, "Needs you")
+            case "waiting_for_user", "needs_input":
+                (symbol, tint, title) = ("questionmark.circle", DieterTheme.amber, "Needs you")
             case "completed", "done": (symbol, tint, title) = ("checkmark.circle", DieterTheme.eyes, "Finished")
             case "failed", "error": (symbol, tint, title) = ("xmark.circle", DieterTheme.coral, "Failed")
             default: continue
@@ -393,15 +426,17 @@ struct MenuBarContent: View {
             let timestamp = MenuBarEvent.parse(card.runtimeUpdatedAt) ?? MenuBarEvent.parse(card.updatedAt)
             // Keep terminal outcomes fresh; stale done cards would crowd out actionable rows.
             if title != "Needs you", let timestamp, Date().timeIntervalSince(timestamp) > 6 * 3_600 { continue }
-            rows.append(MenuBarEvent(
-                id: "runtime-\(card.id)",
-                symbol: symbol,
-                tint: tint,
-                title: title,
-                subtitle: [card.title, boardNames[card.boardID] ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
-                timestamp: timestamp,
-                cardID: card.id,
-            ))
+            rows.append(
+                MenuBarEvent(
+                    id: "runtime-\(card.id)",
+                    symbol: symbol,
+                    tint: tint,
+                    title: title,
+                    subtitle: [card.title, boardNames[card.boardID] ?? ""].filter { !$0.isEmpty }.joined(
+                        separator: " · "),
+                    timestamp: timestamp,
+                    cardID: card.id,
+                ))
         }
         // Actionable rows (review, needs-you) outrank terminal outcomes regardless of age.
         let actionable = Set(["Ready for review", "Needs you"])
@@ -442,10 +477,12 @@ private struct MenuBarEvent: Identifiable {
 
 private struct EventRow: View {
     @Environment(DieterStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     let event: MenuBarEvent
 
     var body: some View {
         Button {
+            openWindow(id: "workspace")
             NSApp.activate(ignoringOtherApps: true)
             Task { await store.openConversation(cardID: event.cardID) }
         } label: {

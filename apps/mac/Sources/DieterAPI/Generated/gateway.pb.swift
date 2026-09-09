@@ -607,6 +607,11 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
     set {_uniqueStorage()._apiVersion = newValue}
   }
 
+  public var capabilities: [String] {
+    get {_storage._capabilities}
+    set {_uniqueStorage()._capabilities = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1521,7 +1526,7 @@ nonisolated extension Dieter_Gateway_V1_RTCConfiguration: SwiftProtobuf.Message,
 
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonLinkFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{3}api_version\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{1}version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{3}api_version\0\u{1}capabilities\0")
 
   fileprivate class _StorageClass {
     var _kind: Dieter_Gateway_V1_DaemonLinkFrameKind = .unspecified
@@ -1542,6 +1547,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
     var _directCandidates: [Dieter_Gateway_V1_DirectCandidate] = []
     var _remoteDesktop: Dieter_Gateway_V1_RemoteDesktopPresence? = nil
     var _apiVersion: String = String()
+    var _capabilities: [String] = []
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -1570,6 +1576,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       _directCandidates = source._directCandidates
       _remoteDesktop = source._remoteDesktop
       _apiVersion = source._apiVersion
+      _capabilities = source._capabilities
     }
   }
 
@@ -1606,6 +1613,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         case 16: try { try decoder.decodeRepeatedMessageField(value: &_storage._directCandidates) }()
         case 17: try { try decoder.decodeSingularMessageField(value: &_storage._remoteDesktop) }()
         case 18: try { try decoder.decodeSingularStringField(value: &_storage._apiVersion) }()
+        case 19: try { try decoder.decodeRepeatedStringField(value: &_storage._capabilities) }()
         default: break
         }
       }
@@ -1672,6 +1680,9 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       if !_storage._apiVersion.isEmpty {
         try visitor.visitSingularStringField(value: _storage._apiVersion, fieldNumber: 18)
       }
+      if !_storage._capabilities.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._capabilities, fieldNumber: 19)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -1699,6 +1710,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         if _storage._directCandidates != rhs_storage._directCandidates {return false}
         if _storage._remoteDesktop != rhs_storage._remoteDesktop {return false}
         if _storage._apiVersion != rhs_storage._apiVersion {return false}
+        if _storage._capabilities != rhs_storage._capabilities {return false}
         return true
       }
       if !storagesAreEqual {return false}

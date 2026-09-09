@@ -3,6 +3,8 @@ package daemon
 import (
 	"testing"
 	"time"
+
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 )
 
 func TestGatewayHeartbeatIntervalBacksOffAndResetsOnActivity(t *testing.T) {
@@ -55,5 +57,65 @@ func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
 		if relayMethodPriority(method) {
 			t.Fatalf("%s should use the bounded streaming relay queue", method)
 		}
+	}
+}
+
+func TestGatewayHeartbeatAcknowledgementNegotiationAndCorrelation(t *testing.T) {
+	legacy := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK}
+	if supportsGatewayCapability(legacy, gatewayHeartbeatAckCapability) {
+		t.Fatal("legacy gateway unexpectedly enabled acknowledged heartbeats")
+	}
+	negotiated := &gatewayv1.DaemonLinkFrame{
+		Kind:         gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK,
+		Capabilities: []string{"another_capability", gatewayHeartbeatAckCapability},
+	}
+	if !supportsGatewayCapability(negotiated, gatewayHeartbeatAckCapability) {
+		t.Fatal("gateway heartbeat acknowledgement capability was not detected")
+	}
+
+	valid := &gatewayv1.DaemonLinkFrame{
+		Kind:     gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG,
+		DaemonId: "daemon", RequestId: "hb_4",
+	}
+	if !matchesGatewayHeartbeatAck(valid, "daemon", "hb_4") {
+		t.Fatal("matching heartbeat acknowledgement was rejected")
+	}
+	if gatewayFrameMarksRelayActivity(valid) {
+		t.Fatal("heartbeat acknowledgement was counted as relay activity")
+	}
+	if !gatewayFrameMarksRelayActivity(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC}) {
+		t.Fatal("relayed RPC was not counted as activity")
+	}
+	for name, frame := range map[string]*gatewayv1.DaemonLinkFrame{
+		"empty outstanding request": valid,
+		"wrong daemon":              {Kind: valid.Kind, DaemonId: "other", RequestId: "hb_4"},
+		"stale request":             {Kind: valid.Kind, DaemonId: "daemon", RequestId: "hb_3"},
+		"wrong frame kind":          {Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PING, DaemonId: "daemon", RequestId: "hb_4"},
+	} {
+		requestID := "hb_4"
+		if name == "empty outstanding request" {
+			requestID = ""
+		}
+		if matchesGatewayHeartbeatAck(frame, "daemon", requestID) {
+			t.Fatalf("%s unexpectedly matched", name)
+		}
+	}
+}
+
+func TestGatewayTimingUsesProductionDefaultsAndBoundedOverrides(t *testing.T) {
+	defaults := (&GatewayClient{}).timing()
+	if defaults.HeartbeatActiveInterval != gatewayHeartbeatActiveInterval ||
+		defaults.HeartbeatIdleMaxInterval != gatewayHeartbeatIdleMaxInterval ||
+		defaults.HeartbeatAckTimeout != gatewayHeartbeatAckTimeout || defaults.HandshakeTimeout != gatewayHandshakeTimeout {
+		t.Fatalf("gateway timing defaults=%#v", defaults)
+	}
+	overrides := (&GatewayClient{Timing: GatewayTiming{
+		HeartbeatActiveInterval: 10 * time.Millisecond, HeartbeatIdleMaxInterval: 20 * time.Millisecond,
+		HeartbeatAckTimeout: 50 * time.Millisecond, HandshakeTimeout: 40 * time.Millisecond,
+		ReconnectInitialBackoff: time.Millisecond, ReconnectMaximumBackoff: 2 * time.Millisecond,
+		ReconnectStableAfter: 3 * time.Millisecond,
+	}}).timing()
+	if overrides.HeartbeatAckTimeout != 50*time.Millisecond || overrides.ReconnectMaximumBackoff != 2*time.Millisecond {
+		t.Fatalf("gateway timing overrides=%#v", overrides)
 	}
 }

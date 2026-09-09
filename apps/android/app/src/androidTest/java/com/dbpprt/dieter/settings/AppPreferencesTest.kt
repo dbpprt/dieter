@@ -47,6 +47,32 @@ class AppPreferencesTest {
     }
 
     @Test
+    fun chatProjectDisclosurePersistsAcrossInstances() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = AppPreferences(context)
+        val projectId = "chat-project-disclosure-test-${System.nanoTime()}"
+
+        try {
+            preferences.setChatProjectCollapsed(projectId, true)
+            preferences.setChatProjectExpanded(projectId, true)
+
+            val restored = AppPreferences(context)
+            assertTrue(projectId in restored.collapsedChatProjectIds.value)
+            assertTrue(projectId in restored.expandedChatProjectIds.value)
+
+            preferences.setChatProjectCollapsed(projectId, false)
+            preferences.setChatProjectExpanded(projectId, false)
+
+            val cleared = AppPreferences(context)
+            assertFalse(projectId in cleared.collapsedChatProjectIds.value)
+            assertFalse(projectId in cleared.expandedChatProjectIds.value)
+        } finally {
+            preferences.setChatProjectCollapsed(projectId, false)
+            preferences.setChatProjectExpanded(projectId, false)
+        }
+    }
+
+    @Test
     fun pinnedChatOrderPersistsInSequence() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val preferences = AppPreferences(context)

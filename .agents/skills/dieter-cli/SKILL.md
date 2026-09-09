@@ -21,6 +21,9 @@ dieter project list --format jsonl
 
 `dieter status` returns daemon-wide active project, board, card, and chat
 counts; it is the cheapest bounded directory overview for one machine.
+Use `dieter daemon status` when diagnosing this machine's process and gateway
+tunnel. Its `gatewayLastAcknowledgedAt` value is bidirectional liveness proof;
+a reconnect affects relay transports only and does not stop a running agent.
 
 For another enrolled machine, authenticate once and pass its exact ID or unique
 name as a global option before the command:
@@ -44,11 +47,20 @@ Use `dieter machine gateway` for the running gateway build identity and
 optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a
 driver cannot provide them; zero remains a real measurement.
 
-Machine restart and shutdown are destructive, require the exact confirmation
-phrases shown by `--help`, and are available only when the target daemon reports
-that the host OS has authorized the action. Linux power control is
-non-interactive systemd-logind/PolicyKit; never attempt to provide sudo or an
-administrator password through Dieter.
+Machine restart, shutdown, and daemon update require the exact confirmation
+phrases shown by `--help` and are available only when the target daemon reports
+the matching capability. Linux power control is non-interactive
+systemd-logind/PolicyKit; never attempt to provide sudo or an administrator
+password through Dieter. Automatic daemon update currently supports only a
+Homebrew-managed macOS service:
+
+```sh
+dieter --machine <machine-id> machine update --confirm UPDATE
+```
+
+The update is detached, non-interactive, and logged on the target under
+`DIETER_HOME/logs/update.log`; a transport disconnect does not imply failure
+because the daemon service intentionally restarts and reconnects.
 
 The initial task should supply an exact card ID. Never guess one. Resolve names
 only for interactive discovery, then retain returned IDs for mutation.

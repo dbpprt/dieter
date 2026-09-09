@@ -13,20 +13,25 @@ final class FileEditorSession {
     private(set) var lineCount = 1
     private(set) var revision = 0
     @ObservationIgnored private weak var textView: NSTextView?
+    @ObservationIgnored private var detachedText = ""
 
     func attach(_ textView: NSTextView, documentKey: String, initialText: String) {
+        let current = currentText()
+        let sameDocument = self.documentKey == documentKey
         self.textView = textView
-        guard self.documentKey != documentKey else { return }
+        textView.string = sameDocument ? current : initialText
+        guard !sameDocument else { return }
         self.documentKey = documentKey
-        textView.string = initialText
+        detachedText = initialText
         isDirty = false
         lineCount = Self.countLines(in: initialText)
         revision &+= 1
     }
 
     func prepare(documentKey: String, text: String) {
-        guard self.documentKey != documentKey else { return }
+        guard self.documentKey != documentKey || (!isDirty && currentText() != text) else { return }
         self.documentKey = documentKey
+        detachedText = text
         if textView?.string != text { textView?.string = text }
         isDirty = false
         lineCount = Self.countLines(in: text)
@@ -40,15 +45,22 @@ final class FileEditorSession {
     }
 
     func currentText() -> String {
-        textView?.string ?? ""
+        textView?.string ?? detachedText
     }
 
-    func markSaved(documentKey: String, text: String) {
-        self.documentKey = documentKey
-        if textView?.string != text { textView?.string = text }
+    func detach(_ view: NSTextView) {
+        guard textView === view else { return }
+        detachedText = view.string
+        textView = nil
+    }
+
+    func markSaved(documentKey: String, submittedText: String, editRevision: Int) {
+        guard self.documentKey == documentKey else { return }
+        // Acknowledgement advances the server revision in FilesModel. It never
+        // replaces the live buffer or marks a successor edit as clean.
+        guard revision == editRevision, currentText() == submittedText else { return }
+        detachedText = submittedText
         isDirty = false
-        lineCount = Self.countLines(in: text)
-        revision &+= 1
     }
 
     nonisolated static func countLines(in text: String) -> Int {

@@ -527,6 +527,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 			return []machine.OperationCapability{
 				{Operation: machine.OperationRestart, Supported: true, Authorized: true},
 				{Operation: machine.OperationShutdown, Supported: true, Authorized: true},
+				{Operation: machine.OperationUpdate, Supported: true, Authorized: true},
 			}
 		},
 	})
@@ -603,6 +604,19 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 		t.Fatal("direct restart did not reach the fake executor")
 	}
 	firstOutput.Reset()
+	if err := first.Run([]string{"machine", "update", "--confirm", "UPDATE"}); err != nil {
+		t.Fatalf("direct update output=%q err=%v", firstOutput.String(), err)
+	}
+	assertMachineOperationAccepted(t, firstOutput.Bytes())
+	select {
+	case operation := <-powerActions:
+		if operation != machine.OperationUpdate {
+			t.Fatalf("direct update operation=%q", operation)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("direct update did not reach the fake executor")
+	}
+	firstOutput.Reset()
 	if err := first.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "direct-exec"}); err != nil || firstOutput.String() != "direct-exec" {
 		t.Fatalf("direct remote exec output=%q err=%v", firstOutput.String(), err)
 	}
@@ -629,6 +643,19 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	secondOutput.Reset()
 	if err := second.Run([]string{"machine", "info"}); err != nil || !strings.Contains(secondOutput.String(), `"daemonBuild"`) || !strings.Contains(secondOutput.String(), `"gpu"`) {
 		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)
+	}
+	secondOutput.Reset()
+	if err := second.Run([]string{"machine", "update", "--confirm", "UPDATE"}); err != nil {
+		t.Fatalf("relay update output=%q err=%v", secondOutput.String(), err)
+	}
+	assertMachineOperationAccepted(t, secondOutput.Bytes())
+	select {
+	case operation := <-powerActions:
+		if operation != machine.OperationUpdate {
+			t.Fatalf("relay update operation=%q", operation)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("relay update did not reach the fake executor")
 	}
 	secondOutput.Reset()
 	if err := second.Run([]string{"machine", "shutdown", "--confirm", "SHUT DOWN"}); err != nil {
