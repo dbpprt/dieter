@@ -216,7 +216,6 @@ struct DieterThemePerformanceTests {
         let implementation = source[start.lowerBound..<end.lowerBound]
 
         #expect(implementation.contains("VStack(alignment: .leading, spacing: 0)"))
-        #expect(implementation.contains("VStack(spacing: 7)"))
         #expect(!implementation.contains("LazyVStack"))
     }
 

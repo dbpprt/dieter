@@ -411,15 +411,12 @@
             await store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
 
-            // Expand the first compressed project inline via its trailing chevron
-            // (x≈211 for the 234pt sidebar; the first row sits just below the PROJECTS
-            // header). This reveals the same boards/files/schedules rows the quick-nav
-            // popover shows, so it doubles as the popover's row-design verification.
-            click(window: window, x: 211, distanceFromTop: 272)
+            // Project expansion remains independent of the system sidebar visibility.
+            NativeUIAccessibility.click("sidebar.project.\(project.id).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(600)
             await captureAppearances(window, named: "01c-project-expanded.png", in: output)
             results["01c-project-expanded"] = "passed"
-            click(window: window, x: 211, distanceFromTop: 272)  // collapse back
+            NativeUIAccessibility.click("sidebar.project.\(project.id).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(450)
 
             // Note: the row-body quick-nav popover is verified by hand — driving it
@@ -427,24 +424,28 @@
             // sync and destabilizes the later RPC-backed steps. Its rows are identical
             // to the inline expansion captured above.
 
-            // Resolve the current controls: Quick Task and sidebar resizing can
-            // move the rail destinations without changing their behavior.
-            let collapseClicked = NativeUIAccessibility.click("sidebar.toggle", in: window)
-            try? await DieterTaskSleep.milliseconds(500)
+            // Exercise the system NavigationSplitView toggle. Collapsing hides
+            // the entire sidebar; global compose stays in the window toolbar.
+            let collapseClicked = NativeUIAccessibility.click(
+                "sidebar.toggle", in: window, fallbackLabel: "Hide Sidebar")
+            let sidebarHidden = await NativeUIAccessibility.wait {
+                NativeUIAccessibility.find("sidebar.toggle", in: window, fallbackLabel: "Show Sidebar") != nil
+            }
+            let composeAvailable = NativeUIAccessibility.find("sidebar.quick-task", in: window) != nil
             await captureAppearances(window, named: "01b-navigation-collapsed.png", in: output)
-            let collapsedRailCaptured =
-                NativeUIAccessibility.find("sidebar.toggle", in: window)?.text.contains(
-                    "Expand navigation") == true
+            let expandClicked = NativeUIAccessibility.click(
+                "sidebar.toggle", in: window, fallbackLabel: "Show Sidebar")
+            let sidebarShown = await NativeUIAccessibility.wait {
+                NativeUIAccessibility.find("sidebar.toggle", in: window, fallbackLabel: "Hide Sidebar") != nil
+            }
             let chatsClicked = NativeUIAccessibility.click("sidebar.all-chats", in: window)
             _ = await NativeUIAccessibility.wait { store.section == .chats }
             results["navigation-collapse"] =
-                collapseClicked && collapsedRailCaptured && chatsClicked && store.section == .chats
+                collapseClicked && sidebarHidden && composeAvailable && expandClicked && sidebarShown
+                    && chatsClicked && store.section == .chats
                 ? "passed"
-                : "failed: collapsed rail did not navigate (rendered=\(collapsedRailCaptured), section=\(store.section.rawValue))"
+                : "failed: native sidebar toggle/navigation (hidden=\(sidebarHidden), shown=\(sidebarShown), compose=\(composeAvailable), section=\(store.section.rawValue))"
             store.section = .board
-            // Re-expand for the remaining expanded-sidebar interactions.
-            NativeUIAccessibility.click("sidebar.toggle", in: window)
-            try? await DieterTaskSleep.milliseconds(500)
             let steps = [Step(name: "02-global-chats", section: .chats, distanceFromTop: 142)]
             for step in steps {
                 click(window: window, x: 80, distanceFromTop: step.distanceFromTop)

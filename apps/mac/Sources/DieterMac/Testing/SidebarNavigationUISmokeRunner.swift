@@ -63,14 +63,8 @@
             writeReport(results, to: output)
         }
 
-        // Projects are compressed by default; the trailing chevron stays 23pt from
-        // the current sidebar edge. Rows share a 42pt vertical pitch below the
-        // global destinations and PROJECTS section header.
-        private static let firstRowTop: CGFloat = 271
-        private static let secondRowTop: CGFloat = 314
-
         private static func prepare(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
-            click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(450)
             var preferences = loadPreferences()
             results["expand-click"] =
@@ -148,18 +142,23 @@
                 ? "passed"
                 : "failed: restored \(restoredWidth)"
 
-            // The reordered third project is the first visible row after relaunch.
-            click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
+            // Verify the rendered order before expanding the first row.
+            let first = NativeUIAccessibility.find("sidebar.project.\(projectIDs[2]).toggle", in: window)
+            let second = NativeUIAccessibility.find("sidebar.project.\(projectIDs[0]).toggle", in: window)
+            let firstFrame = first?.recordedFrame ?? first?.frame ?? .zero
+            let secondFrame = second?.recordedFrame ?? second?.frame ?? .zero
+            let renderedOrder = firstFrame.width > 0 && secondFrame.width > 0 && firstFrame.minY > secondFrame.maxY
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[2]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
             var interacted = loadPreferences()
             results["order-in-relaunched-ui"] =
-                interacted.isExpanded(projectIDs[2])
+                renderedOrder && interacted.isExpanded(projectIDs[2])
                 ? "passed" : "failed: first visible toggle was not the reordered project"
-            click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[2]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
 
             // The saved-expanded project renders second; collapsing it clears the flag.
-            click(window: window, x: chevronX(), distanceFromTop: secondRowTop)
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
 
             await showChats(store: store, window: window)
@@ -181,7 +180,7 @@
             results["expand-in-relaunched-ui"] =
                 !interacted.isExpanded(projectIDs[0])
                 ? "passed" : "failed: saved expanded project was not rendered second"
-            click(window: window, x: chevronX(), distanceFromTop: secondRowTop)
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
         }
 
@@ -330,10 +329,6 @@
             let value = SidebarProjectNavigationPreferences.applicationDefaults().double(
                 forKey: SidebarSizing.storageKey)
             return value > 0 ? SidebarSizing.clamped(CGFloat(value)) : SidebarSizing.defaultWidth
-        }
-
-        private static func chevronX() -> CGFloat {
-            persistedSidebarWidth() - 23
         }
 
         private static func outputDirectory() -> URL {
