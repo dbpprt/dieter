@@ -423,8 +423,10 @@ struct AppSidebar: View {
             SidebarRailToggle { collapsed = false }
                 .help("Expand navigation (⌃⌘S)")
                 .keyboardShortcut("s", modifiers: [.command, .control])
+                .smokeTarget("sidebar.expand-navigation")
                 .accessibilityLabel("Expand navigation")
                 .accessibilityIdentifier("sidebar.toggle")
+                .smokeTarget("sidebar.toggle")
                 .frame(maxWidth: .infinity)
                 .padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
         } else {
@@ -435,6 +437,7 @@ struct AppSidebar: View {
                 SidebarUtilityButton(symbol: "sidebar.left", help: "Collapse navigation (⌃⌘S)") { collapsed = true }
                     .keyboardShortcut("s", modifiers: [.command, .control])
                     .accessibilityIdentifier("sidebar.toggle")
+                    .smokeTarget("sidebar.toggle")
                 globalQuickTaskButton
             }
             .padding(.horizontal, 12).padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)

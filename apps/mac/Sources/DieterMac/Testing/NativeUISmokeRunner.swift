@@ -221,13 +221,19 @@
                 return
             }
             let originalWindowFrame = window.frame
-            let originalZoomedState = window.isZoomed
+            // AppKit may report isZoomed=false when the minimum window width
+            // exceeds the CI display. Compare against its actual standard zoom.
+            window.performZoom(nil)
+            try? await DieterTaskSleep.seconds(1)
+            let standardZoomFrame = window.frame
+            window.setFrame(originalWindowFrame, display: true)
+            try? await DieterTaskSleep.milliseconds(300)
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
             results["window-titlebar-double-click"] =
-                window.isZoomed != originalZoomedState && window.frame != originalWindowFrame
+                window.frame == standardZoomFrame && window.frame != originalWindowFrame
                 ? "passed"
-                : "failed: hidden title-bar double-click did not toggle zoom (before=\(originalWindowFrame), after=\(window.frame), layout=\(window.contentLayoutRect), zoomed=\(originalZoomedState)->\(window.isZoomed))"
+                : "failed: hidden title-bar double-click did not toggle zoom (before=\(originalWindowFrame), after=\(window.frame), layout=\(window.contentLayoutRect), expected=\(standardZoomFrame))"
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
             if window.frame != originalWindowFrame {
@@ -433,8 +439,7 @@
             try? await DieterTaskSleep.milliseconds(500)
             await captureAppearances(window, named: "01b-navigation-collapsed.png", in: output)
             let collapsedRailCaptured =
-                NativeUIAccessibility.find("sidebar.toggle", in: window)?.text.contains(
-                    "Expand navigation") == true
+                NativeUIAccessibility.find("sidebar.expand-navigation", in: window) != nil
             let chatsClicked = NativeUIAccessibility.click("sidebar.all-chats", in: window)
             _ = await NativeUIAccessibility.wait { store.section == .chats }
             results["navigation-collapse"] =
