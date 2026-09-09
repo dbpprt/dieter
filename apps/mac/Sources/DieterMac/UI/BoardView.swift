@@ -662,76 +662,46 @@ struct QuickTaskPopover: View {
                         .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
-                Button {
-                    settingsPresented.toggle()
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .help("Task agent settings")
-                .accessibilityLabel("Task agent settings")
-                .accessibilityIdentifier("quick-task.settings")
-                .disabled(submitting)
-                .popover(isPresented: $settingsPresented, arrowEdge: .trailing) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Task agent").font(.headline)
-                        HarnessFields(
-                            catalog: store.harnessCatalog,
-                            provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions
-                        )
-                        HStack {
-                            Spacer()
-                            Button("Done") { settingsPresented = false }
-                                .buttonStyle(.glass)
-                        }
-                    }
-                    .padding(16)
-                    .frame(width: 310)
-                    .environment(store)
-                }
+
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("DESTINATION").font(.system(size: 10, weight: .semibold)).foregroundStyle(
-                    DieterTheme.tertiary)
-                Picker(
-                    "Project",
-                    selection: Binding(
-                        get: { draftProjectID },
-                        set: { id in
-                            formDraft.selectProject(id, boardIDs: store.boards(for: id).map(\.id))
-                        })
-                ) {
-                    Text("Choose project").tag("")
-                    ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
-                }.accessibilityIdentifier("quick-task.project")
-                Picker("Board", selection: $draftBoardID) {
-                    Text("Choose board").tag("")
-                    ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
-                }.accessibilityIdentifier("quick-task.board")
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker(
+                        "Project",
+                        selection: Binding(
+                            get: { draftProjectID },
+                            set: { id in
+                                formDraft.selectProject(id, boardIDs: store.boards(for: id).map(\.id))
+                            })
+                    ) {
+                        Text("Choose project").tag("")
+                        ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
+                    }.accessibilityIdentifier("quick-task.project")
+                    Picker("Board", selection: $draftBoardID) {
+                        Text("Choose board").tag("")
+                        ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
+                    }.accessibilityIdentifier("quick-task.board")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(4)
+            } label: {
+                Text("Save to").font(.subheadline.weight(.medium))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
             .disabled(submitting)
             if let submissionError { Text(submissionError).font(.caption).foregroundStyle(.orange) }
 
             TextField("What should the agent accomplish?", text: $story, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13)).lineSpacing(2).lineLimit(3...7)
+                .padding(12)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                .font(.system(size: 13)).lineSpacing(2).lineLimit(4...7)
                 .focused($storyFocused)
-                .padding(.horizontal, 12).padding(.vertical, 11)
-                .frame(minHeight: 92, alignment: .topLeading)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9).stroke(
-                        storyFocused ? DieterTheme.shellDeep : DieterTheme.strongBorder,
-                        lineWidth: storyFocused ? 1.5 : 1)
-                )
+                .overlay {
+                    if attachmentDropTargeted {
+                        RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2)
+                    }
+                }
                 .accessibilityIdentifier("quick-task.story")
                 .smokeTarget("quick-task.story")
                 .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
@@ -763,7 +733,7 @@ struct QuickTaskPopover: View {
                 TextField("Page URL (optional)", text: $sourceURL)
                     .textFieldStyle(.plain)
                     .padding(10)
-                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                     .accessibilityIdentifier("quick-task.source-url")
                     .smokeTarget("quick-task.source-url")
                 if let host = CaptureBrowserContext.hostname(sourceURL) {
@@ -777,13 +747,51 @@ struct QuickTaskPopover: View {
                 }
             }
 
-            HStack(spacing: 7) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(defaultsSummary).lineLimit(2)
+            Button {
+                settingsPresented.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 11, weight: .medium))
+                    Text(defaultsSummary).lineLimit(2)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
             }
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(DieterTheme.tertiary)
+            .buttonStyle(.plain)
+            .help("Change task settings")
+            .accessibilityLabel("Task settings")
+            .accessibilityValue(defaultsSummary)
+            .accessibilityIdentifier("quick-task.settings")
+            .disabled(submitting)
+            .popover(isPresented: $settingsPresented, arrowEdge: .trailing) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Task settings").font(.headline)
+                    Form {
+                        HarnessFields(
+                            catalog: store.harnessCatalog,
+                            provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions)
+                    }
+                    .formStyle(.columns)
+                    .pickerStyle(.menu)
+                    .toggleStyle(.switch)
+                    .controlSize(.regular)
+                    Divider()
+                    HStack {
+                        Spacer()
+                        Button("Done") { settingsPresented = false }
+                            .buttonStyle(.glass)
+                            .keyboardShortcut(.defaultAction)
+                    }
+                }
+                .padding(20)
+                .frame(width: 360)
+                .environment(store)
+            }
 
             Divider()
             HStack(spacing: 9) {
