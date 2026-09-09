@@ -38,101 +38,96 @@ struct ConversationChrome: View {
     private var subagentCount: Int { context.conversation?.conversation.subagents.count ?? 0 }
 
     var body: some View {
-        FluidPaneChrome(background: DieterTheme.background, spacing: 8) {
-            HStack(spacing: 10) {
-                if compact {
-                    Button {
-                        context.closeConversation()
-                    } label: {
-                        Image(systemName: "xmark")
+        FluidPaneChrome(background: compact ? .clear : DieterTheme.background, spacing: 8) {
+            if compact {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(card?.title.isEmpty == false ? card!.title : "Conversation")
+                                .font(.system(size: 15, weight: .semibold))
+                                .lineLimit(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let detail = context.selectedDetail {
+                                Text("\(detail.project.name) · \(detail.board.name)")
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Button {
+                            context.closeConversation()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .frame(width: 24, height: 24)
+                        }
+                        .accessibilityLabel("Close conversation")
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .controlSize(.small)
+                        .help("Close conversation")
+                        .accessibilityIdentifier("board.conversation-close")
                     }
-                    .buttonStyle(DieterIconButtonStyle()).help("Close conversation")
+                    HStack(spacing: 10) {
+                        StatusPill(text: status, color: runtimeColor(status))
+                        if let card, !card.workspaceMode.isEmpty {
+                            Button {
+                                tab = "Changes"
+                            } label: {
+                                WorkspaceSummaryBadge(card: card)
+                            }
+                            .buttonStyle(.plain).accessibilityLabel("Open workspace changes")
+                        }
+                        Spacer(minLength: 0)
+                        if context.conversationSyncing {
+                            ProgressView().controlSize(.mini).accessibilityLabel("Refreshing conversation")
+                        }
+                        conversationMenu
+                    }
                 }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(card?.title.isEmpty == false ? card!.title : "Conversation")
-                        .font(DieterFont.paneTitle).lineLimit(1)
-                    HStack(spacing: 4) {
-                        if let detail = context.selectedDetail {
-                            Text(detail.project.name).lineLimit(1)
-                            Text(standalone ? "· Standalone chat" : "/ \(detail.board.name)").lineLimit(1)
-                        }
-                        if let id = card?.id, !id.isEmpty {
-                            Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()).lineLimit(1)
-                        }
-                        if card != nil {
-                            Text("·")
-                            Text(
-                                ConversationRefreshText.label(
-                                    lastRefreshedAt: context.conversationLastRefreshedAt,
-                                    syncing: context.conversationSyncing,
-                                    now: .now
+            } else {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(card?.title.isEmpty == false ? card!.title : "Conversation")
+                            .font(DieterFont.paneTitle).lineLimit(1)
+                        HStack(spacing: 4) {
+                            if let detail = context.selectedDetail {
+                                Text(detail.project.name).lineLimit(1)
+                                Text(standalone ? "· Standalone chat" : "/ \(detail.board.name)").lineLimit(1)
+                            }
+                            if let id = card?.id, !id.isEmpty {
+                                Text("· \(id.prefix(8))").font(.system(size: 10).monospaced()).lineLimit(1)
+                            }
+                            if card != nil {
+                                Text("·")
+                                Text(
+                                    ConversationRefreshText.label(
+                                        lastRefreshedAt: context.conversationLastRefreshedAt,
+                                        syncing: context.conversationSyncing,
+                                        now: .now
+                                    )
                                 )
-                            )
-                            .lineLimit(1)
-                            .accessibilityIdentifier("conversation-last-refreshed")
-                            if context.conversationSyncing {
-                                ProgressView().controlSize(.mini)
-                                    .accessibilityLabel("Refreshing conversation")
+                                .lineLimit(1)
+                                .accessibilityIdentifier("conversation-last-refreshed")
+                                if context.conversationSyncing {
+                                    ProgressView().controlSize(.mini)
+                                        .accessibilityLabel("Refreshing conversation")
+                                }
                             }
                         }
+                        .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
                     }
-                    .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
-                }
-                Spacer(minLength: 10)
-                if let card, !card.workspaceMode.isEmpty {
-                    Button {
-                        tab = "Changes"
-                    } label: {
-                        WorkspaceSummaryBadge(card: card)
+                    Spacer(minLength: 10)
+                    if let card, !card.workspaceMode.isEmpty {
+                        Button {
+                            tab = "Changes"
+                        } label: {
+                            WorkspaceSummaryBadge(card: card)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open workspace changes")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Open workspace changes")
-                }
-                StatusPill(text: status, color: runtimeColor(status))
-                if let card {
-                    Menu {
-                        if context.isFailedOutboxItem(card.id) {
-                            Button("Retry queued creation") { Task { await context.retryOutboxItem(card.id) } }
-                            Button("Discard queued creation", role: .destructive) {
-                                Task { await context.discardOutboxItem(card.id) }
-                            }
-                            Divider()
-                        }
-                        if standalone {
-                            Button(card.pinned ? "Unpin chat" : "Pin chat") {
-                                Task { await context.pin(card, pinned: !card.pinned) }
-                            }
-                        }
-                        Button("Fork as new chat", systemImage: "arrow.triangle.branch") {
-                            Task { await context.fork(card) }
-                        }
-                        if !standalone, BoardCardEditingPolicy.canEditDraft(card) {
-                            Button("Edit card…") { editCardPresented = true }
-                        }
-                        if card.initialPromptSentAt.isEmpty && card.workspace.revision.isEmpty {
-                            Button("Workspace settings…", systemImage: "slider.horizontal.3") {
-                                workspaceSettingsPresented = true
-                            }
-                        }
-                        Button("Open workspace in Files", systemImage: "folder") {
-                            Task { await context.openWorkspaceFiles(card: card) }
-                        }
-                        Button("New terminal in workspace", systemImage: "terminal") {
-                            Task { await context.openWorkspaceTerminal(card: card) }
-                        }
-                        if ["running", "starting", "waiting_for_user"].contains(status) {
-                            Button("Interrupt agent", role: .destructive) { Task { await context.cancel(card) } }
-                        }
-                        Divider()
-                        Button("Archive \(standalone ? "chat" : "card")", role: .destructive) {
-                            Task { await context.archive(card, archived: true) }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .buttonStyle(DieterIconButtonStyle())
+                    StatusPill(text: status, color: runtimeColor(status))
+                    conversationMenu
                 }
             }
         } secondary: {
@@ -160,6 +155,53 @@ struct ConversationChrome: View {
             if let card { ConversationWorkspaceSettingsSheet(model: context.worktreeChanges, card: card) }
         }
     }
+    @ViewBuilder private var conversationMenu: some View {
+        if let card {
+            Menu {
+                if context.isFailedOutboxItem(card.id) {
+                    Button("Retry queued creation") { Task { await context.retryOutboxItem(card.id) } }
+                    Button("Discard queued creation", role: .destructive) {
+                        Task { await context.discardOutboxItem(card.id) }
+                    }
+                    Divider()
+                }
+                if standalone {
+                    Button(card.pinned ? "Unpin chat" : "Pin chat") {
+                        Task { await context.pin(card, pinned: !card.pinned) }
+                    }
+                }
+                Button("Fork as new chat", systemImage: "arrow.triangle.branch") {
+                    Task { await context.fork(card) }
+                }
+                if !standalone, BoardCardEditingPolicy.canEditDraft(card) {
+                    Button("Edit card…") { editCardPresented = true }
+                }
+                if card.initialPromptSentAt.isEmpty && card.workspace.revision.isEmpty {
+                    Button("Workspace settings…", systemImage: "slider.horizontal.3") {
+                        workspaceSettingsPresented = true
+                    }
+                }
+                Button("Open workspace in Files", systemImage: "folder") {
+                    Task { await context.openWorkspaceFiles(card: card) }
+                }
+                Button("New terminal in workspace", systemImage: "terminal") {
+                    Task { await context.openWorkspaceTerminal(card: card) }
+                }
+                if ["running", "starting", "waiting_for_user"].contains(status) {
+                    Button("Interrupt agent", role: .destructive) { Task { await context.cancel(card) } }
+                }
+                Divider()
+                Button("Archive \(standalone ? "chat" : "card")", role: .destructive) {
+                    Task { await context.archive(card, archived: true) }
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .buttonStyle(DieterIconButtonStyle())
+        }
+    }
+
 }
 
 struct ConversationTabBar: View {

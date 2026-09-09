@@ -143,25 +143,6 @@ enum BoardCardOrdering {
     }
 }
 
-enum ConversationPaneSizing {
-    static let minimumWidth: CGFloat = 320
-    static let defaultWidth: CGFloat = 460
-    static let maximumWidth: CGFloat = 720
-    static let minimumBoardWidth: CGFloat = 520
-    static let dividerWidth: CGFloat = 7
-    static let maximumWorkspaceFraction: CGFloat = 0.42
-
-    static func clamped(_ width: CGFloat) -> CGFloat {
-        min(max(width, minimumWidth), maximumWidth)
-    }
-
-    static func resolvedWidth(_ preferredWidth: CGFloat, workspaceWidth: CGFloat) -> CGFloat {
-        let availableMaximum = max(minimumWidth, workspaceWidth - minimumBoardWidth - dividerWidth)
-        let proportionalMaximum = max(minimumWidth, workspaceWidth * maximumWorkspaceFraction)
-        return min(clamped(preferredWidth), min(maximumWidth, availableMaximum, proportionalMaximum))
-    }
-}
-
 enum KanbanLaneSizing {
     static let horizontalPadding: CGFloat = 14
     static let spacing: CGFloat = 9
@@ -200,78 +181,24 @@ enum BoardPresentationState: Equatable {
     }
 }
 
-private struct ConversationResizeDivider: View {
-    let onChanged: (CGFloat) -> Void
-    let onEnded: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        ZStack {
-            Rectangle().fill(Color.clear)
-            Rectangle()
-                .fill(hovering ? DieterTheme.shell.opacity(0.62) : DieterTheme.paneSeparator)
-                .frame(width: hovering ? 2 : 1)
-        }
-        .frame(width: ConversationPaneSizing.dividerWidth)
-        .ignoresSafeArea(.container, edges: .top)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { onChanged($0.translation.width) }
-                .onEnded { _ in onEnded() }
-        )
-        .onHover { isHovering in
-            if isHovering, !hovering { NSCursor.resizeLeftRight.push() }
-            if !isHovering, hovering { NSCursor.pop() }
-            hovering = isHovering
-        }
-        .onDisappear {
-            if hovering { NSCursor.pop() }
-        }
-        .accessibilityLabel("Resize conversation")
-        .accessibilityIdentifier("board.conversation-divider")
-    }
-}
-
 struct BoardView: View {
     @Environment(DieterStore.self) private var store
-    @AppStorage("dieter.conversationPaneWidth") private var conversationPaneWidth = Double(
-        ConversationPaneSizing.defaultWidth)
-    @State private var conversationDragStartWidth: CGFloat?
+    private var conversationPresented: Binding<Bool> {
+        Binding(
+            get: { store.selectedCardID != nil },
+            set: { presented in
+                if !presented { store.closeConversation() }
+            })
+    }
 
     var body: some View {
-        GeometryReader { geometry in
-            let width = ConversationPaneSizing.resolvedWidth(
-                CGFloat(conversationPaneWidth),
-                workspaceWidth: geometry.size.width
-            )
-
-            HStack(spacing: 0) {
-                boardContent
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-
-                if store.selectedCardID != nil {
-                    ConversationResizeDivider(
-                        onChanged: { translation in
-                            let startWidth = conversationDragStartWidth ?? width
-                            if conversationDragStartWidth == nil { conversationDragStartWidth = startWidth }
-                            let next = ConversationPaneSizing.resolvedWidth(
-                                startWidth - translation,
-                                workspaceWidth: geometry.size.width
-                            )
-                            if abs(Double(next) - conversationPaneWidth) > 0.5 {
-                                conversationPaneWidth = Double(next)
-                            }
-                        },
-                        onEnded: { conversationDragStartWidth = nil }
-                    )
-
-                    ConversationView(compact: true).environment(store.conversationContext)
-                        .frame(width: width)
-                }
+        boardContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .inspector(isPresented: conversationPresented) {
+                ConversationView(compact: true)
+                    .environment(store.conversationContext)
+                    .inspectorColumnWidth(min: 320, ideal: 460, max: 720)
             }
-        }
     }
 
     private var boardContent: some View {

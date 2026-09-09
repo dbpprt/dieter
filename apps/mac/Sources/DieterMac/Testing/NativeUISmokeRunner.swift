@@ -963,6 +963,20 @@
                     _ = await waitUntil(timeout: 5) {
                         store.conversation?.detail.card.id == liveCard.id && !store.conversationLoading
                     }
+                    let inspectorVisible = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find("board.conversation-close", in: window) != nil
+                    }
+                    let closed = inspectorVisible && NativeUIAccessibility.click("board.conversation-close", in: window)
+                    let selectionCleared = await waitUntil(timeout: 5) {
+                        store.selectedCardID == nil && store.conversation == nil
+                    }
+                    await store.openConversation(cardID: liveCard.id)
+                    let reopened = await waitUntil(timeout: 5) {
+                        store.conversation?.detail.card.id == liveCard.id
+                            && NativeUIAccessibility.find("board.conversation-close", in: window) != nil
+                    }
+                    results["board-native-inspector-close-reopen"] =
+                        closed && selectionCleared && reopened ? "passed" : "failed: inspector lifecycle"
                 }
                 if let trigger = offlineTrigger() {
                     FileManager.default.createFile(atPath: trigger.path, contents: Data())

@@ -101,7 +101,7 @@ struct ConversationView: View {
                 ConversationComposer(fileImporterPresented: $fileImporterPresented)
             }
         }
-        .background(DieterTheme.background)
+        .background(compact ? Color.clear : DieterTheme.background)
         .overlay(alignment: .bottom) {
             if let toast = context.workspaceToast {
                 WorkspaceToastView(toast: toast)

@@ -1514,14 +1514,6 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(usage.percentage == 15)
 }
 
-@Test func conversationPaneWidthIsClampedToItsSupportedRange() {
-    #expect(ConversationPaneSizing.clamped(320) == ConversationPaneSizing.minimumWidth)
-    #expect(ConversationPaneSizing.clamped(540) == 540)
-    #expect(ConversationPaneSizing.clamped(760) == ConversationPaneSizing.maximumWidth)
-    #expect(ConversationPaneSizing.resolvedWidth(500, workspaceWidth: 1_200) == 500)
-    #expect(ConversationPaneSizing.resolvedWidth(680, workspaceWidth: 1_200) == 504)
-}
-
 @Test func sidebarWidthIsClampedToItsSupportedRange() {
     #expect(SidebarSizing.clamped(180) == SidebarSizing.minimumWidth)
     #expect(SidebarSizing.clamped(300) == 300)

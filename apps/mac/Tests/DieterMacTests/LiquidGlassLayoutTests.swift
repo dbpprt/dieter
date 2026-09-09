@@ -1,4 +1,5 @@
 import AppKit
+import DieterAPI
 import SwiftUI
 import Testing
 @testable import DieterMac
@@ -27,4 +28,33 @@ import Testing
             #expect(draft.story == "Investigate the selected browser page")
         }
     }
+}
+
+@Test @MainActor func conversationInspectorHeaderWrapsLongTitlesAtMinimumWidth() {
+    let store = DieterStore(restoreSync: false)
+    var card = Dieter_V1_Card()
+    card.id = "inspector-layout"
+    card.scope = "board"
+    card.title = "Short title"
+    card.workspaceMode = "project"
+    store.state.cards = [card]
+    store.selectedCardID = card.id
+
+    func height() -> CGFloat {
+        let host = NSHostingView(
+            rootView: ConversationChrome(compact: true, standalone: false, tab: .constant("Conversation"))
+                .environment(store.conversationContext)
+                .frame(width: 320))
+        let size = host.fittingSize
+        #expect(abs(size.width - 320) < 1)
+        return size.height
+    }
+
+    let shortHeight = height()
+    card.title =
+        "A long conversation title that needs several lines while keeping workspace and status controls readable"
+    store.state.cards = [card]
+    let longHeight = height()
+    #expect(longHeight > shortHeight)
+    #expect(longHeight < 240)
 }
