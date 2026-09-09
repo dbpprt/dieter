@@ -1,10 +1,10 @@
-// swift-tools-version: 6.1
+// swift-tools-version: 6.2
 
 import PackageDescription
 
 let package = Package(
     name: "DieterMac",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v26)],
     products: [
         .executable(name: "DieterMac", targets: ["DieterMac"]),
         .executable(name: "DieterMacSmokeDriver", targets: ["DieterMacSmokeDriver"]),

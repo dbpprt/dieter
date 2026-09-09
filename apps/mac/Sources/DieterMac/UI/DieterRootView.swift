@@ -389,7 +389,7 @@ struct AppSidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader
             if collapsed {
-                globalQuickTaskButton
+                globalQuickTaskButton.frame(maxWidth: .infinity)
             }
             searchControl
             allChatsControl
@@ -399,11 +399,13 @@ struct AppSidebar: View {
             }
             sidebarFooter
         }
-        .background(DieterTheme.sidebar)
         .clipped()
-        // Extend the sidebar tone up behind the traffic lights so the title-bar
-        // strip matches the nav instead of showing the darker window background.
-        .background(DieterTheme.sidebar.ignoresSafeArea(.container, edges: .top))
+        // One glass navigation surface; rows retain their quiet selection fills.
+        .background {
+            Rectangle().fill(.clear)
+                .glassEffect(.regular, in: Rectangle())
+                .ignoresSafeArea(.container, edges: .top)
+        }
     }
 
     private var globalQuickTaskButton: some View {
@@ -1360,15 +1362,16 @@ private struct SidebarUtilityButton: View {
     let symbol: String
     let help: String
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
         }
-        .buttonStyle(.plain).foregroundStyle(hovering ? DieterTheme.text : DieterTheme.subtle)
-        .background(hovering ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 6))
-        .onHover { hovering = $0 }.help(help)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+        .controlSize(.small)
+        .help(help)
     }
 }
 

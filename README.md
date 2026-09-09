@@ -267,7 +267,7 @@ user prompt.
 - Git working trees for registered projects
 - a configured Codex, Claude Code, Pi, Oh My Pi, or DeepSeek Harness
   installation
-- macOS 15+ or Android 8+ for the official clients
+- macOS 26+ or Android 8+ for the official clients
 
 Build the CLI/daemon and gateway:
 

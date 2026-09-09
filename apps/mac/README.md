@@ -27,10 +27,13 @@ The 41 view-level design references are indexed in
 extracted from the source design PDF by `design/extract_reference_images.py`;
 the source PDF itself is not checked in.
 
+The navigation sidebar, board actions, Quick Task popovers, and Island use the
+native macOS 26 Liquid Glass appearance. Cards and transcripts keep solid content
+surfaces for readability. Native materials follow system accessibility settings.
+
 ## Develop
 
-Requirements: macOS 15+, Xcode 16+ (the current project is verified with Xcode
-26), a Dieter gateway, and at least one enrolled daemon.
+Requirements: macOS 26+, Xcode 26.5+, a Dieter gateway, and at least one enrolled daemon.
 
 ```sh
 dieter daemon start

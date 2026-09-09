@@ -289,7 +289,7 @@ struct CapturedTaskDraftView: View {
         ScrollView {
             QuickTaskPopover(isPresented: $presented, draft: draft, capturedBrowser: browser.browser)
         }
-        .background(DieterTheme.background)
+        .glassEffect(.regular, in: Rectangle())
         .onChange(of: presented) { _, value in if !value { dismiss() } }
     }
 }

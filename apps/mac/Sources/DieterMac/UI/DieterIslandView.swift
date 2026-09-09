@@ -228,55 +228,11 @@ struct DieterIslandView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(islandBackground)
-        .clipShape(islandShape)
-        .overlay(islandShape.stroke(.white.opacity(presentation.expanded ? 0.12 : 0.08), lineWidth: 0.75))
-        .overlay(alignment: .top) {
-            LinearGradient(
-                colors: [.clear, .white.opacity(presentation.expanded ? 0.16 : 0.10), .clear],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(height: 1)
-            .padding(.horizontal, presentation.expanded ? 42 : 28)
-        }
-        .shadow(
-            color: DieterTheme.primary.opacity(presentation.expanded ? 0.12 : 0.05),
-            radius: presentation.expanded ? 38 : 18, y: 8
-        )
-        .shadow(
-            color: .black.opacity(presentation.expanded ? 0.52 : 0.30), radius: presentation.expanded ? 30 : 14,
-            y: presentation.expanded ? 16 : 7
-        )
+        .glassEffect(.regular, in: islandShape)
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: presentation.expanded)
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dieter.island")
-    }
-
-    private var islandBackground: some View {
-        ZStack {
-            Color(nsColor: NSColor(calibratedRed: 0.012, green: 0.020, blue: 0.033, alpha: 0.992))
-            if presentation.expanded {
-                RadialGradient(
-                    colors: [DieterTheme.primary.opacity(0.19), .clear],
-                    center: .topLeading,
-                    startRadius: 0,
-                    endRadius: 330
-                )
-                RadialGradient(
-                    colors: [DieterTheme.eyes.opacity(0.08), .clear],
-                    center: .bottomTrailing,
-                    startRadius: 0,
-                    endRadius: 250
-                )
-                LinearGradient(
-                    colors: [.white.opacity(0.025), .clear, .black.opacity(0.16)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-        }
     }
 
     private var islandShape: DieterIslandShape {
@@ -371,10 +327,9 @@ struct DieterIslandView: View {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 9.5, weight: .bold))
                         .frame(width: 30, height: 30)
-                        .background(.white.opacity(0.06), in: Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.07), lineWidth: 0.75))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
                 .foregroundStyle(.white.opacity(0.62))
                 .accessibilityLabel("Collapse Dieter Island")
             }
@@ -453,7 +408,7 @@ struct DieterIslandView: View {
                 } label: {
                     Label("Open activity", systemImage: "arrow.up.right.square")
                 }
-                .buttonStyle(IslandActionButtonStyle(primary: true))
+                .buttonStyle(.glassProminent)
                 .disabled(activity.items.isEmpty)
 
                 Button {
@@ -464,13 +419,13 @@ struct DieterIslandView: View {
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
-                .buttonStyle(IslandActionButtonStyle(primary: false))
+                .buttonStyle(.glass)
 
                 Spacer()
                 Button(action: onCaptureTask) {
                     Label("Capture task", systemImage: "viewfinder")
                 }
-                .buttonStyle(IslandActionButtonStyle(primary: true))
+                .buttonStyle(.glassProminent)
                 .help("Select a screen area and create a Quick Task")
                 .accessibilityIdentifier("island.capture-task")
                 .smokeTarget("island.capture-task")
@@ -679,29 +634,6 @@ private struct IslandActivityRow: View {
         case ..<86_400: return "\(seconds / 3_600)h"
         default: return "\(seconds / 86_400)d"
         }
-    }
-}
-
-private struct IslandActionButtonStyle: ButtonStyle {
-    let primary: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-            .foregroundStyle(primary ? Color.white.opacity(0.88) : Color.white.opacity(0.64))
-            .padding(.horizontal, 13)
-            .frame(height: 34)
-            .background(
-                primary
-                    ? DieterTheme.primary.opacity(configuration.isPressed ? 0.23 : 0.16)
-                    : Color.white.opacity(configuration.isPressed ? 0.10 : 0.052),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(primary ? DieterTheme.primary.opacity(0.38) : .white.opacity(0.07), lineWidth: 0.75)
-            }
-            .shadow(color: primary ? DieterTheme.primary.opacity(0.12) : .clear, radius: 10)
     }
 }
 
