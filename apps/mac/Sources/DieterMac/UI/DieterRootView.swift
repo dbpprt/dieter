@@ -1292,67 +1292,6 @@ private struct OnboardingMachineRow: View {
     }
 }
 
-struct CommandPalette: View {
-    @Environment(DieterStore.self) private var store
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-
-    private var commands: [(String, String, () -> Void)] {
-        [
-            ("New card", "rectangle.badge.plus", { store.createConversationPresented = true }),
-            ("New standalone chat", "bubble.left.and.bubble.right.fill", { store.beginStandaloneChat() }),
-            ("Open all chats", "bubble.left.and.bubble.right", { Task { await store.openChats() } }),
-            ("Open terminals", "terminal", { Task { await store.openTerminals() } }),
-            (
-                "Browse project files", "doc.on.doc",
-                { Task { await store.openProject(store.selectedProjectID, section: .files) } }
-            ),
-            (
-                "Open project schedules", "calendar.badge.clock",
-                { Task { await store.openProject(store.selectedProjectID, section: .schedules) } }
-            ),
-            ("Add Git project", "folder.badge.plus", { store.createProjectPresented = true }),
-            ("Edit project context", "text.book.closed", { store.projectContextPresented = true }),
-            ("Refresh", "arrow.clockwise", { Task { await store.refreshState() } }),
-        ]
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(DieterTheme.tertiary)
-                TextField("Type a command…", text: $query).textFieldStyle(.plain).font(.system(size: 16))
-            }
-            .padding(16)
-            Divider().overlay(DieterTheme.border)
-            ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(
-                        Array(commands.enumerated()).filter {
-                            query.isEmpty || $0.element.0.localizedCaseInsensitiveContains(query)
-                        }, id: \.offset
-                    ) { _, command in
-                        Button {
-                            command.2(); dismiss()
-                        } label: {
-                            HStack {
-                                Image(systemName: command.1).font(.system(size: 12)).foregroundStyle(DieterTheme.subtle)
-                                    .frame(width: 22);
-                                Text(command.0).font(DieterFont.body); Spacer();
-                                Image(systemName: "return").font(.system(size: 10)).foregroundStyle(
-                                    DieterTheme.tertiary)
-                            }
-                            .padding(10).background(
-                                DieterTheme.raised.opacity(0.55),
-                                in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
-                        }.buttonStyle(.plain)
-                    }
-                }.padding(10)
-            }
-        }.frame(width: 560, height: 410).background(DieterTheme.surface)
-    }
-}
-
 struct GlobalQuickTaskButton: View {
     @Environment(DieterStore.self) private var store
     @State private var presented = false
