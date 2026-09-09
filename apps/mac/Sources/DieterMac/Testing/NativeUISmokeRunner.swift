@@ -227,7 +227,7 @@
             results["window-titlebar-double-click"] =
                 window.isZoomed != originalZoomedState && window.frame != originalWindowFrame
                 ? "passed"
-                : "failed: hidden title-bar double-click did not toggle the window zoom state"
+                : "failed: hidden title-bar double-click did not toggle zoom (before=\(originalWindowFrame), after=\(window.frame), layout=\(window.contentLayoutRect), zoomed=\(originalZoomedState)->\(window.isZoomed))"
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
             if window.frame != originalWindowFrame {
@@ -427,22 +427,23 @@
             // sync and destabilizes the later RPC-backed steps. Its rows are identical
             // to the inline expansion captured above.
 
-            // Collapse the navigation to capture the compressed rail. The toggle sits
-            // in the header band (x≈174 for the 234pt sidebar); the rail's All chats
-            // destination is the first pill below the search/brand stack.
-            click(window: window, x: 174, distanceFromTop: 56)
+            // Resolve the current controls: Quick Task and sidebar resizing can
+            // move the rail destinations without changing their behavior.
+            let collapseClicked = NativeUIAccessibility.click("sidebar.toggle", in: window)
             try? await DieterTaskSleep.milliseconds(500)
             await captureAppearances(window, named: "01b-navigation-collapsed.png", in: output)
-            let collapsedRailCaptured = store.section == .board
-            click(window: window, x: 30, distanceFromTop: 150)
-            try? await DieterTaskSleep.seconds(1)
+            let collapsedRailCaptured =
+                NativeUIAccessibility.find("sidebar.toggle", in: window)?.text.contains(
+                    "Expand navigation") == true
+            let chatsClicked = NativeUIAccessibility.click("sidebar.all-chats", in: window)
+            _ = await NativeUIAccessibility.wait { store.section == .chats }
             results["navigation-collapse"] =
-                store.section == .chats
+                collapseClicked && collapsedRailCaptured && chatsClicked && store.section == .chats
                 ? "passed"
                 : "failed: collapsed rail did not navigate (rendered=\(collapsedRailCaptured), section=\(store.section.rawValue))"
             store.section = .board
             // Re-expand for the remaining expanded-sidebar interactions.
-            click(window: window, x: 30, distanceFromTop: 56)
+            NativeUIAccessibility.click("sidebar.toggle", in: window)
             try? await DieterTaskSleep.milliseconds(500)
             let steps = [Step(name: "02-global-chats", section: .chats, distanceFromTop: 142)]
             for step in steps {
@@ -865,15 +866,20 @@
             if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
                 await captureAppearances(sheet, named: "14-new-project.png", in: output)
                 results["14-new-project"] = "passed"
-                click(window: sheet, x: 605, distanceFromTop: 260)
-                try? await DieterTaskSleep.seconds(1.5)
+                let browseClicked = NativeUIAccessibility.click("new-project.browse", in: sheet)
+                _ = await NativeUIAccessibility.wait {
+                    NSApp.windows.contains {
+                        $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
+                    }
+                }
                 if let browser = NSApp.windows.first(where: {
                     $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
                 }) {
                     await captureAppearances(browser, named: "15-remote-directory-browser.png", in: output)
                     results["15-remote-directory-browser"] = "passed"
                 } else {
-                    results["15-remote-directory-browser"] = "failed: browser sheet not visible"
+                    results["15-remote-directory-browser"] =
+                        "failed: browser sheet not visible (browse click dispatched=\(browseClicked))"
                 }
             } else {
                 results["14-new-project"] = "failed: sheet not visible"
@@ -1363,6 +1369,8 @@
                 y: window.contentLayoutRect.maxY
                     + ((window.frame.height - window.contentLayoutRect.maxY) / 2)
             )
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
             let timestamp = ProcessInfo.processInfo.systemUptime
             for clickCount in [1, 2] {
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
@@ -1377,7 +1385,9 @@
                         clickCount: clickCount,
                         pressure: type == .leftMouseDown ? 1 : 0
                     )
-                    if let event { NSApp.sendEvent(event) }
+                    // Queue the full gesture so AppKit's local event monitors and
+                    // native tracking loop receive the same events as a user click.
+                    if let event { NSApp.postEvent(event, atStart: false) }
                 }
             }
         }
