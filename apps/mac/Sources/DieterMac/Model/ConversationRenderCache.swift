@@ -33,10 +33,11 @@ enum ConversationRenderCache {
     static func markdown(_ source: String) -> AttributedString {
         let key = source as NSString
         if let cached = storage.markdownCache.object(forKey: key) { return cached.value }
-        let value = (try? AttributedString(
-            markdown: source,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(source)
+        let value =
+            (try? AttributedString(
+                markdown: source,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            )) ?? AttributedString(source)
         storage.markdownCache.setObject(AttributedStringBox(value), forKey: key, cost: source.utf8.count)
         return value
     }

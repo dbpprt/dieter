@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
@@ -79,7 +80,7 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		`$APP_ROOT/Resources/DieterMonochromeFavicon.png`,
 		`$BRAND_ROOT/assets/fonts/Sora-Variable.ttf`,
 	)
-	assertContains(t, filepath.Join(root, "apps/mac/Sources/DieterMac/UI/DieterTheme.swift"),
+	assertContainsIgnoringWhitespace(t, filepath.Join(root, "apps/mac/Sources/DieterMac/UI/DieterTheme.swift"),
 		"PaletteSpec(0x0D1B24, 0x193A49, 0x8DD8E8, 0x3D6E85",
 		"0x62B6CB, 0xBCEAF1, 0xF5FBFD, 0x081116",
 		"background = Color(rgb: dark ? colors.darkBackground : colors.light)",
@@ -156,6 +157,29 @@ func assertContains(t *testing.T, path string, values ...string) {
 	for _, value := range values {
 		if !strings.Contains(string(data), value) {
 			t.Errorf("%s does not contain %q", path, value)
+		}
+	}
+}
+
+// Swift formatting may wrap a palette initializer without changing its tokens.
+func assertContainsIgnoringWhitespace(t *testing.T, path string, values ...string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compact := func(value string) string {
+		return strings.Map(func(r rune) rune {
+			if unicode.IsSpace(r) {
+				return -1
+			}
+			return r
+		}, value)
+	}
+	actual := compact(string(data))
+	for _, value := range values {
+		if !strings.Contains(actual, compact(value)) {
+			t.Errorf("%s does not contain tokens %q", path, value)
 		}
 	}
 }

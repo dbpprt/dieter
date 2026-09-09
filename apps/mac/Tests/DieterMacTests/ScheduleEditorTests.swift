@@ -7,7 +7,11 @@ final class ScheduleEditorTests: XCTestCase {
         var schedule = Dieter_V1_Schedule()
         schedule.id = "sch_edit"
 
-        let presentation = ScheduleEditorPresentation(schedule: schedule)
+        let presentation = ScheduleEditorPresentation(
+            schedule: schedule,
+            context: .init(
+                target: .init(endpointID: "machine", projectID: "project"), projectName: "Project", boards: [],
+                selectedBoardID: "", harnessCatalog: .init()))
 
         XCTAssertEqual(presentation.schedule?.id, schedule.id)
     }

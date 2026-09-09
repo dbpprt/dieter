@@ -62,7 +62,8 @@ struct BoardLaneList: NSViewRepresentable {
         private var measuredWidth: CGFloat = 0
 
         func update(_ value: BoardLaneList, store: DieterStore, colorScheme: ColorScheme, table: NSTableView) {
-            let identityChanged = laneID != value.laneID || direction != value.sortDirection || boardID != store.selectedBoardID
+            let identityChanged =
+                laneID != value.laneID || direction != value.sortDirection || boardID != store.selectedBoardID
             let nextLabels = store.selectedBoard?.labels ?? []
             let appearanceChanged = self.store !== store || scheme != colorScheme || labels != nextLabels
             let changed = cards != value.cards || appearanceChanged || identityChanged
@@ -96,7 +97,8 @@ struct BoardLaneList: NSViewRepresentable {
             }
             if let height = heights[row] { return height }
             guard cards.indices.contains(row) else { return 120 }
-            let height = BoardCardRowSizing.height(card: cards[row], width: width,
+            let height = BoardCardRowSizing.height(
+                card: cards[row], width: width,
                 hasLabels: labels.contains { cards[row].labelIds.contains($0.id) }, last: row == cards.count - 1)
             heights[row] = height
             return height
@@ -111,9 +113,11 @@ struct BoardLaneList: NSViewRepresentable {
             let identifier = NSUserInterfaceItemIdentifier("board.card.cell")
             let cell = tableView.makeView(withIdentifier: identifier, owner: self) as? Cell ?? Cell()
             cell.identifier = identifier
-            cell.host.rootView = AnyView(BoardLaneRow(card: cards[row], laneID: laneID, isLast: row == cards.count - 1)
-                .id(cards[row].id).environment(store).environment(\.colorScheme, scheme)
-                .foregroundStyle(DieterTheme.text).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
+            cell.host.rootView = AnyView(
+                BoardLaneRow(card: cards[row], laneID: laneID, isLast: row == cards.count - 1)
+                    .id(cards[row].id).environment(store).environment(\.colorScheme, scheme)
+                    .foregroundStyle(DieterTheme.text).frame(
+                        maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
             return cell
         }
     }
@@ -138,7 +142,9 @@ enum BoardCardRowSizing {
         let contentWidth = max(1, width - 24)
         let title = card.title.isEmpty ? "Untitled card" : card.title
         var result: CGFloat = 9 + 24 + textHeight(title, width: contentWidth - 18, size: 13, weight: .semibold) + 9 + 21
-        if !card.summary.isEmpty { result += 9 + textHeight(card.summary, width: contentWidth, size: 11, weight: .regular) }
+        if !card.summary.isEmpty {
+            result += 9 + textHeight(card.summary, width: contentWidth, size: 11, weight: .regular)
+        }
         if hasLabels { result += 9 + 18 }
         return ceil(result) + 4 + (last ? 12 : 0)
     }
@@ -146,7 +152,8 @@ enum BoardCardRowSizing {
     private static func textHeight(_ text: String, width: CGFloat, size: CGFloat, weight: NSFont.Weight) -> CGFloat {
         let font = NSFont.systemFont(ofSize: size, weight: weight)
         let line = ceil(font.ascender - font.descender + font.leading)
-        let rect = (text as NSString).boundingRect(with: NSSize(width: max(1, width), height: line * 3),
+        let rect = (text as NSString).boundingRect(
+            with: NSSize(width: max(1, width), height: line * 3),
             options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: [.font: font])
         return min(line * 3, max(line, ceil(rect.height)))
     }

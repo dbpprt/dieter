@@ -52,7 +52,8 @@ struct ConversationWorkspaceDraft: Equatable, Sendable {
     func apply(to request: inout Dieter_V1_CreateConversationRequest) {
         request.workspaceMode = mode.rawValue
         request.workspaceBranch = mode == .worktree ? branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        request.workspaceBaseBranch = mode == .worktree ? baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        request.workspaceBaseBranch =
+            mode == .worktree ? baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
     }
 }
 
@@ -72,7 +73,8 @@ struct ValidationCommandDraft: Identifiable, Equatable, Sendable {
         executable = value.executable
         arguments = value.arguments.joined(separator: "\n")
         workingDirectory = value.workingDirectory
-        environment = value.environment.keys.sorted().map { "\($0)=\(value.environment[$0] ?? "")" }.joined(separator: "\n")
+        environment = value.environment.keys.sorted().map { "\($0)=\(value.environment[$0] ?? "")" }.joined(
+            separator: "\n")
         timeoutSeconds = value.timeoutSeconds
     }
 
@@ -147,7 +149,8 @@ enum GitOperationReconciliation {
     ) -> String? {
         if !workspaceOperationID.isEmpty { return workspaceOperationID }
         guard let observedOperationID, !observedOperationID.isEmpty,
-              let observedStatus, GitOperationStatus.active(observedStatus) else { return nil }
+            let observedStatus, GitOperationStatus.active(observedStatus)
+        else { return nil }
         return observedOperationID
     }
 }
@@ -222,7 +225,8 @@ enum UnifiedDiffParser {
         var result: [UnifiedDiffLine] = []
         var oldLine: Int?
         var newLine: Int?
-        for (index, raw) in patch.split(separator: "\n", omittingEmptySubsequences: false).map(String.init).enumerated() {
+        for (index, raw) in patch.split(separator: "\n", omittingEmptySubsequences: false).map(String.init).enumerated()
+        {
             // Every hunk line has a prefix, including a blank context line
             // (" "). A bare empty string is a separator or final newline.
             guard !raw.isEmpty else { continue }

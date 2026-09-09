@@ -206,14 +206,14 @@ import Testing
 
 @Test func diffProjectionIndexesCommentsWhileBuildingRows() {
     let patch = """
-    diff --git a/Sample.swift b/Sample.swift
-    --- a/Sample.swift
-    +++ b/Sample.swift
-    @@ -1,2 +1,2 @@
-    -let old = 1
-    +let new = 2
-     print(new)
-    """
+        diff --git a/Sample.swift b/Sample.swift
+        --- a/Sample.swift
+        +++ b/Sample.swift
+        @@ -1,2 +1,2 @@
+        -let old = 1
+        +let new = 2
+         print(new)
+        """
     var oldComment = Dieter_V1_ChangeComment()
     oldComment.id = "old"
     oldComment.side = "old"
@@ -278,18 +278,20 @@ import Testing
 @Test func nativeSmokeClickCoordinatesRespectContentOrientation() {
     let bounds = NSRect(x: 0, y: 0, width: 200, height: 100)
 
-    #expect(NativeUIEventDispatcher.contentLocation(
-        x: 100,
-        distanceFromTop: 20,
-        contentBounds: bounds,
-        isFlipped: true
-    ) == NSPoint(x: 100, y: 20))
-    #expect(NativeUIEventDispatcher.contentLocation(
-        x: 100,
-        distanceFromTop: 20,
-        contentBounds: bounds,
-        isFlipped: false
-    ) == NSPoint(x: 100, y: 80))
+    #expect(
+        NativeUIEventDispatcher.contentLocation(
+            x: 100,
+            distanceFromTop: 20,
+            contentBounds: bounds,
+            isFlipped: true
+        ) == NSPoint(x: 100, y: 20))
+    #expect(
+        NativeUIEventDispatcher.contentLocation(
+            x: 100,
+            distanceFromTop: 20,
+            contentBounds: bounds,
+            isFlipped: false
+        ) == NSPoint(x: 100, y: 80))
 }
 
 private final class BlockingPersistenceWriter: @unchecked Sendable {

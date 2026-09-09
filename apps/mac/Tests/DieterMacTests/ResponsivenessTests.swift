@@ -23,14 +23,14 @@ import Testing
     // Dismantling the previous native view after the new one attached is harmless.
     session.detach(first)
     #expect(session.currentText() == replacement.string)
-    session.markSaved(documentKey: "A:2", text: replacement.string)
+    session.markSaved(documentKey: "A:1", submittedText: replacement.string, editRevision: session.revision)
     let afterSave = NSTextView()
-    session.attach(afterSave, documentKey: "A:2", initialText: replacement.string)
+    session.attach(afterSave, documentKey: "A:1", initialText: replacement.string)
     #expect(afterSave.string == "first\nsecond\nunsaved")
     #expect(!session.isDirty)
     session.prepare(documentKey: "B:1", text: "another file")
     #expect(afterSave.string == "another file")
-    session.prepare(documentKey: "A:2", text: "first\nsecond\nunsaved")
+    session.prepare(documentKey: "A:1", text: "first\nsecond\nunsaved")
     #expect(session.currentText() == "first\nsecond\nunsaved")
 }
 
@@ -39,8 +39,7 @@ private actor DelayedReadProbe {
     var cancellations: [String] = []
     func read(_ key: String, delay: Int) async throws -> String {
         calls.append(key)
-        do { try await Task.sleep(for: .milliseconds(delay)) }
-        catch { cancellations.append(key); throw error }
+        do { try await Task.sleep(for: .milliseconds(delay)) } catch { cancellations.append(key); throw error }
         return key
     }
 }
@@ -85,7 +84,9 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     }
 }
 
-@Test(arguments: [50, 250, 1_000]) @MainActor func scheduleLoadsAcknowledgeImmediatelyCoalesceAndRecover(_ delay: Int) async throws {
+@Test(arguments: [50, 250, 1_000]) @MainActor func scheduleLoadsAcknowledgeImmediatelyCoalesceAndRecover(_ delay: Int)
+    async throws
+{
     let rpc = DelayedScheduleRPC(delay: delay)
     let store = DieterStore(scheduleRPCOverride: rpc, restoreSync: false)
     store.selectedProjectID = "A"
@@ -99,7 +100,10 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     #expect(await rpc.calls == 1)
     #expect(!store.schedulesLoading)
     #expect(store.schedulesError?.contains("Fixture unavailable") == true)
-    #expect(SchedulesPresentationState.resolve(isLoaded: false, isLoading: false, hasSchedules: false, error: store.schedulesError) == .failed(store.schedulesError!))
+    #expect(
+        SchedulesPresentationState.resolve(
+            isLoaded: false, isLoading: false, hasSchedules: false, error: store.schedulesError)
+            == .failed(store.schedulesError!))
     await rpc.setFailure(false)
     await store.loadSchedules()
     #expect(store.schedulesError == nil)
@@ -124,16 +128,19 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
         snapshot.conversations.append(conversation)
     }
     let first = try snapshot.serializedData()
-    #expect(await decoder.conversation(cardID: "card-23", endpointID: "A", data: first)?.detail.card.title == "original")
+    #expect(
+        await decoder.conversation(cardID: "card-23", endpointID: "A", data: first)?.detail.card.title == "original")
     snapshot.conversations[23].detail.card.title = "new"
     let second = try snapshot.serializedData()
     #expect(await decoder.conversation(cardID: "card-23", endpointID: "A", data: second)?.detail.card.title == "new")
-    #expect(await decoder.conversation(cardID: "card-23", endpointID: "B", data: first)?.detail.card.title == "original")
+    #expect(
+        await decoder.conversation(cardID: "card-23", endpointID: "B", data: first)?.detail.card.title == "original")
     #expect(await decoder.snapshot(endpointID: "A", data: Data([255])) == nil)
 }
 
 @Test func markdownPreparationRunsOffMainAndBoundsEagerContent() async throws {
-    let source = "| First | Second |\n| --- | --- |\n" + (0..<100).map { "| row \($0) | **value** |" }.joined(separator: "\n")
+    let source =
+        "| First | Second |\n| --- | --- |\n" + (0..<100).map { "| row \($0) | **value** |" }.joined(separator: "\n")
     let result = try await BackgroundPreparation.run { () -> (Bool, [ConversationMarkdownBlock]) in
         (Thread.isMainThread, try ConversationRenderCache.prepare(source))
     }
@@ -156,15 +163,17 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     #expect(earlier == 0..<1)
 }
 
-@Test @MainActor func orphanedOutboxChatsStayInRecoveryWithoutChangingDirectoryCount() throws {
+@Test @MainActor func orphanedOutboxChatsStayInRecoveryWithoutChangingDirectoryCount() async throws {
     let store = DieterStore(restoreSync: false)
     var project = Dieter_V1_Project(); project.id = "exists"
     store.projectDirectory = [project.id: project]
     for projectID in ["exists", "deleted"] {
         var request = Dieter_V1_CreateConversationRequest(); request.projectID = projectID
-        store.syncDiskState.outbox.append(.init(commandID: projectID, clientID: "test", endpointID: store.endpoint.id,
-                                               kind: .createChat, request: try request.serializedData(), optimisticID: "local-\(projectID)",
-                                               attempts: 1, lastError: "Project missing", state: .failed, createdAt: Date()))
+        try await store.outbox.enqueue(
+            .init(
+                commandID: projectID, clientID: "test", endpointID: store.endpoint.id,
+                kind: .createChat, request: try request.serializedData(), optimisticID: "local-\(projectID)",
+                attempts: 1, lastError: "Project missing", state: .failed, createdAt: Date()))
     }
     for _ in 0..<5 {
         store.rebuildOutboxOverlays()
@@ -174,7 +183,7 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
         store.rebuildOutboxOverlays()
         #expect(store.chats.map(\.id) == ["local-exists"])
     }
-    #expect(store.syncDiskState.outbox.count == 2)
+    #expect(store.outbox.entries.count == 2)
     #expect(store.failedOutboxIDs.contains("local-deleted"))
 }
 

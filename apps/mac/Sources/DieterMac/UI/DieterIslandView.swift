@@ -100,7 +100,8 @@ struct DieterIslandActivity: Equatable {
             let runtimeDate = DieterTimestamp.date(from: card.runtimeUpdatedAt)
             let updatedDate = DieterTimestamp.date(from: card.updatedAt)
             if completed, let date = runtimeDate ?? updatedDate,
-               calendar.isDate(date, inSameDayAs: now) {
+                calendar.isDate(date, inSameDayAs: now)
+            {
                 doneTodayCount += 1
             }
 
@@ -118,16 +119,17 @@ struct DieterIslandActivity: Equatable {
             }
             let date = runtimeDate ?? DieterTimestamp.date(from: card.lastActivityAt) ?? updatedDate
             if kind == .completed, let date, !calendar.isDate(date, inSameDayAs: now) { continue }
-            rows.append(Item(
-                id: "\(kind.rawValue)-\(card.id)",
-                cardID: card.id,
-                chat: card.chat,
-                kind: kind,
-                title: card.title.isEmpty ? "Untitled conversation" : card.title,
-                detail: detail(for: card, kind: kind),
-                provider: card.provider,
-                timestamp: date
-            ))
+            rows.append(
+                Item(
+                    id: "\(kind.rawValue)-\(card.id)",
+                    cardID: card.id,
+                    chat: card.chat,
+                    kind: kind,
+                    title: card.title.isEmpty ? "Untitled conversation" : card.title,
+                    detail: detail(for: card, kind: kind),
+                    provider: card.provider,
+                    timestamp: date
+                ))
         }
         rows.sort {
             if $0.kind.rawValue != $1.kind.rawValue { return $0.kind.rawValue < $1.kind.rawValue }
@@ -152,7 +154,10 @@ struct DieterIslandActivity: Equatable {
     private static func detail(for card: SourceCard, kind: Item.Kind) -> String {
         if !card.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return card.summary }
         switch kind {
-        case .running: return card.activeSubagentCount == 0 ? "Agent turn in progress" : "\(card.activeSubagentCount) subagent\(card.activeSubagentCount == 1 ? "" : "s") working"
+        case .running:
+            return card.activeSubagentCount == 0
+                ? "Agent turn in progress"
+                : "\(card.activeSubagentCount) subagent\(card.activeSubagentCount == 1 ? "" : "s") working"
         case .review: return "Ready for your review"
         case .needsInput: return "Waiting for your reply"
         case .completed: return "Completed today"
@@ -234,8 +239,14 @@ struct DieterIslandView: View {
             .frame(height: 1)
             .padding(.horizontal, presentation.expanded ? 42 : 28)
         }
-        .shadow(color: DieterTheme.primary.opacity(presentation.expanded ? 0.12 : 0.05), radius: presentation.expanded ? 38 : 18, y: 8)
-        .shadow(color: .black.opacity(presentation.expanded ? 0.52 : 0.30), radius: presentation.expanded ? 30 : 14, y: presentation.expanded ? 16 : 7)
+        .shadow(
+            color: DieterTheme.primary.opacity(presentation.expanded ? 0.12 : 0.05),
+            radius: presentation.expanded ? 38 : 18, y: 8
+        )
+        .shadow(
+            color: .black.opacity(presentation.expanded ? 0.52 : 0.30), radius: presentation.expanded ? 30 : 14,
+            y: presentation.expanded ? 16 : 7
+        )
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: presentation.expanded)
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
@@ -387,9 +398,13 @@ struct DieterIslandView: View {
                     Text(store.phase.isConnected ? "No agent activity right now" : "Dieter is offline")
                         .font(.system(size: 13.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.88))
-                    Text(store.phase.isConnected ? "Running turns and reviews will appear here." : "The Island will update when Dieter reconnects.")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.40))
+                    Text(
+                        store.phase.isConnected
+                            ? "Running turns and reviews will appear here."
+                            : "The Island will update when Dieter reconnects."
+                    )
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.40))
                 }
                 .padding(.horizontal, 30)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -431,6 +446,7 @@ struct DieterIslandView: View {
 
             HStack(spacing: 9) {
                 Button {
+                    store.reopenWorkspaceWindow()
                     NSApp.activate(ignoringOtherApps: true)
                     if let first = activity.items.first { open(first) }
                 } label: {
@@ -440,6 +456,7 @@ struct DieterIslandView: View {
                 .disabled(activity.items.isEmpty)
 
                 Button {
+                    store.reopenWorkspaceWindow()
                     NSApp.activate(ignoringOtherApps: true)
                     store.openSettings(section: .island)
                     onRequestExpansion(false)
@@ -450,12 +467,15 @@ struct DieterIslandView: View {
 
                 Spacer()
                 if activity.subagentCount > 0 {
-                    Label("\(activity.subagentCount) subagent\(activity.subagentCount == 1 ? "" : "s")", systemImage: "person.2.fill")
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundStyle(DieterTheme.primary)
-                        .padding(.horizontal, 9)
-                        .frame(height: 28)
-                        .background(DieterTheme.primary.opacity(0.09), in: Capsule())
+                    Label(
+                        "\(activity.subagentCount) subagent\(activity.subagentCount == 1 ? "" : "s")",
+                        systemImage: "person.2.fill"
+                    )
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(DieterTheme.primary)
+                    .padding(.horizontal, 9)
+                    .frame(height: 28)
+                    .background(DieterTheme.primary.opacity(0.09), in: Capsule())
                 }
             }
             .padding(.horizontal, 30)
@@ -477,6 +497,7 @@ struct DieterIslandView: View {
     }
 
     private func open(_ item: DieterIslandActivity.Item) {
+        store.reopenWorkspaceWindow()
         NSApp.activate(ignoringOtherApps: true)
         Task { await store.openConversation(cardID: item.cardID, chat: item.chat) }
         onRequestExpansion(false)
@@ -663,7 +684,9 @@ private struct IslandActionButtonStyle: ButtonStyle {
             .padding(.horizontal, 13)
             .frame(height: 34)
             .background(
-                primary ? DieterTheme.primary.opacity(configuration.isPressed ? 0.23 : 0.16) : Color.white.opacity(configuration.isPressed ? 0.10 : 0.052),
+                primary
+                    ? DieterTheme.primary.opacity(configuration.isPressed ? 0.23 : 0.16)
+                    : Color.white.opacity(configuration.isPressed ? 0.10 : 0.052),
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .overlay {

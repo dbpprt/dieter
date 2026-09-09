@@ -20,13 +20,7 @@ extension DieterStore {
             ?? (state.project.id == renameProjectTargetID ? state.project : nil)
     }
 
-    var projects: [Dieter_V1_Project] {
-        let values = projectDirectory.isEmpty ? state.projects : Array(projectDirectory.values)
-        return values.sorted {
-            if $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedSame { return $0.id < $1.id }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
-    }
+    var projects: [Dieter_V1_Project] { replica.projects }
 
     /// The daemon-wide card projection used by app-global surfaces such as the
     /// Island. `state.cards` intentionally contains only the selected project,
@@ -125,14 +119,14 @@ extension DieterStore {
     func isAcceptedOutboxItem(_ id: String) -> Bool { acceptedOutboxIDs.contains(id) }
     func isFailedOutboxItem(_ id: String) -> Bool { failedOutboxIDs.contains(id) }
     func failedCreationError(_ id: String) -> String? {
-        syncDiskState.outbox.first { entry in
-            (entry.optimisticID == id || entry.serverID == id) && entry.state == .failed &&
-                (entry.kind == .createCard || entry.kind == .createChat)
+        outbox.entries.first { entry in
+            (entry.optimisticID == id || entry.serverID == id) && entry.state == .failed
+                && (entry.kind == .createCard || entry.kind == .createChat)
         }?.lastError
     }
 
     var failedOutboxItems: [DieterFailedOutboxItem] {
-        syncDiskState.outbox.compactMap { entry in
+        outbox.entries.compactMap { entry in
             guard entry.state == .failed else { return nil }
             return DieterFailedOutboxItem(
                 id: entry.serverID ?? entry.optimisticID,
@@ -170,16 +164,8 @@ extension DieterStore {
         return state.cards.first { $0.id == id } ?? state.chats.first { $0.id == id } ?? chats.first { $0.id == id }
     }
 
-    var selectedSchedule: Dieter_V1_Schedule? {
-        guard schedulesAreLoaded, let selectedScheduleID else { return nil }
-        return schedules.first { $0.id == selectedScheduleID }
-    }
-
-    var schedulesAreLoaded: Bool {
-        !selectedProjectID.isEmpty &&
-            schedulesLoadedProjectID == selectedProjectID &&
-            schedulesLoadedEndpointID == endpoint.id
-    }
+    var selectedSchedule: Dieter_V1_Schedule? { schedulesModel.selectedSchedule }
+    var schedulesAreLoaded: Bool { schedulesModel.schedulesAreLoaded }
 
     var selectedTerminal: Dieter_V1_Terminal? {
         guard let selectedTerminalID else { return nil }

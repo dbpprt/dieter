@@ -19,24 +19,28 @@ struct ConversationTurnFailure {
         let failedMessageIndex = messages.lastIndex { message in
             !["user", "human"].contains(message.role.lowercased()) && message.parts.contains(where: isFailurePart)
         }
-        let failureParts = failedMessageIndex.map { index in
-            messages[index].parts.filter(isFailurePart)
-        } ?? []
+        let failureParts =
+            failedMessageIndex.map { index in
+                messages[index].parts.filter(isFailurePart)
+            } ?? []
         let diagnostic = failureParts.compactMap { part -> String? in
-            let value = part.errorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let value =
+                part.errorText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 ? part.text
                 : part.errorText
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? nil : trimmed
         }.joined(separator: "\n\n")
-        let log = diagnostic.isEmpty
+        let log =
+            diagnostic.isEmpty
             ? "The harness turn failed without producing diagnostic output."
             : diagnostic
 
         let retrySearchEnd = failedMessageIndex ?? messages.endIndex
-        let retryParts = messages[..<retrySearchEnd].reversed().first { message in
-            ["user", "human"].contains(message.role.lowercased()) && message.parts.contains(where: isRetryablePart)
-        }?.parts ?? []
+        let retryParts =
+            messages[..<retrySearchEnd].reversed().first { message in
+                ["user", "human"].contains(message.role.lowercased()) && message.parts.contains(where: isRetryablePart)
+            }?.parts ?? []
 
         return ConversationTurnFailure(
             summary: conciseSummary(log),
@@ -63,10 +67,12 @@ struct ConversationTurnFailure {
     }
 
     private static func conciseSummary(_ log: String) -> String {
-        var line = log.split(whereSeparator: \.isNewline)
+        var line =
+            log.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first(where: { !$0.isEmpty }) ?? "The harness exited unexpectedly."
-        for prefix in ["Turn failed — ", "Turn failed: ", "Turn failed - "] where line.lowercased().hasPrefix(prefix.lowercased()) {
+        for prefix in ["Turn failed — ", "Turn failed: ", "Turn failed - "]
+        where line.lowercased().hasPrefix(prefix.lowercased()) {
             line = String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
             break
         }

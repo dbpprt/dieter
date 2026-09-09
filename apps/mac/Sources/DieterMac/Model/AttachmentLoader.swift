@@ -20,34 +20,45 @@ actor AttachmentLoader {
     static let maximumBytes = 5 * 1_024 * 1_024
     static let maximumTotalBytes = 6 * 1_024 * 1_024
 
+    nonisolated static func validate(
+        _ incoming: [Dieter_V1_MessagePart], appendingTo existing: [Dieter_V1_MessagePart]
+    ) throws -> [Dieter_V1_MessagePart] {
+        let parts = existing + incoming
+        guard parts.count <= maximumCount else { throw DieterAttachmentError.tooMany }
+        guard parts.reduce(0, { $0 + $1.data.count }) <= maximumTotalBytes else {
+            throw DieterAttachmentError.totalTooLarge
+        }
+        return parts
+    }
+
     func parts(
         urls: [URL],
         appendingTo existing: [Dieter_V1_MessagePart] = []
     ) throws -> [Dieter_V1_MessagePart] {
         try MacPerformanceSignposts.measure("Load file attachments", log: MacPerformanceSignposts.attachment) {
-        guard existing.count + urls.count <= Self.maximumCount else {
-            throw DieterAttachmentError.tooMany
-        }
-        var parts = existing
-        for url in urls {
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            let values = try url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey, .isRegularFileKey])
-            guard values.isRegularFile != false else {
-                throw DieterAttachmentError.notAFile(url.lastPathComponent)
+            guard existing.count + urls.count <= Self.maximumCount else {
+                throw DieterAttachmentError.tooMany
             }
-            if let size = values.fileSize, size > Self.maximumBytes {
-                throw DieterAttachmentError.fileTooLarge(url.lastPathComponent)
+            var parts = existing
+            for url in urls {
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                let values = try url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey, .isRegularFileKey])
+                guard values.isRegularFile != false else {
+                    throw DieterAttachmentError.notAFile(url.lastPathComponent)
+                }
+                if let size = values.fileSize, size > Self.maximumBytes {
+                    throw DieterAttachmentError.fileTooLarge(url.lastPathComponent)
+                }
+                let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+                parts = try Self.appending(
+                    data: data,
+                    filename: url.lastPathComponent,
+                    contentType: values.contentType,
+                    to: parts
+                )
             }
-            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-            parts = try Self.appending(
-                data: data,
-                filename: url.lastPathComponent,
-                contentType: values.contentType,
-                to: parts
-            )
-        }
-        return parts
+            return parts
         }
     }
 
@@ -56,25 +67,25 @@ actor AttachmentLoader {
         appendingTo existing: [Dieter_V1_MessagePart] = []
     ) throws -> [Dieter_V1_MessagePart] {
         try MacPerformanceSignposts.measure("Normalize image attachments", log: MacPerformanceSignposts.attachment) {
-        guard existing.count + images.count <= Self.maximumCount else {
-            throw DieterAttachmentError.tooMany
-        }
-        var parts = existing
-        for image in images {
-            let type = UTType(image.typeIdentifier)
-            let normalized = try Self.normalizedImage(data: image.data, type: type)
-            let baseName = image.suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let fallbackName = "Pasted Image \(parts.count + 1)"
-            let resolvedName = baseName.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackName
-            let filename = Self.filename(resolvedName, for: normalized.type)
-            parts = try Self.appending(
-                data: normalized.data,
-                filename: filename,
-                contentType: normalized.type,
-                to: parts
-            )
-        }
-        return parts
+            guard existing.count + images.count <= Self.maximumCount else {
+                throw DieterAttachmentError.tooMany
+            }
+            var parts = existing
+            for image in images {
+                let type = UTType(image.typeIdentifier)
+                let normalized = try Self.normalizedImage(data: image.data, type: type)
+                let baseName = image.suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let fallbackName = "Pasted Image \(parts.count + 1)"
+                let resolvedName = baseName.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackName
+                let filename = Self.filename(resolvedName, for: normalized.type)
+                parts = try Self.appending(
+                    data: normalized.data,
+                    filename: filename,
+                    contentType: normalized.type,
+                    to: parts
+                )
+            }
+            return parts
         }
     }
 
@@ -103,16 +114,19 @@ actor AttachmentLoader {
             return (data, type ?? .png)
         }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else {
             throw DieterAttachmentError.invalidImage
         }
         let output = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            output,
-            UTType.png.identifier as CFString,
-            1,
-            nil
-        ) else {
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                output,
+                UTType.png.identifier as CFString,
+                1,
+                nil
+            )
+        else {
             throw DieterAttachmentError.invalidImage
         }
         CGImageDestinationAddImage(destination, image, nil)

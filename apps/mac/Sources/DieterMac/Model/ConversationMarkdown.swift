@@ -57,10 +57,10 @@ enum ConversationMarkdownParser {
             }
 
             if !inCode,
-               index + 1 < lines.count,
-               let headers = tableCells(lines[index]),
-               let alignments = tableDelimiter(lines[index + 1]),
-               headers.count == alignments.count
+                index + 1 < lines.count,
+                let headers = tableCells(lines[index]),
+                let alignments = tableDelimiter(lines[index + 1]),
+                headers.count == alignments.count
             {
                 flush()
                 index += 2

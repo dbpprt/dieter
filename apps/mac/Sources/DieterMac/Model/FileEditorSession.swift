@@ -29,7 +29,7 @@ final class FileEditorSession {
     }
 
     func prepare(documentKey: String, text: String) {
-        guard self.documentKey != documentKey else { return }
+        guard self.documentKey != documentKey || (!isDirty && currentText() != text) else { return }
         self.documentKey = documentKey
         detachedText = text
         if textView?.string != text { textView?.string = text }
@@ -54,13 +54,13 @@ final class FileEditorSession {
         textView = nil
     }
 
-    func markSaved(documentKey: String, text: String) {
-        self.documentKey = documentKey
-        detachedText = text
-        if textView?.string != text { textView?.string = text }
+    func markSaved(documentKey: String, submittedText: String, editRevision: Int) {
+        guard self.documentKey == documentKey else { return }
+        // Acknowledgement advances the server revision in FilesModel. It never
+        // replaces the live buffer or marks a successor edit as clean.
+        guard revision == editRevision, currentText() == submittedText else { return }
+        detachedText = submittedText
         isDirty = false
-        lineCount = Self.countLines(in: text)
-        revision &+= 1
     }
 
     nonisolated static func countLines(in text: String) -> Int {

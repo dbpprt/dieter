@@ -2,40 +2,6 @@ import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ChatListProjection: Equatable, Sendable {
-    let visible: [Dieter_V1_Card]
-    let pinned: [Dieter_V1_Card]
-    let byProject: [String: [Dieter_V1_Card]]
-
-    static func resolve(
-        chats: [Dieter_V1_Card],
-        showArchived: Bool,
-        search: String,
-        pinnedOrder: [String]
-    ) -> ChatListProjection {
-        let visible = chats
-            .filter { chat in
-                chat.scope == "chat" && chat.boardID.isEmpty && chat.archived == showArchived &&
-                    (search.isEmpty || chat.title.localizedCaseInsensitiveContains(search) || chat.summary.localizedCaseInsensitiveContains(search))
-            }
-            .sorted {
-                let left = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
-                let right = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
-                return left == right ? $0.id < $1.id : left > right
-            }
-        let pinned = showArchived ? [] : PinnedChatOrdering.ordered(
-            visible.filter(\.pinned),
-            preferredOrder: pinnedOrder
-        )
-        let projectChats = showArchived ? visible : visible.filter { !$0.pinned }
-        return ChatListProjection(
-            visible: visible,
-            pinned: pinned,
-            byProject: Dictionary(grouping: projectChats, by: \.projectID)
-        )
-    }
-}
-
 struct ChatsView: View {
     @Environment(DieterStore.self) private var store
     @State private var search = ""
@@ -51,7 +17,10 @@ struct ChatsView: View {
     private var activePinnedChats: [Dieter_V1_Card] {
         store.chats
             .filter { $0.scope == "chat" && $0.boardID.isEmpty && !$0.archived && $0.pinned }
-            .sorted { ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt) > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt) }
+            .sorted {
+                ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt)
+                    > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt)
+            }
     }
 
     private var pinnedChatMembership: [String] {
@@ -59,8 +28,7 @@ struct ChatsView: View {
     }
 
     var body: some View {
-        let projection = ChatListProjection.resolve(
-            chats: store.chats,
+        let projection = store.replica.chatProjection(
             showArchived: showArchived,
             search: search,
             pinnedOrder: pinnedChatNavigation.chatOrder
@@ -73,34 +41,47 @@ struct ChatsView: View {
                     HStack(spacing: 8) {
                         PaneTitleBlock(
                             title: showArchived ? "Archived chats" : "Chats",
-                            subtitle: "\(projection.visible.count) conversation\(projection.visible.count == 1 ? "" : "s")",
+                            subtitle:
+                                "\(projection.visible.count) conversation\(projection.visible.count == 1 ? "" : "s")",
                             prominent: true
                         )
                         Button {
                             showArchived.toggle()
                             store.closeConversation()
-                        } label: { Image(systemName: showArchived ? "archivebox.fill" : "archivebox") }
-                        .buttonStyle(DieterIconButtonStyle(active: showArchived)).help(showArchived ? "Show active chats" : "Show archived chats")
-                        Button { store.beginStandaloneChat() } label: { Label("New chat", systemImage: "plus") }
-                            .buttonStyle(DieterPrimaryButtonStyle()).disabled(showArchived).help("New standalone chat")
-                            .accessibilityIdentifier("chats.new")
+                        } label: {
+                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                        }
+                        .buttonStyle(DieterIconButtonStyle(active: showArchived)).help(
+                            showArchived ? "Show active chats" : "Show archived chats")
+                        Button {
+                            store.beginStandaloneChat()
+                        } label: {
+                            Label("New chat", systemImage: "plus")
+                        }
+                        .buttonStyle(DieterPrimaryButtonStyle()).disabled(showArchived).help("New standalone chat")
+                        .accessibilityIdentifier("chats.new")
                     }
                 } secondary: {
                     DieterSearchField(text: $search, placeholder: "Search chats")
                 }
 
                 if store.chatsLoading || store.chatsError != nil {
-                    LoadFeedback(title: "Refreshing chats…", error: store.chatsError,
-                                 retry: { Task { await store.refreshChats() } }, compact: true)
-                        .accessibilityIdentifier("chats.load-feedback")
+                    LoadFeedback(
+                        title: "Refreshing chats…", error: store.chatsError,
+                        retry: { Task { await store.refreshChats() } }, compact: true
+                    )
+                    .accessibilityIdentifier("chats.load-feedback")
                 }
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         let pinned = projection.pinned
                         if !pinned.isEmpty {
                             VStack(alignment: .leading, spacing: 5) {
-                                Label("PINNED", systemImage: "pin.fill").font(DieterFont.sectionLabel).foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 8)
-                                ChatGroupCard(chats: displayedPinned, movePinnedChat: movePinnedChat).padding(.leading, 14)
+                                Label("PINNED", systemImage: "pin.fill").font(DieterFont.sectionLabel).foregroundStyle(
+                                    DieterTheme.tertiary
+                                ).padding(.horizontal, 8)
+                                ChatGroupCard(chats: displayedPinned, movePinnedChat: movePinnedChat).padding(
+                                    .leading, 14)
                                 if pinnedPage.pageCount > 1 {
                                     ChatPageControls(
                                         page: pinnedPage,
@@ -113,7 +94,9 @@ struct ChatsView: View {
                         }
 
                         Text(showArchived ? "ARCHIVED PROJECTS" : "PROJECTS")
-                            .font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 8).padding(.top, 3)
+                            .font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary).padding(
+                                .horizontal, 8
+                            ).padding(.top, 3)
 
                         ForEach(store.projects.filter { !$0.archived }, id: \.id) { project in
                             let projectChats = projection.byProject[project.id] ?? []
@@ -132,9 +115,13 @@ struct ChatsView: View {
 
                         if projection.visible.isEmpty && !store.chatsLoading && store.chatsError == nil {
                             ContentUnavailableView(
-                                search.isEmpty ? (showArchived ? "No archived chats" : "No chats yet") : "No matching chats",
+                                search.isEmpty
+                                    ? (showArchived ? "No archived chats" : "No chats yet") : "No matching chats",
                                 systemImage: showArchived ? "archivebox" : "bubble.left.and.bubble.right",
-                                description: Text(showArchived ? "Archived standalone conversations appear here." : "Start a standalone conversation in any project folder.")
+                                description: Text(
+                                    showArchived
+                                        ? "Archived standalone conversations appear here."
+                                        : "Start a standalone conversation in any project folder.")
                             )
                             .padding(.vertical, 32)
                         }
@@ -145,11 +132,13 @@ struct ChatsView: View {
             .background(DieterTheme.sidebar)
 
             if store.selectedChatID != nil {
-                ConversationView()
+                ConversationView().environment(store.conversationContext)
             } else if showArchived {
                 VStack(spacing: 0) {
                     FluidPaneChrome {
-                        PaneTitleBlock(title: "Archived conversations", subtitle: "Select a chat to inspect or restore", symbol: "archivebox")
+                        PaneTitleBlock(
+                            title: "Archived conversations", subtitle: "Select a chat to inspect or restore",
+                            symbol: "archivebox")
                     }
                     VStack(spacing: 10) {
                         Image(systemName: "archivebox").font(.system(size: 34)).foregroundStyle(.secondary)
@@ -213,9 +202,12 @@ private struct ChatProjectGroup: View {
             HStack(spacing: 7) {
                 Button(action: toggleCollapsed) {
                     HStack(spacing: 7) {
-                        Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
+                        Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(
+                            .system(size: 8, weight: .bold)
+                        ).foregroundStyle(DieterTheme.tertiary)
                         Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
-                        Text(project.name.uppercased()).font(DieterFont.sectionLabel).tracking(0.8).lineLimit(1).foregroundStyle(DieterTheme.subtle)
+                        Text(project.name.uppercased()).font(DieterFont.sectionLabel).tracking(0.8).lineLimit(1)
+                            .foregroundStyle(DieterTheme.subtle)
                         Text("· \(chats.count)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                     }
                 }
@@ -226,14 +218,19 @@ private struct ChatProjectGroup: View {
                 .smokeTarget("chats.project.\(project.id).toggle")
                 Spacer()
                 if !showArchived {
-                    Button { store.beginStandaloneChat(projectID: project.id) } label: { Image(systemName: "plus").font(.system(size: 9, weight: .bold)) }
-                        .buttonStyle(.plain).help("New chat in \(project.name)")
+                    Button {
+                        store.beginStandaloneChat(projectID: project.id)
+                    } label: {
+                        Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+                    }
+                    .buttonStyle(.plain).help("New chat in \(project.name)")
                 }
             }.padding(.horizontal, 8).frame(height: 24)
 
             if !collapsed {
                 if chats.isEmpty {
-                    Text(showArchived ? "No archived chats" : "No chats").font(.caption).foregroundStyle(.tertiary).padding(.leading, 36).padding(.vertical, 2)
+                    Text(showArchived ? "No archived chats" : "No chats").font(.caption).foregroundStyle(.tertiary)
+                        .padding(.leading, 36).padding(.vertical, 2)
                 } else {
                     ChatGroupCard(chats: displayed) {
                         if chats.count > 5 {
@@ -383,7 +380,8 @@ struct ChatRow: View {
                             .accessibilityLabel("Running")
                     } else {
                         ZStack {
-                            Circle().stroke(runtimeColor(card.runtime).opacity(0.35), lineWidth: 1.5).frame(width: 11, height: 11)
+                            Circle().stroke(runtimeColor(card.runtime).opacity(0.35), lineWidth: 1.5).frame(
+                                width: 11, height: 11)
                             Circle().fill(runtimeColor(card.runtime)).frame(width: 5, height: 5)
                         }
                     }
@@ -394,18 +392,25 @@ struct ChatRow: View {
                         Text(card.title.isEmpty ? "Untitled chat" : card.title)
                             .font(.system(size: 12.5, weight: unread ? .semibold : .medium))
                             .lineLimit(1)
-                        if card.pinned { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(DieterTheme.shell) }
-                        if card.archived { Image(systemName: "archivebox.fill").font(.system(size: 8)).foregroundStyle(DieterTheme.tertiary) }
+                        if card.pinned {
+                            Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(DieterTheme.shell)
+                        }
+                        if card.archived {
+                            Image(systemName: "archivebox.fill").font(.system(size: 8)).foregroundStyle(
+                                DieterTheme.tertiary)
+                        }
                         Spacer()
                         HStack(spacing: 5) {
                             if unread {
                                 Circle().fill(DieterTheme.primary).frame(width: 6.5, height: 6.5)
                                     .accessibilityLabel("Unread")
                             }
-                            Text(ChatActivityText.compact(
-                                card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt,
-                                relativeTo: .now
-                            ))
+                            Text(
+                                ChatActivityText.compact(
+                                    card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt,
+                                    relativeTo: .now
+                                )
+                            )
                             .fixedSize()
                             if showsPinnedDragHandle {
                                 Image(systemName: "line.3.horizontal")
@@ -417,18 +422,27 @@ struct ChatRow: View {
                         .foregroundStyle(unread ? DieterTheme.primary : DieterTheme.tertiary)
                     }
                     HStack(spacing: 6) {
-                        if ["running", "starting"].contains(card.runtime) { Text("Running").foregroundStyle(DieterTheme.primary) }
-                        else if !card.summary.isEmpty { Text(card.summary).lineLimit(1) }
+                        if ["running", "starting"].contains(card.runtime) {
+                            Text("Running").foregroundStyle(DieterTheme.primary)
+                        } else if !card.summary.isEmpty {
+                            Text(card.summary).lineLimit(1)
+                        }
                         if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
                         if !card.activeSubagents.isEmpty {
-                            Text("· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")").foregroundStyle(DieterTheme.subtle)
+                            Text(
+                                "· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")"
+                            ).foregroundStyle(DieterTheme.subtle)
                         }
                     }
                     .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 7)
-            .background(store.selectedChatID == card.id ? DieterTheme.selection : (hovering ? DieterTheme.raised.opacity(0.75) : .clear), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(
+                store.selectedChatID == card.id
+                    ? DieterTheme.selection : (hovering ? DieterTheme.raised.opacity(0.75) : .clear),
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .opacity(store.isPendingCard(card.id) ? 0.52 : 1)
@@ -446,7 +460,9 @@ struct ChatRow: View {
         .contextMenu {
             if store.isFailedOutboxItem(card.id) {
                 Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
-                Button("Discard queued creation", role: .destructive) { Task { await store.discardOutboxItem(card.id) } }
+                Button("Discard queued creation", role: .destructive) {
+                    Task { await store.discardOutboxItem(card.id) }
+                }
                 Divider()
             }
             if card.archived {
@@ -511,11 +527,14 @@ private struct PinnedChatRow: View {
             }
             .dropDestination(for: String.self) { values, _ in
                 guard let value = values.first,
-                      let payload = PinnedChatDragPayload(value),
-                      payload.chatID != card.id else { return false }
+                    let payload = PinnedChatDragPayload(value),
+                    payload.chatID != card.id
+                else { return false }
                 moveDraggedChat(payload.chatID)
                 return true
-            } isTargeted: { dropTargeted = $0 }
+            } isTargeted: {
+                dropTargeted = $0
+            }
             .animation(.easeOut(duration: 0.12), value: dropTargeted)
             .accessibilityHint("Drag to reorder pinned chats")
     }
@@ -587,10 +606,19 @@ private struct StandaloneChatStartView: View {
     @State private var harnessCatalogError: String?
 
     private let suggestions = [
-        ("Explore the codebase", "Explore this codebase and explain its architecture, important entry points, and current risks."),
+        (
+            "Explore the codebase",
+            "Explore this codebase and explain its architecture, important entry points, and current risks."
+        ),
         ("Build a feature", "Help me design and implement a new feature in this project."),
-        ("Review recent changes", "Review the recent changes in this repository and identify correctness or maintainability issues."),
-        ("Fix a failure", "Investigate the current failures in this project, find the root cause, and implement a verified fix."),
+        (
+            "Review recent changes",
+            "Review the recent changes in this repository and identify correctness or maintainability issues."
+        ),
+        (
+            "Fix a failure",
+            "Investigate the current failures in this project, find the root cause, and implement a verified fix."
+        ),
     ]
 
     private var availableProjects: [Dieter_V1_Project] { store.projects.filter { !$0.archived } }
@@ -627,19 +655,33 @@ private struct StandaloneChatStartView: View {
             Spacer(minLength: 24)
             VStack(spacing: 16) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous).fill(DieterTheme.shellDeep.opacity(0.16)).frame(width: 60, height: 60)
-                    Image(systemName: "bubble.left").font(.system(size: 23, weight: .medium)).foregroundStyle(DieterTheme.shell)
+                    RoundedRectangle(cornerRadius: 15, style: .continuous).fill(DieterTheme.shellDeep.opacity(0.16))
+                        .frame(width: 60, height: 60)
+                    Image(systemName: "bubble.left").font(.system(size: 23, weight: .medium)).foregroundStyle(
+                        DieterTheme.shell)
                 }
                 Text("What should we work on?").font(.system(size: 22, weight: .semibold))
-                Text("Start a standalone local conversation in one of your project folders.\nIt never becomes a dieter card.")
-                    .font(.system(size: 13)).foregroundStyle(DieterTheme.subtle).multilineTextAlignment(.center).lineSpacing(3)
+                Text(
+                    "Start a standalone local conversation in one of your project folders.\nIt never becomes a dieter card."
+                )
+                .font(.system(size: 13)).foregroundStyle(DieterTheme.subtle).multilineTextAlignment(.center)
+                .lineSpacing(3)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(suggestions, id: \.0) { suggestion in
-                        Button { prompt = suggestion.1 } label: {
-                            HStack { Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(DieterTheme.shell); Text(suggestion.0).font(.system(size: 12, weight: .medium)); Spacer() }
-                                .padding(.horizontal, 13).frame(height: 46)
-                                .background(DieterTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
+                        Button {
+                            prompt = suggestion.1
+                        } label: {
+                            HStack {
+                                Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(
+                                    DieterTheme.shell);
+                                Text(suggestion.0).font(.system(size: 12, weight: .medium)); Spacer()
+                            }
+                            .padding(.horizontal, 13).frame(height: 46)
+                            .background(
+                                DieterTheme.surface.opacity(0.7),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            )
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
                         }.buttonStyle(.plain)
                     }
                 }.frame(maxWidth: 590)
@@ -669,12 +711,16 @@ private struct StandaloneChatStartView: View {
                     Menu {
                         ForEach(destinationHarnesses, id: \.id) { item in
                             Button(item.name) {
-                                provider = item.id; model = item.defaultModel
-                                effort = item.models.first(where: { $0.id == model })?.defaultEffort ?? item.effort.options.first?.id ?? ""
-                                providerOptions = ProviderOptionValues.defaults(for: item)
+                                guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else {
+                                    return
+                                }
+                                provider = selection.provider; model = selection.model
+                                effort = selection.effort; providerOptions = selection.providerOptions
                             }
                         }
-                    } label: { DieterChipLabel(title: harness?.name ?? "Agent", symbol: "cpu") }.menuStyle(.borderlessButton).fixedSize()
+                    } label: {
+                        DieterChipLabel(title: harness?.name ?? "Agent", symbol: "cpu")
+                    }.menuStyle(.borderlessButton).fixedSize()
                         .disabled(destinationHarnesses.isEmpty)
 
                     Menu {
@@ -688,19 +734,33 @@ private struct StandaloneChatStartView: View {
                     .help(workspaceDraft.mode.detail)
 
                     Menu {
-                        ForEach(harness?.models ?? [], id: \.id) { item in Button(item.name) { model = item.id; effort = item.defaultEffort } }
-                    } label: { DieterChipLabel(title: selectedModel?.name ?? "Model", symbol: "terminal", maximumTitleWidth: 190) }.menuStyle(.borderlessButton).fixedSize()
+                        ForEach(harness?.models ?? [], id: \.id) { item in
+                            Button(item.name) {
+                                model = item.id; effort = item.defaultEffort
+                            }
+                        }
+                    } label: {
+                        DieterChipLabel(
+                            title: selectedModel?.name ?? "Model", symbol: "terminal", maximumTitleWidth: 190)
+                    }.menuStyle(.borderlessButton).fixedSize()
 
                     if let options = selectedModel?.efforts, !options.isEmpty {
-                        Menu { ForEach(options, id: \.self) { value in Button(value.capitalized) { effort = value } } } label: { DieterChipLabel(title: effort.isEmpty ? "Default" : effort.capitalized, symbol: "sparkles") }.menuStyle(.borderlessButton).fixedSize()
+                        Menu {
+                            ForEach(options, id: \.self) { value in Button(value.capitalized) { effort = value } }
+                        } label: {
+                            DieterChipLabel(title: effort.isEmpty ? "Default" : effort.capitalized, symbol: "sparkles")
+                        }.menuStyle(.borderlessButton).fixedSize()
                     }
                     ProviderOptionChips(options: harness?.options ?? [], values: $providerOptions)
                     Spacer()
                 }
                 if let destination {
                     HStack(spacing: 7) {
-                        Image(systemName: destination.machineOnline ? "desktopcomputer" : "desktopcomputer.trianglebadge.exclamationmark")
-                            .foregroundStyle(destination.machineOnline ? DieterTheme.eyes : DieterTheme.coral)
+                        Image(
+                            systemName: destination.machineOnline
+                                ? "desktopcomputer" : "desktopcomputer.trianglebadge.exclamationmark"
+                        )
+                        .foregroundStyle(destination.machineOnline ? DieterTheme.eyes : DieterTheme.coral)
                         Text("Runs on \(destination.machineName)")
                             .font(.caption.weight(.semibold)).foregroundStyle(DieterTheme.subtle)
                         Text("· \(destination.detail)")
@@ -728,7 +788,9 @@ private struct StandaloneChatStartView: View {
                         .padding(.horizontal, 4)
                 }
                 HStack(alignment: .bottom, spacing: 10) {
-                    Button { fileImporterPresented = true } label: {
+                    Button {
+                        fileImporterPresented = true
+                    } label: {
                         Image(systemName: "paperclip").frame(width: 34, height: 34)
                     }
                     .buttonStyle(DieterIconButtonStyle())
@@ -743,28 +805,45 @@ private struct StandaloneChatStartView: View {
                             if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
                                 return .ignored
                             }
-                            if !submitting, !harnessCatalogLoading, harnessCatalogError == nil, harness != nil, !projectID.isEmpty,
-                               !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty {
+                            if !submitting, !harnessCatalogLoading, harnessCatalogError == nil, harness != nil,
+                                !projectID.isEmpty,
+                                !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+                            {
                                 Task { await submit() }
                             }
                             return .handled
                         }
                         .frame(minHeight: 42, alignment: .topLeading)
-                        .background(attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(attachmentDropTargeted ? DieterTheme.shell : DieterTheme.shellDeep.opacity(0.45), lineWidth: attachmentDropTargeted ? 1.5 : 1))
+                        .background(
+                            attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(
+                                attachmentDropTargeted ? DieterTheme.shell : DieterTheme.shellDeep.opacity(0.45),
+                                lineWidth: attachmentDropTargeted ? 1.5 : 1)
+                        )
                         .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                             Task {
-                                do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) }
-                                catch { store.show(error) }
+                                do {
+                                    attachments = try await store.attachmentParts(providers, appendingTo: attachments)
+                                } catch { store.show(error) }
                             }
                         }
-                    Button { Task { await submit() } } label: {
-                        Image(systemName: submitting ? "hourglass" : "arrow.up").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        Image(systemName: submitting ? "hourglass" : "arrow.up").font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
                             .frame(width: 36, height: 36).background(DieterTheme.shellDeep, in: Circle())
                             .shadow(color: DieterTheme.shellDeep.opacity(0.28), radius: 8, y: 2)
                     }
                     .buttonStyle(.plain)
-                    .disabled(submitting || harnessCatalogLoading || harnessCatalogError != nil || harness == nil || projectID.isEmpty || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty))
+                    .disabled(
+                        submitting || harnessCatalogLoading || harnessCatalogError != nil || harness == nil
+                            || projectID.isEmpty
+                            || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
+                    )
                     .accessibilityIdentifier("chats.new.send")
                 }
             }
@@ -783,7 +862,8 @@ private struct StandaloneChatStartView: View {
 
     private func chooseProject() {
         if projectID.isEmpty {
-            projectID = store.newChatProjectID.isEmpty
+            projectID =
+                store.newChatProjectID.isEmpty
                 ? (store.selectedProjectID.isEmpty ? (availableProjects.first?.id ?? "") : store.selectedProjectID)
                 : store.newChatProjectID
         }
@@ -809,11 +889,14 @@ private struct StandaloneChatStartView: View {
         guard projectID == requestedProjectID else { return }
         destinationHarnesses = catalog.harnesses
         let initializing = provider.isEmpty
-        let preferences = initializing
+        let preferences =
+            initializing
             ? ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
-            : ConversationCreationPreferences(provider: provider, model: model, effort: effort, workspaceMode: workspaceDraft.mode)
+            : ConversationCreationPreferences(
+                provider: provider, model: model, effort: effort, workspaceMode: workspaceDraft.mode)
         guard let selection = preferences.resolved(in: destinationHarnesses),
-              let harness = destinationHarnesses.first(where: { $0.id == selection.provider }) else {
+            let harness = destinationHarnesses.first(where: { $0.id == selection.provider })
+        else {
             harnessCatalogError = "This machine did not advertise any usable agent models."
             return
         }
@@ -831,7 +914,8 @@ private struct StandaloneChatStartView: View {
     private func submit() async {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!text.isEmpty || !attachments.isEmpty), !projectID.isEmpty,
-              !harnessCatalogLoading, harnessCatalogError == nil, harness != nil else { return }
+            !harnessCatalogLoading, harnessCatalogError == nil, harness != nil
+        else { return }
         submitting = true
         ConversationCreationPreferences(
             provider: provider,
@@ -839,10 +923,14 @@ private struct StandaloneChatStartView: View {
             effort: effort,
             workspaceMode: workspaceDraft.mode
         ).save(to: DieterAppearance.applicationDefaults())
-        let firstLine = text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
+        let firstLine =
+            text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
             ?? attachments.first?.filename ?? "New chat"
         let title = firstLine.count > 72 ? String(firstLine.prefix(69)) + "…" : firstLine
-        await store.createConversation(title: title, prompt: text, attachments: attachments, chat: true, provider: provider, model: model, effort: effort, providerOptions: providerOptions, deferred: false, projectID: projectID, workspace: workspaceDraft)
+        await store.createConversation(
+            title: title, prompt: text, attachments: attachments, chat: true, provider: provider, model: model,
+            effort: effort, providerOptions: providerOptions, deferred: false, projectID: projectID,
+            workspace: workspaceDraft)
         submitting = false
     }
 }

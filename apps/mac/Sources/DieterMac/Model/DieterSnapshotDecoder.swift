@@ -25,9 +25,11 @@ actor DieterSnapshotDecoder {
         guard !Task.isCancelled, let data else { return nil }
         if let cached = entries[endpointID], cached.data == data { return cached }
         guard let snapshot = try? Dieter_V1_GlobalSnapshot(serializedBytes: data), !Task.isCancelled else { return nil }
-        let value = Entry(data: data, snapshot: snapshot, conversations: snapshot.conversations.reduce(into: [:]) {
-            $0[$1.detail.card.id] = $1
-        })
+        let value = Entry(
+            data: data, snapshot: snapshot,
+            conversations: snapshot.conversations.reduce(into: [:]) {
+                $0[$1.detail.card.id] = $1
+            })
         order.removeAll { $0 == endpointID }
         entries.removeValue(forKey: endpointID)
         if data.count <= maximumBytes {

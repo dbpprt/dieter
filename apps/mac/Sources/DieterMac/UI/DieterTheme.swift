@@ -43,8 +43,9 @@ enum DieterAppearance: String, CaseIterable, Identifiable {
 
     static func applicationDefaults(arguments: [String] = ProcessInfo.processInfo.arguments) -> UserDefaults {
         guard let flag = arguments.firstIndex(of: defaultsSuiteFlag),
-              arguments.indices.contains(flag + 1),
-              let defaults = UserDefaults(suiteName: arguments[flag + 1]) else { return .standard }
+            arguments.indices.contains(flag + 1),
+            let defaults = UserDefaults(suiteName: arguments[flag + 1])
+        else { return .standard }
         return defaults
     }
 }
@@ -93,21 +94,29 @@ enum DieterPalette: String, CaseIterable, Identifiable {
     fileprivate var spec: PaletteSpec {
         switch self {
         case .monochrome:
-            PaletteSpec(0x1C1C1E, 0x2C2C2E, 0xE5E5EA, 0x636366, 0xF2F2F7, 0x8E8E93, 0xD1D1D6, 0xF5F5F7, 0x0B0B0C, 0x1C1C1E)
+            PaletteSpec(
+                0x1C1C1E, 0x2C2C2E, 0xE5E5EA, 0x636366, 0xF2F2F7, 0x8E8E93, 0xD1D1D6, 0xF5F5F7, 0x0B0B0C, 0x1C1C1E)
         case .electricBlue:
-            PaletteSpec(0x071426, 0x102746, 0x22D3EE, 0x2563EB, 0x73F4E4, 0x2588F5, 0x5EEAD4, 0xFAF9F6, 0x040C18, 0x0B1C33)
+            PaletteSpec(
+                0x071426, 0x102746, 0x22D3EE, 0x2563EB, 0x73F4E4, 0x2588F5, 0x5EEAD4, 0xFAF9F6, 0x040C18, 0x0B1C33)
         case .jadeOperator:
-            PaletteSpec(0x06211D, 0x123C32, 0x34D399, 0x087F5B, 0xA7F3D0, 0x14B8A6, 0xD1FAE5, 0xF4FBF8, 0x041412, 0x0B2C26)
+            PaletteSpec(
+                0x06211D, 0x123C32, 0x34D399, 0x087F5B, 0xA7F3D0, 0x14B8A6, 0xD1FAE5, 0xF4FBF8, 0x041412, 0x0B2C26)
         case .copperCircuit:
-            PaletteSpec(0x1A1210, 0x3A241A, 0xF59E6C, 0xB84C2F, 0xFFD08A, 0xE97850, 0xFFE0B2, 0xFFF8F1, 0x100B0A, 0x271A14)
+            PaletteSpec(
+                0x1A1210, 0x3A241A, 0xF59E6C, 0xB84C2F, 0xFFD08A, 0xE97850, 0xFFE0B2, 0xFFF8F1, 0x100B0A, 0x271A14)
         case .ultravioletRelay:
-            PaletteSpec(0x130C2B, 0x2B1850, 0xC084FC, 0x6D5EF8, 0xE9D5FF, 0xA855F7, 0xDDD6FE, 0xFCFAFF, 0x0C071B, 0x1D113B)
+            PaletteSpec(
+                0x130C2B, 0x2B1850, 0xC084FC, 0x6D5EF8, 0xE9D5FF, 0xA855F7, 0xDDD6FE, 0xFCFAFF, 0x0C071B, 0x1D113B)
         case .solarCommand:
-            PaletteSpec(0x151A22, 0x34321C, 0xFDE047, 0xF59E0B, 0xFEF3C7, 0xFB923C, 0xFDE68A, 0xFFFBEA, 0x0D1015, 0x22241F)
+            PaletteSpec(
+                0x151A22, 0x34321C, 0xFDE047, 0xF59E0B, 0xFEF3C7, 0xFB923C, 0xFDE68A, 0xFFFBEA, 0x0D1015, 0x22241F)
         case .arcticConsole:
-            PaletteSpec(0x0D1B24, 0x193A49, 0x8DD8E8, 0x3D6E85, 0xD7F2F5, 0x62B6CB, 0xBCEAF1, 0xF5FBFD, 0x081116, 0x122834)
+            PaletteSpec(
+                0x0D1B24, 0x193A49, 0x8DD8E8, 0x3D6E85, 0xD7F2F5, 0x62B6CB, 0xBCEAF1, 0xF5FBFD, 0x081116, 0x122834)
         case .coralSignal:
-            PaletteSpec(0x28101F, 0x4A1D33, 0xFF8A7A, 0xE44568, 0xFFD0C7, 0xFF6B8A, 0xFFD6CC, 0xFFF5F3, 0x190A13, 0x361527)
+            PaletteSpec(
+                0x28101F, 0x4A1D33, 0xFF8A7A, 0xE44568, 0xFFD0C7, 0xFF6B8A, 0xFFD6CC, 0xFFF5F3, 0x190A13, 0x361527)
         }
     }
 }
@@ -304,12 +313,13 @@ private final class DieterThemeState {
 /// a consistent contrast hierarchy across every supplied Dieter palette.
 @MainActor
 enum DieterTheme {
-    private static let palettes = Dictionary(uniqueKeysWithValues: DieterPalette.allCases.flatMap { palette in
-        [false, true].map { dark in
-            let key = DieterThemeKey(palette: palette, dark: dark)
-            return (key, DieterThemeTokens(palette: palette, dark: dark))
-        }
-    })
+    private static let palettes = Dictionary(
+        uniqueKeysWithValues: DieterPalette.allCases.flatMap { palette in
+            [false, true].map { dark in
+                let key = DieterThemeKey(palette: palette, dark: dark)
+                return (key, DieterThemeTokens(palette: palette, dark: dark))
+            }
+        })
     private static let fallbackKey = DieterThemeKey(palette: .monochrome, dark: false)
     private static let state = DieterThemeState(
         key: fallbackKey,
@@ -397,10 +407,12 @@ extension View {
         palette: DieterPalette,
         appearance: DieterAppearance = .system
     ) -> some View {
-        modifier(DieterThemeRootModifier(selection: DieterThemeSelection(
-            appearance: appearance,
-            palette: palette
-        )))
+        modifier(
+            DieterThemeRootModifier(
+                selection: DieterThemeSelection(
+                    appearance: appearance,
+                    palette: palette
+                )))
     }
 }
 
@@ -672,8 +684,13 @@ struct DieterSecondaryButtonStyle: ButtonStyle {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(destructive ? DieterTheme.coral : DieterTheme.subtle)
             .padding(.horizontal, 12).frame(height: 30)
-            .background(DieterTheme.surface.opacity(configuration.isPressed ? 0.6 : 1), in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous).stroke(DieterTheme.border))
+            .background(
+                DieterTheme.surface.opacity(configuration.isPressed ? 0.6 : 1),
+                in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous).stroke(
+                    DieterTheme.border))
     }
 }
 
@@ -697,7 +714,8 @@ struct DieterChipLabel: View {
         }
         .font(.system(size: 11, weight: .medium)).foregroundStyle(tint)
         .padding(.horizontal, 9).frame(height: 28)
-        .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+        .background(
+            DieterTheme.surface, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
     }
 }
 
@@ -707,15 +725,21 @@ struct DieterSearchField: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
+            Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).foregroundStyle(
+                DieterTheme.tertiary)
             TextField(placeholder, text: $text).textFieldStyle(.plain).font(.system(size: 12))
             if !text.isEmpty {
-                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 10)) }
-                    .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 10))
+                }
+                .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
             }
         }
         .padding(.horizontal, 10).frame(height: 30)
-        .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+        .background(
+            DieterTheme.surface, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
     }
 }
 

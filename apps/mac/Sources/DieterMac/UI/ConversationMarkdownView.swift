@@ -32,7 +32,8 @@ struct ConversationMarkdownView: View {
         .task(id: preview) {
             guard ConversationRenderCache.cachedBlocks(preview) == nil else { return }
             guard let next = try? await BackgroundPreparation.run({ try ConversationRenderCache.prepare(preview) }),
-                  !Task.isCancelled else { return }
+                !Task.isCancelled
+            else { return }
             preparedBlocks = next
             preparedSource = preview
         }
@@ -95,7 +96,8 @@ private struct ConversationMarkdownTableView: View {
         ScrollView(.horizontal) {
             VStack(spacing: 0) {
                 row(table.headers, header: true)
-                ForEach(Array(table.rows.enumerated()).dropFirst(page * pageSize).prefix(pageSize), id: \.offset) { _, values in
+                ForEach(Array(table.rows.enumerated()).dropFirst(page * pageSize).prefix(pageSize), id: \.offset) {
+                    _, values in
                     row(values, header: false)
                 }
             }
@@ -108,23 +110,29 @@ private struct ConversationMarkdownTableView: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 4) {
-            if table.rows.count > pageSize {
-                HStack {
-                    Button("Previous rows") { page = max(0, page - 1) }.disabled(page == 0)
-                    Text("Rows \(page * pageSize + 1)–\(min(table.rows.count, (page + 1) * pageSize)) of \(table.rows.count)")
+                if table.rows.count > pageSize {
+                    HStack {
+                        Button("Previous rows") { page = max(0, page - 1) }.disabled(page == 0)
+                        Text(
+                            "Rows \(page * pageSize + 1)–\(min(table.rows.count, (page + 1) * pageSize)) of \(table.rows.count)"
+                        )
                         .font(.caption)
                         .smokeTarget("conversation.table.rows.\(page)")
-                    Button("Next rows") { page += 1 }.disabled((page + 1) * pageSize >= table.rows.count)
-                        .accessibilityIdentifier("conversation.table.next-rows").smokeTarget("conversation.table.next-rows")
-                }.padding(.vertical, 5)
-            }
-            if table.headers.count > columnsPerPage {
-                HStack {
-                    Button("Previous columns") { columnPage = max(0, columnPage - 1) }.disabled(columnPage == 0)
-                    Text("Columns \(visibleColumns.lowerBound + 1)–\(visibleColumns.upperBound) of \(table.headers.count)").font(.caption)
-                    Button("Next columns") { columnPage += 1 }.disabled(visibleColumns.upperBound == table.headers.count)
+                        Button("Next rows") { page += 1 }.disabled((page + 1) * pageSize >= table.rows.count)
+                            .accessibilityIdentifier("conversation.table.next-rows").smokeTarget(
+                                "conversation.table.next-rows")
+                    }.padding(.vertical, 5)
                 }
-            }
+                if table.headers.count > columnsPerPage {
+                    HStack {
+                        Button("Previous columns") { columnPage = max(0, columnPage - 1) }.disabled(columnPage == 0)
+                        Text(
+                            "Columns \(visibleColumns.lowerBound + 1)–\(visibleColumns.upperBound) of \(table.headers.count)"
+                        ).font(.caption)
+                        Button("Next columns") { columnPage += 1 }.disabled(
+                            visibleColumns.upperBound == table.headers.count)
+                    }
+                }
             }
         }
         .onChange(of: table.rows.count) { _, count in page = min(page, max(0, (count - 1) / pageSize)) }
@@ -172,7 +180,11 @@ private struct FullConversationText: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text("Full message").font(.headline); Spacer(); Button("Done") { dismiss() }.accessibilityIdentifier("conversation.full-text.done").smokeTarget("conversation.full-text.done") }.padding(14)
+            HStack {
+                Text("Full message").font(.headline); Spacer();
+                Button("Done") { dismiss() }.accessibilityIdentifier("conversation.full-text.done").smokeTarget(
+                    "conversation.full-text.done")
+            }.padding(14)
             FullConversationTextEditor(source: source)
         }.frame(minWidth: 650, minHeight: 500)
     }

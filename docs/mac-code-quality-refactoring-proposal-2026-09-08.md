@@ -4,7 +4,7 @@ The Mac app has a solid functional foundation and several good reusable componen
 
 I recommend an incremental refactor using the app's existing SwiftUI Observation, actors, value reducers, and small RPC protocols. First repair the correctness issues below. Then extract feature models, consolidate routing and persistence, and introduce SwiftPM boundaries once the dependencies are clear. A framework migration or a wholesale rewrite would add substantial migration risk without addressing these issues directly.
 
-This is a proposal. Production code was not changed.
+This is a proposal. Production code was not changed. The subsequent implementation is documented in [the 9 September implementation record](mac-refactoring-implementation-2026-09-09.md).
 
 **Review scope and evidence.** The source baseline is commit `162357792460e60ffb2da5a80bb27936d260b7d4`, initially with a clean working tree. The review covered the handwritten app, transport and authentication, synchronization/outbox, every main feature surface, AppKit/WebRTC adapters, tests, packaging, CI, and vendoring policy. Generated API and vendored dependencies were reviewed at their integration boundaries; this is not an audit of every upstream implementation or a complete security assessment.
 

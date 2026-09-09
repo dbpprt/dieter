@@ -93,7 +93,8 @@ struct DieterRootView: View {
 
     var body: some View {
         @Bindable var store = store
-        let sidebarWidth = navigationCollapsed
+        let sidebarWidth =
+            navigationCollapsed
             ? DieterMetrics.sidebarCollapsedWidth
             : SidebarSizing.clamped(CGFloat(navigationWidth))
         let sidebarDividerWidth = navigationCollapsed ? 1 : SidebarSizing.dividerWidth
@@ -126,17 +127,40 @@ struct DieterRootView: View {
                         freshness: store.workspaceFreshness,
                         lastSyncedAt: store.lastSyncedAt
                     )
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 Group {
                     switch store.section {
                     case .board: BoardView()
                     case .chats: ChatsView()
-                    case .terminals: TerminalsView()
-					case .screens: ScreensView()
-                    case .files: FilesView()
+                    case .terminals:
+                        TerminalsView(model: store.terminalsModel, showAll: { await store.showAllTerminals() })
+                    case .screens:
+                        ScreensView(
+                            machines: store.machines, initialMachineID: store.endpoint.id,
+                            makeConnection: { try await store.remoteDesktopConnection(machineID: $0) })
+                    case .files: FilesView(model: store.filesModel)
                     case .changes: ProjectChangesView()
-                    case .schedules: SchedulesView()
+                    case .schedules:
+                        SchedulesView(
+                            model: store.schedulesModel, context: store.scheduleEditorContext,
+                            prepare: {
+                                let projectID = store.selectedProjectID
+                                let connected = await store.ensureProjectConnection(projectID, reportOffline: false)
+                                guard connected, store.selectedProjectID == projectID, store.section == .schedules
+                                else {
+                                    if !Task.isCancelled {
+                                        store.schedulesError = "This machine is unavailable. Reconnect and retry."
+                                    }
+                                    return false
+                                }
+                                store.bindSchedules()
+                                return true
+                            },
+                            openCard: { id in
+                                store.section = .board
+                                Task { await store.openConversation(cardID: id) }
+                            })
                     case .archive: ArchiveView()
                     case .settings: DieterSettingsView()
                     }
@@ -156,7 +180,8 @@ struct DieterRootView: View {
                 GeometryReader { geometry in
                     let workspaceLeadingEdge = sidebarWidth + sidebarDividerWidth
                     let popupWidth = min(820, max(560, geometry.size.width - workspaceLeadingEdge - 32))
-                    let processCount = store.selectedMachineID
+                    let processCount =
+                        store.selectedMachineID
                         .flatMap { store.machineInformation[$0]?.processes.count } ?? 1
                     let desiredPopupHeight = 420 + CGFloat(min(max(processCount, 1), 4) * 54)
                     let popupHeight = min(max(460, desiredPopupHeight), geometry.size.height - 32)
@@ -175,7 +200,9 @@ struct DieterRootView: View {
             }
         }
         .overlay {
-            if !store.phase.isConnected && (!store.hasLoadedWorkspace || store.phase.needsConnectionOverlay) { ConnectionOverlay() }
+            if !store.phase.isConnected && (!store.hasLoadedWorkspace || store.phase.needsConnectionOverlay) {
+                ConnectionOverlay()
+            }
         }
         .sheet(isPresented: $store.createConversationPresented) { NewConversationSheet().environment(store) }
         .sheet(isPresented: $store.createProjectPresented) { NewProjectSheet().environment(store) }
@@ -186,9 +213,14 @@ struct DieterRootView: View {
         .sheet(isPresented: $store.labelsPresented) { LabelsSheet().environment(store) }
         .sheet(isPresented: $store.archivePolicyPresented) { ArchivePolicySheet().environment(store) }
         .sheet(isPresented: $store.commandPalettePresented) { CommandPalette().environment(store) }
-        .alert("Dieter", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
+        .alert(
+            "Dieter",
+            isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })
+        ) {
             Button("OK") { store.errorMessage = nil }
-        } message: { Text(store.errorMessage ?? "") }
+        } message: {
+            Text(store.errorMessage ?? "")
+        }
     }
 }
 
@@ -262,7 +294,9 @@ struct WorkspaceFreshnessBanner: View {
         .background(accent.opacity(0.055))
         .overlay(alignment: .bottom) { Rectangle().fill(accent.opacity(0.16)).frame(height: 1) }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title). \(detail) \(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: now)).")
+        .accessibilityLabel(
+            "\(title). \(detail) \(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: now))."
+        )
         .accessibilityIdentifier("workspace.cached")
     }
 }
@@ -337,7 +371,8 @@ enum SidebarMachineOrdering {
 struct AppSidebar: View {
     @Environment(DieterStore.self) private var store
     @Binding var collapsed: Bool
-    @State private var projectNavigation = SidebarProjectNavigationPreferences.load(from: SidebarProjectNavigationPreferences.applicationDefaults())
+    @State private var projectNavigation = SidebarProjectNavigationPreferences.load(
+        from: SidebarProjectNavigationPreferences.applicationDefaults())
 
     private var visibleProjects: [Dieter_V1_Project] {
         let projects = store.projects.filter { !$0.archived }
@@ -370,12 +405,12 @@ struct AppSidebar: View {
     @ViewBuilder private var sidebarHeader: some View {
         if collapsed {
             SidebarRailToggle { collapsed = false }
-            .help("Expand navigation (⌃⌘S)")
-            .keyboardShortcut("s", modifiers: [.command, .control])
-            .accessibilityLabel("Expand navigation")
-            .accessibilityIdentifier("sidebar.toggle")
-            .frame(maxWidth: .infinity)
-            .padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
+                .help("Expand navigation (⌃⌘S)")
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .accessibilityLabel("Expand navigation")
+                .accessibilityIdentifier("sidebar.toggle")
+                .frame(maxWidth: .infinity)
+                .padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
         } else {
             HStack(spacing: 9) {
                 DieterBrandIcon(size: 24)
@@ -391,20 +426,29 @@ struct AppSidebar: View {
     }
 
     @ViewBuilder private var searchControl: some View {
-        Button { store.commandPalettePresented = true } label: {
+        Button {
+            store.commandPalettePresented = true
+        } label: {
             if collapsed {
-                Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
-                    .frame(width: 34, height: 30)
-                    .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+                Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .semibold)).foregroundStyle(
+                    DieterTheme.subtle
+                )
+                .frame(width: 34, height: 30)
+                .background(
+                    DieterTheme.surface,
+                    in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
             } else {
                 HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
+                    Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).foregroundStyle(
+                        DieterTheme.tertiary)
                     Text("Search").font(.system(size: 12)).foregroundStyle(DieterTheme.tertiary)
                     Spacer()
                     Text("⌘K").font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
                 }
                 .padding(.horizontal, 10).frame(height: 30)
-                .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+                .background(
+                    DieterTheme.surface,
+                    in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
             }
         }
         .buttonStyle(.plain).help("Search and commands")
@@ -454,24 +498,24 @@ struct AppSidebar: View {
             .accessibilityIdentifier("sidebar.terminals").smokeTarget("sidebar.terminals")
         }
 
-		if collapsed {
-			SidebarRailDestination(
-				title: "Screens",
-				symbol: "rectangle.inset.filled.and.person.filled",
-				selected: store.section == .screens,
-				annotation: "Experimental"
-			) { store.openScreens() }
-			.accessibilityIdentifier("sidebar.screens").smokeTarget("sidebar.screens")
-		} else {
-			SidebarDestination(
-				title: "Screens",
-				symbol: "rectangle.inset.filled.and.person.filled",
-				selected: store.section == .screens,
-				annotation: "Experimental"
-			) { store.openScreens() }
-			.padding(.horizontal, 8)
-			.accessibilityIdentifier("sidebar.screens").smokeTarget("sidebar.screens")
-		}
+        if collapsed {
+            SidebarRailDestination(
+                title: "Screens",
+                symbol: "rectangle.inset.filled.and.person.filled",
+                selected: store.section == .screens,
+                annotation: "Experimental"
+            ) { store.openScreens() }
+            .accessibilityIdentifier("sidebar.screens").smokeTarget("sidebar.screens")
+        } else {
+            SidebarDestination(
+                title: "Screens",
+                symbol: "rectangle.inset.filled.and.person.filled",
+                selected: store.section == .screens,
+                annotation: "Experimental"
+            ) { store.openScreens() }
+            .padding(.horizontal, 8)
+            .accessibilityIdentifier("sidebar.screens").smokeTarget("sidebar.screens")
+        }
     }
 
     private var expandedProjects: some View {
@@ -485,7 +529,9 @@ struct AppSidebar: View {
                         .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary.opacity(0.7))
                 }
                 Spacer()
-                Button { store.createProjectPresented = true } label: {
+                Button {
+                    store.createProjectPresented = true
+                } label: {
                     Image(systemName: "plus").font(.system(size: 10, weight: .bold))
                 }
                 .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary).help("Add Git project")
@@ -521,7 +567,9 @@ struct AppSidebar: View {
             VStack(spacing: 6) {
                 SidebarConnectionStatus(compact: true)
                 ForEach(visibleMachines) { machine in
-                    Button { Task { await store.openMachine(machine) } } label: {
+                    Button {
+                        Task { await store.openMachine(machine) }
+                    } label: {
                         ZStack(alignment: .bottomTrailing) {
                             Text(machine.name.prefix(1).uppercased())
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -541,16 +589,22 @@ struct AppSidebar: View {
                     .accessibilityLabel("\(machine.name), \(machineDetail(machine))")
                     .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
                 }
-                SidebarRailDestination(title: "Settings", symbol: "gearshape", selected: store.section == .settings) { store.openSettings() }
-                    .accessibilityIdentifier("sidebar.settings").smokeTarget("sidebar.settings")
-                SidebarRailDestination(title: "Add a Git project", symbol: "plus", selected: false) { store.createProjectPresented = true }
+                SidebarRailDestination(title: "Settings", symbol: "gearshape", selected: store.section == .settings) {
+                    store.openSettings()
+                }
+                .accessibilityIdentifier("sidebar.settings").smokeTarget("sidebar.settings")
+                SidebarRailDestination(title: "Add a Git project", symbol: "plus", selected: false) {
+                    store.createProjectPresented = true
+                }
             }.frame(maxWidth: .infinity).padding(.vertical, 9)
         } else {
             VStack(spacing: 5) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("MACHINES").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
-                        if let age = MachinePresenceText.freshestAge(store.machines.map(\.lastSeenAt), relativeTo: .now) {
+                        Text("MACHINES").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(
+                            DieterTheme.tertiary)
+                        if let age = MachinePresenceText.freshestAge(store.machines.map(\.lastSeenAt), relativeTo: .now)
+                        {
                             Text(age)
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundStyle(DieterTheme.tertiary.opacity(0.65))
@@ -560,9 +614,13 @@ struct AppSidebar: View {
                     }
                     ForEach(visibleMachines) { machine in
                         VStack(alignment: .leading, spacing: 5) {
-                            Button { Task { await store.openMachine(machine) } } label: {
+                            Button {
+                                Task { await store.openMachine(machine) }
+                            } label: {
                                 HStack(spacing: 8) {
-                                    Circle().fill(machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary).frame(width: 6, height: 6)
+                                    Circle().fill(
+                                        machineIsPresentedOnline(machine) ? DieterTheme.eyes : DieterTheme.tertiary
+                                    ).frame(width: 6, height: 6)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(machine.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
                                         Text(machineDetail(machine))
@@ -588,11 +646,15 @@ struct AppSidebar: View {
                     }
                 }
                 .padding(8)
-                .background(DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(
+                    DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
 
-                SidebarDestination(title: "Settings", symbol: "gearshape", selected: store.section == .settings) { store.openSettings() }
-                    .accessibilityIdentifier("sidebar.settings").smokeTarget("sidebar.settings")
+                SidebarDestination(title: "Settings", symbol: "gearshape", selected: store.section == .settings) {
+                    store.openSettings()
+                }
+                .accessibilityIdentifier("sidebar.settings").smokeTarget("sidebar.settings")
                 SidebarFooterButton(title: "Add a Git project", symbol: "plus") { store.createProjectPresented = true }
             }.padding(8)
         }
@@ -604,21 +666,24 @@ struct AppSidebar: View {
     }
 
     private func moveProject(_ projectID: String, before targetProjectID: String?) {
-        guard projectNavigation.move(projectID, before: targetProjectID, availableIDs: visibleProjects.map(\.id)) else { return }
+        guard projectNavigation.move(projectID, before: targetProjectID, availableIDs: visibleProjects.map(\.id)) else {
+            return
+        }
         projectNavigation.save(to: SidebarProjectNavigationPreferences.applicationDefaults())
     }
 
     private func machineDetail(_ machine: DieterEndpoint) -> String {
-		if let incompatibility = machine.incompatibilityDescription { return incompatibility }
-		if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
+        if let incompatibility = machine.incompatibilityDescription { return incompatibility }
+        if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
         if machine.id == store.endpoint.id && !store.workspaceIsLive {
             if store.workspaceFreshness == .syncing { return "Waiting for live sync…" }
             return "Unavailable · \(MachinePresenceText.lastSeen(machine.lastSeenAt))"
         }
         guard machine.online else {
-            let suffix = store.outboxSummary(for: machine).map { summary in
-                summary.failed ? " · attention needed" : (summary.retrying ? " · retrying" : " · queued")
-            } ?? ""
+            let suffix =
+                store.outboxSummary(for: machine).map { summary in
+                    summary.failed ? " · attention needed" : (summary.retrying ? " · retrying" : " · queued")
+                } ?? ""
             return MachinePresenceText.lastSeen(machine.lastSeenAt) + suffix
         }
         guard let status = store.connectionStatus(for: machine) else { return "Measuring…" }
@@ -626,7 +691,7 @@ struct AppSidebar: View {
     }
 
     private func machineIsPresentedOnline(_ machine: DieterEndpoint) -> Bool {
-		store.machineIsAvailable(machine)
+        store.machineIsAvailable(machine)
     }
 
 }
@@ -678,7 +743,9 @@ private struct MachineQueueBanner: View {
             }
             Button("Keep queued", role: .cancel) {}
         } message: {
-            Text("This permanently removes the queued work from this Mac. Work already accepted by \(machine.name) is not affected.")
+            Text(
+                "This permanently removes the queued work from this Mac. Work already accepted by \(machine.name) is not affected."
+            )
         }
     }
 }
@@ -698,13 +765,12 @@ private struct SidebarProjectRow: View {
     @State private var popoverPresented = false
 
     private var selected: Bool {
-        store.selectedProjectID == project.id &&
-            [.board, .files, .schedules].contains(store.section)
+        store.selectedProjectID == project.id && [.board, .files, .schedules].contains(store.section)
     }
 
     private var projectMachineOnline: Bool? {
         guard let machine = store.machine(forProjectID: project.id) else { return nil }
-		return store.machineIsAvailable(machine)
+        return store.machineIsAvailable(machine)
     }
 
     private var projectMachine: DieterEndpoint? {
@@ -714,7 +780,9 @@ private struct SidebarProjectRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
-                Button { popoverPresented = true } label: {
+                Button {
+                    popoverPresented = true
+                } label: {
                     HStack(spacing: 8) {
                         ProjectAvatar(name: project.name, online: projectMachineOnline)
                         Text(project.name)
@@ -735,11 +803,13 @@ private struct SidebarProjectRow: View {
                 .accessibilityIdentifier("sidebar.project.\(project.id)")
 
                 if hovering {
-                    Button { store.presentNewBoard(projectID: project.id) } label: {
+                    Button {
+                        store.presentNewBoard(projectID: project.id)
+                    } label: {
                         Image(systemName: "plus").font(.system(size: 10, weight: .bold))
                     }
                     .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
-					.disabled(!store.projectIsAvailable(project.id))
+                    .disabled(!store.projectIsAvailable(project.id))
                     .help("New board in \(project.name)")
                     .transition(.opacity)
                 }
@@ -760,7 +830,8 @@ private struct SidebarProjectRow: View {
             }
             .padding(.horizontal, 8).frame(height: DieterMetrics.navigationRowHeight)
             .background(
-                dropTargeted ? DieterTheme.shellDeep.opacity(0.16)
+                dropTargeted
+                    ? DieterTheme.shellDeep.opacity(0.16)
                     : (selected ? DieterTheme.selection : (hovering ? DieterTheme.surface.opacity(0.7) : .clear)),
                 in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
             )
@@ -770,7 +841,9 @@ private struct SidebarProjectRow: View {
                 SidebarProjectDragPreview(project: project)
             }
             .dropDestination(for: String.self) { values, location in
-                guard let value = values.first, let payload = SidebarProjectDragPayload(value), payload.projectID != project.id else { return false }
+                guard let value = values.first, let payload = SidebarProjectDragPayload(value),
+                    payload.projectID != project.id
+                else { return false }
                 let targetIndex = projectIDs.firstIndex(of: project.id) ?? 0
                 let beforeProjectID: String?
                 if location.y < 16 {
@@ -782,7 +855,9 @@ private struct SidebarProjectRow: View {
                 }
                 moveProject(payload.projectID, beforeProjectID)
                 return true
-            } isTargeted: { dropTargeted = $0 }
+            } isTargeted: {
+                dropTargeted = $0
+            }
             .animation(.easeOut(duration: 0.12), value: dropTargeted)
             .animation(.easeOut(duration: 0.12), value: hovering)
             .popover(isPresented: $popoverPresented, arrowEdge: .trailing) {
@@ -856,7 +931,9 @@ private struct ProjectContextMenuModifier: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This removes the project from the sidebar without deleting its Git working tree. You can restore it from Archive.")
+                Text(
+                    "This removes the project from the sidebar without deleting its Git working tree. You can restore it from Archive."
+                )
             }
     }
 }
@@ -875,7 +952,7 @@ private struct SidebarProjectDestinations: View {
     var onNavigate: (() -> Void)? = nil
 
     private var projectIsUnavailable: Bool {
-		!store.projectIsAvailable(project.id)
+        !store.projectIsAvailable(project.id)
     }
 
     var body: some View {
@@ -886,7 +963,9 @@ private struct SidebarProjectDestinations: View {
                     symbol: "rectangle.split.3x1",
                     selected: store.section == .board && store.selectedBoardID == board.id,
                     badge: activeCount(board.id)
-                ) { onNavigate?(); Task { await store.openBoard(board.id, projectID: project.id) } }
+                ) {
+                    onNavigate?(); Task { await store.openBoard(board.id, projectID: project.id) }
+                }
                 .accessibilityIdentifier("sidebar.board.\(board.id)")
                 .smokeTarget("sidebar.board.\(board.id)")
                 .contextMenu {
@@ -894,21 +973,30 @@ private struct SidebarProjectDestinations: View {
                     Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: project.id) }
                 }
             }
-            SidebarDestination(title: "Files", symbol: "folder", selected: store.section == .files && store.selectedProjectID == project.id) {
+            SidebarDestination(
+                title: "Files", symbol: "folder",
+                selected: store.section == .files && store.selectedProjectID == project.id
+            ) {
                 onNavigate?(); Task { await store.openProject(project.id, section: .files) }
             }
             .disabled(projectIsUnavailable)
             .opacity(projectIsUnavailable ? 0.42 : 1)
             .accessibilityIdentifier("sidebar.files.\(project.id)")
             .smokeTarget("sidebar.files.\(project.id)")
-            SidebarDestination(title: "Changes", symbol: "arrow.triangle.branch", selected: store.section == .changes && store.selectedProjectID == project.id) {
+            SidebarDestination(
+                title: "Changes", symbol: "arrow.triangle.branch",
+                selected: store.section == .changes && store.selectedProjectID == project.id
+            ) {
                 onNavigate?(); Task { await store.openProjectChanges(project.id) }
             }
             .disabled(projectIsUnavailable)
             .opacity(projectIsUnavailable ? 0.42 : 1)
             .accessibilityIdentifier("sidebar.changes.\(project.id)")
             .smokeTarget("sidebar.changes.\(project.id)")
-            SidebarDestination(title: "Schedules", symbol: "calendar", selected: store.section == .schedules && store.selectedProjectID == project.id) {
+            SidebarDestination(
+                title: "Schedules", symbol: "calendar",
+                selected: store.section == .schedules && store.selectedProjectID == project.id
+            ) {
                 onNavigate?(); Task { await store.openProject(project.id, section: .schedules) }
             }
             .disabled(projectIsUnavailable)
@@ -919,7 +1007,9 @@ private struct SidebarProjectDestinations: View {
     }
 
     private func activeCount(_ boardID: String) -> Int {
-        store.navigationCards[project.id, default: []].filter { $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime) }.count
+        store.navigationCards[project.id, default: []].filter {
+            $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime)
+        }.count
     }
 }
 
@@ -931,17 +1021,18 @@ private struct SidebarProjectRail: View {
     @State private var hovering = false
 
     private var selected: Bool {
-        store.selectedProjectID == project.id &&
-            [.board, .files, .schedules].contains(store.section)
+        store.selectedProjectID == project.id && [.board, .files, .schedules].contains(store.section)
     }
 
     private var projectMachineOnline: Bool? {
         guard let machine = store.machine(forProjectID: project.id) else { return nil }
-		return store.machineIsAvailable(machine)
+        return store.machineIsAvailable(machine)
     }
 
     var body: some View {
-        Button { popoverPresented = true } label: {
+        Button {
+            popoverPresented = true
+        } label: {
             ProjectAvatar(name: project.name, online: projectMachineOnline, size: 30)
                 .padding(3)
                 .background(
@@ -1003,7 +1094,7 @@ private struct ProjectQuickNav: View {
 
     private var projectMachineOnline: Bool? {
         guard let machine = store.machine(forProjectID: project.id) else { return nil }
-		return store.machineIsAvailable(machine)
+        return store.machineIsAvailable(machine)
     }
 
     var body: some View {
@@ -1027,8 +1118,10 @@ private struct ProjectQuickNav: View {
 
             Divider().overlay(DieterTheme.border)
 
-            SidebarFooterButton(title: "New board…", symbol: "plus") { dismiss(); store.presentNewBoard(projectID: project.id) }
-				.disabled(!store.projectIsAvailable(project.id))
+            SidebarFooterButton(title: "New board…", symbol: "plus") {
+                dismiss(); store.presentNewBoard(projectID: project.id)
+            }
+            .disabled(!store.projectIsAvailable(project.id))
         }
         .padding(10)
         .frame(width: 244)
@@ -1055,10 +1148,14 @@ private struct SidebarProjectInsertionTarget: View {
         .frame(height: 8)
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { values, _ in
-            guard let value = values.first, let payload = SidebarProjectDragPayload(value), payload.projectID != beforeProjectID else { return false }
+            guard let value = values.first, let payload = SidebarProjectDragPayload(value),
+                payload.projectID != beforeProjectID
+            else { return false }
             moveProject(payload.projectID)
             return true
-        } isTargeted: { targeted = $0 }
+        } isTargeted: {
+            targeted = $0
+        }
         .animation(.easeOut(duration: 0.12), value: targeted)
     }
 }
@@ -1193,7 +1290,10 @@ private struct SidebarDestination: View {
                 }
             }
             .padding(.horizontal, 9).frame(height: DieterMetrics.navigationRowHeight)
-            .background(selected ? DieterTheme.selection : (hovering ? DieterTheme.surface.opacity(0.7) : .clear), in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+            .background(
+                selected ? DieterTheme.selection : (hovering ? DieterTheme.surface.opacity(0.7) : .clear),
+                in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -1217,10 +1317,13 @@ private struct SidebarRailDestination: View {
                 Image(systemName: symbol).font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
                     .frame(width: 36, height: 32)
-                    .background(selected ? DieterTheme.selection : (hovering ? DieterTheme.surface : .clear), in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+                    .background(
+                        selected ? DieterTheme.selection : (hovering ? DieterTheme.surface : .clear),
+                        in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
                 if badge > 0 {
                     Text(badge > 9 ? "9+" : "\(badge)").font(.system(size: 7, weight: .bold)).foregroundStyle(.white)
-                        .padding(.horizontal, 3).frame(height: 12).background(DieterTheme.shellDeep, in: Capsule()).offset(x: 3, y: -2)
+                        .padding(.horizontal, 3).frame(height: 12).background(DieterTheme.shellDeep, in: Capsule())
+                        .offset(x: 3, y: -2)
                 } else if annotation != nil {
                     Text("E")
                         .font(.system(size: 7, weight: .bold))
@@ -1244,10 +1347,12 @@ private struct SidebarUtilityButton: View {
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) { Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26) }
-            .buttonStyle(.plain).foregroundStyle(hovering ? DieterTheme.text : DieterTheme.subtle)
-            .background(hovering ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 6))
-            .onHover { hovering = $0 }.help(help)
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
+        }
+        .buttonStyle(.plain).foregroundStyle(hovering ? DieterTheme.text : DieterTheme.subtle)
+        .background(hovering ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 6))
+        .onHover { hovering = $0 }.help(help)
     }
 }
 
@@ -1259,9 +1364,11 @@ private struct SidebarFooterButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 9) { Image(systemName: symbol).frame(width: 15); Text(title); Spacer() }
-                .font(.system(size: 11, weight: .medium)).padding(.horizontal, 9).frame(height: 30)
-                .background(hovering ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 7))
+            HStack(spacing: 9) {
+                Image(systemName: symbol).frame(width: 15); Text(title); Spacer()
+            }
+            .font(.system(size: 11, weight: .medium)).padding(.horizontal, 9).frame(height: 30)
+            .background(hovering ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 7))
         }.buttonStyle(.plain).onHover { hovering = $0 }
     }
 }
@@ -1278,36 +1385,49 @@ struct ConnectionOverlay: View {
                     DieterBrandIcon(size: 62)
                     VStack(spacing: 6) {
                         Text("Connect Dieter").font(.title2.weight(.bold))
-                        Text("Choose the gateway that knows your account. Dieter automatically combines projects and conversations from every enrolled machine.")
-                            .font(.system(size: 13)).foregroundStyle(DieterTheme.subtle)
-                            .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "Choose the gateway that knows your account. Dieter automatically combines projects and conversations from every enrolled machine."
+                        )
+                        .font(.system(size: 13)).foregroundStyle(DieterTheme.subtle)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     }
 
                     HStack(spacing: 10) {
-                        OnboardingConnectionConcept(symbol: "point.3.connected.trianglepath.dotted", title: "Gateway", detail: "Sign-in, machine discovery, encrypted relay")
+                        OnboardingConnectionConcept(
+                            symbol: "point.3.connected.trianglepath.dotted", title: "Gateway",
+                            detail: "Sign-in, machine discovery, encrypted relay")
                         Image(systemName: "arrow.right").foregroundStyle(DieterTheme.tertiary)
-                        OnboardingConnectionConcept(symbol: "desktopcomputer", title: "All machines", detail: "One combined workspace with automatic routing")
+                        OnboardingConnectionConcept(
+                            symbol: "desktopcomputer", title: "All machines",
+                            detail: "One combined workspace with automatic routing")
                     }
 
                     VStack(alignment: .leading, spacing: 9) {
-                        Text("1  CHOOSE A GATEWAY").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
+                        Text("1  CHOOSE A GATEWAY").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(
+                            DieterTheme.tertiary)
                         ForEach(store.gateways) { gateway in
-                            Button { Task { await store.chooseGateway(gateway) } } label: {
+                            Button {
+                                Task { await store.chooseGateway(gateway) }
+                            } label: {
                                 OnboardingGatewayRow(
                                     gateway: gateway,
                                     active: gateway.credentialID == store.activeGateway.credentialID
                                 )
                             }.buttonStyle(.plain)
                         }
-                        Text("The primary gateway is the normal choice. Add another only for a separate self-hosted or organizational deployment; its session and machines are separate.")
-                            .font(.caption2).foregroundStyle(DieterTheme.tertiary).fixedSize(horizontal: false, vertical: true)
+                        Text(
+                            "The primary gateway is the normal choice. Add another only for a separate self-hosted or organizational deployment; its session and machines are separate."
+                        )
+                        .font(.caption2).foregroundStyle(DieterTheme.tertiary).fixedSize(
+                            horizontal: false, vertical: true)
                     }
 
                     if store.phase == .authenticationRequired {
                         VStack(spacing: 8) {
                             Text("Sign in to \(store.activeGateway.name) to discover its enrolled machines.")
                                 .font(.caption).foregroundStyle(DieterTheme.subtle)
-                            Button("Sign in with GitHub") { Task { await store.signIn() } }.buttonStyle(.borderedProminent)
+                            Button("Sign in with GitHub") { Task { await store.signIn() } }.buttonStyle(
+                                .borderedProminent)
                         }
                     }
 
@@ -1335,11 +1455,14 @@ struct ConnectionOverlay: View {
                     .font(.caption)
 
                     if case .connecting = store.phase {
-                        HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Contacting \(store.activeGateway.name)…") }
-                            .font(.caption).foregroundStyle(DieterTheme.subtle)
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small); Text("Contacting \(store.activeGateway.name)…")
+                        }
+                        .font(.caption).foregroundStyle(DieterTheme.subtle)
                     }
                     if case let .failed(message) = store.phase {
-                        Text(message).font(.caption).foregroundStyle(DieterTheme.coral).fixedSize(horizontal: false, vertical: true)
+                        Text(message).font(.caption).foregroundStyle(DieterTheme.coral).fixedSize(
+                            horizontal: false, vertical: true)
                     }
                 }
                 .padding(24)
@@ -1360,7 +1483,8 @@ private struct OnboardingConnectionConcept: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(DieterTheme.shell).frame(width: 26)
+            Image(systemName: symbol).font(.system(size: 16, weight: .semibold)).foregroundStyle(DieterTheme.shell)
+                .frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 11, weight: .semibold))
                 Text(detail).font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary).lineLimit(2)
@@ -1402,7 +1526,7 @@ private struct OnboardingMachineRow: View {
 
     private var detail: String {
         if !machine.online { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
-		if let incompatibility = machine.incompatibilityDescription { return incompatibility }
+        if let incompatibility = machine.incompatibilityDescription { return incompatibility }
         return machine.version.isEmpty ? "Online" : "Online · Dieter \(machine.version)"
     }
 
@@ -1414,16 +1538,20 @@ private struct OnboardingMachineRow: View {
                 Text(detail).font(.caption2).foregroundStyle(DieterTheme.tertiary)
             }
             Spacer()
-			Text(machine.apiCompatibility == .incompatible ? "Update daemon" : (machine.online ? "Included automatically" : "Offline"))
-				.font(.caption2).foregroundStyle(storeColor)
+            Text(
+                machine.apiCompatibility == .incompatible
+                    ? "Update daemon" : (machine.online ? "Included automatically" : "Offline")
+            )
+            .font(.caption2).foregroundStyle(storeColor)
         }
         .padding(11).background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border))
     }
 
-	private var storeColor: Color {
-		machine.apiCompatibility == .incompatible ? DieterTheme.coral : (machine.online ? DieterTheme.shell : DieterTheme.tertiary)
-	}
+    private var storeColor: Color {
+        machine.apiCompatibility == .incompatible
+            ? DieterTheme.coral : (machine.online ? DieterTheme.shell : DieterTheme.tertiary)
+    }
 }
 
 struct CommandPalette: View {
@@ -1437,8 +1565,14 @@ struct CommandPalette: View {
             ("New standalone chat", "bubble.left.and.bubble.right.fill", { store.beginStandaloneChat() }),
             ("Open all chats", "bubble.left.and.bubble.right", { Task { await store.openChats() } }),
             ("Open terminals", "terminal", { Task { await store.openTerminals() } }),
-            ("Browse project files", "doc.on.doc", { Task { await store.openProject(store.selectedProjectID, section: .files) } }),
-            ("Open project schedules", "calendar.badge.clock", { Task { await store.openProject(store.selectedProjectID, section: .schedules) } }),
+            (
+                "Browse project files", "doc.on.doc",
+                { Task { await store.openProject(store.selectedProjectID, section: .files) } }
+            ),
+            (
+                "Open project schedules", "calendar.badge.clock",
+                { Task { await store.openProject(store.selectedProjectID, section: .schedules) } }
+            ),
             ("Add Git project", "folder.badge.plus", { store.createProjectPresented = true }),
             ("Edit project context", "text.book.closed", { store.projectContextPresented = true }),
             ("Refresh", "arrow.clockwise", { Task { await store.refreshState() } }),
@@ -1455,12 +1589,24 @@ struct CommandPalette: View {
             Divider().overlay(DieterTheme.border)
             ScrollView {
                 VStack(spacing: 4) {
-                    ForEach(Array(commands.enumerated()).filter { query.isEmpty || $0.element.0.localizedCaseInsensitiveContains(query) }, id: \.offset) { _, command in
+                    ForEach(
+                        Array(commands.enumerated()).filter {
+                            query.isEmpty || $0.element.0.localizedCaseInsensitiveContains(query)
+                        }, id: \.offset
+                    ) { _, command in
                         Button {
                             command.2(); dismiss()
                         } label: {
-                            HStack { Image(systemName: command.1).font(.system(size: 12)).foregroundStyle(DieterTheme.subtle).frame(width: 22); Text(command.0).font(DieterFont.body); Spacer(); Image(systemName: "return").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary) }
-                                .padding(10).background(DieterTheme.raised.opacity(0.55), in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+                            HStack {
+                                Image(systemName: command.1).font(.system(size: 12)).foregroundStyle(DieterTheme.subtle)
+                                    .frame(width: 22);
+                                Text(command.0).font(DieterFont.body); Spacer();
+                                Image(systemName: "return").font(.system(size: 10)).foregroundStyle(
+                                    DieterTheme.tertiary)
+                            }
+                            .padding(10).background(
+                                DieterTheme.raised.opacity(0.55),
+                                in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
                         }.buttonStyle(.plain)
                     }
                 }.padding(10)

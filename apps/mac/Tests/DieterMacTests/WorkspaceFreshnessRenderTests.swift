@@ -5,8 +5,9 @@ import Testing
 
 private func writeWorkspaceFreshnessPreview(_ image: NSImage, to path: String) throws {
     guard let data = image.tiffRepresentation,
-          let representation = NSBitmapImageRep(data: data),
-          let png = representation.representation(using: .png, properties: [:]) else {
+        let representation = NSBitmapImageRep(data: data),
+        let png = representation.representation(using: .png, properties: [:])
+    else {
         Issue.record("Could not encode workspace freshness preview")
         return
     }

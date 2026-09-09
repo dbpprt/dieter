@@ -14,7 +14,7 @@ through either verified direct TLS or the bounded relay.
 - Daemon-owned terminal tabs with a real VT renderer, reconnectable scrollback,
   working-directory and shell selection, resize forwarding, and explicit close
 - A machine-oriented Screens workspace with explicit host enablement, signed
-  WebRTC admission, Metal-rendered view-only VP8 video, and reconnectable
+  WebRTC admission, Metal-rendered H.264 video with signed control grants, and reconnectable
   signaling over direct TLS or the gateway
 - Message parts, reasoning, lazy full tool output, plans, subagents, and comments
 - Project file browsing/editing and file mutations
@@ -109,10 +109,11 @@ Screens are intentionally independent of the project RPC connection. The app
 selects a machine, prefers its verified direct route, falls back to the gateway
 for signaling, and then establishes peer-to-peer WebRTC media. It verifies the
 daemon's Ed25519 signature over the client offer, DTLS fingerprint, nonce,
-session ID, and lease before accepting the answer. The current slice is
-view-only, VP8-only, and limited to one session per daemon; keyboard, pointer,
-clipboard, audio, file transfer, native capture helpers, and Android viewing
-remain future work. The Google WebRTC M151 community XCFramework is pinned
+session ID, and lease before accepting the answer. The client selects H.264
+video and supports keyboard, pointer, and scroll input through a signed control
+grant when host control is enabled. Signaling, connection attempts, peer callbacks,
+and input channels have explicit session ownership and teardown. Clipboard,
+audio, file transfer, and Android viewing remain future work. The Google WebRTC M151 community XCFramework is pinned
 directly to the byte-verified `151.0.1` release asset. This avoids the upstream
 package manifest's removed `151.0.0` asset while a Dieter-built, reproducibly
 packaged artifact remains future work.
@@ -142,3 +143,27 @@ The app-side smoke hooks compile only in debug builds. A release build has no
 smoke command-line interface. Remove generated smoke evidence with the
 confirmed `just mac clean-smoke` recipe; it never removes the canonical SwiftPM
 compilation caches.
+
+
+## Architecture and maintenance
+
+The executable composes `DieterCore` (identities, contracts and pure policies),
+`DieterClient` (RPC, routing and persistence), and native feature models under
+`Sources/DieterMac/Features`. `AppSession` owns the menu-bar application's
+lifetime; `WindowWorkspace` owns the single workspace window. Native views use
+focused models and explicit commands. Pending commands have their own atomic
+journal, separate from disposable projection checkpoints.
+
+See [the implementation and recovery notes](../../docs/mac-refactoring-implementation-2026-09-09.md)
+for feature ownership, migration behavior, resource limits and verification.
+
+```sh
+just mac format
+just mac format-check
+just mac check
+just mac smoke-all
+```
+
+Swift formatting applies to handwritten sources, tests and tools, excluding
+Generated and Vendor. CI runs core/navigation smoke on pull requests and full
+native qualification on scheduled/manual runs, retaining reports and screenshots.

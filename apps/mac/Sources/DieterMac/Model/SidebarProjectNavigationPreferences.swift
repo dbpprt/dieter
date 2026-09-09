@@ -8,8 +8,9 @@ struct SidebarProjectNavigationPreferences: Equatable {
 
     static func applicationDefaults(arguments: [String] = ProcessInfo.processInfo.arguments) -> UserDefaults {
         guard let flag = arguments.firstIndex(of: "--sidebar-preferences-suite"),
-              arguments.indices.contains(flag + 1),
-              let defaults = UserDefaults(suiteName: arguments[flag + 1]) else { return .standard }
+            arguments.indices.contains(flag + 1),
+            let defaults = UserDefaults(suiteName: arguments[flag + 1])
+        else { return .standard }
         return defaults
     }
 

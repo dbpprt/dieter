@@ -16,7 +16,7 @@ import Testing
 }
 
 @Test func islandActivityCountsRunningReviewAndOnlyTodaysCompletedCards() {
-    let now = Date(timeIntervalSince1970: 1_787_853_600) // 2026-08-27 18:00:00 UTC
+    let now = Date(timeIntervalSince1970: 1_787_853_600)  // 2026-08-27 18:00:00 UTC
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
 
@@ -25,12 +25,13 @@ import Testing
         card.id = id; card.title = id; card.runtime = runtime; card.lane = lane; card.runtimeUpdatedAt = updatedAt
         return card
     }
-    let activity = DieterIslandActivity.resolve(cards: [
-        card("running", runtime: "running", lane: "running", updatedAt: "2026-08-27T11:58:00Z"),
-        card("review", runtime: "waiting_for_user", lane: "review", updatedAt: "2026-08-27T11:00:00Z"),
-        card("done-today", runtime: "completed", lane: "done", updatedAt: "2026-08-27T09:00:00Z"),
-        card("done-yesterday", runtime: "completed", lane: "done", updatedAt: "2026-08-26T09:00:00Z"),
-    ], now: now, calendar: calendar)
+    let activity = DieterIslandActivity.resolve(
+        cards: [
+            card("running", runtime: "running", lane: "running", updatedAt: "2026-08-27T11:58:00Z"),
+            card("review", runtime: "waiting_for_user", lane: "review", updatedAt: "2026-08-27T11:00:00Z"),
+            card("done-today", runtime: "completed", lane: "done", updatedAt: "2026-08-27T09:00:00Z"),
+            card("done-yesterday", runtime: "completed", lane: "done", updatedAt: "2026-08-26T09:00:00Z"),
+        ], now: now, calendar: calendar)
 
     #expect(activity.runningCount == 1)
     #expect(activity.reviewCount == 1)
@@ -39,7 +40,7 @@ import Testing
 }
 
 @Test @MainActor func islandCardProjectionIncludesUnopenedProjectsAndOptimisticSelectedCards() {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
 
     func card(_ id: String, projectID: String, runtime: String) -> Dieter_V1_Card {
         var card = Dieter_V1_Card()

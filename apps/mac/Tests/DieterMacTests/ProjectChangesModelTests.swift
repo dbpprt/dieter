@@ -15,7 +15,9 @@ private actor ChangesFixtureRPC: ProjectChangesRPC {
     var operationWaiter: CheckedContinuation<Dieter_V1_GitOperation, any Error>?
     var changesWaiter: CheckedContinuation<Dieter_V1_Changeset, any Error>?
 
-    static func makeSnapshot(project: String = "project", revision: String = "r1", staged: Bool = false) -> Dieter_V1_Changeset {
+    static func makeSnapshot(project: String = "project", revision: String = "r1", staged: Bool = false)
+        -> Dieter_V1_Changeset
+    {
         var value = Dieter_V1_Changeset()
         value.projectID = project; value.revision = revision; value.branch = "main"
         value.files = ["a.swift", "b.swift"].map { path in
@@ -26,7 +28,10 @@ private actor ChangesFixtureRPC: ProjectChangesRPC {
         return value
     }
 
-    func configure(project: String = "project", revision: String = "r1", staged: Bool = false, holdDiffs: Bool = false, holdChanges: Bool = false, failChanges: Bool = false) {
+    func configure(
+        project: String = "project", revision: String = "r1", staged: Bool = false, holdDiffs: Bool = false,
+        holdChanges: Bool = false, failChanges: Bool = false
+    ) {
         snapshot = Self.makeSnapshot(project: project, revision: revision, staged: staged)
         self.holdDiffs = holdDiffs; self.holdChanges = holdChanges
         self.failChanges = failChanges
@@ -46,16 +51,20 @@ private actor ChangesFixtureRPC: ProjectChangesRPC {
         return Self.makeDiff(request)
     }
 
-    static func makeDiff(_ request: Dieter_V1_GetDiffRequest, patch: String? = nil, truncated: Bool = false) -> Dieter_V1_FileDiff {
+    static func makeDiff(_ request: Dieter_V1_GetDiffRequest, patch: String? = nil, truncated: Bool = false)
+        -> Dieter_V1_FileDiff
+    {
         var value = Dieter_V1_FileDiff()
         value.projectID = request.projectID; value.path = request.path; value.section = request.section
-        value.revision = request.expectedRevision; value.patch = patch ?? "+\(request.path) at \(request.expectedRevision)"
+        value.revision = request.expectedRevision;
+        value.patch = patch ?? "+\(request.path) at \(request.expectedRevision)"
         value.truncated = truncated; value.nextOffset = truncated ? Int64(value.patch.utf8.count) : 0
         return value
     }
 
     func resolveDiff(_ index: Int, patch: String? = nil, truncated: Bool = false) {
-        diffWaiters.removeValue(forKey: index)?.resume(returning: Self.makeDiff(requests[index], patch: patch, truncated: truncated))
+        diffWaiters.removeValue(forKey: index)?.resume(
+            returning: Self.makeDiff(requests[index], patch: patch, truncated: truncated))
     }
 
     func startGitOperation(_ request: Dieter_V1_StartGitOperationRequest) async throws -> Dieter_V1_GitOperation {

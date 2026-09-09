@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterCore
 import Foundation
 import GRPCCore
 import Observation
@@ -8,147 +9,48 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DieterStore {
-    func loadWorkspaceSurface() async {
-        if let workspaceRefreshTask {
-            workspaceRefreshAgain = true
-            await workspaceRefreshTask.value
-            return
+    func bindWorktree() {
+        let card = selectedCard ?? selectedDetail?.card
+        worktreeChanges.bind(
+            target: WorkspaceTarget(
+                endpointID: endpoint.id, projectID: card?.projectID ?? selectedProjectID,
+                conversationID: selectedCardID ?? selectedChatID ?? ""),
+            client: rpc, card: card, doneLaneID: card.flatMap { doneLane(for: $0) }
+        )
+        worktreeChanges.authorName = NSFullUserName()
+        worktreeChanges.onOpenFiles = { [weak self] card, path in
+            await self?.openWorkspaceFiles(card: card, opening: path)
         }
-        guard let rpc, let cardID = selectedCardID ?? selectedChatID,
-              DieterConversationID.isServerBacked(cardID) else { return }
-        workspaceRequestGeneration &+= 1
-        let generation = workspaceRequestGeneration
-        workspaceLoading = true
-        let task = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                if self.workspaceRequestGeneration == generation {
-                    self.workspaceLoading = false
-                    self.workspaceRefreshTask = nil
-                }
+        worktreeChanges.onOpenTerminal = { [weak self] card in await self?.openWorkspaceTerminal(card: card) }
+        worktreeChanges.onSendMessage = { [weak self] text, card, target in
+            await self?.sendAgentMessage(text, card: card, endpointID: target.endpointID) ?? false
+        }
+        worktreeChanges.onCard = { [weak self] card in self?.acceptWorkspaceCard(card) }
+        worktreeChanges.onTransportFailure = { [weak self] error, client in
+            guard let rpc = client as? DieterRPC else { return }
+            self?.connectionStopped(error, client: rpc)
+        }
+        worktreeChanges.onOperationFinished = { [weak self] target in
+            guard let self, self.endpoint.id == target.endpointID, self.selectedProjectID == target.projectID else {
+                return
             }
-            repeat {
-                self.workspaceRefreshAgain = false
-                await self.readWorkspaceSurface(rpc: rpc, cardID: cardID, generation: generation)
-            } while self.workspaceRefreshAgain && self.workspaceRequestGeneration == generation && !Task.isCancelled
-        }
-        workspaceRefreshTask = task
-        await task.value
-    }
-
-    private func readWorkspaceSurface(rpc: DieterRPC, cardID: String, generation: UInt64) async {
-        let reconciliationGeneration = gitReconciliationGeneration
-        func ownsRequest() -> Bool {
-            !Task.isCancelled && self.rpc === rpc && workspaceRequestGeneration == generation
-                && (selectedCardID ?? selectedChatID) == cardID
-        }
-        do {
-            async let workspaceValue = rpc.workspace(cardID: cardID)
-            async let changesetValue = rpc.changeset(cardID: cardID)
-            let (workspace, changes) = try await (workspaceValue, changesetValue)
-            guard ownsRequest() else { return }
-            let revisionChanged = conversationChangeset?.revision != changes.revision
-            var comments = conversationChangeComments
-            if revisionChanged { comments = try await rpc.changeComments(cardID: cardID, revision: changes.revision).comments }
-            guard ownsRequest() else { return }
-            var capabilities = conversationSCMCapabilities
-            if capabilities == nil { capabilities = try await rpc.scmCapabilities(cardID: cardID) }
-            guard ownsRequest() else { return }
-            if conversationWorkspace != workspace { conversationWorkspace = workspace }
-            if conversationChangeset != changes { conversationChangeset = changes }
-            if conversationChangeComments != comments { conversationChangeComments = comments }
-            conversationSCMCapabilities = capabilities
-            if gitReconciliationGeneration == reconciliationGeneration { gitOperationNeedsReconciliation = false }
-            workspaceError = nil
-            acceptWorkspaceSummary(workspace)
-            let selection = WorkspaceReviewSelectionResolver.resolve(
-                currentPath: selectedChangePath, currentCommitSHA: selectedCommitSHA,
-                filePaths: changes.files.map(\.path), commitSHAs: changes.commits.map(\.sha)
-            )
-            if selection.path.isEmpty && selection.commitSHA.isEmpty {
-                diffRequestGeneration &+= 1
-                selectedChangePath = ""; selectedCommitSHA = ""
-                conversationDiff = nil; conversationDiffLoading = false
-            } else if revisionChanged || conversationDiff == nil || selection.path != selectedChangePath || selection.commitSHA != selectedCommitSHA {
-                await loadConversationDiff(path: selection.path, commitSHA: selection.commitSHA, retryStale: false)
-            }
-            guard ownsRequest() else { return }
-            let observed = gitOperation?.cardID == cardID ? gitOperation : nil
-            if let operationID = GitOperationReconciliation.operationID(
-                workspaceOperationID: workspace.currentOperationID,
-                observedOperationID: observed?.id, observedStatus: observed?.status
-            ) { await resumeGitOperation(id: operationID) }
-        } catch {
-            guard ownsRequest() else { return }
-            workspaceError = DieterRPCFailure.message(for: error)
+            await self.loadProjectWorkspaces()
+            guard self.endpoint.id == target.endpointID, self.selectedProjectID == target.projectID else { return }
+            await self.refreshState()
         }
     }
-
-    func loadConversationDiff(path: String, commitSHA: String = "", append: Bool = false, retryStale: Bool = true) async {
-        guard let rpc, let cardID = selectedCardID ?? selectedChatID,
-              let changes = conversationChangeset else { return }
-        if append, conversationDiffLoading { return }
-        if selectedChangePath != path || selectedCommitSHA != commitSHA { conversationDiff = nil }
-        selectedChangePath = path; selectedCommitSHA = commitSHA
-        diffRequestGeneration &+= 1
-        let generation = diffRequestGeneration
-        conversationDiffLoading = true
-        defer { if generation == diffRequestGeneration { conversationDiffLoading = false } }
-        var request = Dieter_V1_GetDiffRequest()
-        request.cardID = cardID; request.path = path; request.commitSha = commitSHA
-        request.expectedRevision = changes.revision; request.limit = 1_048_576
-        let previous = append ? conversationDiff : nil
-        if let previous { request.offset = previous.nextOffset }
-        func ownsRequest() -> Bool {
-            !Task.isCancelled && self.rpc === rpc && diffRequestGeneration == generation
-                && (selectedCardID ?? selectedChatID) == cardID && conversationChangeset?.revision == changes.revision
-                && selectedChangePath == path && selectedCommitSHA == commitSHA
-        }
-        do {
-            var page = try await (commitSHA.isEmpty ? rpc.fileDiff(request) : rpc.commitDiff(request))
-            guard ownsRequest() else { return }
-            if let previous { page.patch = previous.patch + page.patch }
-            conversationDiff = page
-        } catch {
-            guard ownsRequest() else { return }
-            let message = DieterRPCFailure.message(for: error)
-            workspaceError = message
-            if retryStale && (message.localizedCaseInsensitiveContains("refresh") || message.localizedCaseInsensitiveContains("revision")) {
-                await loadWorkspaceSurface()
-            }
-        }
+    func loadWorkspaceSurface() async { bindWorktree(); await worktreeChanges.loadWorkspaceSurface() }
+    func loadConversationDiff(path: String, commitSHA: String = "", append: Bool = false, retryStale: Bool = true) async
+    {
+        bindWorktree();
+        await worktreeChanges.loadConversationDiff(
+            path: path, commitSHA: commitSHA, append: append, retryStale: retryStale)
     }
-
     func addChangeComment(path: String, side: String, line: Int32, body: String) async -> Bool {
-        guard let rpc, let cardID = selectedCardID ?? selectedChatID,
-              let changes = conversationChangeset else { return false }
-        var request = Dieter_V1_AddChangeCommentRequest()
-        request.cardID = cardID; request.path = path; request.side = side; request.line = line
-        request.body = body; request.author = NSFullUserName(); request.revision = changes.revision
-        do {
-            let value = try await rpc.addChangeComment(request)
-            conversationChangeComments.append(value)
-            return true
-        } catch {
-            workspaceError = DieterRPCFailure.message(for: error)
-            return false
-        }
+        bindWorktree(); return await worktreeChanges.addChangeComment(path: path, side: side, line: line, body: body)
     }
-
     func updateConversationWorkspace(_ draft: ConversationWorkspaceDraft) async -> Bool {
-        guard let rpc, let cardID = selectedCardID ?? selectedChatID else { return false }
-        var request = Dieter_V1_UpdateConversationWorkspaceRequest()
-        request.cardID = cardID; request.mode = draft.mode.rawValue
-        request.branch = draft.mode == .worktree ? draft.branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        request.baseBranch = draft.mode == .worktree ? draft.baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        do {
-            let card = try await rpc.updateConversationWorkspace(request)
-            acceptWorkspaceCard(card)
-            return true
-        } catch {
-            workspaceError = DieterRPCFailure.message(for: error)
-            return false
-        }
+        bindWorktree(); return await worktreeChanges.updateConversationWorkspace(draft)
     }
 
     func updateProjectWorkspaceSettings(
@@ -173,125 +75,31 @@ extension DieterStore {
 
     func loadProjectWorkspaces() async {
         guard let rpc, !selectedProjectID.isEmpty else { return }
-        do { projectWorkspaces = try await rpc.projectWorkspaces(projectID: selectedProjectID).workspaces }
-        catch { workspaceError = DieterRPCFailure.message(for: error) }
-    }
-
-    func startGitOperation(_ kind: GitOperationKind, cardID explicitCardID: String? = nil, parameters: [String: String] = [:]) async -> Bool {
-        guard !gitOperationSubmitting, let rpc, let cardID = explicitCardID ?? selectedCardID ?? selectedChatID else { return false }
-        let submissionID = UUID()
-        gitOperationSubmissionID = submissionID
-        gitOperationSubmitting = true
-        defer { if gitOperationSubmissionID == submissionID { gitOperationSubmitting = false; gitOperationSubmissionID = nil } }
-        var request = Dieter_V1_StartGitOperationRequest()
-        request.cardID = cardID; request.kind = kind.rawValue
-        if explicitCardID == nil || explicitCardID == selectedCardID || explicitCardID == selectedChatID {
-            request.expectedRevision = conversationChangeset?.revision ?? ""
-        }
-        request.parameters = parameters
-        do {
-            let operation = try await rpc.startGitOperation(request)
-            guard self.rpc === rpc, gitOperationSubmissionID == submissionID else { return false }
-            if GitOperationStatus.terminal(operation.status) { requireGitReconciliation() }
-            gitOperation = operation
-            gitOperationLogs = []
-            observeGitOperation(id: operation.id, after: 0)
-            return true
-        } catch {
-            guard self.rpc === rpc, gitOperationSubmissionID == submissionID else { return false }
+        do { projectWorkspaces = try await rpc.projectWorkspaces(projectID: selectedProjectID).workspaces } catch {
             workspaceError = DieterRPCFailure.message(for: error)
-            return false
         }
     }
 
-    func cancelCurrentGitOperation() async {
-        guard let rpc, let operation = gitOperation, GitOperationStatus.active(operation.status) else { return }
-        do { gitOperation = try await rpc.cancelGitOperation(id: operation.id) }
-        catch { workspaceError = DieterRPCFailure.message(for: error) }
+    func startGitOperation(_ kind: GitOperationKind, cardID: String? = nil, parameters: [String: String] = [:]) async
+        -> Bool
+    {
+        bindWorktree(); return await worktreeChanges.startGitOperation(kind, cardID: cardID, parameters: parameters)
     }
-
-    func showWorkspaceToast(_ message: String) {
-        workspaceToast = WorkspaceToast(message: message)
-        workspaceToastTask?.cancel()
-        workspaceToastTask = Task { [weak self] in
-            try? await DieterTaskSleep.seconds(6)
-            guard !Task.isCancelled else { return }
-            self?.workspaceToast = nil
-        }
-    }
-
-    /// Runs the full merge flow the merge sheet offers: commit dirty work when
-    /// needed, merge into the base branch, then optionally remove the workspace
-    /// and move the card to Done. Each stage is an ordinary Git operation, so
-    /// progress, logs, and failures surface through the usual operation state.
-    @discardableResult
-    func performMergeFlow(
-        strategy: String,
-        subject: String,
-        body: String,
-        validate: Bool,
-        removeWorkspace: Bool,
-        moveCardToDone: Bool
+    func cancelCurrentGitOperation() async { await worktreeChanges.cancelCurrentGitOperation() }
+    func showWorkspaceToast(_ message: String) { worktreeChanges.showWorkspaceToast(message) }
+    @discardableResult func performMergeFlow(
+        strategy: String, subject: String, body: String, validate: Bool, removeWorkspace: Bool, moveCardToDone: Bool
     ) async -> Bool {
-        guard mergeFlowStep == nil, let card = selectedCard ?? selectedDetail?.card else { return false }
-        let branch = conversationWorkspace?.branch ?? card.workspace.branch
-        var base = conversationWorkspace?.baseBranch ?? card.workspace.baseBranch
-        if base.isEmpty { base = "base" }
-        defer { mergeFlowStep = nil }
-
-        if conversationWorkspace?.dirty == true {
-            mergeFlowStep = .commit
-            guard await startGitOperation(.commit, parameters: [
-                "subject": subject, "body": body, "include_untracked": "true",
-            ]), await awaitCurrentGitOperationSuccess() else { return false }
-            await loadWorkspaceSurface()
-        }
-
-        mergeFlowStep = .merge
-        guard await startGitOperation(.mergeLocal, parameters: [
-            "strategy": strategy, "subject": subject, "validate": validate ? "true" : "false",
-        ]), await awaitCurrentGitOperationSuccess() else { return false }
-
-        if removeWorkspace {
-            mergeFlowStep = .cleanup
-            await loadWorkspaceSurface()
-            if await startGitOperation(.cleanup) {
-                _ = await awaitCurrentGitOperationSuccess()
-            }
-        }
-
-        var movedToDone = false
-        if moveCardToDone, card.scope != "chat", let lane = doneLane(for: card), card.lane != lane {
-            await move(card, lane: lane)
-            movedToDone = true
-        }
-        let mergedLabel = branch.isEmpty ? "workspace" : branch
-        showWorkspaceToast("Merged \(mergedLabel) into \(base)" + (movedToDone ? " · card moved to Done" : ""))
-        return true
+        bindWorktree()
+        return await worktreeChanges.performMergeFlow(
+            strategy: strategy, subject: subject, body: body, validate: validate, removeWorkspace: removeWorkspace,
+            moveCardToDone: moveCardToDone)
     }
-
-    /// Waits for the operation started last to settle. Polls the daemon
-    /// directly so orchestration survives a dropped watch stream.
-    func awaitCurrentGitOperationSuccess() async -> Bool {
-        guard let id = gitOperation?.id else { return false }
-        let deadline = Date().addingTimeInterval(3_600)
-        while Date() < deadline, !Task.isCancelled {
-            if let current = gitOperation, current.id == id,
-               GitOperationStatus.terminal(current.status) || current.status == "waiting_for_resolution" {
-                return current.status == "succeeded"
-            }
-            if let rpc, let polled = try? await rpc.gitOperation(id: id),
-               GitOperationStatus.terminal(polled.status) || polled.status == "waiting_for_resolution" {
-                if gitOperation?.id == id { gitOperation = polled }
-                return polled.status == "succeeded"
-            }
-            try? await DieterTaskSleep.milliseconds(400)
-        }
-        return false
-    }
+    func awaitCurrentGitOperationSuccess() async -> Bool { await worktreeChanges.awaitCurrentGitOperationSuccess() }
 
     func doneLane(for card: Dieter_V1_Card) -> String? {
-        let lanes = selectedDetail?.board.id == card.boardID
+        let lanes =
+            selectedDetail?.board.id == card.boardID
             ? selectedDetail?.board.lanes
             : boards(for: card.projectID).first { $0.id == card.boardID }?.lanes
         guard let lanes, !lanes.isEmpty else { return nil }
@@ -301,11 +109,13 @@ extension DieterStore {
     /// Sends a hand-off message into the conversation on the person's behalf,
     /// e.g. "resolve the merge conflicts" or "address the review".
     @discardableResult
-    func sendAgentMessage(_ text: String) async -> Bool {
+    func sendAgentMessage(
+        _ text: String, card explicitCard: Dieter_V1_Card? = nil, endpointID explicitEndpointID: String? = nil
+    ) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let id = selectedCardID ?? selectedChatID else { return false }
-        let card = selectedCard ?? selectedDetail?.card
-        let targetEndpointID = projectEndpointIDs[card?.projectID ?? ""] ?? endpoint.id
+        guard !trimmed.isEmpty, let id = explicitCard?.id ?? selectedCardID ?? selectedChatID else { return false }
+        let card = explicitCard ?? selectedCard ?? selectedDetail?.card
+        let targetEndpointID = explicitEndpointID ?? projectEndpointIDs[card?.projectID ?? ""] ?? endpoint.id
         var part = Dieter_V1_MessagePart()
         part.type = "text"
         part.text = trimmed
@@ -320,17 +130,7 @@ extension DieterStore {
         request.commandID = UUID().uuidString.lowercased()
         request.messageID = "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
         do {
-            syncDiskState.outbox.append(DieterOutboxEntry(
-                commandID: request.commandID,
-                clientID: syncClientID,
-                endpointID: targetEndpointID,
-                kind: .sendMessage,
-                request: try request.serializedData(),
-                optimisticID: request.messageID,
-                attempts: 0,
-                createdAt: Date()
-            ))
-            await persistAndDrainOutbox()
+            try await enqueueMessage(request, endpointID: targetEndpointID)
             return true
         } catch {
             show(error)
@@ -338,102 +138,18 @@ extension DieterStore {
         }
     }
 
-    func resumeGitOperation(id: String) async {
-        guard let rpc else { return }
-        do {
-            let operation = try await rpc.gitOperation(id: id)
-            guard self.rpc === rpc, operation.cardID == (selectedCardID ?? selectedChatID) else { return }
-            let changedOperation = gitOperation?.id != id
-            if GitOperationStatus.terminal(operation.status), changedOperation || gitOperation?.status != operation.status {
-                requireGitReconciliation()
-                workspaceRefreshAgain = true
-            }
-            gitOperation = operation
-            if changedOperation {
-                gitOperationLogs = []
-                if GitOperationStatus.active(operation.status) { observeGitOperation(id: id, after: 0) }
-            } else if GitOperationStatus.terminal(operation.status) {
-                gitOperationTask?.cancel()
-                gitOperationTask = nil
-            }
-        } catch { workspaceError = DieterRPCFailure.message(for: error) }
-    }
-
+    func resumeGitOperation(id: String) async { bindWorktree(); await worktreeChanges.resumeGitOperation(id: id) }
     func observeGitOperation(id: String, after sequence: UInt64) {
-        gitOperationTask?.cancel()
-        gitOperationTask = Task { [weak self] in
-            guard let self, let rpc = self.rpc else { return }
-            do {
-                try await rpc.watchGitOperation(id: id, after: sequence) { [weak self] frame in
-                    if await self?.acceptGitOperationFrame(frame, operationID: id) == true {
-                        await self?.loadWorkspaceSurface()
-                    }
-                }
-                guard !Task.isCancelled, self.gitOperation?.id == id else { return }
-                let selectedConversationID = self.selectedCardID ?? self.selectedChatID
-                if self.gitOperation?.cardID == selectedConversationID {
-                    let removesWorkspace = ["cleanup", "discard", "adopt"].contains(self.gitOperation?.kind ?? "")
-                        && self.gitOperation?.status == "succeeded"
-                    if removesWorkspace {
-                        self.clearWorkspaceContentPreservingOperation()
-                    } else {
-                        await self.loadWorkspaceSurface()
-                    }
-                }
-                await self.loadProjectWorkspaces()
-                await self.refreshState()
-            } catch {
-                guard !Self.isExpectedCancellation(error) else { return }
-                if DieterRPCFailure.isTransient(error) {
-                    self.connectionStopped(error, client: rpc)
-                } else {
-                    self.workspaceError = DieterRPCFailure.message(for: error)
-                }
-            }
-        }
+        bindWorktree(); worktreeChanges.observeGitOperation(id: id, after: sequence)
     }
-
     func acceptGitOperationFrame(_ frame: Dieter_V1_GitOperationFrame, operationID: String) -> Bool {
-        guard gitOperation?.id == operationID else { return false }
-        let enteredConflict = gitOperation?.status != "waiting_for_resolution" && frame.operation.status == "waiting_for_resolution"
-        if GitOperationStatus.terminal(frame.operation.status), gitOperation?.status != frame.operation.status {
-            requireGitReconciliation()
-        }
-        gitOperation = frame.operation
-        let known = Set(gitOperationLogs.map(\.sequence))
-        gitOperationLogs.append(contentsOf: frame.logs.filter { !known.contains($0.sequence) })
-        return enteredConflict
+        worktreeChanges.acceptGitOperationFrame(frame, operationID: operationID)
     }
-
-    func clearWorkspaceContentPreservingOperation() {
-        workspaceRequestGeneration &+= 1; diffRequestGeneration &+= 1
-        workspaceRefreshTask?.cancel(); workspaceRefreshTask = nil; workspaceRefreshAgain = false
-        conversationDiffLoading = false
-        gitOperationNeedsReconciliation = false
-        conversationWorkspace = nil
-        conversationChangeset = nil
-        conversationDiff = nil
-        conversationChangeComments = []
-        conversationSCMCapabilities = nil
-        selectedChangePath = ""
-        selectedCommitSHA = ""
-        workspaceLoading = false
-        workspaceError = nil
-    }
-
-    private func requireGitReconciliation() {
-        gitReconciliationGeneration &+= 1
-        gitOperationNeedsReconciliation = true
-    }
+    func clearWorkspaceContentPreservingOperation() { worktreeChanges.clearWorkspaceContentPreservingOperation() }
 
     func acceptWorkspaceCard(_ card: Dieter_V1_Card) {
-        if let index = state.cards.firstIndex(where: { $0.id == card.id }) { state.cards[index] = card }
-        if let index = state.chats.firstIndex(where: { $0.id == card.id }) { state.chats[index] = card }
-        if let index = chats.firstIndex(where: { $0.id == card.id }) { chats[index] = card }
-        if var cards = navigationCards[card.boardID], let index = cards.firstIndex(where: { $0.id == card.id }) {
-            cards[index] = card
-            navigationCards[card.boardID] = cards
-        }
+        replica.upsert(card)
+        refreshReplicaPresentation()
         if var detail = selectedDetail, detail.card.id == card.id {
             detail.card = card
             selectedDetail = detail
@@ -441,80 +157,58 @@ extension DieterStore {
     }
 
     func acceptWorkspaceSummary(_ workspace: Dieter_V1_Workspace) {
-        guard var card = selectedCard ?? selectedDetail?.card, card.id == workspace.cardID else { return }
-        card.workspace.mode = workspace.mode
-        card.workspace.state = workspace.state
-        card.workspace.branch = workspace.branch
-        card.workspace.baseBranch = workspace.baseBranch
-        card.workspace.headSha = workspace.headSha
-        card.workspace.baseSha = workspace.baseSha
-        card.workspace.revision = workspace.revision
-        card.workspace.changedFiles = workspace.changedFiles
-        card.workspace.additions = workspace.additions
-        card.workspace.deletions = workspace.deletions
-        card.workspace.ahead = workspace.ahead
-        card.workspace.behind = workspace.behind
-        card.workspace.currentOperationID = workspace.currentOperationID
-        acceptWorkspaceCard(card)
+        bindWorktree(); worktreeChanges.acceptWorkspaceSummary(workspace)
     }
 
     func listProjectDirectories(path: String, machineID: String) async throws -> Dieter_V1_DirectoryListing {
-        guard let machine = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil) else {
-            throw NSError(domain: "DieterMachine", code: 1, userInfo: [NSLocalizedDescriptionKey: "Select an enrolled machine."])
+        guard let machine = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil)
+        else {
+            throw NSError(
+                domain: "DieterMachine", code: 1, userInfo: [NSLocalizedDescriptionKey: "Select an enrolled machine."])
         }
         guard machine.online else {
-            throw NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."])
+            throw NSError(
+                domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."])
         }
         var request = Dieter_V1_ListDirectoriesRequest()
         request.path = path
         if machine.id == endpoint.id, let rpc {
             return try await rpc.listDirectories(request)
         }
-        guard let daemonID = machine.daemonID else {
-            throw NSError(domain: "DieterMachine", code: 3, userInfo: [NSLocalizedDescriptionKey: "The project host has no daemon identity."])
-        }
-        let client = try DieterRPC(
-            endpoint: machine,
-            accessToken: await accessToken(for: machine),
-            route: .relay(daemonID: daemonID)
-        )
-        let connection = Task { try? await client.run() }
-        defer { connection.cancel(); client.shutdown() }
-        return try await client.listDirectories(request)
+        let lease = try await selectDirectoryDataPlane(for: machine)
+        defer { lease.release() }
+        return try await lease.rpc.listDirectories(request)
     }
 
-    func createProject(_ draft: ProjectSetupDraft, machineID: String? = nil) async throws -> Dieter_V1_CreateProjectResponse {
+    func createProject(_ draft: ProjectSetupDraft, machineID: String? = nil) async throws
+        -> Dieter_V1_CreateProjectResponse
+    {
         let target: DieterEndpoint
         if let machineID {
-            guard let selected = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil) else {
-                throw NSError(domain: "DieterMachine", code: 1, userInfo: [NSLocalizedDescriptionKey: "The project host is no longer enrolled."])
+            guard
+                let selected = machines.first(where: { $0.id == machineID })
+                    ?? (endpoint.id == machineID ? endpoint : nil)
+            else {
+                throw NSError(
+                    domain: "DieterMachine", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The project host is no longer enrolled."])
             }
             target = selected
         } else {
             target = endpoint
         }
         guard target.online else {
-            throw NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
+            throw NSError(
+                domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
         }
         let request = draft.request()
         let response: Dieter_V1_CreateProjectResponse
         if target.id == endpoint.id, let rpc {
             response = try await rpc.createProject(request)
         } else {
-            guard let daemonID = target.daemonID else {
-                throw NSError(domain: "DieterMachine", code: 3, userInfo: [NSLocalizedDescriptionKey: "The project host has no daemon identity."])
-            }
-            let client = try DieterRPC(
-                endpoint: target,
-                accessToken: await accessToken(for: target),
-                route: .relay(daemonID: daemonID)
-            )
-            let connection = Task { try? await client.run() }
-            defer {
-                connection.cancel()
-                client.shutdown()
-            }
-            response = try await client.createProject(request)
+            let lease = try await selectDirectoryDataPlane(for: target)
+            defer { lease.release() }
+            response = try await lease.rpc.createProject(request)
         }
 
         projectDirectory[response.project.id] = response.project
@@ -534,7 +228,10 @@ extension DieterStore {
         guard await ensureProjectConnection(id) else { return }
         guard let rpc else { return }
         var request = Dieter_V1_ArchiveProjectRequest(); request.projectID = id; request.archived = archived
-        do { _ = try await rpc.archiveProject(request); await refreshState(); await refreshNavigation(); await loadArchive() } catch { show(error) }
+        do {
+            _ = try await rpc.archiveProject(request); await refreshState(); await refreshNavigation();
+            await loadArchive()
+        } catch { show(error) }
     }
 
     func renameProject(id: String, name: String) async {
@@ -554,18 +251,22 @@ extension DieterStore {
         guard let rpc else { return }
         var request = Dieter_V1_UpdateProjectRequest(); request.projectID = selectedProjectID
         request.name = name; request.summary = summary; request.prompt = prompt
-        do { _ = try await rpc.updateProject(request); projectContextPresented = false; await refreshState() } catch { show(error) }
+        do { _ = try await rpc.updateProject(request); projectContextPresented = false; await refreshState() } catch {
+            show(error)
+        }
     }
 
     func createBoard(name: String, workflow: String, description: String, doneArchivePolicy: String) async {
         do {
-            guard let board = try await createBoard(
-                projectID: selectedProjectID,
-                name: name,
-                workflow: workflow,
-                description: description,
-                doneArchivePolicy: doneArchivePolicy
-            ) else { return }
+            guard
+                let board = try await createBoard(
+                    projectID: selectedProjectID,
+                    name: name,
+                    workflow: workflow,
+                    description: description,
+                    doneArchivePolicy: doneArchivePolicy
+                )
+            else { return }
             createBoardPresented = false
             selectedBoardID = board.id
             section = .board
@@ -604,7 +305,8 @@ extension DieterStore {
                 state = next
             }
             if var boards = navigationBoards[updated.projectID],
-               let index = boards.firstIndex(where: { $0.id == updated.id }) {
+                let index = boards.firstIndex(where: { $0.id == updated.id })
+            {
                 boards[index] = updated
                 navigationBoards[updated.projectID] = boards
             }
@@ -617,20 +319,25 @@ extension DieterStore {
 
     func setArchivePolicy(_ policy: String) async {
         guard let rpc else { return }
-        var request = Dieter_V1_SetBoardArchivePolicyRequest(); request.boardID = selectedBoardID; request.doneArchivePolicy = policy
-        do { _ = try await rpc.setBoardArchivePolicy(request); archivePolicyPresented = false; await refreshState() } catch { show(error) }
+        var request = Dieter_V1_SetBoardArchivePolicyRequest(); request.boardID = selectedBoardID;
+        request.doneArchivePolicy = policy
+        do {
+            _ = try await rpc.setBoardArchivePolicy(request); archivePolicyPresented = false; await refreshState()
+        } catch { show(error) }
     }
 
     func createLabel(name: String, color: String, instructions: String = "") async {
         guard let rpc else { return }
-        var request = Dieter_V1_CreateBoardLabelRequest(); request.boardID = selectedBoardID; request.name = name; request.color = color; request.instructions = instructions
+        var request = Dieter_V1_CreateBoardLabelRequest(); request.boardID = selectedBoardID; request.name = name;
+        request.color = color; request.instructions = instructions
         do { acceptBoard(try await rpc.createBoardLabel(request)) } catch { show(error) }
     }
 
     func updateLabel(id: String, name: String, color: String, instructions: String) async {
         guard let rpc else { return }
         var request = Dieter_V1_UpdateBoardLabelRequest()
-        request.boardID = selectedBoardID; request.labelID = id; request.name = name; request.color = color; request.instructions = instructions
+        request.boardID = selectedBoardID; request.labelID = id; request.name = name; request.color = color;
+        request.instructions = instructions
         do { acceptBoard(try await rpc.updateBoardLabel(request)) } catch { show(error) }
     }
 
@@ -642,22 +349,13 @@ extension DieterStore {
 
     func acceptBoard(_ board: Dieter_V1_Board) {
         pendingBoards[board.id] = board
-        var next = state
-        if let index = next.boards.firstIndex(where: { $0.id == board.id }) { next.boards[index] = board }
-        else if board.projectID == selectedProjectID { next.boards.append(board) }
-        state = next
-        if var boards = navigationBoards[board.projectID], let index = boards.firstIndex(where: { $0.id == board.id }) {
-            boards[index] = board
-            navigationBoards[board.projectID] = boards
-        }
+        replica.upsert(board, selectedProjectID: selectedProjectID)
+        refreshReplicaPresentation()
     }
 
     func acceptProject(_ project: Dieter_V1_Project) {
         pendingProjects[project.id] = project
-        projectDirectory[project.id] = project
-        var next = state
-        if let index = next.projects.firstIndex(where: { $0.id == project.id }) { next.projects[index] = project }
-        if next.project.id == project.id { next.project = project }
-        state = next
+        replica.upsert(project)
+        refreshReplicaPresentation()
     }
 }

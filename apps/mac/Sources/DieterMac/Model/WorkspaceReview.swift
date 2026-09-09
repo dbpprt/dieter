@@ -71,32 +71,35 @@ struct WorkspaceDiffProjection: Sendable {
         comments: [Dieter_V1_ChangeComment]
     ) -> WorkspaceDiffProjection {
         MacPerformanceSignposts.measure("Diff projection", log: MacPerformanceSignposts.projection) {
-        let lines = UnifiedDiffParser.parse(patch)
-        let fileRows = path.isEmpty && !commitSHA.isEmpty
-        let rows = split
-            ? WorkspaceDiffDisplay.splitRows(lines, fileRows: fileRows)
-            : WorkspaceDiffDisplay.inlineRows(lines, fileRows: fileRows)
-        let commentsByLine = Dictionary(grouping: comments) {
-            WorkspaceDiffCommentKey(side: $0.side, line: $0.line)
-        }
-        var maximumCodeColumns = 0
-        var hunkDeltas: [Int: WorkspaceHunkDelta] = [:]
-        var hunkID: Int?
-        for line in lines {
-            if line.kind == .hunk { hunkID = line.id; hunkDeltas[line.id] = WorkspaceHunkDelta() }
-            guard line.kind == .context || line.kind == .addition || line.kind == .deletion else { continue }
-            // Reserve enough horizontal space for tabs and wide Unicode glyphs.
-            // This runs once with parsing, never during row layout or scrolling.
-            let columns = line.text.unicodeScalars.reduce(0) { width, scalar in
-                width + (scalar == "\t" ? 4 : scalar.isASCII ? 1 : 2)
+            let lines = UnifiedDiffParser.parse(patch)
+            let fileRows = path.isEmpty && !commitSHA.isEmpty
+            let rows =
+                split
+                ? WorkspaceDiffDisplay.splitRows(lines, fileRows: fileRows)
+                : WorkspaceDiffDisplay.inlineRows(lines, fileRows: fileRows)
+            let commentsByLine = Dictionary(grouping: comments) {
+                WorkspaceDiffCommentKey(side: $0.side, line: $0.line)
             }
-            maximumCodeColumns = max(maximumCodeColumns, columns)
-            if let hunkID {
-                if line.kind == .addition { hunkDeltas[hunkID, default: .init()].additions += 1 }
-                if line.kind == .deletion { hunkDeltas[hunkID, default: .init()].deletions += 1 }
+            var maximumCodeColumns = 0
+            var hunkDeltas: [Int: WorkspaceHunkDelta] = [:]
+            var hunkID: Int?
+            for line in lines {
+                if line.kind == .hunk { hunkID = line.id; hunkDeltas[line.id] = WorkspaceHunkDelta() }
+                guard line.kind == .context || line.kind == .addition || line.kind == .deletion else { continue }
+                // Reserve enough horizontal space for tabs and wide Unicode glyphs.
+                // This runs once with parsing, never during row layout or scrolling.
+                let columns = line.text.unicodeScalars.reduce(0) { width, scalar in
+                    width + (scalar == "\t" ? 4 : scalar.isASCII ? 1 : 2)
+                }
+                maximumCodeColumns = max(maximumCodeColumns, columns)
+                if let hunkID {
+                    if line.kind == .addition { hunkDeltas[hunkID, default: .init()].additions += 1 }
+                    if line.kind == .deletion { hunkDeltas[hunkID, default: .init()].deletions += 1 }
+                }
             }
-        }
-        return WorkspaceDiffProjection(rows: rows, commentsByLine: commentsByLine, maximumCodeColumns: maximumCodeColumns, hunkDeltas: hunkDeltas)
+            return WorkspaceDiffProjection(
+                rows: rows, commentsByLine: commentsByLine, maximumCodeColumns: maximumCodeColumns,
+                hunkDeltas: hunkDeltas)
         }
     }
 }
@@ -112,11 +115,15 @@ enum WorkspaceDiffDisplay {
     /// Context lines kept visible on each side of a fold.
     static let foldMargin = 5
 
-    static func inlineRows(_ lines: [UnifiedDiffLine], foldThreshold: Int = foldThreshold, fileRows: Bool = false) -> [WorkspaceDiffRow] {
+    static func inlineRows(_ lines: [UnifiedDiffLine], foldThreshold: Int = foldThreshold, fileRows: Bool = false)
+        -> [WorkspaceDiffRow]
+    {
         rows(lines, foldThreshold: foldThreshold, split: false, fileRows: fileRows)
     }
 
-    static func splitRows(_ lines: [UnifiedDiffLine], foldThreshold: Int = foldThreshold, fileRows: Bool = false) -> [WorkspaceDiffRow] {
+    static func splitRows(_ lines: [UnifiedDiffLine], foldThreshold: Int = foldThreshold, fileRows: Bool = false)
+        -> [WorkspaceDiffRow]
+    {
         rows(lines, foldThreshold: foldThreshold, split: true, fileRows: fileRows)
     }
 
@@ -129,7 +136,9 @@ enum WorkspaceDiffDisplay {
         return raw.hasPrefix("b/") ? String(raw.dropFirst(2)) : raw
     }
 
-    private static func rows(_ lines: [UnifiedDiffLine], foldThreshold: Int, split: Bool, fileRows: Bool) -> [WorkspaceDiffRow] {
+    private static func rows(_ lines: [UnifiedDiffLine], foldThreshold: Int, split: Bool, fileRows: Bool)
+        -> [WorkspaceDiffRow]
+    {
         var result: [WorkspaceDiffRow] = []
         var context: [UnifiedDiffLine] = []
         var changes: [UnifiedDiffLine] = []
@@ -164,12 +173,13 @@ enum WorkspaceDiffDisplay {
             let tail = trailing ? 0 : foldMargin
             let hidden = Array(context.dropFirst(head).dropLast(tail))
             emit(context.prefix(head))
-            result.append(.fold(
-                id: hidden.first?.id ?? context.first!.id,
-                count: hidden.count,
-                lines: hidden,
-                pairs: hidden.map { .init(id: $0.id, old: $0, new: $0) }
-            ))
+            result.append(
+                .fold(
+                    id: hidden.first?.id ?? context.first!.id,
+                    count: hidden.count,
+                    lines: hidden,
+                    pairs: hidden.map { .init(id: $0.id, old: $0, new: $0) }
+                ))
             emit(context.suffix(tail))
         }
 
@@ -232,7 +242,10 @@ enum WorkspaceDiffDisplay {
     /// Keeps the function context that trails a hunk header, dropping the raw
     /// range noise when context exists ("function ChatSidebar({ projects })").
     static func hunkDisplayText(_ header: String) -> String {
-        guard let end = header.range(of: "@@", options: .backwards, range: header.index(header.startIndex, offsetBy: 2)..<header.endIndex) else {
+        guard
+            let end = header.range(
+                of: "@@", options: .backwards, range: header.index(header.startIndex, offsetBy: 2)..<header.endIndex)
+        else {
             return header
         }
         let context = header[end.upperBound...].trimmingCharacters(in: .whitespaces)
@@ -274,37 +287,43 @@ struct WorkspaceMergeReadiness: Equatable, Sendable {
         let base = baseBranch.isEmpty ? "base" : baseBranch
         if workspaceState == "conflicted" || conflictedFiles > 0 {
             let count = max(conflictedFiles, 1)
-            items.append(.init(
-                id: "conflicts",
-                tone: .blocked,
-                text: count == 1 ? "1 file conflicts with \(base)" : "\(count) files conflict with \(base)",
-                detail: "Merge is blocked until conflicts are resolved."
-            ))
+            items.append(
+                .init(
+                    id: "conflicts",
+                    tone: .blocked,
+                    text: count == 1 ? "1 file conflicts with \(base)" : "\(count) files conflict with \(base)",
+                    detail: "Merge is blocked until conflicts are resolved."
+                ))
         } else {
-            items.append(.init(id: "conflicts", tone: .ready, text: "No conflicts with \(base)", detail: "checked just now"))
+            items.append(
+                .init(id: "conflicts", tone: .ready, text: "No conflicts with \(base)", detail: "checked just now"))
         }
         if let validation = lastValidation {
-            items.append(.init(
-                id: "validation",
-                tone: validation.passed ? .ready : .note,
-                text: validation.passed ? "\(validation.name) passed on the workspace" : "\(validation.name) failed on the workspace",
-                detail: validation.ago
-            ))
+            items.append(
+                .init(
+                    id: "validation",
+                    tone: validation.passed ? .ready : .note,
+                    text: validation.passed
+                        ? "\(validation.name) passed on the workspace" : "\(validation.name) failed on the workspace",
+                    detail: validation.ago
+                ))
         }
         if behind > 0 {
-            items.append(.init(
-                id: "behind",
-                tone: .note,
-                text: base + " moved · \(behind) new commit" + (behind == 1 ? "" : "s"),
-                detail: "Update from \(base) to pick them up before merging."
-            ))
+            items.append(
+                .init(
+                    id: "behind",
+                    tone: .note,
+                    text: base + " moved · \(behind) new commit" + (behind == 1 ? "" : "s"),
+                    detail: "Update from \(base) to pick them up before merging."
+                ))
         }
         if dirty {
-            items.append(.init(
-                id: "uncommitted",
-                tone: .note,
-                text: "Uncommitted changes will be committed first"
-            ))
+            items.append(
+                .init(
+                    id: "uncommitted",
+                    tone: .note,
+                    text: "Uncommitted changes will be committed first"
+                ))
         }
         return .init(items: items, dirty: dirty, conflictedFiles: conflictedFiles)
     }
@@ -375,11 +394,12 @@ struct PullRequestPresentation: Equatable, Sendable {
         case "changes_requested":
             signals.append(.init(id: "review", tone: .warning, text: "changes requested"))
         case "review_required":
-            signals.append(.init(
-                id: "review",
-                tone: .warning,
-                text: reviewer.isEmpty ? "review requested" : "review requested · @\(reviewer)"
-            ))
+            signals.append(
+                .init(
+                    id: "review",
+                    tone: .warning,
+                    text: reviewer.isEmpty ? "review requested" : "review requested · @\(reviewer)"
+                ))
         default: break
         }
 
@@ -396,7 +416,8 @@ struct PullRequestPresentation: Equatable, Sendable {
             mergeBlockedReason = "not mergeable"
         }
 
-        let canAskAgent = state.lowercased() == "open"
+        let canAskAgent =
+            state.lowercased() == "open"
             && (checksState == "failed" || reviewDecision == "changes_requested")
         return .init(
             stateLabel: stateLabel,
@@ -453,11 +474,14 @@ enum WorkspaceAgentPrompt {
         var text = "The merge into \(base) is blocked by conflicts."
         if !conflicts.isEmpty {
             let files = conflicts.map { conflict in
-                conflict.hunkCount > 0 ? "\(conflict.path) (\(conflict.hunkCount) hunk\(conflict.hunkCount == 1 ? "" : "s"))" : conflict.path
+                conflict.hunkCount > 0
+                    ? "\(conflict.path) (\(conflict.hunkCount) hunk\(conflict.hunkCount == 1 ? "" : "s"))"
+                    : conflict.path
             }
             text += " Conflicting files: " + files.joined(separator: ", ") + "."
         }
-        text += " Please resolve every conflict marker, run the project validation, and report back when the workspace is clean."
+        text +=
+            " Please resolve every conflict marker, run the project validation, and report back when the workspace is clean."
         return text
     }
 
@@ -466,6 +490,7 @@ enum WorkspaceAgentPrompt {
         if checksState == "failed" { reasons.append("failing checks") }
         if reviewDecision == "changes_requested" { reasons.append("requested review changes") }
         let cause = reasons.isEmpty ? "the open review feedback" : reasons.joined(separator: " and ")
-        return "Pull request #\(number) needs attention: please address \(cause), push the fixes to the pull request branch, and summarize what changed."
+        return
+            "Pull request #\(number) needs attention: please address \(cause), push the fixes to the pull request branch, and summarize what changed."
     }
 }

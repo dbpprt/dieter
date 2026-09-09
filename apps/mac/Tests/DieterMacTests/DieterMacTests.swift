@@ -98,20 +98,26 @@ import UniformTypeIdentifiers
         offerHash: Data([0, 1, 2]), controlGranted: true, displayID: "primary",
         inputProtocolVersion: 1, inputEpoch: Data(repeating: 7, count: 16)
     )
-    #expect(String(data: message, encoding: .utf8) == "dieter-remote-desktop-v2\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n1\nBwcHBwcHBwcHBwcHBwcHBw")
+    #expect(
+        String(data: message, encoding: .utf8)
+            == "dieter-remote-desktop-v2\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n1\nBwcHBwcHBwcHBwcHBwcHBw"
+    )
 }
 
 @Test func remoteDesktopInputGeometryExcludesLetterboxingAndUsesTopLeftCoordinates() throws {
     let bounds = CGRect(x: 0, y: 0, width: 1_000, height: 1_000)
     let video = CGSize(width: 1_600, height: 900)
-    #expect(RemoteDesktopInputGeometry.normalized(
-        point: CGPoint(x: 500, y: 100), bounds: bounds, videoSize: video) == nil)
-    let topLeft = try #require(RemoteDesktopInputGeometry.normalized(
-        point: CGPoint(x: 0, y: 781.24), bounds: bounds, videoSize: video))
+    #expect(
+        RemoteDesktopInputGeometry.normalized(
+            point: CGPoint(x: 500, y: 100), bounds: bounds, videoSize: video) == nil)
+    let topLeft = try #require(
+        RemoteDesktopInputGeometry.normalized(
+            point: CGPoint(x: 0, y: 781.24), bounds: bounds, videoSize: video))
     #expect(abs(topLeft.x) < 0.0001)
     #expect(abs(topLeft.y) < 0.0001)
-    let center = try #require(RemoteDesktopInputGeometry.normalized(
-        point: CGPoint(x: 500, y: 500), bounds: bounds, videoSize: video))
+    let center = try #require(
+        RemoteDesktopInputGeometry.normalized(
+            point: CGPoint(x: 500, y: 500), bounds: bounds, videoSize: video))
     #expect(abs(center.x - 0.5) < 0.0001)
     #expect(abs(center.y - 0.5) < 0.0001)
 }
@@ -133,7 +139,9 @@ import UniformTypeIdentifiers
         "project": "Dieter", "board": "Main", "schedule": "Morning",
     ]
     #expect(ScheduleTemplateRenderer.render("{{schedule}} · {{date}}", variables: variables) == "Morning · 2026-08-25")
-    #expect(ScheduleTemplateRenderer.render("Work in {{project}} / {{board}} at {{scheduled_at}}", variables: variables) == "Work in Dieter / Main at 2026-08-25T07:00:00Z")
+    #expect(
+        ScheduleTemplateRenderer.render("Work in {{project}} / {{board}} at {{scheduled_at}}", variables: variables)
+            == "Work in Dieter / Main at 2026-08-25T07:00:00Z")
     #expect(ScheduleTemplateRenderer.appending("{{date}}", to: "Daily") == "Daily {{date}}")
     #expect(ScheduleActionPresentation.title("draft") == "Todo")
     #expect(ScheduleActionPresentation.title("run") == "Running")
@@ -176,7 +184,9 @@ private actor ScheduleRPCStub: DieterScheduleRPC {
         return runsResponses[pageToken] ?? Dieter_V1_ScheduleRunsResponse()
     }
 
-    func requests() -> (projects: [String], schedules: [String], scheduleTokens: [String], runTokens: [String], pageSizes: [Int32]) {
+    func requests() -> (
+        projects: [String], schedules: [String], scheduleTokens: [String], runTokens: [String], pageSizes: [Int32]
+    ) {
         (requestedProjectIDs, requestedScheduleIDs, requestedScheduleTokens, requestedRunTokens, requestedPageSizes)
     }
 }
@@ -199,7 +209,7 @@ private actor ChatPinRPCStub: DieterChatPinRPC {
 
 @Test @MainActor func pinningAndUnpinningAChatUpdatesTheMacProjectionImmediately() async throws {
     let rpc = ChatPinRPCStub()
-    let store = DieterStore(chatPinRPCOverride: rpc)
+    let store = DieterStore(chatPinRPCOverride: rpc, restoreSync: false)
     var chat = Dieter_V1_Card()
     chat.id = "c_chat"
     chat.projectID = "p_dieter"
@@ -254,8 +264,10 @@ private actor ChatPinRPCStub: DieterChatPinRPC {
 }
 
 @Test @MainActor func schedulesAndOccurrenceHistoryAppendCursorPages() async {
-    var morning = Dieter_V1_Schedule(); morning.id = "s_morning"; morning.projectID = "p_dieter"; morning.name = "Morning"
-    var nightly = Dieter_V1_Schedule(); nightly.id = "s_nightly"; nightly.projectID = morning.projectID; nightly.name = "Nightly"
+    var morning = Dieter_V1_Schedule(); morning.id = "s_morning"; morning.projectID = "p_dieter";
+    morning.name = "Morning"
+    var nightly = Dieter_V1_Schedule(); nightly.id = "s_nightly"; nightly.projectID = morning.projectID;
+    nightly.name = "Nightly"
     var firstSchedules = Dieter_V1_SchedulesResponse()
     firstSchedules.schedules = [morning]; firstSchedules.nextPageToken = "s-next"; firstSchedules.totalCount = 2
     var secondSchedules = Dieter_V1_SchedulesResponse()
@@ -306,7 +318,8 @@ private actor ChatPinRPCStub: DieterChatPinRPC {
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
     binding.inputProtocolVersion = 1
     binding.inputEpoch = Data(repeating: 1, count: 16)
-    binding.daemonSignature = try #require(Data(base64Encoded: "ctCMwB2SL9Wk9JqpQzgtM+NQxXqUXGGKSSpQ1X2lNX3G3uS8UR7uKe5J8fjZheT1WxX3U5s37saWnSk7dqIADQ=="))
+    binding.daemonSignature = try #require(
+        Data(base64Encoded: "ctCMwB2SL9Wk9JqpQzgtM+NQxXqUXGGKSSpQ1X2lNX3G3uS8UR7uKe5J8fjZheT1WxX3U5s37saWnSk7dqIADQ=="))
     let certificate = Data(
         """
         -----BEGIN CERTIFICATE-----
@@ -423,9 +436,10 @@ private actor ChatPinRPCStub: DieterChatPinRPC {
     let uppercaseLoopback = candidate("loopback-uppercase", network: "LOOPBACK", priority: 900)
     let lan = candidate("lan", network: "lan", priority: 2_000)
 
-    #expect(DirectCandidateScope.loopbackOnly.ordered([lan, uppercaseLoopback, loopback]).map(\.id) == [
-        "loopback", "loopback-uppercase",
-    ])
+    #expect(
+        DirectCandidateScope.loopbackOnly.ordered([lan, uppercaseLoopback, loopback]).map(\.id) == [
+            "loopback", "loopback-uppercase",
+        ])
     #expect(DirectCandidateScope.all.ordered([loopback, lan]).map(\.id) == ["lan", "loopback"])
 }
 
@@ -446,11 +460,12 @@ func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
         .components(separatedBy: .whitespacesAndNewlines)
         .joined()
     let certificateDER = try #require(Data(base64Encoded: certificateBody))
-    #expect(DieterRPC.verifyDaemonCertificateChain(
-        [certificateDER],
-        daemonCAPEM: identity.daemonCaPem,
-        daemonID: identity.id
-    ))
+    #expect(
+        DieterRPC.verifyDaemonCertificateChain(
+            [certificateDER],
+            daemonCAPEM: identity.daemonCaPem,
+            daemonID: identity.id
+        ))
     let endpoint = DieterEndpoint(name: "Live direct route", host: "127.0.0.1", port: port, daemonID: identity.id)
     let client = try DieterRPC(
         endpoint: endpoint,
@@ -525,11 +540,11 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         secure: gateway.secure,
         daemonID: daemonID
     )
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     let dataPlane = try await store.selectDirectoryDataPlane(for: endpoint)
     defer {
-        dataPlane.task.cancel()
-        dataPlane.rpc.shutdown()
+        dataPlane.release()
+        store.connections.invalidateTemporaryLeases()
     }
 
     #expect(dataPlane.connection.route == .local)
@@ -546,14 +561,14 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         daemonID: "daemon-1",
         online: false,
         lastSeenAt: "2026-08-18T12:00:00Z",
-		version: "v0.4.92",
-		apiVersion: dieterExpectedAPIVersion
+        version: "v0.4.92",
+        apiVersion: dieterExpectedAPIVersion
     )
     #expect(endpoint.id == "https://dieter.example:443#daemon-1")
     #expect(endpoint.credentialID == "https://dieter.example:443")
     #expect(endpoint.name == "Studio Mac")
     #expect(!endpoint.online)
-	#expect(endpoint.apiCompatibility == .compatible)
+    #expect(endpoint.apiCompatibility == .compatible)
     #expect(endpoint.gatewayEndpoint.daemonID == nil)
     #expect(endpoint.gatewayEndpoint.credentialID == endpoint.credentialID)
     #expect(DieterRPC.Route.gateway.daemonID == nil)
@@ -588,7 +603,7 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(directoryMode.intValue == 0o700)
     #expect(fileMode.intValue == 0o600)
 
-    await reloaded.remove(for: credentialID)
+    try await reloaded.remove(for: credentialID)
     let removedToken = await reloaded.token(for: credentialID)
     let retainedOtherToken = await reloaded.token(for: otherCredentialID)
     #expect(removedToken == nil)
@@ -727,45 +742,52 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
 @Test func conversationRefreshTextDistinguishesCachedAndRefreshingState() {
     let now = Date(timeIntervalSince1970: 10_000)
     #expect(ConversationRefreshText.label(lastRefreshedAt: nil, syncing: true, now: now) == "Refreshing…")
-    #expect(ConversationRefreshText.label(
-        lastRefreshedAt: now.addingTimeInterval(-20),
-        syncing: true,
-        now: now
-    ) == "Last refreshed just now · Refreshing…")
-    #expect(ConversationRefreshText.label(
-        lastRefreshedAt: now.addingTimeInterval(-300),
-        syncing: false,
-        now: now
-    ) == "Last refreshed 5m ago")
+    #expect(
+        ConversationRefreshText.label(
+            lastRefreshedAt: now.addingTimeInterval(-20),
+            syncing: true,
+            now: now
+        ) == "Last refreshed just now · Refreshing…")
+    #expect(
+        ConversationRefreshText.label(
+            lastRefreshedAt: now.addingTimeInterval(-300),
+            syncing: false,
+            now: now
+        ) == "Last refreshed 5m ago")
 }
 
 @Test func syncProjectionPersistenceSkipsHeartbeatsAndCheckpointsChangedProjections() {
     let initial = Date(timeIntervalSince1970: 1_000)
-    #expect(!SyncCursorPersistencePolicy.shouldPersist(
-        projectionChanged: false,
-        lastPersistedAt: nil,
-        now: initial
-    ))
-    #expect(!SyncCursorPersistencePolicy.shouldPersist(
-        projectionChanged: false,
-        lastPersistedAt: initial,
-        now: initial.addingTimeInterval(600)
-    ))
-    #expect(SyncCursorPersistencePolicy.shouldPersist(
-        projectionChanged: true,
-        lastPersistedAt: nil,
-        now: initial
-    ))
-    #expect(!SyncCursorPersistencePolicy.shouldPersist(
-        projectionChanged: true,
-        lastPersistedAt: initial,
-        now: initial.addingTimeInterval(299)
-    ))
-    #expect(SyncCursorPersistencePolicy.shouldPersist(
-        projectionChanged: true,
-        lastPersistedAt: initial,
-        now: initial.addingTimeInterval(300)
-    ))
+    #expect(
+        !SyncCursorPersistencePolicy.shouldPersist(
+            projectionChanged: false,
+            lastPersistedAt: nil,
+            now: initial
+        ))
+    #expect(
+        !SyncCursorPersistencePolicy.shouldPersist(
+            projectionChanged: false,
+            lastPersistedAt: initial,
+            now: initial.addingTimeInterval(600)
+        ))
+    #expect(
+        SyncCursorPersistencePolicy.shouldPersist(
+            projectionChanged: true,
+            lastPersistedAt: nil,
+            now: initial
+        ))
+    #expect(
+        !SyncCursorPersistencePolicy.shouldPersist(
+            projectionChanged: true,
+            lastPersistedAt: initial,
+            now: initial.addingTimeInterval(299)
+        ))
+    #expect(
+        SyncCursorPersistencePolicy.shouldPersist(
+            projectionChanged: true,
+            lastPersistedAt: initial,
+            now: initial.addingTimeInterval(300)
+        ))
 }
 
 @Test func equalInactiveMachineRefreshProducesAnEqualDirectoryProjection() {
@@ -845,14 +867,18 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
         cards: [activeProject.id: [activeCard]],
         chats: []
     )
-    let next = MachineDirectoryReducer.merging(current, snapshots: [MachineSnapshot(
-        endpoint: otherEndpoint,
-        connection: MachineConnectionStatus(route: .gateway, latencyMilliseconds: 8),
-        projects: [otherProject],
-        boards: [],
-        cards: [],
-        chats: [otherChat]
-    )])
+    let next = MachineDirectoryReducer.merging(
+        current,
+        snapshots: [
+            MachineSnapshot(
+                endpoint: otherEndpoint,
+                connection: MachineConnectionStatus(route: .gateway, latencyMilliseconds: 8),
+                projects: [otherProject],
+                boards: [],
+                cards: [],
+                chats: [otherChat]
+            )
+        ])
 
     #expect(next.projects[activeProject.id] == activeProject)
     #expect(next.projectEndpointIDs[activeProject.id] == activeEndpoint.id)
@@ -975,7 +1001,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 }
 
 @Test @MainActor func watchDeltaWindowSlidesKeepMessagesAsLocalHistory() {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     var snapshot = Dieter_V1_ConversationSnapshot()
     snapshot.conversation.messages = [historyTextMessage("m_1"), historyTextMessage("m_2"), historyTextMessage("m_3")]
     store.conversation = snapshot
@@ -995,7 +1021,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 }
 
 @Test @MainActor func watchSnapshotReplacementSlidesEarlierMessagesIntoHistory() {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     var snapshot = Dieter_V1_ConversationSnapshot()
     snapshot.conversation.messages = [historyTextMessage("m_1"), historyTextMessage("m_2"), historyTextMessage("m_3")]
     store.conversation = snapshot
@@ -1018,7 +1044,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 }
 
 @Test @MainActor func watchSnapshotWithoutOverlapResetsHistoryToTheServerPage() {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     var snapshot = Dieter_V1_ConversationSnapshot()
     snapshot.conversation.messages = [historyTextMessage("m_1"), historyTextMessage("m_2")]
     store.conversation = snapshot
@@ -1173,21 +1199,24 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 
 @Test func boardCardActivityTextUsesLatestModificationOrChatActivity() throws {
     let now = try #require(ISO8601DateFormatter().date(from: "2026-08-19T12:00:00Z"))
-    #expect(BoardCardActivityText.compact(
-        updatedAt: "2026-08-19T11:50:00Z",
-        lastActivityAt: "2026-08-19T10:00:00Z",
-        relativeTo: now
-    ) == "10min")
-    #expect(BoardCardActivityText.compact(
-        updatedAt: "2026-08-14T12:00:00Z",
-        lastActivityAt: "2026-08-19T10:00:00Z",
-        relativeTo: now
-    ) == "2h")
-    #expect(BoardCardActivityText.compact(
-        updatedAt: "2026-08-14T12:00:00Z",
-        lastActivityAt: "",
-        relativeTo: now
-    ) == "5d")
+    #expect(
+        BoardCardActivityText.compact(
+            updatedAt: "2026-08-19T11:50:00Z",
+            lastActivityAt: "2026-08-19T10:00:00Z",
+            relativeTo: now
+        ) == "10min")
+    #expect(
+        BoardCardActivityText.compact(
+            updatedAt: "2026-08-14T12:00:00Z",
+            lastActivityAt: "2026-08-19T10:00:00Z",
+            relativeTo: now
+        ) == "2h")
+    #expect(
+        BoardCardActivityText.compact(
+            updatedAt: "2026-08-14T12:00:00Z",
+            lastActivityAt: "",
+            relativeTo: now
+        ) == "5d")
     #expect(BoardCardActivityText.compact(updatedAt: "", lastActivityAt: "", relativeTo: now).isEmpty)
 }
 
@@ -1240,21 +1269,23 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     assistant.role = "assistant"
     assistant.parts = [diagnostic]
 
-    let failure = try #require(ConversationTurnFailure.resolve(
-        messages: [user, assistant],
-        conversationStatus: "failed",
-        cardRuntime: "failed"
-    ))
+    let failure = try #require(
+        ConversationTurnFailure.resolve(
+            messages: [user, assistant],
+            conversationStatus: "failed",
+            cardRuntime: "failed"
+        ))
     #expect(failure.summary == "codex exited 1 after 42s (context overflow).")
     #expect(failure.log.contains("provider stderr\nstack frame"))
     #expect(failure.retryParts.count == 2)
     #expect(failure.retryParts[0].text == prompt.text)
     #expect(ConversationMessagePartGroup.group([diagnostic]).isEmpty)
-    #expect(ConversationTurnFailure.resolve(
-        messages: [user, assistant],
-        conversationStatus: "idle",
-        cardRuntime: "idle"
-    ) == nil)
+    #expect(
+        ConversationTurnFailure.resolve(
+            messages: [user, assistant],
+            conversationStatus: "idle",
+            cardRuntime: "idle"
+        ) == nil)
 }
 
 @Test func hiddenReasoningDoesNotSplitAdjacentToolCallGroups() {
@@ -1366,13 +1397,17 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 
 @Test func toolCallGroupSummaryMatchesCompactEditAndCommandLabels() {
     #expect(ToolCallGroupSummary(toolNames: ["Bash"]).title == "1 command")
-    #expect(ToolCallGroupSummary(toolNames: Array(repeating: "Edit", count: 14) + Array(repeating: "exec_command", count: 7)).title == "14 edits, 7 commands")
+    #expect(
+        ToolCallGroupSummary(
+            toolNames: Array(repeating: "Edit", count: 14) + Array(repeating: "exec_command", count: 7)
+        ).title == "14 edits, 7 commands")
     #expect(ToolCallGroupSummary(toolNames: ["browser.open", "mcp/custom"]).title == "2 tool calls")
 }
 
 @Test func conversationContextUsageReadsHarnessMetadata() throws {
     var message = Dieter_V1_UiMessage()
-    message.metadataJson = Data(#"{"usage":{"inputTokens":120,"outputTokens":30,"totalTokens":150},"contextWindowTokens":1000}"#.utf8)
+    message.metadataJson = Data(
+        #"{"usage":{"inputTokens":120,"outputTokens":30,"totalTokens":150},"contextWindowTokens":1000}"#.utf8)
     let usage = try #require(ConversationContextUsage.latest(messages: [message], fallbackWindow: 0))
     #expect(usage.used == 150)
     #expect(usage.window == 1_000)
@@ -1481,16 +1516,18 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 
 @Test func boardCreationOptionsMatchTheServerContract() {
     #expect(BoardWorkflow.allCases.map(\.rawValue) == ["review", "direct"])
-    #expect(DoneArchivePolicy.allCases.map(\.rawValue) == [
-        "never", "immediately", "after_1_day", "after_7_days", "after_30_days", "after_90_days",
-    ])
+    #expect(
+        DoneArchivePolicy.allCases.map(\.rawValue) == [
+            "never", "immediately", "after_1_day", "after_7_days", "after_30_days", "after_90_days",
+        ])
 }
 
 @Test func settingsAreFirstClassNestedNavigationDestinations() {
     #expect(AppSection.allCases.contains(.settings))
-    #expect(DieterSettingsSection.allCases.map(\.rawValue) == [
-        "General", "Connection", "Prompts", "Notifications", "Island", "Agents",
-    ])
+    #expect(
+        DieterSettingsSection.allCases.map(\.rawValue) == [
+            "General", "Connection", "Prompts", "Notifications", "Island", "Agents",
+        ])
 }
 
 @Test func machineInformationUsesAPopupInsteadOfANavigationDestination() {
@@ -1545,12 +1582,14 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 
     let restored = ConversationCreationPreferences.load(from: defaults)
     #expect(restored == saved)
-    #expect(restored.resolved(in: [codex]) == ConversationCreationSelection(
-        provider: "codex",
-        model: "sol",
-        effort: "xhigh",
-        workspaceMode: .project
-    ))
+    #expect(
+        restored.resolved(in: [codex])
+            == ConversationCreationSelection(
+                provider: "codex",
+                model: "sol",
+                effort: "xhigh",
+                workspaceMode: .project
+            ))
 }
 
 @Test func conversationCreationPreferencesFallBackWhenTheCatalogChanges() {
@@ -1574,12 +1613,14 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         workspaceMode: .project
     )
 
-    #expect(stale.resolved(in: [harness]) == ConversationCreationSelection(
-        provider: "available",
-        model: "current",
-        effort: "medium",
-        workspaceMode: .project
-    ))
+    #expect(
+        stale.resolved(in: [harness])
+            == ConversationCreationSelection(
+                provider: "available",
+                model: "current",
+                effort: "medium",
+                workspaceMode: .project
+            ))
 }
 
 @Test func conversationHarnessCatalogDirectoryUsesTheProjectsMachine() throws {
@@ -1598,19 +1639,21 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         projectEndpointIDs: ["p_remote": "machine-remote"]
     )
     #expect(endpointID == "machine-remote")
-    let selected = try #require(ConversationHarnessCatalogDirectory.catalog(
-        endpointID: endpointID,
-        activeEndpointID: "machine-local",
-        activeCatalog: localCatalog,
-        catalogsByEndpoint: ["machine-remote": remoteCatalog]
-    ))
+    let selected = try #require(
+        ConversationHarnessCatalogDirectory.catalog(
+            endpointID: endpointID,
+            activeEndpointID: "machine-local",
+            activeCatalog: localCatalog,
+            catalogsByEndpoint: ["machine-remote": remoteCatalog]
+        ))
     #expect(selected.harnesses.map(\.id) == ["remote"])
-    #expect(ConversationHarnessCatalogDirectory.catalog(
-        endpointID: "machine-unknown",
-        activeEndpointID: "machine-local",
-        activeCatalog: localCatalog,
-        catalogsByEndpoint: [:]
-    ) == nil)
+    #expect(
+        ConversationHarnessCatalogDirectory.catalog(
+            endpointID: "machine-unknown",
+            activeEndpointID: "machine-local",
+            activeCatalog: localCatalog,
+            catalogsByEndpoint: [:]
+        ) == nil)
 }
 
 @Test func providerOptionsDropValuesUnsupportedByTheDestinationHarness() {
@@ -1620,26 +1663,29 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     var harness = Dieter_V1_Harness()
     harness.options = [advisor]
 
-    #expect(ProviderOptionValues.resolved(
-        for: harness,
-        existing: ["advisor": "true", "local-only": "secret"]
-    ) == ["advisor": "true"])
+    #expect(
+        ProviderOptionValues.resolved(
+            for: harness,
+            existing: ["advisor": "true", "local-only": "secret"]
+        ) == ["advisor": "true"])
 }
 
-@Test @MainActor func failedCreationIsDistinguishedFromAFailedTurn() {
+@Test @MainActor func failedCreationIsDistinguishedFromAFailedTurn() async throws {
     let store = DieterStore(restoreSync: false)
-    store.syncDiskState.outbox = [
-        DieterOutboxEntry(
-            commandID: "create", clientID: "mac", endpointID: "gateway#daemon",
-            kind: .createChat, request: Data(), optimisticID: "local_chat", attempts: 1,
-            lastError: "model is not supported by this daemon", state: .failed, createdAt: Date()
-        ),
-        DieterOutboxEntry(
-            commandID: "send", clientID: "mac", endpointID: "gateway#daemon",
-            kind: .sendMessage, request: Data(), optimisticID: "local_message", attempts: 1,
-            lastError: "turn failed", state: .failed, createdAt: Date()
-        ),
-    ]
+    try await store.outbox.update {
+        $0 = [
+            DieterOutboxEntry(
+                commandID: "create", clientID: "mac", endpointID: "gateway#daemon",
+                kind: .createChat, request: Data(), optimisticID: "local_chat", attempts: 1,
+                lastError: "model is not supported by this daemon", state: .failed, createdAt: Date()
+            ),
+            DieterOutboxEntry(
+                commandID: "send", clientID: "mac", endpointID: "gateway#daemon",
+                kind: .sendMessage, request: Data(), optimisticID: "local_message", attempts: 1,
+                lastError: "turn failed", state: .failed, createdAt: Date()
+            ),
+        ]
+    }
 
     #expect(store.failedCreationError("local_chat") == "model is not supported by this daemon")
     #expect(store.failedCreationError("local_message") == nil)
@@ -1658,11 +1704,12 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(DieterPalette.resolve(nil) == .monochrome)
     #expect(DieterPalette.resolve("unknown") == .monochrome)
     #expect(DieterPalette.resolve("acid-terminal") == .monochrome)
-    #expect(DieterPalette.allCases.map(\.rawValue) == [
-        "monochrome",
-        "electric-blue", "jade-operator", "copper-circuit", "ultraviolet-relay",
-        "solar-command", "arctic-console", "coral-signal",
-    ])
+    #expect(
+        DieterPalette.allCases.map(\.rawValue) == [
+            "monochrome",
+            "electric-blue", "jade-operator", "copper-circuit", "ultraviolet-relay",
+            "solar-command", "arctic-console", "coral-signal",
+        ])
     #expect(Set(DieterPalette.allCases.map(\.title)).count == 8)
     #expect(DieterPalette.allCases.allSatisfy { DieterPalette.resolve($0.rawValue) == $0 })
 }
@@ -1713,53 +1760,57 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         daemonID: "server", online: true
     )
 
-    #expect(MachineRoutingPolicy.automaticConnectionTarget(
-        from: [offlinePreferred, onlineFallback],
-        preferredDaemonID: "mac"
-    ) == onlineFallback)
-    #expect(MachineRoutingPolicy.automaticConnectionTarget(
-        from: [offlinePreferred],
-        preferredDaemonID: "mac"
-    ) == nil)
+    #expect(
+        MachineRoutingPolicy.automaticConnectionTarget(
+            from: [offlinePreferred, onlineFallback],
+            preferredDaemonID: "mac"
+        ) == onlineFallback)
+    #expect(
+        MachineRoutingPolicy.automaticConnectionTarget(
+            from: [offlinePreferred],
+            preferredDaemonID: "mac"
+        ) == nil)
 }
 
 @Test func machineRoutingSkipsKnownIncompatibleDaemonsAndRetainsUnknownFallbacks() throws {
-	let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
-	let incompatible = DieterEndpoint(
-		name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
-		daemonID: "legacy", online: true, apiVersion: "2"
-	)
-	let unknown = DieterEndpoint(
-		name: "Unknown", host: gateway.host, port: gateway.port, secure: true,
-		daemonID: "unknown", online: true
-	)
-	let compatible = DieterEndpoint(
-		name: "Current", host: gateway.host, port: gateway.port, secure: true,
-		daemonID: "current", online: true, apiVersion: dieterExpectedAPIVersion
-	)
+    let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
+    let incompatible = DieterEndpoint(
+        name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
+        daemonID: "legacy", online: true, apiVersion: "2"
+    )
+    let unknown = DieterEndpoint(
+        name: "Unknown", host: gateway.host, port: gateway.port, secure: true,
+        daemonID: "unknown", online: true
+    )
+    let compatible = DieterEndpoint(
+        name: "Current", host: gateway.host, port: gateway.port, secure: true,
+        daemonID: "current", online: true, apiVersion: dieterExpectedAPIVersion
+    )
 
-	#expect(MachineRoutingPolicy.connectionTargets(
-		from: [incompatible, unknown, compatible],
-		preferredDaemonID: "legacy",
-		explicitMachineSelection: false
-	) == [compatible, unknown])
-	#expect(MachineRoutingPolicy.connectionTargets(
-		from: [incompatible, compatible],
-		preferredDaemonID: "legacy",
-		explicitMachineSelection: true
-	) == [incompatible])
-	#expect(try #require(incompatible.incompatibilityDescription).contains("API 2"))
+    #expect(
+        MachineRoutingPolicy.connectionTargets(
+            from: [incompatible, unknown, compatible],
+            preferredDaemonID: "legacy",
+            explicitMachineSelection: false
+        ) == [compatible, unknown])
+    #expect(
+        MachineRoutingPolicy.connectionTargets(
+            from: [incompatible, compatible],
+            preferredDaemonID: "legacy",
+            explicitMachineSelection: true
+        ) == [incompatible])
+    #expect(try #require(incompatible.incompatibilityDescription).contains("API 2"))
 }
 
 @Test func explicitGatewaySelectionClearsTheCurrentMachinePreference() {
-	let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
-	let machine = DieterEndpoint(
-		name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
-		daemonID: "legacy", online: true, apiVersion: "2"
-	)
+    let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
+    let machine = DieterEndpoint(
+        name: "Legacy", host: gateway.host, port: gateway.port, secure: true,
+        daemonID: "legacy", online: true, apiVersion: "2"
+    )
 
-	#expect(MachineRoutingPolicy.preferredDaemonID(newEndpoint: nil, currentEndpoint: machine) == "legacy")
-	#expect(MachineRoutingPolicy.preferredDaemonID(newEndpoint: gateway, currentEndpoint: machine) == nil)
+    #expect(MachineRoutingPolicy.preferredDaemonID(newEndpoint: nil, currentEndpoint: machine) == "legacy")
+    #expect(MachineRoutingPolicy.preferredDaemonID(newEndpoint: gateway, currentEndpoint: machine) == nil)
 }
 
 @Test func projectDestinationsGroupDuplicateNamesByOwningMachine() throws {
@@ -1820,29 +1871,33 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 }
 
 @Test func boardPresentationUsesLoadingStateUntilASelectionCanBeResolved() {
-    #expect(BoardPresentationState.resolve(
-        hasLoadedWorkspace: false,
-        selectedBoardID: "",
-        hasSelectedBoard: false
-    ) == .loading)
-    #expect(BoardPresentationState.resolve(
-        hasLoadedWorkspace: true,
-        selectedBoardID: "b_loading",
-        hasSelectedBoard: false
-    ) == .loading)
-    #expect(BoardPresentationState.resolve(
-        hasLoadedWorkspace: true,
-        selectedBoardID: "b_loaded",
-        hasSelectedBoard: true
-    ) == .loaded)
+    #expect(
+        BoardPresentationState.resolve(
+            hasLoadedWorkspace: false,
+            selectedBoardID: "",
+            hasSelectedBoard: false
+        ) == .loading)
+    #expect(
+        BoardPresentationState.resolve(
+            hasLoadedWorkspace: true,
+            selectedBoardID: "b_loading",
+            hasSelectedBoard: false
+        ) == .loading)
+    #expect(
+        BoardPresentationState.resolve(
+            hasLoadedWorkspace: true,
+            selectedBoardID: "b_loaded",
+            hasSelectedBoard: true
+        ) == .loaded)
 }
 
 @Test func boardPresentationPreservesTheEmptyStateForABoardlessWorkspace() {
-    #expect(BoardPresentationState.resolve(
-        hasLoadedWorkspace: true,
-        selectedBoardID: "",
-        hasSelectedBoard: false
-    ) == .empty)
+    #expect(
+        BoardPresentationState.resolve(
+            hasLoadedWorkspace: true,
+            selectedBoardID: "",
+            hasSelectedBoard: false
+        ) == .empty)
 }
 
 @Test func transientRPCFailuresAreEligibleForSilentReconnect() {
@@ -1852,29 +1907,33 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 }
 
 @Test func staleConnectionAttemptsCannotMutateTheActiveTransport() {
-    #expect(ConnectionAttemptOwnership.mayMutateSharedState(
-        attemptGeneration: 8,
-        currentGeneration: 8
-    ))
-    #expect(!ConnectionAttemptOwnership.mayMutateSharedState(
-        attemptGeneration: 7,
-        currentGeneration: 8
-    ))
+    #expect(
+        ConnectionAttemptOwnership.mayMutateSharedState(
+            attemptGeneration: 8,
+            currentGeneration: 8
+        ))
+    #expect(
+        !ConnectionAttemptOwnership.mayMutateSharedState(
+            attemptGeneration: 7,
+            currentGeneration: 8
+        ))
 }
 
 @Test func retiredOutboxWorkerCannotClearItsReplacement() {
-    #expect(OutboxWorkerOwnership.mayClearTask(
-        workerGeneration: 12,
-        currentGeneration: 12
-    ))
-    #expect(!OutboxWorkerOwnership.mayClearTask(
-        workerGeneration: 11,
-        currentGeneration: 12
-    ))
+    #expect(
+        OutboxWorkerOwnership.mayClearTask(
+            workerGeneration: 12,
+            currentGeneration: 12
+        ))
+    #expect(
+        !OutboxWorkerOwnership.mayClearTask(
+            workerGeneration: 11,
+            currentGeneration: 12
+        ))
 }
 
 @Test @MainActor func transientRPCFailuresStaySilentAfterTheClientIsReleased() {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
 
     store.show(RPCError(code: .unavailable, message: "stream unexpectedly closed"))
 
@@ -1884,13 +1943,19 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 @Test func offlineConnectionLabelsUseCompactRelativeAges() {
     let now = Date(timeIntervalSince1970: 100_000)
     #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: nil, now: now) == "Last connected unknown")
-    #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-59), now: now) == "Last connected just now")
-    #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-60), now: now) == "Last connected 1m ago")
-    #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-3_600), now: now) == "Last connected 1h ago")
+    #expect(
+        SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-59), now: now)
+            == "Last connected just now")
+    #expect(
+        SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-60), now: now)
+            == "Last connected 1m ago")
+    #expect(
+        SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-3_600), now: now)
+            == "Last connected 1h ago")
 }
 
 @Test @MainActor func cachedBoardSelectionSwitchesTheVisibleProjectWithoutAnRPC() {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     var firstProject = Dieter_V1_Project()
     firstProject.id = "p_first"
     firstProject.name = "First"
@@ -2010,11 +2075,14 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     )
     let endpointID = "https://dieter.example:443#daemon-one"
     let refreshedAt = Date(timeIntervalSince1970: 100)
-    try await persistence.save(.init(
-        projections: [endpointID: .init(cursor: try cursor.serializedData(), snapshot: try snapshot.serializedData())],
-        conversationRefreshedAt: [endpointID: ["c_one": refreshedAt]],
-        outbox: [entry]
-    ))
+    try await persistence.save(
+        .init(
+            projections: [
+                endpointID: .init(cursor: try cursor.serializedData(), snapshot: try snapshot.serializedData())
+            ],
+            conversationRefreshedAt: [endpointID: ["c_one": refreshedAt]],
+            outbox: [entry]
+        ))
 
     let restored = await DieterSyncPersistence(root: root).load()
     let projection = try #require(restored.projections[endpointID])
@@ -2099,7 +2167,9 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         createdAt: Date(timeIntervalSince1970: 2)
     )
 
-    #expect(DieterOutboxPolicy.nextIndex(in: [delayed, ready], endpointID: endpointID, now: Date(timeIntervalSince1970: 100)) == 1)
+    #expect(
+        DieterOutboxPolicy.nextIndex(
+            in: [delayed, ready], endpointID: endpointID, now: Date(timeIntervalSince1970: 100)) == 1)
 }
 
 @Test func machineOutboxSummaryGroupsOnlyUndeliveredWorkByOwningMachine() {
@@ -2137,10 +2207,11 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
         request: Data(), optimisticID: "msg_two", attempts: 0, createdAt: Date()
     )
 
-    #expect(DieterOutboxPolicy.nextIndex(
-        in: [first, second],
-        endpointIDs: ["gateway#two", "gateway#one"]
-    ) == 1)
+    #expect(
+        DieterOutboxPolicy.nextIndex(
+            in: [first, second],
+            endpointIDs: ["gateway#two", "gateway#one"]
+        ) == 1)
 }
 
 @Test func cancelingAMachineQueueRemovesOnlyItsUndeliveredWork() {
@@ -2231,18 +2302,21 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     )
     let expectedID = "c_cf6f9faf64cd8f1ea9c84d28"
 
-    #expect(DieterOutboxPolicy.expectedConversationID(
-        clientID: entry.clientID,
-        commandID: entry.commandID
-    ) == expectedID)
-    #expect(DieterOutboxPolicy.synchronizedConversationID(
-        for: entry,
-        visibleConversationIDs: [expectedID]
-    ) == expectedID)
-    #expect(DieterOutboxPolicy.synchronizedConversationID(
-        for: entry,
-        visibleConversationIDs: ["c_another"]
-    ) == nil)
+    #expect(
+        DieterOutboxPolicy.expectedConversationID(
+            clientID: entry.clientID,
+            commandID: entry.commandID
+        ) == expectedID)
+    #expect(
+        DieterOutboxPolicy.synchronizedConversationID(
+            for: entry,
+            visibleConversationIDs: [expectedID]
+        ) == expectedID)
+    #expect(
+        DieterOutboxPolicy.synchronizedConversationID(
+            for: entry,
+            visibleConversationIDs: ["c_another"]
+        ) == nil)
 }
 
 @Test func localConversationIDsNeverQualifyForServerFetch() {
@@ -2261,21 +2335,24 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 @Test func cancelledConversationOpenRetriesOnceWithoutReportingStaleFailures() {
     let cancelled = RPCError(code: .cancelled, message: "request cancelled")
 
-    #expect(DieterConversationOpenFailurePolicy.disposition(
-        for: cancelled,
-        selectionMatches: true,
-        cancellationRetries: 0
-    ) == .retry)
-    #expect(DieterConversationOpenFailurePolicy.disposition(
-        for: cancelled,
-        selectionMatches: true,
-        cancellationRetries: 1
-    ) == .report)
-    #expect(DieterConversationOpenFailurePolicy.disposition(
-        for: RPCError(code: .notFound, message: "missing"),
-        selectionMatches: false,
-        cancellationRetries: 0
-    ) == .ignore)
+    #expect(
+        DieterConversationOpenFailurePolicy.disposition(
+            for: cancelled,
+            selectionMatches: true,
+            cancellationRetries: 0
+        ) == .retry)
+    #expect(
+        DieterConversationOpenFailurePolicy.disposition(
+            for: cancelled,
+            selectionMatches: true,
+            cancellationRetries: 1
+        ) == .report)
+    #expect(
+        DieterConversationOpenFailurePolicy.disposition(
+            for: RPCError(code: .notFound, message: "missing"),
+            selectionMatches: false,
+            cancellationRetries: 0
+        ) == .ignore)
 }
 
 @Test func globalProjectionReducerAppliesMetadataChangesAndTombstones() {
@@ -2367,14 +2444,16 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 
 @Test func syncStreamLivenessRebuildsTheConnectionAfterThreeMissedHeartbeats() {
     let lastFrame = Date(timeIntervalSince1970: 1_000)
-    #expect(!SyncStreamLiveness.requiresConnectionRecovery(
-        lastFrameAt: lastFrame,
-        now: lastFrame.addingTimeInterval(SyncStreamLiveness.timeout - 0.01)
-    ))
-    #expect(SyncStreamLiveness.requiresConnectionRecovery(
-        lastFrameAt: lastFrame,
-        now: lastFrame.addingTimeInterval(SyncStreamLiveness.timeout)
-    ))
+    #expect(
+        !SyncStreamLiveness.requiresConnectionRecovery(
+            lastFrameAt: lastFrame,
+            now: lastFrame.addingTimeInterval(SyncStreamLiveness.timeout - 0.01)
+        ))
+    #expect(
+        SyncStreamLiveness.requiresConnectionRecovery(
+            lastFrameAt: lastFrame,
+            now: lastFrame.addingTimeInterval(SyncStreamLiveness.timeout)
+        ))
     #expect(SyncStreamLiveness.requiresConnectionRecovery(lastFrameAt: nil, now: lastFrame))
 }
 
@@ -2419,7 +2498,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     try Data("png fixture".utf8).write(to: image)
     try Data("hello".utf8).write(to: document)
 
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     let parts = try await store.attachmentParts([image, document])
     #expect(parts.count == 2)
     #expect(parts[0].filename == "fixture.png")
@@ -2437,9 +2516,12 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 }
 
 @Test @MainActor func pastedMacImageBecomesAPngAttachmentWithoutALocalFileURL() async throws {
-    let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+    let png = try #require(
+        Data(
+            base64Encoded:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
     let provider = NSItemProvider(item: png as NSData, typeIdentifier: UTType.png.identifier)
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
 
     let parts = try await store.attachmentParts([provider])
 
@@ -2458,7 +2540,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     image.unlockFocus()
     let tiff = try #require(image.tiffRepresentation)
     let provider = NSItemProvider(item: tiff as NSData, typeIdentifier: UTType.tiff.identifier)
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
 
     let parts = try await store.attachmentParts([provider])
 
@@ -2468,12 +2550,15 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 }
 
 @Test @MainActor func pasteboardImageDataBecomesAComposerAttachment() async throws {
-    let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+    let png = try #require(
+        Data(
+            base64Encoded:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
     let pasteboard = NSPasteboard(name: NSPasteboard.Name("dieter-test-\(UUID().uuidString)"))
     defer { pasteboard.releaseGlobally() }
     pasteboard.clearContents()
     pasteboard.setData(png, forType: NSPasteboard.PasteboardType(UTType.png.identifier))
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
 
     let input = try #require(store.pasteboardAttachmentInput(pasteboard))
     let parts = try await store.attachmentParts(input)
@@ -2490,7 +2575,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     defer { pasteboard.releaseGlobally() }
     pasteboard.clearContents()
     pasteboard.setString("plain text", forType: .string)
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
 
     #expect(store.pasteboardAttachmentInput(pasteboard) == nil)
     #expect(!store.attachPasteboard(pasteboard))
@@ -2538,7 +2623,10 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
 }
 
 @Test func embeddedMacImageAttachmentsProvidePreviewImages() throws {
-    let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+    let png = try #require(
+        Data(
+            base64Encoded:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
     var dataPart = Dieter_V1_MessagePart()
     dataPart.type = "image"
     dataPart.mediaType = "image/png"
@@ -2561,7 +2649,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     defer { pasteboard.releaseGlobally() }
     pasteboard.clearContents()
     pasteboard.writeObjects([file as NSURL])
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
 
     #expect(store.attachPasteboard(pasteboard))
     let deadline = Date().addingTimeInterval(1)
@@ -2764,7 +2852,7 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
 }
 
 @Test @MainActor func openingAConversationRoutesToItsChatOrBoardWorkspace() async {
-    let store = DieterStore()
+    let store = DieterStore(restoreSync: false)
     var firstProject = Dieter_V1_Project()
     firstProject.id = "p_first"
     firstProject.name = "First"

@@ -19,12 +19,14 @@ struct FilePaneSplit<Navigator: View, Preview: View>: View {
                     .frame(width: 1)
                     .frame(width: 7)
                     .contentShape(Rectangle())
-                    .gesture(DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if dragStart == nil { dragStart = width }
-                            storedWidth = min(max((dragStart ?? width) + value.translation.width, 260), maximum)
-                        }
-                        .onEnded { _ in dragStart = nil })
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                if dragStart == nil { dragStart = width }
+                                storedWidth = min(max((dragStart ?? width) + value.translation.width, 260), maximum)
+                            }
+                            .onEnded { _ in dragStart = nil }
+                    )
                     .accessibilityLabel("File navigator width")
                     .accessibilityValue("\(Int(width)) points")
                     .accessibilityAdjustableAction { direction in

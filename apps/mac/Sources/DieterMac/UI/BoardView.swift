@@ -51,9 +51,8 @@ enum BoardLabelAssignment {
 
 enum BoardCardEditingPolicy {
     static func canEditDraft(_ card: Dieter_V1_Card) -> Bool {
-        card.lane.caseInsensitiveCompare("todo") == .orderedSame &&
-            card.initialPromptSentAt.isEmpty &&
-            !card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        card.lane.caseInsensitiveCompare("todo") == .orderedSame && card.initialPromptSentAt.isEmpty
+            && !card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -139,7 +138,9 @@ enum KanbanLaneSizing {
 
     static func contentWidth(availableWidth: CGFloat, laneCount: Int) -> CGFloat {
         guard laneCount > 0 else { return availableWidth }
-        return (horizontalPadding * 2) + (laneWidth(availableWidth: availableWidth, laneCount: laneCount) * CGFloat(laneCount)) + (spacing * CGFloat(max(0, laneCount - 1)))
+        return (horizontalPadding * 2)
+            + (laneWidth(availableWidth: availableWidth, laneCount: laneCount) * CGFloat(laneCount))
+            + (spacing * CGFloat(max(0, laneCount - 1)))
     }
 }
 
@@ -194,7 +195,8 @@ private struct ConversationResizeDivider: View {
 
 struct BoardView: View {
     @Environment(DieterStore.self) private var store
-    @AppStorage("dieter.conversationPaneWidth") private var conversationPaneWidth = Double(ConversationPaneSizing.defaultWidth)
+    @AppStorage("dieter.conversationPaneWidth") private var conversationPaneWidth = Double(
+        ConversationPaneSizing.defaultWidth)
     @State private var conversationDragStartWidth: CGFloat?
 
     var body: some View {
@@ -225,7 +227,7 @@ struct BoardView: View {
                         onEnded: { conversationDragStartWidth = nil }
                     )
 
-                    ConversationView(compact: true)
+                    ConversationView(compact: true).environment(store.conversationContext)
                         .frame(width: width)
                 }
             }
@@ -290,7 +292,8 @@ struct BoardHeader: View {
     private var retentionTitle: String {
         let value = store.selectedBoard?.doneArchivePolicy ?? "never"
         if value == "never" { return "Done: Never" }
-        return "Done: " + value
+        return "Done: "
+            + value
             .replacingOccurrences(of: "after_", with: "")
             .replacingOccurrences(of: "_", with: " ")
             .capitalized
@@ -323,74 +326,91 @@ struct BoardHeader: View {
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 8)
-                Button { store.projectContextPresented = true } label: { Image(systemName: "ellipsis") }
-                    .buttonStyle(DieterIconButtonStyle()).help("Project context")
+                Button {
+                    store.projectContextPresented = true
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+                .buttonStyle(DieterIconButtonStyle()).help("Project context")
             }
         } secondary: {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 7) {
-                Button {
-                    store.labelFilter = ""
-                } label: {
-                    HStack(spacing: 6) {
-                        if store.labelFilter.isEmpty { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
-                        Text("All cards · \(store.boardCards.count)").lineLimit(1)
+                    Button {
+                        store.labelFilter = ""
+                    } label: {
+                        HStack(spacing: 6) {
+                            if store.labelFilter.isEmpty {
+                                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                            }
+                            Text("All cards · \(store.boardCards.count)").lineLimit(1)
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
+                        .padding(.horizontal, 10).frame(height: 28)
+                        .background(
+                            store.labelFilter.isEmpty ? DieterTheme.elevated : DieterTheme.surface,
+                            in: RoundedRectangle(cornerRadius: 7))
                     }
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
-                    .padding(.horizontal, 10).frame(height: 28)
-                    .background(store.labelFilter.isEmpty ? DieterTheme.elevated : DieterTheme.surface, in: RoundedRectangle(cornerRadius: 7))
-                }
-                .buttonStyle(.plain)
+                    .buttonStyle(.plain)
 
-                if let board = store.selectedBoard, !board.labels.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 7) {
-                            ForEach(board.labels, id: \.id) { label in
-                                BoardLabelShelfChip(
-                                    label: label,
-                                    boardID: board.id,
-                                    count: store.boardProjection.labelCounts[label.id, default: 0],
-                                    selected: store.labelFilter == label.id
-                                ) {
-                                    store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                    if let board = store.selectedBoard, !board.labels.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 7) {
+                                ForEach(board.labels, id: \.id) { label in
+                                    BoardLabelShelfChip(
+                                        label: label,
+                                        boardID: board.id,
+                                        count: store.boardProjection.labelCounts[label.id, default: 0],
+                                        selected: store.labelFilter == label.id
+                                    ) {
+                                        store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                                    }
                                 }
                             }
                         }
+                        .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
-                }
 
-                Menu {
-                    Button("All states") { store.runtimeFilter = "" }
-                    ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
-                        Button(runtime.capitalized) { store.runtimeFilter = runtime }
+                    Menu {
+                        Button("All states") { store.runtimeFilter = "" }
+                        ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
+                            Button(runtime.capitalized) { store.runtimeFilter = runtime }
+                        }
+                    } label: {
+                        DieterChipLabel(
+                            title: store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized)
                     }
-                } label: { DieterChipLabel(title: store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
 
-                Button { store.archivePolicyPresented = true } label: {
-                    DieterChipLabel(title: retentionTitle, symbol: "archivebox")
-                }
-                .buttonStyle(.plain)
-
-                Button { store.labelsPresented = true } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "tag").font(.system(size: 10, weight: .semibold))
-                        Text("Labels")
+                    Button {
+                        store.archivePolicyPresented = true
+                    } label: {
+                        DieterChipLabel(title: retentionTitle, symbol: "archivebox")
                     }
-                    .font(.caption2.weight(.medium)).foregroundStyle(DieterTheme.subtle)
-                    .padding(.horizontal, 9).frame(height: 28)
-                    .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 7))
-                }
-                .buttonStyle(.plain)
-                .help("Manage board labels")
+                    .buttonStyle(.plain)
 
-                Button { store.createConversationPresented = true } label: {
-                    Label("New card", systemImage: "plus")
-                }
-                .buttonStyle(DieterPrimaryButtonStyle())
-                .accessibilityIdentifier("board.new-card")
+                    Button {
+                        store.labelsPresented = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "tag").font(.system(size: 10, weight: .semibold))
+                            Text("Labels")
+                        }
+                        .font(.caption2.weight(.medium)).foregroundStyle(DieterTheme.subtle)
+                        .padding(.horizontal, 9).frame(height: 28)
+                        .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 7))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Manage board labels")
+
+                    Button {
+                        store.createConversationPresented = true
+                    } label: {
+                        Label("New card", systemImage: "plus")
+                    }
+                    .buttonStyle(DieterPrimaryButtonStyle())
+                    .accessibilityIdentifier("board.new-card")
                 }
 
                 HStack(spacing: 7) {
@@ -398,13 +418,17 @@ struct BoardHeader: View {
                         store.labelFilter = ""
                     } label: {
                         HStack(spacing: 6) {
-                            if store.labelFilter.isEmpty { Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)) }
+                            if store.labelFilter.isEmpty {
+                                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                            }
                             Text("All · \(store.boardCards.count)").lineLimit(1)
                         }
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
                         .padding(.horizontal, 10).frame(height: 28)
-                        .background(store.labelFilter.isEmpty ? DieterTheme.elevated : DieterTheme.surface, in: RoundedRectangle(cornerRadius: 7))
+                        .background(
+                            store.labelFilter.isEmpty ? DieterTheme.elevated : DieterTheme.surface,
+                            in: RoundedRectangle(cornerRadius: 7))
                     }
                     .buttonStyle(.plain)
 
@@ -442,7 +466,9 @@ struct BoardHeader: View {
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
 
-                    Button { store.createConversationPresented = true } label: {
+                    Button {
+                        store.createConversationPresented = true
+                    } label: {
                         Label("New", systemImage: "plus")
                     }
                     .buttonStyle(DieterPrimaryButtonStyle())
@@ -534,7 +560,7 @@ struct KanbanView: View {
                             sortDirection: direction,
                             onToggleSort: { laneSortDirections[lane.id] = direction.toggled }
                         )
-                            .frame(width: laneWidth)
+                        .frame(width: laneWidth)
                     }
                 }
                 .padding(.horizontal, KanbanLaneSizing.horizontalPadding).padding(.vertical, 12)
@@ -581,11 +607,17 @@ struct LaneColumn: View {
                 .accessibilityLabel("\(lane.name) lane sorted \(sortDirection.title.lowercased())")
                 .accessibilityHint("Sort \(sortDirection.toggled.title.lowercased())")
                 .accessibilityIdentifier("lane-sort.\(lane.id)")
-                Button { store.createConversationPresented = true } label: { Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary) }.buttonStyle(.plain)
+                Button {
+                    store.createConversationPresented = true
+                } label: {
+                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).foregroundStyle(
+                        DieterTheme.tertiary)
+                }.buttonStyle(.plain)
             }.padding(.horizontal, 6).padding(.top, 2)
             if cards.isEmpty {
                 VStack(spacing: 7) {
-                    Image(systemName: isDropTargeted ? "arrow.down.circle.fill" : "arrow.down.circle").font(.system(size: 17))
+                    Image(systemName: isDropTargeted ? "arrow.down.circle.fill" : "arrow.down.circle").font(
+                        .system(size: 17))
                     Text(isDropTargeted ? "Release to move" : "Drop cards here")
                 }
                 .font(.caption).foregroundStyle(isDropTargeted ? DieterTheme.shell : DieterTheme.tertiary)
@@ -597,17 +629,26 @@ struct LaneColumn: View {
             }
         }
         .padding(10)
-        .background(isDropTargeted ? DieterTheme.shellDeep.opacity(0.08) : DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isDropTargeted ? DieterTheme.shell.opacity(0.32) : DieterTheme.border))
+        .background(
+            isDropTargeted ? DieterTheme.shellDeep.opacity(0.08) : DieterTheme.surface.opacity(0.45),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(
+                isDropTargeted ? DieterTheme.shell.opacity(0.32) : DieterTheme.border)
+        )
         .animation(.easeOut(duration: 0.14), value: isDropTargeted)
         .dropDestination(for: String.self) { values, _ in
             guard let value = values.first, let payload = BoardCardDragPayload(value),
-                  payload.boardID == store.selectedBoardID,
-                  let card = store.state.cards.first(where: { $0.id == payload.cardID }) else { return false }
+                payload.boardID == store.selectedBoardID,
+                let card = store.state.cards.first(where: { $0.id == payload.cardID })
+            else { return false }
             if payload.sourceLane == lane.id, cards.last?.id == payload.cardID { return true }
             Task { await store.move(card, lane: lane.id) }
             return true
-        } isTargeted: { isDropTargeted = $0 }
+        } isTargeted: {
+            isDropTargeted = $0
+        }
     }
 }
 
@@ -631,19 +672,23 @@ struct LaneInsertionTarget: View {
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { values, _ in
             guard let value = values.first, let payload = BoardCardDragPayload(value),
-                  payload.boardID == store.selectedBoardID,
-                  let card = store.state.cards.first(where: { $0.id == payload.cardID }) else { return false }
+                payload.boardID == store.selectedBoardID,
+                let card = store.state.cards.first(where: { $0.id == payload.cardID })
+            else { return false }
             if payload.sourceLane == laneID, beforeCardID == payload.cardID { return true }
             let position: Int64?
             if let beforeCardID {
-                position = BoardDropOrdering.position(before: beforeCardID, movingCardID: payload.cardID,
+                position = BoardDropOrdering.position(
+                    before: beforeCardID, movingCardID: payload.cardID,
                     cards: store.boardProjection.displayedCardsByLane[laneID] ?? [])
             } else {
                 position = nil
             }
             Task { await store.move(card, lane: laneID, position: position) }
             return true
-        } isTargeted: { targeted = $0 }
+        } isTargeted: {
+            targeted = $0
+        }
         .animation(.easeOut(duration: 0.12), value: targeted)
     }
 }
@@ -655,10 +700,12 @@ private struct BoardCardDragPreview: View {
         HStack(spacing: 10) {
             Image(systemName: "rectangle.on.rectangle.angled").foregroundStyle(DieterTheme.shell)
             VStack(alignment: .leading, spacing: 3) {
-                Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 12, weight: .semibold)).lineLimit(2)
+                Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 12, weight: .semibold))
+                    .lineLimit(2)
                 HStack(spacing: 6) {
                     Circle().fill(runtimeColor(card.runtime)).frame(width: 5, height: 5)
-                    Text(card.runtime.capitalized).font(.system(size: 9, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
+                    Text(card.runtime.capitalized).font(.system(size: 9, weight: .medium)).foregroundStyle(
+                        DieterTheme.tertiary)
                 }
             }
             Spacer(minLength: 8)
@@ -682,21 +729,29 @@ struct BoardCardView: View {
     var labels: [Dieter_V1_Label] { store.selectedBoard?.labels.filter { card.labelIds.contains($0.id) } ?? [] }
 
     var body: some View {
-        Button { Task { await store.openConversation(cardID: card.id) } } label: {
+        Button {
+            Task { await store.openConversation(cardID: card.id) }
+        } label: {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .top) {
-                    Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 13, weight: .semibold)).multilineTextAlignment(.leading).lineLimit(3)
+                    Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 13, weight: .semibold))
+                        .multilineTextAlignment(.leading).lineLimit(3)
                     Spacer(minLength: 4)
                     Circle().fill(runtimeColor(card.runtime)).frame(width: 6, height: 6).padding(.top, 5)
                 }
-                if !card.summary.isEmpty { Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle).lineLimit(3).multilineTextAlignment(.leading) }
+                if !card.summary.isEmpty {
+                    Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle).lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                }
                 if !labels.isEmpty {
                     FlowLabels(labels: labels)
                 }
                 HStack(spacing: 7) {
                     StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
                     if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
-                    if !card.model.isEmpty { Text(card.model).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1) }
+                    if !card.model.isEmpty {
+                        Text(card.model).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+                    }
                     Spacer()
                     let age = BoardCardActivityText.compact(
                         updatedAt: card.updatedAt,
@@ -709,19 +764,29 @@ struct BoardCardView: View {
                             .foregroundStyle(DieterTheme.tertiary)
                             .accessibilityLabel("Last activity \(age)")
                     }
-                    if card.commentCount > 0 { Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary) }
-                    if !card.activeSubagents.isEmpty { Label("\(card.activeSubagents.count)", systemImage: "person.2").font(.system(size: 10)).foregroundStyle(DieterTheme.shell) }
+                    if card.commentCount > 0 {
+                        Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10))
+                            .foregroundStyle(DieterTheme.tertiary)
+                    }
+                    if !card.activeSubagents.isEmpty {
+                        Label("\(card.activeSubagents.count)", systemImage: "person.2").font(.system(size: 10))
+                            .foregroundStyle(DieterTheme.shell)
+                    }
                 }
             }
             .padding(12)
             .background(
-                store.selectedCardID == card.id ? DieterTheme.elevated.opacity(0.82) : (hovering ? DieterTheme.raised.opacity(0.9) : DieterTheme.surface),
+                store.selectedCardID == card.id
+                    ? DieterTheme.elevated.opacity(0.82)
+                    : (hovering ? DieterTheme.raised.opacity(0.9) : DieterTheme.surface),
                 in: RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
                     .stroke(
-                        labelDropTargeted ? DieterTheme.eyes.opacity(0.9) : (store.selectedCardID == card.id ? DieterTheme.shell.opacity(0.45) : DieterTheme.border),
+                        labelDropTargeted
+                            ? DieterTheme.eyes.opacity(0.9)
+                            : (store.selectedCardID == card.id ? DieterTheme.shell.opacity(0.45) : DieterTheme.border),
                         lineWidth: labelDropTargeted ? 1.5 : 1
                     )
             )
@@ -754,21 +819,28 @@ struct BoardCardView: View {
                 guard let value = values.first else { return false }
                 if let payload = BoardLabelDragPayload(value) {
                     guard payload.boardID == store.selectedBoardID,
-                          store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true else { return false }
+                        store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true
+                    else { return false }
                     let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
                     guard ids != card.labelIds else { return true }
                     Task { await store.setLabels(card, ids: ids) }
                     return true
                 }
                 guard let payload = BoardCardDragPayload(value),
-                      payload.boardID == store.selectedBoardID,
-                      let dragged = store.state.cards.first(where: { $0.id == payload.cardID }) else { return false }
+                    payload.boardID == store.selectedBoardID,
+                    let dragged = store.state.cards.first(where: { $0.id == payload.cardID })
+                else { return false }
                 guard payload.cardID != card.id else { return true }
-                let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted { $0.position < $1.position }
-                let position = BoardDropOrdering.position(before: card.id, movingCardID: payload.cardID, cards: laneCards)
+                let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted {
+                    $0.position < $1.position
+                }
+                let position = BoardDropOrdering.position(
+                    before: card.id, movingCardID: payload.cardID, cards: laneCards)
                 Task { await store.move(dragged, lane: card.lane, position: position) }
                 return true
-            } isTargeted: { labelDropTargeted = $0 }
+            } isTargeted: {
+                labelDropTargeted = $0
+            }
             .animation(.easeOut(duration: 0.14), value: labelDropTargeted)
         }
         .buttonStyle(.plain)
@@ -776,36 +848,63 @@ struct BoardCardView: View {
         .contextMenu {
             if store.isFailedOutboxItem(card.id) {
                 Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
-                Button("Discard queued creation", role: .destructive) { Task { await store.discardOutboxItem(card.id) } }
+                Button("Discard queued creation", role: .destructive) {
+                    Task { await store.discardOutboxItem(card.id) }
+                }
                 Divider()
             }
             Button("Open conversation") { Task { await store.openConversation(cardID: card.id) } }
             Group {
-            if BoardCardEditingPolicy.canEditDraft(card) {
-                Button("Edit card…") { editPresented = true }
-            }
-            Button("Rename…") { renameText = card.title; renamePresented = true }
-            Menu("Move to") {
-                ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { lane in
-                    Button(lane.name) { Task { await store.move(card, lane: lane.id) } }
+                if BoardCardEditingPolicy.canEditDraft(card) {
+                    Button("Edit card…") { editPresented = true }
                 }
-            }
-            if let labels = store.selectedBoard?.labels, !labels.isEmpty {
-                Menu("Labels") {
-                    ForEach(labels, id: \.id) { label in
-                        Button { var ids = card.labelIds; if let index = ids.firstIndex(of: label.id) { ids.remove(at: index) } else { ids.append(label.id) }; Task { await store.setLabels(card, ids: ids) } } label: { Label(label.name, systemImage: card.labelIds.contains(label.id) ? "checkmark.circle.fill" : "circle") }
+                Button("Rename…") {
+                    renameText = card.title; renamePresented = true
+                }
+                Menu("Move to") {
+                    ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { lane in
+                        Button(lane.name) { Task { await store.move(card, lane: lane.id) } }
                     }
                 }
-            }
-            if ["running", "waiting", "review"].contains(card.runtime) { Button("Cancel turn", role: .destructive) { Task { await store.cancel(card) } } }
-            Divider()
-            Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
+                if let labels = store.selectedBoard?.labels, !labels.isEmpty {
+                    Menu("Labels") {
+                        ForEach(labels, id: \.id) { label in
+                            Button {
+                                var ids = card.labelIds;
+                                if let index = ids.firstIndex(of: label.id) {
+                                    ids.remove(at: index)
+                                } else {
+                                    ids.append(label.id)
+                                }; Task { await store.setLabels(card, ids: ids) }
+                            } label: {
+                                Label(
+                                    label.name,
+                                    systemImage: card.labelIds.contains(label.id) ? "checkmark.circle.fill" : "circle")
+                            }
+                        }
+                    }
+                }
+                if ["running", "waiting", "review"].contains(card.runtime) {
+                    Button("Cancel turn", role: .destructive) { Task { await store.cancel(card) } }
+                }
+                Divider()
+                Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
             }.disabled(!store.projectIsAvailable(card.projectID))
         }
         .accessibilityIdentifier("card.\(card.id)")
         .smokeTarget("card.\(card.id)")
         .sheet(isPresented: $renamePresented) {
-            VStack(alignment: .leading, spacing: 14) { Text("Rename card").font(.title2.weight(.bold)); TextField("Title", text: $renameText); HStack { Spacer(); Button("Cancel") { renamePresented = false }; Button("Rename") { Task { await store.rename(card, title: renameText); renamePresented = false } }.buttonStyle(.borderedProminent).disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty) } }.padding(22).frame(width: 440)
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Rename card").font(.title2.weight(.bold)); TextField("Title", text: $renameText);
+                HStack {
+                    Spacer(); Button("Cancel") { renamePresented = false };
+                    Button("Rename") {
+                        Task {
+                            await store.rename(card, title: renameText); renamePresented = false
+                        }
+                    }.buttonStyle(.borderedProminent).disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }.padding(22).frame(width: 440)
         }
         .sheet(isPresented: $editPresented) {
             EditCardSheet(card: card).environment(store)
@@ -844,10 +943,13 @@ struct FlowLabels: View {
     var body: some View {
         HStack(spacing: 4) {
             ForEach(labels.prefix(3), id: \.id) { label in
-                HStack(spacing: 4) { Circle().fill(Color(hex: label.color) ?? DieterTheme.shellDeep).frame(width: 5, height: 5); Text(label.name) }
-                    .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.subtle)
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(DieterTheme.raised, in: Capsule())
+                HStack(spacing: 4) {
+                    Circle().fill(Color(hex: label.color) ?? DieterTheme.shellDeep).frame(width: 5, height: 5);
+                    Text(label.name)
+                }
+                .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.subtle)
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(DieterTheme.raised, in: Capsule())
             }
         }
     }
@@ -858,6 +960,8 @@ extension Color {
         var value = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
         if value.count == 3 { value = value.map { "\($0)\($0)" }.joined() }
         guard value.count == 6, let int = UInt64(value, radix: 16) else { return nil }
-        self.init(red: Double((int >> 16) & 0xff) / 255, green: Double((int >> 8) & 0xff) / 255, blue: Double(int & 0xff) / 255)
+        self.init(
+            red: Double((int >> 16) & 0xff) / 255, green: Double((int >> 8) & 0xff) / 255,
+            blue: Double(int & 0xff) / 255)
     }
 }

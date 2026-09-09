@@ -10,18 +10,19 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 @Test func diffProjectionMeasuresLongCodeAndKeepsHunkCountsSeparate() {
     let longLine = String(repeating: "x", count: 180) + "\t界"
     let patch = """
-    diff --git a/source.swift b/source.swift
-    @@ -1,2 +1,3 @@
-     context
-    -old
-    +new
-    +\(longLine)
-    @@ -40 +41 @@
-    -before
-    +after
-    """
+        diff --git a/source.swift b/source.swift
+        @@ -1,2 +1,3 @@
+         context
+        -old
+        +new
+        +\(longLine)
+        @@ -40 +41 @@
+        -before
+        +after
+        """
     for split in [false, true] {
-        let projection = WorkspaceDiffProjection.build(patch: patch, path: "source.swift", commitSHA: "", split: split, comments: [])
+        let projection = WorkspaceDiffProjection.build(
+            patch: patch, path: "source.swift", commitSHA: "", split: split, comments: [])
         let hunkIDs = projection.rows.compactMap { row -> Int? in
             if case .hunk(let id, _, _) = row { id } else { nil }
         }
@@ -33,16 +34,18 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 }
 
 @Test func diffDisplayDropsHeaderNoiseAndKeepsChanges() {
-    let rows = WorkspaceDiffDisplay.inlineRows(parsed("""
-    diff --git a/a.swift b/a.swift
-    index 123..456 100644
-    --- a/a.swift
-    +++ b/a.swift
-    @@ -1,3 +1,3 @@
-     context
-    -old
-    +new
-    """))
+    let rows = WorkspaceDiffDisplay.inlineRows(
+        parsed(
+            """
+            diff --git a/a.swift b/a.swift
+            index 123..456 100644
+            --- a/a.swift
+            +++ b/a.swift
+            @@ -1,3 +1,3 @@
+             context
+            -old
+            +new
+            """))
 
     let hunks = rows.filter { if case .hunk = $0 { true } else { false } }
     let lines = rows.compactMap { if case .line(let line) = $0 { line } else { nil } }
@@ -52,18 +55,20 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 }
 
 @Test func diffDisplayCountsUnchangedLinesBetweenHunks() {
-    let rows = WorkspaceDiffDisplay.inlineRows(parsed("""
-    @@ -10,4 +10,5 @@ func first()
-     context
-    -old
-    +new
-    +extra
-     tail
-    @@ -228,3 +229,4 @@ func second()
-     context
-    +added
-     tail
-    """))
+    let rows = WorkspaceDiffDisplay.inlineRows(
+        parsed(
+            """
+            @@ -10,4 +10,5 @@ func first()
+             context
+            -old
+            +new
+            +extra
+             tail
+            @@ -228,3 +229,4 @@ func second()
+             context
+            +added
+             tail
+            """))
 
     let skips = rows.compactMap { if case .hunk(_, _, let skipped) = $0 { skipped } else { nil } }
     #expect(skips.count == 2)
@@ -74,12 +79,14 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 
 @Test func diffDisplayFoldsLongContextRuns() {
     let context = (1...40).map { "line \($0)" }.joined(separator: "\n ")
-    let rows = WorkspaceDiffDisplay.inlineRows(parsed("""
-    @@ -1,41 +1,41 @@
-     \(context)
-    -old
-    +new
-    """))
+    let rows = WorkspaceDiffDisplay.inlineRows(
+        parsed(
+            """
+            @@ -1,41 +1,41 @@
+             \(context)
+            -old
+            +new
+            """))
 
     let folds = rows.compactMap { row -> (count: Int, lines: [UnifiedDiffLine])? in
         if case .fold(_, let count, let lines, _) = row { (count, lines) } else { nil }
@@ -93,28 +100,32 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 }
 
 @Test func diffDisplayKeepsShortContextUnfolded() {
-    let rows = WorkspaceDiffDisplay.inlineRows(parsed("""
-    @@ -1,6 +1,6 @@
-     one
-     two
-     three
-    -old
-    +new
-     four
-    """))
+    let rows = WorkspaceDiffDisplay.inlineRows(
+        parsed(
+            """
+            @@ -1,6 +1,6 @@
+             one
+             two
+             three
+            -old
+            +new
+             four
+            """))
 
     #expect(!rows.contains { if case .fold = $0 { true } else { false } })
 }
 
 @Test func splitRowsPairDeletionsWithAdditions() {
-    let rows = WorkspaceDiffDisplay.splitRows(parsed("""
-    @@ -1,3 +1,4 @@
-     context
-    -removed
-    +replaced
-    +added
-     tail
-    """))
+    let rows = WorkspaceDiffDisplay.splitRows(
+        parsed(
+            """
+            @@ -1,3 +1,4 @@
+             context
+            -removed
+            +replaced
+            +added
+             tail
+            """))
 
     let pairs = rows.compactMap { if case .pair(let pair) = $0 { pair } else { nil } }
     #expect(pairs.count == 4)
@@ -128,22 +139,23 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 }
 
 @Test func parserClassifiesCommitMetadataAndResetsBetweenFiles() {
-    let lines = parsed("""
-    diff --git a/one.txt b/one.txt
-    new file mode 100644
-    index 0000000..5626abf
-    --- /dev/null
-    +++ b/one.txt
-    @@ -0,0 +1 @@
-    +one
-    diff --git a/two.txt b/two.txt
-    new file mode 100644
-    index 0000000..f719efd
-    --- /dev/null
-    +++ b/two.txt
-    @@ -0,0 +1 @@
-    +two
-    """)
+    let lines = parsed(
+        """
+        diff --git a/one.txt b/one.txt
+        new file mode 100644
+        index 0000000..5626abf
+        --- /dev/null
+        +++ b/one.txt
+        @@ -0,0 +1 @@
+        +one
+        diff --git a/two.txt b/two.txt
+        new file mode 100644
+        index 0000000..f719efd
+        --- /dev/null
+        +++ b/two.txt
+        @@ -0,0 +1 @@
+        +two
+        """)
 
     // Every metadata line stays out of the content stream for both files.
     #expect(lines.filter { $0.kind == .header }.count == 10)
@@ -153,14 +165,15 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 }
 
 @Test func diffDisplayEmitsFileRowsForWholeCommitPatches() {
-    let lines = parsed("""
-    diff --git a/one.txt b/one.txt
-    @@ -0,0 +1 @@
-    +one
-    diff --git a/two.txt b/two.txt
-    @@ -0,0 +1 @@
-    +two
-    """)
+    let lines = parsed(
+        """
+        diff --git a/one.txt b/one.txt
+        @@ -0,0 +1 @@
+        +one
+        diff --git a/two.txt b/two.txt
+        @@ -0,0 +1 @@
+        +two
+        """)
 
     let rows = WorkspaceDiffDisplay.inlineRows(lines, fileRows: true)
     let files = rows.compactMap { if case .file(_, let path) = $0 { path } else { nil } }
@@ -172,8 +185,9 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 }
 
 @Test func hunkDisplayTextKeepsFunctionContext() {
-    #expect(WorkspaceDiffDisplay.hunkDisplayText("@@ -1284,9 +1284,16 @@ function ChatSidebar({ projects })")
-        == "@@ -1284,9 +1284,16 @@ function ChatSidebar({ projects })")
+    #expect(
+        WorkspaceDiffDisplay.hunkDisplayText("@@ -1284,9 +1284,16 @@ function ChatSidebar({ projects })")
+            == "@@ -1284,9 +1284,16 @@ function ChatSidebar({ projects })")
     #expect(WorkspaceDiffDisplay.hunkDisplayText("@@ -1,3 +1,4 @@") == "@@ -1,3 +1,4 @@")
     #expect(WorkspaceDiffDisplay.hunkSummary("@@ -1284,9 +1284,16 @@ fn")?.oldCount == 9)
     #expect(WorkspaceDiffDisplay.hunkSummary("@@ -5 +6 @@")?.oldCount == 1)
@@ -253,7 +267,9 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
 }
 
 @Test func mergeFlowAvailabilityAcceptsDirtyAndConflictedWorktrees() {
-    func availability(state: String = "ready", mode: String = "worktree", files: Int, commits: Bool, dirty: Bool) -> WorkspaceActionAvailability {
+    func availability(state: String = "ready", mode: String = "worktree", files: Int, commits: Bool, dirty: Bool)
+        -> WorkspaceActionAvailability
+    {
         WorkspaceActionAvailability(
             agentActive: false, operationActive: false, workspaceState: state,
             workspaceMode: mode, changedFiles: files, hasCommits: commits,
@@ -284,7 +300,9 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
     #expect(WorkspaceRelativeTime.compact(stamp(7_200), now: now) == "2h ago")
     #expect(WorkspaceRelativeTime.compact(stamp(3 * 86_400), now: now) == "3d ago")
     #expect(WorkspaceRelativeTime.compact("", now: now) == "")
-    #expect(WorkspaceRelativeTime.compact("2026-08-29T10:00:00.123456Z", now: Date(timeIntervalSince1970: 1_787_047_260)) != "")
+    #expect(
+        WorkspaceRelativeTime.compact("2026-08-29T10:00:00.123456Z", now: Date(timeIntervalSince1970: 1_787_047_260))
+            != "")
 }
 
 @Test func agentPromptsDescribeConflictsAndReviews() {
@@ -295,7 +313,8 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
     #expect(prompt.contains("main"))
     #expect(prompt.contains("web/src/App.jsx (3 hunks)"))
 
-    let review = WorkspaceAgentPrompt.addressReview(number: 142, checksState: "failed", reviewDecision: "changes_requested")
+    let review = WorkspaceAgentPrompt.addressReview(
+        number: 142, checksState: "failed", reviewDecision: "changes_requested")
     #expect(review.contains("#142"))
     #expect(review.contains("failing checks and requested review changes"))
 }

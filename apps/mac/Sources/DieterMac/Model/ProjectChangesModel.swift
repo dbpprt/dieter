@@ -2,15 +2,6 @@ import DieterAPI
 import Foundation
 import Observation
 
-protocol ProjectChangesRPC: AnyObject, Sendable {
-    func changeset(projectID: String) async throws -> Dieter_V1_Changeset
-    func fileDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff
-    func startGitOperation(_ request: Dieter_V1_StartGitOperationRequest) async throws -> Dieter_V1_GitOperation
-    func gitOperation(id: String) async throws -> Dieter_V1_GitOperation
-}
-
-extension DieterRPC: ProjectChangesRPC {}
-
 struct ProjectChangeSelection: Hashable, Sendable {
     var path: String
     var section: String
@@ -48,7 +39,10 @@ final class ProjectChangesModel {
 
     var stagedFiles: [Dieter_V1_ChangedFile] { changes?.files.filter(\.staged) ?? [] }
     var unstagedFiles: [Dieter_V1_ChangedFile] { changes?.files.filter(\.unstaged) ?? [] }
-    var busy: Bool { pendingKind != nil || needsReconciliation || GitOperationStatus.active(operation?.status ?? "") || !(changes?.currentOperationID.isEmpty ?? true) }
+    var busy: Bool {
+        pendingKind != nil || needsReconciliation || GitOperationStatus.active(operation?.status ?? "")
+            || !(changes?.currentOperationID.isEmpty ?? true)
+    }
     var mutationsDisabled: Bool { client == nil || changes == nil || busy || changes?.volatile == true }
 
     func bind(projectID: String, client: any ProjectChangesRPC) {
@@ -124,13 +118,17 @@ final class ProjectChangesModel {
         if revisionChanged { cache = [:]; cacheOrder = [] }
         if revisionChanged, pendingKind == nil { notice = nil }
         if changes != value { changes = value }
-        let choices = value.files.filter(\.unstaged).map { ProjectChangeSelection(path: $0.path, section: "unstaged") }
+        let choices =
+            value.files.filter(\.unstaged).map { ProjectChangeSelection(path: $0.path, section: "unstaged") }
             + value.files.filter(\.staged).map { ProjectChangeSelection(path: $0.path, section: "staged") }
-        let next = selection.flatMap { current in
-            choices.first(where: { $0 == current }) ?? choices.first(where: { $0.path == current.path })
-        } ?? choices.first
+        let next =
+            selection.flatMap { current in
+                choices.first(where: { $0 == current }) ?? choices.first(where: { $0.path == current.path })
+            } ?? choices.first
         if let next {
-            if next != selection || revisionChanged || diff == nil { select(next, reload: revisionChanged, retryStale: false) }
+            if next != selection || revisionChanged || diff == nil {
+                select(next, reload: revisionChanged, retryStale: false)
+            }
         } else {
             diffTask?.cancel(); diffGeneration &+= 1
             selection = nil; diff = nil; diffError = nil; diffLoading = false
@@ -178,14 +176,16 @@ final class ProjectChangesModel {
             do {
                 var page = try await client.fileDiff(request)
                 guard self.owns(token), self.diffGeneration == requestID,
-                      self.selection == selection, self.changes?.revision == request.expectedRevision else { return }
+                    self.selection == selection, self.changes?.revision == request.expectedRevision
+                else { return }
                 if let previous { page.patch = previous.patch + page.patch }
                 self.diff = page
                 self.diffError = nil
                 self.cache[selection] = page
                 self.cacheOrder.removeAll { $0 == selection }
                 self.cacheOrder.append(selection)
-                while self.cacheOrder.count > 8 || self.cache.values.reduce(0, { $0 + $1.patch.utf8.count }) > 8_388_608 {
+                while self.cacheOrder.count > 8 || self.cache.values.reduce(0, { $0 + $1.patch.utf8.count }) > 8_388_608
+                {
                     guard !self.cacheOrder.isEmpty else { break }
                     self.cache.removeValue(forKey: self.cacheOrder.removeFirst())
                 }
@@ -222,7 +222,9 @@ final class ProjectChangesModel {
                 guard self.owns(token) else { return false }
                 self.operation = value
                 let deadline = Date().addingTimeInterval(3_600)
-                while GitOperationStatus.active(value.status), value.status != "waiting_for_resolution", Date() < deadline {
+                while GitOperationStatus.active(value.status), value.status != "waiting_for_resolution",
+                    Date() < deadline
+                {
                     try await DieterTaskSleep.milliseconds(250)
                     value = try await client.gitOperation(id: value.id)
                     guard self.owns(token) else { return false }
@@ -232,7 +234,8 @@ final class ProjectChangesModel {
                 await self.refresh()
                 guard self.owns(token) else { return false }
                 guard value.status == "succeeded" else {
-                    self.operationError = value.error.isEmpty ? "The operation ended with status \(value.status)." : value.error
+                    self.operationError =
+                        value.error.isEmpty ? "The operation ended with status \(value.status)." : value.error
                     return false
                 }
                 guard !self.needsReconciliation else { return false }

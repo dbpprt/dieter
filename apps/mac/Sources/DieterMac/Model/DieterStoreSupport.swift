@@ -47,41 +47,11 @@ enum TerminalScreenReducer {
     }
 }
 
-actor TerminalInputForwarder {
-    private var pending: [String: Data] = [:]
-    private var flushing: Set<String> = []
-
-    func enqueue(id: String, data: Data, rpc: DieterRPC) async -> String? {
-        guard !data.isEmpty else { return nil }
-        pending[id, default: Data()].append(data)
-        guard flushing.insert(id).inserted else { return nil }
-        defer { flushing.remove(id) }
-        do {
-            while !Task.isCancelled {
-                try await DieterTaskSleep.milliseconds(12)
-                guard let chunk = pending.removeValue(forKey: id), !chunk.isEmpty else { return nil }
-                var offset = 0
-                while offset < chunk.count {
-                    let end = min(chunk.count, offset + (64 * 1_024))
-                    _ = try await rpc.writeTerminal(id: id, data: chunk.subdata(in: offset..<end))
-                    offset = end
-                }
-                if pending[id]?.isEmpty != false { return nil }
-            }
-            return nil
-        } catch is CancellationError {
-            return nil
-        } catch {
-            return error.localizedDescription
-        }
-    }
-}
-
 enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case board = "Board"
     case chats = "All chats"
     case terminals = "Terminals"
-	case screens = "Screens"
+    case screens = "Screens"
     case files = "Files"
     case changes = "Changes"
     case schedules = "Schedules"
@@ -94,123 +64,13 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
         case .board: "rectangle.split.3x1"
         case .chats: "bubble.left.and.bubble.right"
         case .terminals: "terminal"
-		case .screens: "rectangle.inset.filled.and.person.filled"
+        case .screens: "rectangle.inset.filled.and.person.filled"
         case .files: "doc.on.doc"
         case .changes: "arrow.triangle.branch"
         case .schedules: "calendar.badge.clock"
         case .archive: "archivebox"
         case .settings: "gearshape"
         }
-    }
-}
-
-struct MachineSnapshot {
-    let endpoint: DieterEndpoint
-    let connection: MachineConnectionStatus
-    let projects: [Dieter_V1_Project]
-    let boards: [Dieter_V1_Board]
-    let cards: [Dieter_V1_Card]
-    let chats: [Dieter_V1_Card]
-    let cursor: Data?
-    let unchanged: Bool
-
-    init(
-        endpoint: DieterEndpoint,
-        connection: MachineConnectionStatus,
-        projects: [Dieter_V1_Project],
-        boards: [Dieter_V1_Board],
-        cards: [Dieter_V1_Card],
-        chats: [Dieter_V1_Card],
-        cursor: Data? = nil,
-        unchanged: Bool = false
-    ) {
-        self.endpoint = endpoint
-        self.connection = connection
-        self.projects = projects
-        self.boards = boards
-        self.cards = cards
-        self.chats = chats
-        self.cursor = cursor
-        self.unchanged = unchanged
-    }
-}
-
-struct MachineDirectoryProjection: Equatable {
-    var projects: [String: Dieter_V1_Project]
-    var projectEndpointIDs: [String: String]
-    var boards: [String: [Dieter_V1_Board]]
-    var cards: [String: [Dieter_V1_Card]]
-    var chats: [Dieter_V1_Card]
-
-    var sortedProjects: [Dieter_V1_Project] {
-        projects.values.sorted {
-            if $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedSame { return $0.id < $1.id }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
-    }
-}
-
-enum MachineDirectoryReducer {
-    static func merging(
-        _ current: MachineDirectoryProjection,
-        snapshots: [MachineSnapshot]
-    ) -> MachineDirectoryProjection {
-        let changedSnapshots = snapshots.filter { !$0.unchanged }
-        let refreshedEndpointIDs = Set(changedSnapshots.map(\.endpoint.id))
-        var nextProjects = current.projects.filter {
-            current.projectEndpointIDs[$0.key].map { !refreshedEndpointIDs.contains($0) } ?? false
-        }
-        var nextProjectEndpoints = current.projectEndpointIDs.filter { !refreshedEndpointIDs.contains($0.value) }
-        var nextBoards = current.boards.filter { projectID, _ in nextProjectEndpoints[projectID] != nil }
-        var nextCards = current.cards.filter { projectID, _ in nextProjectEndpoints[projectID] != nil }
-        var nextChats = current.chats.filter { chat in nextProjectEndpoints[chat.projectID] != nil }
-
-        for snapshot in changedSnapshots {
-            let boardsByProject = Dictionary(grouping: snapshot.boards, by: \.projectID)
-            let cardsByProject = Dictionary(grouping: snapshot.cards, by: \.projectID)
-            for project in snapshot.projects {
-                nextProjects[project.id] = project
-                nextProjectEndpoints[project.id] = snapshot.endpoint.id
-                nextBoards[project.id] = boardsByProject[project.id] ?? []
-                nextCards[project.id] = cardsByProject[project.id] ?? []
-            }
-            nextChats.append(contentsOf: snapshot.chats)
-        }
-        let chats = nextChats
-            .filter { $0.scope == "chat" && $0.boardID.isEmpty }
-            .reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }
-            .values
-            .sorted {
-                let lhsActivity = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
-                let rhsActivity = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
-                if lhsActivity == rhsActivity { return $0.id < $1.id }
-                return lhsActivity > rhsActivity
-            }
-        return MachineDirectoryProjection(
-            projects: nextProjects,
-            projectEndpointIDs: nextProjectEndpoints,
-            boards: nextBoards,
-            cards: nextCards,
-            chats: chats
-        )
-    }
-}
-
-struct DataPlaneConnection {
-    let rpc: DieterRPC
-    let task: Task<Void, Never>
-    let connection: MachineConnectionStatus
-    let directTokenExpiresAt: String?
-}
-
-enum DirectCandidateScope: Equatable {
-    case all
-    case loopbackOnly
-
-    func ordered(_ candidates: [Dieter_Gateway_V1_DirectCandidate]) -> [Dieter_Gateway_V1_DirectCandidate] {
-        candidates
-            .filter { self == .all || $0.network.caseInsensitiveCompare("loopback") == .orderedSame }
-            .sorted { $0.priority > $1.priority }
     }
 }
 
@@ -247,21 +107,21 @@ enum ConnectionAttemptOwnership {
 }
 
 enum MachineAPICompatibility: Equatable, Sendable {
-	case compatible
-	case incompatible
-	case unknown
+    case compatible
+    case incompatible
+    case unknown
 }
 
 extension DieterEndpoint {
-	var apiCompatibility: MachineAPICompatibility {
-		guard !apiVersion.isEmpty else { return .unknown }
-		return apiVersion == dieterExpectedAPIVersion ? .compatible : .incompatible
-	}
+    var apiCompatibility: MachineAPICompatibility {
+        guard !apiVersion.isEmpty else { return .unknown }
+        return apiVersion == dieterExpectedAPIVersion ? .compatible : .incompatible
+    }
 
-	var incompatibilityDescription: String? {
-		guard apiCompatibility == .incompatible else { return nil }
-		return "Update required · API \(apiVersion) (requires \(dieterExpectedAPIVersion))"
-	}
+    var incompatibilityDescription: String? {
+        guard apiCompatibility == .incompatible else { return nil }
+        return "Update required · API \(apiVersion) (requires \(dieterExpectedAPIVersion))"
+    }
 }
 
 enum OutboxWorkerOwnership {
@@ -338,16 +198,6 @@ enum SyncCursorPersistencePolicy {
         guard projectionChanged else { return false }
         return lastPersistedAt.map { now.timeIntervalSince($0) >= interval } ?? true
     }
-}
-
-enum MachineConnectionRoute: String, Sendable {
-    case local = "Local"
-    case gateway = "Gateway"
-}
-
-struct MachineConnectionStatus: Equatable, Sendable {
-    let route: MachineConnectionRoute
-    let latencyMilliseconds: Int
 }
 
 struct MachineOutboxSummary: Equatable, Sendable {
@@ -437,141 +287,46 @@ struct ProjectFileNavigation: Equatable, Sendable {
 }
 
 enum MachineRoutingPolicy {
-	static func preferredDaemonID(newEndpoint: DieterEndpoint?, currentEndpoint: DieterEndpoint) -> String? {
-		newEndpoint?.daemonID ?? (newEndpoint == nil ? currentEndpoint.daemonID : nil)
-	}
+    static func preferredDaemonID(newEndpoint: DieterEndpoint?, currentEndpoint: DieterEndpoint) -> String? {
+        newEndpoint?.daemonID ?? (newEndpoint == nil ? currentEndpoint.daemonID : nil)
+    }
 
     static func automaticConnectionTarget(
         from machines: [DieterEndpoint],
         preferredDaemonID: String?
     ) -> DieterEndpoint? {
-		connectionTargets(
-			from: machines,
-			preferredDaemonID: preferredDaemonID,
-			explicitMachineSelection: false
-		).first
-	}
-
-	static func connectionTargets(
-		from machines: [DieterEndpoint],
-		preferredDaemonID: String?,
-		explicitMachineSelection: Bool
-	) -> [DieterEndpoint] {
-		let online = machines.filter(\.online)
-		if explicitMachineSelection, let preferredDaemonID {
-			return online.filter { $0.daemonID == preferredDaemonID }
-		}
-		let eligible = online.filter { $0.apiCompatibility != .incompatible }
-		let sorted = eligible.sorted {
-			let leftRank = $0.apiCompatibility == .compatible ? 0 : 1
-			let rightRank = $1.apiCompatibility == .compatible ? 0 : 1
-			if leftRank != rightRank { return leftRank < rightRank }
-			let names = $0.name.localizedCaseInsensitiveCompare($1.name)
-			if names != .orderedSame { return names == .orderedAscending }
-			return $0.id < $1.id
-		}
-		guard let preferredIndex = sorted.firstIndex(where: { $0.daemonID == preferredDaemonID }) else {
-			return sorted
-		}
-		var result = sorted
-		let preferred = result.remove(at: preferredIndex)
-		result.insert(preferred, at: 0)
-		return result
-    }
-}
-
-struct OptimisticCardMove: Equatable, Sendable {
-    let operationID: UUID
-    var lane: String
-    var position: Int64
-    var confirmsPosition: Bool
-
-    func isConfirmed(by card: Dieter_V1_Card) -> Bool {
-        card.lane == lane && (!confirmsPosition || card.position == position)
+        connectionTargets(
+            from: machines,
+            preferredDaemonID: preferredDaemonID,
+            explicitMachineSelection: false
+        ).first
     }
 
-    func applying(to card: Dieter_V1_Card) -> Dieter_V1_Card {
-        var card = card
-        card.lane = lane
-        card.position = position
-        return card
-    }
-}
-
-struct OptimisticCardLabels: Equatable, Sendable {
-    let operationID: UUID
-    let labelIDs: [String]
-
-    func isConfirmed(by card: Dieter_V1_Card) -> Bool {
-        card.labelIds == labelIDs
-    }
-
-    func applying(to card: Dieter_V1_Card) -> Dieter_V1_Card {
-        var card = card
-        card.labelIds = labelIDs
-        return card
-    }
-}
-
-struct OptimisticCardProjection {
-    let cards: [Dieter_V1_Card]
-    let moves: [String: OptimisticCardMove]
-    let labels: [String: OptimisticCardLabels]
-
-    static func reconcile(
-        cards: [Dieter_V1_Card],
-        moves: [String: OptimisticCardMove],
-        labels: [String: OptimisticCardLabels]
-    ) -> OptimisticCardProjection {
-        var remainingMoves = moves
-        var remainingLabels = labels
-        let projected = cards.map { serverCard in
-            var card = serverCard
-            if let move = moves[card.id] {
-                if move.isConfirmed(by: serverCard) { remainingMoves.removeValue(forKey: card.id) }
-                else { card = move.applying(to: card) }
-            }
-            if let labelUpdate = labels[card.id] {
-                if labelUpdate.isConfirmed(by: serverCard) { remainingLabels.removeValue(forKey: card.id) }
-                else { card = labelUpdate.applying(to: card) }
-            }
-            return card
+    static func connectionTargets(
+        from machines: [DieterEndpoint],
+        preferredDaemonID: String?,
+        explicitMachineSelection: Bool
+    ) -> [DieterEndpoint] {
+        let online = machines.filter(\.online)
+        if explicitMachineSelection, let preferredDaemonID {
+            return online.filter { $0.daemonID == preferredDaemonID }
         }
-        return .init(cards: projected, moves: remainingMoves, labels: remainingLabels)
-    }
-}
-
-struct OptimisticWorkspaceProjection {
-    static func reconcileBoards(
-        _ serverBoards: [Dieter_V1_Board],
-        pending: [String: Dieter_V1_Board]
-    ) -> (boards: [Dieter_V1_Board], pending: [String: Dieter_V1_Board]) {
-        var remaining = pending
-        let boards = serverBoards.map { serverBoard in
-            guard let expected = pending[serverBoard.id] else { return serverBoard }
-            if serverBoard == expected {
-                remaining.removeValue(forKey: serverBoard.id)
-                return serverBoard
-            }
-            return expected
+        let eligible = online.filter { $0.apiCompatibility != .incompatible }
+        let sorted = eligible.sorted {
+            let leftRank = $0.apiCompatibility == .compatible ? 0 : 1
+            let rightRank = $1.apiCompatibility == .compatible ? 0 : 1
+            if leftRank != rightRank { return leftRank < rightRank }
+            let names = $0.name.localizedCaseInsensitiveCompare($1.name)
+            if names != .orderedSame { return names == .orderedAscending }
+            return $0.id < $1.id
         }
-        return (boards, remaining)
-    }
-
-    static func reconcileProjects(
-        _ serverProjects: [Dieter_V1_Project],
-        pending: [String: Dieter_V1_Project]
-    ) -> (projects: [Dieter_V1_Project], pending: [String: Dieter_V1_Project]) {
-        var remaining = pending
-        let projects = serverProjects.map { serverProject in
-            guard let expected = pending[serverProject.id] else { return serverProject }
-            if serverProject == expected {
-                remaining.removeValue(forKey: serverProject.id)
-                return serverProject
-            }
-            return expected
+        guard let preferredIndex = sorted.firstIndex(where: { $0.daemonID == preferredDaemonID }) else {
+            return sorted
         }
-        return (projects, remaining)
+        var result = sorted
+        let preferred = result.remove(at: preferredIndex)
+        result.insert(preferred, at: 0)
+        return result
     }
 }
 

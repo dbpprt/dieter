@@ -20,6 +20,21 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "DieterCore",
+            dependencies: [
+                "DieterAPI", .product(name: "GRPCCore", package: "grpc-swift-2"),
+            ]),
+        .target(
+            name: "DieterClient",
+            dependencies: [
+                "DieterCore", "DieterAPI",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+                .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ]),
+        .testTarget(name: "DieterCoreTests", dependencies: ["DieterCore", "DieterAPI"]),
+        .target(
             name: "DieterAPI",
             dependencies: [
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
@@ -36,6 +51,7 @@ let package = Package(
         .executableTarget(
             name: "DieterMac",
             dependencies: [
+                "DieterCore", "DieterClient",
                 "DieterAPI",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
@@ -45,13 +61,13 @@ let package = Package(
                 "WebRTC",
             ],
             swiftSettings: [
-                .define("DIETER_UI_SMOKE", .when(configuration: .debug)),
+                .define("DIETER_UI_SMOKE", .when(configuration: .debug))
             ],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-rpath",
                     "-Xlinker", "@executable_path/../Frameworks",
-                ]),
+                ])
             ]
         ),
         .executableTarget(
