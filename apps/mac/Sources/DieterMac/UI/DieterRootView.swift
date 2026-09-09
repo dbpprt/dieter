@@ -28,7 +28,7 @@ enum SidebarSizing {
     static let storageKey = "DieterSidebarWidth"
     static let minimumWidth: CGFloat = 210
     static let defaultWidth = DieterMetrics.sidebarExpandedWidth
-    static let maximumWidth: CGFloat = 420
+    static let maximumWidth: CGFloat = 300
     static let dividerWidth: CGFloat = 7
 
     static func clamped(_ width: CGFloat) -> CGFloat {
@@ -65,6 +65,9 @@ struct DieterRootView: View {
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
             AppSidebar()
                 .frame(minWidth: SidebarSizing.minimumWidth)
+                .background(
+                    NativeSplitColumnBounds(minimum: SidebarSizing.minimumWidth, maximum: SidebarSizing.maximumWidth)
+                )
                 .navigationSplitViewColumnWidth(
                     min: SidebarSizing.minimumWidth,
                     ideal: SidebarSizing.clamped(CGFloat(navigationWidth)),

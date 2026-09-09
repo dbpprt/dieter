@@ -197,6 +197,8 @@ struct BoardView: View {
             .inspector(isPresented: conversationPresented) {
                 ConversationView(compact: true)
                     .environment(store.conversationContext)
+                    .frame(minWidth: 320)
+                    .background(NativeSplitColumnBounds(minimum: 320, maximum: 720))
                     .inspectorColumnWidth(min: 320, ideal: 460, max: 720)
             }
     }
