@@ -213,7 +213,15 @@ struct DieterIslandView: View {
     @Environment(DieterStore.self) private var store
     @Bindable var presentation: DieterIslandPresentation
     let onRequestExpansion: (Bool) -> Void
+    var onDragChanged: () -> Void = {}
+    var onDragEnded: (CGSize) -> Void = { _ in }
     var onCaptureTask: () -> Void = {}
+
+    private var pushGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { _ in if !presentation.hasPhysicalNotch { onDragChanged() } }
+            .onEnded { value in if !presentation.hasPhysicalNotch { onDragEnded(value.translation) } }
+    }
 
     private var activity: DieterIslandActivity { store.islandActivity }
 
@@ -266,6 +274,7 @@ struct DieterIslandView: View {
         .padding(.horizontal, presentation.hasPhysicalNotch ? 17 : 26)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
+        .gesture(pushGesture)
         .accessibilityLabel(collapsedAccessibilityLabel)
     }
 
@@ -339,6 +348,11 @@ struct DieterIslandView: View {
             // and the content instead of measuring padding from the clear area.
             .padding(.horizontal, 30)
             .frame(height: 45)
+            .contentShape(Rectangle())
+            .simultaneousGesture(pushGesture)
+            .help(
+                presentation.hasPhysicalNotch
+                    ? "Dieter activity" : "Drag toward the other side and release to move the island")
 
             IslandSeparator()
 

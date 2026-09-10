@@ -66,6 +66,7 @@ struct ConversationChrome: View {
                         .controlSize(.small)
                         .help("Close conversation")
                         .accessibilityIdentifier("board.conversation-close")
+                        .smokeTarget("board.conversation-close")
                     }
                     HStack(spacing: 10) {
                         StatusPill(text: status, color: runtimeColor(status))

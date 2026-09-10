@@ -66,20 +66,19 @@ struct DieterRootView: View {
             AppSidebar()
                 .frame(minWidth: SidebarSizing.minimumWidth)
                 .background(
-                    NativeSplitColumnBounds(minimum: SidebarSizing.minimumWidth, maximum: SidebarSizing.maximumWidth)
+                    NativeSplitColumnBounds(
+                        minimum: SidebarSizing.minimumWidth, maximum: SidebarSizing.maximumWidth,
+                        initialWidth: CGFloat(navigationWidth),
+                        onWidthChange: { width in
+                            if abs(Double(width) - navigationWidth) > 0.5 { navigationWidth = Double(width) }
+                        })
                 )
                 .navigationSplitViewColumnWidth(
                     min: SidebarSizing.minimumWidth,
-                    ideal: SidebarSizing.clamped(CGFloat(navigationWidth)),
+                    ideal: SidebarSizing.defaultWidth,
                     max: SidebarSizing.maximumWidth
                 )
-                .onGeometryChange(for: CGFloat.self) {
-                    $0.size.width
-                } action: { width in
-                    guard width >= SidebarSizing.minimumWidth else { return }
-                    let next = Double(SidebarSizing.clamped(width))
-                    if abs(next - navigationWidth) > 0.5 { navigationWidth = next }
-                }
+
         } detail: {
             VStack(spacing: 0) {
                 if workspaceSurfaceTreatment.showsNotice {
@@ -664,6 +663,19 @@ private struct SidebarProjectRow: View {
                 .buttonStyle(.plain)
                 .help("\(project.name) — boards, files, changes, schedules")
                 .accessibilityIdentifier("sidebar.project.\(project.id)")
+
+                Button {
+                    store.presentProjectEditor(projectID: project.id)
+                } label: {
+                    Image(systemName: "gearshape").frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Project context for \(project.name)")
+                .accessibilityLabel("Project context for \(project.name)")
+                .accessibilityIdentifier("sidebar.project.\(project.id).settings")
+                .smokeTarget("sidebar.project.\(project.id).settings")
+                .disabled(!store.projectIsAvailable(project.id))
 
                 if hovering {
                     Button {

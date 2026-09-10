@@ -14,6 +14,9 @@ import Testing
     let probe = SplitColumnBoundsView()
     probe.minimum = 210
     probe.maximum = 300
+    probe.initialWidth = 275
+    var savedWidth: CGFloat = 0
+    probe.onWidthChange = { savedWidth = $0 }
     sidebar.view.addSubview(probe)
     let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 1200, height: 600),
@@ -24,10 +27,17 @@ import Testing
     window.contentView?.layoutSubtreeIfNeeded()
     probe.scheduleConfiguration()
     try? await Task.sleep(for: .milliseconds(40))
+    #expect(abs(controller.splitView.arrangedSubviews[0].frame.width - 275) < 2)
+    #expect(abs(savedWidth - 275) < 2)
     controller.splitView.setPosition(800, ofDividerAt: 0)
     try? await Task.sleep(for: .milliseconds(40))
     #expect(controller.splitView.arrangedSubviews[0].frame.width <= 301)
     controller.splitView.setPosition(250, ofDividerAt: 0)
     try? await Task.sleep(for: .milliseconds(40))
     #expect(abs(controller.splitView.arrangedSubviews[0].frame.width - 250) < 2)
+    #expect(abs(savedWidth - 250) < 2)
+    probe.initialWidth = 275
+    probe.scheduleConfiguration()
+    try? await Task.sleep(for: .milliseconds(40))
+    #expect(abs(savedWidth - 250) < 2)
 }

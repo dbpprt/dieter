@@ -95,3 +95,26 @@ import Testing
     #expect(external.windowFrame(expanded: false).maxX == visible.maxX - 12)
     #expect(external.windowFrame(expanded: false).maxY == visible.maxY - 8)
 }
+
+@Test func islandPushRequiresHorizontalIntentAndKeepsBothEdgesOnExternalDisplay() {
+    #expect(DieterIslandEdge.right.pushed(horizontal: -70, vertical: 4) == .left)
+    #expect(DieterIslandEdge.left.pushed(horizontal: 70, vertical: 4) == .right)
+    #expect(DieterIslandEdge.right.pushed(horizontal: -20, vertical: 0) == .right)
+    #expect(DieterIslandEdge.right.pushed(horizontal: -70, vertical: 100) == .right)
+    let geometry = DieterIslandDisplayGeometry.resolve(
+        screenFrame: CGRect(x: -1920, y: 0, width: 1920, height: 1080),
+        visibleFrame: CGRect(x: -1920, y: 40, width: 1920, height: 1015),
+        safeAreaTop: 0, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil)
+    for expanded in [false, true] {
+        let left = geometry.windowFrame(expanded: expanded, edge: .left)
+        let right = geometry.windowFrame(expanded: expanded, edge: .right)
+        #expect(left.minX == geometry.visibleFrame.minX + 12)
+        #expect(right.maxX == geometry.visibleFrame.maxX - 12)
+        #expect(left.maxY == right.maxY)
+    }
+    let notched = DieterIslandDisplayGeometry.resolve(
+        screenFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+        visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 950),
+        safeAreaTop: 32, auxiliaryLeftWidth: 650, auxiliaryRightWidth: 650)
+    #expect(notched.windowFrame(expanded: true, edge: .left) == notched.windowFrame(expanded: true, edge: .right))
+}

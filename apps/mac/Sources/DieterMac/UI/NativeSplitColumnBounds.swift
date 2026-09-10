@@ -5,12 +5,16 @@ import SwiftUI
 struct NativeSplitColumnBounds: NSViewRepresentable {
     let minimum: CGFloat
     let maximum: CGFloat
+    var initialWidth: CGFloat? = nil
+    var onWidthChange: ((CGFloat) -> Void)? = nil
 
     func makeNSView(context: Context) -> SplitColumnBoundsView { SplitColumnBoundsView() }
 
     func updateNSView(_ view: SplitColumnBoundsView, context: Context) {
         view.minimum = minimum
         view.maximum = maximum
+        view.initialWidth = initialWidth
+        view.onWidthChange = onWidthChange
         view.scheduleConfiguration()
     }
 
@@ -20,6 +24,10 @@ struct NativeSplitColumnBounds: NSViewRepresentable {
 final class SplitColumnBoundsView: NSView {
     var minimum: CGFloat = 0
     var maximum: CGFloat = .greatestFiniteMagnitude
+    var initialWidth: CGFloat?
+    var onWidthChange: ((CGFloat) -> Void)?
+    private var restoredWidth = false
+    private var reportedWidth: CGFloat?
     private weak var splitView: NSSplitView?
     private weak var column: NSView?
     private var resizeObserver: NSObjectProtocol?
@@ -72,7 +80,19 @@ final class SplitColumnBoundsView: NSView {
                     if item.minimumThickness != minimum { item.minimumThickness = minimum }
                     if item.maximumThickness != maximum { item.maximumThickness = maximum }
                 }
+                if !restoredWidth, let initialWidth,
+                    let index = split.arrangedSubviews.firstIndex(of: column), index < split.arrangedSubviews.count - 1
+                {
+                    restoredWidth = true
+                    split.setPosition(column.frame.minX + min(max(initialWidth, minimum), maximum), ofDividerAt: index)
+                }
                 clampColumn()
+                if !column.isHidden, column.frame.width >= minimum,
+                    column.frame.width <= maximum, reportedWidth != column.frame.width
+                {
+                    reportedWidth = column.frame.width
+                    onWidthChange?(column.frame.width)
+                }
                 return
             }
             ancestor = view.superview

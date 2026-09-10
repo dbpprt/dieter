@@ -314,9 +314,10 @@ extension DieterStore {
         } catch { show(error) }
     }
 
-    func updateProject(name: String, summary: String, prompt: String) async {
-        guard await ensureProjectConnection(selectedProjectID) else { return }
-        guard let rpc else { return }
+    @discardableResult
+    func updateProject(name: String, summary: String, prompt: String) async -> Bool {
+        guard await ensureProjectConnection(selectedProjectID) else { return false }
+        guard let rpc else { return false }
         var request = Dieter_V1_UpdateProjectRequest()
         request.projectID = selectedProjectID
         request.name = name
@@ -326,8 +327,10 @@ extension DieterStore {
             _ = try await rpc.updateProject(request)
             projectContextPresented = false
             await refreshState()
+            return true
         } catch {
             show(error)
+            return false
         }
     }
 
@@ -376,10 +379,11 @@ extension DieterStore {
         return try await rpc.createBoard(request)
     }
 
-    func renameBoard(id: String, name: String) async {
-        guard let rpc else { return }
+    @discardableResult
+    func renameBoard(id: String, name: String) async -> Bool {
+        guard let rpc else { return false }
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return }
+        guard !normalized.isEmpty else { return false }
         var request = Dieter_V1_RenameBoardRequest()
         request.boardID = id
         request.name = normalized
@@ -400,7 +404,11 @@ extension DieterStore {
             renameBoardTargetID = ""
             await refreshState()
             await refreshNavigation()
-        } catch { show(error) }
+            return true
+        } catch {
+            show(error)
+            return false
+        }
     }
 
     func setArchivePolicy(_ policy: String) async {

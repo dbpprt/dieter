@@ -187,7 +187,9 @@ struct BoardView: View {
         Binding(
             get: { store.selectedCardID != nil },
             set: { presented in
-                if !presented { store.closeConversation() }
+                if !presented, store.section == .board, store.selectedCardID != nil {
+                    store.closeConversation()
+                }
             })
     }
 
@@ -274,38 +276,15 @@ struct BoardHeader: View {
         FluidPaneChrome(background: DieterTheme.background, spacing: 7) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 7) {
-                        Text(store.selectedBoard?.name ?? "Board")
-                            .font(DieterFont.paneTitle).lineLimit(1)
-                        Menu {
-                            Button("Rename board…") {
-                                if let board = store.selectedBoard { store.presentRenameBoard(boardID: board.id) }
-                            }
-                            .disabled(store.selectedBoard == nil)
-                        } label: {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
-                                .frame(width: 16, height: 16)
-                        }
-                        .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden)
-                        .buttonBorderShape(.circle).controlSize(.small).fixedSize()
-                        .help("Board actions")
-                        .accessibilityIdentifier("board.actions")
-                    }
+                    Text(store.selectedBoard?.name ?? "Board")
+                        .font(DieterFont.paneTitle).lineLimit(1)
                     Text(boardMetadata)
                         .font(DieterFont.subtitle)
                         .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 8)
-                Button {
-                    store.projectContextPresented = true
-                } label: {
-                    Image(systemName: "text.book.closed")
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.glass).buttonBorderShape(.circle).help("Project context")
-                .accessibilityLabel("Project context")
+
             }
         } secondary: {
             GlassEffectContainer(spacing: 7) {
@@ -368,6 +347,8 @@ struct BoardHeader: View {
                             Label("Board settings", systemImage: "gearshape")
                         }
                         .buttonStyle(.glass)
+                        .accessibilityIdentifier("board.settings")
+                        .smokeTarget("board.settings")
 
                         Button {
                             store.labelsPresented = true
@@ -657,7 +638,8 @@ struct QuickTaskPopover: View {
                     .background(DieterTheme.shellDeep.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Quick task").font(.system(size: 18, weight: .semibold)).smokeTarget(
-                        "quick-task.title")
+                        "quick-task.title"
+                    ).smokeTarget("quick-task.title")
                     Text("Describe the task. A short title is created automatically.")
                         .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
                 }

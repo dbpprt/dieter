@@ -20,12 +20,16 @@
         private static let syntheticCardFixtureID = "c_conversation_card_ui_smoke"
         private static var jumpToLatestVisible = false
         private static var viewportConversationID = ""
+        private static var expectedViewportConversationID = ""
         private static var viewportIsAtLatest = false
         private static var viewportFollowsLatest = false
         private static var viewportInitialPositionComplete = false
 
-        static func recordJumpToLatestVisibility(_ visible: Bool) {
+        static func recordJumpToLatestVisibility(_ visible: Bool, conversationID: String) {
             guard ProcessInfo.processInfo.arguments.contains("--conversation-ui-smoke") else { return }
+            guard expectedViewportConversationID.isEmpty || conversationID == expectedViewportConversationID else {
+                return
+            }
             jumpToLatestVisible = visible
         }
 
@@ -36,6 +40,9 @@
             initialPositionComplete: Bool
         ) {
             guard ProcessInfo.processInfo.arguments.contains("--conversation-ui-smoke") else { return }
+            guard expectedViewportConversationID.isEmpty || conversationID == expectedViewportConversationID else {
+                return
+            }
             viewportConversationID = conversationID
             viewportIsAtLatest = isAtLatest
             viewportFollowsLatest = followsLatest
@@ -145,7 +152,7 @@
             results: inout [String: String],
             output: URL
         ) async {
-            guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            guard await installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
                 results["markdown-table"] = "failed: renderer fixture unavailable"
                 return
             }
@@ -187,22 +194,32 @@
             assistant.parts = [text]
             snapshot.conversation.messages = [assistant]
             store.conversation = snapshot
-            let prepared = await NativeUIAccessibility.wait {
-                NativeUIAccessibility.find("conversation.table.next-rows", in: window) != nil
+            let tableRendered = await NativeUIAccessibility.wait {
+                nativeTextViews(in: window.contentView).contains { view in
+                    guard view is MessageTextView, view.string.contains("Row 0"), view.isSelectable,
+                        let storage = view.textStorage
+                    else { return false }
+                    var nativeCells = 0
+                    storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) {
+                        value, _, _ in
+                        if let style = value as? NSParagraphStyle,
+                            style.textBlocks.contains(where: { $0 is NSTextTableBlock })
+                        {
+                            nativeCells += 1
+                        }
+                    }
+                    return nativeCells > 2
+                }
             }
-            // Preparation mounts the table before the transcript's tail-follow
-            // layout finishes. Wait for that layout before resolving click geometry.
-            try? await DieterTaskSleep.milliseconds(350)
-            capture(window, to: output.appending(path: "03c-large-markdown-table-before.png"))
-            let advanced =
-                prepared && NativeUIAccessibility.click("conversation.table.next-rows", in: window)
-            let rowPage = await NativeUIAccessibility.wait {
-                NativeUIAccessibility.find("conversation.table.rows.1", in: window) != nil
-            }
-            results["large-markdown-table-pagination"] =
-                advanced && rowPage ? "passed" : "failed: next table page unavailable"
+            results["large-markdown-native-table"] =
+                tableRendered
+                ? "passed" : "failed: selectable native table cells unavailable"
             capture(window, to: output.appending(path: "03c-large-markdown-table.png"))
-            let opened = NativeUIAccessibility.click("conversation.full-text", in: window)
+            if let target = NativeUIAccessibility.find("conversation.full-text", in: window)?.object as? NSView {
+                target.scrollToVisible(target.bounds)
+            }
+            try? await DieterTaskSleep.milliseconds(400)
+            let opened = NativeUIAccessibility.press("conversation.full-text", in: window)
             let fullText = await NativeUIAccessibility.wait {
                 guard let sheet = window.attachedSheet else { return false }
                 return nativeTextViews(in: sheet.contentView).contains {
@@ -210,7 +227,9 @@
                 }
             }
             results["large-message-full-text"] =
-                opened && fullText ? "passed" : "failed: complete message unavailable"
+                opened && fullText
+                ? "passed"
+                : "failed: complete message unavailable (open action=\(opened), sheet=\(window.attachedSheet != nil))"
             if let sheet = window.attachedSheet {
                 capture(sheet, to: output.appending(path: "03d-full-message.png"))
                 _ = NativeUIAccessibility.click("conversation.full-text.done", in: sheet)
@@ -231,7 +250,7 @@
             results: inout [String: String],
             output: URL
         ) async {
-            guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            guard await installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
                 results["turn-failure"] = "failed: renderer fixture unavailable"
                 return
             }
@@ -297,8 +316,8 @@
                 ("chat", syntheticTailChatFixtureID, true),
                 ("card", syntheticCardFixtureID, false),
             ] {
-                resetViewportObservation()
-                guard installLongViewportFixture(store, id: id, chat: chat) != nil else {
+                resetViewportObservation(conversationID: id)
+                guard await installLongViewportFixture(store, id: id, chat: chat) != nil else {
                     results["\(scope)-opens-at-latest"] = "failed: renderer fixture unavailable"
                     continue
                 }
@@ -315,9 +334,9 @@
                     : "failed: initial projection did not settle at the transcript tail"
             }
 
-            resetViewportObservation()
+            resetViewportObservation(conversationID: syntheticTailChatFixtureID)
             guard
-                installLongViewportFixture(
+                await installLongViewportFixture(
                     store,
                     id: syntheticTailChatFixtureID,
                     chat: true
@@ -340,6 +359,13 @@
                 ))
             snapshot.conversation.lastSeq += 1
             store.conversation = snapshot
+            let firstGrowthRendered = await NativeUIAccessibility.wait {
+                nativeTextViews(in: window.contentView).contains { $0.string.contains("First streamed model answer") }
+            }
+            progress(
+                "First growth rendered=\(firstGrowthRendered), model messages=\(store.conversationMessages.count), snapshot messages=\(store.conversation?.conversation.messages.count ?? 0)",
+                in: output)
+            try? await DieterTaskSleep.milliseconds(350)
             let tailedFirstGrowth = await waitForViewport(
                 conversationID: syntheticTailChatFixtureID,
                 isAtLatest: true,
@@ -348,10 +374,13 @@
             )
             capture(window, to: output.appending(path: "07c-live-tail.png"))
             results["live-tail"] =
-                tailedFirstGrowth && !jumpToLatestVisible
+                firstGrowthRendered && tailedFirstGrowth && !jumpToLatestVisible
                 ? "passed"
                 : "failed: streamed growth detached a viewport that was following the tail"
 
+            progress(
+                "Before wheel id=\(viewportConversationID), latest=\(viewportIsAtLatest), follows=\(viewportFollowsLatest), initial=\(viewportInitialPositionComplete)",
+                in: output)
             await postScrollUp(window)
             let detached = await waitForViewport(
                 conversationID: syntheticTailChatFixtureID,
@@ -409,6 +438,9 @@
             snapshot.conversation.lastSeq += 1
             store.conversation = snapshot
             progress("viewport: appended post-jump stream growth", in: output)
+            _ = await NativeUIAccessibility.wait {
+                nativeTextViews(in: window.contentView).contains { $0.string.contains("Third streamed model answer") }
+            }
             let resumedTail = await waitForViewport(
                 conversationID: syntheticTailChatFixtureID,
                 isAtLatest: true,
@@ -431,7 +463,7 @@
             results: inout [String: String],
             output: URL
         ) async {
-            guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            guard await installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
                 results["agent-activity-indicator"] = "failed: renderer fixture unavailable"
                 return
             }
@@ -456,7 +488,7 @@
             results: inout [String: String],
             output: URL
         ) async {
-            guard installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
+            guard await installSyntheticFixture(store) != nil, var snapshot = store.conversation else {
                 results["queued-message-visible"] = "failed: renderer fixture unavailable"
                 return
             }
@@ -798,11 +830,15 @@
                 let tools = parts.filter(ConversationMessagePartGroup.isToolCall)
                 if !reasoning.isEmpty && tools.count >= 2 { return cardID }
             }
-            return installSyntheticFixture(store)
+            return await installSyntheticFixture(store)
         }
 
-        private static func installSyntheticFixture(_ store: DieterStore) -> String? {
+        private static func installSyntheticFixture(_ store: DieterStore) async -> String? {
             guard let project = store.projects.first else { return nil }
+            // The renderer fixture replaces the live conversation. Cancel its
+            // transport lease so a late snapshot cannot overwrite the fixture.
+            store.closeConversation()
+            try? await DieterTaskSleep.milliseconds(500)
 
             var card = Dieter_V1_Card()
             card.id = syntheticFixtureID
@@ -888,8 +924,8 @@
             _ store: DieterStore,
             id: String,
             chat: Bool
-        ) -> String? {
-            guard installSyntheticFixture(store) != nil,
+        ) async -> String? {
+            guard await installSyntheticFixture(store) != nil,
                 var snapshot = store.conversation
             else { return nil }
             let project = snapshot.detail.project
@@ -959,7 +995,8 @@
             return message
         }
 
-        private static func resetViewportObservation() {
+        private static func resetViewportObservation(conversationID: String) {
+            expectedViewportConversationID = conversationID
             jumpToLatestVisible = false
             viewportConversationID = ""
             viewportIsAtLatest = false
@@ -989,11 +1026,42 @@
         private static func postScrollUp(_ window: NSWindow) async {
             guard let content = window.contentView else { return }
             window.makeKeyAndOrderFront(nil)
-            let location = NSPoint(x: content.bounds.width - 260, y: content.bounds.height * 0.55)
-            var hit = content.hitTest(content.convert(location, from: nil))
-            while hit != nil && !(hit is NSScrollView) { hit = hit?.superview }
-            guard let scroll = hit as? NSScrollView else { return }
-            let screenLocation = window.convertPoint(toScreen: location)
+            var views = [content]
+            var candidates: [NSScrollView] = []
+            while let view = views.popLast() {
+                views.append(contentsOf: view.subviews)
+                if let scroll = view as? NSScrollView {
+                    if scroll.bounds.width > 100,
+                        nativeTextViews(in: scroll.documentView).contains(where: {
+                            $0.string.contains("First streamed model answer")
+                        }),
+                        (scroll.documentView?.frame.height ?? 0) > scroll.contentSize.height + 1
+                    {
+                        candidates.append(scroll)
+                    }
+                }
+            }
+            guard let scroll = candidates.max(by: { $0.contentSize.height < $1.contentSize.height }) else {
+                var pending = [content]
+                var inventory: [String] = []
+                while let view = pending.popLast() {
+                    if let scroll = view as? NSScrollView {
+                        inventory.append(
+                            "\(type(of: view)) viewport=\(scroll.contentSize), document=\(scroll.documentView?.frame ?? .zero)"
+                        )
+                    }
+                    pending.append(contentsOf: view.subviews)
+                }
+                progress(
+                    "No native scroll view containing the streamed fixture: \(inventory.joined(separator: "; "))",
+                    in: outputDirectory())
+                return
+            }
+            let viewport = window.convertToScreen(scroll.convert(scroll.bounds, to: nil))
+            progress(
+                "Scroll viewport \(viewport), native bounds \(scroll.bounds), document \(scroll.documentView?.frame ?? .zero)",
+                in: outputDirectory())
+            let screenLocation = NSPoint(x: viewport.midX, y: (NSScreen.screens.first?.frame.maxY ?? 0) - viewport.midY)
             for index in 0..<10 {
                 guard
                     let cgEvent = CGEvent(
@@ -1006,16 +1074,27 @@
                     )
                 else { continue }
                 cgEvent.location = screenLocation
+                cgEvent.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.windowNumber))
+                cgEvent.setIntegerValueField(
+                    .mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.windowNumber))
                 cgEvent.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
                 cgEvent.setIntegerValueField(
                     .scrollWheelEventScrollPhase,
                     value: index == 0 ? 1 : (index == 9 ? 4 : 2)
                 )
                 if let event = NSEvent(cgEvent: cgEvent) {
+                    if index == 0 {
+                        progress(
+                            "Wheel window=\(event.windowNumber), point=\(event.locationInWindow), phase=\(event.phase.rawValue), delta=\(event.scrollingDeltaY), clip=\(scroll.documentVisibleRect)",
+                            in: outputDirectory())
+                    }
                     scroll.scrollWheel(with: event)
                 }
                 try? await DieterTaskSleep.milliseconds(20)
             }
+            progress(
+                "Wheel completed clip=\(scroll.documentVisibleRect), atLatest=\(viewportIsAtLatest), following=\(viewportFollowsLatest)",
+                in: outputDirectory())
         }
 
         static func progress(_ message: String, in directory: URL) {

@@ -207,6 +207,7 @@ struct ConversationTimeline: View {
             }
             .textSelection(.enabled)
             .background(DieterTheme.background)
+            .smokeTarget("conversation.viewport")
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 ConversationScrollBehavior.isAtLatest(
                     visibleMaxY: geometry.visibleRect.maxY,
@@ -253,7 +254,7 @@ struct ConversationTimeline: View {
             }
             .onChange(of: showsJumpToLatest) { _, visible in
                 #if DIETER_UI_SMOKE
-                    ConversationUISmokeRunner.recordJumpToLatestVisibility(visible)
+                    ConversationUISmokeRunner.recordJumpToLatestVisibility(visible, conversationID: conversationID)
                 #endif
             }
             .onChange(of: viewportObservation, initial: true) { _, observation in

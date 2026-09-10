@@ -6,45 +6,100 @@ import UniformTypeIdentifiers
 struct ProjectContextSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var summary = ""
-    @State private var prompt = ""
-    @State private var baseRemote = "origin"
-    @State private var baseBranch = "main"
-    @State private var validationCommands: [ValidationCommandDraft] = []
+    @State private var draft = ProjectSettingsDraft()
     @State private var workspacesPresented = false
     @State private var saving = false
 
     var body: some View {
         NavigationStack {
             Form {
-                if let project = store.selectedProject {
-                    Section("Git working tree") {
+                ProjectContextFields(
+                    name: $draft.name, summary: $draft.summary, prompt: $draft.prompt,
+                    baseRemote: $draft.baseRemote, baseBranch: $draft.baseBranch,
+                    validationCommands: $draft.validationCommands, workspacesPresented: $workspacesPresented)
+            }.formStyle(.grouped).navigationTitle("Project context")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }.smokeTarget("project.context.cancel")
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { save() }.disabled(saving || !draft.isValid)
+                    }
+                }
+        }
+        .frame(width: 620, height: 620)
+        .onAppear {
+            guard let project = store.selectedProject else { return }
+            draft = ProjectSettingsDraft(project: project)
+        }
+        .sheet(isPresented: $workspacesPresented) { ProjectWorkspacesSheet().environment(store) }
+    }
+
+    private func save() {
+        saving = true
+        Task {
+            let workspaceSaved = await store.updateProjectWorkspaceSettings(
+                remote: draft.baseRemote,
+                branch: draft.baseBranch,
+                validationCommands: draft.validationCommands.map(\.value)
+            )
+            if workspaceSaved {
+                await store.updateProject(name: draft.name, summary: draft.summary, prompt: draft.prompt)
+            }
+            saving = false
+        }
+    }
+}
+
+struct ProjectContextFields: View {
+    @Environment(DieterStore.self) private var store
+    @Binding var name: String
+    @Binding var summary: String
+    @Binding var prompt: String
+    @Binding var baseRemote: String
+    @Binding var baseBranch: String
+    @Binding var validationCommands: [ValidationCommandDraft]
+    @Binding var workspacesPresented: Bool
+
+    var body: some View {
+        Group {
+            Section {
+                TextEditor(text: $prompt)
+                    .accessibilityIdentifier("project.context.instructions")
+                    .smokeTarget("project.context.instructions")
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .frame(height: 200)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            } header: {
+                Text("Agent instructions")
+            } footer: {
+                Text("Shared by every board in this project. Supplied to new work without changing repository files.")
+            }
+            Section {
+                DisclosureGroup("Project details") {
+                    TextField("Name", text: $name)
+                    TextField("Short summary", text: $summary)
+                    if let project = store.selectedProject {
                         LabeledContent(
                             "Host", value: store.machine(forProjectID: project.id)?.name ?? store.endpoint.name)
-                        Text(project.path)
-                            .font(.body.monospaced())
-                            .textSelection(.enabled)
+                        Text(project.path).font(.caption.monospaced()).textSelection(.enabled)
                             .accessibilityLabel("Git working tree path")
                     }
                 }
-                Section("Project") {
-                    TextField("Name", text: $name); TextField("Short summary", text: $summary)
-                }
-                Section("Persistent context") {
-                    TextEditor(text: $prompt).font(.body.monospaced()).frame(height: 260);
-                    Text(
-                        "This context is owned by Dieter and supplied to new work without writing into the repository."
-                    ).font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Agent workspaces") {
+            }
+            Section {
+                DisclosureGroup("Workspace defaults") {
                     TextField("Base remote", text: $baseRemote)
                     TextField("Base branch", text: $baseBranch)
                     Text("Workspace mode is selected independently when each chat or card is created.")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("Manage existing workspaces…") { workspacesPresented = true }
                 }
-                Section("Workspace validation") {
+            }
+            Section {
+                DisclosureGroup("Validation commands") {
                     ForEach($validationCommands) { $command in
                         DisclosureGroup(
                             command.name.isEmpty
@@ -73,41 +128,33 @@ struct ProjectContextSheet: View {
                     )
                     .font(.caption).foregroundStyle(.secondary)
                 }
-            }.formStyle(.grouped).navigationTitle("Project context")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") { save() }.disabled(
-                            saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || baseBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || validationCommands.contains(where: {
-                                    $0.executable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                }))
-                    }
-                }
+            }
         }
-        .frame(width: 700, height: 790)
-        .onAppear {
-            guard let project = store.selectedProject else { return }
-            name = project.name; summary = project.summary; prompt = project.prompt
-            baseRemote = project.baseRemote.isEmpty ? "origin" : project.baseRemote
-            baseBranch = project.baseBranch.isEmpty ? "main" : project.baseBranch
-            validationCommands = project.validationCommands.map(ValidationCommandDraft.init)
-        }
-        .sheet(isPresented: $workspacesPresented) { ProjectWorkspacesSheet().environment(store) }
+    }
+}
+
+struct ProjectSettingsDraft: Equatable {
+    var name = ""
+    var summary = ""
+    var prompt = ""
+    var baseRemote = "origin"
+    var baseBranch = "main"
+    var validationCommands: [ValidationCommandDraft] = []
+
+    init() {}
+    init(project: Dieter_V1_Project) {
+        name = project.name
+        summary = project.summary
+        prompt = project.prompt
+        baseRemote = project.baseRemote.isEmpty ? "origin" : project.baseRemote
+        baseBranch = project.baseBranch.isEmpty ? "main" : project.baseBranch
+        validationCommands = project.validationCommands.map(ValidationCommandDraft.init)
     }
 
-    private func save() {
-        saving = true
-        Task {
-            let workspaceSaved = await store.updateProjectWorkspaceSettings(
-                remote: baseRemote,
-                branch: baseBranch,
-                validationCommands: validationCommands.map(\.value)
-            )
-            if workspaceSaved { await store.updateProject(name: name, summary: summary, prompt: prompt) }
-            saving = false
-        }
+    var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !baseBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !validationCommands.contains { $0.executable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 }
 
