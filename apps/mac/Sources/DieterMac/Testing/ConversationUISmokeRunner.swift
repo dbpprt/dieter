@@ -329,6 +329,13 @@
                     positioned
                     ? "passed"
                     : "failed: initial projection did not settle at the transcript tail"
+                await runComposerLayoutChecks(
+                    store: store, window: window, scope: scope, results: &results, output: output)
+                if scope == "card" {
+                    await runBoardConversationOverlayChecks(
+                        store: store, window: window, results: &results, output: output)
+                    await runAttachmentImportChecks(store: store, window: window, results: &results)
+                }
             }
 
             resetViewportObservation(conversationID: syntheticTailChatFixtureID)
@@ -450,6 +457,392 @@
                 resumedTail && !jumpToLatestVisible
                 ? "passed"
                 : "failed: streaming did not continue to tail after the jump action"
+        }
+
+        /// Exercises the actual native column widths that expose composer overflow.
+        /// These fixtures are local projections; resizing and opening an attachment
+        /// menu never dispatches a message or starts an agent.
+        private static func runComposerLayoutChecks(
+            store: DieterStore,
+            window: NSWindow,
+            scope: String,
+            results: inout [String: String],
+            output: URL
+        ) async {
+            guard await waitForStableControl("conversation.composer-shell", in: window),
+                let shell = NativeUIAccessibility.find("conversation.composer-shell", in: window),
+                let anchor = shell.object as? NSView,
+                let (split, column) = conversationColumn(containing: anchor)
+            else {
+                results["\(scope)-composer-layout"] = "failed: native conversation column unavailable"
+                return
+            }
+            let originalWidth = column.frame.width
+            let widths: [CGFloat] = scope == "card" ? [460, 320] : [originalWidth]
+            let harness = store.harnessCatalog.harnesses.first { $0.id == store.composerProvider }
+            let model = harness?.models.first { $0.id == store.composerModel }
+            var identifiers = [
+                "conversation.composer", "conversation.attach", "conversation.provider",
+                "conversation.model", "conversation.stop", "conversation.send",
+            ]
+            if model?.efforts.isEmpty == false { identifiers.append("conversation.reasoning") }
+            if !ProviderOptionValues.options(for: harness, model: store.composerModel).isEmpty {
+                identifiers.append("conversation.provider-options")
+            }
+
+            for width in widths {
+                if scope == "card" { setColumnWidth(width, split: split, column: column) }
+                let resized = await NativeUIAccessibility.wait(timeout: 5) {
+                    abs(column.frame.width - width) < 2
+                }
+                let settled = await waitForStableControl("conversation.composer-shell", in: window)
+                let resultKey = "\(scope)-composer-layout-\(Int(width))"
+                guard resized, settled,
+                    let frame = NativeUIAccessibility.find("conversation.composer-shell", in: window)?.recordedFrame
+                else {
+                    results[resultKey] = "failed: requested width \(width), actual \(column.frame.width)"
+                    continue
+                }
+                let columnFrame = window.convertToScreen(column.convert(column.bounds, to: nil))
+                var failures: [String] = []
+                if !columnFrame.insetBy(dx: -1, dy: -1).contains(frame) {
+                    failures.append("composer \(frame) outside column \(columnFrame)")
+                }
+                for identifier in identifiers {
+                    guard let target = NativeUIAccessibility.find(identifier, in: window),
+                        let controlFrame = target.recordedFrame,
+                        target.recordedWindow === window,
+                        controlFrame.width > 0, controlFrame.height > 0
+                    else {
+                        failures.append("\(identifier) missing")
+                        continue
+                    }
+                    if !frame.insetBy(dx: -1, dy: -1).contains(controlFrame) {
+                        failures.append("\(identifier) \(controlFrame) outside composer \(frame)")
+                    }
+                }
+                results[resultKey] = failures.isEmpty ? "passed" : "failed: " + failures.joined(separator: "; ")
+                capture(window, to: output.appending(path: "07-\(scope)-composer-\(Int(width)).png"))
+                await runAttachmentPopoverChecks(
+                    window: window, prefix: "\(scope)-attachment-\(Int(width))", results: &results)
+            }
+            if scope == "card" {
+                setColumnWidth(originalWidth, split: split, column: column)
+                _ = await waitForStableControl("conversation.composer-shell", in: window)
+            }
+        }
+
+        private static func conversationColumn(containing anchor: NSView) -> (NSSplitView, NSView)? {
+            var ancestor = anchor.superview
+            while let view = ancestor {
+                if let split = view as? NSSplitView, split.isVertical,
+                    let column = split.arrangedSubviews.first(where: { anchor.isDescendant(of: $0) })
+                {
+                    return (split, column)
+                }
+                ancestor = view.superview
+            }
+            return nil
+        }
+
+        private static func runBoardConversationOverlayChecks(
+            store: DieterStore, window: NSWindow, results: inout [String: String], output: URL
+        ) async {
+            guard let shell = NativeUIAccessibility.find("conversation.composer-shell", in: window),
+                let anchor = shell.object as? NSView,
+                let (split, column) = conversationColumn(containing: anchor),
+                let controller = split.delegate as? BoardConversationSplitController,
+                let boardFrame = NativeUIAccessibility.find("board.canvas", in: window)?.recordedFrame
+            else {
+                results["board-conversation-native-resize"] = "failed: native overlay unavailable"
+                return
+            }
+            let originalWidth = column.frame.width
+            let originalComposerDraft = store.composer.draft
+            let originalDraft = originalComposerDraft.text
+            let selectedID = store.selectedCardID
+            let host = controller.conversationHost
+            let draft = "Keep this draft while resizing and expanding the conversation"
+            defer {
+                window.makeFirstResponder(nil)
+                originalComposerDraft.text = originalDraft
+            }
+            // Seed through the editor like a user. Replacing a focused native
+            // field's binding can leave an older editing buffer to commit later.
+            window.makeFirstResponder(nil)
+            originalComposerDraft.text = ""
+            let inputSettled = await waitForStableControl("conversation.composer", in: window)
+            let focused = inputSettled && NativeUIAccessibility.click("conversation.composer", in: window)
+            let editorReady = await NativeUIAccessibility.wait(timeout: 5) {
+                guard let editor = window.firstResponder as? NSTextView else { return false }
+                return editor.isEditable && editor.string.isEmpty
+            }
+            if focused, editorReady { await NativeUIAccessibility.type(draft, in: window) }
+            let entered = await NativeUIAccessibility.wait(timeout: 5) {
+                store.composerText == draft && store.selectedCardID == selectedID
+            }
+            results["board-conversation-draft-input"] =
+                focused && editorReady && entered
+                ? "passed"
+                : "failed: focus=\(focused), editor ready=\(editorReady), typed draft=\(entered)"
+            guard focused, editorReady, entered else { return }
+            let targetWidth: CGFloat = originalWidth < 580 ? originalWidth + 80 : originalWidth - 80
+            postDividerDrag(split: split, targetWidth: targetWidth, in: window)
+            let resized = await NativeUIAccessibility.wait(timeout: 5) {
+                abs(column.frame.width - targetWidth) < 2
+            }
+            let boardStayedFullWidth =
+                NativeUIAccessibility.find("board.canvas", in: window)?.recordedFrame == boardFrame
+            results["board-conversation-native-resize"] =
+                resized && boardStayedFullWidth && store.composerText == draft
+                ? "passed"
+                : "failed: drag width=\(column.frame.width), expected=\(targetWidth), board unchanged=\(boardStayedFullWidth)"
+            capture(window, to: output.appending(path: "07-card-conversation-resized.png"))
+
+            let settled = await waitForStableControl("board.conversation-maximize", in: window)
+            let expanded = settled && NativeUIAccessibility.click("board.conversation-maximize", in: window)
+            let maximized = await NativeUIAccessibility.wait(timeout: 5) {
+                controller.maximized && abs(column.frame.width - boardFrame.width) < 2
+            }
+            results["board-conversation-maximize"] =
+                expanded && maximized && store.selectedCardID == selectedID && store.composerText == draft
+                    && controller.conversationHost === host
+                ? "passed"
+                : "failed: expand=\(expanded), maximized=\(maximized), state=\(controller.maximized), collapsed=\(controller.splitViewItems.map(\.isCollapsed)), split=\(split.bounds), column=\(column.frame), board=\(boardFrame.width)"
+            capture(window, to: output.appending(path: "07-card-conversation-maximized.png"))
+
+            let restoreSettled = await waitForStableControl("board.conversation-maximize", in: window)
+            let restoredClick = restoreSettled && NativeUIAccessibility.click("board.conversation-maximize", in: window)
+            let restored = await NativeUIAccessibility.wait(timeout: 5) {
+                !controller.maximized && abs(column.frame.width - targetWidth) < 2
+            }
+            results["board-conversation-restore"] =
+                restoredClick && restored && store.selectedCardID == selectedID && store.composerText == draft
+                    && controller.conversationHost === host
+                ? "passed"
+                : "failed: restore=\(restoredClick), settled=\(restored), maximized=\(controller.maximized), restored width=\(column.frame.width), expected=\(targetWidth), selection=\(store.selectedCardID == selectedID), draft=\(store.composerText == draft), host=\(controller.conversationHost === host)"
+            if !controller.maximized {
+                setColumnWidth(originalWidth, split: split, column: column)
+                _ = await waitForStableControl("conversation.composer-shell", in: window)
+                controller.rememberRegularWidth()
+            }
+        }
+
+        private static func postDividerDrag(split: NSSplitView, targetWidth: CGFloat, in window: NSWindow) {
+            guard let native = split as? BoardConversationSplitView else { return }
+            let rect = native.dividerTrackingRect
+            let start = split.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+            let end = split.convert(
+                NSPoint(x: split.bounds.width - targetWidth - split.dividerThickness / 2, y: rect.midY), to: nil)
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            let timestamp = ProcessInfo.processInfo.systemUptime
+            for step in 0...12 {
+                let type: NSEvent.EventType =
+                    step == 0 ? .leftMouseDown : (step == 12 ? .leftMouseUp : .leftMouseDragged)
+                let fraction = CGFloat(step) / 12
+                let location = NSPoint(x: start.x + (end.x - start.x) * fraction, y: start.y)
+                guard
+                    let event = NSEvent.mouseEvent(
+                        with: type, location: location, modifierFlags: [], timestamp: timestamp + Double(step) * 0.016,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: step, clickCount: 1,
+                        pressure: step == 12 ? 0 : 1)
+                else { continue }
+                NSApp.postEvent(event, atStart: false)
+            }
+        }
+
+        private static func setColumnWidth(_ width: CGFloat, split: NSSplitView, column: NSView) {
+            guard let index = split.arrangedSubviews.firstIndex(of: column) else { return }
+            if index == split.arrangedSubviews.count - 1, index > 0 {
+                let position = split.bounds.maxX - width
+                split.setPosition(
+                    split is BoardConversationSplitView ? position : position - split.dividerThickness,
+                    ofDividerAt: index - 1)
+            } else if index < split.arrangedSubviews.count - 1 {
+                split.setPosition(column.frame.minX + width, ofDividerAt: index)
+            }
+        }
+
+        /// Accessibility activation bypasses hit testing. Always open this menu
+        /// with a pointer gesture so decorative overlays cannot hide a regression.
+        private static func runAttachmentPopoverChecks(
+            window: NSWindow, prefix: String, results: inout [String: String]
+        ) async {
+            let ready = await prepareComposerWindow(window)
+            let settled = await waitForStableControl("conversation.attach", in: window)
+            let opened = ready && settled && NativeUIAccessibility.click("conversation.attach", in: window)
+            let choicesVisible = await NativeUIAccessibility.wait(timeout: 5) {
+                attachmentChoicesVisible(in: window)
+            }
+            results["\(prefix)-source-popover"] =
+                opened && choicesVisible
+                ? "passed"
+                : "failed: pointer click did not expose choices (ready=\(ready), settled=\(settled), active=\(NSApp.isActive), key=\(window.isKeyWindow), sheet=\(window.attachedSheet != nil))"
+            guard opened, choicesVisible else { return }
+
+            let clickedOutside = NativeUIAccessibility.click("conversation.composer", in: window)
+            let dismissed = await NativeUIAccessibility.wait(timeout: 5) {
+                !attachmentChoicesVisible(in: window)
+            }
+            let resettled = await waitForStableControl("conversation.attach", in: window)
+            let reopened = dismissed && resettled && NativeUIAccessibility.click("conversation.attach", in: window)
+            let choicesRestored = await NativeUIAccessibility.wait(timeout: 5) {
+                attachmentChoicesVisible(in: window)
+            }
+            results["\(prefix)-source-popover-reopens"] =
+                clickedOutside && dismissed && reopened && choicesRestored
+                ? "passed"
+                : "failed: outside click=\(clickedOutside), dismissed=\(dismissed), reopened=\(reopened), choices=\(choicesRestored)"
+            _ = NativeUIAccessibility.click("conversation.composer", in: window)
+            _ = await NativeUIAccessibility.wait(timeout: 5) { !attachmentChoicesVisible(in: window) }
+        }
+
+        private static func attachmentChoicesVisible(in window: NSWindow) -> Bool {
+            ["conversation.attach.upload", "conversation.attach.capture"].allSatisfy { identifier in
+                guard let target = NativeUIAccessibility.find(identifier, in: window),
+                    target.recordedWindow?.isVisible == true, let frame = target.recordedFrame
+                else { return false }
+                return frame.width > 0 && frame.height > 0
+            }
+        }
+
+        /// Exercise the actual upload action and the navigation race after its
+        /// mouse-up. Both conversations are local fixtures; no message is sent.
+        private static func runAttachmentImportChecks(
+            store: DieterStore, window: NSWindow, results: inout [String: String]
+        ) async {
+            guard let originalID = store.selectedCardID, let originalSnapshot = store.conversation else {
+                results["attachment-upload-picker"] = "failed: card fixture unavailable"
+                return
+            }
+            let originalDraft = store.composer.draft
+            let originalText = originalDraft.text
+            let originalAttachments = originalDraft.attachments
+            var marker = Dieter_V1_MessagePart()
+            marker.type = "file"
+            marker.filename = "existing-draft.txt"
+            marker.mediaType = "text/plain"
+            marker.data = Data("Keep this attachment".utf8)
+            originalDraft.text = "Keep the upload source draft"
+            originalDraft.attachments = [marker]
+
+            let targetID = "c_upload_navigation_\(UUID().uuidString.lowercased())"
+            var targetSnapshot = originalSnapshot
+            targetSnapshot.detail.card.id = targetID
+            targetSnapshot.detail.card.title = "Upload navigation target"
+            targetSnapshot.conversation.cardID = targetID
+            store.state.cards.append(targetSnapshot.detail.card)
+            store.selectedCardID = targetID
+            let targetDraft = store.composer.draft
+            targetDraft.text = "Keep the upload destination draft"
+            targetDraft.attachments = [marker]
+            store.selectedCardID = originalID
+            defer {
+                nativeUploadPanel(in: window)?.cancel(nil)
+                originalDraft.text = originalText
+                originalDraft.attachments = originalAttachments
+                store.selectedCardID = originalID
+                store.selectedDetail = originalSnapshot.detail
+                store.conversation = originalSnapshot
+                store.state.cards.removeAll { $0.id == targetID }
+            }
+
+            func draftsIntact() -> Bool {
+                originalDraft.text == "Keep the upload source draft" && originalDraft.attachments == [marker]
+                    && targetDraft.text == "Keep the upload destination draft" && targetDraft.attachments == [marker]
+            }
+
+            guard await openAttachmentUploadChoice(in: window) else {
+                results["attachment-upload-picker"] = "failed: Upload choice unavailable"
+                return
+            }
+            let uploaded = NativeUIAccessibility.click("conversation.attach.upload", in: window)
+            let opened = await NativeUIAccessibility.wait(timeout: 5) { nativeUploadPanel(in: window) != nil }
+            results["attachment-upload-picker"] =
+                uploaded && opened ? "passed" : "failed: Upload did not open a native file picker"
+            guard uploaded, opened, let panel = nativeUploadPanel(in: window) else { return }
+            panel.cancel(nil)
+            let cancelled = await NativeUIAccessibility.wait(timeout: 5) {
+                nativeUploadPanel(in: window) == nil && window.attachedSheet == nil
+            }
+            window.makeKeyAndOrderFront(nil)
+            results["attachment-upload-cancel"] =
+                cancelled && draftsIntact()
+                ? "passed" : "failed: Cancel left the picker open or changed an existing draft"
+            guard cancelled, await openAttachmentUploadChoice(in: window) else {
+                results["attachment-upload-navigation"] = "failed: Upload choice did not reopen after cancellation"
+                return
+            }
+
+            let clicked = NativeUIAccessibility.click("conversation.attach.upload", in: window)
+            // Observe the action's popover dismissal before navigating. Native
+            // button tracking consumes mouse-up itself, bypassing event monitors.
+            let uploadDispatched = await NativeUIAccessibility.wait(timeout: 5) {
+                !attachmentChoicesVisible(in: window)
+            }
+            store.selectedCardID = targetID
+            store.selectedDetail = targetSnapshot.detail
+            store.conversation = targetSnapshot
+            let pickerDismissed = await NativeUIAccessibility.wait(timeout: 5) {
+                nativeUploadPanel(in: window) == nil
+            }
+            // Observe beyond the delayed presentation, including its animation.
+            var pickerAppeared = false
+            for _ in 0..<20 {
+                pickerAppeared = pickerAppeared || nativeUploadPanel(in: window) != nil
+                try? await DieterTaskSleep.milliseconds(50)
+            }
+            results["attachment-upload-navigation"] =
+                clicked && uploadDispatched && pickerDismissed && !pickerAppeared && draftsIntact()
+                    && store.selectedCardID == targetID && store.composer.draft === targetDraft
+                ? "passed"
+                : "failed: click=\(clicked), dispatched=\(uploadDispatched), dismissed=\(pickerDismissed), picker=\(pickerAppeared), drafts intact=\(draftsIntact())"
+        }
+
+        private static func openAttachmentUploadChoice(in window: NSWindow) async -> Bool {
+            if attachmentChoicesVisible(in: window) {
+                return await waitForStableControl("conversation.attach.upload", in: window)
+            }
+            guard await prepareComposerWindow(window),
+                await waitForStableControl("conversation.attach", in: window),
+                NativeUIAccessibility.click("conversation.attach", in: window),
+                await NativeUIAccessibility.wait(timeout: 5, until: { attachmentChoicesVisible(in: window) })
+            else { return false }
+            return await waitForStableControl("conversation.attach.upload", in: window)
+        }
+
+        private static func prepareComposerWindow(_ window: NSWindow) async -> Bool {
+            // App activation and sheet dismissal are asynchronous. A native
+            // first click may only activate a window, so establish focus first.
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return await NativeUIAccessibility.wait(timeout: 5) {
+                NSApp.isActive && window.isKeyWindow && window.attachedSheet == nil
+            }
+        }
+
+        private static func nativeUploadPanel(in window: NSWindow) -> NSOpenPanel? {
+            NSApp.windows.compactMap { $0 as? NSOpenPanel }.first {
+                $0.isVisible && ($0.sheetParent === window || window.attachedSheet === $0)
+            }
+        }
+
+        private static func waitForStableControl(_ identifier: String, in window: NSWindow) async -> Bool {
+            var previousFrame: CGRect?
+            var stableSamples = 0
+            return await NativeUIAccessibility.wait(timeout: 5) {
+                guard let target = NativeUIAccessibility.find(identifier, in: window),
+                    target.recordedWindow?.isVisible == true, let frame = target.recordedFrame,
+                    frame.width > 0, frame.height > 0
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                stableSamples = frame == previousFrame ? stableSamples + 1 : 0
+                previousFrame = frame
+                return stableSamples >= 4
+            }
         }
 
         /// Leaves a deterministic active conversation at the transcript tail so
@@ -599,16 +992,7 @@
             results: inout [String: String],
             output: URL
         ) async {
-            let attachOpened = await NativeUIAccessibility.pressWhenSettled("conversation.attach", in: window)
-            let choicesVisible = await NativeUIAccessibility.wait {
-                NativeUIAccessibility.find("conversation.attach.upload", in: window) != nil
-                    && NativeUIAccessibility.find("conversation.attach.capture", in: window) != nil
-            }
-            results["attachment-source-popover"] =
-                attachOpened && choicesVisible
-                ? "passed" : "failed: Upload file and Take screenshot choices unavailable"
-            _ = NativeUIAccessibility.click("conversation.composer", in: window)
-            try? await DieterTaskSleep.milliseconds(400)
+            await runAttachmentPopoverChecks(window: window, prefix: "attachment", results: &results)
             let pasteboard = NSPasteboard.general
             let saved = (pasteboard.pasteboardItems ?? []).map { item in
                 item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in
@@ -710,7 +1094,7 @@
             results["paste-text-continues-typing"] =
                 store.composerText == pastedText + typedSuffix
                 ? "passed"
-                : "failed: composer lost the paste caret (\(store.composerText.count) characters)"
+                : "failed: composer lost the paste caret (\(store.composerText.count) characters; value=\(store.composerText.debugDescription))"
             capture(window, to: output.appending(path: "04c-pasted-text-continues.png"))
             store.composerText = ""
             store.composerAttachments = []

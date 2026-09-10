@@ -143,7 +143,7 @@ struct DieterIslandActivity: Equatable {
             reviewCount: reviewCount,
             doneTodayCount: doneTodayCount,
             subagentCount: subagentCount,
-            items: Array(rows.prefix(4))
+            items: Array(rows.prefix(DieterIslandLayout.maximumVisibleRows))
         )
     }
 
@@ -343,11 +343,9 @@ struct DieterIslandView: View {
                 .accessibilityLabel("Collapse Dieter Island")
             }
             .font(.system(size: 10.5, weight: .medium))
-            // The expanded shape's vertical sides begin 15 points in from the
-            // window frame. Keep another 15 points between that visible edge
-            // and the content instead of measuring padding from the clear area.
-            .padding(.horizontal, 30)
-            .frame(height: 45)
+            .smokeTarget("island.header")
+            .padding(.horizontal, DieterIslandLayout.horizontalInset)
+            .frame(height: DieterIslandLayout.headerHeight)
             .contentShape(Rectangle())
             .simultaneousGesture(pushGesture)
             .help(
@@ -376,10 +374,11 @@ struct DieterIslandView: View {
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.white.opacity(0.40))
                 }
-                .padding(.horizontal, 30)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, DieterIslandLayout.horizontalInset)
+                .frame(maxWidth: .infinity)
+                .frame(height: DieterIslandLayout.emptyActivityHeight)
             } else {
-                VStack(spacing: 7) {
+                VStack(spacing: DieterIslandLayout.rowSpacing) {
                     HStack(spacing: 7) {
                         Text("LIVE ACTIVITY")
                             .font(.system(size: 9, weight: .bold, design: .rounded))
@@ -396,20 +395,18 @@ struct DieterIslandView: View {
                             .font(.system(size: 9.5, weight: .medium))
                             .foregroundStyle(.white.opacity(0.28))
                     }
-                    .frame(height: 19)
-                    .padding(.horizontal, 4)
+                    .frame(height: DieterIslandLayout.activityHeadingHeight)
+                    .smokeTarget("island.activity-heading")
 
                     ForEach(activity.items) { item in
                         IslandActivityRow(item: item) {
                             open(item)
                         }
+                        .smokeTarget("island.activity-row.\(item.id)")
                     }
                 }
-                // Rows add their own 9-point inset, aligning their icons and
-                // trailing chevrons with the header and footer at 30 points.
-                .padding(.horizontal, 21)
-                .padding(.vertical, 8)
-                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(.horizontal, DieterIslandLayout.horizontalInset)
+                .padding(.vertical, DieterIslandLayout.activityVerticalInset)
             }
 
             IslandSeparator()
@@ -455,8 +452,9 @@ struct DieterIslandView: View {
                     .background(DieterTheme.primary.opacity(0.09), in: Capsule())
                 }
             }
-            .padding(.horizontal, 30)
-            .frame(height: 51)
+            .smokeTarget("island.footer")
+            .padding(.horizontal, DieterIslandLayout.horizontalInset)
+            .frame(height: DieterIslandLayout.footerHeight)
         }
     }
 
@@ -534,7 +532,7 @@ private struct IslandSeparator: View {
             startPoint: .leading,
             endPoint: .trailing
         )
-        .frame(height: 1)
+        .frame(height: DieterIslandLayout.separatorHeight)
     }
 }
 
@@ -622,8 +620,8 @@ private struct IslandActivityRow: View {
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.white.opacity(0.22))
             }
-            .padding(.horizontal, 11)
-            .frame(height: 56)
+            .padding(.horizontal, 10)
+            .frame(height: DieterIslandLayout.rowHeight)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)

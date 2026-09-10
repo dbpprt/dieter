@@ -183,26 +183,34 @@ enum BoardPresentationState: Equatable {
 
 struct BoardView: View {
     @Environment(DieterStore.self) private var store
-    private var conversationPresented: Binding<Bool> {
-        Binding(
-            get: { store.selectedCardID != nil },
-            set: { presented in
-                if !presented, store.section == .board, store.selectedCardID != nil {
-                    store.closeConversation()
-                }
-            })
-    }
+    @State private var conversationMaximized = false
 
     var body: some View {
-        boardContent
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .inspector(isPresented: conversationPresented) {
-                ConversationView(compact: true)
-                    .environment(store.conversationContext)
-                    .frame(minWidth: 320)
-                    .background(NativeSplitColumnBounds(minimum: 320, maximum: 720))
-                    .inspectorColumnWidth(min: 320, ideal: 460, max: 720)
-            }
+        BoardConversationOverlay(
+            board: AnyView(
+                boardContent.environment(store)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                    .smokeTarget("board.canvas")
+                    .dieterThemeRoot(
+                        palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
+            conversation: AnyView(
+                ConversationView(
+                    compact: true,
+                    maximized: conversationMaximized,
+                    onToggleMaximize: { conversationMaximized.toggle() }
+                )
+                .environment(store)
+                .environment(store.conversationContext)
+                .background(.regularMaterial)
+                .dieterThemeRoot(
+                    palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
+            presented: store.selectedCardID != nil,
+            maximized: conversationMaximized
+        )
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: store.selectedCardID) { _, cardID in
+            if cardID == nil { conversationMaximized = false }
+        }
     }
 
     private var boardContent: some View {
@@ -288,156 +296,158 @@ struct BoardHeader: View {
             }
         } secondary: {
             GlassEffectContainer(spacing: 7) {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 7) {
-                        Button {
-                            store.labelFilter = ""
-                        } label: {
-                            HStack(spacing: 6) {
-                                if store.labelFilter.isEmpty {
-                                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                HStack(spacing: 7) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 7) {
+                            Button {
+                                store.labelFilter = ""
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if store.labelFilter.isEmpty {
+                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                                    }
+                                    Text("All cards · \(store.boardCards.count)").lineLimit(1)
                                 }
-                                Text("All cards · \(store.boardCards.count)").lineLimit(1)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
+                                .padding(.horizontal, 10).frame(height: 28)
+                                .background(
+                                    Color.clear, in: Capsule()
+                                )
+                                .glassEffect(
+                                    store.labelFilter.isEmpty
+                                        ? .regular.tint(DieterTheme.shell.opacity(0.12)).interactive()
+                                        : .regular.interactive(), in: Capsule())
                             }
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
-                            .padding(.horizontal, 10).frame(height: 28)
-                            .background(
-                                Color.clear, in: Capsule()
-                            )
-                            .glassEffect(
-                                store.labelFilter.isEmpty
-                                    ? .regular.tint(DieterTheme.shell.opacity(0.12)).interactive()
-                                    : .regular.interactive(), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
+                            .buttonStyle(.plain)
 
-                        if let board = store.selectedBoard, !board.labels.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 7) {
-                                    ForEach(board.labels, id: \.id) { label in
-                                        BoardLabelShelfChip(
-                                            label: label,
-                                            boardID: board.id,
-                                            count: store.boardProjection.labelCounts[label.id, default: 0],
-                                            selected: store.labelFilter == label.id
-                                        ) {
-                                            store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                            if let board = store.selectedBoard, !board.labels.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 7) {
+                                        ForEach(board.labels, id: \.id) { label in
+                                            BoardLabelShelfChip(
+                                                label: label,
+                                                boardID: board.id,
+                                                count: store.boardProjection.labelCounts[label.id, default: 0],
+                                                selected: store.labelFilter == label.id
+                                            ) {
+                                                store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                                            }
                                         }
                                     }
                                 }
+                                .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
                             }
-                            .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
-                        }
 
-                        Menu {
-                            Button("All states") { store.runtimeFilter = "" }
-                            ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
-                                runtime in
-                                Button(runtime.capitalized) { store.runtimeFilter = runtime }
-                            }
-                        } label: {
-                            Text(store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized)
-                        }
-                        .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
-
-                        Button {
-                            store.archivePolicyPresented = true
-                        } label: {
-                            Label("Board settings", systemImage: "gearshape")
-                        }
-                        .buttonStyle(.glass)
-                        .accessibilityIdentifier("board.settings")
-                        .smokeTarget("board.settings")
-
-                        Button {
-                            store.labelsPresented = true
-                        } label: {
-                            Label("Labels", systemImage: "tag")
-                        }
-                        .buttonStyle(.glass)
-                        .help("Manage board labels")
-
-                        Button {
-                            store.createConversationPresented = true
-                        } label: {
-                            Label("New card", systemImage: "rectangle.badge.plus")
-                        }
-                        .buttonStyle(.glass)
-                        .accessibilityIdentifier("board.new-card")
-
-                        quickTaskButton(compact: false)
-                    }
-
-                    HStack(spacing: 7) {
-                        Button {
-                            store.labelFilter = ""
-                        } label: {
-                            HStack(spacing: 6) {
-                                if store.labelFilter.isEmpty {
-                                    Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                            Menu {
+                                Button("All states") { store.runtimeFilter = "" }
+                                ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
+                                    runtime in
+                                    Button(runtime.capitalized) { store.runtimeFilter = runtime }
                                 }
-                                Text("All · \(store.boardCards.count)").lineLimit(1)
+                            } label: {
+                                Text(store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized)
                             }
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
-                            .padding(.horizontal, 10).frame(height: 28)
-                            .background(
-                                Color.clear, in: Capsule()
-                            )
-                            .glassEffect(
-                                store.labelFilter.isEmpty
-                                    ? .regular.tint(DieterTheme.shell.opacity(0.12)).interactive()
-                                    : .regular.interactive(), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
+                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
 
-                        if let board = store.selectedBoard, !board.labels.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 7) {
-                                    ForEach(board.labels, id: \.id) { label in
-                                        BoardLabelShelfChip(
-                                            label: label,
-                                            boardID: board.id,
-                                            count: store.boardProjection.labelCounts[label.id, default: 0],
-                                            selected: store.labelFilter == label.id
-                                        ) {
-                                            store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                            Button {
+                                store.archivePolicyPresented = true
+                            } label: {
+                                Label("Board settings", systemImage: "gearshape")
+                            }
+                            .buttonStyle(.glass)
+                            .accessibilityIdentifier("board.settings")
+                            .smokeTarget("board.settings")
+
+                            Button {
+                                store.labelsPresented = true
+                            } label: {
+                                Label("Labels", systemImage: "tag")
+                            }
+                            .buttonStyle(.glass)
+                            .help("Manage board labels")
+
+                            Button {
+                                store.createConversationPresented = true
+                            } label: {
+                                Label("New card", systemImage: "rectangle.badge.plus")
+                            }
+                            .buttonStyle(.glass)
+                            .accessibilityIdentifier("board.new-card")
+
+                        }
+
+                        HStack(spacing: 7) {
+                            Button {
+                                store.labelFilter = ""
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if store.labelFilter.isEmpty {
+                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                                    }
+                                    Text("All · \(store.boardCards.count)").lineLimit(1)
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
+                                .padding(.horizontal, 10).frame(height: 28)
+                                .background(
+                                    Color.clear, in: Capsule()
+                                )
+                                .glassEffect(
+                                    store.labelFilter.isEmpty
+                                        ? .regular.tint(DieterTheme.shell.opacity(0.12)).interactive()
+                                        : .regular.interactive(), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+
+                            if let board = store.selectedBoard, !board.labels.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 7) {
+                                        ForEach(board.labels, id: \.id) { label in
+                                            BoardLabelShelfChip(
+                                                label: label,
+                                                boardID: board.id,
+                                                count: store.boardProjection.labelCounts[label.id, default: 0],
+                                                selected: store.labelFilter == label.id
+                                            ) {
+                                                store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                                            }
                                         }
                                     }
                                 }
+                                .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
                             }
-                            .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
-                        }
 
-                        Menu {
-                            Button("All states") { store.runtimeFilter = "" }
-                            ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
-                                runtime in
-                                Button(runtime.capitalized) { store.runtimeFilter = runtime }
+                            Menu {
+                                Button("All states") { store.runtimeFilter = "" }
+                                ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
+                                    runtime in
+                                    Button(runtime.capitalized) { store.runtimeFilter = runtime }
+                                }
+                                Divider()
+                                Button("Board settings…") { store.archivePolicyPresented = true }
+                                Button("Manage labels…") { store.labelsPresented = true }
+                            } label: {
+                                Label(
+                                    store.runtimeFilter.isEmpty ? "Filters" : store.runtimeFilter.capitalized,
+                                    systemImage: "line.3.horizontal.decrease")
                             }
-                            Divider()
-                            Button("Board settings…") { store.archivePolicyPresented = true }
-                            Button("Manage labels…") { store.labelsPresented = true }
-                        } label: {
-                            Label(
-                                store.runtimeFilter.isEmpty ? "Filters" : store.runtimeFilter.capitalized,
-                                systemImage: "line.3.horizontal.decrease")
-                        }
-                        .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
+                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
 
-                        Menu {
-                            Button("New card…") { store.createConversationPresented = true }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .frame(width: 28, height: 28)
-                        }
-                        .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
-                        .help("New card")
-                        .accessibilityIdentifier("board.new-card")
+                            Menu {
+                                Button("New card…") { store.createConversationPresented = true }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .frame(width: 28, height: 28)
+                            }
+                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
+                            .help("New card")
+                            .accessibilityIdentifier("board.new-card")
 
-                        quickTaskButton(compact: true)
+                        }
                     }
+                    quickTaskButton
+                        .fixedSize()
                 }
                 .controlSize(.regular)
                 .buttonBorderShape(.capsule)
@@ -445,11 +455,11 @@ struct BoardHeader: View {
         }
     }
 
-    private func quickTaskButton(compact: Bool) -> some View {
+    private var quickTaskButton: some View {
         Button {
             quickTaskPresented = true
         } label: {
-            Label(compact ? "Quick" : "Quick task", systemImage: "sparkles")
+            Label("Quick task", systemImage: "sparkles")
         }
         .buttonStyle(.glassProminent)
         .help("Create a task from its story")

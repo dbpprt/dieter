@@ -22,7 +22,9 @@
             try? await DieterTaskSleep.milliseconds(450)
             let expandedSize = controller.islandWindow?.frame.size ?? .zero
             let expanded =
-                controller.isExpanded && expandedSize.width == 600 && expandedSize.height >= 300
+                controller.isExpanded
+                && expandedSize == DieterIslandLayout.expandedSize(itemCount: store.islandActivity.items.count)
+            let expandedInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
                 capture(window, to: output.appending(path: "island-expanded.png"))
             }
@@ -31,7 +33,8 @@
             try? await DieterTaskSleep.milliseconds(600)
             let singleItemSize = controller.islandWindow?.frame.size ?? .zero
             let singleItemExpanded =
-                controller.isExpanded && singleItemSize == CGSize(width: 600, height: 302)
+                controller.isExpanded && singleItemSize == DieterIslandLayout.expandedSize(itemCount: 1)
+            let singleItemInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
                 capture(window, to: output.appending(path: "island-expanded-single.png"))
             }
@@ -39,7 +42,8 @@
             store.state.cards = []
             try? await DieterTaskSleep.milliseconds(600)
             let emptySize = controller.islandWindow?.frame.size ?? .zero
-            let emptyExpanded = controller.isExpanded && emptySize == CGSize(width: 600, height: 324)
+            let emptyExpanded = controller.isExpanded && emptySize == DieterIslandLayout.expandedSize(itemCount: 0)
+            let emptyInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
                 capture(window, to: output.appending(path: "island-expanded-empty.png"))
             }
@@ -136,10 +140,13 @@
                     "collapsed-window": appeared ? "passed" : "failed: island window did not appear",
                     "expanded-window": expanded
                         ? "passed" : "failed: island did not expand to its activity panel",
+                    "expanded-section-insets": expandedInsets,
                     "single-activity-layout": singleItemExpanded
-                        ? "passed" : "failed: single activity did not use the roomy minimum layout",
+                        ? "passed" : "failed: single activity did not fit its compact content height",
+                    "single-activity-section-insets": singleItemInsets,
                     "empty-activity-layout": emptyExpanded
-                        ? "passed" : "failed: empty activity did not use the balanced minimum layout",
+                        ? "passed" : "failed: empty activity did not fit its compact content height",
+                    "empty-activity-section-insets": emptyInsets,
                     "settings-toggle-off": hidden
                         ? "passed" : "failed: disabling the preference left the island visible",
                     "settings-toggle-on": restored
@@ -151,6 +158,34 @@
                         ? "passed" : "failed: Island was not the active Settings destination",
                 ], to: output)
             NSApp.terminate(nil)
+        }
+
+        private static func sectionInsets(
+            controller: DieterIslandController, activity: DieterIslandActivity
+        ) -> String {
+            guard let window = controller.islandWindow else { return "failed: island window unavailable" }
+            let expected = window.frame.insetBy(dx: DieterIslandLayout.horizontalInset, dy: 0)
+            var identifiers = ["island.header", "island.footer"]
+            if !activity.items.isEmpty {
+                identifiers.append("island.activity-heading")
+                identifiers += activity.items.map { "island.activity-row.\($0.id)" }
+            }
+            var failures: [String] = []
+            for identifier in identifiers {
+                guard let element = NativeUIAccessibility.find(identifier, in: window),
+                    element.recordedWindow === window, let frame = element.recordedFrame,
+                    frame.width > 0, frame.height > 0
+                else {
+                    failures.append("\(identifier) missing")
+                    continue
+                }
+                if abs(frame.minX - expected.minX) > 1 || abs(frame.maxX - expected.maxX) > 1 {
+                    failures.append("\(identifier) horizontal bounds \(frame.minX)...\(frame.maxX)")
+                }
+            }
+            return failures.isEmpty
+                ? "passed"
+                : "failed: expected \(expected.minX)...\(expected.maxX); " + failures.joined(separator: "; ")
         }
 
         private static func installFixture(in store: DieterStore) {

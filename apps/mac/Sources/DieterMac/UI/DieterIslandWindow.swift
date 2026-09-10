@@ -12,6 +12,35 @@ enum DieterIslandEdge: String {
     }
 }
 
+/// Keep the native panel exactly as tall as the SwiftUI sections it contains.
+enum DieterIslandLayout {
+    static let expandedWidth: CGFloat = 600
+    static let horizontalInset: CGFloat = 20
+    static let headerHeight: CGFloat = 56
+    static let footerHeight: CGFloat = 54
+    static let separatorHeight: CGFloat = 1
+    static let activityVerticalInset: CGFloat = 12
+    static let activityHeadingHeight: CGFloat = 20
+    static let rowHeight: CGFloat = 56
+    static let rowSpacing: CGFloat = 8
+    static let emptyActivityHeight: CGFloat = 136
+    static let maximumVisibleRows = 4
+
+    static func activityHeight(itemCount: Int) -> CGFloat {
+        let count = min(max(itemCount, 0), maximumVisibleRows)
+        guard count > 0 else { return emptyActivityHeight }
+        return activityVerticalInset * 2 + activityHeadingHeight
+            + CGFloat(count) * (rowHeight + rowSpacing)
+    }
+
+    static func expandedSize(itemCount: Int) -> CGSize {
+        CGSize(
+            width: expandedWidth,
+            height: headerHeight + footerHeight + separatorHeight * 2 + activityHeight(itemCount: itemCount)
+        )
+    }
+}
+
 struct DieterIslandDisplayGeometry: Equatable {
     let screenFrame: CGRect
     let visibleFrame: CGRect
@@ -47,10 +76,7 @@ struct DieterIslandDisplayGeometry: Equatable {
     }
 
     func expandedSize(itemCount: Int) -> CGSize {
-        let visibleRows = min(max(itemCount, 0), 4)
-        let populatedBodyHeight = CGFloat(visibleRows * 62) + 48
-        let bodyHeight = visibleRows == 0 ? 190 : max(168, populatedBodyHeight)
-        return CGSize(width: 600, height: 68 + 1 + bodyHeight + 1 + 64)
+        DieterIslandLayout.expandedSize(itemCount: itemCount)
     }
 
     func windowFrame(expanded: Bool, activityItemCount: Int = 4, edge: DieterIslandEdge = .right) -> CGRect {

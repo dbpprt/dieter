@@ -279,6 +279,10 @@
                 await store.openBoard(board.id, projectID: project.id)
                 _ = await waitUntil(timeout: 5) { NativeUIAccessibility.find("board.quick-task", in: window) != nil }
                 try? await DieterTaskSleep.milliseconds(350)
+                let toolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
+                results["board-toolbar-uncovered"] =
+                    toolbarUncovered
+                    ? "passed" : "failed: conversation overlay still covers board toolbar"
                 if var draft = store.state.cards.first(where: { $0.boardID == board.id }) {
                     draft.initialPromptSentAt = ""
                     draft.lane = "todo"
@@ -307,9 +311,14 @@
                     hover.enter(NSItemProvider(object: "board-card|board|todo|source" as NSString)) { _ in
                         true
                     }
-                    try? await DieterTaskSleep.milliseconds(2400)
+                    // The production two-second hover begins only after the
+                    // item provider finishes loading. Wait for that state so
+                    // slower CI rendering does not consume a fixed sleep's slack.
+                    let hoverArmed = await waitUntil(timeout: 5) { hover.mergeReady }
                     results["card-merge-hover-icon"] =
-                        hover.mergeReady ? "passed" : "failed: merge hover did not arm"
+                        hoverArmed
+                        ? "passed"
+                        : "failed: merge hover did not arm (targeted=\(hover.targeted), payloadLoaded=\(hover.payload != nil))"
                     capture(preview, to: output.appending(path: "card-merge-hover-icon.png"))
                     hover.reset()
                     preview.close()
@@ -424,7 +433,16 @@
                             "\($0)=\(NativeUIAccessibility.find($0, in: window)?.recordedFrame?.debugDescription ?? "missing")"
                         }.joined(separator: "; ")
                 }
-                let boardQuickTaskClicked = NativeUIAccessibility.press("board.quick-task", in: window)
+                // Dismissing the global popover can also activate the underlying
+                // card. A board header control stays mounted behind the overlay;
+                // close the conversation before clicking the visible toolbar.
+                let quickTaskToolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
+                results["quick-task-toolbar-uncovered"] =
+                    quickTaskToolbarUncovered
+                    ? "passed" : "failed: conversation overlay still covers Quick Task"
+                let boardQuickTaskClicked =
+                    quickTaskToolbarUncovered
+                    && NativeUIAccessibility.click("board.quick-task", in: window)
                 _ = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
                 }
@@ -1314,6 +1332,23 @@
             } catch {
                 results["files-editor-lifecycle"] = "failed: \(error)"
             }
+        }
+
+        private static func closeBoardConversationForToolbar(store: DieterStore, window: NSWindow) async -> Bool {
+            if store.selectedCardID == nil, !NativeUIAccessibility.hasOpenInspector(in: window) { return true }
+            let visibleClose = await waitUntil(timeout: 5) {
+                guard let close = NativeUIAccessibility.find("board.conversation-close", in: window),
+                    close.recordedWindow === window, let frame = close.recordedFrame
+                else { return false }
+                return frame.width > 0 && frame.height > 0 && window.frame.contains(frame)
+            }
+            guard visibleClose else { return false }
+            try? await DieterTaskSleep.milliseconds(350)
+            let clicked = NativeUIAccessibility.click("board.conversation-close", in: window)
+            let detached = await waitUntil(timeout: 5) {
+                store.selectedCardID == nil && !NativeUIAccessibility.hasOpenInspector(in: window)
+            }
+            return clicked && detached
         }
 
         private static func runBoardOpeningChecks(

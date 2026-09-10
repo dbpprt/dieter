@@ -80,8 +80,8 @@ import Testing
     #expect(notched.windowFrame(expanded: false).midX == screen.midX)
     #expect(notched.windowFrame(expanded: false).maxY == screen.maxY)
     #expect(notched.collapsedSize == CGSize(width: 336, height: 42))
-    #expect(notched.expandedSize(itemCount: 1) == CGSize(width: 600, height: 302))
-    #expect(notched.expandedSize(itemCount: 4) == CGSize(width: 600, height: 430))
+    #expect(notched.expandedSize(itemCount: 1) == CGSize(width: 600, height: 220))
+    #expect(notched.expandedSize(itemCount: 4) == CGSize(width: 600, height: 412))
 
     let external = DieterIslandDisplayGeometry.resolve(
         screenFrame: screen,
@@ -94,6 +94,28 @@ import Testing
     #expect(external.collapsedSize == CGSize(width: 270, height: 38))
     #expect(external.windowFrame(expanded: false).maxX == visible.maxX - 12)
     #expect(external.windowFrame(expanded: false).maxY == visible.maxY - 8)
+}
+
+@Test func islandExpandedHeightFitsItsRowsAndStaysBounded() {
+    let empty = DieterIslandLayout.expandedSize(itemCount: 0)
+    let one = DieterIslandLayout.expandedSize(itemCount: 1)
+    let two = DieterIslandLayout.expandedSize(itemCount: 2)
+    let four = DieterIslandLayout.expandedSize(itemCount: 4)
+    #expect(empty == CGSize(width: 600, height: 248))
+    #expect(one.height < empty.height)
+    #expect(two.height - one.height == 64)
+    #expect(four.height - two.height == 128)
+    #expect(DieterIslandLayout.expandedSize(itemCount: -1) == empty)
+    #expect(DieterIslandLayout.expandedSize(itemCount: 100) == four)
+
+    let geometry = DieterIslandDisplayGeometry.resolve(
+        screenFrame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+        visibleFrame: CGRect(x: 0, y: 0, width: 1512, height: 950),
+        safeAreaTop: 0, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil)
+    let shortFrame = geometry.windowFrame(expanded: true, activityItemCount: 1)
+    let fullFrame = geometry.windowFrame(expanded: true, activityItemCount: 4)
+    #expect(shortFrame.maxY == fullFrame.maxY)
+    #expect(shortFrame.maxX == fullFrame.maxX)
 }
 
 @Test func islandPushRequiresHorizontalIntentAndKeepsBothEdgesOnExternalDisplay() {

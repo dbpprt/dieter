@@ -30,6 +30,8 @@ struct ConversationChrome: View {
     let compact: Bool
     let standalone: Bool
     @Binding var tab: String
+    var maximized = false
+    var onToggleMaximize: (() -> Void)? = nil
     @State private var editCardPresented = false
     @State private var workspaceSettingsPresented = false
 
@@ -53,6 +55,27 @@ struct ConversationChrome: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        if let onToggleMaximize {
+                            Button(action: onToggleMaximize) {
+                                Image(
+                                    systemName: maximized
+                                        ? "arrow.down.right.and.arrow.up.left"
+                                        : "arrow.up.left.and.arrow.down.right"
+                                )
+                                .font(.system(size: 11, weight: .semibold))
+                                .frame(width: 24, height: 24)
+                            }
+                            .buttonStyle(.glass)
+                            .buttonBorderShape(.circle)
+                            .controlSize(.small)
+                            .accessibilityLabel(
+                                maximized ? "Restore conversation size" : "Expand conversation over board"
+                            )
+                            .accessibilityValue(maximized ? "Expanded" : "Side panel")
+                            .help(maximized ? "Restore conversation size" : "Expand conversation over board")
+                            .accessibilityIdentifier("board.conversation-maximize")
+                            .smokeTarget("board.conversation-maximize")
+                        }
                         Button {
                             context.closeConversation()
                         } label: {

@@ -110,9 +110,9 @@ struct ProviderOptionChip: View {
             } label: {
                 if option.id == "fast_mode" {
                     Image(systemName: enabled ? "bolt.fill" : "bolt")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(enabled ? Color.yellow : DieterTheme.subtle)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 } else {
                     DieterChipLabel(
@@ -127,7 +127,7 @@ struct ProviderOptionChip: View {
             .accessibilityValue(enabled ? "On" : "Off")
             .help(
                 option.id == "fast_mode"
-                    ? "Fast mode: \(enabled ? "On" : "Off"). Requests faster processing when supported by the model; usage may cost more."
+                    ? "Fast mode: \(enabled ? "On" : "Off"). Requests faster processing for your next message when supported by the model; usage may cost more. The current turn keeps its settings."
                     : option.description_p)
         } else if ["enum", "select"].contains(option.type.lowercased()) {
             Menu {
