@@ -179,7 +179,10 @@ import Testing
         #expect(layout.usedRect(for: container).maxY <= measured.height)
         #expect(finalRect.maxY <= view.bounds.maxY)
         #expect(finalRect.width > 0 && finalRect.height > 0)
-        view.scrollToVisible(finalRect)
+        // NSClipView aligns its origin to backing pixels. Round the requested
+        // glyph bounds outward so a half-point descender on a 1x CI display is
+        // not lost when AppKit rounds an otherwise sufficient scroll offset.
+        view.scrollToVisible(finalRect.integral)
         #expect(scroll.documentVisibleRect.contains(finalRect), "The last line must be reachable at width \(width)")
     }
 }

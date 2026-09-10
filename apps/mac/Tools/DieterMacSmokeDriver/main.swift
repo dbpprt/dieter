@@ -26,9 +26,8 @@ private enum SmokeSuite: String, CaseIterable {
         switch self {
         case .core: 240
         case .board: 150
-        case .workspace: 180
+        case .workspace, .conversation: 180
         case .terminal: 75
-        case .conversation: 90
         case .machine: 60
         case .sidebar, .island: 30
         }

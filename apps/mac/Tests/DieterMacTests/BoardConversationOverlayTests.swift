@@ -22,7 +22,8 @@ import Testing
     #expect(BoardConversationSizing.dragMaximumWidth(availableWidth: 1200) > 900)
 }
 
-@Test @MainActor func boardConversationUsesANativeSidebarAndRestoresItsDraftAndWidth() async {
+@Test(arguments: [CGFloat(1024), 1200]) @MainActor
+func boardConversationUsesANativeSidebarAndRestoresItsDraftAndWidth(preferredWidth: CGFloat) async {
     let suite = "BoardConversationOverlayTests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -34,14 +35,15 @@ import Testing
     let editor = NSTextView()
     editor.string = "Unsaved conversation draft"
     controller.inspector.conversationHost.rootView = AnyView(BoardConversationTestEditor(editor: editor))
+    let contentSize = boardConversationTestWindowSize(preferredWidth: preferredWidth)
     let window = NSWindow(
-        contentRect: NSRect(x: -3_000, y: -3_000, width: 1200, height: 800),
+        contentRect: NSRect(origin: NSPoint(x: -3_000, y: -3_000), size: contentSize),
         styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.titleVisibility = .hidden
     window.titlebarAppearsTransparent = true
     window.contentViewController = controller
-    window.setContentSize(NSSize(width: 1200, height: 800))
+    window.setContentSize(contentSize)
     window.orderBack(nil)
     defer { window.close() }
 
@@ -61,7 +63,7 @@ import Testing
     #expect(!controller.inspector.splitView(split, canCollapseSubview: controller.inspector.boardBackground))
     #expect(!controller.inspector.splitView(split, canCollapseSubview: host))
     #expect(controller.inspector.splitViewItems.allSatisfy { !$0.canCollapseFromWindowResize })
-    #expect(window.contentView?.bounds.width == 1200)
+    #expect(window.contentView?.bounds.width == contentSize.width)
 
     split.setPosition(560, ofDividerAt: 0)
     await settle()
@@ -76,7 +78,7 @@ import Testing
 
     controller.setPresentation(presented: true, maximized: true)
     await settle()
-    #expect(abs(controller.inspector.conversationFrame.width - 1200) < 2)
+    #expect(abs(controller.inspector.conversationFrame.width - contentSize.width) < 2)
     #expect(controller.inspector.boardItem.isCollapsed)
     #expect(controller.inspector.conversationHost === host)
     #expect(abs(defaults.double(forKey: BoardConversationSizing.widthPreference) - 560) < 2)
@@ -93,7 +95,7 @@ import Testing
     #expect(controller.inspector.conversationItem.isCollapsed)
     #expect(host.window == nil || host.isHiddenOrHasHiddenAncestor)
     #expect(window.firstResponder !== editor)
-    #expect(abs(controller.boardHost.frame.width - 1200) < 2)
+    #expect(abs(controller.boardHost.frame.width - contentSize.width) < 2)
     #expect(controller.boardHost.window === window)
     #expect(controller.inspector.boardBackground.safeAreaInsets.right == 0)
     #expect((split as? BoardConversationSplitView)?.dividerTrackingRect.isEmpty == true)
@@ -104,7 +106,8 @@ import Testing
     #expect(editor.string == "Unsaved conversation draft")
 }
 
-@Test @MainActor func boardConversationSwiftUIStateMaximizesWithinItsParentProposal() async throws {
+@Test(arguments: [CGFloat(1024), 1200]) @MainActor
+func boardConversationSwiftUIStateMaximizesWithinItsParentProposal(preferredWidth: CGFloat) async throws {
     let suite = "BoardConversationBridgeTests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -112,14 +115,15 @@ import Testing
     let actions = BoardConversationBridgeTestActions()
     let root = NSHostingView(rootView: BoardConversationBridgeTestView(defaults: defaults, actions: actions))
     root.sizingOptions = []
+    let contentSize = boardConversationTestWindowSize(preferredWidth: preferredWidth)
     let window = NSWindow(
-        contentRect: NSRect(x: -3_000, y: -3_000, width: 1200, height: 800),
+        contentRect: NSRect(origin: NSPoint(x: -3_000, y: -3_000), size: contentSize),
         styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.titleVisibility = .hidden
     window.titlebarAppearsTransparent = true
     window.contentView = root
-    window.setContentSize(NSSize(width: 1200, height: 800))
+    window.setContentSize(contentSize)
     window.orderBack(nil)
     defer { window.close() }
     root.layoutSubtreeIfNeeded()
@@ -148,10 +152,10 @@ import Testing
     try? await Task.sleep(for: .milliseconds(200))
     #expect(inspector.maximized)
     #expect(inspector.boardItem.isCollapsed)
-    #expect(abs(inspector.splitView.bounds.width - 1200) < 2)
-    #expect(abs(inspector.conversationFrame.width - 1200) < 2)
+    #expect(abs(inspector.splitView.bounds.width - contentSize.width) < 2)
+    #expect(abs(inspector.conversationFrame.width - contentSize.width) < 2)
     #expect(inspector.boardItem.isCollapsed)
-    #expect(window.contentView?.bounds.width == 1200)
+    #expect(window.contentView?.bounds.width == contentSize.width)
     #expect(inspector.conversationHost === host)
 
     toggle()
@@ -162,19 +166,20 @@ import Testing
     #expect(inspector.conversationHost === host)
 
     inspector.dividerDragBegan()
-    inspector.splitView.setPosition(950, ofDividerAt: 0)
+    inspector.splitView.setPosition(contentSize.width * 0.79, ofDividerAt: 0)
     root.layoutSubtreeIfNeeded()
     try? await Task.sleep(for: .milliseconds(60))
     inspector.dividerDragEnded()
     try? await Task.sleep(for: .milliseconds(200))
     #expect(inspector.maximized)
     #expect(inspector.boardItem.isCollapsed)
-    #expect(abs(inspector.conversationFrame.width - 1200) < 2)
+    #expect(abs(inspector.conversationFrame.width - contentSize.width) < 2)
     #expect(inspector.conversationHost === host)
     #expect(abs(defaults.double(forKey: BoardConversationSizing.widthPreference) - 540) < 2)
 }
 
-@Test @MainActor func boardConversationDragMaximizesOnlyOnReleaseAndPreservesItsRegularWidth() async {
+@Test(arguments: [CGFloat(1024), 2000]) @MainActor
+func boardConversationDragMaximizesOnlyOnReleaseAndPreservesItsRegularWidth(preferredWidth: CGFloat) async {
     let suite = "BoardConversationDragTests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -184,14 +189,17 @@ import Testing
     let editor = NSTextView()
     editor.string = "Keep this draft while maximizing"
     controller.inspector.conversationHost.rootView = AnyView(BoardConversationTestEditor(editor: editor))
+    let contentSize = boardConversationTestWindowSize(preferredWidth: preferredWidth)
+    let maximizeThreshold = contentSize.width * 0.75
+    let widerThanThreshold = contentSize.width * 0.77
     let window = NSWindow(
-        contentRect: NSRect(x: -3_000, y: -3_000, width: 2000, height: 800),
+        contentRect: NSRect(origin: NSPoint(x: -3_000, y: -3_000), size: contentSize),
         styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.titleVisibility = .hidden
     window.titlebarAppearsTransparent = true
     window.contentViewController = controller
-    window.setContentSize(NSSize(width: 2000, height: 800))
+    window.setContentSize(contentSize)
     window.orderBack(nil)
     defer { window.close() }
     var maximizeRequests = 0
@@ -215,27 +223,27 @@ import Testing
     await settle()
     let split = controller.inspector.splitView
     let host = controller.inspector.conversationHost
-    #expect(controller.inspector.conversationItem.maximumThickness > 1500)
+    #expect(controller.inspector.conversationItem.maximumThickness > maximizeThreshold)
     #expect(maximizeRequests == 0)
 
     // Programmatic layout and window resizing never request maximization.
-    await resizeConversation(to: 1540)
-    #expect(controller.inspector.conversationFrame.width > 1500)
+    await resizeConversation(to: widerThanThreshold)
+    #expect(controller.inspector.conversationFrame.width > maximizeThreshold)
     #expect(maximizeRequests == 0)
     controller.inspector.dividerDragEnded()
     #expect(maximizeRequests == 0)
-    window.setContentSize(NSSize(width: 1800, height: 800))
+    window.setContentSize(NSSize(width: contentSize.width * 0.9, height: contentSize.height))
     await settle()
     #expect(maximizeRequests == 0)
     #expect(!controller.inspector.maximized)
-    window.setContentSize(NSSize(width: 2000, height: 800))
+    window.setContentSize(contentSize)
     await settle()
     await resizeConversation(to: 480)
     controller.inspector.rememberRegularWidth()
 
     controller.inspector.dividerDragBegan()
     await resizeConversation(to: split.bounds.width * 0.75)
-    #expect(abs(controller.inspector.conversationFrame.width - 1500) < 0.1)
+    #expect(abs(controller.inspector.conversationFrame.width - maximizeThreshold) < 0.1)
     controller.inspector.dividerDragEnded()
     #expect(maximizeRequests == 0)
     #expect(!controller.inspector.maximized)
@@ -243,14 +251,14 @@ import Testing
     await resizeConversation(to: 480)
     controller.inspector.rememberRegularWidth()
     controller.inspector.dividerDragBegan()
-    await resizeConversation(to: 1540)
+    await resizeConversation(to: widerThanThreshold)
     #expect(maximizeRequests == 0)
     #expect(!controller.inspector.maximized)
     controller.inspector.dividerDragEnded()
     await settle()
     #expect(maximizeRequests == 1)
     #expect(controller.inspector.maximized)
-    #expect(abs(controller.inspector.conversationFrame.width - 2000) < 2)
+    #expect(abs(controller.inspector.conversationFrame.width - contentSize.width) < 2)
     #expect(controller.inspector.conversationHost === host)
     #expect(editor.string == "Keep this draft while maximizing")
     #expect(abs(defaults.double(forKey: BoardConversationSizing.widthPreference) - 480) < 2)
@@ -262,6 +270,15 @@ import Testing
     #expect(abs(controller.inspector.conversationFrame.width - 480) < 2)
     #expect(controller.inspector.conversationHost === host)
     #expect(editor.string == "Keep this draft while maximizing")
+}
+
+@MainActor private func boardConversationTestWindowSize(preferredWidth: CGFloat) -> NSSize {
+    // AppKit constrains ordered windows to their display, including offscreen
+    // test windows. CI's display can be only 1024 points wide. Keep the requested
+    // fixture on that display, while still asserting it never shrinks when the
+    // inspector collapses or maximizes.
+    let display = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1024, height: 768)
+    return NSSize(width: min(preferredWidth, display.width), height: min(800, display.height))
 }
 
 private struct BoardConversationTestEditor: NSViewRepresentable {

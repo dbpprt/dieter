@@ -132,23 +132,40 @@
             results["reasoning-toggle"] = "passed"
 
             await runMarkdownTableCheck(store: store, window: window, results: &results, output: output)
+            checkpoint(results, after: "Markdown tables", output: output)
             await runPasteChecks(store: store, window: window, results: &results, output: output)
+            checkpoint(results, after: "paste", output: output)
             if cardID == syntheticFixtureID {
                 results["history-bounded"] = "skipped: fresh-state renderer fixture"
             } else {
                 await runHistoryChecks(store: store, window: window, results: &results, output: output)
             }
             await runActivityHeaderClickCheck(store: store, window: window, results: &results, output: output)
+            checkpoint(results, after: "activity disclosure", output: output)
             await runActivityIndicatorCheck(
                 store: store, window: window, results: &results, output: output)
             await runQueuedMessageCheck(store: store, window: window, results: &results, output: output)
             await runQueueRecallChecks(store: store, window: window, results: &results, output: output)
+            checkpoint(results, after: "activity and queued messages", output: output)
             await runMessageFooterChecks(store: store, window: window, results: &results, output: output)
+            checkpoint(results, after: "message footers", output: output)
             await runViewportChecks(store: store, window: window, results: &results, output: output)
+            checkpoint(results, after: "viewport and card composer", output: output)
             await runTurnFailureCheck(store: store, window: window, results: &results, output: output)
+            checkpoint(results, after: "turn failure", output: output)
             await runNewChatComposerChecks(store: store, window: window, results: &results, output: output)
 
             writeReport(results, to: output)
+        }
+
+        private static func checkpoint(_ results: [String: String], after phase: String, output: URL) {
+            let failures = results.filter { $0.value.hasPrefix("failed:") }
+            progress("Completed \(phase): \(results.count) results, \(failures.count) failures", in: output)
+            // report.json is the driver's completion signal. Preserve partial
+            // assertions separately so timeout diagnostics cannot end a run early.
+            if let data = try? JSONSerialization.data(withJSONObject: results, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: output.appending(path: "progress-report.json"), options: .atomic)
+            }
         }
 
         /// Click the summary's text, not the chevron or an accessibility action.
@@ -497,6 +514,8 @@
                 ? "passed"
                 : "failed: manual upward scrolling did not expose Jump to latest"
 
+            let readingOffset = streamedConversationScrollView(window)?.documentVisibleRect.origin.y
+            let readingMessageOrigin = streamedReadingMessageOrigin(window)
             snapshot = store.conversation ?? snapshot
             snapshot.conversation.messages.append(
                 longTextMessage(
@@ -505,9 +524,24 @@
                 ))
             snapshot.conversation.lastSeq += 1
             store.conversation = snapshot
+            let secondGrowthPresented = await NativeUIAccessibility.wait {
+                nativeTextViews(in: window.contentView).contains { $0.string.contains("Second streamed model answer") }
+                    || NativeUIAccessibility.find("conversation.show-later", in: window) != nil
+            }
             try? await DieterTaskSleep.milliseconds(800)
+            let updatedReadingOffset = streamedConversationScrollView(window)?.documentVisibleRect.origin.y
+            let updatedMessageOrigin = streamedReadingMessageOrigin(window)
+            let offsetPreserved =
+                readingOffset.map { before in
+                    updatedReadingOffset.map { abs($0 - before) < 2 } ?? false
+                } ?? false
+            let messagePositionPreserved =
+                readingMessageOrigin.map { before in
+                    updatedMessageOrigin.map { abs($0 - before) < 2 } ?? false
+                } ?? false
             let preservedReadingPosition =
-                viewportConversationID == syntheticTailChatFixtureID
+                secondGrowthPresented && offsetPreserved && messagePositionPreserved
+                && viewportConversationID == syntheticTailChatFixtureID
                 && !viewportIsAtLatest
                 && !viewportFollowsLatest
                 && jumpToLatestVisible
@@ -515,7 +549,7 @@
             results["detached-stream-preserves-position"] =
                 preservedReadingPosition
                 ? "passed"
-                : "failed: streamed growth forced a detached viewport back to the tail"
+                : "failed: streamed growth moved detached viewport; offset=\(String(describing: readingOffset))->\(String(describing: updatedReadingOffset)), messageOrigin=\(String(describing: readingMessageOrigin))->\(String(describing: updatedMessageOrigin)), presented=\(secondGrowthPresented), latest=\(viewportIsAtLatest), follows=\(viewportFollowsLatest), jump=\(jumpToLatestVisible)"
             progress("viewport: detached stream growth recorded", in: output)
 
             _ = NativeUIAccessibility.click("conversation.jump-to-latest", in: window)
@@ -577,7 +611,8 @@
                 return
             }
             let originalWidth = column.frame.width
-            let widths: [CGFloat] = scope == "card" ? [460, 320] : [originalWidth]
+            let widths: [CGFloat] =
+                scope == "card" ? [460, 320] : [conversationContentWidth(split: split, column: column)]
             let harness = store.harnessCatalog.harnesses.first { $0.id == store.composerProvider }
             let model = harness?.models.first { $0.id == store.composerModel }
             var identifiers = [
@@ -592,16 +627,17 @@
             }
 
             for width in widths {
-                if scope == "card" { setColumnWidth(width, split: split, column: column) }
+                if scope == "card" { setConversationContentWidth(width, split: split, column: column) }
                 let resized = await NativeUIAccessibility.wait(timeout: 5) {
-                    abs(column.frame.width - width) < 2
+                    abs(conversationContentWidth(split: split, column: column) - width) < 2
                 }
                 let settled = await waitForStableControl("conversation.composer-shell", in: window)
                 let resultKey = "\(scope)-composer-layout-\(Int(width))"
                 guard resized, settled,
                     let frame = NativeUIAccessibility.find("conversation.composer-shell", in: window)?.recordedFrame
                 else {
-                    results[resultKey] = "failed: requested width \(width), actual \(column.frame.width)"
+                    results[resultKey] =
+                        "failed: requested content width \(width), actual \(conversationContentWidth(split: split, column: column)), pane=\(column.frame.width)"
                     continue
                 }
                 let columnFrame = window.convertToScreen(column.convert(column.bounds, to: nil))
@@ -846,10 +882,13 @@
             store.composerModel = harness.defaultModel
             store.composerEffort = harness.models.first(where: { $0.id == harness.defaultModel })?.defaultEffort ?? ""
             store.composerProviderOptions = ["fast_mode": "false"]
-            setColumnWidth(320, split: split, column: column)
-            let resized = await NativeUIAccessibility.wait(timeout: 5) { abs(column.frame.width - 320) < 2 }
+            setConversationContentWidth(320, split: split, column: column)
+            let resized = await NativeUIAccessibility.wait(timeout: 5) {
+                abs(conversationContentWidth(split: split, column: column) - 320) < 2
+            }
             guard resized else {
-                results["omp-provider-options"] = "failed: narrow fixture width=\(column.frame.width)"
+                results["omp-provider-options"] =
+                    "failed: narrow content width=\(conversationContentWidth(split: split, column: column)), pane=\(column.frame.width)"
                 return
             }
             await runComposerLayoutChecks(
@@ -961,7 +1000,7 @@
             let settled = await waitForStableControl("board.conversation-maximize", in: window)
             let expanded = settled && NativeUIAccessibility.click("board.conversation-maximize", in: window)
             let maximized = await NativeUIAccessibility.wait(timeout: 5) {
-                controller.maximized && abs(column.frame.width - split.bounds.width) < 2
+                controller.maximized && abs(controller.conversationFrame.width - split.bounds.width) < 2
             }
             results["board-conversation-maximize"] =
                 expanded && maximized && store.selectedCardID == selectedID && store.composerText == draft
@@ -973,13 +1012,14 @@
             let restoreSettled = await waitForStableControl("board.conversation-maximize", in: window)
             let restoredClick = restoreSettled && NativeUIAccessibility.click("board.conversation-maximize", in: window)
             let restored = await NativeUIAccessibility.wait(timeout: 5) {
-                !controller.maximized && abs(column.frame.width - targetWidth) < 2
+                !controller.maximized && abs(controller.conversationFrame.width - targetWidth) < 2
+                    && host.window === window && host.isDescendant(of: split)
             }
             results["board-conversation-restore"] =
                 restoredClick && restored && store.selectedCardID == selectedID && store.composerText == draft
                     && controller.conversationHost === host
                 ? "passed"
-                : "failed: restore=\(restoredClick), settled=\(restored), maximized=\(controller.maximized), restored width=\(column.frame.width), expected=\(targetWidth), selection=\(store.selectedCardID == selectedID), draft=\(store.composerText == draft), host=\(controller.conversationHost === host)"
+                : "failed: restore=\(restoredClick), settled=\(restored), maximized=\(controller.maximized), restored width=\(controller.conversationFrame.width), expected=\(targetWidth), selection=\(store.selectedCardID == selectedID), draft=\(store.composerText == draft), host=\(controller.conversationHost === host)"
             if !controller.maximized {
                 setColumnWidth(originalWidth, split: split, column: column)
                 _ = await waitForStableControl("conversation.composer-shell", in: window)
@@ -1009,6 +1049,25 @@
                 else { continue }
                 NSApp.postEvent(event, atStart: false)
             }
+        }
+
+        /// Native sidebars add system chrome outside their hosting view. Exercise
+        /// the actual width offered to the composer, independently of that inset.
+        private static func conversationContentWidth(split: NSSplitView, column: NSView) -> CGFloat {
+            if let controller = split.delegate as? BoardConversationSplitController {
+                return controller.conversationHost.bounds.width
+            }
+            return column.frame.width
+        }
+
+        private static func setConversationContentWidth(_ width: CGFloat, split: NSSplitView, column: NSView) {
+            let nativeChrome: CGFloat
+            if let controller = split.delegate as? BoardConversationSplitController {
+                nativeChrome = max(0, controller.conversationFrame.width - controller.conversationHost.bounds.width)
+            } else {
+                nativeChrome = 0
+            }
+            setColumnWidth(width + nativeChrome, split: split, column: column)
         }
 
         private static func setColumnWidth(_ width: CGFloat, split: NSSplitView, column: NSView) {
@@ -2134,9 +2193,8 @@
             return false
         }
 
-        private static func postScrollUp(_ window: NSWindow) async {
-            guard let content = window.contentView else { return }
-            window.makeKeyAndOrderFront(nil)
+        private static func streamedConversationScrollView(_ window: NSWindow) -> NSScrollView? {
+            guard let content = window.contentView else { return nil }
             var views = [content]
             var candidates: [NSScrollView] = []
             while let view = views.popLast() {
@@ -2152,7 +2210,22 @@
                     }
                 }
             }
-            guard let scroll = candidates.max(by: { $0.contentSize.height < $1.contentSize.height }) else {
+            return candidates.max(by: { $0.contentSize.height < $1.contentSize.height })
+        }
+
+        private static func streamedReadingMessageOrigin(_ window: NSWindow) -> CGFloat? {
+            guard let scroll = streamedConversationScrollView(window),
+                let text = nativeTextViews(in: scroll.documentView).first(where: {
+                    $0.string.contains("First streamed model answer")
+                })
+            else { return nil }
+            return text.convert(text.bounds, to: scroll.documentView).minY
+        }
+
+        private static func postScrollUp(_ window: NSWindow) async {
+            guard let content = window.contentView else { return }
+            window.makeKeyAndOrderFront(nil)
+            guard let scroll = streamedConversationScrollView(window) else {
                 var pending = [content]
                 var inventory: [String] = []
                 while let view = pending.popLast() {

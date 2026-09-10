@@ -1,6 +1,7 @@
 import DieterAPI
 import DieterCore
 import Foundation
+import SwiftUI
 import Testing
 @testable import DieterMac
 
@@ -14,6 +15,18 @@ private func recallMessage(_ id: String, text: String) -> Dieter_V1_QueuedMessag
     message.selection.provider = "codex"; message.selection.model = "queued-model"
     message.selection.effort = "high"; message.selection.providerOptions = ["fast_mode": "true"]
     return message
+}
+
+@Test func queueRecallAcceptsNativeArrowFlagsAndPreservesModifiedShortcuts() {
+    let shortcutModifiers: EventModifiers = [.shift, .control, .option, .command]
+    let nativeFlags = EventModifiers.all.subtracting(shortcutModifiers)
+    for flags in [EventModifiers(), .numericPad, .capsLock, nativeFlags] {
+        #expect(ComposerHistoryNavigation.acceptsArrow(modifiers: flags))
+    }
+    for modifier in [EventModifiers.shift, .control, .option, .command] {
+        #expect(!ComposerHistoryNavigation.acceptsArrow(modifiers: modifier))
+        #expect(!ComposerHistoryNavigation.acceptsArrow(modifiers: nativeFlags.union(modifier)))
+    }
 }
 
 @Test func queueRecallChoosesLastMessageOnlyForAnEmptyComposer() {

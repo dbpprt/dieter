@@ -27,6 +27,12 @@ struct ComposerHistoryNavigation {
 
     var isBrowsing: Bool { selectedIndex != nil }
 
+    static func acceptsArrow(modifiers: EventModifiers) -> Bool {
+        // AppKit marks ordinary arrow keys as function/numeric-pad events.
+        // Only user shortcuts should prevent recall or history navigation.
+        modifiers.intersection([.shift, .control, .option, .command]).isEmpty
+    }
+
     static func entries(
         messages: [Dieter_V1_UiMessage],
         queuedMessages: [Dieter_V1_QueuedMessage]

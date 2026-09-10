@@ -70,12 +70,12 @@ struct ConversationComposer: View {
                     return .handled
                 }
                 .onKeyPress(.upArrow, phases: .down) { press in
-                    guard press.modifiers.isEmpty else { return .ignored }
+                    guard ComposerHistoryNavigation.acceptsArrow(modifiers: press.modifiers) else { return .ignored }
                     if recallQueuedMessage() { return .handled }
                     return navigateHistory(.older) ? .handled : .ignored
                 }
                 .onKeyPress(.downArrow, phases: .down) { press in
-                    guard press.modifiers.isEmpty else { return .ignored }
+                    guard ComposerHistoryNavigation.acceptsArrow(modifiers: press.modifiers) else { return .ignored }
                     return navigateHistory(.newer) ? .handled : .ignored
                 }
                 .onChange(of: context.composerText) { _, text in

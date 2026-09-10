@@ -57,7 +57,7 @@ struct ConversationTimeline: View {
     // The native sidebar supplies its own adaptive glass behind the transcript.
     var background: Color = DieterTheme.background
     @State private var historyLoadInFlight = false
-    @State private var isAtLatest = true
+    @State private var isAtRenderedEnd = true
     @State private var userScrollInProgress = false
     @State private var viewportMode = ConversationViewportMode.awaitingInitial(conversationID: "")
     @State private var presentedFailureLog: String?
@@ -78,6 +78,9 @@ struct ConversationTimeline: View {
     private var timelineGroups: [ConversationTimelineDisplayGroup] { projection.displayGroups }
     private var renderRange: Range<Int> {
         ConversationRenderWindow.range(messages: messages, requestedStart: renderWindowStart)
+    }
+    private var isAtLatest: Bool {
+        isAtRenderedEnd && renderRange.upperBound == messages.count
     }
     private var projectionKey: ConversationPresentationKey {
         ConversationPresentationKey(
@@ -243,12 +246,18 @@ struct ConversationTimeline: View {
                         Button("Show later messages") {
                             viewportMode = .detached
                             renderWindowStart = renderRange.upperBound
-                        }.buttonStyle(.borderless).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderless).frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("conversation.show-later")
+                        .smokeTarget("conversation.show-later")
                     }
                     Color.clear.frame(height: 17).id(ConversationScrollBehavior.bottomID)
                 }
                 .padding(.horizontal, 18).padding(.top, 17)
             }
+            // Growing messages must not move the reading position after a user
+            // scrolls away. Live following is driven explicitly by tail requests.
+            .defaultScrollAnchor(.top, for: .sizeChanges)
             .textSelection(.enabled)
             .background(background)
             .smokeTarget("conversation.viewport")
@@ -258,9 +267,9 @@ struct ConversationTimeline: View {
                     contentHeight: geometry.contentSize.height
                 )
             } action: { _, atLatest in
-                isAtLatest = atLatest
+                isAtRenderedEnd = atLatest
                 if userScrollInProgress {
-                    viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: atLatest)
+                    updateViewportAfterUserScroll()
                 } else if !atLatest, ConversationScrollBehavior.followsLatest(viewportMode) {
                     requestTailScroll()
                 }
@@ -270,9 +279,9 @@ struct ConversationTimeline: View {
                 let isUserDriven = ConversationScrollBehavior.isUserDriven(newPhase)
                 userScrollInProgress = isUserDriven
                 if isUserDriven, !isAtLatest {
-                    viewportMode = .detached
+                    updateViewportAfterUserScroll()
                 } else if wasUserDriven, !isUserDriven {
-                    viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: isAtLatest)
+                    updateViewportAfterUserScroll()
                 }
             }
             .overlay(alignment: .bottom) {
@@ -320,7 +329,7 @@ struct ConversationTimeline: View {
                 projection = .empty
                 projectionConversationID = ""
                 viewportMode = .awaitingInitial(conversationID: selectedID)
-                isAtLatest = false
+                isAtRenderedEnd = false
                 userScrollInProgress = false
             }
             .task(id: projectionKey) {
@@ -394,6 +403,15 @@ struct ConversationTimeline: View {
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
         renderWindowStart = nil
         proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom)
+    }
+
+    private func updateViewportAfterUserScroll() {
+        viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: isAtLatest)
+        if viewportMode == .detached, renderWindowStart == nil {
+            // Keep the current page while reading. Recomputing a tail window
+            // on every append can discard the very messages under the cursor.
+            renderWindowStart = renderRange.lowerBound
+        }
     }
 
     private func requestTailScroll() {

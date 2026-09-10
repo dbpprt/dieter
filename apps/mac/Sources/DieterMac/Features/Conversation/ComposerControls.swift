@@ -104,19 +104,25 @@ struct ComposerSelectionMenu<Content: View>: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        // Native Menu sizing does not propagate the custom label's minimum
+        // through HStack negotiation. Reserve the hit area on the control too.
+        .frame(minWidth: 28, minHeight: 28)
         .accessibilityLabel("\(help): \(title)")
         .quickHelp(help)
     }
 }
 
-/// Reserve only the selected label's width, while allowing long names to truncate.
+/// Keep every selector clickable while allowing long names to truncate.
 private struct ComposerMenuLabelLayout: Layout {
     let maximumWidth: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let label = subviews.first else { return .zero }
         let ideal = label.sizeThatFits(.unspecified)
-        let width = min(ideal.width, maximumWidth, proposal.width ?? .infinity)
+        // A high-priority model label must yield enough space for the other
+        // selectors. Reporting zero minimum width lets HStack erase a provider
+        // menu when Fast and additional provider options are both present.
+        let width = max(28, min(ideal.width, maximumWidth, proposal.width ?? .infinity))
         return CGSize(width: width, height: max(28, ideal.height))
     }
 
