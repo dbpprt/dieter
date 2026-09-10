@@ -16,13 +16,19 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
 	maxRelayPayload               = 16 << 20
-	defaultRelayFrameBuffer       = 4
+	defaultRelayFrameBuffer       = 64
 	remoteDesktopRelayFrameBuffer = 128
-	heartbeatAckCapability        = "heartbeat_ack_v1"
+	// WatchExecution can replay all 4096 events retained by remoteexec before
+	// its receiver runs, plus the transport header and trailer. Keep this in
+	// sync with maxRetainedEventFrames in internal/remoteexec/manager_unix.go.
+	executionRelayFrameBuffer = 4096 + 2
+	maxRelayBufferedBytes     = 64 << 20
+	heartbeatAckCapability    = "heartbeat_ack_v1"
 )
 
 const (
@@ -53,15 +59,42 @@ type daemonLink struct {
 	done       chan struct{}
 	closeOnce  sync.Once
 	mu         sync.RWMutex
-	streams    map[uint64]chan *gatewayv1.DaemonLinkFrame
+	streams    map[uint64]*relayFrameQueue
 	lastSeenAt atomic.Int64
 }
 
 type relayStream struct {
-	link   *daemonLink
-	id     uint64
-	frames <-chan *gatewayv1.DaemonLinkFrame
-	once   sync.Once
+	link  *daemonLink
+	id    uint64
+	queue *relayFrameQueue
+	once  sync.Once
+}
+
+type queuedRelayFrame struct {
+	frame *gatewayv1.DaemonLinkFrame
+	bytes int64
+}
+
+type relayFrameQueue struct {
+	frames chan queuedRelayFrame
+	bytes  atomic.Int64
+}
+
+func (q *relayFrameQueue) push(frame *gatewayv1.DaemonLinkFrame) bool {
+	// Count the whole encoded frame, including metadata. Reserve before the
+	// send because the receiver may consume and release it immediately.
+	size := int64(proto.Size(frame))
+	if q.bytes.Add(size) > maxRelayBufferedBytes {
+		q.bytes.Add(-size)
+		return false
+	}
+	select {
+	case q.frames <- queuedRelayFrame{frame: frame, bytes: size}:
+		return true
+	default:
+		q.bytes.Add(-size)
+		return false
+	}
 }
 
 func NewHub(store *Store, config Config) *Hub {
@@ -104,7 +137,7 @@ func (h *Hub) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	link := &daemonLink{
 		id: identity, generation: record.Generation,
 		send: make(chan *gatewayv1.DaemonLinkFrame, 8), control: make(chan *gatewayv1.DaemonLinkFrame, 4),
-		done: make(chan struct{}), streams: map[uint64]chan *gatewayv1.DaemonLinkFrame{},
+		done: make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
 	}
 	link.markSeen(time.Now())
 	h.register(link)
@@ -277,20 +310,19 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		link.mu.Unlock()
 		return nil, status.Error(codes.ResourceExhausted, "daemon relay concurrency is exhausted")
 	}
-	// Keep every RPC bounded. Remote-desktop admission legitimately bursts its
-	// signed binding, SDP answer, state, and gathered ICE candidates before the
-	// gateway handler is scheduled to drain them, so it needs enough room for
-	// the daemon's bounded signaling history. Other RPCs retain the small buffer
-	// that promptly isolates genuinely slow consumers.
-	frames := make(chan *gatewayv1.DaemonLinkFrame, relayFrameBuffer(frame.GetMethod()))
-	link.streams[id] = frames
+	// A watch may replay several small events plus headers/trailers before its
+	// receiver is scheduled. Allow bounded bursts without increasing the old
+	// ordinary-RPC memory ceiling (four 16 MiB frames). Large frames still hit
+	// the byte limit; a stalled stream never blocks the shared daemon link.
+	queue := &relayFrameQueue{frames: make(chan queuedRelayFrame, relayFrameBuffer(frame.GetMethod()))}
+	link.streams[id] = queue
 	link.mu.Unlock()
 	frame.StreamId, frame.DaemonId = id, daemonID
 	if err := link.sendFrame(frame); err != nil {
 		link.removeStream(id)
 		return nil, status.Error(14, "daemon disconnected")
 	}
-	result := &relayStream{link: link, id: id, frames: frames}
+	result := &relayStream{link: link, id: id, queue: queue}
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -305,6 +337,9 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 func relayFrameBuffer(method string) int {
 	if strings.HasSuffix(method, "/StartRemoteDesktop") {
 		return remoteDesktopRelayFrameBuffer
+	}
+	if strings.HasSuffix(method, "/WatchExecution") {
+		return executionRelayFrameBuffer
 	}
 	return defaultRelayFrameBuffer
 }
@@ -322,11 +357,12 @@ func (s *relayStream) Recv() (*gatewayv1.DaemonLinkFrame, error) {
 	select {
 	case <-s.link.done:
 		return nil, status.Error(14, "daemon disconnected")
-	case frame, ok := <-s.frames:
+	case frame, ok := <-s.queue.frames:
 		if !ok {
 			return nil, io.EOF
 		}
-		return frame, nil
+		s.queue.bytes.Add(-frame.bytes)
+		return frame.frame, nil
 	}
 }
 
@@ -359,10 +395,7 @@ func (l *daemonLink) dispatch(frame *gatewayv1.DaemonLinkFrame) {
 		l.mu.RUnlock()
 		return
 	}
-	select {
-	case stream <- frame:
-	case <-l.done:
-	default:
+	if !stream.push(frame) {
 		l.mu.RUnlock()
 		l.failStream(frame.GetStreamId(), status.Error(codes.ResourceExhausted, "relay client is not consuming responses"))
 		return
@@ -378,12 +411,18 @@ func (l *daemonLink) failStream(id uint64, err error) {
 	stream := l.streams[id]
 	delete(l.streams, id)
 	if stream != nil {
-		for len(stream) > 0 {
-			<-stream
+	drain:
+		for {
+			select {
+			case frame := <-stream.frames:
+				stream.bytes.Add(-frame.bytes)
+			default:
+				break drain
+			}
 		}
 		value := status.Convert(err)
-		stream <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR, StreamId: id, StatusCode: int32(value.Code()), StatusMessage: value.Message()}
-		close(stream)
+		stream.push(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR, StreamId: id, StatusCode: int32(value.Code()), StatusMessage: value.Message()})
+		close(stream.frames)
 	}
 	l.mu.Unlock()
 }
@@ -394,7 +433,7 @@ func (l *daemonLink) removeStream(id uint64) {
 	delete(l.streams, id)
 	l.mu.Unlock()
 	if stream != nil {
-		close(stream)
+		close(stream.frames)
 	}
 }
 
@@ -404,7 +443,7 @@ func (l *daemonLink) close() {
 		l.mu.Lock()
 		for id, stream := range l.streams {
 			delete(l.streams, id)
-			close(stream)
+			close(stream.frames)
 		}
 		l.mu.Unlock()
 	})
