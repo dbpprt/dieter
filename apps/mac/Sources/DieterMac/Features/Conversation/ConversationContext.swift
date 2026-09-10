@@ -53,6 +53,22 @@ final class ConversationContext {
     var selectedCardID: String? { model.selectedCardID }
     var selectedChatID: String? { model.selectedChatID }
     var selectedDetail: Dieter_V1_CardDetail? { model.selectedDetail }
+    var composerProviderLocked: Bool {
+        let card = selectedCard ?? selectedDetail?.card
+        return card?.initialPromptSentAt.isEmpty == false || !conversationMessages.isEmpty
+            || ConversationActivityPresentation.isActive(
+                conversationStatus: conversation?.conversation.status ?? "", cardRuntime: card?.runtime ?? "")
+    }
+    func canChangeComposerSelection(_ capability: String) -> Bool {
+        ConversationSelectionPolicy.canChange(
+            capability, harness: harnessCatalog.harnesses.first { $0.id == composerProvider },
+            conversationLocked: composerProviderLocked)
+    }
+    func selectComposerModel(_ value: Dieter_V1_HarnessModel) {
+        composer.draft.selectModel(
+            value, harness: harnessCatalog.harnesses.first { $0.id == composerProvider },
+            allowsEffortChange: canChangeComposerSelection("effort-selection"))
+    }
     var commentText: String {
         get { composer.draft.comment }
         set { composer.draft.comment = newValue }

@@ -527,12 +527,22 @@ type Conversation struct {
 // response ID lets a restarted Dieter process continue streaming into the same
 // assistant message instead of creating a duplicate.
 type ConversationTurn struct {
-	ID                string   `json:"id"`
-	UserMessageID     string   `json:"userMessageId"`
-	ResponseMessageID string   `json:"responseMessageId"`
-	Instructions      string   `json:"instructions,omitempty"`
-	InstructionSource string   `json:"instructionSource,omitempty"`
-	InstructionLabels []string `json:"instructionLabels,omitempty"`
+	ID                string            `json:"id"`
+	UserMessageID     string            `json:"userMessageId"`
+	ResponseMessageID string            `json:"responseMessageId"`
+	Instructions      string            `json:"instructions,omitempty"`
+	InstructionSource string            `json:"instructionSource,omitempty"`
+	InstructionLabels []string          `json:"instructionLabels,omitempty"`
+	Selection         *HarnessSelection `json:"selection,omitempty"`
+}
+
+// HarnessSelection is the immutable configuration admitted for one message.
+// Queued and recoverable active turns retain their own snapshot.
+type HarnessSelection struct {
+	Provider        string            `json:"provider"`
+	Model           string            `json:"model"`
+	Effort          string            `json:"effort"`
+	ProviderOptions map[string]string `json:"providerOptions,omitempty"`
 }
 
 // TaskPlan is the provider-neutral latest progress snapshot for one assistant
@@ -649,11 +659,12 @@ type PendingTool struct {
 }
 
 type QueuedMessage struct {
-	MergeSourceID string          `json:"mergeSourceId,omitempty"`
-	ID            string          `json:"id"`
-	Text          string          `json:"text"`
-	Parts         []UIMessagePart `json:"parts,omitempty"`
-	CreatedAt     string          `json:"createdAt"`
+	Selection     *HarnessSelection `json:"selection,omitempty"`
+	MergeSourceID string            `json:"mergeSourceId,omitempty"`
+	ID            string            `json:"id"`
+	Text          string            `json:"text"`
+	Parts         []UIMessagePart   `json:"parts,omitempty"`
+	CreatedAt     string            `json:"createdAt"`
 }
 
 type ConversationEvent struct {

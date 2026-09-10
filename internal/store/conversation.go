@@ -375,6 +375,10 @@ func (s *Store) QueueConversationMessageParts(cardRef string, parts []model.UIMe
 }
 
 func (s *Store) QueueConversationMessagePartsWithID(cardRef, messageID string, parts []model.UIMessagePart) (model.QueuedMessage, model.Conversation, error) {
+	return s.QueueConversationMessageWithSelection(cardRef, messageID, parts, nil)
+}
+
+func (s *Store) QueueConversationMessageWithSelection(cardRef, messageID string, parts []model.UIMessagePart, selection *model.HarnessSelection) (model.QueuedMessage, model.Conversation, error) {
 	text := ""
 	for _, part := range parts {
 		if part.Type == "text" {
@@ -400,7 +404,7 @@ func (s *Store) QueueConversationMessagePartsWithID(cardRef, messageID string, p
 			}
 		}
 	}
-	queued := model.QueuedMessage{ID: messageID, Text: text, Parts: parts, CreatedAt: timestamp()}
+	queued := model.QueuedMessage{ID: messageID, Text: text, Parts: parts, CreatedAt: timestamp(), Selection: selection}
 	_, conversation, err := s.AppendConversationEvent(cardRef, "queue-message", "", "", queued)
 	return queued, conversation, err
 }

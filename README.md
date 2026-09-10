@@ -518,7 +518,15 @@ Dropping earlier keeps the usual card ordering behavior.
 
 Draft agent settings can be changed in Edit card or with
 `dieter card update --provider codex --model MODEL --effort high --provider-option fast_mode=true CARD`.
-Settings are locked once the initial request has been sent. These commands also
+The draft editor is locked once the initial request has been sent. For later
+messages, `card send` and `chat send` accept `--model`, `--effort`, and mutable
+`--provider-option` settings within the same provider. Codex, Claude Code and
+Pi support model and reasoning changes between turns; OMP and DSH support
+model changes. OMP thinking stays fixed after the first message. Use
+`--effort default` to reset reasoning. A message queued during an active turn
+retains its own selection; it does not reconfigure the current turn. Queue
+removal returns that selection with the message so editing preserves it.
+These commands also
 support the global `--machine ID|NAME` option for direct TLS or gateway relay.
 
 ### Capture a Quick Task on macOS

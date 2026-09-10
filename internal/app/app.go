@@ -36,6 +36,7 @@ type Service struct {
 }
 
 type activeTurn struct {
+	selection      model.HarnessSelection
 	cancel         context.CancelFunc
 	cardID         string
 	turnID         string
@@ -174,7 +175,11 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	if !hasTurnContinuation(conversation.Session) {
 		return errNoTurnContinuation
 	}
-	adapter, configuredModel, err := resolvePersistedSelection(detail.Card.Provider, detail.Card.Model, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
+	selection := selectionFromCard(detail.Card)
+	if conversation.ActiveTurn != nil && conversation.ActiveTurn.Selection != nil {
+		selection = *conversation.ActiveTurn.Selection
+	}
+	adapter, configuredModel, err := resolvePersistedSelection(selection.Provider, selection.Model, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
 	if err != nil {
 		return err
 	}
@@ -182,8 +187,8 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	// process. The locked model and effort were validated when the conversation
 	// was created, so recovery must trust those persisted values rather than
 	// rejecting a live continuation against the smaller release fallback list.
-	effort := detail.Card.Effort
-	providerOptions, err := harness.ResolveOptionsForModel(adapter, configuredModel.ID, detail.Card.ProviderOptions)
+	effort := selection.Effort
+	providerOptions, err := harness.ResolveOptionsForModel(adapter, configuredModel.ID, selection.ProviderOptions)
 	if err != nil {
 		return err
 	}
@@ -222,7 +227,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		return store.ErrCardActive
 	}
 	now := time.Now()
-	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
+	s.active[detail.Card.ID] = &activeTurn{selection: selection, cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
 	s.mu.Unlock()
 	updates := make(chan TurnUpdate, 1024)
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
@@ -252,6 +257,15 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, ResponseMessageID: responseMessageID,
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
 		ProjectPath: workspaceValue.Path, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID), Continue: true,
+	}
+	// The card is the active/last-admitted selection shown by clients. Restore
+	// every field from the same snapshot used by the recovered request.
+	if _, err := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: adapter.ID, Model: configuredModel.ID, Effort: &effort, ProviderOptions: providerOptions, Runtime: "running"}); err != nil {
+		cancel()
+		_ = s.Store.ReleaseRuntimeLease(lease)
+		s.clearActive(detail.Card.ID, turnID)
+		close(done)
+		return err
 	}
 	go s.runTurn(ctx, detail, turnID, request, updates, done)
 	go drainTurnUpdates(updates)
@@ -624,65 +638,12 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if len(parts) == 0 {
 		parts = []model.UIMessagePart{{Type: "text", Text: content}}
 	}
-	requestedProvider, requestedModel, requestedEffort := strings.TrimSpace(provider), strings.TrimSpace(modelName), strings.TrimSpace(effort)
-	explicitDefaultEffort := requestedEffort == "default"
-	if !first {
-		if requestedProvider != "" && requestedProvider != detail.Card.Provider {
-			return nil, fmt.Errorf("conversation harness is locked to %q", detail.Card.Provider)
-		}
-		if requestedModel != "" && requestedModel != detail.Card.Model {
-			return nil, fmt.Errorf("conversation model is locked to %q", detail.Card.Model)
-		}
-		comparisonEffort := requestedEffort
-		if explicitDefaultEffort {
-			comparisonEffort = ""
-		}
-		if (requestedEffort != "" || explicitDefaultEffort) && comparisonEffort != detail.Card.Effort {
-			locked := detail.Card.Effort
-			if locked == "" {
-				locked = "default"
-			}
-			return nil, fmt.Errorf("conversation effort is locked to %q", locked)
-		}
-		provider, modelName, effort = detail.Card.Provider, detail.Card.Model, detail.Card.Effort
-	}
-	if provider == "" {
-		provider = detail.Card.Provider
-	}
-	if provider == "" {
-		provider = "codex"
-	}
-	if modelName == "" {
-		modelName = detail.Card.Model
-	}
-	if effort == "" && !explicitDefaultEffort {
-		effort = detail.Card.Effort
-	}
-	adapter, configuredModel, err := harness.ResolveSelectionWithRefresh(context.Background(), provider, modelName, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
+	adapter, configuredModel, selection, err := resolveTurnSelection(detail.Card, provider, modelName, effort, requestedOptions)
 	if err != nil {
 		return nil, err
 	}
-	provider, modelName = adapter.ID, configuredModel.ID
-	effort, err = harness.ResolveEffort(adapter, configuredModel, effort)
-	if err != nil {
-		return nil, err
-	}
-	if requestedOptions == nil {
-		requestedOptions = detail.Card.ProviderOptions
-	}
-	providerOptions, err := harness.ResolveOptionsForModel(adapter, configuredModel.ID, requestedOptions)
-	if err != nil {
-		return nil, err
-	}
-	if !first && requestedOptions != nil {
-		lockedOptions, resolveErr := harness.ResolveOptionsForModel(adapter, configuredModel.ID, detail.Card.ProviderOptions)
-		if resolveErr != nil {
-			return nil, resolveErr
-		}
-		if updateErr := harness.ValidateOptionUpdate(adapter, lockedOptions, providerOptions); updateErr != nil {
-			return nil, updateErr
-		}
-	}
+	provider, modelName, effort = selection.Provider, selection.Model, selection.Effort
+	providerOptions := selection.ProviderOptions
 	if err := s.ensureStartStorage(s.Store.Root, detail.Project.Path); err != nil {
 		return nil, err
 	}
@@ -705,7 +666,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	done := make(chan struct{})
 	s.mu.Lock()
 	now := time.Now()
-	s.active[detail.Card.ID] = &activeTurn{cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
+	s.active[detail.Card.ID] = &activeTurn{selection: selection, cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
 	s.mu.Unlock()
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
 	if err != nil {
@@ -744,7 +705,7 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	for _, label := range resolution.AppliedLabels {
 		labelIDs = append(labelIDs, label.ID)
 	}
-	if _, startErr = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: messageID, ResponseMessageID: responseMessageID, Instructions: resolution.Instructions, InstructionSource: resolution.Source, InstructionLabels: labelIDs}); startErr != nil {
+	if _, startErr = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: messageID, ResponseMessageID: responseMessageID, Instructions: resolution.Instructions, InstructionSource: resolution.Source, InstructionLabels: labelIDs, Selection: &selection}); startErr != nil {
 		cancel()
 		_ = s.Store.ReleaseRuntimeLease(lease)
 		s.clearActive(detail.Card.ID, turnID)
@@ -1106,7 +1067,7 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 						break
 					}
 				}
-				conversation, _ = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: userMessageID, ResponseMessageID: request.ResponseMessageID, Instructions: request.Instructions})
+				conversation, _ = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: userMessageID, ResponseMessageID: request.ResponseMessageID, Instructions: request.Instructions, Selection: &model.HarnessSelection{Provider: request.Harness, Model: request.ConfiguredModel, Effort: request.Effort, ProviderOptions: request.Options}})
 			}
 			_, _ = s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: "running"})
 			_ = finish(false, store.CardCacheInput{})
@@ -1199,7 +1160,15 @@ func (s *Service) startNextQueued(cardID string) {
 	if len(parts) == 0 {
 		parts = []model.UIMessagePart{{Type: "text", Text: next.Text}}
 	}
-	updates, err := s.startCard(cardID, next.Text, parts, "", "", "", nil, next.ID, "")
+	var selection model.HarnessSelection
+	if next.Selection != nil {
+		selection = *next.Selection
+	}
+	effort := selection.Effort
+	if next.Selection != nil {
+		effort = selectionEffort(selection)
+	}
+	updates, err := s.startCard(cardID, next.Text, parts, selection.Provider, selection.Model, effort, selection.ProviderOptions, next.ID, next.ID)
 	if err == nil {
 		go drainTurnUpdates(updates)
 	}
@@ -1260,81 +1229,58 @@ func (s *Service) SubmitCardParts(ref string, parts []model.UIMessagePart, provi
 }
 
 func (s *Service) SubmitCardPartsWithMessageID(ref string, parts []model.UIMessagePart, provider, modelName, effort string, providerOptions map[string]string, messageID string) (bool, error) {
-	var err error
-	parts, err = attachments.NormalizeMessageParts(parts)
+	parts, err := attachments.NormalizeMessageParts(parts)
 	if err != nil {
 		return false, err
 	}
-	card, err := s.Store.ResolveCard(ref)
-	if err != nil {
-		return false, err
-	}
-	content := messagePartsText(parts)
-	if content == "" && !messagePartsHaveFiles(parts) {
+	if messagePartsText(parts) == "" && !messagePartsHaveFiles(parts) {
 		return false, errors.New("message is required")
 	}
-	s.mu.Lock()
-	active := s.active[card.ID]
-	if active != nil {
-		if requested := strings.TrimSpace(provider); requested != "" && requested != card.Provider {
-			s.mu.Unlock()
-			return false, fmt.Errorf("conversation harness is locked to %q", card.Provider)
+	for {
+		card, err := s.Store.ResolveCard(ref)
+		if err != nil {
+			return false, err
 		}
-		if requested := strings.TrimSpace(modelName); requested != "" && requested != card.Model {
-			s.mu.Unlock()
-			return false, fmt.Errorf("conversation model is locked to %q", card.Model)
+		s.mu.Lock()
+		active := s.active[card.ID]
+		if active != nil && active.selection.Provider != "" {
+			card.Provider, card.Model, card.Effort, card.ProviderOptions = active.selection.Provider, active.selection.Model, active.selection.Effort, active.selection.ProviderOptions
+			card.InitialPromptSentAt = "active"
 		}
-		requestedEffort := strings.TrimSpace(effort)
-		comparisonEffort := requestedEffort
-		if requestedEffort == "default" {
-			comparisonEffort = ""
-		}
-		if requestedEffort != "" && comparisonEffort != card.Effort {
-			s.mu.Unlock()
-			locked := card.Effort
-			if locked == "" {
-				locked = "default"
-			}
-			return false, fmt.Errorf("conversation effort is locked to %q", locked)
-		}
-		if providerOptions != nil && !providerOptionsEqual(providerOptions, card.ProviderOptions) {
-			adapter, valid := harness.ResolveAdapter(card.Provider, os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
-			if !valid {
-				s.mu.Unlock()
-				return false, fmt.Errorf("unsupported harness %q", card.Provider)
-			}
-			requestedOptions, resolveErr := harness.ResolveOptionsForModel(adapter, card.Model, providerOptions)
-			if resolveErr != nil {
-				s.mu.Unlock()
-				return false, resolveErr
-			}
-			lockedOptions, resolveErr := harness.ResolveOptionsForModel(adapter, card.Model, card.ProviderOptions)
-			if resolveErr != nil {
-				s.mu.Unlock()
-				return false, resolveErr
-			}
-			if updateErr := harness.ValidateOptionUpdate(adapter, lockedOptions, requestedOptions); updateErr != nil {
-				s.mu.Unlock()
-				return false, updateErr
-			}
-			if !providerOptionsEqual(requestedOptions, lockedOptions) {
-				if _, updateErr := s.Store.UpdateCardCache(card.ID, store.CardCacheInput{ProviderOptions: requestedOptions}); updateErr != nil {
-					s.mu.Unlock()
-					return false, updateErr
-				}
-			}
-		}
-		_, _, err = s.Store.QueueConversationMessagePartsWithID(card.ID, messageID, parts)
 		s.mu.Unlock()
-		return err == nil, err
+		if active != nil {
+			// Discovery can contact a provider. Keep it outside the service lock
+			// so configuration validation cannot stall unrelated active turns.
+			_, _, selection, selectionErr := resolveTurnSelection(card, provider, modelName, effort, providerOptions)
+			if selectionErr != nil {
+				return false, selectionErr
+			}
+			s.mu.Lock()
+			if s.active[card.ID] != active {
+				s.mu.Unlock()
+				continue
+			}
+			// Each message owns its selection; never change the active turn's
+			// card configuration when admitting a future turn.
+			_, _, err = s.Store.QueueConversationMessageWithSelection(card.ID, messageID, parts, &selection)
+			s.mu.Unlock()
+			return err == nil, err
+		}
+		updates, err := s.StartCardWithMessageParts(card.ID, parts, provider, modelName, effort, providerOptions, messageID)
+		if errors.Is(err, store.ErrCardActive) {
+			s.mu.Lock()
+			started := s.active[card.ID] != nil
+			s.mu.Unlock()
+			if started {
+				continue
+			}
+		}
+		if err != nil {
+			return false, err
+		}
+		go drainTurnUpdates(updates)
+		return false, nil
 	}
-	s.mu.Unlock()
-	updates, err := s.StartCardWithMessageParts(card.ID, parts, provider, modelName, effort, providerOptions, messageID)
-	if err != nil {
-		return false, err
-	}
-	go drainTurnUpdates(updates)
-	return false, nil
 }
 
 func (s *Service) CancelCard(ref string) error {

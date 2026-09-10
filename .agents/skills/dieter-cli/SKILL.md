@@ -151,6 +151,18 @@ not started yet—and receive its complete text and attachments as JSON—with:
 dieter card queue remove --message <message-id> <card-id>
 ```
 
+For an existing card or chat, `send --model MODEL --effort EFFORT` changes the
+next message's selection within the same provider when its harness advertises
+`model-selection` / `effort-selection` with level `between-turns`. Codex,
+Claude Code and Pi support both; OMP and DSH support model changes. OMP's
+thinking level stays fixed after the first message. Mutable options such as
+Codex `--provider-option fast_mode=true` apply to the next message too.
+`--effort default` explicitly resets reasoning; omitting effort retains the
+current value for the same model and uses the configured default after a model
+change. Queued messages retain separate durable selections, and removing one
+returns `selection` alongside its text and attachments for editing. Neither
+selection changes nor queued messages reconfigure an already running turn.
+
 Boards own their labels. Use label IDs for filtering and assignment:
 
 ```sh

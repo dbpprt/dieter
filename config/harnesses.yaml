@@ -9,6 +9,10 @@ harnesses:
     name: Codex
     adapter: codex
     capabilities:
+      - id: model-selection
+        level: between-turns
+      - id: effort-selection
+        level: between-turns
       - id: task-plan
         level: snapshots
     options:
@@ -68,6 +72,10 @@ harnesses:
     name: Claude Code
     adapter: claude-code
     capabilities:
+      - id: model-selection
+        level: between-turns
+      - id: effort-selection
+        level: between-turns
       - id: subagents
         level: lifecycle
       - id: task-plan
@@ -104,6 +112,10 @@ harnesses:
     name: Pi
     adapter: pi
     capabilities:
+      - id: model-selection
+        level: between-turns
+      - id: effort-selection
+        level: between-turns
       - id: task-plan
         level: host-tool
     defaultModel: default
@@ -136,6 +148,8 @@ harnesses:
     name: Oh My Pi
     adapter: omp-acp
     capabilities:
+      - id: model-selection
+        level: between-turns
       - id: subagents
         level: progress
       - id: task-plan
@@ -182,6 +196,8 @@ harnesses:
     name: DeepSeek Harness
     adapter: dsh-acp
     capabilities:
+      - id: model-selection
+        level: between-turns
       - id: task-plan
         level: snapshots
     defaultModel: default

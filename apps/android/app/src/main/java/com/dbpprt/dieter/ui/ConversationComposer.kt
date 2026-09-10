@@ -315,28 +315,25 @@ internal fun MessageComposer(
     onRemoveAttachment: (Int) -> Unit = {},
     onSend: (String, String, String, Map<String, String>) -> Unit,
 ) {
-    val locked = card?.initialPromptSentAt?.isNotBlank() == true
-    var provider by remember(card?.id, harnesses) {
-        mutableStateOf(card?.provider?.takeIf { it.isNotBlank() } ?: harnesses.firstOrNull()?.id.orEmpty())
+    val locked = conversationSelectionLocked(card)
+    var selection by remember(card?.id) {
+        mutableStateOf(ConversationComposerSelection.initial(card, harnesses))
     }
-    val selectedHarness = harnesses.firstOrNull { it.id == provider } ?: harnesses.firstOrNull()
-    var selectedModel by remember(card?.id, provider, selectedHarness) {
-        mutableStateOf(card?.model?.takeIf { it.isNotBlank() } ?: selectedHarness?.defaultModel.orEmpty())
+    LaunchedEffect(card?.id, harnesses) {
+        selection = selection.fillingMissingSelection(card, harnesses)
     }
-    var effort by remember(card?.id, provider, selectedModel) { mutableStateOf(card?.effort.orEmpty()) }
-    var providerOptions by remember(card?.id, provider, selectedHarness, selectedModel, card?.providerOptionsMap) {
-        mutableStateOf(
-            providerOptionValues(
-                selectedHarness,
-                card?.providerOptionsMap?.takeIf { card.provider == provider }.orEmpty(),
-                selectedModel,
-            ),
-        )
-    }
+    val provider = selection.provider
+    val selectedModel = selection.model
+    val effort = selection.effort
+    val providerOptions = selection.providerOptions
+    val selectedHarness = harnesses.firstOrNull { it.id == provider }
     val selectedHarnessModel = selectedHarness?.modelsList?.firstOrNull { it.id == selectedModel }
     val effortOptions = selectedHarness?.effortOptionsFor(selectedModel).orEmpty()
-    val displayedEffort = effort.ifBlank { selectedHarnessModel?.defaultEffort.orEmpty() }
-    val effortLabel = effortOptions.firstOrNull { it.id == displayedEffort }?.name
+    val modelEnabled = enabled && conversationSettingEnabled(selectedHarness, locked, "model-selection")
+    val effortEnabled = enabled && conversationSettingEnabled(selectedHarness, locked, "effort-selection")
+    val displayedEffort = effort.takeUnless { it.isBlank() || it == "default" }
+        ?: selectedHarnessModel?.defaultEffort.orEmpty()
+    val effortLabel = if (effort == "default") "Default" else effortOptions.firstOrNull { it.id == displayedEffort }?.name
         ?: displayedEffort.replaceFirstChar { if (it.isLowerCase()) it.uppercaseChar().toString() else it.toString() }
             .ifBlank { "Default" }
     var providerMenu by remember { mutableStateOf(false) }
@@ -371,37 +368,40 @@ internal fun MessageComposer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box {
-                        ComposerSettingPill(selectedHarness?.name ?: provider.ifBlank { "Agent" }, enabled = !locked) { providerMenu = true }
+                        ComposerSettingPill(selectedHarness?.name ?: provider.ifBlank { "Agent" }, enabled = enabled && !locked) { providerMenu = true }
                         DropdownMenu(providerMenu, { providerMenu = false }) {
                             harnesses.forEach { harness ->
-                                DropdownMenuItem(text = { Text(harness.name) }, onClick = {
+                                DropdownMenuItem(text = { Text(harness.name) }, enabled = enabled && !locked, onClick = {
                                     providerMenu = false
-                                    provider = harness.id
-                                    selectedModel = harness.defaultModel
-                                    effort = ""
+                                    selection = ConversationComposerSelection.forProvider(harness)
                                 })
                             }
                         }
                     }
                     Box {
-                        ComposerSettingPill(selectedHarnessModel?.name ?: selectedModel.ifBlank { "Default model" }, enabled = !locked) { modelMenu = true }
+                        ComposerSettingPill(selectedHarnessModel?.name ?: selectedModel.ifBlank { "Default model" }, enabled = modelEnabled) { modelMenu = true }
                         DropdownMenu(modelMenu, { modelMenu = false }) {
                             selectedHarness?.modelsList.orEmpty().forEach { harnessModel ->
-                                DropdownMenuItem(text = { Text(harnessModel.name) }, onClick = {
+                                DropdownMenuItem(text = { Text(harnessModel.name) }, enabled = modelEnabled, onClick = {
                                     modelMenu = false
-                                    selectedModel = harnessModel.id
-                                    effort = ""
+                                    selection = selection.selectingModel(harnessModel.id, selectedHarness)
                                 })
                             }
                         }
                     }
                     if (effortOptions.isNotEmpty()) {
                         Box {
-                            ComposerSettingPill(effortLabel, enabled = !locked) { effortMenu = true }
+                            ComposerSettingPill(effortLabel, enabled = effortEnabled) { effortMenu = true }
                             DropdownMenu(effortMenu, { effortMenu = false }) {
-                                DropdownMenuItem(text = { Text("Default") }, onClick = { effortMenu = false; effort = "" })
+                                DropdownMenuItem(text = { Text("Default") }, enabled = effortEnabled, onClick = {
+                                    effortMenu = false
+                                    selection = selection.copy(effort = "default")
+                                })
                                 effortOptions.forEach { option ->
-                                    DropdownMenuItem(text = { Text(option.name) }, onClick = { effortMenu = false; effort = option.id })
+                                    DropdownMenuItem(text = { Text(option.name) }, enabled = effortEnabled, onClick = {
+                                        effortMenu = false
+                                        selection = selection.copy(effort = option.id)
+                                    })
                                 }
                             }
                         }
@@ -410,8 +410,8 @@ internal fun MessageComposer(
                         ProviderOptionControl(
                             option = option,
                             values = providerOptions,
-                            enabled = providerOptionEnabled(option, locked),
-                            onValueChange = { id, next -> providerOptions = providerOptions + (id to next) },
+                            enabled = enabled && providerOptionEnabled(option, locked),
+                            onValueChange = { id, next -> selection = selection.copy(providerOptions = providerOptions + (id to next)) },
                         )
                     }
                 }
@@ -425,6 +425,14 @@ internal fun MessageComposer(
                         maxLines = 1,
                     )
                 }
+            }
+            if (locked) {
+                Text(
+                    "Settings apply to your next message. The current turn keeps its settings.",
+                    color = DieterMuted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.testTag("composer-next-message-settings"),
+                )
             }
         }
         Row(

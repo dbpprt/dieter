@@ -146,20 +146,21 @@ extension DieterStore {
             guard let self else { return }
             self.bindWorktree()
             let draft = self.composer.draft
-            if draft.provider.isEmpty {
-                draft.provider = snapshot.detail.card.provider
-                draft.model = snapshot.detail.card.model
-                draft.effort = snapshot.detail.card.effort
-                let harness = self.harnessCatalog.harnesses.first { $0.id == draft.provider }
-                draft.providerOptions = ProviderOptionValues.resolved(
-                    for: harness, existing: snapshot.detail.card.providerOptions)
-            }
+            let harness = self.harnessCatalog.harnesses.first { $0.id == snapshot.detail.card.provider }
+            draft.reconcileSettings(card: snapshot.detail.card, harness: harness)
             if chat, let card = self.chats.first(where: { $0.id == snapshot.detail.card.id }) {
                 self.markChatRead(card)
             }
         }
         conversationModel.onSnapshot = { [weak self] snapshot, endpointID, refreshedAt in
-            await self?.cacheConversation(snapshot, endpointID: endpointID, refreshedAt: refreshedAt)
+            guard let self else { return }
+            if self.endpoint.id == endpointID,
+                (self.selectedCardID ?? self.selectedChatID) == snapshot.detail.card.id
+            {
+                let harness = self.harnessCatalog.harnesses.first { $0.id == snapshot.detail.card.provider }
+                self.composer.draft.reconcileSettings(card: snapshot.detail.card, harness: harness)
+            }
+            await self.cacheConversation(snapshot, endpointID: endpointID, refreshedAt: refreshedAt)
         }
         conversationModel.onTransportFailure = { [weak self] error, client in
             guard let rpc = client as? DieterRPC else { return }
@@ -255,10 +256,7 @@ extension DieterStore {
         var request = Dieter_V1_SendMessageRequest()
         request.cardID = id
         request.parts = parts
-        request.provider = composerProvider.isEmpty ? (selectedCard?.provider ?? "") : composerProvider
-        request.model = composerModel.isEmpty ? (selectedCard?.model ?? "") : composerModel
-        request.effort = composerEffort.isEmpty ? (selectedCard?.effort ?? "") : composerEffort
-        request.providerOptions = composerProviderOptions
+        draft.applySettings(to: &request, fallback: selectedCard ?? selectedDetail?.card)
         request.clientID = syncClientID
         request.commandID = UUID().uuidString.lowercased()
         request.messageID =
@@ -286,6 +284,7 @@ extension DieterStore {
             }
             if edit {
                 let draft = ConversationQueuePresentation.editableDraft(for: removed)
+                composer.draft.restoreSettings(from: removed)
                 let currentText = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
                 composerText = [draft.text, currentText].filter { !$0.isEmpty }.joined(separator: "\n\n")
                 composerAttachments = draft.attachments + composerAttachments

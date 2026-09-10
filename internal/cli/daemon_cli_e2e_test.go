@@ -519,6 +519,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	}
 	powerActions := make(chan machine.Operation, 2)
 	remoteServer := server.NewWithOptions(remoteStore, logger, server.Options{
+		Runner: &fakeRunner{},
 		MachineAction: func(_ context.Context, operation machine.Operation) error {
 			powerActions <- operation
 			return nil
@@ -623,6 +624,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
+	assertConversationSelectionCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	first.Close()
 
 	directRoute.server.Stop()
@@ -677,6 +679,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)
+	assertConversationSelectionCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 }
 
 func assertMachineOperationAccepted(t *testing.T, raw []byte) {

@@ -2014,6 +2014,37 @@ public nonisolated struct Dieter_V1_QueuedMessage: Sendable {
 
   public var createdAt: String = String()
 
+  /// Immutable selection admitted with this message, also returned on removal
+  /// so editing restores its model, reasoning and provider options.
+  public var selection: Dieter_V1_HarnessSelection {
+    get {_selection ?? Dieter_V1_HarnessSelection()}
+    set {_selection = newValue}
+  }
+  /// Returns true if `selection` has been explicitly set.
+  public var hasSelection: Bool {self._selection != nil}
+  /// Clears the value of `selection`. Subsequent reads from it will return its default value.
+  public mutating func clearSelection() {self._selection = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _selection: Dieter_V1_HarnessSelection? = nil
+}
+
+public nonisolated struct Dieter_V1_HarnessSelection: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var provider: String = String()
+
+  public var model: String = String()
+
+  public var effort: String = String()
+
+  public var providerOptions: Dictionary<String,String> = [:]
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -9279,7 +9310,7 @@ nonisolated extension Dieter_V1_PendingTool: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension Dieter_V1_QueuedMessage: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".QueuedMessage"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}text\0\u{1}parts\0\u{3}created_at\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}text\0\u{1}parts\0\u{3}created_at\0\u{1}selection\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -9291,12 +9322,17 @@ nonisolated extension Dieter_V1_QueuedMessage: SwiftProtobuf.Message, SwiftProto
       case 2: try { try decoder.decodeSingularStringField(value: &self.text) }()
       case 3: try { try decoder.decodeRepeatedMessageField(value: &self.parts) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.createdAt) }()
+      case 5: try { try decoder.decodeSingularMessageField(value: &self._selection) }()
       default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.id.isEmpty {
       try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
     }
@@ -9309,6 +9345,9 @@ nonisolated extension Dieter_V1_QueuedMessage: SwiftProtobuf.Message, SwiftProto
     if !self.createdAt.isEmpty {
       try visitor.visitSingularStringField(value: self.createdAt, fieldNumber: 4)
     }
+    try { if let v = self._selection {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -9317,6 +9356,52 @@ nonisolated extension Dieter_V1_QueuedMessage: SwiftProtobuf.Message, SwiftProto
     if lhs.text != rhs.text {return false}
     if lhs.parts != rhs.parts {return false}
     if lhs.createdAt != rhs.createdAt {return false}
+    if lhs._selection != rhs._selection {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_HarnessSelection: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".HarnessSelection"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}provider\0\u{1}model\0\u{1}effort\0\u{3}provider_options\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.provider) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.model) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.effort) }()
+      case 4: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.providerOptions) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.provider.isEmpty {
+      try visitor.visitSingularStringField(value: self.provider, fieldNumber: 1)
+    }
+    if !self.model.isEmpty {
+      try visitor.visitSingularStringField(value: self.model, fieldNumber: 2)
+    }
+    if !self.effort.isEmpty {
+      try visitor.visitSingularStringField(value: self.effort, fieldNumber: 3)
+    }
+    if !self.providerOptions.isEmpty {
+      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.providerOptions, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_HarnessSelection, rhs: Dieter_V1_HarnessSelection) -> Bool {
+    if lhs.provider != rhs.provider {return false}
+    if lhs.model != rhs.model {return false}
+    if lhs.effort != rhs.effort {return false}
+    if lhs.providerOptions != rhs.providerOptions {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
