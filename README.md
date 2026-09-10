@@ -416,10 +416,21 @@ Go changes run race tests and vet for affected packages and their reverse
 dependencies (including test imports and embedded files). Native changes run
 the affected client's complete unit test suite because each client is one
 application module. App code, resources, or build configuration also select
-that client's integration suite: macOS packaged smoke tests or Android connected
-tests. Unit-test-only edits do not select device tests. Shared protobuf and
-native fixture changes select both clients. Harness and website changes select
-their own checks.
+that client's integration tests. macOS selects smoke suites by component: for
+example, Island views run `island`, while board and conversation panel hosts run
+`core`, `board`, `conversation`, and `workspace` to cover panel resizing,
+maximizing, and workspace tabs. Mixed changes run the union once, with one build. Shared
+app/store/theme code, build configuration, shared fixtures, and unknown Mac paths
+fall back to all eight suites. A changed smoke runner selects its own suite
+(`NativeUISmokeRunner` selects both `core` and `board`). The mapping lives in
+`scripts/check_changed.py`; add coverage when introducing a new component.
+Android app changes select connected tests. Unit-test-only edits do not select
+device tests. Shared protobuf and native fixture changes select both clients.
+Harness and website changes select their own checks.
+
+To run a known subset directly, use `just mac smoke-suites board conversation island`.
+It builds once and runs suites serially with the existing cache and
+isolated smoke driver. Explicit `just mac smoke-all` and CI still run every suite.
 
 Checks stop on the first failure. Mac smoke tests require no Dieter app to be
 running; Android connected tests require a healthy configured emulator and use
