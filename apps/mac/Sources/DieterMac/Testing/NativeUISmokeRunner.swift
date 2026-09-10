@@ -369,10 +369,9 @@
                     projectContextClosed && projectContextDismissed
                     ? "passed" : "failed: project settings did not dismiss before Quick Task"
 
-                try? await DieterTaskSleep.milliseconds(350)
-
-                let globalOpened = NativeUIAccessibility.press("sidebar.quick-task", in: window)
-                _ = await waitUntil(timeout: 5) {
+                let globalReady = await waitForBoardControl("sidebar.quick-task", in: window)
+                let globalOpened = globalReady && NativeUIAccessibility.click("sidebar.quick-task", in: window)
+                let globalVisible = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
                     ["quick-task.content", "quick-task.title", "quick-task.story", "quick-task.create"].allSatisfy {
                         NativeUIAccessibility.find($0, in: window)?.recordedFrame?.height ?? 0 > 0
                     }
@@ -394,19 +393,23 @@
                         && createFrame.minY - contentFrame.minY < 40
                         && titleFrame.minY > storyFrame.maxY
                     results["global-quick-task-layout"] =
-                        compact
+                        globalOpened && globalVisible && compact
                         ? "passed"
                         : "failed: excess shell space or misplaced title/footer; shell=\(sheetFrame), content=\(contentFrame)"
                     capture(sheet, to: output.appending(path: "global-quick-task-layout.png"))
-                    _ = NativeUIAccessibility.click("quick-task.story", in: sheet)
-                    try? await DieterTaskSleep.milliseconds(100)
-                    await NativeUIAccessibility.type("Keep this draft after clicking outside", in: sheet)
+                    let storyFocused = await focusQuickTaskStory(in: sheet)
+                    if storyFocused {
+                        await NativeUIAccessibility.type("Keep this draft after clicking outside", in: sheet)
+                    }
+                    let storyEntered = await waitUntil(timeout: 5, intervalMilliseconds: 50) {
+                        store.quickTaskForm.story == "Keep this draft after clicking outside"
+                    }
                     NativeUIEventDispatcher.click(
                         window: window, x: window.frame.width - 60, distanceFromTop: window.frame.height - 70,
                         throughApplication: true)
                     let dismissed = await waitUntil(timeout: 5) { !sheet.isVisible }
-                    try? await DieterTaskSleep.milliseconds(350)
-                    _ = NativeUIAccessibility.press("sidebar.quick-task", in: window)
+                    let reopenReady = await waitForBoardControl("sidebar.quick-task", in: window)
+                    let reopenClicked = reopenReady && NativeUIAccessibility.click("sidebar.quick-task", in: window)
                     _ = await waitUntil(timeout: 5) {
                         NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
                     }
@@ -417,18 +420,20 @@
                         capture(reopened, to: output.appending(path: "global-quick-task-restored.png"))
                     }
                     results["global-quick-task-retains-draft"] =
-                        dismissed && retained
+                        storyFocused && storyEntered && dismissed && reopenClicked && retained
                         ? "passed"
-                        : "failed: outside dismissal=\(dismissed), restored content=\(retained), story=\(store.quickTaskForm.story)"
+                        : "failed: focus=\(storyFocused), typed=\(storyEntered), outside dismissal=\(dismissed), reopen=\(reopenClicked), restored content=\(retained), story=\(store.quickTaskForm.story)"
                     if let reopened {
-                        _ = NativeUIAccessibility.press("quick-task.cancel", in: reopened)
+                        if await waitForBoardControl("quick-task.cancel", in: reopened) {
+                            _ = NativeUIAccessibility.click("quick-task.cancel", in: reopened)
+                        }
                         _ = await waitUntil(timeout: 5) { !reopened.isVisible }
                     }
                     try? await DieterTaskSleep.milliseconds(350)
                     store.quickTaskForm.reset()
                 } else {
                     results["global-quick-task-layout"] =
-                        "failed: global open action=\(globalOpened); "
+                        "failed: global ready=\(globalReady), open action=\(globalOpened), visible=\(globalVisible), active=\(NSApp.isActive), key=\(window.isKeyWindow); "
                         + ["quick-task.content", "quick-task.title", "quick-task.story", "quick-task.create"].map {
                             "\($0)=\(NativeUIAccessibility.find($0, in: window)?.recordedFrame?.debugDescription ?? "missing")"
                         }.joined(separator: "; ")
@@ -440,18 +445,17 @@
                 results["quick-task-toolbar-uncovered"] =
                     quickTaskToolbarUncovered
                     ? "passed" : "failed: conversation overlay still covers Quick Task"
+                let boardQuickTaskReady = await waitForBoardControl("board.quick-task", in: window)
                 let boardQuickTaskClicked =
-                    quickTaskToolbarUncovered
+                    quickTaskToolbarUncovered && boardQuickTaskReady
                     && NativeUIAccessibility.click("board.quick-task", in: window)
                 _ = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
                 }
-                try? await DieterTaskSleep.milliseconds(400)
                 if let target = NativeUIAccessibility.find("quick-task.story", in: window),
                     let popover = target.recordedWindow
                 {
-                    _ = NativeUIAccessibility.click("quick-task.story", in: popover)
-                    try? await DieterTaskSleep.milliseconds(200)
+                    let storyFocused = await focusQuickTaskStory(in: popover)
                     let pasteboard = NSPasteboard.general
                     let saved = (pasteboard.pasteboardItems ?? []).map { item in
                         item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in
@@ -465,19 +469,31 @@
                     image.unlockFocus()
                     pasteboard.clearContents()
                     pasteboard.writeObjects([image])
-                    if let event = NSEvent.keyEvent(
-                        with: .keyDown, location: .zero, modifierFlags: [.command],
-                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: popover.windowNumber,
-                        context: nil,
-                        characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9)
-                    {
-                        NSApp.postEvent(event, atStart: false)
+                    if storyFocused {
+                        for type in [NSEvent.EventType.keyDown, .keyUp] {
+                            if let event = NSEvent.keyEvent(
+                                with: type, location: .zero, modifierFlags: [.command],
+                                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: popover.windowNumber,
+                                context: nil,
+                                characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9)
+                            {
+                                NSApp.postEvent(event, atStart: false)
+                            }
+                        }
                     }
-                    let attached = await waitUntil(timeout: 5) {
-                        NativeUIAccessibility.find("quick-task.attachments", in: popover) != nil
+                    let attached = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                        popover.contentView?.layoutSubtreeIfNeeded()
+                        popover.displayIfNeeded()
+                        guard !store.quickTaskForm.attachments.isEmpty,
+                            let preview = NativeUIAccessibility.find("quick-task.attachments", in: popover),
+                            preview.recordedWindow === popover, let frame = preview.recordedFrame
+                        else { return false }
+                        return frame.width > 0 && frame.height > 0 && popover.isVisible
                     }
                     results["quick-task-paste-screenshot"] =
-                        attached ? "passed" : "failed: pasted screenshot preview was absent"
+                        storyFocused && attached
+                        ? "passed"
+                        : "failed: focus=\(storyFocused), attachments=\(store.quickTaskForm.attachments.count), rendered preview=\(attached), active=\(NSApp.isActive), key=\(popover.isKeyWindow)"
                     capture(popover, to: output.appending(path: "quick-task-pasted-screenshot.png"))
                     pasteboard.clearContents()
                     let items = saved.map { values in
@@ -531,14 +547,14 @@
             let sidebarShown = await NativeUIAccessibility.wait {
                 navigation?.splitViewItems.first?.isCollapsed == false
             }
-            try? await DieterTaskSleep.milliseconds(400)
-            let chatsClicked = NativeUIAccessibility.press("sidebar.all-chats", in: window)
-            _ = await NativeUIAccessibility.wait { store.section == .chats }
+            let chatsReady = await waitForExpandedSidebarTarget("sidebar.all-chats", navigation: navigation, in: window)
+            let chatsClicked = chatsReady && NativeUIAccessibility.click("sidebar.all-chats", in: window)
+            let chatsOpened = await NativeUIAccessibility.wait { store.section == .chats }
             results["navigation-collapse"] =
                 navigation != nil && sidebarHidden && composeAvailable && sidebarShown
-                    && chatsClicked && store.section == .chats
+                    && chatsReady && chatsClicked && chatsOpened
                 ? "passed"
-                : "failed: native sidebar toggle/navigation (hidden=\(sidebarHidden), shown=\(sidebarShown), compose=\(composeAvailable), section=\(store.section.rawValue))"
+                : "failed: native sidebar toggle/navigation (hidden=\(sidebarHidden), shown=\(sidebarShown), compose=\(composeAvailable), ready=\(chatsReady), clicked=\(chatsClicked), active=\(NSApp.isActive), key=\(window.isKeyWindow), section=\(store.section.rawValue))"
             store.section = .board
             let steps = [Step(name: "02-global-chats", section: .chats, distanceFromTop: 142)]
             for step in steps {
@@ -1214,6 +1230,86 @@
                 try? await DieterTaskSleep.milliseconds(intervalMilliseconds)
             }
             return condition()
+        }
+
+        private static func waitForExpandedSidebarTarget(
+            _ identifier: String, navigation: NSSplitViewController?, in window: NSWindow
+        ) async -> Bool {
+            guard let item = navigation?.splitViewItems.first else { return false }
+            var previousFrame: CGRect?
+            var stableSamples = 0
+            var nextActivation = Date.distantPast
+            return await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                if (!NSApp.isActive || !window.isKeyWindow), window.attachedSheet == nil,
+                    Date() >= nextActivation
+                {
+                    _ = NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    nextActivation = Date().addingTimeInterval(1)
+                }
+                guard NSApp.isActive, window.isKeyWindow, window.attachedSheet == nil, !item.isCollapsed,
+                    let target = NativeUIAccessibility.find(identifier, in: window),
+                    target.recordedWindow === window, let frame = target.recordedFrame,
+                    frame.width > 0, frame.height > 0
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                let sidebar = item.viewController.view
+                let sidebarFrame = window.convertToScreen(sidebar.convert(sidebar.bounds, to: nil))
+                guard sidebar.window === window, sidebarFrame.insetBy(dx: -1, dy: -1).contains(frame) else {
+                    stableSamples = 0
+                    return false
+                }
+                stableSamples = frame == previousFrame ? stableSamples + 1 : 0
+                previousFrame = frame
+                return stableSamples >= 3
+            }
+        }
+
+        /// Popover and toolbar controls must be in their actual, focused window
+        /// before the one pointer action; a first click can otherwise only focus.
+        private static func waitForBoardControl(_ identifier: String, in window: NSWindow) async -> Bool {
+            var previousFrame: CGRect?
+            var stableSamples = 0
+            var nextActivation = Date.distantPast
+            return await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                if (!NSApp.isActive || !window.isKeyWindow), window.attachedSheet == nil,
+                    Date() >= nextActivation
+                {
+                    _ = NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    nextActivation = Date().addingTimeInterval(1)
+                }
+                window.contentView?.layoutSubtreeIfNeeded()
+                guard NSApp.isActive, window.isKeyWindow, window.attachedSheet == nil,
+                    let target = NativeUIAccessibility.find(identifier, in: window),
+                    target.recordedWindow === window, let frame = target.recordedFrame,
+                    frame.width > 0, frame.height > 0, window.frame.insetBy(dx: -1, dy: -1).contains(frame)
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                stableSamples = frame == previousFrame ? stableSamples + 1 : 0
+                previousFrame = frame
+                return stableSamples >= 3
+            }
+        }
+
+        private static func focusQuickTaskStory(in window: NSWindow) async -> Bool {
+            guard await waitForBoardControl("quick-task.story", in: window) else { return false }
+            window.makeFirstResponder(nil)
+            guard NativeUIAccessibility.click("quick-task.story", in: window) else { return false }
+            return await waitUntil(timeout: 5, intervalMilliseconds: 50) {
+                guard NSApp.isActive, window.isKeyWindow,
+                    let editor = window.firstResponder as? NSTextView, editor.isEditable, editor.window === window,
+                    let storyFrame = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedFrame
+                else { return false }
+                let editorFrame = window.convertToScreen(editor.convert(editor.bounds, to: nil))
+                return storyFrame.intersects(editorFrame)
+            }
         }
 
         private static func assessFileResponsiveness(

@@ -215,8 +215,9 @@
             if let target = NativeUIAccessibility.find("conversation.full-text", in: window)?.object as? NSView {
                 target.scrollToVisible(target.bounds)
             }
-            try? await DieterTaskSleep.milliseconds(400)
-            let opened = NativeUIAccessibility.press("conversation.full-text", in: window)
+            let ready = await prepareComposerWindow(window)
+            let settled = await waitForStableControl("conversation.full-text", in: window)
+            let opened = ready && settled && NativeUIAccessibility.click("conversation.full-text", in: window)
             let fullText = await NativeUIAccessibility.wait {
                 guard let sheet = window.attachedSheet else { return false }
                 return nativeTextViews(in: sheet.contentView).contains {
@@ -226,7 +227,7 @@
             results["large-message-full-text"] =
                 opened && fullText
                 ? "passed"
-                : "failed: complete message unavailable (open action=\(opened), sheet=\(window.attachedSheet != nil))"
+                : "failed: complete message unavailable (ready=\(ready), settled=\(settled), open action=\(opened), active=\(NSApp.isActive), key=\(window.isKeyWindow), sheet=\(window.attachedSheet != nil))"
             if let sheet = window.attachedSheet {
                 capture(sheet, to: output.appending(path: "03d-full-message.png"))
                 _ = NativeUIAccessibility.click("conversation.full-text.done", in: sheet)
@@ -335,6 +336,7 @@
                     await runBoardConversationOverlayChecks(
                         store: store, window: window, results: &results, output: output)
                     await runAttachmentImportChecks(store: store, window: window, results: &results)
+                    await runOtherProviderOptionsChecks(store: store, window: window, results: &results, output: output)
                 }
             }
 
@@ -486,8 +488,10 @@
                 "conversation.model", "conversation.stop", "conversation.send",
             ]
             if model?.efforts.isEmpty == false { identifiers.append("conversation.reasoning") }
-            if !ProviderOptionValues.options(for: harness, model: store.composerModel).isEmpty {
-                identifiers.append("conversation.provider-options")
+            let options = ProviderOptionValues.options(for: harness, model: store.composerModel)
+            if options.contains(where: { $0.id == "fast_mode" }) { identifiers.append("conversation.fast-mode") }
+            if options.contains(where: { $0.id != "fast_mode" }) {
+                identifiers.append("conversation.additional-options")
             }
 
             for width in widths {
@@ -505,6 +509,7 @@
                 }
                 let columnFrame = window.convertToScreen(column.convert(column.bounds, to: nil))
                 var failures: [String] = []
+                var toolbarFrames: [String: CGRect] = [:]
                 if !columnFrame.insetBy(dx: -1, dy: -1).contains(frame) {
                     failures.append("composer \(frame) outside column \(columnFrame)")
                 }
@@ -520,8 +525,35 @@
                     if !frame.insetBy(dx: -1, dy: -1).contains(controlFrame) {
                         failures.append("\(identifier) \(controlFrame) outside composer \(frame)")
                     }
+                    if identifier != "conversation.composer" { toolbarFrames[identifier] = controlFrame }
                 }
                 results[resultKey] = failures.isEmpty ? "passed" : "failed: " + failures.joined(separator: "; ")
+                let centers = toolbarFrames.values.map(\.midY)
+                let sameRow = (centers.max() ?? 0) - (centers.min() ?? 0) <= 2
+                let orderedFrames = toolbarFrames.values.sorted { $0.minX < $1.minX }
+                let noOverlap = zip(orderedFrames, orderedFrames.dropFirst()).allSatisfy { pair in
+                    pair.0.maxX <= pair.1.minX + 1
+                }
+                results["\(scope)-composer-single-row-\(Int(width))"] =
+                    toolbarFrames.count == identifiers.count - 1 && sameRow && noOverlap
+                    ? "passed" : "failed: toolbar frames=\(toolbarFrames)"
+                let helpViews = nativeComposerHelpViews(in: column)
+                let missingHelp = toolbarFrames.compactMap { identifier, controlFrame -> String? in
+                    let center = CGPoint(x: controlFrame.midX, y: controlFrame.midY)
+                    let registered = helpViews.contains { help in
+                        guard help.window === window, !help.isHidden, help.toolTip?.isEmpty == false else {
+                            return false
+                        }
+                        if identifier == "conversation.fast-mode", help.toolTip?.hasPrefix("Fast mode:") != true {
+                            return false
+                        }
+                        let tooltipFrame = window.convertToScreen(help.convert(help.bounds, to: nil))
+                        return tooltipFrame.insetBy(dx: -1, dy: -1).contains(center)
+                    }
+                    return registered ? nil : identifier
+                }
+                results["\(scope)-composer-native-help-\(Int(width))"] =
+                    missingHelp.isEmpty ? "passed" : "failed: no native tooltip at \(missingHelp)"
                 capture(window, to: output.appending(path: "07-\(scope)-composer-\(Int(width)).png"))
                 await runAttachmentPopoverChecks(
                     window: window, prefix: "\(scope)-attachment-\(Int(width))", results: &results)
@@ -530,6 +562,106 @@
                 setColumnWidth(originalWidth, split: split, column: column)
                 _ = await waitForStableControl("conversation.composer-shell", in: window)
             }
+        }
+
+        private static func nativeComposerHelpViews(in root: NSView) -> [NativeHelpView] {
+            var pending = [root]
+            var result: [NativeHelpView] = []
+            while let view = pending.popLast() {
+                if let help = view as? NativeHelpView { result.append(help) }
+                pending.append(contentsOf: view.subviews)
+            }
+            return result
+        }
+
+        /// OMP's real Advisor setting and synthetic choice/text fields must fit
+        /// through the same bounded options popover at the narrowest chat width.
+        private static func runOtherProviderOptionsChecks(
+            store: DieterStore, window: NSWindow, results: inout [String: String], output: URL
+        ) async {
+            guard let index = store.harnessCatalog.harnesses.firstIndex(where: { $0.id == "omp" }),
+                store.harnessCatalog.harnesses[index].options.contains(where: { $0.id == "advisor" }),
+                let anchor = NativeUIAccessibility.find("conversation.composer-shell", in: window)?.object as? NSView,
+                let (split, column) = conversationColumn(containing: anchor)
+            else {
+                results["omp-provider-options"] = "failed: Advisor or native conversation fixture unavailable"
+                return
+            }
+            let originalCatalog = store.harnessCatalog
+            let originalSelection = store.composer.draft.selection
+            let originalWidth = column.frame.width
+            defer {
+                window.makeFirstResponder(nil)
+                store.harnessCatalog = originalCatalog
+                store.composer.draft.selection = originalSelection
+                setColumnWidth(originalWidth, split: split, column: column)
+            }
+            var mode = Dieter_V1_ProviderOption()
+            mode.id = "smoke_mode"
+            mode.name = "Review mode"
+            mode.type = "enum"
+            mode.mutable = true
+            mode.defaultValue = "quick"
+            mode.choices = ["quick", "thorough"].map { value in
+                var choice = Dieter_V1_ProviderOptionChoice()
+                choice.value = value
+                choice.name = value.capitalized
+                return choice
+            }
+            var note = Dieter_V1_ProviderOption()
+            note.id = "smoke_note"
+            note.name = "Review note"
+            note.type = "string"
+            note.mutable = true
+            // Also exercise Fast + the options button simultaneously. These
+            // catalog additions exist only in this in-memory rendering fixture.
+            var fast = Dieter_V1_ProviderOption()
+            fast.id = "fast_mode"
+            fast.name = "Fast mode"
+            fast.type = "boolean"
+            fast.defaultValue = "false"
+            fast.mutable = true
+            store.harnessCatalog.harnesses[index].options.append(contentsOf: [mode, note, fast])
+            let harness = store.harnessCatalog.harnesses[index]
+            store.composerProvider = harness.id
+            store.composerModel = harness.defaultModel
+            store.composerEffort = harness.models.first(where: { $0.id == harness.defaultModel })?.defaultEffort ?? ""
+            store.composerProviderOptions = ["fast_mode": "false"]
+            setColumnWidth(320, split: split, column: column)
+            let resized = await NativeUIAccessibility.wait(timeout: 5) { abs(column.frame.width - 320) < 2 }
+            guard resized else {
+                results["omp-provider-options"] = "failed: narrow fixture width=\(column.frame.width)"
+                return
+            }
+            await runComposerLayoutChecks(
+                store: store, window: window, scope: "omp-options", results: &results, output: output)
+            let ready = await prepareComposerWindow(window)
+            let settled = await waitForStableControl("conversation.additional-options", in: window)
+            let opened = ready && settled && NativeUIAccessibility.click("conversation.additional-options", in: window)
+            let fieldIDs = ["advisor", "smoke_mode", "smoke_note"]
+            let fieldsVisible = await NativeUIAccessibility.wait(timeout: 5) {
+                fieldIDs.allSatisfy { id in
+                    guard let field = NativeUIAccessibility.find("conversation.other-option.\(id)", in: window),
+                        let frame = field.recordedFrame, let host = field.recordedWindow, host.isVisible
+                    else { return false }
+                    return frame.width > 0 && frame.height > 0 && host.frame.insetBy(dx: -1, dy: -1).contains(frame)
+                }
+            }
+            results["omp-provider-options"] =
+                opened && fieldsVisible ? "passed" : "failed: opened=\(opened), native fields=\(fieldsVisible)"
+            if fieldsVisible,
+                let popover = NativeUIAccessibility.find("conversation.other-option.advisor", in: window)?
+                    .recordedWindow
+            {
+                capture(popover, to: output.appending(path: "07-omp-provider-options.png"))
+            }
+            _ = NativeUIAccessibility.click("conversation.composer", in: window)
+            let dismissed = await NativeUIAccessibility.wait(timeout: 5) {
+                NativeUIAccessibility.find("conversation.other-option.advisor", in: window)?.recordedWindow?.isVisible
+                    != true
+            }
+            results["omp-provider-options-dismisses"] =
+                dismissed ? "passed" : "failed: options popover remained visible"
         }
 
         private static func conversationColumn(containing anchor: NSView) -> (NSSplitView, NSView)? {
@@ -814,12 +946,27 @@
 
         private static func prepareComposerWindow(_ window: NSWindow) async -> Bool {
             // App activation and sheet dismissal are asynchronous. A native
-            // first click may only activate a window, so establish focus first.
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            return await NativeUIAccessibility.wait(timeout: 5) {
-                NSApp.isActive && window.isKeyWindow && window.attachedSheet == nil
+            // first click may only activate a window, so establish stable focus
+            // before the single action. Only activation requests are repeated.
+            let deadline = Date().addingTimeInterval(8)
+            var nextActivation = Date.distantPast
+            var stableSamples = 0
+            while Date() < deadline {
+                if NSApp.isActive && window.isKeyWindow && window.attachedSheet == nil {
+                    stableSamples += 1
+                    if stableSamples >= 3 { return true }
+                } else {
+                    stableSamples = 0
+                    if window.attachedSheet == nil, Date() >= nextActivation {
+                        _ = NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+                        NSApp.activate(ignoringOtherApps: true)
+                        window.makeKeyAndOrderFront(nil)
+                        nextActivation = Date().addingTimeInterval(1)
+                    }
+                }
+                try? await DieterTaskSleep.milliseconds(50)
             }
+            return false
         }
 
         private static func nativeUploadPanel(in window: NSWindow) -> NSOpenPanel? {

@@ -99,29 +99,47 @@ struct ConversationComposer: View {
                         .padding(.bottom, 6)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    composerSettings
-                    HStack(spacing: 8) {
+                GeometryReader { geometry in
+                    let compact = geometry.size.width < 360
+                    HStack(spacing: compact ? 4 : 6) {
                         attachmentButton
-                        ProviderOptionChips(
+                        providerMenu(compact: compact)
+                            .frame(width: compact ? 24 : min(100, max(66, geometry.size.width * 0.16)))
+                        modelMenu(compact: compact)
+                            .frame(minWidth: 40, maxWidth: 180)
+                            .layoutPriority(1)
+                        if let efforts = model?.efforts, !efforts.isEmpty {
+                            reasoningMenu(efforts: efforts, compact: compact)
+                                .frame(width: compact ? 24 : 64)
+                        }
+                        ComposerProviderOptions(
                             options: ProviderOptionValues.options(for: harness, model: context.composerModel),
                             values: Binding(
                                 get: { context.composerProviderOptions },
                                 set: { context.composerProviderOptions = $0 }
                             ),
-                            conversationLocked: context.composerProviderLocked
+                            conversationLocked: context.composerProviderLocked,
+                            conversationID: conversationID
                         )
                         .smokeTarget("conversation.provider-options")
-                        Spacer(minLength: 8)
-                        if let usage = ConversationContextUsage.latest(
-                            messages: context.conversation?.conversation.messages ?? [],
-                            fallbackWindow: Int64(model?.contextWindow ?? 0)
-                        ) {
+                        .fixedSize()
+                        Spacer(minLength: 0)
+                        if geometry.size.width >= 560,
+                            let usage = ConversationContextUsage.latest(
+                                messages: context.conversation?.conversation.messages ?? [],
+                                fallbackWindow: Int64(model?.contextWindow ?? 0)
+                            )
+                        {
                             ContextUsageIndicator(usage: usage)
                         }
                         composerActions
                     }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DieterTheme.subtle)
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .frame(height: 30)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 10)
 
@@ -224,7 +242,7 @@ struct ConversationComposer: View {
         .accessibilityLabel("Attach")
         .accessibilityIdentifier("conversation.attach")
         .smokeTarget("conversation.attach")
-        .help("Attach a file or capture an area of your screen to include with your message.")
+        .nativeHelp("Attach a file or capture an area of your screen to include with your message.")
         .popover(isPresented: $attachmentMenuPresented) {
             VStack(alignment: .leading, spacing: 8) {
                 Button {
@@ -265,7 +283,7 @@ struct ConversationComposer: View {
                         .background(DieterTheme.coral.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .help("Stop agent")
+                .nativeHelp("Stop agent")
                 .accessibilityIdentifier("conversation.stop")
                 .smokeTarget("conversation.stop")
             }
@@ -286,134 +304,169 @@ struct ConversationComposer: View {
             }
             .buttonStyle(.plain)
             .disabled(!hasDraft)
-            .help(working ? "Queue message" : "Send message")
+            .nativeHelp(working ? "Queue message" : "Send message")
             .accessibilityIdentifier("conversation.send")
             .smokeTarget("conversation.send")
         }
         .fixedSize()
     }
 
-    private var composerSettings: some View {
-        ComposerSettingsLayout(spacing: 12) {
-
-            Menu {
-                ForEach(context.harnessCatalog.harnesses, id: \.id) { item in
-                    Button(item.name) {
-                        guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else {
-                            return
-                        }
-                        context.composerProvider = selection.provider
-                        context.composerModel = selection.model
-                        context.composerEffort = selection.effort
-                        context.composerProviderOptions = selection.providerOptions
+    private func providerMenu(compact: Bool) -> some View {
+        Menu {
+            ForEach(context.harnessCatalog.harnesses, id: \.id) { item in
+                Button(item.name) {
+                    guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else {
+                        return
                     }
+                    context.composerProvider = selection.provider
+                    context.composerModel = selection.model
+                    context.composerEffort = selection.effort
+                    context.composerProviderOptions = selection.providerOptions
                 }
-            } label: {
-                Text(harness?.name ?? context.composerProvider).lineLimit(1)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .accessibilityLabel("Provider: \(harness?.name ?? context.composerProvider)")
-            .accessibilityIdentifier("conversation.provider")
-            .smokeTarget("conversation.provider")
-            .disabled(context.composerProviderLocked)
-            .help(
-                context.composerProviderLocked
-                    ? "Provider: this conversation keeps its original agent service. Model and reasoning changes apply to your next message."
-                    : "Provider: the agent service that runs this conversation and its tools.")
-
-            Menu {
-                ForEach(harness?.models ?? [], id: \.id) { item in
-                    Button(item.name) {
-                        context.selectComposerModel(item)
-                    }
-                }
-            } label: {
-                Text(model?.name ?? context.composerModel)
-                    .lineLimit(1).truncationMode(.tail).frame(maxWidth: 140, alignment: .leading)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .accessibilityLabel("Model: \(model?.name ?? context.composerModel)")
-            .accessibilityIdentifier("conversation.model")
-            .smokeTarget("conversation.model")
-            .disabled(!context.canChangeComposerSelection("model-selection"))
-            .help(
-                context.canChangeComposerSelection("model-selection")
-                    ? "Model: the AI model used for your next message. The current turn keeps its settings; models differ in capability, speed, and cost."
-                    : "Model: this provider or daemon version does not support changing models in an existing conversation."
-            )
-
-            if let efforts = model?.efforts, !efforts.isEmpty {
-                Menu {
-                    ForEach(efforts, id: \.self) { value in
-                        Button(value.capitalized) { context.composerEffort = value }
-                    }
-                } label: {
-                    Text(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized)
-                        .lineLimit(1)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .accessibilityLabel(
-                    "Reasoning: \(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized)"
-                )
-                .accessibilityIdentifier("conversation.reasoning")
-                .smokeTarget("conversation.reasoning")
-                .disabled(!context.canChangeComposerSelection("effort-selection"))
-                .help(
-                    context.canChangeComposerSelection("effort-selection")
-                        ? "Reasoning: how much effort the model spends thinking on your next message. Higher effort can improve difficult answers but takes longer. The current turn keeps its settings."
-                        : "Reasoning: this provider or daemon version keeps the original reasoning effort for an existing conversation."
-                )
-            }
-
+        } label: {
+            ComposerMenuLabel(
+                title: harness?.name ?? context.composerProvider, symbol: "cpu", iconOnly: compact)
         }
-        .font(.system(size: 11, weight: .medium))
-        .foregroundStyle(DieterTheme.subtle)
-        .controlSize(.small)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 5)
-        .padding(.bottom, 3)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Provider: \(harness?.name ?? context.composerProvider)")
+        .accessibilityIdentifier("conversation.provider")
+        .smokeTarget("conversation.provider")
+        .disabled(context.composerProviderLocked)
+        .nativeHelp(
+            context.composerProviderLocked
+                ? "Provider: \(harness?.name ?? context.composerProvider). This conversation keeps its original agent service. Model and reasoning changes apply to your next message."
+                : "Provider: \(harness?.name ?? context.composerProvider). The agent service that runs this conversation and its tools."
+        )
+    }
+
+    private func modelMenu(compact: Bool) -> some View {
+        Menu {
+            ForEach(harness?.models ?? [], id: \.id) { item in
+                Button(item.name) {
+                    context.selectComposerModel(item)
+                }
+            }
+        } label: {
+            let name = model?.name ?? context.composerModel
+            ComposerMenuLabel(
+                title: compact ? name.replacingOccurrences(of: "GPT-", with: "") : name,
+                symbol: "sparkles", iconOnly: false)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Model: \(model?.name ?? context.composerModel)")
+        .accessibilityIdentifier("conversation.model")
+        .smokeTarget("conversation.model")
+        .disabled(!context.canChangeComposerSelection("model-selection"))
+        .nativeHelp(
+            context.canChangeComposerSelection("model-selection")
+                ? "Model: \(model?.name ?? context.composerModel). The AI model used for your next message. The current turn keeps its settings; models differ in capability, speed, and cost."
+                : "Model: \(model?.name ?? context.composerModel). This provider or daemon version does not support changing models in an existing conversation."
+        )
+    }
+
+    private func reasoningMenu(efforts: [String], compact: Bool) -> some View {
+        Menu {
+            ForEach(efforts, id: \.self) { value in
+                Button(value.capitalized) { context.composerEffort = value }
+            }
+        } label: {
+            ComposerMenuLabel(
+                title: context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized,
+                symbol: "sparkles", iconOnly: compact)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel(
+            "Reasoning: \(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized)"
+        )
+        .accessibilityIdentifier("conversation.reasoning")
+        .smokeTarget("conversation.reasoning")
+        .disabled(!context.canChangeComposerSelection("effort-selection"))
+        .nativeHelp(
+            context.canChangeComposerSelection("effort-selection")
+                ? "Reasoning: \(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized). How much effort the model spends thinking on your next message. Higher effort can improve difficult answers but takes longer. The current turn keeps its settings."
+                : "Reasoning: this provider or daemon version keeps the original reasoning effort for an existing conversation."
+        )
     }
 }
 
-/// Wrap native menus without measuring duplicate interactive view trees.
-struct ComposerSettingsLayout: Layout {
-    var spacing: CGFloat = 12
+/// Only the menu's visual label adapts; its native presenter stays in place.
+private struct ComposerMenuLabel: View {
+    let title: String
+    let symbol: String
+    let iconOnly: Bool
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        positions(width: proposal.width ?? .greatestFiniteMagnitude, subviews: subviews).size
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let layout = positions(width: bounds.width, subviews: subviews)
-        for (index, view) in subviews.enumerated() {
-            let frame = layout.frames[index]
-            view.place(
-                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
-                proposal: ProposedViewSize(frame.size))
-        }
-    }
-
-    private func positions(width: CGFloat, subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
-        var frames: [CGRect] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        var usedWidth: CGFloat = 0
-        for view in subviews {
-            let size = view.sizeThatFits(ProposedViewSize(width: width, height: nil))
-            if x > 0, x + size.width > width {
-                y += rowHeight + 6
-                x = 0
-                rowHeight = 0
+    var body: some View {
+        HStack(spacing: 3) {
+            if iconOnly {
+                Image(systemName: symbol)
+                    .frame(width: 14)
+            } else {
+                Text(title).lineLimit(1).truncationMode(.tail)
             }
-            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
-            usedWidth = max(usedWidth, x + size.width)
-            rowHeight = max(rowHeight, size.height)
-            x += size.width + spacing
+            Image(systemName: "chevron.down")
+                .font(.system(size: 7, weight: .semibold))
+                .foregroundStyle(.tertiary)
         }
-        return (frames, CGSize(width: min(width, usedWidth), height: y + rowHeight))
+        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Keep Fast directly accessible while bounding every provider's other settings
+/// to one persistent popover, including providers with text or choice options.
+private struct ComposerProviderOptions: View {
+    let options: [Dieter_V1_ProviderOption]
+    @Binding var values: [String: String]
+    let conversationLocked: Bool
+    let conversationID: String
+    @State private var presented = false
+
+    private var additionalOptions: [Dieter_V1_ProviderOption] { options.filter { $0.id != "fast_mode" } }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let fast = options.first(where: { $0.id == "fast_mode" }) {
+                ProviderOptionChip(
+                    option: fast, values: $values,
+                    isEnabled: ProviderOptionValues.isEnabled(fast, conversationLocked: conversationLocked)
+                )
+                .smokeTarget("conversation.fast-mode")
+            }
+            if !additionalOptions.isEmpty {
+                Button {
+                    presented = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Provider options")
+                .accessibilityIdentifier("conversation.additional-options")
+                .smokeTarget("conversation.additional-options")
+                .nativeHelp("Provider options: additional settings supported by this agent service.")
+                .popover(isPresented: $presented) {
+                    Form {
+                        ForEach(additionalOptions, id: \.id) { option in
+                            ProviderOptionField(option: option, values: $values)
+                                .disabled(
+                                    !ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
+                                )
+                                .smokeTarget("conversation.other-option.\(option.id)")
+                        }
+                    }
+                    .formStyle(.grouped)
+                    .frame(width: 320)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .onChange(of: conversationID) { _, _ in presented = false }
+        .onChange(of: options) { _, _ in presented = false }
+        .onDisappear { presented = false }
     }
 }

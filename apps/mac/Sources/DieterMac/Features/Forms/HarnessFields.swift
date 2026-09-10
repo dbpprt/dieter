@@ -125,7 +125,7 @@ struct ProviderOptionChip: View {
             .buttonStyle(.plain).disabled(!isEnabled)
             .accessibilityLabel(option.id == "fast_mode" ? "Fast mode" : option.name)
             .accessibilityValue(enabled ? "On" : "Off")
-            .help(
+            .nativeHelp(
                 option.id == "fast_mode"
                     ? "Fast mode: \(enabled ? "On" : "Off"). Requests faster processing for your next message when supported by the model; usage may cost more. The current turn keeps its settings."
                     : option.description_p)
@@ -140,10 +140,10 @@ struct ProviderOptionChip: View {
                 DieterChipLabel(
                     title: option.choices.first(where: { $0.value == currentValue })?.name ?? option.name,
                     symbol: "slider.horizontal.3")
-            }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).help(option.description_p)
+            }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).nativeHelp(option.description_p)
         } else {
             TextField(option.name, text: Binding(get: { currentValue }, set: { values[option.id] = $0 }))
-                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).help(
+                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).nativeHelp(
                     option.description_p)
         }
     }
