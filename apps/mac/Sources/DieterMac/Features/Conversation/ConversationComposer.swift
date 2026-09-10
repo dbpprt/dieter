@@ -7,6 +7,8 @@ struct ConversationComposer: View {
     @Binding var fileImporterPresented: Bool
     @FocusState private var composerFocused: Bool
     @State private var attachmentDropTargeted = false
+    @State private var attachmentMenuPresented = false
+    @State private var captureInProgress = false
     @State private var historyNavigation = ComposerHistoryNavigation()
 
     private var harness: Dieter_V1_Harness? {
@@ -202,15 +204,66 @@ struct ConversationComposer: View {
         Task { await context.sendComposer() }
     }
 
+    private func captureScreenshot() {
+        guard !captureInProgress else { return }
+        captureInProgress = true
+        let capturedConversationID = conversationID
+        Task { @MainActor in
+            defer {
+                captureInProgress = false
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            do {
+                try await DieterTaskSleep.milliseconds(300)
+                NSApp.hide(nil)
+                guard let file = try await TaskScreenCapture.region() else { return }
+                defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+                let parts = try await AttachmentLoader().parts(urls: [file])
+                guard conversationID == capturedConversationID else { return }
+                context.composerAttachments = try AttachmentLoader.validate(
+                    parts, appendingTo: context.composerAttachments)
+            } catch {
+                NSApp.activate(ignoringOtherApps: true)
+                NSAlert(error: error).runModal()
+            }
+        }
+    }
+
     private func composerSettings(showContext: Bool) -> some View {
         HStack(spacing: 7) {
             Button {
-                fileImporterPresented = true
+                attachmentMenuPresented = true
             } label: {
                 Image(systemName: "paperclip")
             }
             .buttonStyle(DieterIconButtonStyle())
-            .help("Attach files")
+            .disabled(captureInProgress)
+            .accessibilityLabel("Attach")
+            .accessibilityIdentifier("conversation.attach")
+            .smokeTarget("conversation.attach")
+            .help("Attach a file or capture an area of your screen to include with your message.")
+            .popover(isPresented: $attachmentMenuPresented) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        attachmentMenuPresented = false
+                        fileImporterPresented = true
+                    } label: {
+                        Label("Upload file…", systemImage: "doc.badge.plus")
+                    }
+                    .accessibilityIdentifier("conversation.attach.upload")
+                    .smokeTarget("conversation.attach.upload")
+                    Button {
+                        attachmentMenuPresented = false
+                        captureScreenshot()
+                    } label: {
+                        Label("Take screenshot…", systemImage: "viewfinder")
+                    }
+                    .accessibilityIdentifier("conversation.attach.capture")
+                    .smokeTarget("conversation.attach.capture")
+                }
+                .buttonStyle(.borderless)
+                .padding(14)
+            }
 
             Menu {
                 ForEach(context.harnessCatalog.harnesses, id: \.id) { item in
@@ -229,6 +282,7 @@ struct ConversationComposer: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .help("Provider: the agent service that runs this conversation and its tools.")
 
             Menu {
                 ForEach(harness?.models ?? [], id: \.id) { item in
@@ -248,6 +302,7 @@ struct ConversationComposer: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .help("Model: the AI model used for your next message; models differ in capability, speed, and cost.")
 
             if let efforts = model?.efforts, !efforts.isEmpty {
                 Menu {
@@ -261,6 +316,9 @@ struct ConversationComposer: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .help(
+                    "Reasoning: how much effort the model spends thinking. Higher effort can improve difficult answers but takes longer."
+                )
             }
 
             ProviderOptionChips(

@@ -168,8 +168,14 @@ struct ConversationTimeline: View {
                         PendingToolGroupView(tools: pendingTools)
                     }
                     if agentIsWorking {
-                        ConversationAgentWorkingIndicator(hasPendingTool: !pendingTools.isEmpty)
-                            .id("conversation.agent-working")
+                        ConversationAgentWorkingIndicator(
+                            label: ConversationActivityPresentation.liveLabel(pendingTools: pendingTools, plans: plans),
+                            startedAt: ConversationActivityPresentation.turnStart(
+                                messages: messages,
+                                runtimeUpdatedAt: (context.selectedCard ?? context.selectedDetail?.card)?
+                                    .runtimeUpdatedAt ?? "")
+                        )
+                        .id("conversation.agent-working")
                     }
                     if let creationFailure {
                         CreationFailureBanner(

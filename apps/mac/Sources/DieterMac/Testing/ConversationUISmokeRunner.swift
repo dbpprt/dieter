@@ -599,6 +599,16 @@
             results: inout [String: String],
             output: URL
         ) async {
+            let attachOpened = await NativeUIAccessibility.pressWhenSettled("conversation.attach", in: window)
+            let choicesVisible = await NativeUIAccessibility.wait {
+                NativeUIAccessibility.find("conversation.attach.upload", in: window) != nil
+                    && NativeUIAccessibility.find("conversation.attach.capture", in: window) != nil
+            }
+            results["attachment-source-popover"] =
+                attachOpened && choicesVisible
+                ? "passed" : "failed: Upload file and Take screenshot choices unavailable"
+            _ = NativeUIAccessibility.click("conversation.composer", in: window)
+            try? await DieterTaskSleep.milliseconds(400)
             let pasteboard = NSPasteboard.general
             let saved = (pasteboard.pasteboardItems ?? []).map { item in
                 item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in

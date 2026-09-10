@@ -175,3 +175,32 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
         try png.write(to: URL(fileURLWithPath: output), options: .atomic)
     }
 }
+
+@Test func activityUsesPersistedTurnStartInsteadOfChangingRuntimeTimestamp() throws {
+    var user = Dieter_V1_UiMessage()
+    user.role = "user"
+    user.metadataJson = Data(#"{"createdAt":"2026-09-10T10:00:00Z"}"#.utf8)
+    let expected = ISO8601DateFormatter().date(from: "2026-09-10T10:00:00Z")
+    #expect(
+        ConversationActivityPresentation.turnStart(messages: [user], runtimeUpdatedAt: "2026-09-10T10:02:00Z")
+            == expected)
+    #expect(ConversationActivityPresentation.turnStart(messages: [], runtimeUpdatedAt: "invalid") == nil)
+}
+
+@Test func activityUsesLiveToolAndPlanWithThinkingFallback() {
+    var tool = Dieter_V1_PendingTool()
+    tool.toolName = "read_file"
+    #expect(ConversationActivityPresentation.liveLabel(pendingTools: [tool], plans: []) == "Running read_file…")
+    var task = Dieter_V1_TaskPlanItem()
+    task.status = "in_progress"
+    task.activeForm = "Inspecting the tests"
+    var phase = Dieter_V1_TaskPlanPhase()
+    phase.tasks = [task]
+    var plan = Dieter_V1_TaskPlan()
+    plan.phases = [phase]
+    #expect(ConversationActivityPresentation.liveLabel(pendingTools: [], plans: [plan]) == "Inspecting the tests")
+    task.status = "completed"
+    phase.tasks = [task]
+    plan.phases = [phase]
+    #expect(ConversationActivityPresentation.liveLabel(pendingTools: [], plans: [plan]) == "Thinking…")
+}

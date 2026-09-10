@@ -33,6 +33,27 @@ enum ConversationActivityPresentation {
             || activeStatuses.contains(cardRuntime.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 
+    static func turnStart(messages: [Dieter_V1_UiMessage], runtimeUpdatedAt: String) -> Date? {
+        if let user = messages.last(where: { $0.role == "user" }),
+            let metadata = try? JSONSerialization.jsonObject(with: user.metadataJson) as? [String: Any],
+            let value = metadata["createdAt"] as? String,
+            let date = DieterTimestamp.date(from: value)
+        {
+            return date
+        }
+        return DieterTimestamp.date(from: runtimeUpdatedAt)
+    }
+
+    static func liveLabel(pendingTools: [Dieter_V1_PendingTool], plans: [Dieter_V1_TaskPlan]) -> String {
+        if let tool = pendingTools.first, !tool.toolName.isEmpty { return "Running \(tool.toolName)…" }
+        if let task = plans.last?.phases.flatMap(\.tasks).first(where: { $0.status == "in_progress" }),
+            !task.activeForm.isEmpty
+        {
+            return task.activeForm
+        }
+        return label(hasPendingTool: !pendingTools.isEmpty)
+    }
+
     static func label(hasPendingTool: Bool) -> String {
         hasPendingTool ? "Working…" : "Thinking…"
     }

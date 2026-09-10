@@ -125,7 +125,10 @@ struct ProviderOptionChip: View {
             .buttonStyle(.plain).disabled(!isEnabled)
             .accessibilityLabel(option.id == "fast_mode" ? "Fast mode" : option.name)
             .accessibilityValue(enabled ? "On" : "Off")
-            .help(option.id == "fast_mode" ? "Fast mode: \(enabled ? "On" : "Off")" : option.description_p)
+            .help(
+                option.id == "fast_mode"
+                    ? "Fast mode: \(enabled ? "On" : "Off"). Requests faster processing when supported by the model; usage may cost more."
+                    : option.description_p)
         } else if ["enum", "select"].contains(option.type.lowercased()) {
             Menu {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
