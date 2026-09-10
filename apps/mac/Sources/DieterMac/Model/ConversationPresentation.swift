@@ -69,9 +69,10 @@ struct ConversationTimelineRowContent: Identifiable, Sendable {
 struct ConversationTimelineProjection: Sendable {
     let items: [ConversationTimelineItem]
     let rows: [ConversationTimelineRowContent]
+    let displayGroups: [ConversationTimelineDisplayGroup]
     let unattachedPlans: [Dieter_V1_TaskPlan]
 
-    static let empty = ConversationTimelineProjection(items: [], rows: [], unattachedPlans: [])
+    static let empty = ConversationTimelineProjection(items: [], rows: [], displayGroups: [], unattachedPlans: [])
 
     static func build(
         messages: [Dieter_V1_UiMessage],
@@ -89,7 +90,7 @@ struct ConversationTimelineProjection: Sendable {
             ).filter { message in
                 ["user", "human"].contains(message.role.lowercased()) || structuredMessageIDs.contains(message.id)
                     || message.parts.contains {
-                        !ConversationMessagePartGroup.isHidden($0, showReasoning: showReasoning)
+                        ConversationActivityGrouping.isVisible($0, showReasoning: showReasoning)
                     }
             }
             let items = ConversationTimelineItem.group(visibleMessages, showReasoning: showReasoning)
@@ -110,6 +111,7 @@ struct ConversationTimelineProjection: Sendable {
             return ConversationTimelineProjection(
                 items: items,
                 rows: rows,
+                displayGroups: ConversationTimelineDisplayGroup.group(rows, showReasoning: showReasoning),
                 unattachedPlans: plans.filter {
                     !$0.messageID.isEmpty && !allMessageIDs.contains($0.messageID)
                 }

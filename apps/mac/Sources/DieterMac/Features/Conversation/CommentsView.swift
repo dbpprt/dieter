@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct CommentsView: View {
     @Environment(ConversationContext.self) private var context
+    var composerBackground: Color = DieterTheme.sidebar
     var body: some View {
         @Bindable var context = context
         VStack(spacing: 0) {
@@ -40,7 +41,7 @@ struct CommentsView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.border))
                 Button("Comment") { Task { await context.addComment() } }.buttonStyle(DieterPrimaryButtonStyle())
                     .disabled(context.commentText.isEmpty)
-            }.padding(12).background(DieterTheme.sidebar)
+            }.padding(12).background(composerBackground)
         }
     }
 }

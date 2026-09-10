@@ -1,0 +1,7 @@
+# Generated bundles contain upstream template strings and verbatim licenses.
+# Verify them with `just mac markdown-check`, without rewriting their contents.
+apps/mac/Sources/DieterMac/Resources/MarkdownPreview/** linguist-generated=true -whitespace
+
+# Preserve the imported package's formatting; local changes are documented in
+# its DIETER-PATCHES.md and covered by the native Markdown integration tests.
+apps/mac/Vendor/swift-markdown-engine/** linguist-vendored=true -whitespace

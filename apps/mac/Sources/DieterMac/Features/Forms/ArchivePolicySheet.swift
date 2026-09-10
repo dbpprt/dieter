@@ -65,7 +65,7 @@ struct ArchivePolicySheet: View {
 
                     Form {
                         Section("Browser routing") {
-                            Text("Browser URLs or hostnames")
+                            Text("Browser URLs or hostnames with optional ports")
                             TextEditor(text: $browserURLs)
                                 .scrollContentBackground(.hidden)
                                 .padding(8)
@@ -74,7 +74,7 @@ struct ArchivePolicySheet: View {
                                 .accessibilityIdentifier("board.hostnames")
                                 .smokeTarget("board.hostnames")
                             Text(
-                                "One per line. Screenshot tasks match this board by exact hostname, across all URL paths and ports."
+                                "One per line. Include a port to match a specific app, such as localhost:4018. Without a port, the hostname matches any port. URL paths are ignored."
                             )
                             .font(.caption).foregroundStyle(.secondary)
                         }

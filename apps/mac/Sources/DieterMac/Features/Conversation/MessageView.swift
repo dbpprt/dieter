@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct MessageView: View {
     @Environment(ConversationContext.self) private var context
     let message: Dieter_V1_UiMessage
+    var expandedActivity = false
 
     private var deliveryState: MessageDeliveryState {
         MessageDeliveryState(
@@ -69,22 +70,10 @@ struct MessageView: View {
                 }
             }
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(
-                    Array(
-                        ConversationMessagePartGroup.group(message.parts, showReasoning: context.showReasoning)
-                            .enumerated()), id: \.offset
-                ) { _, group in
-                    if group.isToolCallGroup {
-                        ToolCallGroupView(
-                            items: group.parts.map {
-                                ConversationToolCall(messageID: message.id, part: $0)
-                            })
-                    } else if let part = group.parts.first {
-                        MessagePartView(messageID: message.id, part: part, inUserBubble: false)
-                    }
-                }
-            }
+            ConversationActivityPartsView(
+                steps: ConversationActivityStep.steps(messages: [message], showReasoning: context.showReasoning),
+                expandedActivity: expandedActivity
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }

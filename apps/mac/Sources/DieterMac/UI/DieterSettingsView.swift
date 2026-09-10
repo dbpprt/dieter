@@ -591,6 +591,7 @@ private struct PaletteOption: View {
         .accessibilityLabel("\(palette.title) design")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityIdentifier("settings.palette.\(palette.rawValue)")
+        .smokeTarget("settings.palette.\(palette.rawValue)")
     }
 }
 
@@ -629,6 +630,7 @@ private struct AppearanceOption: View {
         .accessibilityLabel("\(appearance.title) appearance")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityIdentifier("settings.appearance.\(appearance.rawValue)")
+        .smokeTarget("settings.appearance.\(appearance.rawValue)")
     }
 }
 

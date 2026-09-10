@@ -6,6 +6,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
     let documentKey: String
     let text: String
     let filename: String
+    var active = true
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -31,6 +32,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         textView.textColor = FileSyntaxHighlighter.foreground
         context.coordinator.textView = textView
         context.coordinator.container = container
+        context.coordinator.setActive(active)
         session.attach(textView, documentKey: documentKey, initialText: text)
         context.coordinator.highlight(force: true)
         return container
@@ -39,6 +41,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
     func updateNSView(_ container: SyntaxEditorContainer, context: Context) {
         context.coordinator.parent = self
         guard context.coordinator.textView != nil else { return }
+        context.coordinator.setActive(active)
         if session.documentKey != documentKey {
             context.coordinator.isApplyingUpdate = true
             session.prepare(documentKey: documentKey, text: text)
@@ -47,10 +50,11 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         } else {
             context.coordinator.highlight(force: false)
         }
-        container.needsLayout = true
+        if active { container.needsLayout = true }
     }
 
     static func dismantleNSView(_ container: SyntaxEditorContainer, coordinator: Coordinator) {
+        coordinator.setActive(false)
         if container.window?.firstResponder === container.textView {
             container.window?.makeFirstResponder(nil)
         }
@@ -68,8 +72,26 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         private var pendingEditedRange: NSRange?
         private var pendingLineDelta = 0
         private var fullHighlightTask: Task<Void, Never>?
+        private var needsFullHighlight = true
+        private var isActive = true
 
         init(parent: SyntaxHighlightedEditor) { self.parent = parent }
+
+        func setActive(_ active: Bool) {
+            let becameActive = active && !isActive
+            isActive = active
+            container?.setActive(active)
+            if !active {
+                fullHighlightTask?.cancel()
+                fullHighlightTask = nil
+                needsFullHighlight = true
+                if textView?.window?.firstResponder === textView {
+                    textView?.window?.makeFirstResponder(nil)
+                }
+            } else if becameActive {
+                highlight(force: true)
+            }
+        }
 
         func textView(
             _ textView: NSTextView,
@@ -93,20 +115,23 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             highlightEditedRange(pendingEditedRange)
             pendingEditedRange = nil
             pendingLineDelta = 0
-            container?.needsLayout = true
+            if isActive { container?.needsLayout = true }
         }
 
         func highlight(force: Bool) {
+            guard isActive else { needsFullHighlight = true; return }
             guard let textView, let storage = textView.textStorage else { return }
             let language = ProjectFileLanguage.detect(filename: parent.filename)
-            guard force || highlightedLanguage != language else { return }
+            guard force || needsFullHighlight || highlightedLanguage != language else { return }
             highlightedLanguage = language
+            needsFullHighlight = false
             textView.typingAttributes = FileSyntaxHighlighter.baseAttributes
             guard storage.length <= FileSyntaxHighlighter.backgroundFullHighlightLimit else { return }
             scheduleFullHighlight(language: language, delayNanoseconds: 0)
         }
 
         private func highlightEditedRange(_ editedRange: NSRange?) {
+            guard isActive else { needsFullHighlight = true; return }
             guard let textView, let storage = textView.textStorage, let editedRange else { return }
             let source = storage.string as NSString
             let safeLocation = min(editedRange.location, source.length)
@@ -122,20 +147,25 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         }
 
         private func scheduleFullHighlight(language: ProjectFileLanguage, delayNanoseconds: UInt64) {
+            guard isActive else { return }
             guard let storage = textView?.textStorage else { return }
             fullHighlightTask?.cancel()
             let source = storage.string
             let revision = parent.session.revision
+            let documentKey = parent.documentKey
             fullHighlightTask = Task { @MainActor [weak self] in
                 if delayNanoseconds > 0 {
                     try? await Task.sleep(nanoseconds: delayNanoseconds)
                 }
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled, self?.isActive == true else { return }
                 let plan = await Task.detached(priority: .userInitiated) {
                     FileSyntaxHighlightPlanner.build(source: source, language: language)
                 }.value
                 guard !Task.isCancelled,
                     let self,
+                    self.isActive,
+                    self.parent.documentKey == documentKey,
+                    self.parent.session.documentKey == documentKey,
                     self.parent.session.revision == revision,
                     let textView = self.textView,
                     let storage = textView.textStorage
@@ -152,6 +182,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
 final class SyntaxEditorContainer: NSView {
     let scrollView = NSScrollView()
     let textView = SyntaxEditorTextView()
+    private(set) var isActive = true
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -181,8 +212,19 @@ final class SyntaxEditorContainer: NSView {
 
     required init?(coder: NSCoder) { nil }
 
+    func setActive(_ active: Bool) {
+        guard isActive != active else { return }
+        isActive = active
+        textView.isPresentationActive = active
+        textView.isVerticallyResizable = active
+        textView.autoresizingMask = active ? [.width] : []
+        textView.textContainer?.widthTracksTextView = active
+        textView.layoutManager?.backgroundLayoutEnabled = active
+        if active { needsLayout = true }
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point) else { return nil }
+        guard isActive, bounds.contains(point) else { return nil }
         let pointInScrollView = scrollView.convert(point, from: self)
         if let scroller = scrollView.verticalScroller,
             !scroller.isHidden,
@@ -195,6 +237,7 @@ final class SyntaxEditorContainer: NSView {
 
     override func layout() {
         super.layout()
+        guard isActive else { return }
         let viewport = scrollView.contentSize
         guard viewport.width > 0, let textContainer = textView.textContainer else { return }
         textContainer.containerSize = NSSize(width: viewport.width, height: CGFloat.greatestFiniteMagnitude)
@@ -207,7 +250,8 @@ final class SyntaxEditorContainer: NSView {
 
 @MainActor
 final class SyntaxEditorTextView: NSTextView {
-    override var acceptsFirstResponder: Bool { true }
+    var isPresentationActive = true
+    override var acceptsFirstResponder: Bool { isPresentationActive }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)

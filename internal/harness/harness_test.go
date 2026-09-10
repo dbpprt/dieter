@@ -148,7 +148,7 @@ func TestCatalogIncludesCurrentCodexRegistry(t *testing.T) {
 			t.Fatalf("model %d=%q want %q", index, codex.Models[index].ID, id)
 		}
 	}
-	if codex.Effort == nil || codex.Effort.Label != "Reasoning" || len(codex.Effort.Options) != 4 ||
+	if codex.Effort == nil || codex.Effort.Label != "Reasoning" || len(codex.Effort.Options) != 6 ||
 		codex.Models[0].DefaultEffort != "medium" || codex.Models[1].DefaultEffort != "xhigh" {
 		t.Fatalf("codex effort catalog=%#v", codex)
 	}
@@ -183,8 +183,25 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 	if effort, err := ResolveEffort(codex, sol, "xhigh"); err != nil || effort != "xhigh" {
 		t.Fatalf("codex xhigh effort=%q err=%v", effort, err)
 	}
-	if _, err := ResolveEffort(codex, sol, "max"); err == nil || !strings.Contains(err.Error(), "not supported") {
-		t.Fatalf("codex max err=%v", err)
+	for _, modelID := range []string{"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra"} {
+		adapter, model, resolveErr := ResolveSelection("codex", modelID, false)
+		if resolveErr != nil {
+			t.Fatal(resolveErr)
+		}
+		for _, level := range []string{"max", "ultra"} {
+			if effort, err := ResolveEffort(adapter, model, level); err != nil || effort != level {
+				t.Fatalf("codex %s %s effort=%q err=%v", modelID, level, effort, err)
+			}
+		}
+	}
+	for _, modelID := range []string{"gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"} {
+		adapter, model, resolveErr := ResolveSelection("codex", modelID, false)
+		if resolveErr != nil {
+			t.Fatal(resolveErr)
+		}
+		if _, err := ResolveEffort(adapter, model, "ultra"); err == nil || !strings.Contains(err.Error(), "not supported") {
+			t.Fatalf("codex %s ultra err=%v", modelID, err)
+		}
 	}
 	claude, sonnet, err := ResolveSelection("claude-code", "claude-sonnet-4-5", false)
 	if err != nil {

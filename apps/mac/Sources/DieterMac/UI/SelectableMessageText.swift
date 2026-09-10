@@ -23,6 +23,9 @@ struct SelectableMessageText: NSViewRepresentable {
 final class MessageTextView: NSTextView {
     private var renderedSource: String?
     private var renderedColor: NSColor?
+    private let measurementStorage = NSTextStorage()
+    private let measurementLayout = NSLayoutManager()
+    private let measurementContainer = NSTextContainer(containerSize: .zero)
 
     init() {
         let storage = NSTextStorage()
@@ -31,6 +34,9 @@ final class MessageTextView: NSTextView {
         storage.addLayoutManager(layout)
         layout.addTextContainer(container)
         super.init(frame: .zero, textContainer: container)
+        measurementStorage.addLayoutManager(measurementLayout)
+        measurementLayout.addTextContainer(measurementContainer)
+        measurementContainer.lineFragmentPadding = 0
         isEditable = false
         isSelectable = true
         isRichText = true
@@ -39,7 +45,12 @@ final class MessageTextView: NSTextView {
         textContainer?.lineFragmentPadding = 0
         textContainer?.widthTracksTextView = true
         isHorizontallyResizable = false
-        isVerticallyResizable = true
+        // SwiftUI owns the frame. TextKit must not resize the live view while
+        // SwiftUI measures another proposal or applies a streaming update.
+        isVerticallyResizable = false
+        clipsToBounds = true
+        textContainer?.heightTracksTextView = false
+        textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         minSize = .zero
         maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -54,6 +65,7 @@ final class MessageTextView: NSTextView {
         let previousText = string
         let content = Self.attributedText(source: source, color: color)
         textStorage?.setAttributedString(content)
+        measurementStorage.setAttributedString(content)
         // Streaming and theme updates must not clear an in-progress selection.
         if content.string == previousText || content.string.hasPrefix(previousText) {
             setSelectedRange(NSIntersectionRange(selection, NSRange(location: 0, length: content.length)))
@@ -66,15 +78,12 @@ final class MessageTextView: NSTextView {
     }
 
     func fittingSize(width proposedWidth: CGFloat?) -> CGSize {
-        guard let textContainer, let layoutManager else { return .zero }
         let width = max(1, proposedWidth.flatMap { $0.isFinite ? $0 : nil } ?? 620)
-        // SwiftUI asks for a size before assigning our frame. Measure against
-        // its proposed width rather than the previous (initially zero) frame.
-        textContainer.widthTracksTextView = false
-        defer { textContainer.widthTracksTextView = true }
-        textContainer.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
-        layoutManager.ensureLayout(for: textContainer)
-        let used = layoutManager.usedRect(for: textContainer)
+        // A proposal may be rejected. Never change the displayed container's
+        // width, glyph layout or frame just to answer a sizing question.
+        measurementContainer.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+        measurementLayout.ensureLayout(for: measurementContainer)
+        let used = measurementLayout.usedRect(for: measurementContainer)
         return NSSize(width: min(width, ceil(used.width)), height: ceil(used.height))
     }
 

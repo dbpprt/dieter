@@ -4,13 +4,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HarnessAgent, getHarnessErrorMessage } from '@ai-sdk/harness/agent';
-import { createCodex } from '@ai-sdk/harness-codex';
 import { createClaudeCode } from '@ai-sdk/harness-claude-code';
 import { createPi } from '@ai-sdk/harness-pi';
 import { createACP } from '@ai-sdk/harness-acp';
 import { tool, toUIMessageStream } from 'ai';
 import { z } from 'zod';
 import { createLocalSandboxProvider } from './local-sandbox.mjs';
+import { createLocalCodex } from './codex-runtime.mjs';
 import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
 import { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
@@ -141,7 +141,7 @@ if (request.harness === 'mock') {
 let harness;
 switch (adapter) {
   case 'codex':
-    harness = createCodex({
+    harness = createLocalCodex({
       model: request.model || undefined,
       reasoningEffort: request.effort || undefined,
       webSearch: request.webSearch === true,

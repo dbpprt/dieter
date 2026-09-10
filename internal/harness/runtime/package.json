@@ -14,6 +14,7 @@
     "@ai-sdk/harness-claude-code": "1.0.106",
     "@ai-sdk/harness-codex": "1.0.104",
     "@ai-sdk/harness-pi": "1.0.104",
+    "@openai/codex-sdk": "0.154.0",
     "ai": "7.0.93",
     "ws": "8.21.3",
     "zod": "4.5.4"

@@ -4,6 +4,7 @@ import DieterAPI
 import Foundation
 import Observation
 import SwiftUI
+import Synchronization
 import Testing
 @testable import DieterMac
 
@@ -123,6 +124,63 @@ struct DieterThemePerformanceTests {
         continuation.finish()
     }
 
+    @Test @MainActor func renderingAStaleAuxiliaryRootCannotReinstallThePreviousTheme() {
+        defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+        DieterTheme.install(selection: .init(appearance: .light, palette: .coralSignal))
+        let expectedBackground = DieterTheme.background
+        let expectedAddition = DieterTheme.diffAddition
+        let changedDuringLayout = Mutex(false)
+        withObservationTracking {
+            _ = DieterTheme.background
+            _ = DieterTheme.diffAddition
+        } onChange: {
+            changedDuringLayout.withLock { $0 = true }
+        }
+
+        // Auxiliary windows can render their old root before observing the
+        // store's new selection. This used to mutate global theme state from
+        // body and invalidate other NSHostingViews during window layout.
+        let host = NSHostingView(
+            rootView: Text("Existing auxiliary window")
+                .foregroundStyle(DieterTheme.text)
+                .dieterThemeRoot(palette: .monochrome, appearance: .dark))
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 100)
+        host.layoutSubtreeIfNeeded()
+
+        #expect(!changedDuringLayout.withLock { $0 })
+        #expect(DieterTheme.background == expectedBackground)
+        #expect(DieterTheme.diffAddition == expectedAddition)
+    }
+
+    @Test @MainActor func cachedSystemThemeTracksOSChangesWithoutOverridingExplicitAppearance() {
+        defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+        for palette in [DieterPalette.monochrome, .coralSignal] {
+            DieterTheme.install(palette: palette, colorScheme: .dark)
+            let darkBackground = DieterTheme.background
+            let darkAddition = DieterTheme.diffAddition
+            DieterTheme.install(palette: palette, colorScheme: .light)
+            let lightBackground = DieterTheme.background
+            let lightAddition = DieterTheme.diffAddition
+
+            // The initial colors are unchanged when switching Light to System.
+            // The following system change must still update every cached token.
+            DieterTheme.install(selection: .init(appearance: .system, palette: palette), systemColorScheme: .light)
+            DieterTheme.systemColorSchemeDidChange(.dark)
+            #expect(DieterTheme.background == darkBackground)
+            #expect(DieterTheme.diffAddition == darkAddition)
+            DieterTheme.systemColorSchemeDidChange(.light)
+            #expect(DieterTheme.background == lightBackground)
+            #expect(DieterTheme.diffAddition == lightAddition)
+
+            DieterTheme.install(selection: .init(appearance: .light, palette: palette))
+            DieterTheme.systemColorSchemeDidChange(.dark)
+            #expect(DieterTheme.background == lightBackground)
+            DieterTheme.install(selection: .init(appearance: .dark, palette: palette))
+            DieterTheme.systemColorSchemeDidChange(.light)
+            #expect(DieterTheme.background == darkBackground)
+        }
+    }
+
     @Test @MainActor func outgoingMessagesKeepEnhancedContrastInEveryTheme() throws {
         defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
 
@@ -183,10 +241,20 @@ struct DieterThemePerformanceTests {
         #expect(accessibilityStart.duration(to: .now) < .seconds(2))
     }
 
-    @Test @MainActor func boardOnlyMountsVisibleCardsAndScrollsBeyondTheOldPageLimit() {
+    @Test @MainActor func boardOnlyMountsVisibleCardsAndScrollsBeyondTheOldPageLimit() async throws {
         let fixture = makeProductionBoardFixture(laneCounts: [100, 0, 0, 0])
         let view = NSHostingView(rootView: productionBoard(store: fixture.store, board: fixture.board))
-        view.frame = NSRect(x: 0, y: 0, width: 1_140, height: 710)
+        view.sizingOptions = []
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_140, height: 710),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        // Native List installs its scroll view and visible rows after receiving
+        // a window and the first deferred SwiftUI layout pass.
+        view.layoutSubtreeIfNeeded()
+        try await DieterTaskSleep.milliseconds(160)
         view.layoutSubtreeIfNeeded()
         var pending: [NSView] = [view]
         var tables: [NSTableView] = []
@@ -194,14 +262,48 @@ struct DieterThemePerformanceTests {
             pending.append(contentsOf: next.subviews)
             if let table = next as? NSTableView { tables.append(table) }
         }
-        guard let table = tables.first else { Issue.record("Native lane missing"); return }
+        let table = try #require(tables.first(where: { $0.numberOfRows == 100 }))
         #expect(table.numberOfRows == 100)
         var mounted = 0
         table.enumerateAvailableRowViews { _, _ in mounted += 1 }
-        #expect(mounted > 0 && mounted < 15)
-        table.scrollRowToVisible(99)
-        view.layoutSubtreeIfNeeded()
+        let visibleRows = table.rows(in: table.visibleRect)
+        let preparedRows = table.rows(in: table.preparedContentRect.union(table.visibleRect))
+        // Native List prefetches beyond the viewport for responsive scrolling.
+        // Its prepared region grows while idle, so the old custom table's fixed
+        // visible-row limit is not a contract. Bound mounting by AppKit's actual
+        // prefetch region and verify that the far end remains virtualized.
+        try #require(visibleRows.length > 0)
+        #expect(mounted >= visibleRows.length)
+        #expect(mounted <= preparedRows.length)
+        #expect(mounted < table.numberOfRows)
+        #expect(table.rowView(atRow: 99, makeIfNecessary: false) == nil)
+        for row in visibleRows.location..<NSMaxRange(visibleRows) {
+            #expect(table.rowView(atRow: row, makeIfNecessary: false) != nil)
+        }
+        let scrollView = try #require(table.enclosingScrollView)
+        for _ in 0..<8 {
+            let documentBounds = table.bounds
+            let viewportSize = scrollView.contentView.bounds.size
+            let bottom =
+                table.isFlipped
+                ? max(documentBounds.minY, documentBounds.maxY - viewportSize.height) : documentBounds.minY
+            scrollView.contentView.scroll(to: NSPoint(x: scrollView.contentView.bounds.minX, y: bottom))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            view.layoutSubtreeIfNeeded()
+            try await DieterTaskSleep.milliseconds(160)
+            view.layoutSubtreeIfNeeded()
+            if table.visibleRect.maxY >= table.rect(ofRow: 99).maxY - 1,
+                table.rowView(atRow: 99, makeIfNecessary: false) != nil
+            {
+                break
+            }
+            try #require(
+                table.bounds != documentBounds || scrollView.contentView.bounds.size != viewportSize,
+                "Native List stopped updating before the final card was reachable")
+        }
         #expect(NSLocationInRange(99, table.rows(in: table.visibleRect)))
+        #expect(table.rowView(atRow: 99, makeIfNecessary: false) != nil)
+        #expect(table.visibleRect.maxY >= table.rect(ofRow: 99).maxY - 1)
     }
 
     @Test func productionProjectSidebarRetainsTheEagerStackWorkaround() throws {

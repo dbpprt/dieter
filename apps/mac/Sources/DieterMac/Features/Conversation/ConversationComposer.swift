@@ -4,12 +4,13 @@ import UniformTypeIdentifiers
 
 struct ConversationComposer: View {
     @Environment(ConversationContext.self) private var context
+    var background: Color = DieterTheme.sidebar
     var onUploadFile: () -> Void
     @FocusState private var composerFocused: Bool
     @State private var attachmentDropTargeted = false
-    @State private var attachmentMenuPresented = false
     @State private var captureInProgress = false
     @State private var historyNavigation = ComposerHistoryNavigation()
+    @State private var queueRecallID: UUID?
 
     private var harness: Dieter_V1_Harness? {
         context.harnessCatalog.harnesses.first { $0.id == context.composerProvider }
@@ -42,9 +43,7 @@ struct ConversationComposer: View {
                     messages: queue,
                     agentIsWorking: working,
                     onEdit: { message in
-                        if await context.removeQueuedMessage(message, edit: true) {
-                            composerFocused = true
-                        }
+                        await editQueuedMessage(message)
                     },
                     onRemove: { message in
                         _ = await context.removeQueuedMessage(message, edit: false)
@@ -55,43 +54,35 @@ struct ConversationComposer: View {
                         }
                     }
                 )
+                .disabled(!context.composer.draft.pendingQueueMessageIDs.isEmpty || queueRecallID != nil)
             }
-            VStack(alignment: .leading, spacing: 0) {
-                TextField("Message the local agent…", text: $context.composerText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .lineLimit(1...5)
-                    .focused($composerFocused)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .accessibilityIdentifier("conversation.composer")
-                    .smokeTarget("conversation.composer")
-                    .onKeyPress(.return, phases: .down) { press in
-                        if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
-                            return .ignored
-                        }
-                        if hasDraft { submitComposer() }
-                        return .handled
+            ComposerSurface(focused: composerFocused, dropTargeted: attachmentDropTargeted) {
+                ComposerTextInput(
+                    placeholder: "Message the local agent…", text: $context.composerText, focus: $composerFocused
+                )
+                .accessibilityIdentifier("conversation.composer")
+                .smokeTarget("conversation.composer")
+                .onKeyPress(.return, phases: .down) { press in
+                    if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
+                        return .ignored
                     }
-                    .onKeyPress(.upArrow, phases: .down) { press in
-                        guard press.modifiers.isEmpty else { return .ignored }
-                        return navigateHistory(.older) ? .handled : .ignored
-                    }
-                    .onKeyPress(.downArrow, phases: .down) { press in
-                        guard press.modifiers.isEmpty else { return .ignored }
-                        return navigateHistory(.newer) ? .handled : .ignored
-                    }
-                    .onChange(of: context.composerText) { _, text in
-                        var navigation = historyNavigation
-                        navigation.observeTextChange(text)
-                        historyNavigation = navigation
-                    }
-                    .frame(minHeight: 54, alignment: .topLeading)
-                    .background {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture { composerFocused = true }
-                    }
+                    if hasDraft { submitComposer() }
+                    return .handled
+                }
+                .onKeyPress(.upArrow, phases: .down) { press in
+                    guard press.modifiers.isEmpty else { return .ignored }
+                    if recallQueuedMessage() { return .handled }
+                    return navigateHistory(.older) ? .handled : .ignored
+                }
+                .onKeyPress(.downArrow, phases: .down) { press in
+                    guard press.modifiers.isEmpty else { return .ignored }
+                    return navigateHistory(.newer) ? .handled : .ignored
+                }
+                .onChange(of: context.composerText) { _, text in
+                    var navigation = historyNavigation
+                    navigation.observeTextChange(text)
+                    historyNavigation = navigation
+                }
 
                 if !context.composerAttachments.isEmpty {
                     AttachmentPreviewStrip(attachments: $context.composerAttachments)
@@ -99,84 +90,92 @@ struct ConversationComposer: View {
                         .padding(.bottom, 6)
                 }
 
-                GeometryReader { geometry in
-                    let compact = geometry.size.width < 360
-                    HStack(spacing: compact ? 4 : 6) {
-                        attachmentButton
-                        providerMenu(compact: compact)
-                            .frame(width: compact ? 24 : min(100, max(66, geometry.size.width * 0.16)))
-                        modelMenu(compact: compact)
-                            .frame(minWidth: 40, maxWidth: 180)
-                            .layoutPriority(1)
-                        if let efforts = model?.efforts, !efforts.isEmpty {
-                            reasoningMenu(efforts: efforts, compact: compact)
-                                .frame(width: compact ? 24 : 64)
-                        }
-                        ComposerProviderOptions(
-                            options: ProviderOptionValues.options(for: harness, model: context.composerModel),
-                            values: Binding(
-                                get: { context.composerProviderOptions },
-                                set: { context.composerProviderOptions = $0 }
-                            ),
-                            conversationLocked: context.composerProviderLocked,
-                            conversationID: conversationID
-                        )
-                        .smokeTarget("conversation.provider-options")
-                        .fixedSize()
-                        Spacer(minLength: 0)
-                        if geometry.size.width >= 560,
-                            let usage = ConversationContextUsage.latest(
-                                messages: context.conversation?.conversation.messages ?? [],
-                                fallbackWindow: Int64(model?.contextWindow ?? 0)
-                            )
-                        {
-                            ContextUsageIndicator(usage: usage)
-                        }
-                        composerActions
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(DieterTheme.subtle)
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .frame(height: 30)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
-
-            }
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.surface)
-                    .allowsHitTesting(false)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(
-                        attachmentDropTargeted
-                            ? DieterTheme.shell
-                            : (composerFocused ? DieterTheme.shellDeep.opacity(0.55) : DieterTheme.border),
-                        lineWidth: attachmentDropTargeted ? 1.5 : 1
+                ComposerToolbar { metrics in
+                    ComposerAttachmentButton(
+                        identifierPrefix: "conversation", identity: conversationID,
+                        isEnabled: !captureInProgress, onUpload: onUploadFile, onCapture: captureScreenshot
                     )
-                    .allowsHitTesting(false)
+                    providerMenu(compact: metrics.compact)
+                    modelMenu(compact: metrics.compact)
+                        .layoutPriority(1)
+                    if let efforts = model?.efforts, !efforts.isEmpty {
+                        reasoningMenu(efforts: efforts, compact: metrics.compact)
+                    }
+                    ComposerProviderOptions(
+                        options: ProviderOptionValues.options(for: harness, model: context.composerModel),
+                        values: Binding(
+                            get: { context.composerProviderOptions },
+                            set: { context.composerProviderOptions = $0 }
+                        ),
+                        conversationLocked: context.composerProviderLocked,
+                        identity: conversationID,
+                        identifierPrefix: "conversation"
+                    )
+                    .smokeTarget("conversation.provider-options")
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                    if metrics.width >= 560,
+                        let usage = ConversationContextUsage.latest(
+                            messages: context.conversation?.conversation.messages ?? [],
+                            fallbackWindow: Int64(model?.contextWindow ?? 0)
+                        )
+                    {
+                        ContextUsageIndicator(usage: usage)
+                    }
+                    composerActions
+                }
             }
             .smokeTarget("conversation.composer-shell")
-            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
-            .animation(.easeOut(duration: 0.16), value: composerFocused)
-            .animation(.easeOut(duration: 0.12), value: attachmentDropTargeted)
             .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                 context.addPastedAttachments(providers)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .background(DieterTheme.sidebar)
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(background)
         .onChange(of: conversationID) { _, _ in
             historyNavigation.reset()
-            attachmentMenuPresented = false
+            queueRecallID = nil
         }
-        .onDisappear { attachmentMenuPresented = false }
+    }
+
+    private func recallQueuedMessage() -> Bool {
+        guard context.composerText.isEmpty, context.composerAttachments.isEmpty else { return false }
+        if queueRecallID != nil || !context.composer.draft.pendingQueueMessageIDs.isEmpty { return true }
+        guard
+            let message = ComposerQueueRecall.newestMessage(
+                text: context.composerText, attachments: context.composerAttachments,
+                queue: context.conversation?.conversation.queue ?? []
+            ), !context.composer.draft.sending
+        else { return false }
+        let requestID = UUID()
+        let originID = conversationID
+        let originDraft = context.composer.draft
+        queueRecallID = requestID
+        historyNavigation.reset()
+        Task { @MainActor in
+            defer { if queueRecallID == requestID { queueRecallID = nil } }
+            guard conversationID == originID, context.composer.draft === originDraft else { return }
+            await editQueuedMessage(message)
+        }
+        return true
+    }
+
+    private func editQueuedMessage(_ message: Dieter_V1_QueuedMessage) async {
+        let originID = conversationID
+        let originDraft = context.composer.draft
+        if await context.removeQueuedMessage(message, edit: true),
+            conversationID == originID, context.composer.draft === originDraft
+        {
+            historyNavigation.reset()
+            composerFocused = true
+        }
     }
 
     private func navigateHistory(_ direction: ComposerHistoryDirection) -> Bool {
+        guard
+            historyNavigation.isBrowsing
+                || (context.composerText.isEmpty && context.composerAttachments.isEmpty)
+        else { return false }
         guard !historyEntries.isEmpty else { return false }
         let selection = (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectedRange()
         guard
@@ -231,43 +230,6 @@ struct ConversationComposer: View {
         }
     }
 
-    private var attachmentButton: some View {
-        Button {
-            attachmentMenuPresented = true
-        } label: {
-            Image(systemName: "paperclip")
-        }
-        .buttonStyle(DieterIconButtonStyle())
-        .disabled(captureInProgress)
-        .accessibilityLabel("Attach")
-        .accessibilityIdentifier("conversation.attach")
-        .smokeTarget("conversation.attach")
-        .nativeHelp("Attach a file or capture an area of your screen to include with your message.")
-        .popover(isPresented: $attachmentMenuPresented) {
-            VStack(alignment: .leading, spacing: 8) {
-                Button {
-                    attachmentMenuPresented = false
-                    onUploadFile()
-                } label: {
-                    Label("Upload file…", systemImage: "doc.badge.plus")
-                }
-                .accessibilityIdentifier("conversation.attach.upload")
-                .smokeTarget("conversation.attach.upload")
-                Button {
-                    attachmentMenuPresented = false
-                    captureScreenshot()
-                } label: {
-                    Label("Take screenshot…", systemImage: "viewfinder")
-                }
-                .accessibilityIdentifier("conversation.attach.capture")
-                .smokeTarget("conversation.attach.capture")
-            }
-            .buttonStyle(.borderless)
-            .padding(14)
-        }
-
-    }
-
     private var composerActions: some View {
         HStack(spacing: 7) {
             if working {
@@ -283,36 +245,24 @@ struct ConversationComposer: View {
                         .background(DieterTheme.coral.opacity(0.12), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .nativeHelp("Stop agent")
+                .quickHelp("Stop")
+                .accessibilityLabel("Stop agent")
                 .accessibilityIdentifier("conversation.stop")
                 .smokeTarget("conversation.stop")
             }
 
-            Button {
-                submitComposer()
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(hasDraft ? Color.white : DieterTheme.tertiary)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        hasDraft ? DieterTheme.primary : DieterTheme.elevated,
-                        in: Circle()
-                    )
-                    .overlay(Circle().stroke(Color.white.opacity(hasDraft ? 0.14 : 0.055)))
-                    .shadow(color: DieterTheme.shellDeep.opacity(hasDraft ? 0.3 : 0), radius: 9, y: 3)
-            }
-            .buttonStyle(.plain)
-            .disabled(!hasDraft)
-            .nativeHelp(working ? "Queue message" : "Send message")
-            .accessibilityIdentifier("conversation.send")
-            .smokeTarget("conversation.send")
+            ComposerSendButton(isEnabled: hasDraft, queuesMessage: working, action: submitComposer)
+                .accessibilityIdentifier("conversation.send")
+                .smokeTarget("conversation.send")
         }
         .fixedSize()
     }
 
     private func providerMenu(compact: Bool) -> some View {
-        Menu {
+        ComposerSelectionMenu(
+            title: harness?.name ?? context.composerProvider, symbol: "cpu", help: "Provider", compact: compact,
+            maximumWidth: 100
+        ) {
             ForEach(context.harnessCatalog.harnesses, id: \.id) { item in
                 Button(item.name) {
                     guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else {
@@ -324,149 +274,45 @@ struct ConversationComposer: View {
                     context.composerProviderOptions = selection.providerOptions
                 }
             }
-        } label: {
-            ComposerMenuLabel(
-                title: harness?.name ?? context.composerProvider, symbol: "cpu", iconOnly: compact)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
         .accessibilityLabel("Provider: \(harness?.name ?? context.composerProvider)")
         .accessibilityIdentifier("conversation.provider")
         .smokeTarget("conversation.provider")
         .disabled(context.composerProviderLocked)
-        .nativeHelp(
-            context.composerProviderLocked
-                ? "Provider: \(harness?.name ?? context.composerProvider). This conversation keeps its original agent service. Model and reasoning changes apply to your next message."
-                : "Provider: \(harness?.name ?? context.composerProvider). The agent service that runs this conversation and its tools."
-        )
     }
 
     private func modelMenu(compact: Bool) -> some View {
-        Menu {
+        let name = model?.name ?? context.composerModel
+        return ComposerSelectionMenu(
+            title: compact ? name.replacingOccurrences(of: "GPT-", with: "") : name,
+            symbol: "sparkles", help: "Model"
+        ) {
             ForEach(harness?.models ?? [], id: \.id) { item in
                 Button(item.name) {
                     context.selectComposerModel(item)
                 }
             }
-        } label: {
-            let name = model?.name ?? context.composerModel
-            ComposerMenuLabel(
-                title: compact ? name.replacingOccurrences(of: "GPT-", with: "") : name,
-                symbol: "sparkles", iconOnly: false)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
         .accessibilityLabel("Model: \(model?.name ?? context.composerModel)")
         .accessibilityIdentifier("conversation.model")
         .smokeTarget("conversation.model")
         .disabled(!context.canChangeComposerSelection("model-selection"))
-        .nativeHelp(
-            context.canChangeComposerSelection("model-selection")
-                ? "Model: \(model?.name ?? context.composerModel). The AI model used for your next message. The current turn keeps its settings; models differ in capability, speed, and cost."
-                : "Model: \(model?.name ?? context.composerModel). This provider or daemon version does not support changing models in an existing conversation."
-        )
     }
 
     private func reasoningMenu(efforts: [String], compact: Bool) -> some View {
-        Menu {
+        ComposerSelectionMenu(
+            title: context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized,
+            symbol: "sparkles", help: "Reasoning", compact: compact, maximumWidth: 80
+        ) {
             ForEach(efforts, id: \.self) { value in
                 Button(value.capitalized) { context.composerEffort = value }
             }
-        } label: {
-            ComposerMenuLabel(
-                title: context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized,
-                symbol: "sparkles", iconOnly: compact)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
         .accessibilityLabel(
             "Reasoning: \(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized)"
         )
         .accessibilityIdentifier("conversation.reasoning")
         .smokeTarget("conversation.reasoning")
         .disabled(!context.canChangeComposerSelection("effort-selection"))
-        .nativeHelp(
-            context.canChangeComposerSelection("effort-selection")
-                ? "Reasoning: \(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized). How much effort the model spends thinking on your next message. Higher effort can improve difficult answers but takes longer. The current turn keeps its settings."
-                : "Reasoning: this provider or daemon version keeps the original reasoning effort for an existing conversation."
-        )
-    }
-}
-
-/// Only the menu's visual label adapts; its native presenter stays in place.
-private struct ComposerMenuLabel: View {
-    let title: String
-    let symbol: String
-    let iconOnly: Bool
-
-    var body: some View {
-        HStack(spacing: 3) {
-            if iconOnly {
-                Image(systemName: symbol)
-                    .frame(width: 14)
-            } else {
-                Text(title).lineLimit(1).truncationMode(.tail)
-            }
-            Image(systemName: "chevron.down")
-                .font(.system(size: 7, weight: .semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-        .contentShape(Rectangle())
-    }
-}
-
-/// Keep Fast directly accessible while bounding every provider's other settings
-/// to one persistent popover, including providers with text or choice options.
-private struct ComposerProviderOptions: View {
-    let options: [Dieter_V1_ProviderOption]
-    @Binding var values: [String: String]
-    let conversationLocked: Bool
-    let conversationID: String
-    @State private var presented = false
-
-    private var additionalOptions: [Dieter_V1_ProviderOption] { options.filter { $0.id != "fast_mode" } }
-
-    var body: some View {
-        HStack(spacing: 4) {
-            if let fast = options.first(where: { $0.id == "fast_mode" }) {
-                ProviderOptionChip(
-                    option: fast, values: $values,
-                    isEnabled: ProviderOptionValues.isEnabled(fast, conversationLocked: conversationLocked)
-                )
-                .smokeTarget("conversation.fast-mode")
-            }
-            if !additionalOptions.isEmpty {
-                Button {
-                    presented = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Provider options")
-                .accessibilityIdentifier("conversation.additional-options")
-                .smokeTarget("conversation.additional-options")
-                .nativeHelp("Provider options: additional settings supported by this agent service.")
-                .popover(isPresented: $presented) {
-                    Form {
-                        ForEach(additionalOptions, id: \.id) { option in
-                            ProviderOptionField(option: option, values: $values)
-                                .disabled(
-                                    !ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
-                                )
-                                .smokeTarget("conversation.other-option.\(option.id)")
-                        }
-                    }
-                    .formStyle(.grouped)
-                    .frame(width: 320)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .onChange(of: conversationID) { _, _ in presented = false }
-        .onChange(of: options) { _, _ in presented = false }
-        .onDisappear { presented = false }
     }
 }

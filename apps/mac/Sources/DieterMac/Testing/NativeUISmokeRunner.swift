@@ -3,6 +3,7 @@
     import DieterAPI
     import Foundation
     import SwiftUI
+    import WebKit
 
     /// An in-process smoke driver for a native app.
     ///
@@ -27,7 +28,8 @@
                 for attempt in 0..<20 {
                     try? await DieterTaskSleep.milliseconds(250)
                     if NSApp.windows.contains(where: {
-                        $0.contentView != nil && $0.frame.width >= 600 && $0.frame.height >= 400
+                        $0.isVisible && $0.title == "Dieter" && $0.contentView != nil
+                            && $0.frame.width >= 600 && $0.frame.height >= 400
                     }) {
                         return
                     }
@@ -142,16 +144,23 @@
             await store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.seconds(1)
 
-            guard
+            let workspaceVisible = await waitUntil(timeout: 5) {
+                NSApp.windows.contains {
+                    $0.isVisible && $0.contentView != nil && $0.title == "Dieter"
+                }
+            }
+            guard workspaceVisible,
                 let window = NSApp.windows.first(where: {
                     $0.isVisible && $0.contentView != nil && $0.title == "Dieter"
                 })
-                    ?? NSApp.windows.first(where: { $0.isVisible && $0.contentView != nil })
             else {
-                writeReport(["error": "failed: Dieter window not found"], to: output)
+                writeReport(["error": "failed: visible Dieter workspace window not found"], to: output)
                 return
             }
 
+            let windowTrace = NativeUIWindowLifecycleTrace(
+                window: window, output: output.appending(path: "window-lifecycle.log"))
+            defer { windowTrace.stop() }
             window.setContentSize(NSSize(width: 1_380, height: 870))
             window.center()
             window.makeKeyAndOrderFront(nil)
@@ -245,13 +254,7 @@
             await captureAppearances(window, named: "01-board.png", in: output)
             results["board-initial"] = store.section.rawValue
 
-            // The packaged-app smoke has a fixed 1,380pt content width. Drive the
-            // first lane's rendered sort button through Dieter's own NSWindow and
-            // capture immediately, before any appearance change can rebuild it.
-            NativeUIAccessibility.press("lane-sort.todo", in: window)
-            try? await DieterTaskSleep.milliseconds(500)
-            capture(window, to: output.appending(path: "01-board-oldest-first.png"))
-            results["board-lane-sort-toggle"] = "dispatched for visual verification"
+            await runBoardLaneSortChecks(store: store, window: window, results: &results, output: output)
             if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
                 let boardCards = store.state.cards.filter { $0.boardID == board.id }
                 let largestLane =
@@ -510,9 +513,6 @@
                 NSApp.terminate(nil)
                 return
             }
-            NativeUIAccessibility.press("lane-sort.todo", in: window)  // restore newest-first
-            try? await DieterTaskSleep.milliseconds(350)
-
             store.openScreens()
             try? await DieterTaskSleep.milliseconds(500)
             results["01a-experimental-screens"] =
@@ -674,36 +674,44 @@
                 store.section == .settings ? "passed" : "failed: settings did not open"
             await captureAppearances(window, named: "09-settings-general.png", in: output)
 
-            click(window: window, x: 920, distanceFromTop: 196)
-            try? await DieterTaskSleep.milliseconds(700)
+            let lightPressed = await NativeUIAccessibility.pressWhenSettled("settings.appearance.light", in: window)
+            let lightApplied = await waitUntil(timeout: 5) {
+                DieterAppearance.resolve(appearanceDefaults.string(forKey: DieterAppearance.storageKey)) == .light
+                    && store.themeSelection.appearance == .light
+                    && window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua
+            }
             let storedAppearance = DieterAppearance.resolve(
                 appearanceDefaults.string(forKey: DieterAppearance.storageKey))
             let effectiveAppearance = window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua])
             results["09b-settings-light-appearance"] =
-                storedAppearance == .light
-                    && store.themeSelection.appearance == .light
-                    && effectiveAppearance == .aqua
+                lightPressed && lightApplied
                 ? "passed"
-                : "failed: stored=\(storedAppearance.rawValue), live=\(store.themeSelection.appearance.rawValue), effective=\(effectiveAppearance?.rawValue ?? "unknown")"
+                : "failed: pressed=\(lightPressed), stored=\(storedAppearance.rawValue), live=\(store.themeSelection.appearance.rawValue), effective=\(effectiveAppearance?.rawValue ?? "unknown")"
             await captureAppearances(window, named: "09b-settings-light-appearance.png", in: output)
 
-            click(window: window, x: 1_230, distanceFromTop: 376)
-            try? await DieterTaskSleep.milliseconds(700)
+            let coralPressed = await NativeUIAccessibility.pressWhenSettled("settings.palette.coral-signal", in: window)
+            let coralApplied = await waitUntil(timeout: 5) {
+                DieterPalette.resolve(appearanceDefaults.string(forKey: DieterPalette.storageKey)) == .coralSignal
+                    && store.themeSelection.palette == .coralSignal
+            }
             let storedPalette = DieterPalette.resolve(
                 appearanceDefaults.string(forKey: DieterPalette.storageKey))
             results["09c-settings-coral-design"] =
-                storedPalette == .coralSignal
-                    && store.themeSelection.palette == .coralSignal
+                coralPressed && coralApplied
                 ? "passed"
-                : "failed: stored=\(storedPalette.rawValue), live=\(store.themeSelection.palette.rawValue)"
+                : "failed: pressed=\(coralPressed), stored=\(storedPalette.rawValue), live=\(store.themeSelection.palette.rawValue)"
             await captureAppearances(window, named: "09c-settings-coral-design.png", in: output)
 
-            click(window: window, x: 600, distanceFromTop: 324)
-            try? await DieterTaskSleep.milliseconds(700)
+            let monochromePressed = await NativeUIAccessibility.pressWhenSettled(
+                "settings.palette.monochrome", in: window)
+            let monochromeApplied = await waitUntil(timeout: 5) {
+                DieterPalette.resolve(appearanceDefaults.string(forKey: DieterPalette.storageKey)) == .monochrome
+                    && store.themeSelection.palette == .monochrome
+            }
             results["09d-settings-monochrome-design"] =
-                store.themeSelection.palette == .monochrome
+                monochromePressed && monochromeApplied
                 ? "passed"
-                : "failed: live=\(store.themeSelection.palette.rawValue)"
+                : "failed: pressed=\(monochromePressed), live=\(store.themeSelection.palette.rawValue)"
 
             click(window: window, x: 320, distanceFromTop: 151)
             try? await DieterTaskSleep.milliseconds(700)
@@ -756,20 +764,39 @@
             if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
                 await captureAppearances(sheet, named: "13-new-card.png", in: output)
                 results["13-new-card"] = "passed"
-                click(window: sheet, x: 217, distanceFromTop: 425)
-                try? await DieterTaskSleep.milliseconds(700)
-                if let picker = NSApp.windows.first(where: {
-                    $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
-                }) {
+                let workspaceOpened = await NativeUIAccessibility.pressWhenSettled("new-card.workspace", in: sheet)
+                let workspaceVisible = await waitUntil(timeout: 5) {
+                    guard let picker = NativeUIAccessibility.find("workspace.mode.worktree", in: sheet)?.recordedWindow
+                    else { return false }
+                    return picker !== sheet && picker.isVisible
+                }
+                if workspaceOpened, workspaceVisible,
+                    let picker = NativeUIAccessibility.find("workspace.mode.worktree", in: sheet)?.recordedWindow
+                {
+                    let worktreePressed = await NativeUIAccessibility.pressWhenSettled(
+                        "workspace.mode.worktree", in: picker)
+                    let worktreeFieldsVisible = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find("workspace.branch", in: picker) != nil
+                            && NativeUIAccessibility.find("workspace.base-branch", in: picker) != nil
+                    }
                     await captureAppearances(picker, named: "13a-workspace-picker-worktree.png", in: output)
-                    click(window: picker, x: 500, distanceFromTop: 190)
-                    try? await DieterTaskSleep.milliseconds(350)
+                    let projectPressed = await NativeUIAccessibility.pressWhenSettled(
+                        "workspace.mode.project", in: picker)
+                    let projectFieldsVisible = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find("workspace.branch", in: picker) == nil
+                            && NativeUIAccessibility.find("workspace.base-branch", in: picker) == nil
+                            && NativeUIAccessibility.find("workspace.confirm", in: picker) != nil
+                    }
                     await captureAppearances(picker, named: "13a-workspace-picker-project.png", in: output)
-                    results["13a-workspace-picker"] = "passed"
-                    click(window: picker, x: picker.frame.width - 32, distanceFromTop: 36)
-                    try? await DieterTaskSleep.milliseconds(350)
+                    let workspaceClosed = await NativeUIAccessibility.pressWhenSettled("workspace.close", in: picker)
+                    let workspaceDismissed = await waitUntil(timeout: 5) { !picker.isVisible }
+                    results["13a-workspace-picker"] =
+                        worktreePressed && worktreeFieldsVisible && projectPressed && projectFieldsVisible
+                            && workspaceClosed && workspaceDismissed
+                        ? "passed"
+                        : "failed: worktree=\(worktreePressed)/\(worktreeFieldsVisible), project=\(projectPressed)/\(projectFieldsVisible), closed=\(workspaceClosed)/\(workspaceDismissed)"
                 } else {
-                    results["13a-workspace-picker"] = "failed: sheet not visible"
+                    results["13a-workspace-picker"] = "failed: opened=\(workspaceOpened), visible=\(workspaceVisible)"
                 }
             } else {
                 results["13-new-card"] = "failed: sheet not visible"
@@ -1321,7 +1348,23 @@
                 return
             }
             let documents = [
-                ("responsiveness-a.md", "# File A\nVisible editor content.\n"),
+                (
+                    "responsiveness-a.md",
+                    """
+                    # File A
+                    Visible editor content.
+
+                    ```mermaid
+                    graph LR
+                      A[Source] --> B[Preview]
+                    ```
+
+                    ```vega-lite
+                    {"width":720,"height":220,"title":{"text":"Results across primary outcomes","subtitle":"A deliberately long report subtitle with context and uncertainty intervals that must fit a narrow preview pane"},"data":{"values":[{"label":"A","value":3},{"label":"B","value":7}]},"layer":[{"mark":"bar","encoding":{"y":{"field":"label","type":"nominal"},"x":{"field":"value","type":"quantitative"}}},{"mark":{"type":"text","align":"left","dx":6},"encoding":{"y":{"field":"label","type":"nominal"},"x":{"field":"value","type":"quantitative"},"text":{"field":"value"}}}]}
+                    ```
+
+                    """
+                ),
                 ("responsiveness-b.md", "# File B\nAnother document.\n"),
             ]
             do {
@@ -1377,6 +1420,59 @@
                     separator: ", ")
                 results["files-open-to-content-ms"] = latencies.map { String(format: "%.1f", $0) }.joined(
                     separator: ", ")
+                let defaultRich = nativeRichTextView(in: window.contentView)
+                results["files-markdown-default-edit"] =
+                    defaultRich?.isEditable == true
+                        && markdownSplitController(in: window.contentView)?.layout == .preview
+                    ? "passed" : "failed: Markdown did not open in rich edit mode"
+                _ = NativeUIAccessibility.selectSegment(1, identifier: "files.markdown.layout", in: window)
+                _ = await waitUntil(timeout: 5) {
+                    markdownSplitController(in: window.contentView)?.layout == .split
+                }
+                let preview = markdownWebView(in: window.contentView)
+                let rendered = await waitForMarkdown(
+                    preview,
+                    predicate: """
+                        document.querySelector('#preview[data-render-state="ready"] h1')?.textContent === 'File A'
+                        && document.querySelector('[data-kind="mermaid"][data-state="rendered"] svg') !== null
+                        && document.querySelector('[data-kind="vega-lite"][data-state="rendered"] svg') !== null
+                        """)
+                results["files-markdown-diagrams"] =
+                    rendered ? "passed" : "failed: Markdown, Mermaid or Vega-Lite did not render"
+                if let preview, rendered {
+                    let chartFitsPane = """
+                        (() => {
+                          const chart = document.querySelector('[data-kind="vega-lite"][data-state="rendered"]');
+                          const svg = chart?.querySelector('svg');
+                          if (!chart || !svg) return false;
+                          const width = svg.getBoundingClientRect().width;
+                          return width > 200 && width <= chart.clientWidth + 1 && chart.scrollWidth <= chart.clientWidth + 1;
+                        })()
+                        """
+                    let sized = await waitForMarkdown(preview, predicate: chartFitsPane)
+                    results["files-markdown-chart-sizing"] =
+                        sized ? "passed" : "failed: fixed-width chart overflowed the preview pane"
+                    await captureMarkdown(preview, to: output.appending(path: "04a-markdown-rendered.png"))
+                    var ancestor = preview.superview
+                    while let view = ancestor, !(view is NSSplitView) { ancestor = view.superview }
+                    if let split = ancestor as? NSSplitView, split.isVertical, split.arrangedSubviews.count == 2 {
+                        let original = split.arrangedSubviews[0].frame.width
+                        split.setPosition(split.bounds.width * 0.62, ofDividerAt: 0)
+                        let resized = await waitUntil(timeout: 5) {
+                            abs(split.arrangedSubviews[0].frame.width - original) > 10
+                                && split.arrangedSubviews[1].frame.width >= 140
+                        }
+                        results["files-markdown-native-split"] =
+                            resized ? "passed" : "failed: divider did not resize both panes"
+                        let chartResized = await waitForMarkdown(preview, predicate: chartFitsPane)
+                        results["files-markdown-chart-resize"] =
+                            resized && chartResized
+                            ? "passed" : "failed: chart did not fit after moving the native divider"
+                        split.setPosition(original, ofDividerAt: 0)
+                    } else {
+                        results["files-markdown-native-split"] = "failed: native Markdown split missing"
+                    }
+                }
                 guard
                     let editor = nativeTextViews(in: window.contentView).first(where: {
                         $0.string == documents[0].1 && $0.isEditable && $0.window === window
@@ -1388,11 +1484,42 @@
                 window.makeKeyAndOrderFront(nil)
                 window.makeFirstResponder(editor)
                 editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
-                await NativeUIAccessibility.type("Saved through the native editor.\n", in: window)
-                let expected = documents[0].1 + "Saved through the native editor.\n"
+                // Exercise NSTextInputClient and its normal delegate/undo path.
+                // This file-edit check must not depend on the global pasteboard,
+                // which the operator can change while the isolated suite runs.
+                editor.insertText("Saved through the native editor.\n", replacementRange: editor.selectedRange())
+                var expected = documents[0].1 + "Saved through the native editor.\n"
                 let edited = await waitUntil(timeout: 5) {
                     store.fileEditorSession.isDirty && editor.string == expected
                 }
+                let previewUpdated = await waitForMarkdown(
+                    preview,
+                    predicate: """
+                        document.querySelector('#preview[data-render-state="ready"]')?.textContent.includes('Saved through the native editor.') === true
+                        """)
+                results["files-markdown-unsaved-preview"] =
+                    edited && previewUpdated && store.fileDocument?.content == documents[0].1
+                    ? "passed" : "failed: unsaved editor changes did not reach the preview"
+                let previewOnly = NativeUIAccessibility.selectSegment(
+                    3, identifier: "files.markdown.layout", in: window)
+                let fullPreview = await waitUntil(timeout: 5) {
+                    guard let split = self.markdownSplitController(in: window.contentView) else { return false }
+                    return split.layout == .preview && split.splitViewItems[0].isCollapsed
+                }
+                let sourceOnly = NativeUIAccessibility.selectSegment(2, identifier: "files.markdown.layout", in: window)
+                let fullSource = await waitUntil(timeout: 5) {
+                    guard let split = self.markdownSplitController(in: window.contentView) else { return false }
+                    return split.layout == .source && split.splitViewItems[1].isCollapsed
+                }
+                let splitAgain = NativeUIAccessibility.selectSegment(1, identifier: "files.markdown.layout", in: window)
+                let restoredSplit = await waitUntil(timeout: 5) {
+                    guard let split = self.markdownSplitController(in: window.contentView) else { return false }
+                    return split.layout == .split && !split.splitViewItems.contains(where: \.isCollapsed)
+                }
+                results["files-markdown-layout-modes"] =
+                    previewOnly && fullPreview && sourceOnly && fullSource && splitAgain && restoredSplit
+                        && editor.string == expected && store.fileEditorSession.isDirty
+                    ? "passed" : "failed: switching layout lost the editor or its unsaved draft"
                 let saved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
                 let persisted = await waitUntil(timeout: 5) {
                     store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
@@ -1401,6 +1528,57 @@
                     edited && saved && persisted
                     ? "passed"
                     : "failed: native edit/save did not persist (edited=\(edited), save action=\(saved), persisted=\(persisted))"
+                if preview != nil {
+                    let selected = NativeUIAccessibility.selectSegment(
+                        0, identifier: "files.markdown.layout", in: window)
+                    let richReady = await waitUntil(timeout: 8) {
+                        self.nativeRichTextView(in: window.contentView)?.isEditable == true
+                    }
+                    if selected && richReady, let richText = nativeRichTextView(in: window.contentView) {
+                        window.makeFirstResponder(richText)
+                        richText.setSelectedRange((richText.string as NSString).range(of: "File A"))
+                        let formatted = await NativeUIAccessibility.pressWhenSettled(
+                            "files.markdown.format.bold", in: window)
+                        let richEdited = await waitUntil(timeout: 5) {
+                            store.fileEditorSession.isDirty
+                                && store.fileEditorSession.currentText().contains("**File A**")
+                        }
+                        // Hidden source editors are suspended. Verify the shared
+                        // document buffer, which owns edits in every mode.
+                        expected = store.fileEditorSession.currentText()
+                        capture(window, to: output.appending(path: "04c-markdown-rich-editor.png"))
+                        let richSaved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
+                        let richPersisted = await waitUntil(timeout: 5) {
+                            store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
+                        }
+                        results["files-markdown-rich-edit-save"] =
+                            formatted && richEdited && richSaved && richPersisted
+                            ? "passed"
+                            : "failed: rich formatting/save (action=\(formatted), edited=\(richEdited), saved=\(richSaved), persisted=\(richPersisted))"
+                        _ = NativeUIAccessibility.selectSegment(3, identifier: "files.markdown.layout", in: window)
+                        // Preview is unmounted while hidden and recreated on
+                        // entry; never inspect the previous detached WebView.
+                        _ = await waitUntil(timeout: 5) {
+                            markdownWebView(in: window.contentView) != nil
+                        }
+                        let richPreviewView = markdownWebView(in: window.contentView)
+                        let richPreview = await waitForMarkdown(
+                            richPreviewView,
+                            predicate: """
+                                document.querySelector('#preview h1 strong')?.textContent === 'File A'
+                                && document.querySelector('[data-kind="mermaid"][data-state="rendered"] svg') !== null
+                                && document.querySelector('[data-kind="vega-lite"][data-state="rendered"] svg') !== null
+                                """)
+                        results["files-markdown-rich-preview"] =
+                            richPreview ? "passed" : "failed: rich editing lost formatting or diagram fences"
+                        if let richPreviewView {
+                            await captureMarkdown(
+                                richPreviewView, to: output.appending(path: "04c-markdown-rich-edit.png"))
+                        }
+                    } else {
+                        results["files-markdown-rich-edit-save"] = "failed: rich editor did not open"
+                    }
+                }
                 await store.openBoard(boardID, projectID: projectID)
                 await store.openProject(projectID, section: .files)
                 let revisited = await waitUntil(timeout: 5) {
@@ -1430,6 +1608,55 @@
             }
         }
 
+        private static func nativeRichTextView(in view: NSView?) -> NSTextView? {
+            guard let view else { return nil }
+            if let text = view as? NSTextView,
+                String(reflecting: type(of: text)).contains("MarkdownEngine")
+            {
+                return text
+            }
+            return view.subviews.lazy.compactMap { nativeRichTextView(in: $0) }.first
+        }
+
+        private static func markdownSplitController(in view: NSView?) -> MarkdownEditorSplitController? {
+            guard let view else { return nil }
+            if let split = view as? NSSplitView, let controller = split.delegate as? MarkdownEditorSplitController {
+                return controller
+            }
+            return view.subviews.lazy.compactMap { markdownSplitController(in: $0) }.first
+        }
+
+        private static func markdownWebView(in view: NSView?) -> WKWebView? {
+            guard let view else { return nil }
+            if let web = view as? WKWebView { return web }
+            return view.subviews.lazy.compactMap { markdownWebView(in: $0) }.first
+        }
+
+        private static func waitForMarkdown(_ web: WKWebView?, predicate: String) async -> Bool {
+            guard let web else { return false }
+            let deadline = Date().addingTimeInterval(15)
+            while Date() < deadline {
+                let matched: Bool = await withCheckedContinuation { continuation in
+                    web.evaluateJavaScript("Boolean(\(predicate))") { value, _ in
+                        continuation.resume(returning: value as? Bool == true)
+                    }
+                }
+                if matched { return true }
+                try? await DieterTaskSleep.milliseconds(100)
+            }
+            return false
+        }
+
+        private static func captureMarkdown(_ web: WKWebView, to url: URL) async {
+            let image: NSImage? = await withCheckedContinuation { continuation in
+                web.takeSnapshot(with: nil) { image, _ in continuation.resume(returning: image) }
+            }
+            guard let tiff = image?.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+                let png = bitmap.representation(using: .png, properties: [:])
+            else { return }
+            try? png.write(to: url)
+        }
+
         private static func closeBoardConversationForToolbar(store: DieterStore, window: NSWindow) async -> Bool {
             if store.selectedCardID == nil, !NativeUIAccessibility.hasOpenInspector(in: window) { return true }
             let visibleClose = await waitUntil(timeout: 5) {
@@ -1445,6 +1672,66 @@
                 store.selectedCardID == nil && !NativeUIAccessibility.hasOpenInspector(in: window)
             }
             return clicked && detached
+        }
+
+        private static func runBoardLaneSortChecks(
+            store: DieterStore, window: NSWindow, results: inout [String: String], output: URL
+        ) async {
+            let cards = store.displayedCards.filter { $0.lane == "todo" }
+            let directions: [BoardCardSortDirection] = [.ascending, .descending]
+            for direction in directions {
+                let ready = await waitForBoardControl("lane-sort.todo", in: window)
+                let clicked = ready && NativeUIAccessibility.click("lane-sort.todo", in: window)
+                let changed = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("lane-sort.todo.\(direction.systemImage)", in: window) != nil
+                        && NativeUIAccessibility.find("lane-sort.todo.\(direction.toggled.systemImage)", in: window)
+                            == nil
+                }
+                // A one-card fixture still proves the rendered sort state
+                // changes. Larger lanes also have to reorder their actual rows.
+                let orderChanged: Bool
+                if cards.count < 2 {
+                    orderChanged = true
+                } else {
+                    orderChanged = await waitUntil(timeout: 5) {
+                        guard let first = BoardCardOrdering.sorted(cards, direction: direction).first else {
+                            return false
+                        }
+                        return firstCardIsTopmost(first.id, cards: cards, in: window)
+                    }
+                }
+                let key = direction == .ascending ? "board-lane-sort-toggle" : "board-lane-sort-restore"
+                results[key] =
+                    clicked && changed && orderChanged
+                    ? "passed"
+                    : "failed: ready=\(ready), clicked=\(clicked), rendered direction=\(changed), row order=\(orderChanged)"
+                if direction == .ascending {
+                    capture(window, to: output.appending(path: "01-board-oldest-first.png"))
+                }
+            }
+        }
+
+        private static func firstCardIsTopmost(
+            _ identifier: String, cards: [Dieter_V1_Card], in window: NSWindow
+        ) -> Bool {
+            guard let first = NativeUIAccessibility.find("card.\(identifier)", in: window),
+                let anchor = first.object as? NSView, let frame = first.recordedFrame
+            else { return false }
+            var ancestor = anchor.superview
+            var clip: NSClipView?
+            while let view = ancestor {
+                if let candidate = view as? NSClipView { clip = candidate; break }
+                ancestor = view.superview
+            }
+            guard let clip, clip.window === window else { return false }
+            let viewport = window.convertToScreen(clip.convert(clip.bounds, to: nil))
+            guard frame.intersects(viewport) else { return false }
+            return cards.allSatisfy { card in
+                guard let other = NativeUIAccessibility.find("card.\(card.id)", in: window)?.recordedFrame,
+                    other.intersects(viewport)
+                else { return true }
+                return other.maxY <= frame.maxY + 1
+            }
         }
 
         private static func runBoardOpeningChecks(
@@ -1478,21 +1765,44 @@
             results["board-mounted-card-rows"] =
                 "\(mounted) of \(tables.reduce(0) { $0 + $1.numberOfRows })"
             results["board-virtualized"] =
-                tables.reduce(0) { $0 + $1.numberOfRows } == 100 && mounted < 40
+                tables.reduce(0) { $0 + $1.numberOfRows } == 100 && mounted > 0 && mounted < 40
                 ? "passed" : "failed: offscreen cards were mounted or missing"
             guard let table = tables.first(where: { $0.numberOfRows == 85 }) else {
                 results["board-scroll-to-last-card"] = "failed: Todo lane missing"
                 return
             }
-            table.scrollRowToVisible(84)
-            try? await DieterTaskSleep.milliseconds(200)
+            let reachedBottom = await scrollNativeLaneToBottom(table, window: window)
             let last = BoardCardOrdering.sorted(store.displayedCards.filter { $0.lane == "todo" }).last
             let lastVisible =
-                last.map { NativeUIAccessibility.find("card.\($0.id)", in: window) != nil } ?? false
+                reachedBottom && (last.map { NativeUIAccessibility.find("card.\($0.id)", in: window) != nil } ?? false)
             results["board-scroll-to-last-card"] =
                 lastVisible ? "passed" : "failed: last card unavailable"
             capture(window, to: output.appending(path: "02-board-scrolled-to-last.png"))
             if let last {
+                // The geometry registry is sufficient for pointer gestures, but
+                // cannot establish that VoiceOver exposes an actionable card.
+                let accessible = NativeUIAccessibility.elements(in: window)
+                if let card = accessible.first(where: { $0.identifier == "card.open.\(last.id)" }),
+                    let action = card.object as? NSAccessibilityProtocol
+                {
+                    let visible =
+                        card.frame.width > 0 && card.frame.height > 0
+                        && window.frame.intersects(card.frame)
+                    let pressed = visible && action.accessibilityPerformPress()
+                    let opened = await NativeUIAccessibility.wait { pressed && store.selectedCardID == last.id }
+                    results["board-card-accessibility-action"] =
+                        opened
+                        ? "passed"
+                        : "failed: visible=\(visible), AX press=\(pressed), selected=\(store.selectedCardID ?? "none")"
+                    store.closeConversation()
+                    _ = await NativeUIAccessibility.wait { !NativeUIAccessibility.hasOpenInspector(in: window) }
+                } else if accessible.contains(where: { $0.identifier?.hasPrefix("sidebar.") == true }) {
+                    results["board-card-accessibility-action"] =
+                        "failed: card button absent from native accessibility tree"
+                } else {
+                    results["board-card-accessibility-action"] =
+                        "skipped: in-process AppKit accessibility bridge did not expose SwiftUI controls; requires external AX verification"
+                }
                 let clicked = NativeUIAccessibility.click("card.\(last.id)", in: window)
                 let opened = await NativeUIAccessibility.wait { store.selectedCardID == last.id }
                 results["board-scrolled-card-click"] =
@@ -1502,6 +1812,35 @@
             table.scrollRowToVisible(0)
             try? await DieterTaskSleep.milliseconds(200)
             capture(window, to: output.appending(path: "03-board-returned-to-top.png"))
+        }
+
+        private static func scrollNativeLaneToBottom(_ table: NSTableView, window: NSWindow) async -> Bool {
+            guard table.numberOfRows > 0, let scrollView = table.enclosingScrollView else { return false }
+            // A native List refines estimated row heights as new cards enter the
+            // viewport. Follow the scrollbar's actual document bottom until its
+            // geometry settles; never mistake an estimated row jump for arrival.
+            for _ in 0..<8 {
+                let documentBounds = table.bounds
+                let viewportSize = scrollView.contentView.bounds.size
+                let bottom =
+                    table.isFlipped
+                    ? max(documentBounds.minY, documentBounds.maxY - viewportSize.height) : documentBounds.minY
+                scrollView.contentView.scroll(to: NSPoint(x: scrollView.contentView.bounds.minX, y: bottom))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+                window.contentView?.layoutSubtreeIfNeeded()
+                try? await DieterTaskSleep.milliseconds(200)
+                window.contentView?.layoutSubtreeIfNeeded()
+                let finalRow = table.numberOfRows - 1
+                if table.visibleRect.maxY >= table.rect(ofRow: finalRow).maxY - 1,
+                    table.rowView(atRow: finalRow, makeIfNecessary: false) != nil
+                {
+                    return true
+                }
+                guard table.bounds != documentBounds || scrollView.contentView.bounds.size != viewportSize else {
+                    return false
+                }
+            }
+            return false
         }
 
         private static func runNavigationResponsivenessChecks(
@@ -1532,10 +1871,20 @@
                 var samples: [String] = []
                 for repetition in 0..<3 {
                     if section == .screens { store.openSettings() } else { store.openScreens() }
-                    try? await DieterTaskSleep.milliseconds(300)
+                    // The source destination can remount a native split column.
+                    // Establish a visible, stable sidebar before measuring the
+                    // next click; preparation is outside the timed interval.
+                    let ready = await waitForExpandedSidebarTarget(
+                        control, navigation: NativeUIAccessibility.navigationSplitController(in: window), in: window)
+                    if !ready {
+                        recordNavigationTargetFailure(
+                            control, section: store.section, window: window,
+                            to: output.appending(
+                                path: "navigation-missing-\(section.rawValue.lowercased())-\(repetition + 1).txt"))
+                    }
                     let probe = NativeUINavigationProbe(window: window, section: section)
                     probe.start()
-                    let clicked = NativeUIAccessibility.click(control, in: window)
+                    let clicked = ready && NativeUIAccessibility.click(control, in: window)
                     // Do not force layout/display or traverse accessibility inside
                     // the measured interval. Let the real event/run loop advance.
                     for _ in 0..<200 {
@@ -1551,7 +1900,7 @@
                                 probe.mouseDownMS ?? -1, update, probe.maximumMainLoopGapMS))
                     } else {
                         samples.append(
-                            "failed: click \(clicked), section \(store.section.rawValue), draw \(probe.firstDrawMS != nil)"
+                            "failed: ready \(ready), click \(clicked), section \(store.section.rawValue), draw \(probe.firstDrawMS != nil)"
                         )
                     }
                     if repetition == 0 {
@@ -1563,6 +1912,45 @@
             }
             results["navigation-metric-definition"] =
                 "Native click invocation to first destination drawing callback; includes target lookup. Not compositor presentation or data-ready time. Event = mouse-down delivery; max-gap = largest main-run-loop timer interval (8 ms target). Three samples, debug fixture."
+        }
+
+        private static func recordNavigationTargetFailure(
+            _ identifier: String, section: AppSection, window: NSWindow, to output: URL
+        ) {
+            var lines = [
+                "target=\(identifier) section=\(section.rawValue) active=\(NSApp.isActive) key=\(window.isKeyWindow) visible=\(window.isVisible) sheet=\(window.attachedSheet != nil)",
+                "window=\(window.windowNumber) frame=\(window.frame)",
+            ]
+            if let navigation = NativeUIAccessibility.navigationSplitController(in: window) {
+                for (index, item) in navigation.splitViewItems.enumerated() {
+                    let view = item.viewController.view
+                    lines.append(
+                        "split item \(index): behavior=\(item.behavior.rawValue) collapsed=\(item.isCollapsed) frame=\(view.frame) window=\(view.window?.windowNumber ?? -1)"
+                    )
+                }
+            } else {
+                lines.append("native navigation split missing")
+            }
+            let entries = NativeUISmokeTargets.frames[identifier] ?? []
+            lines.append("registered anchors=\(entries.count)")
+            for entry in entries {
+                guard let view = entry.view else { lines.append("deallocated anchor"); continue }
+                var ancestor: NSView? = view
+                while let current = ancestor {
+                    lines.append(
+                        "\(type(of: current)) frame=\(current.frame) bounds=\(current.bounds) hidden=\(current.isHidden) window=\(current.window?.windowNumber ?? -1)"
+                    )
+                    ancestor = current.superview
+                }
+            }
+            lines.append("other sidebar anchors:")
+            for key in NativeUISmokeTargets.frames.keys.filter({ $0.hasPrefix("sidebar.") }).sorted() {
+                let mounted = NativeUISmokeTargets.frames[key, default: []].compactMap(\.view).map {
+                    "window=\($0.window?.windowNumber ?? -1) bounds=\($0.bounds)"
+                }
+                lines.append("\(key): \(mounted.joined(separator: "; "))")
+            }
+            try? lines.joined(separator: "\n").write(to: output, atomically: true, encoding: .utf8)
         }
 
         private static func nativeTables(in view: NSView?) -> [NSTableView] {

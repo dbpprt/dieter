@@ -19,10 +19,10 @@
             }
 
             controller.setExpanded(true, animated: false)
-            try? await DieterTaskSleep.milliseconds(450)
+            let expandedSettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let expandedSize = controller.islandWindow?.frame.size ?? .zero
             let expanded =
-                controller.isExpanded
+                expandedSettled && controller.isExpanded
                 && expandedSize == DieterIslandLayout.expandedSize(itemCount: store.islandActivity.items.count)
             let expandedInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
@@ -30,19 +30,21 @@
             }
 
             store.state.cards = Array(store.state.cards.prefix(1))
-            try? await DieterTaskSleep.milliseconds(600)
+            let singleItemSettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let singleItemSize = controller.islandWindow?.frame.size ?? .zero
             let singleItemExpanded =
-                controller.isExpanded && singleItemSize == DieterIslandLayout.expandedSize(itemCount: 1)
+                singleItemSettled && controller.isExpanded
+                && singleItemSize == DieterIslandLayout.expandedSize(itemCount: 1)
             let singleItemInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
                 capture(window, to: output.appending(path: "island-expanded-single.png"))
             }
 
             store.state.cards = []
-            try? await DieterTaskSleep.milliseconds(600)
+            let emptySettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let emptySize = controller.islandWindow?.frame.size ?? .zero
-            let emptyExpanded = controller.isExpanded && emptySize == DieterIslandLayout.expandedSize(itemCount: 0)
+            let emptyExpanded =
+                emptySettled && controller.isExpanded && emptySize == DieterIslandLayout.expandedSize(itemCount: 0)
             let emptyInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
                 capture(window, to: output.appending(path: "island-expanded-empty.png"))
@@ -51,8 +53,16 @@
             let captureDestination = installNavigationFixture(in: store)
             store.projectDirectory[captureDestination.projectID]?.hostnames = []
             var captureBoards = store.navigationBoards[captureDestination.projectID] ?? []
-            captureBoards[0].hostnames = ["example.com"]
-            store.navigationBoards[captureDestination.projectID] = captureBoards
+            captureBoards[0].hostnames = ["127.0.0.1:4018"]
+            var otherPort = captureBoards[0]
+            otherPort.id = "island-other-port-board"
+            otherPort.name = "Other local app"
+            otherPort.hostnames = ["127.0.0.1:4019"]
+            var hostFallback = captureBoards[0]
+            hostFallback.id = "island-host-fallback-board"
+            hostFallback.name = "Host fallback"
+            hostFallback.hostnames = ["127.0.0.1"]
+            store.navigationBoards[captureDestination.projectID] = [otherPort, hostFallback] + captureBoards
             store.selectedProjectID = ""
             store.selectedBoardID = ""
             let captureDirectory = output.appending(path: "capture-input")
@@ -71,7 +81,7 @@
             }
             controller.installCaptureFixture(
                 file: captureFile,
-                browser: CaptureBrowserContext(url: "https://example.com/capture", browser: true))
+                browser: CaptureBrowserContext(url: "http://127.0.0.1:4018/commitments/3", browser: true))
             let captureClicked =
                 controller.islandWindow.map { NativeUIAccessibility.click("island.capture-task", in: $0) }
                 ?? false
@@ -126,11 +136,14 @@
             if let window = NSApp.windows.first(where: { $0.title == "Dieter" && $0.isVisible }) {
                 capture(window, to: output.appending(path: "island-settings.png"))
             }
+            let displayChecks = await checkDisplayMovement(
+                controller: controller, activity: store.islandActivity, defaults: defaults, output: output)
 
             writeReport(
                 [
-                    "capture-hostname-routing": captureRouted
-                        ? "passed" : "failed: browser hostname did not select project and board",
+                    "capture-port-routing": captureRouted
+                        ? "passed"
+                        : "failed: browser port did not select the matching board ahead of other ports and host fallback",
                     "capture-task-button": captureClicked
                         ? "passed" : "failed: capture button did not dispatch",
                     "capture-task-draft": captureOpened && captureAttachment && captureURL
@@ -156,8 +169,180 @@
                     "open-chat": chatOpened ? "passed" : "failed: activity did not route to Chats",
                     "settings-page": settingsVisible
                         ? "passed" : "failed: Island was not the active Settings destination",
-                ], to: output)
+                ].merging(displayChecks) { _, checked in checked }, to: output)
             NSApp.terminate(nil)
+        }
+
+        private static func checkDisplayMovement(
+            controller: DieterIslandController, activity: DieterIslandActivity, defaults: UserDefaults, output: URL
+        ) async -> [String: String] {
+            var results = [
+                "display-picker": "failed: picker did not open",
+                "display-selection": "failed: display was not selected",
+                "display-placement": "failed: island was not placed on the selected display",
+                "display-automatic": "failed: Automatic was not restored",
+            ]
+            // Always return this isolated fixture to Automatic, even if a UI
+            // assertion fails. The explicit Automatic action is checked first.
+            defer {
+                controller.setExpanded(false, animated: false)
+                controller.moveToDisplay(nil)
+            }
+            let displays = controller.availableDisplays
+            guard let target = displays.first(where: { $0.id != controller.currentDisplayID }) ?? displays.first,
+                let window = controller.islandWindow
+            else {
+                results["display-picker"] = "failed: no attached display or island window"
+                return results
+            }
+            controller.setExpanded(true, animated: false)
+            let expandedSettled = await waitForExpandedLayout(controller: controller, activity: activity)
+            let ready = await waitForIslandTarget("island.display-picker", in: window, activate: true)
+            let opened = expandedSettled && ready && NativeUIAccessibility.press("island.display-picker", in: window)
+            let targetID = "island.display.\(target.id)"
+            let choicesReady = opened ? await waitForIslandTarget(targetID, in: window) : false
+            results["display-picker"] =
+                choicesReady ? "passed" : "failed: expanded=\(expandedSettled), ready=\(ready), opened=\(opened)"
+            guard choicesReady else {
+                writeDisplayDiagnostics(targetID, in: window, controller: controller, output: output)
+                return results
+            }
+            if let popover = NativeUIAccessibility.find("island.display-options", in: window)?.recordedWindow {
+                capture(popover, to: output.appending(path: "island-display-options.png"))
+            }
+            let selected = NativeUIAccessibility.click(targetID, in: window)
+            let moved = await waitUntil {
+                controller.currentDisplayID == target.id
+                    && DieterIslandPreferences.displayID(in: defaults) == target.id
+                    && NativeUIAccessibility.find("island.display-options", in: window)?.recordedWindow?.isVisible
+                        != true
+            }
+            results["display-selection"] =
+                selected && moved
+                ? "passed"
+                : "failed: clicked=\(selected), current=\(controller.currentDisplayID ?? "nil"), saved=\(DieterIslandPreferences.displayID(in: defaults) ?? "nil"), expected=\(target.id)"
+            let placed = await waitUntil {
+                guard let frame = controller.islandWindow?.frame else { return false }
+                return controller.currentDisplayID == target.id
+                    && target.geometry.screenFrame.insetBy(dx: -1, dy: -1).contains(frame)
+            }
+            results["display-placement"] =
+                placed
+                ? "passed" : "failed: island frame=\(window.frame), display frame=\(target.geometry.screenFrame)"
+            capture(window, to: output.appending(path: "island-moved-display.png"))
+
+            let automaticReady = await waitForIslandTarget("island.display-picker", in: window, activate: true)
+            let reopened = automaticReady && NativeUIAccessibility.press("island.display-picker", in: window)
+            let automaticVisible = reopened ? await waitForIslandTarget("island.display.automatic", in: window) : false
+            guard automaticVisible else {
+                results["display-automatic"] = "failed: picker did not reopen for Automatic"
+                return results
+            }
+            let connected = controller.availableDisplays
+            let mainID = NSScreen.main.flatMap { screen in
+                connected.first { $0.geometry.screenFrame == screen.frame }?.id
+            }
+            let automaticDisplay = DieterIslandDisplay.selected(
+                preferredID: nil, displays: connected, mainDisplayID: mainID)
+            let automaticClicked = NativeUIAccessibility.click("island.display.automatic", in: window)
+            let automaticRestored = await waitUntil {
+                guard let display = automaticDisplay, let frame = controller.islandWindow?.frame else { return false }
+                return DieterIslandPreferences.displayID(in: defaults) == nil
+                    && controller.currentDisplayID == display.id
+                    && display.geometry.screenFrame.insetBy(dx: -1, dy: -1).contains(frame)
+                    && NativeUIAccessibility.find("island.display-options", in: window)?.recordedWindow?.isVisible
+                        != true
+            }
+            results["display-automatic"] =
+                automaticClicked && automaticRestored
+                ? "passed"
+                : "failed: clicked=\(automaticClicked), current=\(controller.currentDisplayID ?? "nil"), saved=\(DieterIslandPreferences.displayID(in: defaults) ?? "nil"), expected=\(automaticDisplay?.id ?? "nil")"
+            capture(window, to: output.appending(path: "island-automatic-display.png"))
+            return results
+        }
+
+        /// Wait for AppKit activation and stable geometry, then callers dispatch
+        /// a single pointer gesture. No selection action is retried.
+        private static func waitForIslandTarget(_ identifier: String, in window: NSWindow, activate: Bool = false) async
+            -> Bool
+        {
+            var previousFrame: CGRect?
+            var previousHost: NSWindow?
+            var stableSamples = 0
+            var nextActivation = Date.distantPast
+            return await waitUntil(timeout: 8) {
+                if activate, (!NSApp.isActive || !window.isKeyWindow), Date() >= nextActivation {
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    nextActivation = Date().addingTimeInterval(1)
+                }
+                guard !activate || (NSApp.isActive && window.isKeyWindow),
+                    let target = NativeUIAccessibility.find(identifier, in: window),
+                    let host = target.recordedWindow, host.isVisible, let frame = target.recordedFrame,
+                    frame.width > 0, frame.height > 0, host.frame.insetBy(dx: -1, dy: -1).contains(frame)
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                stableSamples = frame == previousFrame && host === previousHost ? stableSamples + 1 : 0
+                previousFrame = frame
+                previousHost = host
+                return stableSamples >= 3
+            }
+        }
+
+        /// The SwiftUI spring still scales the content after the panel itself
+        /// reaches its target frame, including setExpanded(animated: false).
+        private static func waitForExpandedLayout(
+            controller: DieterIslandController, activity: DieterIslandActivity
+        ) async -> Bool {
+            var previousFrames: [CGRect] = []
+            var stableSamples = 0
+            return await waitUntil(timeout: 5) {
+                guard controller.isExpanded, let window = controller.islandWindow,
+                    window.frame.size == DieterIslandLayout.expandedSize(itemCount: activity.items.count),
+                    sectionInsets(controller: controller, activity: activity) == "passed"
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                let frames =
+                    [window.frame]
+                    + sectionIdentifiers(activity: activity).compactMap {
+                        NativeUIAccessibility.find($0, in: window)?.recordedFrame
+                    }
+                stableSamples = frames == previousFrames ? stableSamples + 1 : 0
+                previousFrames = frames
+                return stableSamples >= 3
+            }
+        }
+
+        private static func writeDisplayDiagnostics(
+            _ identifier: String, in window: NSWindow, controller: DieterIslandController, output: URL
+        ) {
+            let targets = ["island.display-picker", "island.display-options", identifier].map { id in
+                guard let target = NativeUIAccessibility.find(id, in: window) else { return "\(id): absent" }
+                return
+                    "\(id): frame=\(String(describing: target.recordedFrame)), host=\(String(describing: target.recordedWindow?.frame)), visible=\(target.recordedWindow?.isVisible == true)"
+            }
+            let windows = NSApp.windows.filter(\.isVisible).map {
+                "\(type(of: $0)) title=\($0.title), frame=\($0.frame), key=\($0.isKeyWindow), parent=\(String(describing: $0.parent?.windowNumber))"
+            }
+            let details =
+                ["expanded=\(controller.isExpanded), active=\(NSApp.isActive), islandKey=\(window.isKeyWindow)"]
+                + targets + windows
+            try? details.joined(separator: "\n").write(
+                to: output.appending(path: "island-display-picker-diagnostics.txt"), atomically: true, encoding: .utf8)
+            capture(window, to: output.appending(path: "island-display-picker-failed.png"))
+        }
+
+        private static func sectionIdentifiers(activity: DieterIslandActivity) -> [String] {
+            var identifiers = ["island.header", "island.footer"]
+            if !activity.items.isEmpty {
+                identifiers.append("island.activity-heading")
+                identifiers += activity.items.map { "island.activity-row.\($0.id)" }
+            }
+            return identifiers
         }
 
         private static func sectionInsets(
@@ -165,13 +350,8 @@
         ) -> String {
             guard let window = controller.islandWindow else { return "failed: island window unavailable" }
             let expected = window.frame.insetBy(dx: DieterIslandLayout.horizontalInset, dy: 0)
-            var identifiers = ["island.header", "island.footer"]
-            if !activity.items.isEmpty {
-                identifiers.append("island.activity-heading")
-                identifiers += activity.items.map { "island.activity-row.\($0.id)" }
-            }
             var failures: [String] = []
-            for identifier in identifiers {
+            for identifier in sectionIdentifiers(activity: activity) {
                 guard let element = NativeUIAccessibility.find(identifier, in: window),
                     element.recordedWindow === window, let frame = element.recordedFrame,
                     frame.width > 0, frame.height > 0

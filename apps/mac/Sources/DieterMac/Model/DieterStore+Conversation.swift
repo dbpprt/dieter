@@ -275,21 +275,16 @@ extension DieterStore {
     @discardableResult
     func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage, edit: Bool) async -> Bool {
         guard let cardID = selectedCardID ?? selectedChatID, let rpc else { return false }
+        let draft = composer.draft
         do {
-            let removed = try await rpc.removeQueuedMessage(cardID: cardID, messageID: message.id)
-            guard (selectedCardID ?? selectedChatID) == cardID else { return false }
-            if var snapshot = conversation {
-                snapshot.conversation.queue.removeAll { $0.id == removed.id }
-                conversation = snapshot
+            return try await draft.removeQueuedMessage(message, edit: edit) { messageID in
+                let removed = try await rpc.removeQueuedMessage(cardID: cardID, messageID: messageID)
+                if (self.selectedCardID ?? self.selectedChatID) == cardID, var snapshot = self.conversation {
+                    snapshot.conversation.queue.removeAll { $0.id == removed.id }
+                    self.conversation = snapshot
+                }
+                return removed
             }
-            if edit {
-                let draft = ConversationQueuePresentation.editableDraft(for: removed)
-                composer.draft.restoreSettings(from: removed)
-                let currentText = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-                composerText = [draft.text, currentText].filter { !$0.isEmpty }.joined(separator: "\n\n")
-                composerAttachments = draft.attachments + composerAttachments
-            }
-            return true
         } catch {
             show(error)
             return false

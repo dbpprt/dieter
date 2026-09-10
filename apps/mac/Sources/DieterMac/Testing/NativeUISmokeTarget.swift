@@ -11,9 +11,16 @@ import SwiftUI
         static var diffSplit: Bool?
         static let enabled = ProcessInfo.processInfo.arguments.contains { $0.hasSuffix("-ui-smoke") }
         static func register(_ view: NSView, identifier: String) {
-            var entries = frames[identifier, default: []].filter { $0.view != nil && $0.view !== view }
-            entries.append(.init(view: view))
-            frames[identifier] = entries
+            // SwiftUI can reuse a representable when a native list recycles its
+            // row. Remove its previous identifier before registering the new one.
+            unregister(view)
+            frames[identifier, default: []].append(.init(view: view))
+        }
+        static func unregister(_ view: NSView) {
+            frames = frames.compactMapValues { entries in
+                let remaining = entries.filter { $0.view != nil && $0.view !== view }
+                return remaining.isEmpty ? nil : remaining
+            }
         }
     }
 
@@ -31,10 +38,7 @@ import SwiftUI
             NativeUISmokeTargets.register(view, identifier: identifier)
         }
         static func dismantleNSView(_ view: Anchor, coordinator: ()) {
-            NativeUISmokeTargets.frames = NativeUISmokeTargets.frames.compactMapValues { entries in
-                let remaining = entries.filter { $0.view != nil && $0.view !== view }
-                return remaining.isEmpty ? nil : remaining
-            }
+            NativeUISmokeTargets.unregister(view)
         }
     }
 #endif

@@ -348,6 +348,7 @@ struct NewConversationSheet: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("new-card.workspace")
+            .smokeTarget("new-card.workspace")
             .help("Choose where this agent should work")
         }
         .frame(maxWidth: .infinity)

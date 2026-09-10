@@ -55,41 +55,7 @@ struct ConversationChrome: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        if let onToggleMaximize {
-                            Button(action: onToggleMaximize) {
-                                Image(
-                                    systemName: maximized
-                                        ? "arrow.down.right.and.arrow.up.left"
-                                        : "arrow.up.left.and.arrow.down.right"
-                                )
-                                .font(.system(size: 11, weight: .semibold))
-                                .frame(width: 24, height: 24)
-                            }
-                            .buttonStyle(.glass)
-                            .buttonBorderShape(.circle)
-                            .controlSize(.small)
-                            .accessibilityLabel(
-                                maximized ? "Restore conversation size" : "Expand conversation over board"
-                            )
-                            .accessibilityValue(maximized ? "Expanded" : "Side panel")
-                            .help(maximized ? "Restore conversation size" : "Expand conversation over board")
-                            .accessibilityIdentifier("board.conversation-maximize")
-                            .smokeTarget("board.conversation-maximize")
-                        }
-                        Button {
-                            context.closeConversation()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 11, weight: .semibold))
-                                .frame(width: 24, height: 24)
-                        }
-                        .accessibilityLabel("Close conversation")
-                        .buttonStyle(.glass)
-                        .buttonBorderShape(.circle)
-                        .controlSize(.small)
-                        .help("Close conversation")
-                        .accessibilityIdentifier("board.conversation-close")
-                        .smokeTarget("board.conversation-close")
+                        sidebarActions
                     }
                     HStack(spacing: 10) {
                         StatusPill(text: status, color: runtimeColor(status))
@@ -105,7 +71,6 @@ struct ConversationChrome: View {
                         if context.conversationSyncing {
                             ProgressView().controlSize(.mini).accessibilityLabel("Refreshing conversation")
                         }
-                        conversationMenu
                     }
                 }
             } else {
@@ -179,6 +144,45 @@ struct ConversationChrome: View {
             if let card { ConversationWorkspaceSettingsSheet(model: context.worktreeChanges, card: card) }
         }
     }
+    private var sidebarActions: some View {
+        HStack(spacing: 3) {
+            conversationMenu
+            if let onToggleMaximize {
+                Button(action: onToggleMaximize) {
+                    Image(
+                        systemName: maximized
+                            ? "arrow.down.right.and.arrow.up.left"
+                            : "arrow.up.left.and.arrow.down.right"
+                    )
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                }
+                .accessibilityLabel(
+                    maximized ? "Restore conversation size" : "Expand conversation over board"
+                )
+                .accessibilityValue(maximized ? "Expanded" : "Side panel")
+                .quickHelp(maximized ? "Restore size" : "Maximize")
+                .accessibilityIdentifier("board.conversation-maximize")
+                .smokeTarget("board.conversation-maximize")
+            }
+            Button {
+                context.closeConversation()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 24, height: 24)
+            }
+            .accessibilityLabel("Close conversation")
+            .quickHelp("Close")
+            .accessibilityIdentifier("board.conversation-close")
+            .smokeTarget("board.conversation-close")
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .foregroundStyle(.secondary)
+        .fixedSize()
+    }
+
     @ViewBuilder private var conversationMenu: some View {
         if let card {
             Menu {
@@ -220,9 +224,11 @@ struct ConversationChrome: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
+                    .frame(width: 24, height: 24)
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .buttonStyle(DieterIconButtonStyle())
+            .accessibilityLabel("Conversation actions")
+            .quickHelp("More")
         }
     }
 

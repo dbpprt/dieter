@@ -155,7 +155,10 @@ struct ToolCallView: View {
     @State private var output: Dieter_V1_ToolOutput?
     @State private var loading = false
 
-    private var completed: Bool { ["completed", "success", "done"].contains(part.state.lowercased()) }
+    private var completed: Bool {
+        ["completed", "success", "done", "output-available"].contains(part.state.lowercased())
+    }
+    private var needsAttention: Bool { ConversationActivityGrouping.needsAttention(part) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -165,9 +168,13 @@ struct ToolCallView: View {
                 HStack(spacing: 8) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .bold))
                         .foregroundStyle(DieterTheme.tertiary)
-                    Image(systemName: completed ? "checkmark.circle" : "terminal").font(
+                    Image(
+                        systemName: needsAttention
+                            ? "exclamationmark.circle" : (completed ? "checkmark.circle" : "terminal")
+                    ).font(
                         .system(size: 11, weight: .medium)
-                    ).foregroundStyle(completed ? DieterTheme.eyes : DieterTheme.shell)
+                    ).foregroundStyle(
+                        needsAttention ? DieterTheme.amber : (completed ? DieterTheme.eyes : DieterTheme.shell))
                     Text(part.effectiveToolName.isEmpty ? "Command" : part.effectiveToolName).font(
                         .caption.monospaced().weight(.medium)
                     ).lineLimit(1)
@@ -186,6 +193,10 @@ struct ToolCallView: View {
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
 
+            if needsAttention, !part.errorText.isEmpty {
+                Text(part.errorText).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral)
+                    .padding(.horizontal, 10).padding(.bottom, 10)
+            }
             if expanded {
                 VStack(alignment: .leading, spacing: 9) {
                     let input = output.map { String(decoding: $0.inputJson, as: UTF8.self) } ?? part.inputPreview
@@ -193,7 +204,9 @@ struct ToolCallView: View {
                     if !input.isEmpty { CodeBlock(title: "Input", value: input) }
                     if !result.isEmpty { CodeBlock(title: "Output", value: result) }
                     let error = output?.errorText ?? part.errorText
-                    if !error.isEmpty { Text(error).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral) }
+                    if !error.isEmpty, !(needsAttention && error == part.errorText) {
+                        Text(error).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral)
+                    }
                 }
                 .padding(.horizontal, 10).padding(.bottom, 10)
             }

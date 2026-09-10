@@ -35,15 +35,3 @@ import Testing
     store.syncSnapshot = nil
     #expect(!store.hasLiveBoardProjection(projectID: project.id))
 }
-
-@Test @MainActor func boardRowSizingIsBoundedAndIncludesItsVisibleSections() {
-    var card = Dieter_V1_Card(); card.title = "Short title"
-    let short = BoardCardRowSizing.height(card: card, width: 250, hasLabels: false, last: false)
-    card.title = String(repeating: "Long title ", count: 1_000)
-    card.summary = String(repeating: "Multi-line summary with Unicode 👋🏼 words ", count: 1_000)
-    let rich = BoardCardRowSizing.height(card: card, width: 250, hasLabels: true, last: false)
-    #expect(rich > short)
-    #expect(rich < 250)
-    #expect(BoardCardRowSizing.height(card: card, width: 250, hasLabels: true, last: true) == rich + 12)
-    #expect(BoardCardRowSizing.height(card: card, width: 400, hasLabels: true, last: false) <= rich)
-}

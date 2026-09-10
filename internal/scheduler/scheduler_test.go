@@ -119,7 +119,7 @@ func TestSchedulePersistsValidatedEffortOnCreatedCard(t *testing.T) {
 	manager, data, project, board := setup(t)
 	schedule, err := manager.Create(store.ScheduleInput{
 		Project: project.ID, Board: board.ID, Name: "Careful work", Cron: "0 9 * * *", Timezone: "UTC",
-		Action: model.ScheduleActionDraft, TitleTemplate: "Careful", PromptTemplate: "Think", Provider: "codex", Model: "gpt-5.6-sol", Effort: "high",
+		Action: model.ScheduleActionDraft, TitleTemplate: "Careful", PromptTemplate: "Think", Provider: "codex", Model: "gpt-6-astra", Effort: "ultra",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -129,15 +129,15 @@ func TestSchedulePersistsValidatedEffortOnCreatedCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	card, err := data.ResolveCard(run.CardID)
-	if err != nil || card.Effort != "high" {
+	if err != nil || card.Model != "gpt-6-astra" || card.Effort != "ultra" {
 		t.Fatalf("card=%#v err=%v", card, err)
 	}
 	_, err = manager.Create(store.ScheduleInput{
 		Project: project.ID, Board: board.ID, Name: "Unsupported", Cron: "0 10 * * *", Timezone: "UTC",
-		Action: model.ScheduleActionDraft, TitleTemplate: "Bad", PromptTemplate: "Think", Provider: "codex", Model: "gpt-5.6-sol", Effort: "max",
+		Action: model.ScheduleActionDraft, TitleTemplate: "Bad", PromptTemplate: "Think", Provider: "codex", Model: "gpt-5.6-luna", Effort: "ultra",
 	})
-	if err == nil {
-		t.Fatal("unsupported schedule effort was accepted")
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("unsupported schedule effort err=%v", err)
 	}
 }
 

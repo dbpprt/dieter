@@ -9,6 +9,17 @@ enum ComposerHistoryDirection {
     case newer
 }
 
+enum ComposerQueueRecall {
+    static func newestMessage(
+        text: String,
+        attachments: [Dieter_V1_MessagePart],
+        queue: [Dieter_V1_QueuedMessage]
+    ) -> Dieter_V1_QueuedMessage? {
+        guard text.isEmpty, attachments.isEmpty else { return nil }
+        return queue.last
+    }
+}
+
 struct ComposerHistoryNavigation {
     private(set) var selectedIndex: Int?
     private(set) var selectedText: String?

@@ -34,6 +34,20 @@ if [ ! -x "$WEBRTC_BINARY" ] || [ ! -f "$WEBRTC_INFO_PLIST" ]; then
     echo "WebRTC.framework was not produced alongside DieterMac" >&2
     exit 1
 fi
+MARKDOWN_BUNDLE="$SWIFT_SCRATCH_PATH/$CONFIGURATION/DieterMac_DieterMac.bundle"
+if [ ! -f "$MARKDOWN_BUNDLE/MarkdownPreview/index.html" ] || \
+    [ ! -f "$MARKDOWN_BUNDLE/MarkdownPreview/app.js" ] || \
+    [ ! -f "$MARKDOWN_BUNDLE/MarkdownPreview/app.css" ] || \
+    [ ! -f "$MARKDOWN_BUNDLE/MarkdownPreview/LICENSES.txt" ]; then
+    echo "The bundled Markdown renderer was not produced alongside DieterMac" >&2
+    exit 1
+fi
+
+HIGHLIGHTER_BUNDLE="$SWIFT_SCRATCH_PATH/$CONFIGURATION/Highlighter_Highlighter.bundle"
+if [ ! -f "$HIGHLIGHTER_BUNDLE/highlight.min.js" ]; then
+    echo "The native Markdown highlighter bundle was not produced" >&2
+    exit 1
+fi
 
 mkdir -p "$OUTPUT_ROOT"
 NEW_BUNDLE_MANIFEST=$(mktemp "${TMPDIR:-/tmp}/dieter-mac-bundle.XXXXXX")
@@ -49,6 +63,7 @@ stat -f '%N %Fm %z %i' \
     "$WEBRTC_BINARY" \
     "$WEBRTC_INFO_PLIST" >"$NEW_BUNDLE_MANIFEST"
 find "$PALETTE_ICON_ROOT" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_MANIFEST"
+find "$MARKDOWN_BUNDLE" "$HIGHLIGHTER_BUNDLE" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_MANIFEST"
 
 BUNDLE_OUTPUTS_MATCH=0
 if [ -f "$APP_BUNDLE/Contents/Info.plist" ] && \
@@ -57,6 +72,11 @@ if [ -f "$APP_BUNDLE/Contents/Info.plist" ] && \
     [ -f "$APP_BUNDLE/Contents/Resources/DieterFavicon.png" ] && \
     [ -d "$APP_BUNDLE/Contents/Resources/PaletteIcons" ] && \
     [ -f "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf" ] && \
+    [ -f "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle/MarkdownPreview/index.html" ] && \
+    [ -f "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle/MarkdownPreview/app.js" ] && \
+    [ -f "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle/MarkdownPreview/app.css" ] && \
+    [ -f "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle/MarkdownPreview/LICENSES.txt" ] && \
+    [ -f "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle/highlight.min.js" ] && \
     [ -x "$APP_BUNDLE/Contents/MacOS/DieterMac" ] && \
     [ -x "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" ] && \
     [ -f "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" ]; then
@@ -70,6 +90,7 @@ if [ -f "$APP_BUNDLE/Contents/Info.plist" ] && \
         "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" \
         "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
     find "$APP_BUNDLE/Contents/Resources/PaletteIcons" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
+    find "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle" "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
     if [ -f "$BUNDLE_OUTPUT_MANIFEST" ] && \
         cmp -s "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"; then
         BUNDLE_OUTPUTS_MATCH=1
@@ -87,6 +108,10 @@ if [ ! -f "$BUNDLE_MANIFEST" ] || \
     cp "$BRAND_ROOT/assets/fonts/Sora-Variable.ttf" "$APP_BUNDLE/Contents/Resources/Fonts/Sora-Variable.ttf"
     cp "$PALETTE_ICON_ROOT"/*.png "$APP_BUNDLE/Contents/Resources/PaletteIcons/"
     cp "$DIETER_BINARY" "$APP_BUNDLE/Contents/MacOS/DieterMac"
+    rm -rf "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle"
+    ditto "$MARKDOWN_BUNDLE" "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle"
+    rm -rf "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle"
+    ditto "$HIGHLIGHTER_BUNDLE" "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle"
     rm -rf "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
     ditto "$WEBRTC_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
 fi
@@ -117,6 +142,7 @@ stat -f '%N %Fm %z %i' \
     "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/WebRTC" \
     "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework/Versions/A/Resources/Info.plist" >"$NEW_BUNDLE_OUTPUT_MANIFEST"
 find "$APP_BUNDLE/Contents/Resources/PaletteIcons" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
+find "$APP_BUNDLE/Contents/Resources/DieterMac_DieterMac.bundle" "$APP_BUNDLE/Contents/Resources/Highlighter_Highlighter.bundle" -type f | sort | xargs stat -f '%N %Fm %z %i' >>"$NEW_BUNDLE_OUTPUT_MANIFEST"
 mv "$NEW_BUNDLE_MANIFEST" "$BUNDLE_MANIFEST"
 mv "$NEW_BUNDLE_OUTPUT_MANIFEST" "$BUNDLE_OUTPUT_MANIFEST"
 trap - EXIT INT TERM

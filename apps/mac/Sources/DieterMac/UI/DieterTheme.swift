@@ -288,21 +288,23 @@ private struct DieterThemeKey: Hashable {
 @Observable
 private final class DieterThemeState {
     private(set) var colors: DieterThemeTokens
-    @ObservationIgnored private(set) var systemColorScheme: ColorScheme
+    @ObservationIgnored private(set) var selection: DieterThemeSelection
     private(set) var installedKey: DieterThemeKey
 
-    init(key: DieterThemeKey, colors: DieterThemeTokens, systemColorScheme: ColorScheme) {
+    init(key: DieterThemeKey, colors: DieterThemeTokens, selection: DieterThemeSelection) {
         installedKey = key
         self.colors = colors
-        self.systemColorScheme = systemColorScheme
+        self.selection = selection
     }
 
     func install(
         key: DieterThemeKey,
         colors: DieterThemeTokens,
-        systemColorScheme: ColorScheme? = nil
+        selection: DieterThemeSelection
     ) {
-        if let systemColorScheme { self.systemColorScheme = systemColorScheme }
+        // System and an explicit appearance can currently resolve to the same
+        // colors, but only System should follow the next OS appearance change.
+        self.selection = selection
         guard key != installedKey else { return }
         installedKey = key
         self.colors = colors
@@ -324,7 +326,7 @@ enum DieterTheme {
     private static let state = DieterThemeState(
         key: fallbackKey,
         colors: palettes[fallbackKey]!,
-        systemColorScheme: .light
+        selection: DieterThemeSelection(appearance: .light, palette: .monochrome)
     )
 
     static func install(palette: DieterPalette, colorScheme: ColorScheme) {
@@ -332,7 +334,7 @@ enum DieterTheme {
         state.install(
             key: key,
             colors: palettes[key] ?? palettes[fallbackKey]!,
-            systemColorScheme: colorScheme
+            selection: DieterThemeSelection(appearance: colorScheme == .dark ? .dark : .light, palette: palette)
         )
     }
 
@@ -346,8 +348,13 @@ enum DieterTheme {
         state.install(
             key: key,
             colors: palettes[key] ?? palettes[fallbackKey]!,
-            systemColorScheme: systemColorScheme
+            selection: selection
         )
+    }
+
+    static func systemColorSchemeDidChange(_ colorScheme: ColorScheme) {
+        guard state.selection.appearance == .system else { return }
+        install(selection: state.selection, systemColorScheme: colorScheme)
     }
 
     static var background: Color { state.colors.background }
@@ -396,7 +403,9 @@ private struct DieterThemeRootModifier: ViewModifier {
     let selection: DieterThemeSelection
     func body(content: Content) -> some View {
         let systemScheme = DieterSystemAppearance.shared.colorScheme
-        DieterTheme.install(selection: selection, systemColorScheme: systemScheme)
+        // AppSession owns the palette cache. A root may still hold the previous
+        // selection while another window is laying out; rendering must never
+        // reinstall that stale selection or invalidate another hosting view.
         return
             content
             .preferredColorScheme(selection.appearance.colorScheme ?? systemScheme)

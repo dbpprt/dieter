@@ -103,7 +103,7 @@ struct ConversationView: View {
                 } else if tab == "Subagents" {
                     SubagentsView()
                 } else if tab == "Comments" {
-                    CommentsView()
+                    CommentsView(composerBackground: compact ? .clear : DieterTheme.sidebar)
                 } else if tab == "Changes" {
                     let card = context.selectedCard ?? context.selectedDetail?.card
                     if ConversationWorkspaceMode.projectMode(
@@ -115,7 +115,7 @@ struct ConversationView: View {
                         WorkspaceChangesView(model: context.worktreeChanges)
                     }
                 } else {
-                    ConversationTimeline()
+                    ConversationTimeline(background: compact ? .clear : DieterTheme.background)
                         .id(context.selectedCardID ?? context.selectedChatID ?? "")
                 }
             }
@@ -125,7 +125,7 @@ struct ConversationView: View {
                 if let card, canStartCard || startingCard {
                     ConversationStartCardBanner(card: card, starting: startingCard)
                 }
-                ConversationComposer {
+                ConversationComposer(background: compact ? .clear : DieterTheme.sidebar) {
                     guard !conversationID.isEmpty else { return }
                     fileImportRequest = ConversationFileImportRequest(conversationID: conversationID)
                 }

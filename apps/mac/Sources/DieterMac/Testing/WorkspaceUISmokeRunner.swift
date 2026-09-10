@@ -144,7 +144,7 @@
                     && !model.busy
             }
             let selected = NativeUIAccessibility.click("project-changes.unstaged.web/ChatFolder.swift", in: window)
-            _ = NativeUIAccessibility.click("project-changes.diff-mode", in: window, horizontalFraction: 0.75)
+            _ = await NativeUIAccessibility.pressWhenSettled("project-changes.diff-mode.split", in: window)
             let visible = await NativeUIAccessibility.wait {
                 model.diff?.path == "web/ChatFolder.swift" && model.diff?.section == "unstaged"
                     && NativeUISmokeTargets.diffSplit == true
@@ -153,6 +153,10 @@
             await NativeUIAccessibility.type("Fold chats to five per project", in: window)
             _ = NativeUIAccessibility.click("project-changes.commit-body", in: window)
             await NativeUIAccessibility.type("Keep projects compact and make every chat reachable.", in: window)
+            let draftEntered = await NativeUIAccessibility.wait {
+                model.commitSubject == "Fold chats to five per project"
+                    && model.commitBody == "Keep projects compact and make every chat reachable."
+            }
             _ = NativeUIAccessibility.click("project-changes.unstaged.web/ChatFolder.swift", in: window)
             try? await DieterTaskSleep.milliseconds(300)
             capture(window, to: output.appending(path: "11-design-dark-split.png"))
@@ -188,27 +192,35 @@
             try? await DieterTaskSleep.milliseconds(300)
             capture(window, to: output.appending(path: "13-design-light.png"))
             store.themeSelection.appearance = .dark
-            _ = await NativeUIAccessibility.wait {
+            let darkReady = await NativeUIAccessibility.wait {
                 window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                    && NativeUIAccessibility.find("project-changes.unstaged.web/ChatFolder.swift", in: window) != nil
             }
-            _ = NativeUIAccessibility.click("project-changes.unstaged.web/ChatFolder.swift", in: window)
-            _ = NativeUIAccessibility.click("project-changes.diff-mode", in: window, horizontalFraction: 0.25)
-            _ = await NativeUIAccessibility.wait {
+            // Appearance and split-layout changes can rebuild hosting views.
+            // Wait for current geometry and verify each transition before the
+            // next native interaction, rather than clicking stale AX frames.
+            let inlineSelected = await NativeUIAccessibility.pressWhenSettled(
+                "project-changes.unstaged.web/ChatFolder.swift", in: window)
+            let unstagedReady = await NativeUIAccessibility.wait { model.diff?.section == "unstaged" }
+            let inlinePressed = await NativeUIAccessibility.pressWhenSettled(
+                "project-changes.diff-mode.inline", in: window)
+            let inlineReady = await NativeUIAccessibility.wait {
                 NativeUISmokeTargets.diffSplit == false && model.diff?.section == "unstaged"
             }
             capture(window, to: output.appending(path: "14-design-inline.png"))
             window.setContentSize(NSSize(width: 1_080, height: 680))
-            _ = await NativeUIAccessibility.wait {
-                NativeUIAccessibility.find("project-changes.back", in: window) != nil
-            }
-            let back = NativeUIAccessibility.click("project-changes.back", in: window)
+            let back = await NativeUIAccessibility.pressWhenSettled("project-changes.back", in: window)
             let composerVisible = await NativeUIAccessibility.wait {
                 NativeUIAccessibility.find("project-changes.commit-subject", in: window) != nil
             }
+            let draftPreserved =
+                model.commitSubject == "Fold chats to five per project"
+                && model.commitBody == "Keep projects compact and make every chat reachable."
             results["project-inline-draft-persists"] =
-                back && composerVisible && model.commitSubject == "Fold chats to five per project"
-                    && model.commitBody == "Keep projects compact and make every chat reachable."
-                ? "passed" : "failed: inline draft or compact back navigation lost"
+                draftEntered && darkReady && inlineSelected && unstagedReady && inlinePressed && inlineReady
+                    && back && composerVisible && draftPreserved
+                ? "passed"
+                : "failed: entered=\(draftEntered), dark=\(darkReady), selected=\(inlineSelected), unstaged=\(unstagedReady), inline pressed=\(inlinePressed), inline ready=\(inlineReady), back=\(back), composer=\(composerVisible), preserved=\(draftPreserved)"
             capture(window, to: output.appending(path: "15-design-compact-composer.png"))
         }
 

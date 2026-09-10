@@ -257,7 +257,7 @@ func (c *CLI) rpcProjectShow(args []string) error {
 }
 
 func (c *CLI) rpcProjectUpdate(args []string) error {
-	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST ...|--clear-hostnames] PROJECT\n\nRepeat --hostname to replace the complete list of exact browser hosts (no URL, port, or wildcard).\nUse --clear-hostnames to remove all mappings; omit both flags to preserve them.\n"
+	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST[:PORT] ...|--clear-hostnames] PROJECT\n\nRepeat --hostname to replace the complete list of exact browser hosts or host:port mappings.\nPorts are 1-65535; use brackets for IPv6 ports, for example '[::1]:4018'. No URL, path, or wildcard.\nCapture tries board mappings before project mappings. Within each scope, an exact port wins,\nthen a bare host is the fallback; HTTP and HTTPS default to ports 80 and 443.\nUse --clear-hostnames to remove all mappings; omit both flags to preserve them.\n"
 	set := flags("project update")
 	path, name, summary, prompt := &optional{}, &optional{}, &optional{}, &optional{}
 	set.Var(path, "path", "new canonical Git working-tree path on the daemon host")
@@ -266,7 +266,7 @@ func (c *CLI) rpcProjectUpdate(args []string) error {
 	set.Var(prompt, "prompt", "project instructions")
 	promptFile := set.String("prompt-file", "", "project instructions file")
 	var hostnames repeatedStrings
-	set.Var(&hostnames, "hostname", "exact browser hostname; repeat to replace the complete hostname list (no URL, port, or wildcard)")
+	set.Var(&hostnames, "hostname", "browser host or host:port (IPv6: [::1]:4018); repeat to replace all mappings")
 	clearHostnames := set.Bool("clear-hostnames", false, "remove all browser hostname mappings")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
@@ -784,10 +784,10 @@ Actions:
 }
 
 func (c *CLI) rpcBoardHostnames(args []string) error {
-	const usage = "Usage: dieter board hostnames [--hostname HOST ...] [--append|--clear] BOARD\n\nReplaces the complete list by default. --append adds without replacing; --clear removes all.\n"
+	const usage = "Usage: dieter board hostnames [--hostname HOST[:PORT] ...] [--append|--clear] BOARD\n\nAccepts exact hosts or host:port mappings. Replaces the complete list by default.\n--append adds without replacing; --clear removes all.\nPorts are 1-65535; use brackets for IPv6 ports, for example '[::1]:4018'. No URL, path, or wildcard.\nCapture tries board mappings before project mappings. Within each scope, an exact port wins,\nthen a bare host is the fallback; HTTP and HTTPS default to ports 80 and 443.\n"
 	set := flags("board hostnames")
 	var hosts repeatedStrings
-	set.Var(&hosts, "hostname", "exact hostname (repeatable)")
+	set.Var(&hosts, "hostname", "browser host or host:port (IPv6: [::1]:4018), repeatable")
 	add := set.Bool("append", false, "append hostnames")
 	clear := set.Bool("clear", false, "clear all hostnames")
 	help, err := parse(set, args, usage, c.Out)

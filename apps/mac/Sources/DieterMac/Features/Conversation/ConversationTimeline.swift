@@ -3,30 +3,59 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ConversationTimelineRow: View {
+    @Environment(ConversationContext.self) private var context
     let item: ConversationTimelineItem
     let details: [ConversationTimelineMessageDetails]
+    var isLatest = false
+    var expandedActivity = false
+    @State private var isHovered = false
+
+    private var footer: MessageFooterContent { MessageFooterContent(messages: item.messages) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            if item.isToolCallGroup {
-                ToolCallGroupView(items: item.toolCalls)
-            } else if let message = item.messages.first {
-                MessageView(message: message)
+        VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 15) {
+                if item.isToolCallGroup {
+                    ConversationActivityPartsView(
+                        steps: ConversationActivityStep.steps(
+                            messages: item.messages, showReasoning: context.showReasoning),
+                        expandedActivity: expandedActivity)
+                } else if let message = item.messages.first {
+                    MessageView(message: message, expandedActivity: expandedActivity)
+                }
+                ForEach(details) { detail in
+                    ForEach(detail.plans, id: \.id) {
+                        TaskPlanView(plan: $0)
+                    }
+                    if !detail.subagents.isEmpty {
+                        SubagentTimelineGroup(agents: detail.subagents)
+                    }
+                }
             }
-            ForEach(details) { detail in
-                ForEach(detail.plans, id: \.id) {
-                    TaskPlanView(plan: $0)
-                }
-                if !detail.subagents.isEmpty {
-                    SubagentTimelineGroup(agents: detail.subagents)
-                }
+            MessageFooter(
+                content: footer, messageID: item.messages.last?.id ?? item.id,
+                isLatest: isLatest, isHovered: isHovered
+            )
+            .frame(
+                maxWidth: .infinity,
+                alignment: item.messages.first?.role == "user" ? .trailing : .leading)
+        }
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityActions {
+            if !footer.markdown.isEmpty {
+                Button("Copy message") { footer.copy() }
             }
         }
+        .smokeTarget("conversation.message.row.\(item.messages.last?.id ?? item.id)")
     }
 }
 
 struct ConversationTimeline: View {
     @Environment(ConversationContext.self) private var context
+    // The native sidebar supplies its own adaptive glass behind the transcript.
+    var background: Color = DieterTheme.background
     @State private var historyLoadInFlight = false
     @State private var isAtLatest = true
     @State private var userScrollInProgress = false
@@ -45,7 +74,7 @@ struct ConversationTimeline: View {
     private var queuedMessages: [Dieter_V1_QueuedMessage] {
         context.model.browsingEarlierHistory ? [] : context.conversation?.conversation.queue ?? []
     }
-    private var timelineRows: [ConversationTimelineRowContent] { projection.rows }
+    private var timelineGroups: [ConversationTimelineDisplayGroup] { projection.displayGroups }
     private var renderRange: Range<Int> {
         ConversationRenderWindow.range(messages: messages, requestedStart: renderWindowStart)
     }
@@ -155,9 +184,13 @@ struct ConversationTimeline: View {
                         )
                     }
 
-                    ForEach(timelineRows) { row in
-                        ConversationTimelineRow(item: row.item, details: row.details)
-                            .id(row.id)
+                    ForEach(timelineGroups) { group in
+                        ConversationTimelineDisplayGroupView(
+                            group: group, showReasoning: context.showReasoning,
+                            isLatest: !context.model.browsingEarlierHistory && renderRange.upperBound == messages.count
+                                && group.id == timelineGroups.last?.id
+                        )
+                        .id(group.id)
                     }
 
                     ForEach(projection.unattachedPlans, id: \.id) {
@@ -212,7 +245,7 @@ struct ConversationTimeline: View {
                 .padding(.horizontal, 18).padding(.top, 17)
             }
             .textSelection(.enabled)
-            .background(DieterTheme.background)
+            .background(background)
             .smokeTarget("conversation.viewport")
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 ConversationScrollBehavior.isAtLatest(

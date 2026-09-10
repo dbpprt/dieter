@@ -64,6 +64,10 @@ struct DieterMacApp: App {
                         // modes, which install their own isolated test state.
                         guard arguments.contains(where: { $0.hasSuffix("-ui-smoke") }), !didStartSmoke else { return }
                         didStartSmoke = true
+                        // macOS can restore a closed workspace while constructing
+                        // its scene. Every UI suite needs that real window; the
+                        // island must never become an accidental fallback target.
+                        openWindow(id: "workspace")
                         if arguments.contains("--island-ui-smoke") {
                             await IslandUISmokeRunner.run(store: store, controller: islandController)
                             return

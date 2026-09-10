@@ -15,6 +15,9 @@ package final class DieterRPC: Sendable {
     package typealias GatewayService = Dieter_Gateway_V1_GatewayService.Client<Transport>
 
     package let endpoint: DieterEndpoint
+    /// Whether this data plane actually connects to this Mac's loopback,
+    /// independent of the gateway endpoint retained for machine identity.
+    package let isLoopbackDataPlane: Bool
     package let core: GRPCClient<Transport>
     package let service: Service
     package let gatewayService: GatewayService
@@ -71,6 +74,7 @@ package final class DieterRPC: Sendable {
         direct: DirectRoute? = nil
     ) throws {
         self.endpoint = endpoint
+        isLoopbackDataPlane = Self.isLoopbackDataPlane(endpoint: endpoint, route: route, directHost: direct?.host)
         let host = direct?.host ?? endpoint.host
         let port = direct?.port ?? endpoint.port
         let security: HTTP2ClientTransport.Posix.TransportSecurity
@@ -109,6 +113,20 @@ package final class DieterRPC: Sendable {
         self.core = core
         self.service = Service(wrapping: core)
         self.gatewayService = GatewayService(wrapping: core)
+    }
+
+    package static func isLoopbackDataPlane(endpoint: DieterEndpoint, route: Route, directHost: String?) -> Bool {
+        guard route.daemonID == nil, directHost != nil || endpoint.daemonID == nil else { return false }
+        let host = (directHost ?? endpoint.host).lowercased()
+        if host == "localhost" { return true }
+        var ipv4 = in_addr()
+        if inet_pton(AF_INET, host, &ipv4) == 1 { return UInt32(bigEndian: ipv4.s_addr) >> 24 == 127 }
+        var ipv6 = in6_addr()
+        guard inet_pton(AF_INET6, host, &ipv6) == 1 else { return false }
+        return withUnsafeBytes(of: ipv6) { bytes in
+            bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1
+                || bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 255 && bytes[11] == 255 && bytes[12] == 127
+        }
     }
 
     package static func verifyDaemonCertificateChain(

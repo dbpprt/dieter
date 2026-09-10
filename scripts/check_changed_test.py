@@ -21,6 +21,13 @@ class CheckChangedTests(unittest.TestCase):
         self.assertEqual(self.plan(), [])
         self.assertEqual(self.plan("README.md", "apps/mac/README.md", "AGENTS.md"), [])
 
+    def test_markdown_renderer_runs_library_regressions_and_asset_check(self):
+        for path in ["apps/mac/MarkdownPreview/src/chart-sizing.js",
+                     "apps/mac/Sources/DieterMac/Resources/MarkdownPreview/app.js"]:
+            plan = self.plan(path)
+            self.assertEqual(plan[0], ["just", "mac", "markdown-check"])
+            self.assertIn(["just", "mac", "test"], plan)
+
     def test_mac_change_runs_only_mac_unit_and_integration_tests(self):
         self.assertEqual(self.plan("apps/mac/Sources/DieterMac/Features/Conversation/ConversationView.swift"),
                          [["just", "mac", "test"],

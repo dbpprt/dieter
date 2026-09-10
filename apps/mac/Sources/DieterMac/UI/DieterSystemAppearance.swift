@@ -43,5 +43,10 @@ final class DieterSystemAppearance {
         }
     }
 
-    private func refresh() { colorScheme = Self.read() }
+    private func refresh() {
+        let current = Self.read()
+        guard current != colorScheme else { return }
+        colorScheme = current
+        DieterTheme.systemColorSchemeDidChange(current)
+    }
 }

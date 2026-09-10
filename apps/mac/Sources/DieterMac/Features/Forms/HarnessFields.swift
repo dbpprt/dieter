@@ -67,15 +67,15 @@ struct ProviderOptionField: View {
 
     @ViewBuilder var body: some View {
         if ["boolean", "bool"].contains(option.type.lowercased()) {
-            Toggle(option.name, isOn: booleanValue).help(option.description_p)
+            Toggle(option.name, isOn: booleanValue).quickHelp(option.name)
         } else if ["enum", "select"].contains(option.type.lowercased()) {
             Picker(option.name, selection: value) {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
                     Text(choice.name.isEmpty ? choice.value : choice.name).tag(choice.value)
                 }
-            }.help(option.description_p)
+            }.quickHelp(option.name)
         } else {
-            TextField(option.name, text: value).help(option.description_p)
+            TextField(option.name, text: value).quickHelp(option.name)
         }
     }
 }
@@ -125,10 +125,7 @@ struct ProviderOptionChip: View {
             .buttonStyle(.plain).disabled(!isEnabled)
             .accessibilityLabel(option.id == "fast_mode" ? "Fast mode" : option.name)
             .accessibilityValue(enabled ? "On" : "Off")
-            .nativeHelp(
-                option.id == "fast_mode"
-                    ? "Fast mode: \(enabled ? "On" : "Off"). Requests faster processing for your next message when supported by the model; usage may cost more. The current turn keeps its settings."
-                    : option.description_p)
+            .quickHelp(option.id == "fast_mode" ? "Fast mode" : option.name)
         } else if ["enum", "select"].contains(option.type.lowercased()) {
             Menu {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
@@ -140,11 +137,10 @@ struct ProviderOptionChip: View {
                 DieterChipLabel(
                     title: option.choices.first(where: { $0.value == currentValue })?.name ?? option.name,
                     symbol: "slider.horizontal.3")
-            }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).nativeHelp(option.description_p)
+            }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).quickHelp(option.name)
         } else {
             TextField(option.name, text: Binding(get: { currentValue }, set: { values[option.id] = $0 }))
-                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).nativeHelp(
-                    option.description_p)
+                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).quickHelp(option.name)
         }
     }
 }

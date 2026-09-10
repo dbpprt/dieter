@@ -85,17 +85,27 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 	}
 }
 
-func TestProjectUpdateHelpDiscoversHostnames(t *testing.T) {
-	c := New(store.New(t.TempDir()))
-	c.DaemonMode = true
-	var output bytes.Buffer
-	c.Out = &output
-	if err := c.Run([]string{"project", "update", "--help"}); err != nil {
-		t.Fatal(err)
-	}
-	for _, flag := range []string{"--hostname", "--clear-hostnames"} {
-		if !strings.Contains(output.String(), flag) {
-			t.Fatalf("missing %s in %s", flag, output.String())
-		}
+func TestHostnameHelpExplainsPortsAndRouting(t *testing.T) {
+	for _, command := range []struct {
+		args  []string
+		clear string
+	}{
+		{[]string{"project", "update"}, "--clear-hostnames"},
+		{[]string{"board", "hostnames"}, "--clear"},
+	} {
+		t.Run(strings.Join(command.args, " "), func(t *testing.T) {
+			c := New(store.New(t.TempDir()))
+			c.DaemonMode = true
+			var output bytes.Buffer
+			c.Out = &output
+			if err := c.Run(append(command.args, "--help")); err != nil {
+				t.Fatal(err)
+			}
+			for _, text := range []string{"--hostname", command.clear, "host:port", "1-65535", "[::1]:4018", "board mappings before project", "fallback", "80 and 443"} {
+				if !strings.Contains(output.String(), text) {
+					t.Fatalf("missing %s in %s", text, output.String())
+				}
+			}
+		})
 	}
 }

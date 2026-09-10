@@ -22,6 +22,7 @@ final class ConversationDraft {
     var providerOptions: [String: String] = [:]
     var comment = ""
     var sending = false
+    private(set) var pendingQueueMessageIDs: Set<String> = []
     private(set) var revision: UInt64 = 0
     private(set) var intakeGeneration: UInt64 = 0
     private var savedSelection: HarnessSelection?
@@ -79,6 +80,26 @@ final class ConversationDraft {
             provider: value.provider, model: value.model, effort: value.effort, providerOptions: value.providerOptions)
     }
 
+    /// Retain this draft across the dequeue request: changing conversations
+    /// must not discard the message once the daemon has removed it.
+    func removeQueuedMessage(
+        _ message: Dieter_V1_QueuedMessage,
+        edit: Bool,
+        remove: @MainActor (String) async throws -> Dieter_V1_QueuedMessage
+    ) async throws -> Bool {
+        guard !message.id.isEmpty, pendingQueueMessageIDs.isEmpty, !sending else { return false }
+        pendingQueueMessageIDs.insert(message.id)
+        defer { pendingQueueMessageIDs.remove(message.id) }
+        let removed = try await remove(message.id)
+        if edit {
+            let restored = ConversationQueuePresentation.editableDraft(for: removed)
+            restoreSettings(from: removed)
+            text = [restored.text, text].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            attachments = restored.attachments + attachments
+        }
+        return true
+    }
+
     func acceptSend(revision: UInt64) {
         intakeGeneration &+= 1
         guard self.revision == revision else { return }
@@ -95,7 +116,8 @@ final class ComposerModel {
     func select(_ target: WorkspaceTarget?) {
         guard self.target != target else { return }
         if let previous = self.target, draft.text.isEmpty, draft.attachments.isEmpty,
-            draft.comment.isEmpty, !draft.sending, !draft.hasPendingSettingsChanges
+            draft.comment.isEmpty, !draft.sending, draft.pendingQueueMessageIDs.isEmpty,
+            !draft.hasPendingSettingsChanges
         {
             drafts.removeValue(forKey: previous)
         }
