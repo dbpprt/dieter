@@ -108,12 +108,24 @@ struct ProviderOptionChip: View {
             Button {
                 values[option.id] = enabled ? "false" : "true"
             } label: {
-                DieterChipLabel(
-                    title: option.name,
-                    symbol: enabled ? "checkmark.circle.fill" : "circle",
-                    showsDisclosure: false
-                )
-            }.buttonStyle(.plain).disabled(!isEnabled).help(option.description_p)
+                if option.id == "fast_mode" {
+                    Image(systemName: enabled ? "bolt.fill" : "bolt")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(enabled ? Color.yellow : DieterTheme.subtle)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                } else {
+                    DieterChipLabel(
+                        title: option.name,
+                        symbol: enabled ? "checkmark.circle.fill" : "circle",
+                        showsDisclosure: false
+                    )
+                }
+            }
+            .buttonStyle(.plain).disabled(!isEnabled)
+            .accessibilityLabel(option.id == "fast_mode" ? "Fast mode" : option.name)
+            .accessibilityValue(enabled ? "On" : "Off")
+            .help(option.id == "fast_mode" ? "Fast mode: \(enabled ? "On" : "Off")" : option.description_p)
         } else if ["enum", "select"].contains(option.type.lowercased()) {
             Menu {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
