@@ -221,13 +221,19 @@
                 return
             }
             let originalWindowFrame = window.frame
-            let originalZoomedState = window.isZoomed
+            // AppKit may report isZoomed=false when the minimum window width
+            // exceeds the CI display. Compare against its actual standard zoom.
+            window.performZoom(nil)
+            try? await DieterTaskSleep.seconds(1)
+            let standardZoomFrame = window.frame
+            window.setFrame(originalWindowFrame, display: true)
+            try? await DieterTaskSleep.milliseconds(300)
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
             results["window-titlebar-double-click"] =
-                window.isZoomed != originalZoomedState && window.frame != originalWindowFrame
+                window.frame == standardZoomFrame && window.frame != originalWindowFrame
                 ? "passed"
-                : "failed: hidden title-bar double-click did not toggle zoom (before=\(originalWindowFrame), after=\(window.frame), layout=\(window.contentLayoutRect), zoomed=\(originalZoomedState)->\(window.isZoomed))"
+                : "failed: hidden title-bar double-click did not toggle zoom (before=\(originalWindowFrame), after=\(window.frame), layout=\(window.contentLayoutRect), expected=\(standardZoomFrame))"
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
             if window.frame != originalWindowFrame {
@@ -404,7 +410,7 @@
                             "\($0)=\(NativeUIAccessibility.find($0, in: window)?.recordedFrame?.debugDescription ?? "missing")"
                         }.joined(separator: "; ")
                 }
-                _ = NativeUIAccessibility.press("board.quick-task", in: window)
+                let boardQuickTaskClicked = NativeUIAccessibility.press("board.quick-task", in: window)
                 _ = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
                 }
@@ -449,7 +455,8 @@
                     }
                     if !items.isEmpty { pasteboard.writeObjects(items) }
                 } else {
-                    results["quick-task-paste-screenshot"] = "failed: Quick Task popover was absent"
+                    results["quick-task-paste-screenshot"] =
+                        "failed: Quick Task popover was absent (section=\(store.section.rawValue), click=\(boardQuickTaskClicked))"
                 }
                 writeReport(results, to: output)
                 NSApp.terminate(nil)

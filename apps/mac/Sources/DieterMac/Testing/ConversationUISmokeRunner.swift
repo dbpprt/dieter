@@ -194,26 +194,23 @@
             assistant.parts = [text]
             snapshot.conversation.messages = [assistant]
             store.conversation = snapshot
-            let tableRendered = await NativeUIAccessibility.wait {
+            // Large tables now share the native selectable message surface.
+            // Verify rendered table cells rather than removed pagination controls.
+            let renderedTable = await NativeUIAccessibility.wait {
                 nativeTextViews(in: window.contentView).contains { view in
-                    guard view is MessageTextView, view.string.contains("Row 0"), view.isSelectable,
-                        let storage = view.textStorage
+                    let firstRow = (view.string as NSString).range(of: "Row 0")
+                    guard view.isSelectable, firstRow.location != NSNotFound,
+                        view.string.contains("Row 100"),
+                        view.string.contains("Formatted content"),
+                        !view.string.contains("**Formatted content**"),
+                        let style = view.textStorage?.attribute(
+                            .paragraphStyle, at: firstRow.location, effectiveRange: nil) as? NSParagraphStyle
                     else { return false }
-                    var nativeCells = 0
-                    storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) {
-                        value, _, _ in
-                        if let style = value as? NSParagraphStyle,
-                            style.textBlocks.contains(where: { $0 is NSTextTableBlock })
-                        {
-                            nativeCells += 1
-                        }
-                    }
-                    return nativeCells > 2
+                    return style.textBlocks.contains { $0 is NSTextTableBlock }
                 }
             }
-            results["large-markdown-native-table"] =
-                tableRendered
-                ? "passed" : "failed: selectable native table cells unavailable"
+            results["large-markdown-table-selection"] =
+                renderedTable ? "passed" : "failed: selectable native table preview was absent"
             capture(window, to: output.appending(path: "03c-large-markdown-table.png"))
             if let target = NativeUIAccessibility.find("conversation.full-text", in: window)?.object as? NSView {
                 target.scrollToVisible(target.bounds)
