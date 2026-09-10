@@ -336,11 +336,16 @@
                     _ = NativeUIAccessibility.click("quick-task.story", in: sheet)
                     try? await DieterTaskSleep.milliseconds(100)
                     await NativeUIAccessibility.type("Keep this draft after clicking outside", in: sheet)
-                    click(window: window, x: window.frame.width - 60, distanceFromTop: 100)
-                    try? await DieterTaskSleep.milliseconds(300)
-                    let dismissed = !sheet.isVisible
+                    // Popover dismissal is handled by AppKit's application event
+                    // monitors, which direct NSWindow.sendEvent bypasses.
+                    NativeUIEventDispatcher.click(
+                        window: window, x: window.frame.width - 60, distanceFromTop: 100,
+                        throughApplicationQueue: true)
+                    let dismissed = await NativeUIAccessibility.wait { !sheet.isVisible }
                     _ = NativeUIAccessibility.click("sidebar.quick-task", in: window)
-                    try? await DieterTaskSleep.milliseconds(400)
+                    _ = await NativeUIAccessibility.wait {
+                        NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow != nil
+                    }
                     let reopened = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
                     let retained =
                         reopened != nil && store.quickTaskForm.story == "Keep this draft after clicking outside"
@@ -358,8 +363,16 @@
                     results["global-quick-task-layout"] =
                         "failed: global Quick Task sheet or layout anchors absent"
                 }
-                _ = NativeUIAccessibility.click("board.quick-task", in: window)
-                try? await DieterTaskSleep.milliseconds(400)
+                // Navigation checks finish on Screens; the board launcher only
+                // exists after returning to the fixture board.
+                await store.openBoard(board.id, projectID: project.id)
+                _ = await NativeUIAccessibility.wait {
+                    NativeUIAccessibility.find("board.quick-task", in: window) != nil
+                }
+                let boardQuickTaskClicked = NativeUIAccessibility.click("board.quick-task", in: window)
+                _ = await NativeUIAccessibility.wait {
+                    NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow != nil
+                }
                 if let target = NativeUIAccessibility.find("quick-task.story", in: window),
                     let popover = target.recordedWindow
                 {
@@ -400,7 +413,8 @@
                     }
                     if !items.isEmpty { pasteboard.writeObjects(items) }
                 } else {
-                    results["quick-task-paste-screenshot"] = "failed: Quick Task popover was absent"
+                    results["quick-task-paste-screenshot"] =
+                        "failed: Quick Task popover was absent (section=\(store.section.rawValue), click=\(boardQuickTaskClicked))"
                 }
                 writeReport(results, to: output)
                 NSApp.terminate(nil)
@@ -1437,7 +1451,10 @@
 
     @MainActor
     enum NativeUIEventDispatcher {
-        static func click(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
+        static func click(
+            window: NSWindow, x: CGFloat, distanceFromTop: CGFloat,
+            throughApplicationQueue: Bool = false
+        ) {
             guard let content = window.contentView else { return }
             let contentLocation = contentLocation(
                 x: x,
@@ -1462,7 +1479,13 @@
                     clickCount: type == .mouseMoved ? 0 : 1,
                     pressure: type == .leftMouseDown ? 1 : 0
                 )
-                if let event { window.sendEvent(event) }
+                if let event {
+                    if throughApplicationQueue {
+                        NSApp.postEvent(event, atStart: false)
+                    } else {
+                        window.sendEvent(event)
+                    }
+                }
             }
         }
 

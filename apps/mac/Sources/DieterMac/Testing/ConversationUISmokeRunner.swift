@@ -187,20 +187,23 @@
             assistant.parts = [text]
             snapshot.conversation.messages = [assistant]
             store.conversation = snapshot
-            let prepared = await NativeUIAccessibility.wait {
-                NativeUIAccessibility.find("conversation.table.next-rows", in: window) != nil
+            // Large tables now share the native selectable message surface.
+            // Verify rendered table cells rather than removed pagination controls.
+            let renderedTable = await NativeUIAccessibility.wait {
+                nativeTextViews(in: window.contentView).contains { view in
+                    let firstRow = (view.string as NSString).range(of: "Row 0")
+                    guard view.isSelectable, firstRow.location != NSNotFound,
+                        view.string.contains("Row 100"),
+                        view.string.contains("Formatted content"),
+                        !view.string.contains("**Formatted content**"),
+                        let style = view.textStorage?.attribute(
+                            .paragraphStyle, at: firstRow.location, effectiveRange: nil) as? NSParagraphStyle
+                    else { return false }
+                    return style.textBlocks.contains { $0 is NSTextTableBlock }
+                }
             }
-            // Preparation mounts the table before the transcript's tail-follow
-            // layout finishes. Wait for that layout before resolving click geometry.
-            try? await DieterTaskSleep.milliseconds(350)
-            capture(window, to: output.appending(path: "03c-large-markdown-table-before.png"))
-            let advanced =
-                prepared && NativeUIAccessibility.click("conversation.table.next-rows", in: window)
-            let rowPage = await NativeUIAccessibility.wait {
-                NativeUIAccessibility.find("conversation.table.rows.1", in: window) != nil
-            }
-            results["large-markdown-table-pagination"] =
-                advanced && rowPage ? "passed" : "failed: next table page unavailable"
+            results["large-markdown-table-selection"] =
+                renderedTable ? "passed" : "failed: selectable native table preview was absent"
             capture(window, to: output.appending(path: "03c-large-markdown-table.png"))
             let opened = NativeUIAccessibility.click("conversation.full-text", in: window)
             let fullText = await NativeUIAccessibility.wait {
