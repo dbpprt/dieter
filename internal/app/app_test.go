@@ -1080,7 +1080,7 @@ func TestMessageReopensDoneCardAndResumesSession(t *testing.T) {
 	}
 }
 
-func TestConversationHarnessAndModelAreLockedAfterFirstTurn(t *testing.T) {
+func TestConversationKeepsProviderAndResumesWithChangedModelAndEffort(t *testing.T) {
 	service, fake, project, board := appSetup(t)
 	card, err := service.CreateCard(context.Background(), CardInput{Project: project.ID, Board: board.ID, Lane: model.LaneTodo, Title: "Implement", Prompt: "Ship it", Provider: "codex", Model: "gpt-5.5", Effort: "high"})
 	if err != nil {
@@ -1098,11 +1098,24 @@ func TestConversationHarnessAndModelAreLockedAfterFirstTurn(t *testing.T) {
 	if err = service.SendCard(context.Background(), card.ID, "switch", "claude-code", "claude-sonnet-4-5", ""); err == nil || !strings.Contains(err.Error(), "locked") {
 		t.Fatalf("harness switch err=%v", err)
 	}
-	if err = service.SendCard(context.Background(), card.ID, "switch", "codex", "gpt-5.6-sol", ""); err == nil || !strings.Contains(err.Error(), "locked") {
+	if err = service.SendCard(context.Background(), card.ID, "switch", "codex", "gpt-5.6-sol", ""); err != nil {
 		t.Fatalf("model switch err=%v", err)
 	}
-	if err = service.SendCard(context.Background(), card.ID, "switch", "codex", "gpt-5.5", "medium"); err == nil || !strings.Contains(err.Error(), "effort is locked") {
+	if err = service.SendCard(context.Background(), card.ID, "switch", "codex", "gpt-5.6-sol", "medium"); err != nil {
 		t.Fatalf("effort switch err=%v", err)
+	}
+	if fake.request(1).ConfiguredModel != "gpt-5.6-sol" || fake.request(1).Effort != "xhigh" || fake.request(2).Effort != "medium" {
+		t.Fatalf("resumed selections: %#v %#v", fake.request(1), fake.request(2))
+	}
+	for i := 1; i < 3; i++ {
+		var session struct {
+			Data struct {
+				ThreadID string `json:"threadId"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(fake.request(i).Session, &session); err != nil || fake.request(i).SessionID != card.ID || session.Data.ThreadID != "thread_1" {
+			t.Fatalf("turn %d lost its original session: %#v", i, fake.request(i))
+		}
 	}
 }
 
@@ -1387,8 +1400,12 @@ func TestQueuedMessageUsesUpdatedMutableProviderOptions(t *testing.T) {
 		t.Fatalf("queued=%v err=%v", queued, err)
 	}
 	stored, err := service.Store.ResolveCard(card.ID)
-	if err != nil || stored.ProviderOptions["fast_mode"] != "true" {
+	if err != nil || stored.ProviderOptions["fast_mode"] != "false" {
 		t.Fatalf("stored options=%#v err=%v", stored.ProviderOptions, err)
+	}
+	queuedConversation, err := store.New(service.Store.Root).Conversation(card.ID)
+	if err != nil || len(queuedConversation.Queue) != 1 || queuedConversation.Queue[0].Selection == nil || queuedConversation.Queue[0].Selection.ProviderOptions["fast_mode"] != "true" {
+		t.Fatalf("durable queued selection=%#v err=%v", queuedConversation.Queue, err)
 	}
 	if err := service.CancelCard(card.ID); err != nil {
 		t.Fatal(err)
@@ -1501,6 +1518,10 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			if _, settingsErr = service.Store.UpdatePromptSettings("Changed after suspension\n{{project.instructions_block}}\n{{labels.instructions_block}}", settings.BoardSkillTemplate, settings.ChatSkillTemplate); settingsErr != nil {
 				t.Fatal(settingsErr)
 			}
+			changedEffort := "different-effort"
+			if _, err := service.Store.UpdateCardCache(card.ID, store.CardCacheInput{Model: "different-model", Effort: &changedEffort, ProviderOptions: map[string]string{}}); err != nil {
+				t.Fatal(err)
+			}
 			restarted := New(service.Store, runner)
 			recovered, err := restarted.ReconcileOrphanedTurns()
 			if err != nil || len(recovered) != 1 || recovered[0] != card.ID {
@@ -1522,6 +1543,13 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			}
 			if provider.options != nil && (requests[0].Options["advisor"] != "true" || requests[1].Options["advisor"] != "true") {
 				t.Fatalf("provider options were not retained across restart: %#v", requests)
+			}
+			stored, err := service.Store.ResolveCard(card.ID)
+			if err != nil || stored.Model != requests[0].ConfiguredModel || stored.Effort != requests[0].Effort || !providerOptionsEqual(stored.ProviderOptions, requests[0].Options) {
+				t.Fatalf("recovery cache=%#v err=%v", stored, err)
+			}
+			if requests[1].ConfiguredModel != requests[0].ConfiguredModel || requests[1].Effort != requests[0].Effort {
+				t.Fatalf("active configuration changed on recovery: %#v", requests)
 			}
 			if requests[0].Instructions == "" || requests[1].Instructions != requests[0].Instructions {
 				t.Fatalf("instruction snapshot changed across restart: first=%q resumed=%q", requests[0].Instructions, requests[1].Instructions)

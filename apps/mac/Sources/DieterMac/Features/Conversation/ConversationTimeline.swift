@@ -168,8 +168,14 @@ struct ConversationTimeline: View {
                         PendingToolGroupView(tools: pendingTools)
                     }
                     if agentIsWorking {
-                        ConversationAgentWorkingIndicator(hasPendingTool: !pendingTools.isEmpty)
-                            .id("conversation.agent-working")
+                        ConversationAgentWorkingIndicator(
+                            label: ConversationActivityPresentation.liveLabel(pendingTools: pendingTools, plans: plans),
+                            startedAt: ConversationActivityPresentation.turnStart(
+                                messages: messages,
+                                runtimeUpdatedAt: (context.selectedCard ?? context.selectedDetail?.card)?
+                                    .runtimeUpdatedAt ?? "")
+                        )
+                        .id("conversation.agent-working")
                     }
                     if let creationFailure {
                         CreationFailureBanner(
@@ -207,6 +213,7 @@ struct ConversationTimeline: View {
             }
             .textSelection(.enabled)
             .background(DieterTheme.background)
+            .smokeTarget("conversation.viewport")
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 ConversationScrollBehavior.isAtLatest(
                     visibleMaxY: geometry.visibleRect.maxY,
@@ -253,7 +260,7 @@ struct ConversationTimeline: View {
             }
             .onChange(of: showsJumpToLatest) { _, visible in
                 #if DIETER_UI_SMOKE
-                    ConversationUISmokeRunner.recordJumpToLatestVisibility(visible)
+                    ConversationUISmokeRunner.recordJumpToLatestVisibility(visible, conversationID: conversationID)
                 #endif
             }
             .onChange(of: viewportObservation, initial: true) { _, observation in

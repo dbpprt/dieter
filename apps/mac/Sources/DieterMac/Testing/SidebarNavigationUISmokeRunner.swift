@@ -63,14 +63,8 @@
             writeReport(results, to: output)
         }
 
-        // Projects are compressed by default; the trailing chevron stays 23pt from
-        // the current sidebar edge. Rows share a 42pt vertical pitch below the
-        // global destinations and PROJECTS section header.
-        private static let firstRowTop: CGFloat = 271
-        private static let secondRowTop: CGFloat = 314
-
         private static func prepare(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
-            click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(450)
             var preferences = loadPreferences()
             results["expand-click"] =
@@ -98,29 +92,23 @@
             results["saved-expand"] =
                 preferences.isExpanded(projectIDs[0]) ? "passed" : "failed: expanded state was not saved"
 
-            let initialWidth = persistedSidebarWidth()
-            let targetWidth = SidebarSizing.clamped(initialWidth + 112)
-            await drag(
-                window: window,
-                fromX: initialWidth + (SidebarSizing.dividerWidth / 2),
-                fromTop: 500,
-                toX: targetWidth + (SidebarSizing.dividerWidth / 2),
-                toTop: 500
-            )
-            try? await DieterTaskSleep.milliseconds(500)
-            var resizedWidth = persistedSidebarWidth()
-            if resizedWidth <= initialWidth + 40 {
-                // Synthetic NSEvents do not always enter SwiftUI's resize gesture
-                // on headless CI or an inactive desktop. Record the same accepted
-                // resize state so the second real process still verifies reload.
+            if let split = navigationSplit(in: window) {
+                let initialWidth = split.arrangedSubviews[0].frame.width
+                let targetWidth: CGFloat = initialWidth > 275 ? 250 : 300
+                // Resize the actual AppKit divider, not the removed SwiftUI drag handle.
+                split.setPosition(targetWidth, ofDividerAt: 0)
+                let resized = await NativeUIAccessibility.wait {
+                    abs(split.arrangedSubviews[0].frame.width - targetWidth) < 2
+                        && abs(persistedSidebarWidth() - targetWidth) < 2
+                }
                 SidebarProjectNavigationPreferences.applicationDefaults().set(
-                    Double(targetWidth),
-                    forKey: SidebarSizing.storageKey
-                )
-                resizedWidth = persistedSidebarWidth()
-                results["resize-drag"] = "accepted-resize state recorded"
+                    Double(targetWidth), forKey: "smoke.expectedSidebarWidth")
+                results["resize-native-divider"] =
+                    resized
+                    ? "passed"
+                    : "failed: native width \(split.arrangedSubviews[0].frame.width), saved \(persistedSidebarWidth()), expected \(targetWidth)"
             } else {
-                results["resize-drag"] = "native resize passed: saved \(resizedWidth)"
+                results["resize-native-divider"] = "failed: navigation split view unavailable"
             }
 
             await showChats(store: store, window: window)
@@ -142,20 +130,29 @@
                 restored.orderedIDs(from: projectIDs) == [projectIDs[2], projectIDs[0], projectIDs[1]]
                 ? "passed" : "failed"
             results["restored-expand"] = restored.isExpanded(projectIDs[0]) ? "passed" : "failed"
-            let restoredWidth = persistedSidebarWidth()
+            let expectedWidth = SidebarProjectNavigationPreferences.applicationDefaults().double(
+                forKey: "smoke.expectedSidebarWidth")
+            let widthRestored = await NativeUIAccessibility.wait {
+                guard let split = navigationSplit(in: window) else { return false }
+                return abs(split.arrangedSubviews[0].frame.width - expectedWidth) < 2
+                    && abs(persistedSidebarWidth() - expectedWidth) < 2
+            }
             results["restored-width"] =
-                restoredWidth > SidebarSizing.defaultWidth + 40
-                ? "passed"
-                : "failed: restored \(restoredWidth)"
+                widthRestored ? "passed" : "failed: expected \(expectedWidth), restored \(persistedSidebarWidth())"
 
-            // The reordered third project is the first visible row after relaunch.
-            click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
+            // Verify the rendered order before expanding the first row.
+            let first = NativeUIAccessibility.find("sidebar.project.\(projectIDs[2]).toggle", in: window)
+            let second = NativeUIAccessibility.find("sidebar.project.\(projectIDs[0]).toggle", in: window)
+            let firstFrame = first?.recordedFrame ?? first?.frame ?? .zero
+            let secondFrame = second?.recordedFrame ?? second?.frame ?? .zero
+            let renderedOrder = firstFrame.width > 0 && secondFrame.width > 0 && firstFrame.minY > secondFrame.maxY
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[2]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
             var interacted = loadPreferences()
             results["order-in-relaunched-ui"] =
-                interacted.isExpanded(projectIDs[2])
+                renderedOrder && interacted.isExpanded(projectIDs[2])
                 ? "passed" : "failed: first visible toggle was not the reordered project"
-            click(window: window, x: chevronX(), distanceFromTop: firstRowTop)
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[2]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
 
             // The saved-expanded project renders second; collapsing it clears the flag.
@@ -326,14 +323,22 @@
             }
         }
 
+        private static func navigationSplit(in window: NSWindow) -> NSSplitView? {
+            guard let content = window.contentView else { return nil }
+            var views = [content]
+            while let view = views.popLast() {
+                if let split = view as? NSSplitView, split.isVertical, split.arrangedSubviews.count >= 2 {
+                    return split
+                }
+                views.append(contentsOf: view.subviews)
+            }
+            return nil
+        }
+
         private static func persistedSidebarWidth() -> CGFloat {
             let value = SidebarProjectNavigationPreferences.applicationDefaults().double(
                 forKey: SidebarSizing.storageKey)
             return value > 0 ? SidebarSizing.clamped(CGFloat(value)) : SidebarSizing.defaultWidth
-        }
-
-        private static func chevronX() -> CGFloat {
-            persistedSidebarWidth() - 23
         }
 
         private static func outputDirectory() -> URL {

@@ -33,6 +33,27 @@ enum ConversationActivityPresentation {
             || activeStatuses.contains(cardRuntime.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }
 
+    static func turnStart(messages: [Dieter_V1_UiMessage], runtimeUpdatedAt: String) -> Date? {
+        if let user = messages.last(where: { $0.role == "user" }),
+            let metadata = try? JSONSerialization.jsonObject(with: user.metadataJson) as? [String: Any],
+            let value = metadata["createdAt"] as? String,
+            let date = DieterTimestamp.date(from: value)
+        {
+            return date
+        }
+        return DieterTimestamp.date(from: runtimeUpdatedAt)
+    }
+
+    static func liveLabel(pendingTools: [Dieter_V1_PendingTool], plans: [Dieter_V1_TaskPlan]) -> String {
+        if let tool = pendingTools.first, !tool.toolName.isEmpty { return "Running \(tool.toolName)…" }
+        if let task = plans.last?.phases.flatMap(\.tasks).first(where: { $0.status == "in_progress" }),
+            !task.activeForm.isEmpty
+        {
+            return task.activeForm
+        }
+        return label(hasPendingTool: !pendingTools.isEmpty)
+    }
+
     static func label(hasPendingTool: Bool) -> String {
         hasPendingTool ? "Working…" : "Thinking…"
     }
@@ -41,8 +62,12 @@ enum ConversationActivityPresentation {
 struct ConversationView: View {
     @Environment(ConversationContext.self) private var context
     var compact = false
+    var maximized = false
+    var onToggleMaximize: (() -> Void)? = nil
     @State private var tab = "Conversation"
-    @State private var fileImporterPresented = false
+    @State private var fileImportRequest: ConversationFileImportRequest?
+
+    private var conversationID: String { context.selectedCardID ?? context.selectedChatID ?? "" }
 
     private var standalone: Bool {
         (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat"
@@ -61,7 +86,9 @@ struct ConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ConversationChrome(compact: compact, standalone: standalone, tab: $tab)
+            ConversationChrome(
+                compact: compact, standalone: standalone, tab: $tab,
+                maximized: maximized, onToggleMaximize: onToggleMaximize)
 
             Group {
                 if context.conversationLoading {
@@ -98,10 +125,13 @@ struct ConversationView: View {
                 if let card, canStartCard || startingCard {
                     ConversationStartCardBanner(card: card, starting: startingCard)
                 }
-                ConversationComposer(fileImporterPresented: $fileImporterPresented)
+                ConversationComposer {
+                    guard !conversationID.isEmpty else { return }
+                    fileImportRequest = ConversationFileImportRequest(conversationID: conversationID)
+                }
             }
         }
-        .background(DieterTheme.background)
+        .background(compact ? Color.clear : DieterTheme.background)
         .overlay(alignment: .bottom) {
             if let toast = context.workspaceToast {
                 WorkspaceToastView(toast: toast)
@@ -113,6 +143,9 @@ struct ConversationView: View {
         .animation(.spring(duration: 0.3), value: context.workspaceToast)
         .onChange(of: context.selectedCardID) { _, _ in tab = "Conversation" }
         .onChange(of: context.selectedChatID) { _, _ in tab = "Conversation" }
+        .onChange(of: conversationID) { _, _ in fileImportRequest = nil }
+        .onChange(of: tab) { _, _ in fileImportRequest = nil }
+        .onDisappear { fileImportRequest = nil }
         #if DIETER_UI_SMOKE
             .onReceive(
                 NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.selectTabNotification)
@@ -121,14 +154,24 @@ struct ConversationView: View {
                 if let name = note.object as? String { tab = name }
             }
         #endif
-        .fileImporter(
-            isPresented: $fileImporterPresented, allowedContentTypes: [.item],
-            allowsMultipleSelection: true
-        ) { result in
-            if case .success(let urls) = result {
-                context.addAttachments(urls)
-            } else if case .failure(let error) = result {
-                context.show(error)
+        .background {
+            if let request = fileImportRequest {
+                ConversationFileImporter(
+                    isCurrent: {
+                        fileImportRequest?.id == request.id && conversationID == request.conversationID
+                    },
+                    onCompletion: { result in
+                        guard fileImportRequest?.id == request.id,
+                            conversationID == request.conversationID
+                        else { return }
+                        fileImportRequest = nil
+                        switch result {
+                        case .success(let urls): context.addAttachments(urls)
+                        case .failure(let error): context.show(error)
+                        }
+                    }
+                )
+                .id(request.id)
             }
         }
         // AttachmentPasteMonitor is the single owner of ⌘V. Registering an
@@ -136,5 +179,36 @@ struct ConversationView: View {
         .attachmentPasteCatcher { pasteboard in
             context.attachPasteboard(pasteboard)
         }
+    }
+}
+
+private struct ConversationFileImportRequest: Identifiable {
+    let id = UUID()
+    let conversationID: String
+}
+
+/// Each presentation owns its delay and completion, so leaving a conversation
+/// cannot open a picker later or deliver its result to another draft.
+private struct ConversationFileImporter: View {
+    var isCurrent: () -> Bool
+    var onCompletion: (Result<[URL], Error>) -> Void
+    @State private var presented = false
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .fileImporter(
+                isPresented: $presented, allowedContentTypes: [.item], allowsMultipleSelection: true,
+                onCompletion: onCompletion
+            )
+            .task {
+                do {
+                    // Let the attachment source popover finish dismissing.
+                    try await DieterTaskSleep.milliseconds(250)
+                    guard !Task.isCancelled, isCurrent() else { return }
+                    presented = true
+                } catch {}
+            }
+            .onDisappear { presented = false }
     }
 }

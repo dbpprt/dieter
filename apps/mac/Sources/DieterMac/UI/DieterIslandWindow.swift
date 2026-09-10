@@ -3,6 +3,44 @@ import Observation
 import QuartzCore
 import SwiftUI
 
+enum DieterIslandEdge: String {
+    case left, right
+
+    func pushed(horizontal: CGFloat, vertical: CGFloat) -> Self {
+        guard abs(horizontal) >= 40, abs(horizontal) > abs(vertical) else { return self }
+        return horizontal < 0 ? .left : .right
+    }
+}
+
+/// Keep the native panel exactly as tall as the SwiftUI sections it contains.
+enum DieterIslandLayout {
+    static let expandedWidth: CGFloat = 600
+    static let horizontalInset: CGFloat = 20
+    static let headerHeight: CGFloat = 56
+    static let footerHeight: CGFloat = 54
+    static let separatorHeight: CGFloat = 1
+    static let activityVerticalInset: CGFloat = 12
+    static let activityHeadingHeight: CGFloat = 20
+    static let rowHeight: CGFloat = 56
+    static let rowSpacing: CGFloat = 8
+    static let emptyActivityHeight: CGFloat = 136
+    static let maximumVisibleRows = 4
+
+    static func activityHeight(itemCount: Int) -> CGFloat {
+        let count = min(max(itemCount, 0), maximumVisibleRows)
+        guard count > 0 else { return emptyActivityHeight }
+        return activityVerticalInset * 2 + activityHeadingHeight
+            + CGFloat(count) * (rowHeight + rowSpacing)
+    }
+
+    static func expandedSize(itemCount: Int) -> CGSize {
+        CGSize(
+            width: expandedWidth,
+            height: headerHeight + footerHeight + separatorHeight * 2 + activityHeight(itemCount: itemCount)
+        )
+    }
+}
+
 struct DieterIslandDisplayGeometry: Equatable {
     let screenFrame: CGRect
     let visibleFrame: CGRect
@@ -38,13 +76,10 @@ struct DieterIslandDisplayGeometry: Equatable {
     }
 
     func expandedSize(itemCount: Int) -> CGSize {
-        let visibleRows = min(max(itemCount, 0), 4)
-        let populatedBodyHeight = CGFloat(visibleRows * 62) + 48
-        let bodyHeight = visibleRows == 0 ? 190 : max(168, populatedBodyHeight)
-        return CGSize(width: 600, height: 68 + 1 + bodyHeight + 1 + 64)
+        DieterIslandLayout.expandedSize(itemCount: itemCount)
     }
 
-    func windowFrame(expanded: Bool, activityItemCount: Int = 4) -> CGRect {
+    func windowFrame(expanded: Bool, activityItemCount: Int = 4, edge: DieterIslandEdge = .right) -> CGRect {
         let size = expanded ? expandedSize(itemCount: activityItemCount) : collapsedSize
         let x: CGFloat
         let y: CGFloat
@@ -52,7 +87,7 @@ struct DieterIslandDisplayGeometry: Equatable {
             x = screenFrame.midX - size.width / 2
             y = screenFrame.maxY - size.height
         } else {
-            x = visibleFrame.maxX - size.width - 12
+            x = edge == .left ? visibleFrame.minX + 12 : visibleFrame.maxX - size.width - 12
             y = visibleFrame.maxY - size.height - 8
         }
         return CGRect(origin: CGPoint(x: x, y: y), size: size)
@@ -114,6 +149,10 @@ final class DieterIslandController: NSObject {
     private var localPointerMonitor: Any?
     private var closeTask: Task<Void, Never>?
     private var screenObserver: NSObjectProtocol?
+    private var edge =
+        DieterIslandEdge(
+            rawValue: DieterAppearance.applicationDefaults().string(forKey: "DieterIslandEdge") ?? "right") ?? .right
+    private var dragging = false
     private var enabled = false
     private var started = false
     #if DIETER_UI_SMOKE
@@ -180,7 +219,7 @@ final class DieterIslandController: NSObject {
     }
 
     private func checkPointerLocation() {
-        guard automaticHoverEnabled, enabled, let panel else { return }
+        guard automaticHoverEnabled, enabled, !dragging, let panel else { return }
         let point = NSEvent.mouseLocation
         if panel.frame.insetBy(dx: -5, dy: -5).contains(point) {
             closeTask?.cancel()
@@ -246,12 +285,19 @@ final class DieterIslandController: NSObject {
         geometry = newGeometry
         presentation.hasPhysicalNotch = newGeometry.hasPhysicalNotch
         if panel == nil {
-            let panel = DieterIslandPanel(frame: newGeometry.windowFrame(expanded: false))
+            let panel = DieterIslandPanel(frame: newGeometry.windowFrame(expanded: false, edge: edge))
             panel.contentView = NSHostingView(
                 rootView: DieterIslandThemeRoot(store: store) {
                     DieterIslandView(
                         presentation: presentation,
                         onRequestExpansion: { [weak self] expanded in self?.setExpanded(expanded) },
+                        onDragChanged: { [weak self] in
+                            guard let self, self.geometry?.hasPhysicalNotch == false else { return }
+                            self.dragging = true
+                            self.closeTask?.cancel()
+                            self.closeTask = nil
+                        },
+                        onDragEnded: { [weak self] translation in self?.pushIsland(translation) },
                         onCaptureTask: { [weak self] in
                             guard let self else { return }
                             self.captureTask.capture(
@@ -289,8 +335,30 @@ final class DieterIslandController: NSObject {
     private func targetFrame(expanded: Bool, geometry: DieterIslandDisplayGeometry) -> CGRect {
         geometry.windowFrame(
             expanded: expanded,
-            activityItemCount: store.islandActivity.items.count
+            activityItemCount: store.islandActivity.items.count, edge: edge
         )
+    }
+
+    private func pushIsland(_ translation: CGSize) {
+        dragging = false
+        guard let geometry, !geometry.hasPhysicalNotch, let panel else { return }
+        let destination = edge.pushed(horizontal: translation.width, vertical: translation.height)
+        guard destination != edge else { checkPointerLocation(); return }
+        edge = destination
+        DieterAppearance.applicationDefaults().set(edge.rawValue, forKey: "DieterIslandEdge")
+        closeTask?.cancel()
+        closeTask = nil
+        presentation.expanded = false
+        panel.ignoresMouseEvents = true
+        let frame = targetFrame(expanded: false, geometry: geometry)
+        dragging = true
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.45
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in self?.dragging = false }
+        }
     }
 
     private func installPointerMonitors() {

@@ -653,6 +653,16 @@ message QueuedMessage {
   string text = 2;
   repeated MessagePart parts = 3;
   string created_at = 4;
+  // Immutable selection admitted with this message, also returned on removal
+  // so editing restores its model, reasoning and provider options.
+  HarnessSelection selection = 5;
+}
+
+message HarnessSelection {
+  string provider = 1;
+  string model = 2;
+  string effort = 3;
+  map<string, string> provider_options = 4;
 }
 
 message ConversationPage {

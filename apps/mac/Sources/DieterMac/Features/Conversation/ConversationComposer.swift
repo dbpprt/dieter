@@ -4,9 +4,11 @@ import UniformTypeIdentifiers
 
 struct ConversationComposer: View {
     @Environment(ConversationContext.self) private var context
-    @Binding var fileImporterPresented: Bool
+    var onUploadFile: () -> Void
     @FocusState private var composerFocused: Bool
     @State private var attachmentDropTargeted = false
+    @State private var attachmentMenuPresented = false
+    @State private var captureInProgress = false
     @State private var historyNavigation = ComposerHistoryNavigation()
 
     private var harness: Dieter_V1_Harness? {
@@ -97,60 +99,55 @@ struct ConversationComposer: View {
                         .padding(.bottom, 6)
                 }
 
-                HStack(alignment: .center, spacing: 9) {
-                    ViewThatFits(in: .horizontal) {
-                        composerSettings(showContext: true)
-                        composerSettings(showContext: false)
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    if working {
-                        Button {
-                            if let card = context.selectedCard ?? context.selectedDetail?.card {
-                                Task { await context.cancel(card) }
-                            }
-                        } label: {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(Color.white)
-                                .frame(width: 30, height: 30)
-                                .background(DieterTheme.coral, in: Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.14)))
+                GeometryReader { geometry in
+                    let compact = geometry.size.width < 360
+                    HStack(spacing: compact ? 4 : 6) {
+                        attachmentButton
+                        providerMenu(compact: compact)
+                            .frame(width: compact ? 24 : min(100, max(66, geometry.size.width * 0.16)))
+                        modelMenu(compact: compact)
+                            .frame(minWidth: 40, maxWidth: 180)
+                            .layoutPriority(1)
+                        if let efforts = model?.efforts, !efforts.isEmpty {
+                            reasoningMenu(efforts: efforts, compact: compact)
+                                .frame(width: compact ? 24 : 64)
                         }
-                        .buttonStyle(.plain)
-                        .help("Stop agent")
-                        .accessibilityIdentifier("conversation.stop")
-                    }
-
-                    Button {
-                        submitComposer()
-                    } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(hasDraft ? Color.white : DieterTheme.tertiary)
-                            .frame(width: 36, height: 36)
-                            .background(
-                                hasDraft ? DieterTheme.primary : DieterTheme.elevated,
-                                in: Circle()
+                        ComposerProviderOptions(
+                            options: ProviderOptionValues.options(for: harness, model: context.composerModel),
+                            values: Binding(
+                                get: { context.composerProviderOptions },
+                                set: { context.composerProviderOptions = $0 }
+                            ),
+                            conversationLocked: context.composerProviderLocked,
+                            conversationID: conversationID
+                        )
+                        .smokeTarget("conversation.provider-options")
+                        .fixedSize()
+                        Spacer(minLength: 0)
+                        if geometry.size.width >= 560,
+                            let usage = ConversationContextUsage.latest(
+                                messages: context.conversation?.conversation.messages ?? [],
+                                fallbackWindow: Int64(model?.contextWindow ?? 0)
                             )
-                            .overlay(Circle().stroke(Color.white.opacity(hasDraft ? 0.14 : 0.055)))
-                            .shadow(color: DieterTheme.shellDeep.opacity(hasDraft ? 0.3 : 0), radius: 9, y: 3)
+                        {
+                            ContextUsageIndicator(usage: usage)
+                        }
+                        composerActions
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!hasDraft)
-                    .help(working ? "Queue message" : "Send message")
-                    .accessibilityIdentifier("conversation.send")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(DieterTheme.subtle)
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .padding(.leading, 10)
-                .padding(.trailing, 9)
-                .padding(.bottom, 9)
+                .frame(height: 30)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
 
             }
             .background {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.surface)
-                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .onTapGesture { composerFocused = true }
+                    .allowsHitTesting(false)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -158,9 +155,12 @@ struct ConversationComposer: View {
                         attachmentDropTargeted
                             ? DieterTheme.shell
                             : (composerFocused ? DieterTheme.shellDeep.opacity(0.55) : DieterTheme.border),
-                        lineWidth: attachmentDropTargeted ? 1.5 : 1)
+                        lineWidth: attachmentDropTargeted ? 1.5 : 1
+                    )
+                    .allowsHitTesting(false)
             }
-            .shadow(color: Color.black.opacity(0.24), radius: 12, y: 5)
+            .smokeTarget("conversation.composer-shell")
+            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
             .animation(.easeOut(duration: 0.16), value: composerFocused)
             .animation(.easeOut(duration: 0.12), value: attachmentDropTargeted)
             .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
@@ -169,7 +169,11 @@ struct ConversationComposer: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(DieterTheme.sidebar)
-        .onChange(of: conversationID) { _, _ in historyNavigation.reset() }
+        .onChange(of: conversationID) { _, _ in
+            historyNavigation.reset()
+            attachmentMenuPresented = false
+        }
+        .onDisappear { attachmentMenuPresented = false }
     }
 
     private func navigateHistory(_ direction: ComposerHistoryDirection) -> Bool {
@@ -202,85 +206,267 @@ struct ConversationComposer: View {
         Task { await context.sendComposer() }
     }
 
-    private func composerSettings(showContext: Bool) -> some View {
-        HStack(spacing: 7) {
-            Button {
-                fileImporterPresented = true
-            } label: {
-                Image(systemName: "paperclip")
+    private func captureScreenshot() {
+        guard !captureInProgress else { return }
+        captureInProgress = true
+        let capturedConversationID = conversationID
+        Task { @MainActor in
+            defer {
+                captureInProgress = false
+                NSApp.activate(ignoringOtherApps: true)
             }
-            .buttonStyle(DieterIconButtonStyle())
-            .help("Attach files")
-
-            Menu {
-                ForEach(context.harnessCatalog.harnesses, id: \.id) { item in
-                    Button(item.name) {
-                        guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else {
-                            return
-                        }
-                        context.composerProvider = selection.provider
-                        context.composerModel = selection.model
-                        context.composerEffort = selection.effort
-                        context.composerProviderOptions = selection.providerOptions
-                    }
-                }
-            } label: {
-                DieterChipLabel(title: harness?.name ?? context.composerProvider, symbol: "cpu")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-
-            Menu {
-                ForEach(harness?.models ?? [], id: \.id) { item in
-                    Button(item.name) {
-                        context.composerModel = item.id
-                        context.composerEffort = item.defaultEffort
-                        context.composerProviderOptions = ProviderOptionValues.normalized(
-                            for: harness,
-                            model: context.composerModel,
-                            saved: context.composerProviderOptions
-                        )
-                    }
-                }
-            } label: {
-                DieterChipLabel(
-                    title: model?.name ?? context.composerModel, symbol: "terminal", maximumTitleWidth: 190)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-
-            if let efforts = model?.efforts, !efforts.isEmpty {
-                Menu {
-                    ForEach(efforts, id: \.self) { value in
-                        Button(value.capitalized) { context.composerEffort = value }
-                    }
-                } label: {
-                    DieterChipLabel(
-                        title: context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized,
-                        symbol: "sparkles")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-            }
-
-            ProviderOptionChips(
-                options: ProviderOptionValues.options(for: harness, model: context.composerModel),
-                values: Binding(
-                    get: { context.composerProviderOptions },
-                    set: { context.composerProviderOptions = $0 }
-                ),
-                conversationLocked: (context.selectedCard ?? context.selectedDetail?.card)?.initialPromptSentAt
-                    .isEmpty == false)
-
-            Spacer(minLength: 0)
-            if showContext,
-                let usage = ConversationContextUsage.latest(
-                    messages: context.conversation?.conversation.messages ?? [],
-                    fallbackWindow: Int64(model?.contextWindow ?? 0)
-                )
-            {
-                ContextUsageIndicator(usage: usage)
+            do {
+                try await DieterTaskSleep.milliseconds(300)
+                NSApp.hide(nil)
+                guard let file = try await TaskScreenCapture.region() else { return }
+                defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+                let parts = try await AttachmentLoader().parts(urls: [file])
+                guard conversationID == capturedConversationID else { return }
+                context.composerAttachments = try AttachmentLoader.validate(
+                    parts, appendingTo: context.composerAttachments)
+            } catch {
+                NSApp.activate(ignoringOtherApps: true)
+                NSAlert(error: error).runModal()
             }
         }
+    }
+
+    private var attachmentButton: some View {
+        Button {
+            attachmentMenuPresented = true
+        } label: {
+            Image(systemName: "paperclip")
+        }
+        .buttonStyle(DieterIconButtonStyle())
+        .disabled(captureInProgress)
+        .accessibilityLabel("Attach")
+        .accessibilityIdentifier("conversation.attach")
+        .smokeTarget("conversation.attach")
+        .nativeHelp("Attach a file or capture an area of your screen to include with your message.")
+        .popover(isPresented: $attachmentMenuPresented) {
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    attachmentMenuPresented = false
+                    onUploadFile()
+                } label: {
+                    Label("Upload file…", systemImage: "doc.badge.plus")
+                }
+                .accessibilityIdentifier("conversation.attach.upload")
+                .smokeTarget("conversation.attach.upload")
+                Button {
+                    attachmentMenuPresented = false
+                    captureScreenshot()
+                } label: {
+                    Label("Take screenshot…", systemImage: "viewfinder")
+                }
+                .accessibilityIdentifier("conversation.attach.capture")
+                .smokeTarget("conversation.attach.capture")
+            }
+            .buttonStyle(.borderless)
+            .padding(14)
+        }
+
+    }
+
+    private var composerActions: some View {
+        HStack(spacing: 7) {
+            if working {
+                Button {
+                    if let card = context.selectedCard ?? context.selectedDetail?.card {
+                        Task { await context.cancel(card) }
+                    }
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(DieterTheme.coral)
+                        .frame(width: 30, height: 30)
+                        .background(DieterTheme.coral.opacity(0.12), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .nativeHelp("Stop agent")
+                .accessibilityIdentifier("conversation.stop")
+                .smokeTarget("conversation.stop")
+            }
+
+            Button {
+                submitComposer()
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(hasDraft ? Color.white : DieterTheme.tertiary)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        hasDraft ? DieterTheme.primary : DieterTheme.elevated,
+                        in: Circle()
+                    )
+                    .overlay(Circle().stroke(Color.white.opacity(hasDraft ? 0.14 : 0.055)))
+                    .shadow(color: DieterTheme.shellDeep.opacity(hasDraft ? 0.3 : 0), radius: 9, y: 3)
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasDraft)
+            .nativeHelp(working ? "Queue message" : "Send message")
+            .accessibilityIdentifier("conversation.send")
+            .smokeTarget("conversation.send")
+        }
+        .fixedSize()
+    }
+
+    private func providerMenu(compact: Bool) -> some View {
+        Menu {
+            ForEach(context.harnessCatalog.harnesses, id: \.id) { item in
+                Button(item.name) {
+                    guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else {
+                        return
+                    }
+                    context.composerProvider = selection.provider
+                    context.composerModel = selection.model
+                    context.composerEffort = selection.effort
+                    context.composerProviderOptions = selection.providerOptions
+                }
+            }
+        } label: {
+            ComposerMenuLabel(
+                title: harness?.name ?? context.composerProvider, symbol: "cpu", iconOnly: compact)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Provider: \(harness?.name ?? context.composerProvider)")
+        .accessibilityIdentifier("conversation.provider")
+        .smokeTarget("conversation.provider")
+        .disabled(context.composerProviderLocked)
+        .nativeHelp(
+            context.composerProviderLocked
+                ? "Provider: \(harness?.name ?? context.composerProvider). This conversation keeps its original agent service. Model and reasoning changes apply to your next message."
+                : "Provider: \(harness?.name ?? context.composerProvider). The agent service that runs this conversation and its tools."
+        )
+    }
+
+    private func modelMenu(compact: Bool) -> some View {
+        Menu {
+            ForEach(harness?.models ?? [], id: \.id) { item in
+                Button(item.name) {
+                    context.selectComposerModel(item)
+                }
+            }
+        } label: {
+            let name = model?.name ?? context.composerModel
+            ComposerMenuLabel(
+                title: compact ? name.replacingOccurrences(of: "GPT-", with: "") : name,
+                symbol: "sparkles", iconOnly: false)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Model: \(model?.name ?? context.composerModel)")
+        .accessibilityIdentifier("conversation.model")
+        .smokeTarget("conversation.model")
+        .disabled(!context.canChangeComposerSelection("model-selection"))
+        .nativeHelp(
+            context.canChangeComposerSelection("model-selection")
+                ? "Model: \(model?.name ?? context.composerModel). The AI model used for your next message. The current turn keeps its settings; models differ in capability, speed, and cost."
+                : "Model: \(model?.name ?? context.composerModel). This provider or daemon version does not support changing models in an existing conversation."
+        )
+    }
+
+    private func reasoningMenu(efforts: [String], compact: Bool) -> some View {
+        Menu {
+            ForEach(efforts, id: \.self) { value in
+                Button(value.capitalized) { context.composerEffort = value }
+            }
+        } label: {
+            ComposerMenuLabel(
+                title: context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized,
+                symbol: "sparkles", iconOnly: compact)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel(
+            "Reasoning: \(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized)"
+        )
+        .accessibilityIdentifier("conversation.reasoning")
+        .smokeTarget("conversation.reasoning")
+        .disabled(!context.canChangeComposerSelection("effort-selection"))
+        .nativeHelp(
+            context.canChangeComposerSelection("effort-selection")
+                ? "Reasoning: \(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized). How much effort the model spends thinking on your next message. Higher effort can improve difficult answers but takes longer. The current turn keeps its settings."
+                : "Reasoning: this provider or daemon version keeps the original reasoning effort for an existing conversation."
+        )
+    }
+}
+
+/// Only the menu's visual label adapts; its native presenter stays in place.
+private struct ComposerMenuLabel: View {
+    let title: String
+    let symbol: String
+    let iconOnly: Bool
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if iconOnly {
+                Image(systemName: symbol)
+                    .frame(width: 14)
+            } else {
+                Text(title).lineLimit(1).truncationMode(.tail)
+            }
+            Image(systemName: "chevron.down")
+                .font(.system(size: 7, weight: .semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Keep Fast directly accessible while bounding every provider's other settings
+/// to one persistent popover, including providers with text or choice options.
+private struct ComposerProviderOptions: View {
+    let options: [Dieter_V1_ProviderOption]
+    @Binding var values: [String: String]
+    let conversationLocked: Bool
+    let conversationID: String
+    @State private var presented = false
+
+    private var additionalOptions: [Dieter_V1_ProviderOption] { options.filter { $0.id != "fast_mode" } }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let fast = options.first(where: { $0.id == "fast_mode" }) {
+                ProviderOptionChip(
+                    option: fast, values: $values,
+                    isEnabled: ProviderOptionValues.isEnabled(fast, conversationLocked: conversationLocked)
+                )
+                .smokeTarget("conversation.fast-mode")
+            }
+            if !additionalOptions.isEmpty {
+                Button {
+                    presented = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Provider options")
+                .accessibilityIdentifier("conversation.additional-options")
+                .smokeTarget("conversation.additional-options")
+                .nativeHelp("Provider options: additional settings supported by this agent service.")
+                .popover(isPresented: $presented) {
+                    Form {
+                        ForEach(additionalOptions, id: \.id) { option in
+                            ProviderOptionField(option: option, values: $values)
+                                .disabled(
+                                    !ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
+                                )
+                                .smokeTarget("conversation.other-option.\(option.id)")
+                        }
+                    }
+                    .formStyle(.grouped)
+                    .frame(width: 320)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .onChange(of: conversationID) { _, _ in presented = false }
+        .onChange(of: options) { _, _ in presented = false }
+        .onDisappear { presented = false }
     }
 }

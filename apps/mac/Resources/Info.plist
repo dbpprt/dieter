@@ -16,7 +16,7 @@
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
-    <key>LSMinimumSystemVersion</key><string>15.0</string>
+    <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>NSHumanReadableCopyright</key><string>Dieter</string>
     <key>NSLocalNetworkUsageDescription</key><string>Dieter connects to a Dieter server on this Mac or a trusted private network.</string>
     <key>NSAppleEventsUsageDescription</key><string>Dieter reads the active browser tab URL when you capture a task, so you can include it with your screenshot.</string>

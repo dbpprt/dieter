@@ -9,6 +9,91 @@ import subprocess
 import sys
 
 
+MAC_SMOKE_SUITES = ("core", "board", "conversation", "machine", "sidebar", "terminal", "island", "workspace")
+MAC_SOURCE_ROOT = "apps/mac/Sources/DieterMac/"
+
+# This is a conservative component map, not a Swift dependency graph. Shared
+# app/store/navigation/theme code and unclassified paths always run every suite.
+# Keep entries in sync with the surfaces exercised by the native smoke runners.
+MAC_SMOKE_COMPONENTS = {
+    "Features/Conversation/": ("core", "board", "conversation", "workspace"),
+    "Features/Changes/": ("workspace",),
+    "Features/Files/": ("core", "workspace"),
+    "Features/Terminals/": ("terminal",),
+    "Features/Schedules/": ("core", "board"),
+    "Features/Search/": ("core", "board", "sidebar"),
+}
+MAC_SMOKE_FILES = {
+    "Testing/NativeUISmokeRunner.swift": ("core", "board"),
+    "Testing/ConversationUISmokeRunner.swift": ("conversation",),
+    "Testing/MachineUISmokeRunner.swift": ("machine",),
+    "Testing/SidebarNavigationUISmokeRunner.swift": ("sidebar",),
+    "Testing/TerminalUISmokeRunner.swift": ("terminal",),
+    "Testing/IslandUISmokeRunner.swift": ("island",),
+    "Testing/WorkspaceUISmokeRunner.swift": ("workspace",),
+    "UI/BoardView.swift": ("core", "board", "conversation", "workspace"),
+    "UI/BoardLaneList.swift": ("core", "board"),
+    "UI/BoardCardMergeDrop.swift": ("board",),
+    "UI/BoardConversationOverlay.swift": ("core", "board", "conversation", "workspace"),
+    "UI/ChatsView.swift": ("core", "conversation", "sidebar"),
+    "UI/ConversationMarkdownView.swift": ("core", "board", "conversation"),
+    "UI/SelectableMessageText.swift": ("core", "board", "conversation"),
+    "UI/Attachments.swift": ("core", "board", "conversation"),
+    "UI/CaptureTask.swift": ("core", "board", "conversation", "island"),
+    "UI/DieterIslandView.swift": ("island",),
+    "UI/DieterIslandWindow.swift": ("island",),
+    "UI/MachinesView.swift": ("core", "machine", "sidebar"),
+    "UI/FilePaneSplit.swift": ("workspace",),
+    "Features/Forms/EditCardSheet.swift": ("core", "board"),
+    "Features/Forms/LabelForms.swift": ("core", "board"),
+    "Features/Forms/BoardForms.swift": ("core", "board"),
+    "Features/Forms/HarnessFields.swift": ("core", "board", "conversation"),
+    "Features/Forms/NewConversationSheet.swift": ("core", "board", "conversation"),
+    "Features/Forms/ConversationWorkspacePickerSheet.swift": ("core", "board", "workspace"),
+    "Model/BoardProjection.swift": ("core", "board"),
+    "Model/DieterIslandPreferences.swift": ("island",),
+    "Model/TerminalOutputAccumulator.swift": ("terminal",),
+    "Model/FileEditorSession.swift": ("core", "workspace"),
+    "Model/FileSyntaxHighlightPlan.swift": ("core", "workspace"),
+    "Model/ProjectChangesModel.swift": ("workspace",),
+    "Model/WorkspaceGit.swift": ("workspace",),
+    "Model/WorkspaceReview.swift": ("workspace",),
+    "Model/PinnedChatNavigationPreferences.swift": ("core", "sidebar"),
+    "Model/ChatProjectDisclosurePreferences.swift": ("core", "sidebar"),
+    "Model/SidebarProjectNavigationPreferences.swift": ("core", "sidebar"),
+    "Model/ConversationRenderCache.swift": ("core", "board", "conversation"),
+    "Model/ConversationPresentation.swift": ("core", "board", "conversation"),
+    "Model/ConversationTurnFailure.swift": ("core", "board", "conversation"),
+    "Model/ConversationMessagePartGroup.swift": ("core", "board", "conversation"),
+    "Model/ConversationMarkdown.swift": ("core", "board", "conversation"),
+    "Model/ConversationCreationPreferences.swift": ("core", "board", "conversation"),
+    "Model/ReasoningTracePreferences.swift": ("core", "board", "conversation"),
+    "Model/SubagentUsagePresentation.swift": ("core", "board", "conversation"),
+    "Model/AttachmentLoader.swift": ("core", "board", "conversation", "island"),
+}
+
+
+def affected_mac_smoke_suites(paths):
+    selected = set()
+    for path in paths:
+        if path.startswith(("api/proto/", "scripts/isolated-gateway/", "assets/brand/")) \
+                or path in {"scripts/generate-proto.sh", "just/mac.just"}:
+            return MAC_SMOKE_SUITES
+        if not path.startswith("apps/mac/") or path.startswith("apps/mac/Tests/"):
+            continue
+        relative = path.removeprefix(MAC_SOURCE_ROOT)
+        suites = MAC_SMOKE_FILES.get(relative)
+        if suites is None:
+            suites = next((suites for prefix, suites in MAC_SMOKE_COMPONENTS.items()
+                           if relative.startswith(prefix)), None)
+        if suites is None:
+            return MAC_SMOKE_SUITES
+        selected.update(suites)
+    # Paths need not exist: deleted and renamed files validate their old component
+    # too. Union mixed edits once, in the same order as the full smoke run.
+    return tuple(suite for suite in MAC_SMOKE_SUITES if suite in selected)
+
+
 def output(root, *args):
     return subprocess.check_output(args, cwd=root).decode()
 
@@ -71,13 +156,12 @@ def plan_checks(root, paths, packages=None):
     brand = any(p.startswith("assets/brand/") for p in code)
     mac = schema or fixture or brand or any(p.startswith("apps/mac/") or p == "just/mac.just" for p in code)
     android = schema or fixture or brand or any(p.startswith("apps/android/") or p == "just/android.just" for p in code)
-    mac_integration = mac and (schema or fixture or brand or any(
-        (p.startswith("apps/mac/") and not p.startswith("apps/mac/Tests/")) or p == "just/mac.just" for p in code))
+    mac_suites = affected_mac_smoke_suites(code)
     android_integration = android and (schema or fixture or brand or any(
         (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
         or p == "just/android.just" for p in code))
 
-    if any(p.startswith("scripts/check_changed") or p == "justfile" for p in code):
+    if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just"} for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
     if any(p == "justfile" or p.startswith("just/") for p in code):
         add("just", "justfile-check")
@@ -101,8 +185,10 @@ def plan_checks(root, paths, packages=None):
         add("just", "mac", "test")
     if android:
         add("just", "android", "test")
-    if mac_integration:
+    if mac_suites == MAC_SMOKE_SUITES:
         add("just", "mac", "smoke-all")
+    elif mac_suites:
+        add("just", "mac", "smoke-suites", *mac_suites)
     if android_integration:
         add("just", "android", "connected-test")
     if brand or any(p.startswith("landingpage/") or p == "just/site.just" for p in code):
@@ -130,7 +216,7 @@ def main():
     if args.dry_run:
         return 0
     for command in commands:
-        if command == ["just", "mac", "smoke-all"]:
+        if command[:3] in (["just", "mac", "smoke-all"], ["just", "mac", "smoke-suites"]):
             # The smoke driver refuses concurrent app processes. Check before
             # packaging so a known lifecycle conflict doesn't waste a build.
             running = subprocess.run(["pgrep", "-x", "DieterMac"], capture_output=True, text=True)

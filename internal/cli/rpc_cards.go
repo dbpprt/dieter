@@ -568,7 +568,7 @@ func (c *CLI) rpcCardFork(args []string) error {
 }
 
 func (c *CLI) rpcCardSend(args []string) error {
-	const usage = "Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\n"
+	const usage = "Usage: dieter card send [--message TEXT|--file FILE] [--attach FILE ...] [--provider P] [--model M] [--effort E] [--provider-option K=V] CARD\nModel, effort and mutable provider options apply to this message where supported.\nDuring a running turn, the message and its selection are queued together.\nThe provider stays fixed after the first message. Use --effort default to reset reasoning.\n"
 	set := flags("card send")
 	message := set.String("message", "", "message text")
 	file := set.String("file", "", "message file or -")

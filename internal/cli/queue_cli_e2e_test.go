@@ -29,10 +29,11 @@ func assertQueueRemovalCLI(t *testing.T, client *CLI, output *bytes.Buffer, data
 	if err != nil {
 		t.Fatal(err)
 	}
-	queued, _, err := data.QueueConversationMessageParts(card.ID, []model.UIMessagePart{
+	selection := &model.HarnessSelection{Provider: "codex", Model: "gpt-5.6-sol", Effort: "high", ProviderOptions: map[string]string{"fast_mode": "true"}}
+	queued, _, err := data.QueueConversationMessageWithSelection(card.ID, "", []model.UIMessagePart{
 		{Type: "text", Text: "Keep my attachment"},
 		{Type: "file", Filename: "note.txt", MediaType: "text/plain", URL: "data:text/plain;base64,aGk="},
-	})
+	}, selection)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +44,9 @@ func assertQueueRemovalCLI(t *testing.T, client *CLI, output *bytes.Buffer, data
 	}
 	if removed.Id != queued.ID || removed.Text != queued.Text || len(removed.Parts) != 2 || string(removed.Parts[1].Data) != "hi" || removed.Parts[1].Filename != "note.txt" {
 		t.Fatalf("removed payload: %s", raw)
+	}
+	if removed.GetSelection().GetModel() != selection.Model || removed.GetSelection().GetEffort() != selection.Effort || removed.GetSelection().GetProviderOptions()["fast_mode"] != "true" {
+		t.Fatalf("removed message lost its selection: %s", raw)
 	}
 	conversation, err := data.Conversation(card.ID)
 	if err != nil || len(conversation.Queue) != 0 {

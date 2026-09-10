@@ -34,24 +34,53 @@ enum ConversationQueuePresentation {
     }
 }
 struct ConversationAgentWorkingIndicator: View {
-    let hasPendingTool: Bool
+    let label: String
+    let startedAt: Date?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shimmer = false
 
     var body: some View {
         HStack(spacing: 8) {
-            DieterActivityIndicator(size: 12)
-                .accessibilityHidden(true)
-            Text(ConversationActivityPresentation.label(hasPendingTool: hasPendingTool))
+            DieterActivityIndicator(size: 12).accessibilityHidden(true)
+            Text(label)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(DieterTheme.subtle)
+                .overlay {
+                    if !reduceMotion {
+                        GeometryReader { geometry in
+                            LinearGradient(
+                                colors: [.clear, DieterTheme.text, .clear], startPoint: .leading, endPoint: .trailing
+                            )
+                            .frame(width: geometry.size.width)
+                            .offset(x: shimmer ? geometry.size.width : -geometry.size.width)
+                        }
+                        .mask(Text(label).font(.caption.weight(.medium)))
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
+                }
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let startedAt {
+                Text(startedAt, style: .timer)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(DieterTheme.subtle)
+                    .accessibilityLabel("Elapsed time")
+                    .fixedSize()
+            }
         }
         .padding(.horizontal, 11)
         .frame(height: 34)
         .background(DieterTheme.surface.opacity(0.85), in: Capsule())
         .overlay(Capsule().stroke(DieterTheme.primary.opacity(0.18)))
-        .fixedSize()
+        .frame(maxWidth: 360, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(ConversationActivityPresentation.label(hasPendingTool: hasPendingTool))
         .accessibilityIdentifier("conversation.agent-working")
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: 2).repeatForever(autoreverses: false)) { shimmer = true }
+        }
     }
 }
 

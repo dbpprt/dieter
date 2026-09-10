@@ -206,7 +206,7 @@ func TestCatalogIncludesConfiguredOMPModels(t *testing.T) {
 	if adapter.Models[0].RuntimeID() != "" || adapter.Models[1].ContextWindow != 1048576 || adapter.Models[2].ID != "box/qwen3_6_27b" {
 		t.Fatalf("omp models=%#v", adapter.Models)
 	}
-	if adapter.Effort == nil || len(adapter.Effort.Options) != 8 || len(adapter.Capabilities) != 2 || adapter.Capabilities[0] != (Capability{ID: "subagents", Level: "progress"}) || adapter.Capabilities[1] != (Capability{ID: "task-plan", Level: "phases"}) {
+	if adapter.Effort == nil || len(adapter.Effort.Options) != 8 || len(adapter.Capabilities) != 3 || adapter.Capabilities[0] != (Capability{ID: "model-selection", Level: "between-turns"}) || adapter.Capabilities[1] != (Capability{ID: "subagents", Level: "progress"}) || adapter.Capabilities[2] != (Capability{ID: "task-plan", Level: "phases"}) {
 		t.Fatalf("omp capabilities or effort=%#v %#v", adapter.Capabilities, adapter.Effort)
 	}
 	if len(adapter.Options) != 1 || adapter.Options[0].ID != "advisor" || adapter.Options[0].Type != "boolean" {

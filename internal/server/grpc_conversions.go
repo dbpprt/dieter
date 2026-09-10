@@ -287,6 +287,9 @@ func protoConversation(value model.Conversation) *dieterv1.Conversation {
 
 func protoQueuedMessage(value model.QueuedMessage) *dieterv1.QueuedMessage {
 	result := &dieterv1.QueuedMessage{Id: value.ID, Text: value.Text, CreatedAt: value.CreatedAt}
+	if value.Selection != nil {
+		result.Selection = &dieterv1.HarnessSelection{Provider: value.Selection.Provider, Model: value.Selection.Model, Effort: value.Selection.Effort, ProviderOptions: value.Selection.ProviderOptions}
+	}
 	for _, part := range value.Parts {
 		result.Parts = append(result.Parts, protoMessagePart(part))
 	}

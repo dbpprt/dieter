@@ -248,7 +248,7 @@
             // The packaged-app smoke has a fixed 1,380pt content width. Drive the
             // first lane's rendered sort button through Dieter's own NSWindow and
             // capture immediately, before any appearance change can rebuild it.
-            click(window: window, x: 478, distanceFromTop: 164)
+            NativeUIAccessibility.press("lane-sort.todo", in: window)
             try? await DieterTaskSleep.milliseconds(500)
             capture(window, to: output.appending(path: "01-board-oldest-first.png"))
             results["board-lane-sort-toggle"] = "dispatched for visual verification"
@@ -274,6 +274,15 @@
                     output: output)
             }
             if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
+                // Navigation measurements finish on Screens. Restore the board
+                // before exercising controls that only exist in its header.
+                await store.openBoard(board.id, projectID: project.id)
+                _ = await waitUntil(timeout: 5) { NativeUIAccessibility.find("board.quick-task", in: window) != nil }
+                try? await DieterTaskSleep.milliseconds(350)
+                let toolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
+                results["board-toolbar-uncovered"] =
+                    toolbarUncovered
+                    ? "passed" : "failed: conversation overlay still covers board toolbar"
                 if var draft = store.state.cards.first(where: { $0.boardID == board.id }) {
                     draft.initialPromptSentAt = ""
                     draft.lane = "todo"
@@ -302,16 +311,71 @@
                     hover.enter(NSItemProvider(object: "board-card|board|todo|source" as NSString)) { _ in
                         true
                     }
-                    try? await DieterTaskSleep.milliseconds(2400)
+                    // The production two-second hover begins only after the
+                    // item provider finishes loading. Wait for that state so
+                    // slower CI rendering does not consume a fixed sleep's slack.
+                    let hoverArmed = await waitUntil(timeout: 5) { hover.mergeReady }
                     results["card-merge-hover-icon"] =
-                        hover.mergeReady ? "passed" : "failed: merge hover did not arm"
+                        hoverArmed
+                        ? "passed"
+                        : "failed: merge hover did not arm (targeted=\(hover.targeted), payloadLoaded=\(hover.payload != nil))"
                     capture(preview, to: output.appending(path: "card-merge-hover-icon.png"))
                     hover.reset()
                     preview.close()
                     window.makeKeyAndOrderFront(nil)
                 }
-                _ = NativeUIAccessibility.click("sidebar.quick-task", in: window)
-                try? await DieterTaskSleep.milliseconds(500)
+                let settingsClicked = NativeUIAccessibility.click("board.settings", in: window)
+                let generalVisible = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("board.settings.name", in: window) != nil
+                }
+                try? await DieterTaskSleep.milliseconds(400)
+                let routingClicked = NativeUIAccessibility.selectSegment(
+                    1, identifier: "board.settings.sections", in: window)
+                let routingVisible = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("board.hostnames", in: window) != nil
+                }
+                try? await DieterTaskSleep.milliseconds(300)
+                let generalClicked = NativeUIAccessibility.selectSegment(
+                    0, identifier: "board.settings.sections", in: window)
+                let returned = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("board.settings.name", in: window) != nil
+                }
+                results["board-settings-native-sections"] =
+                    settingsClicked && generalVisible && routingClicked && routingVisible && generalClicked && returned
+                    ? "passed"
+                    : "failed: open=\(settingsClicked), general=\(generalVisible), route action=\(routingClicked), routing=\(routingVisible), general action=\(generalClicked), restored=\(returned)"
+                let boardSettingsClosed = await NativeUIAccessibility.pressWhenSettled(
+                    "board.settings.cancel", in: window)
+                let boardSettingsDismissed = await waitUntil(timeout: 5) {
+                    !store.archivePolicyPresented && window.attachedSheet == nil
+                }
+                results["board-settings-dismissal"] =
+                    boardSettingsClosed && boardSettingsDismissed
+                    ? "passed" : "failed: board settings did not dismiss before project settings"
+
+                let projectClicked = NativeUIAccessibility.click("sidebar.project.\(project.id).settings", in: window)
+                let projectContextVisible = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("project.context.instructions", in: window) != nil
+                }
+                results["sidebar-project-context"] =
+                    projectClicked && projectContextVisible
+                    ? "passed" : "failed: project cog did not open instructions"
+                let projectContextClosed = await NativeUIAccessibility.pressWhenSettled(
+                    "project.context.cancel", in: window)
+                let projectContextDismissed = await waitUntil(timeout: 5) {
+                    !store.projectContextPresented && window.attachedSheet == nil
+                }
+                results["project-context-dismissal"] =
+                    projectContextClosed && projectContextDismissed
+                    ? "passed" : "failed: project settings did not dismiss before Quick Task"
+
+                let globalReady = await waitForBoardControl("sidebar.quick-task", in: window)
+                let globalOpened = globalReady && NativeUIAccessibility.click("sidebar.quick-task", in: window)
+                let globalVisible = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                    ["quick-task.content", "quick-task.title", "quick-task.story", "quick-task.create"].allSatisfy {
+                        NativeUIAccessibility.find($0, in: window)?.recordedFrame?.height ?? 0 > 0
+                    }
+                }
                 if let content = NativeUIAccessibility.find("quick-task.content", in: window),
                     let sheet = content.recordedWindow,
                     let contentFrame = content.recordedFrame,
@@ -329,22 +393,25 @@
                         && createFrame.minY - contentFrame.minY < 40
                         && titleFrame.minY > storyFrame.maxY
                     results["global-quick-task-layout"] =
-                        compact
+                        globalOpened && globalVisible && compact
                         ? "passed"
                         : "failed: excess shell space or misplaced title/footer; shell=\(sheetFrame), content=\(contentFrame)"
                     capture(sheet, to: output.appending(path: "global-quick-task-layout.png"))
-                    _ = NativeUIAccessibility.click("quick-task.story", in: sheet)
-                    try? await DieterTaskSleep.milliseconds(100)
-                    await NativeUIAccessibility.type("Keep this draft after clicking outside", in: sheet)
-                    // Popover dismissal is handled by AppKit's application event
-                    // monitors, which direct NSWindow.sendEvent bypasses.
+                    let storyFocused = await focusQuickTaskStory(in: sheet)
+                    if storyFocused {
+                        await NativeUIAccessibility.type("Keep this draft after clicking outside", in: sheet)
+                    }
+                    let storyEntered = await waitUntil(timeout: 5, intervalMilliseconds: 50) {
+                        store.quickTaskForm.story == "Keep this draft after clicking outside"
+                    }
                     NativeUIEventDispatcher.click(
-                        window: window, x: window.frame.width - 60, distanceFromTop: 100,
-                        throughApplicationQueue: true)
-                    let dismissed = await NativeUIAccessibility.wait { !sheet.isVisible }
-                    _ = NativeUIAccessibility.click("sidebar.quick-task", in: window)
-                    _ = await NativeUIAccessibility.wait {
-                        NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow != nil
+                        window: window, x: window.frame.width - 60, distanceFromTop: window.frame.height - 70,
+                        throughApplication: true)
+                    let dismissed = await waitUntil(timeout: 5) { !sheet.isVisible }
+                    let reopenReady = await waitForBoardControl("sidebar.quick-task", in: window)
+                    let reopenClicked = reopenReady && NativeUIAccessibility.click("sidebar.quick-task", in: window)
+                    _ = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
                     }
                     let reopened = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
                     let retained =
@@ -353,31 +420,42 @@
                         capture(reopened, to: output.appending(path: "global-quick-task-restored.png"))
                     }
                     results["global-quick-task-retains-draft"] =
-                        dismissed && retained
+                        storyFocused && storyEntered && dismissed && reopenClicked && retained
                         ? "passed"
-                        : "failed: outside dismissal=\(dismissed), restored content=\(retained), story=\(store.quickTaskForm.story)"
-                    if let reopened { _ = NativeUIAccessibility.click("quick-task.cancel", in: reopened) }
-                    try? await DieterTaskSleep.milliseconds(300)
+                        : "failed: focus=\(storyFocused), typed=\(storyEntered), outside dismissal=\(dismissed), reopen=\(reopenClicked), restored content=\(retained), story=\(store.quickTaskForm.story)"
+                    if let reopened {
+                        if await waitForBoardControl("quick-task.cancel", in: reopened) {
+                            _ = NativeUIAccessibility.click("quick-task.cancel", in: reopened)
+                        }
+                        _ = await waitUntil(timeout: 5) { !reopened.isVisible }
+                    }
+                    try? await DieterTaskSleep.milliseconds(350)
                     store.quickTaskForm.reset()
                 } else {
                     results["global-quick-task-layout"] =
-                        "failed: global Quick Task sheet or layout anchors absent"
+                        "failed: global ready=\(globalReady), open action=\(globalOpened), visible=\(globalVisible), active=\(NSApp.isActive), key=\(window.isKeyWindow); "
+                        + ["quick-task.content", "quick-task.title", "quick-task.story", "quick-task.create"].map {
+                            "\($0)=\(NativeUIAccessibility.find($0, in: window)?.recordedFrame?.debugDescription ?? "missing")"
+                        }.joined(separator: "; ")
                 }
-                // Navigation checks finish on Screens; the board launcher only
-                // exists after returning to the fixture board.
-                await store.openBoard(board.id, projectID: project.id)
-                _ = await NativeUIAccessibility.wait {
-                    NativeUIAccessibility.find("board.quick-task", in: window) != nil
-                }
-                let boardQuickTaskClicked = NativeUIAccessibility.click("board.quick-task", in: window)
-                _ = await NativeUIAccessibility.wait {
-                    NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow != nil
+                // Dismissing the global popover can also activate the underlying
+                // card. A board header control stays mounted behind the overlay;
+                // close the conversation before clicking the visible toolbar.
+                let quickTaskToolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
+                results["quick-task-toolbar-uncovered"] =
+                    quickTaskToolbarUncovered
+                    ? "passed" : "failed: conversation overlay still covers Quick Task"
+                let boardQuickTaskReady = await waitForBoardControl("board.quick-task", in: window)
+                let boardQuickTaskClicked =
+                    quickTaskToolbarUncovered && boardQuickTaskReady
+                    && NativeUIAccessibility.click("board.quick-task", in: window)
+                _ = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
                 }
                 if let target = NativeUIAccessibility.find("quick-task.story", in: window),
                     let popover = target.recordedWindow
                 {
-                    _ = NativeUIAccessibility.click("quick-task.story", in: popover)
-                    try? await DieterTaskSleep.milliseconds(200)
+                    let storyFocused = await focusQuickTaskStory(in: popover)
                     let pasteboard = NSPasteboard.general
                     let saved = (pasteboard.pasteboardItems ?? []).map { item in
                         item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in
@@ -391,19 +469,31 @@
                     image.unlockFocus()
                     pasteboard.clearContents()
                     pasteboard.writeObjects([image])
-                    if let event = NSEvent.keyEvent(
-                        with: .keyDown, location: .zero, modifierFlags: [.command],
-                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: popover.windowNumber,
-                        context: nil,
-                        characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9)
-                    {
-                        NSApp.postEvent(event, atStart: false)
+                    if storyFocused {
+                        for type in [NSEvent.EventType.keyDown, .keyUp] {
+                            if let event = NSEvent.keyEvent(
+                                with: type, location: .zero, modifierFlags: [.command],
+                                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: popover.windowNumber,
+                                context: nil,
+                                characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9)
+                            {
+                                NSApp.postEvent(event, atStart: false)
+                            }
+                        }
                     }
-                    let attached = await waitUntil(timeout: 5) {
-                        NativeUIAccessibility.find("quick-task.attachments", in: popover) != nil
+                    let attached = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                        popover.contentView?.layoutSubtreeIfNeeded()
+                        popover.displayIfNeeded()
+                        guard !store.quickTaskForm.attachments.isEmpty,
+                            let preview = NativeUIAccessibility.find("quick-task.attachments", in: popover),
+                            preview.recordedWindow === popover, let frame = preview.recordedFrame
+                        else { return false }
+                        return frame.width > 0 && frame.height > 0 && popover.isVisible
                     }
                     results["quick-task-paste-screenshot"] =
-                        attached ? "passed" : "failed: pasted screenshot preview was absent"
+                        storyFocused && attached
+                        ? "passed"
+                        : "failed: focus=\(storyFocused), attachments=\(store.quickTaskForm.attachments.count), rendered preview=\(attached), active=\(NSApp.isActive), key=\(popover.isKeyWindow)"
                     capture(popover, to: output.appending(path: "quick-task-pasted-screenshot.png"))
                     pasteboard.clearContents()
                     let items = saved.map { values in
@@ -420,7 +510,7 @@
                 NSApp.terminate(nil)
                 return
             }
-            click(window: window, x: 478, distanceFromTop: 164)  // restore newest-first
+            NativeUIAccessibility.press("lane-sort.todo", in: window)  // restore newest-first
             try? await DieterTaskSleep.milliseconds(350)
 
             store.openScreens()
@@ -431,15 +521,12 @@
             await store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
 
-            // Expand the first compressed project inline via its trailing chevron
-            // (x≈211 for the 234pt sidebar; the first row sits just below the PROJECTS
-            // header). This reveals the same boards/files/schedules rows the quick-nav
-            // popover shows, so it doubles as the popover's row-design verification.
-            click(window: window, x: 211, distanceFromTop: 272)
+            // Project expansion remains independent of the system sidebar visibility.
+            NativeUIAccessibility.click("sidebar.project.\(project.id).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(600)
             await captureAppearances(window, named: "01c-project-expanded.png", in: output)
             results["01c-project-expanded"] = "passed"
-            click(window: window, x: 211, distanceFromTop: 272)  // collapse back
+            NativeUIAccessibility.click("sidebar.project.\(project.id).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(450)
 
             // Note: the row-body quick-nav popover is verified by hand — driving it
@@ -447,26 +534,31 @@
             // sync and destabilizes the later RPC-backed steps. Its rows are identical
             // to the inline expansion captured above.
 
-            // Resolve the current controls: Quick Task and sidebar resizing can
-            // move the rail destinations without changing their behavior.
-            let collapseClicked = NativeUIAccessibility.click("sidebar.toggle", in: window)
-            try? await DieterTaskSleep.milliseconds(500)
+            // Exercise the system NavigationSplitView toggle. Collapsing hides
+            // the entire sidebar; global compose stays in the window toolbar.
+            let navigation = NativeUIAccessibility.navigationSplitController(in: window)
+            navigation?.toggleSidebar(nil)
+            let sidebarHidden = await NativeUIAccessibility.wait {
+                navigation?.splitViewItems.first?.isCollapsed == true
+            }
+            let composeAvailable = NativeUIAccessibility.find("sidebar.quick-task", in: window) != nil
             await captureAppearances(window, named: "01b-navigation-collapsed.png", in: output)
-            let collapsedRailCaptured =
-                NativeUIAccessibility.find("sidebar.expand-navigation", in: window) != nil
-            let chatsClicked = NativeUIAccessibility.click("sidebar.all-chats", in: window)
-            _ = await NativeUIAccessibility.wait { store.section == .chats }
+            navigation?.toggleSidebar(nil)
+            let sidebarShown = await NativeUIAccessibility.wait {
+                navigation?.splitViewItems.first?.isCollapsed == false
+            }
+            let chatsReady = await waitForExpandedSidebarTarget("sidebar.all-chats", navigation: navigation, in: window)
+            let chatsClicked = chatsReady && NativeUIAccessibility.click("sidebar.all-chats", in: window)
+            let chatsOpened = await NativeUIAccessibility.wait { store.section == .chats }
             results["navigation-collapse"] =
-                collapseClicked && collapsedRailCaptured && chatsClicked && store.section == .chats
+                navigation != nil && sidebarHidden && composeAvailable && sidebarShown
+                    && chatsReady && chatsClicked && chatsOpened
                 ? "passed"
-                : "failed: collapsed rail did not navigate (rendered=\(collapsedRailCaptured), section=\(store.section.rawValue))"
+                : "failed: native sidebar toggle/navigation (hidden=\(sidebarHidden), shown=\(sidebarShown), compose=\(composeAvailable), ready=\(chatsReady), clicked=\(chatsClicked), active=\(NSApp.isActive), key=\(window.isKeyWindow), section=\(store.section.rawValue))"
             store.section = .board
-            // Re-expand for the remaining expanded-sidebar interactions.
-            NativeUIAccessibility.click("sidebar.toggle", in: window)
-            try? await DieterTaskSleep.milliseconds(500)
             let steps = [Step(name: "02-global-chats", section: .chats, distanceFromTop: 142)]
             for step in steps {
-                click(window: window, x: 80, distanceFromTop: step.distanceFromTop)
+                NativeUIAccessibility.click("sidebar.all-chats", in: window)
                 try? await DieterTaskSleep.seconds(1)
                 results[step.name] =
                     store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
@@ -489,7 +581,7 @@
                 ? "passed"
                 : "failed: navigation became unstable"
 
-            click(window: window, x: 500, distanceFromTop: 65)
+            NativeUIAccessibility.click("chats.new", in: window)
             try? await DieterTaskSleep.seconds(1)
             results["03-standalone-chat"] =
                 store.section == .chats && store.newChatProjectID == project.id
@@ -981,6 +1073,30 @@
                     _ = await waitUntil(timeout: 5) {
                         store.conversation?.detail.card.id == liveCard.id && !store.conversationLoading
                     }
+                    let inspectorVisible = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find("board.conversation-close", in: window) != nil
+                    }
+                    // The inspector animates after its controls first enter the view tree.
+                    try? await DieterTaskSleep.milliseconds(400)
+                    let closed = await NativeUIAccessibility.pressWhenSettled("board.conversation-close", in: window)
+                    let selectionCleared = await waitUntil(timeout: 5) {
+                        store.selectedCardID == nil && store.conversation == nil
+                            && !NativeUIAccessibility.hasOpenInspector(in: window)
+                    }
+                    let clearedState =
+                        "selection=\(store.selectedCardID ?? "nil"), conversation=\(store.conversation?.detail.card.id ?? "nil"), close mounted=\(NativeUIAccessibility.find("board.conversation-close", in: window) != nil)"
+                    // Let the native collapse transition finish before presenting again.
+                    try? await DieterTaskSleep.milliseconds(400)
+                    await store.openConversation(cardID: liveCard.id)
+                    let reopened = await waitUntil(timeout: 5) {
+                        store.conversation?.detail.card.id == liveCard.id && !store.conversationLoading
+                            && NativeUIAccessibility.find("board.conversation-close", in: window) != nil
+                    }
+                    try? await DieterTaskSleep.milliseconds(400)
+                    results["board-native-inspector-close-reopen"] =
+                        closed && selectionCleared && reopened
+                        ? "passed"
+                        : "failed: inspector visible=\(inspectorVisible), close=\(closed), cleared=\(selectionCleared), reopened=\(reopened), \(clearedState)"
                 }
                 if let trigger = offlineTrigger() {
                     FileManager.default.createFile(atPath: trigger.path, contents: Data())
@@ -1116,6 +1232,86 @@
             return condition()
         }
 
+        private static func waitForExpandedSidebarTarget(
+            _ identifier: String, navigation: NSSplitViewController?, in window: NSWindow
+        ) async -> Bool {
+            guard let item = navigation?.splitViewItems.first else { return false }
+            var previousFrame: CGRect?
+            var stableSamples = 0
+            var nextActivation = Date.distantPast
+            return await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                if (!NSApp.isActive || !window.isKeyWindow), window.attachedSheet == nil,
+                    Date() >= nextActivation
+                {
+                    _ = NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    nextActivation = Date().addingTimeInterval(1)
+                }
+                guard NSApp.isActive, window.isKeyWindow, window.attachedSheet == nil, !item.isCollapsed,
+                    let target = NativeUIAccessibility.find(identifier, in: window),
+                    target.recordedWindow === window, let frame = target.recordedFrame,
+                    frame.width > 0, frame.height > 0
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                let sidebar = item.viewController.view
+                let sidebarFrame = window.convertToScreen(sidebar.convert(sidebar.bounds, to: nil))
+                guard sidebar.window === window, sidebarFrame.insetBy(dx: -1, dy: -1).contains(frame) else {
+                    stableSamples = 0
+                    return false
+                }
+                stableSamples = frame == previousFrame ? stableSamples + 1 : 0
+                previousFrame = frame
+                return stableSamples >= 3
+            }
+        }
+
+        /// Popover and toolbar controls must be in their actual, focused window
+        /// before the one pointer action; a first click can otherwise only focus.
+        private static func waitForBoardControl(_ identifier: String, in window: NSWindow) async -> Bool {
+            var previousFrame: CGRect?
+            var stableSamples = 0
+            var nextActivation = Date.distantPast
+            return await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                if (!NSApp.isActive || !window.isKeyWindow), window.attachedSheet == nil,
+                    Date() >= nextActivation
+                {
+                    _ = NSRunningApplication.current.activate(options: [.activateIgnoringOtherApps])
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    nextActivation = Date().addingTimeInterval(1)
+                }
+                window.contentView?.layoutSubtreeIfNeeded()
+                guard NSApp.isActive, window.isKeyWindow, window.attachedSheet == nil,
+                    let target = NativeUIAccessibility.find(identifier, in: window),
+                    target.recordedWindow === window, let frame = target.recordedFrame,
+                    frame.width > 0, frame.height > 0, window.frame.insetBy(dx: -1, dy: -1).contains(frame)
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                stableSamples = frame == previousFrame ? stableSamples + 1 : 0
+                previousFrame = frame
+                return stableSamples >= 3
+            }
+        }
+
+        private static func focusQuickTaskStory(in window: NSWindow) async -> Bool {
+            guard await waitForBoardControl("quick-task.story", in: window) else { return false }
+            window.makeFirstResponder(nil)
+            guard NativeUIAccessibility.click("quick-task.story", in: window) else { return false }
+            return await waitUntil(timeout: 5, intervalMilliseconds: 50) {
+                guard NSApp.isActive, window.isKeyWindow,
+                    let editor = window.firstResponder as? NSTextView, editor.isEditable, editor.window === window,
+                    let storyFrame = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedFrame
+                else { return false }
+                let editorFrame = window.convertToScreen(editor.convert(editor.bounds, to: nil))
+                return storyFrame.intersects(editorFrame)
+            }
+        }
+
         private static func assessFileResponsiveness(
             store: DieterStore, projectID: String, boardID: String, window: NSWindow,
             output: URL, results: inout [String: String]
@@ -1183,12 +1379,13 @@
                     separator: ", ")
                 guard
                     let editor = nativeTextViews(in: window.contentView).first(where: {
-                        $0.string == documents[0].1
+                        $0.string == documents[0].1 && $0.isEditable && $0.window === window
                     })
                 else {
                     results["files-edit-save"] = "failed: native editor missing"
                     return
                 }
+                window.makeKeyAndOrderFront(nil)
                 window.makeFirstResponder(editor)
                 editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
                 await NativeUIAccessibility.type("Saved through the native editor.\n", in: window)
@@ -1196,12 +1393,14 @@
                 let edited = await waitUntil(timeout: 5) {
                     store.fileEditorSession.isDirty && editor.string == expected
                 }
-                let saved = NativeUIAccessibility.click("files.save", in: window)
+                let saved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
                 let persisted = await waitUntil(timeout: 5) {
                     store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
                 }
                 results["files-edit-save"] =
-                    edited && saved && persisted ? "passed" : "failed: native edit/save did not persist"
+                    edited && saved && persisted
+                    ? "passed"
+                    : "failed: native edit/save did not persist (edited=\(edited), save action=\(saved), persisted=\(persisted))"
                 await store.openBoard(boardID, projectID: projectID)
                 await store.openProject(projectID, section: .files)
                 let revisited = await waitUntil(timeout: 5) {
@@ -1229,6 +1428,23 @@
             } catch {
                 results["files-editor-lifecycle"] = "failed: \(error)"
             }
+        }
+
+        private static func closeBoardConversationForToolbar(store: DieterStore, window: NSWindow) async -> Bool {
+            if store.selectedCardID == nil, !NativeUIAccessibility.hasOpenInspector(in: window) { return true }
+            let visibleClose = await waitUntil(timeout: 5) {
+                guard let close = NativeUIAccessibility.find("board.conversation-close", in: window),
+                    close.recordedWindow === window, let frame = close.recordedFrame
+                else { return false }
+                return frame.width > 0 && frame.height > 0 && window.frame.contains(frame)
+            }
+            guard visibleClose else { return false }
+            try? await DieterTaskSleep.milliseconds(350)
+            let clicked = NativeUIAccessibility.click("board.conversation-close", in: window)
+            let detached = await waitUntil(timeout: 5) {
+                store.selectedCardID == nil && !NativeUIAccessibility.hasOpenInspector(in: window)
+            }
+            return clicked && detached
         }
 
         private static func runBoardOpeningChecks(
@@ -1451,10 +1667,7 @@
 
     @MainActor
     enum NativeUIEventDispatcher {
-        static func click(
-            window: NSWindow, x: CGFloat, distanceFromTop: CGFloat,
-            throughApplicationQueue: Bool = false
-        ) {
+        static func click(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat, throughApplication: Bool = false) {
             guard let content = window.contentView else { return }
             let contentLocation = contentLocation(
                 x: x,
@@ -1480,11 +1693,7 @@
                     pressure: type == .leftMouseDown ? 1 : 0
                 )
                 if let event {
-                    if throughApplicationQueue {
-                        NSApp.postEvent(event, atStart: false)
-                    } else {
-                        window.sendEvent(event)
-                    }
+                    if throughApplication { NSApp.postEvent(event, atStart: false) } else { window.sendEvent(event) }
                 }
             }
         }

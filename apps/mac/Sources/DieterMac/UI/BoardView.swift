@@ -143,25 +143,6 @@ enum BoardCardOrdering {
     }
 }
 
-enum ConversationPaneSizing {
-    static let minimumWidth: CGFloat = 320
-    static let defaultWidth: CGFloat = 460
-    static let maximumWidth: CGFloat = 720
-    static let minimumBoardWidth: CGFloat = 520
-    static let dividerWidth: CGFloat = 7
-    static let maximumWorkspaceFraction: CGFloat = 0.42
-
-    static func clamped(_ width: CGFloat) -> CGFloat {
-        min(max(width, minimumWidth), maximumWidth)
-    }
-
-    static func resolvedWidth(_ preferredWidth: CGFloat, workspaceWidth: CGFloat) -> CGFloat {
-        let availableMaximum = max(minimumWidth, workspaceWidth - minimumBoardWidth - dividerWidth)
-        let proportionalMaximum = max(minimumWidth, workspaceWidth * maximumWorkspaceFraction)
-        return min(clamped(preferredWidth), min(maximumWidth, availableMaximum, proportionalMaximum))
-    }
-}
-
 enum KanbanLaneSizing {
     static let horizontalPadding: CGFloat = 14
     static let spacing: CGFloat = 9
@@ -200,77 +181,35 @@ enum BoardPresentationState: Equatable {
     }
 }
 
-private struct ConversationResizeDivider: View {
-    let onChanged: (CGFloat) -> Void
-    let onEnded: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        ZStack {
-            Rectangle().fill(Color.clear)
-            Rectangle()
-                .fill(hovering ? DieterTheme.shell.opacity(0.62) : DieterTheme.paneSeparator)
-                .frame(width: hovering ? 2 : 1)
-        }
-        .frame(width: ConversationPaneSizing.dividerWidth)
-        .ignoresSafeArea(.container, edges: .top)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { onChanged($0.translation.width) }
-                .onEnded { _ in onEnded() }
-        )
-        .onHover { isHovering in
-            if isHovering, !hovering { NSCursor.resizeLeftRight.push() }
-            if !isHovering, hovering { NSCursor.pop() }
-            hovering = isHovering
-        }
-        .onDisappear {
-            if hovering { NSCursor.pop() }
-        }
-        .accessibilityLabel("Resize conversation")
-        .accessibilityIdentifier("board.conversation-divider")
-    }
-}
-
 struct BoardView: View {
     @Environment(DieterStore.self) private var store
-    @AppStorage("dieter.conversationPaneWidth") private var conversationPaneWidth = Double(
-        ConversationPaneSizing.defaultWidth)
-    @State private var conversationDragStartWidth: CGFloat?
+    @State private var conversationMaximized = false
 
     var body: some View {
-        GeometryReader { geometry in
-            let width = ConversationPaneSizing.resolvedWidth(
-                CGFloat(conversationPaneWidth),
-                workspaceWidth: geometry.size.width
-            )
-
-            HStack(spacing: 0) {
-                boardContent
-                    .frame(maxWidth: .infinity)
-                    .clipped()
-
-                if store.selectedCardID != nil {
-                    ConversationResizeDivider(
-                        onChanged: { translation in
-                            let startWidth = conversationDragStartWidth ?? width
-                            if conversationDragStartWidth == nil { conversationDragStartWidth = startWidth }
-                            let next = ConversationPaneSizing.resolvedWidth(
-                                startWidth - translation,
-                                workspaceWidth: geometry.size.width
-                            )
-                            if abs(Double(next) - conversationPaneWidth) > 0.5 {
-                                conversationPaneWidth = Double(next)
-                            }
-                        },
-                        onEnded: { conversationDragStartWidth = nil }
-                    )
-
-                    ConversationView(compact: true).environment(store.conversationContext)
-                        .frame(width: width)
-                }
-            }
+        BoardConversationOverlay(
+            board: AnyView(
+                boardContent.environment(store)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                    .smokeTarget("board.canvas")
+                    .dieterThemeRoot(
+                        palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
+            conversation: AnyView(
+                ConversationView(
+                    compact: true,
+                    maximized: conversationMaximized,
+                    onToggleMaximize: { conversationMaximized.toggle() }
+                )
+                .environment(store)
+                .environment(store.conversationContext)
+                .background(.regularMaterial)
+                .dieterThemeRoot(
+                    palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
+            presented: store.selectedCardID != nil,
+            maximized: conversationMaximized
+        )
+        .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: store.selectedCardID) { _, cardID in
+            if cardID == nil { conversationMaximized = false }
         }
     }
 
@@ -345,195 +284,184 @@ struct BoardHeader: View {
         FluidPaneChrome(background: DieterTheme.background, spacing: 7) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 7) {
-                        Text(store.selectedBoard?.name ?? "Board")
-                            .font(DieterFont.paneTitle).lineLimit(1)
-                        Menu {
-                            Button("Create board…") { store.createBoardPresented = true }
-                            Button("Rename board…") {
-                                if let board = store.selectedBoard { store.presentRenameBoard(boardID: board.id) }
-                            }
-                            .disabled(store.selectedBoard == nil)
-                        } label: {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
-                                .frame(width: 16, height: 16)
-                        }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    }
+                    Text(store.selectedBoard?.name ?? "Board")
+                        .font(DieterFont.paneTitle).lineLimit(1)
                     Text(boardMetadata)
                         .font(DieterFont.subtitle)
                         .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 8)
-                Button {
-                    store.projectContextPresented = true
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .buttonStyle(DieterIconButtonStyle()).help("Project context")
+
             }
         } secondary: {
-            ViewThatFits(in: .horizontal) {
+            GlassEffectContainer(spacing: 7) {
                 HStack(spacing: 7) {
-                    Button {
-                        store.labelFilter = ""
-                    } label: {
-                        HStack(spacing: 6) {
-                            if store.labelFilter.isEmpty {
-                                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 7) {
+                            Button {
+                                store.labelFilter = ""
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if store.labelFilter.isEmpty {
+                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                                    }
+                                    Text("All cards · \(store.boardCards.count)").lineLimit(1)
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
+                                .padding(.horizontal, 10).frame(height: 28)
+                                .background(
+                                    Color.clear, in: Capsule()
+                                )
+                                .glassEffect(
+                                    store.labelFilter.isEmpty
+                                        ? .regular.tint(DieterTheme.shell.opacity(0.12)).interactive()
+                                        : .regular.interactive(), in: Capsule())
                             }
-                            Text("All cards · \(store.boardCards.count)").lineLimit(1)
-                        }
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
-                        .padding(.horizontal, 10).frame(height: 28)
-                        .background(
-                            store.labelFilter.isEmpty ? DieterTheme.elevated : DieterTheme.surface,
-                            in: RoundedRectangle(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain)
+                            .buttonStyle(.plain)
 
-                    if let board = store.selectedBoard, !board.labels.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 7) {
-                                ForEach(board.labels, id: \.id) { label in
-                                    BoardLabelShelfChip(
-                                        label: label,
-                                        boardID: board.id,
-                                        count: store.boardProjection.labelCounts[label.id, default: 0],
-                                        selected: store.labelFilter == label.id
-                                    ) {
-                                        store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                            if let board = store.selectedBoard, !board.labels.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 7) {
+                                        ForEach(board.labels, id: \.id) { label in
+                                            BoardLabelShelfChip(
+                                                label: label,
+                                                boardID: board.id,
+                                                count: store.boardProjection.labelCounts[label.id, default: 0],
+                                                selected: store.labelFilter == label.id
+                                            ) {
+                                                store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                                            }
+                                        }
                                     }
                                 }
+                                .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
                             }
-                        }
-                        .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
-                    }
 
-                    Menu {
-                        Button("All states") { store.runtimeFilter = "" }
-                        ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
-                            runtime in
-                            Button(runtime.capitalized) { store.runtimeFilter = runtime }
-                        }
-                    } label: {
-                        DieterChipLabel(
-                            title: store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized)
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-
-                    Button {
-                        store.archivePolicyPresented = true
-                    } label: {
-                        DieterChipLabel(title: "Board settings", symbol: "gearshape")
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        store.labelsPresented = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "tag").font(.system(size: 10, weight: .semibold))
-                            Text("Labels")
-                        }
-                        .font(.caption2.weight(.medium)).foregroundStyle(DieterTheme.subtle)
-                        .padding(.horizontal, 9).frame(height: 28)
-                        .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Manage board labels")
-
-                    Button {
-                        store.createConversationPresented = true
-                    } label: {
-                        Label("New card", systemImage: "rectangle.badge.plus")
-                    }
-                    .buttonStyle(DieterSecondaryButtonStyle())
-                    .accessibilityIdentifier("board.new-card")
-
-                    quickTaskButton(compact: false)
-                }
-
-                HStack(spacing: 7) {
-                    Button {
-                        store.labelFilter = ""
-                    } label: {
-                        HStack(spacing: 6) {
-                            if store.labelFilter.isEmpty {
-                                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                            Menu {
+                                Button("All states") { store.runtimeFilter = "" }
+                                ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
+                                    runtime in
+                                    Button(runtime.capitalized) { store.runtimeFilter = runtime }
+                                }
+                            } label: {
+                                Text(store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized)
                             }
-                            Text("All · \(store.boardCards.count)").lineLimit(1)
-                        }
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
-                        .padding(.horizontal, 10).frame(height: 28)
-                        .background(
-                            store.labelFilter.isEmpty ? DieterTheme.elevated : DieterTheme.surface,
-                            in: RoundedRectangle(cornerRadius: 7))
-                    }
-                    .buttonStyle(.plain)
+                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
 
-                    if let board = store.selectedBoard, !board.labels.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 7) {
-                                ForEach(board.labels, id: \.id) { label in
-                                    BoardLabelShelfChip(
-                                        label: label,
-                                        boardID: board.id,
-                                        count: store.boardProjection.labelCounts[label.id, default: 0],
-                                        selected: store.labelFilter == label.id
-                                    ) {
-                                        store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                            Button {
+                                store.archivePolicyPresented = true
+                            } label: {
+                                Label("Board settings", systemImage: "gearshape")
+                            }
+                            .buttonStyle(.glass)
+                            .accessibilityIdentifier("board.settings")
+                            .smokeTarget("board.settings")
+
+                            Button {
+                                store.labelsPresented = true
+                            } label: {
+                                Label("Labels", systemImage: "tag")
+                            }
+                            .buttonStyle(.glass)
+                            .help("Manage board labels")
+
+                            Button {
+                                store.createConversationPresented = true
+                            } label: {
+                                Label("New card", systemImage: "rectangle.badge.plus")
+                            }
+                            .buttonStyle(.glass)
+                            .accessibilityIdentifier("board.new-card")
+
+                        }
+
+                        HStack(spacing: 7) {
+                            Button {
+                                store.labelFilter = ""
+                            } label: {
+                                HStack(spacing: 6) {
+                                    if store.labelFilter.isEmpty {
+                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                                    }
+                                    Text("All · \(store.boardCards.count)").lineLimit(1)
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
+                                .padding(.horizontal, 10).frame(height: 28)
+                                .background(
+                                    Color.clear, in: Capsule()
+                                )
+                                .glassEffect(
+                                    store.labelFilter.isEmpty
+                                        ? .regular.tint(DieterTheme.shell.opacity(0.12)).interactive()
+                                        : .regular.interactive(), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+
+                            if let board = store.selectedBoard, !board.labels.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 7) {
+                                        ForEach(board.labels, id: \.id) { label in
+                                            BoardLabelShelfChip(
+                                                label: label,
+                                                boardID: board.id,
+                                                count: store.boardProjection.labelCounts[label.id, default: 0],
+                                                selected: store.labelFilter == label.id
+                                            ) {
+                                                store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                                            }
+                                        }
                                     }
                                 }
+                                .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
                             }
+
+                            Menu {
+                                Button("All states") { store.runtimeFilter = "" }
+                                ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
+                                    runtime in
+                                    Button(runtime.capitalized) { store.runtimeFilter = runtime }
+                                }
+                                Divider()
+                                Button("Board settings…") { store.archivePolicyPresented = true }
+                                Button("Manage labels…") { store.labelsPresented = true }
+                            } label: {
+                                Label(
+                                    store.runtimeFilter.isEmpty ? "Filters" : store.runtimeFilter.capitalized,
+                                    systemImage: "line.3.horizontal.decrease")
+                            }
+                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
+
+                            Menu {
+                                Button("New card…") { store.createConversationPresented = true }
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .frame(width: 28, height: 28)
+                            }
+                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
+                            .help("New card")
+                            .accessibilityIdentifier("board.new-card")
+
                         }
-                        .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
                     }
-
-                    Menu {
-                        Button("All states") { store.runtimeFilter = "" }
-                        ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
-                            runtime in
-                            Button(runtime.capitalized) { store.runtimeFilter = runtime }
-                        }
-                        Divider()
-                        Button("Board settings…") { store.archivePolicyPresented = true }
-                        Button("Manage labels…") { store.labelsPresented = true }
-                    } label: {
-                        DieterChipLabel(
-                            title: store.runtimeFilter.isEmpty ? "Filters" : store.runtimeFilter.capitalized,
-                            symbol: "line.3.horizontal.decrease"
-                        )
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-
-                    Menu {
-                        Button("New card…") { store.createConversationPresented = true }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .frame(width: 28, height: 28)
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .help("New card")
-                    .accessibilityIdentifier("board.new-card")
-
-                    quickTaskButton(compact: true)
+                    quickTaskButton
+                        .fixedSize()
                 }
+                .controlSize(.regular)
+                .buttonBorderShape(.capsule)
             }
         }
     }
 
-    private func quickTaskButton(compact: Bool) -> some View {
+    private var quickTaskButton: some View {
         Button {
             quickTaskPresented = true
         } label: {
-            Label(compact ? "Quick" : "Quick task", systemImage: "sparkles")
+            Label("Quick task", systemImage: "sparkles")
         }
-        .buttonStyle(DieterPrimaryButtonStyle())
+        .buttonStyle(.glassProminent)
         .help("Create a task from its story")
         .accessibilityIdentifier("board.quick-task")
         .smokeTarget("board.quick-task")
@@ -720,81 +648,52 @@ struct QuickTaskPopover: View {
                     .background(DieterTheme.shellDeep.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Quick task").font(.system(size: 18, weight: .semibold)).smokeTarget(
-                        "quick-task.title")
+                        "quick-task.title"
+                    ).smokeTarget("quick-task.title")
                     Text("Describe the task. A short title is created automatically.")
                         .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
-                Button {
-                    settingsPresented.toggle()
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 14))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Task agent settings")
-                .accessibilityLabel("Task agent settings")
-                .accessibilityIdentifier("quick-task.settings")
-                .disabled(submitting)
-                .popover(isPresented: $settingsPresented, arrowEdge: .trailing) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Task agent").font(.headline)
-                        HarnessFields(
-                            catalog: store.harnessCatalog,
-                            provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions
-                        )
-                        HStack {
-                            Spacer()
-                            Button("Done") { settingsPresented = false }
-                                .buttonStyle(DieterSecondaryButtonStyle())
-                        }
-                    }
-                    .padding(16)
-                    .frame(width: 310)
-                    .background(DieterTheme.background)
-                    .environment(store)
-                }
+
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("DESTINATION").font(.system(size: 10, weight: .semibold)).foregroundStyle(
-                    DieterTheme.tertiary)
-                Picker(
-                    "Project",
-                    selection: Binding(
-                        get: { draftProjectID },
-                        set: { id in
-                            formDraft.selectProject(id, boardIDs: store.boards(for: id).map(\.id))
-                        })
-                ) {
-                    Text("Choose project").tag("")
-                    ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
-                }.accessibilityIdentifier("quick-task.project")
-                Picker("Board", selection: $draftBoardID) {
-                    Text("Choose board").tag("")
-                    ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
-                }.accessibilityIdentifier("quick-task.board")
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker(
+                        "Project",
+                        selection: Binding(
+                            get: { draftProjectID },
+                            set: { id in
+                                formDraft.selectProject(id, boardIDs: store.boards(for: id).map(\.id))
+                            })
+                    ) {
+                        Text("Choose project").tag("")
+                        ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
+                    }.accessibilityIdentifier("quick-task.project")
+                    Picker("Board", selection: $draftBoardID) {
+                        Text("Choose board").tag("")
+                        ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
+                    }.accessibilityIdentifier("quick-task.board")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(4)
+            } label: {
+                Text("Save to").font(.subheadline.weight(.medium))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
             .disabled(submitting)
             if let submissionError { Text(submissionError).font(.caption).foregroundStyle(.orange) }
 
             TextField("What should the agent accomplish?", text: $story, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13)).lineSpacing(2).lineLimit(3...7)
+                .padding(12)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+                .font(.system(size: 13)).lineSpacing(2).lineLimit(4...7)
                 .focused($storyFocused)
-                .padding(.horizontal, 12).padding(.vertical, 11)
-                .frame(minHeight: 92, alignment: .topLeading)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9).stroke(
-                        storyFocused ? DieterTheme.shellDeep : DieterTheme.strongBorder,
-                        lineWidth: storyFocused ? 1.5 : 1)
-                )
+                .overlay {
+                    if attachmentDropTargeted {
+                        RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2)
+                    }
+                }
                 .accessibilityIdentifier("quick-task.story")
                 .smokeTarget("quick-task.story")
                 .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
@@ -811,7 +710,7 @@ struct QuickTaskPopover: View {
                 } label: {
                     Label("Attach", systemImage: "paperclip")
                 }
-                .buttonStyle(DieterSecondaryButtonStyle())
+                .buttonStyle(.glass)
                 .accessibilityIdentifier("quick-task.attach")
                 Text("Paste or drop screenshots · 4 files, 6 MB total")
                     .font(.caption2).foregroundStyle(DieterTheme.tertiary)
@@ -826,7 +725,7 @@ struct QuickTaskPopover: View {
                 TextField("Page URL (optional)", text: $sourceURL)
                     .textFieldStyle(.plain)
                     .padding(10)
-                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                     .accessibilityIdentifier("quick-task.source-url")
                     .smokeTarget("quick-task.source-url")
                 if let host = CaptureBrowserContext.hostname(sourceURL) {
@@ -840,19 +739,57 @@ struct QuickTaskPopover: View {
                 }
             }
 
-            HStack(spacing: 7) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(defaultsSummary).lineLimit(2)
+            Button {
+                settingsPresented.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 11, weight: .medium))
+                    Text(defaultsSummary).lineLimit(2)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
             }
-            .font(.system(size: 10.5, weight: .medium))
-            .foregroundStyle(DieterTheme.tertiary)
+            .buttonStyle(.plain)
+            .help("Change task settings")
+            .accessibilityLabel("Task settings")
+            .accessibilityValue(defaultsSummary)
+            .accessibilityIdentifier("quick-task.settings")
+            .disabled(submitting)
+            .popover(isPresented: $settingsPresented, arrowEdge: .trailing) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Task settings").font(.headline)
+                    Form {
+                        HarnessFields(
+                            catalog: store.harnessCatalog,
+                            provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions)
+                    }
+                    .formStyle(.columns)
+                    .pickerStyle(.menu)
+                    .toggleStyle(.switch)
+                    .controlSize(.regular)
+                    Divider()
+                    HStack {
+                        Spacer()
+                        Button("Done") { settingsPresented = false }
+                            .buttonStyle(.glass)
+                            .keyboardShortcut(.defaultAction)
+                    }
+                }
+                .padding(20)
+                .frame(width: 360)
+                .environment(store)
+            }
 
             Divider()
             HStack(spacing: 9) {
                 Button("Cancel") { isPresented = false }
                     .smokeTarget("quick-task.cancel")
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(.glass)
                 Spacer()
                 Button {
                     Task { await submit() }
@@ -866,7 +803,7 @@ struct QuickTaskPopover: View {
                         Text("Add task")
                     }
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(.glassProminent)
                 .disabled(
                     cleanStory.isEmpty || submitting || draftProjectID.isEmpty || draftBoardID.isEmpty
                 )
@@ -879,7 +816,6 @@ struct QuickTaskPopover: View {
         .frame(width: 430)
         .fixedSize(horizontal: false, vertical: true)
         .smokeTarget("quick-task.content")
-        .background(DieterTheme.background)
         .attachmentIntake(
             store: store, importerPresented: $fileImporterPresented, attachments: $attachments
         )

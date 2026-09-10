@@ -233,6 +233,35 @@ proto-generate:
 smoke suite="core": build
     just mac _smoke "{{ suite }}"
 
+# Run selected packaged-app smoke suites once each, in canonical order, with one build.
+[positional-arguments]
+smoke-suites +suites:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for suite in "$@"; do
+        case "$suite" in
+            core|board|conversation|machine|sidebar|terminal|island|workspace) ;;
+            *) echo "Unknown Mac smoke suite: $suite" >&2; exit 1 ;;
+        esac
+    done
+    if running="$(pgrep -x DieterMac)"; then
+        echo "Mac smoke tests require no DieterMac process; still running: $running" >&2
+        echo "No app or daemon was stopped." >&2
+        exit 1
+    else
+        status=$?
+        [[ "$status" -eq 1 ]] || { echo "Could not check for running DieterMac processes." >&2; exit 1; }
+    fi
+    just mac build
+    for suite in core board conversation machine sidebar terminal island workspace; do
+        for requested in "$@"; do
+            if [[ "$requested" == "$suite" ]]; then
+                just mac _smoke "$suite"
+                break
+            fi
+        done
+    done
+
 # Run every packaged-app smoke suite sequentially with one build.
 smoke-all: build
     #!/usr/bin/env bash

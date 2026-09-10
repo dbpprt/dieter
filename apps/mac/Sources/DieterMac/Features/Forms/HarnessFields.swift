@@ -108,12 +108,27 @@ struct ProviderOptionChip: View {
             Button {
                 values[option.id] = enabled ? "false" : "true"
             } label: {
-                DieterChipLabel(
-                    title: option.name,
-                    symbol: enabled ? "checkmark.circle.fill" : "circle",
-                    showsDisclosure: false
-                )
-            }.buttonStyle(.plain).disabled(!isEnabled).help(option.description_p)
+                if option.id == "fast_mode" {
+                    Image(systemName: enabled ? "bolt.fill" : "bolt")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(enabled ? Color.yellow : DieterTheme.subtle)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                } else {
+                    DieterChipLabel(
+                        title: option.name,
+                        symbol: enabled ? "checkmark.circle.fill" : "circle",
+                        showsDisclosure: false
+                    )
+                }
+            }
+            .buttonStyle(.plain).disabled(!isEnabled)
+            .accessibilityLabel(option.id == "fast_mode" ? "Fast mode" : option.name)
+            .accessibilityValue(enabled ? "On" : "Off")
+            .nativeHelp(
+                option.id == "fast_mode"
+                    ? "Fast mode: \(enabled ? "On" : "Off"). Requests faster processing for your next message when supported by the model; usage may cost more. The current turn keeps its settings."
+                    : option.description_p)
         } else if ["enum", "select"].contains(option.type.lowercased()) {
             Menu {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
@@ -125,10 +140,10 @@ struct ProviderOptionChip: View {
                 DieterChipLabel(
                     title: option.choices.first(where: { $0.value == currentValue })?.name ?? option.name,
                     symbol: "slider.horizontal.3")
-            }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).help(option.description_p)
+            }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).nativeHelp(option.description_p)
         } else {
             TextField(option.name, text: Binding(get: { currentValue }, set: { values[option.id] = $0 }))
-                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).help(
+                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).nativeHelp(
                     option.description_p)
         }
     }

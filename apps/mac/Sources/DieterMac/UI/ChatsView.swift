@@ -63,6 +63,7 @@ struct ChatsView: View {
                             "New standalone chat"
                         )
                         .accessibilityIdentifier("chats.new")
+                        .smokeTarget("chats.new")
                     }
                 } secondary: {
                     DieterSearchField(text: $search, placeholder: "Search chats")

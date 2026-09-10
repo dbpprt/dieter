@@ -267,7 +267,7 @@ user prompt.
 - Git working trees for registered projects
 - a configured Codex, Claude Code, Pi, Oh My Pi, or DeepSeek Harness
   installation
-- macOS 15+ or Android 8+ for the official clients
+- macOS 26+ or Android 8+ for the official clients
 
 Build the CLI/daemon and gateway:
 
@@ -416,10 +416,21 @@ Go changes run race tests and vet for affected packages and their reverse
 dependencies (including test imports and embedded files). Native changes run
 the affected client's complete unit test suite because each client is one
 application module. App code, resources, or build configuration also select
-that client's integration suite: macOS packaged smoke tests or Android connected
-tests. Unit-test-only edits do not select device tests. Shared protobuf and
-native fixture changes select both clients. Harness and website changes select
-their own checks.
+that client's integration tests. macOS selects smoke suites by component: for
+example, Island views run `island`, while board and conversation panel hosts run
+`core`, `board`, `conversation`, and `workspace` to cover panel resizing,
+maximizing, and workspace tabs. Mixed changes run the union once, with one build. Shared
+app/store/theme code, build configuration, shared fixtures, and unknown Mac paths
+fall back to all eight suites. A changed smoke runner selects its own suite
+(`NativeUISmokeRunner` selects both `core` and `board`). The mapping lives in
+`scripts/check_changed.py`; add coverage when introducing a new component.
+Android app changes select connected tests. Unit-test-only edits do not select
+device tests. Shared protobuf and native fixture changes select both clients.
+Harness and website changes select their own checks.
+
+To run a known subset directly, use `just mac smoke-suites board conversation island`.
+It builds once and runs suites serially with the existing cache and
+isolated smoke driver. Explicit `just mac smoke-all` and CI still run every suite.
 
 Checks stop on the first failure. Mac smoke tests require no Dieter app to be
 running; Android connected tests require a healthy configured emulator and use
@@ -518,7 +529,15 @@ Dropping earlier keeps the usual card ordering behavior.
 
 Draft agent settings can be changed in Edit card or with
 `dieter card update --provider codex --model MODEL --effort high --provider-option fast_mode=true CARD`.
-Settings are locked once the initial request has been sent. These commands also
+The draft editor is locked once the initial request has been sent. For later
+messages, `card send` and `chat send` accept `--model`, `--effort`, and mutable
+`--provider-option` settings within the same provider. Codex, Claude Code and
+Pi support model and reasoning changes between turns; OMP and DSH support
+model changes. OMP thinking stays fixed after the first message. Use
+`--effort default` to reset reasoning. A message queued during an active turn
+retains its own selection; it does not reconfigure the current turn. Queue
+removal returns that selection with the message so editing preserves it.
+These commands also
 support the global `--machine ID|NAME` option for direct TLS or gateway relay.
 
 ### Capture a Quick Task on macOS

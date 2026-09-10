@@ -39,15 +39,115 @@
             // Transcript measurement hosts can contain an offscreen copy of the
             // same control. Only interact with a view mounted in a visible window.
             if let view = NativeUISmokeTargets.frames[identifier]?.compactMap(\.view).first(where: {
-                $0.window?.isVisible == true && $0.bounds.width > 0 && $0.bounds.height > 0
+                $0.window?.isVisible == true
+                    && $0.bounds.width > 0 && $0.bounds.height > 0
             }), let targetWindow = view.window {
                 return Element(
                     object: view, recordedFrame: targetWindow.convertToScreen(view.convert(view.bounds, to: nil)),
                     recordedWindow: targetWindow)
             }
-            return elements(in: window).first {
-                $0.identifier == identifier || (fallbackLabel != nil && $0.text == fallbackLabel && $0.frame.width > 0)
+            let windows =
+                [window] + NSApp.windows.filter { $0 !== window && $0.isVisible && ($0.isSheet || $0.parent == window) }
+            for candidate in windows {
+                if var element = elements(in: candidate).first(where: {
+                    $0.identifier == identifier
+                        || (fallbackLabel != nil && $0.text.contains(fallbackLabel!) && $0.frame.width > 0)
+                }) {
+                    element.recordedFrame = element.frame
+                    element.recordedWindow = candidate
+                    return element
+                }
             }
+            return nil
+        }
+
+        static func hasOpenInspector(in window: NSWindow) -> Bool {
+            guard let root = window.contentView else { return false }
+            var views = [root]
+            while let view = views.popLast() {
+                if let split = view as? NSSplitView, let controller = split.delegate as? NSSplitViewController,
+                    controller.splitViewItems.contains(where: { $0.behavior == .inspector && !$0.isCollapsed })
+                {
+                    return true
+                }
+                views.append(contentsOf: view.subviews)
+            }
+            return false
+        }
+
+        static func navigationSplitController(in window: NSWindow) -> NSSplitViewController? {
+            guard let root = window.contentView else { return nil }
+            var views = [root]
+            while let view = views.popLast() {
+                if let split = view as? NSSplitView, split.isVertical,
+                    let controller = split.delegate as? NSSplitViewController,
+                    controller.splitViewItems.first?.behavior == .sidebar
+                {
+                    return controller
+                }
+                views.append(contentsOf: view.subviews)
+            }
+            return nil
+        }
+
+        @discardableResult
+        static func selectSegment(_ index: Int, identifier: String, in window: NSWindow) -> Bool {
+            guard let element = find(identifier, in: window), let host = element.recordedWindow,
+                let root = host.contentView
+            else { return false }
+            var views = [root]
+            while let view = views.popLast() {
+                if let control = view as? NSSegmentedControl, index < control.segmentCount,
+                    let frame = element.recordedFrame,
+                    frame.intersects(host.convertToScreen(control.convert(control.bounds, to: nil)))
+                {
+                    control.selectedSegment = index
+                    return control.sendAction(control.action, to: control.target)
+                }
+                views.append(contentsOf: view.subviews)
+            }
+            return false
+        }
+
+        /// SwiftUI registers sheet controls before AppKit finishes positioning
+        /// their window. Wait for stable screen geometry before a mouse fallback.
+        static func pressWhenSettled(_ identifier: String, in window: NSWindow) async -> Bool {
+            var lastFrame: CGRect?
+            var lastWindow: NSWindow?
+            var stableSamples = 0
+            let settled = await wait(timeout: 5) {
+                guard let target = find(identifier, in: window),
+                    let host = target.recordedWindow, host.isVisible,
+                    let frame = target.recordedFrame, frame.width > 0, frame.height > 0
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                if frame == lastFrame, host === lastWindow {
+                    stableSamples += 1
+                } else {
+                    stableSamples = 0
+                }
+                lastFrame = frame
+                lastWindow = host
+                return stableSamples >= 4
+            }
+            guard settled, let host = lastWindow else { return false }
+            return press(identifier, in: host)
+        }
+
+        /// Native toolbar items may be hosted outside the SwiftUI content tree.
+        /// Invoke their public accessibility action and assert the resulting UI.
+        @discardableResult
+        static func press(_ identifier: String, in window: NSWindow, fallbackLabel: String? = nil) -> Bool {
+            if let element = elements(in: window).first(where: {
+                $0.identifier == identifier || (fallbackLabel != nil && $0.text.contains(fallbackLabel!))
+            }), let accessible = element.object as? NSAccessibilityProtocol,
+                accessible.accessibilityPerformPress()
+            {
+                return true
+            }
+            return click(identifier, in: window, fallbackLabel: fallbackLabel)
         }
 
         @discardableResult
