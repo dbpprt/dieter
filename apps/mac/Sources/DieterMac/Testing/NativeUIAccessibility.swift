@@ -109,6 +109,33 @@
             return false
         }
 
+        /// SwiftUI registers sheet controls before AppKit finishes positioning
+        /// their window. Wait for stable screen geometry before a mouse fallback.
+        static func pressWhenSettled(_ identifier: String, in window: NSWindow) async -> Bool {
+            var lastFrame: CGRect?
+            var lastWindow: NSWindow?
+            var stableSamples = 0
+            let settled = await wait(timeout: 5) {
+                guard let target = find(identifier, in: window),
+                    let host = target.recordedWindow, host.isVisible,
+                    let frame = target.recordedFrame, frame.width > 0, frame.height > 0
+                else {
+                    stableSamples = 0
+                    return false
+                }
+                if frame == lastFrame, host === lastWindow {
+                    stableSamples += 1
+                } else {
+                    stableSamples = 0
+                }
+                lastFrame = frame
+                lastWindow = host
+                return stableSamples >= 4
+            }
+            guard settled, let host = lastWindow else { return false }
+            return press(identifier, in: host)
+        }
+
         /// Native toolbar items may be hosted outside the SwiftUI content tree.
         /// Invoke their public accessibility action and assert the resulting UI.
         @discardableResult

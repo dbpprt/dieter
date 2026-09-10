@@ -335,8 +335,15 @@
                     settingsClicked && generalVisible && routingClicked && routingVisible && generalClicked && returned
                     ? "passed"
                     : "failed: open=\(settingsClicked), general=\(generalVisible), route action=\(routingClicked), routing=\(routingVisible), general action=\(generalClicked), restored=\(returned)"
-                _ = NativeUIAccessibility.click("board.settings.cancel", in: window)
-                _ = await waitUntil(timeout: 5) { !store.archivePolicyPresented }
+                let boardSettingsClosed = await NativeUIAccessibility.pressWhenSettled(
+                    "board.settings.cancel", in: window)
+                let boardSettingsDismissed = await waitUntil(timeout: 5) {
+                    !store.archivePolicyPresented && window.attachedSheet == nil
+                }
+                results["board-settings-dismissal"] =
+                    boardSettingsClosed && boardSettingsDismissed
+                    ? "passed" : "failed: board settings did not dismiss before project settings"
+
                 let projectClicked = NativeUIAccessibility.click("sidebar.project.\(project.id).settings", in: window)
                 let projectContextVisible = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("project.context.instructions", in: window) != nil
@@ -344,8 +351,15 @@
                 results["sidebar-project-context"] =
                     projectClicked && projectContextVisible
                     ? "passed" : "failed: project cog did not open instructions"
-                _ = NativeUIAccessibility.click("project.context.cancel", in: window)
-                _ = await waitUntil(timeout: 5) { !store.projectContextPresented && window.attachedSheet == nil }
+                let projectContextClosed = await NativeUIAccessibility.pressWhenSettled(
+                    "project.context.cancel", in: window)
+                let projectContextDismissed = await waitUntil(timeout: 5) {
+                    !store.projectContextPresented && window.attachedSheet == nil
+                }
+                results["project-context-dismissal"] =
+                    projectContextClosed && projectContextDismissed
+                    ? "passed" : "failed: project settings did not dismiss before Quick Task"
+
                 try? await DieterTaskSleep.milliseconds(350)
 
                 let globalOpened = NativeUIAccessibility.press("sidebar.quick-task", in: window)
@@ -1030,7 +1044,7 @@
                     }
                     // The inspector animates after its controls first enter the view tree.
                     try? await DieterTaskSleep.milliseconds(400)
-                    let closed = inspectorVisible && NativeUIAccessibility.press("board.conversation-close", in: window)
+                    let closed = await NativeUIAccessibility.pressWhenSettled("board.conversation-close", in: window)
                     let selectionCleared = await waitUntil(timeout: 5) {
                         store.selectedCardID == nil && store.conversation == nil
                             && !NativeUIAccessibility.hasOpenInspector(in: window)
@@ -1251,12 +1265,13 @@
                     separator: ", ")
                 guard
                     let editor = nativeTextViews(in: window.contentView).first(where: {
-                        $0.string == documents[0].1
+                        $0.string == documents[0].1 && $0.isEditable && $0.window === window
                     })
                 else {
                     results["files-edit-save"] = "failed: native editor missing"
                     return
                 }
+                window.makeKeyAndOrderFront(nil)
                 window.makeFirstResponder(editor)
                 editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
                 await NativeUIAccessibility.type("Saved through the native editor.\n", in: window)
@@ -1264,12 +1279,14 @@
                 let edited = await waitUntil(timeout: 5) {
                     store.fileEditorSession.isDirty && editor.string == expected
                 }
-                let saved = NativeUIAccessibility.click("files.save", in: window)
+                let saved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
                 let persisted = await waitUntil(timeout: 5) {
                     store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
                 }
                 results["files-edit-save"] =
-                    edited && saved && persisted ? "passed" : "failed: native edit/save did not persist"
+                    edited && saved && persisted
+                    ? "passed"
+                    : "failed: native edit/save did not persist (edited=\(edited), save action=\(saved), persisted=\(persisted))"
                 await store.openBoard(boardID, projectID: projectID)
                 await store.openProject(projectID, section: .files)
                 let revisited = await waitUntil(timeout: 5) {
