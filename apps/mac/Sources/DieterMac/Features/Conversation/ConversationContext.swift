@@ -48,6 +48,15 @@ final class ConversationContext {
     var conversationLastRefreshedAt: Date? { model.conversationLastRefreshedAt }
     var conversationLoading: Bool { model.conversationLoading }
     var conversationMessages: [Dieter_V1_UiMessage] { model.conversationMessages }
+    var liveActivityMessages: [Dieter_V1_UiMessage] {
+        guard let conversation = conversation?.conversation else { return [] }
+        let queuedIDs = Set(conversation.queue.map(\.id))
+        // The displayed snapshot can contain local outbox overlays, even while
+        // browsing earlier history. Those sends have not started a turn yet.
+        return conversation.messages.filter {
+            !queuedIDs.contains($0.id) && !isPendingMessage($0.id) && !isFailedOutboxItem($0.id)
+        }
+    }
     var conversationPresentationRevision: Int { model.conversationPresentationRevision }
     var conversationSyncing: Bool { model.conversationSyncing }
     var selectedCardID: String? { model.selectedCardID }

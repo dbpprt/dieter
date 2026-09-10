@@ -68,6 +68,7 @@ struct ConversationTimeline: View {
     @State private var tailScrollRequest = 0
 
     private var messages: [Dieter_V1_UiMessage] { context.conversationMessages }
+    private var liveMessages: [Dieter_V1_UiMessage] { context.liveActivityMessages }
     private var timelineItems: [ConversationTimelineItem] { projection.items }
     private var plans: [Dieter_V1_TaskPlan] { context.conversation?.conversation.taskPlans ?? [] }
     private var subagents: [Dieter_V1_Subagent] { context.conversation?.conversation.subagents ?? [] }
@@ -202,9 +203,13 @@ struct ConversationTimeline: View {
                     }
                     if agentIsWorking {
                         ConversationAgentWorkingIndicator(
-                            label: ConversationActivityPresentation.liveLabel(pendingTools: pendingTools, plans: plans),
+                            label: ConversationActivityPresentation.liveLabel(
+                                messages: liveMessages, pendingTools: pendingTools, plans: plans,
+                                showReasoning: context.showReasoning,
+                                conversationStatus: context.conversation?.conversation.status ?? "",
+                                cardRuntime: (context.selectedCard ?? context.selectedDetail?.card)?.runtime ?? ""),
                             startedAt: ConversationActivityPresentation.turnStart(
-                                messages: messages,
+                                messages: liveMessages,
                                 runtimeUpdatedAt: (context.selectedCard ?? context.selectedDetail?.card)?
                                     .runtimeUpdatedAt ?? "")
                         )
