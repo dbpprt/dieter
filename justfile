@@ -60,6 +60,11 @@ check-all: check
     just mac check
     just android check
 
+# Run local checks for changed code; accepts --dry-run and --base REF.
+[positional-arguments]
+check-changed *args:
+    python3 scripts/check_changed.py "$@"
+
 # Verify every Just module is formatted and parseable.
 justfile-check:
     just --fmt --check

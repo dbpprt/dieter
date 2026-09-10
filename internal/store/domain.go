@@ -214,6 +214,14 @@ func (s *Store) ArchiveProject(ref string, archived bool) (model.Project, error)
 }
 
 func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths ...*string) (model.Project, error) {
+	var path *string
+	if len(paths) > 0 {
+		path = paths[0]
+	}
+	return s.UpdateProjectWithHostnames(ref, name, summary, prompt, path, nil)
+}
+
+func (s *Store) UpdateProjectWithHostnames(ref string, name, summary, prompt, path *string, hostnames *[]string) (model.Project, error) {
 	release, err := s.beginWrite()
 	if err != nil {
 		return model.Project{}, err
@@ -232,8 +240,8 @@ func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths .
 	if prompt != nil {
 		project.Prompt = strings.TrimSpace(*prompt)
 	}
-	if len(paths) > 0 && paths[0] != nil {
-		path, normalizeErr := normalizePath(*paths[0])
+	if path != nil {
+		path, normalizeErr := normalizePath(*path)
 		if normalizeErr != nil {
 			return model.Project{}, normalizeErr
 		}
@@ -247,6 +255,13 @@ func (s *Store) UpdateProject(ref string, name, summary, prompt *string, paths .
 			}
 		}
 		project.Path = path
+	}
+	if hostnames != nil {
+		normalized, err := normalizeProjectHostnames(*hostnames)
+		if err != nil {
+			return model.Project{}, err
+		}
+		project.Hostnames = normalized
 	}
 	project.UpdatedAt = timestamp()
 	return project, writeMarkdown(filepath.Join(s.projectDir(), project.ID+".md"), project, project.Prompt)
@@ -334,7 +349,10 @@ func normalizeValidationCommands(values []model.ValidationCommand) ([]model.Vali
 	return result, nil
 }
 
-type CreateBoardInput struct{ Project, Name, Workflow, Description, DoneArchivePolicy string }
+type CreateBoardInput struct {
+	Project, Name, Workflow, Description, DoneArchivePolicy string
+	BaseRemote, RemotePublishMode                           string
+}
 
 func normalizeWorkflow(value string) (string, error) {
 	if value == "" {
@@ -359,6 +377,19 @@ func normalizeDoneArchivePolicy(value string) (string, error) {
 	}
 }
 
+func normalizeRemotePublishMode(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = model.RemotePublishManual
+	}
+	switch value {
+	case model.RemotePublishManual, model.RemotePublishPullRequest, model.RemotePublishPushBase:
+		return value, nil
+	default:
+		return "", errors.New("remote publish mode must be manual, pull_request, or push_base")
+	}
+}
+
 func doneArchiveDelay(policy string) (time.Duration, bool) {
 	switch policy {
 	case model.DoneArchiveImmediately:
@@ -380,6 +411,9 @@ func hydrateBoard(item model.Board) model.Board {
 	if item.DoneArchivePolicy == "" {
 		item.DoneArchivePolicy = model.DoneArchiveNever
 	}
+	if item.RemotePublishMode == "" {
+		item.RemotePublishMode = model.RemotePublishManual
+	}
 	item.Lanes = model.WorkflowLanes(item.Workflow)
 	return item
 }
@@ -400,13 +434,21 @@ func (s *Store) CreateBoard(input CreateBoardInput) (model.Board, error) {
 	if err != nil {
 		return model.Board{}, err
 	}
+	remotePublishMode, err := normalizeRemotePublishMode(input.RemotePublishMode)
+	if err != nil {
+		return model.Board{}, err
+	}
 	release, err := s.beginWrite()
 	if err != nil {
 		return model.Board{}, err
 	}
 	defer release()
 	now := timestamp()
-	item := model.Board{ID: newID("b_"), ProjectID: project.ID, Name: strings.TrimSpace(input.Name), Workflow: workflow, Description: strings.TrimSpace(input.Description), DoneArchivePolicy: archivePolicy, CreatedAt: now, UpdatedAt: now}
+	baseRemote := strings.TrimSpace(input.BaseRemote)
+	if baseRemote == "" {
+		baseRemote = strings.TrimSpace(project.BaseRemote)
+	}
+	item := model.Board{ID: newID("b_"), ProjectID: project.ID, Name: strings.TrimSpace(input.Name), Workflow: workflow, Description: strings.TrimSpace(input.Description), DoneArchivePolicy: archivePolicy, BaseRemote: baseRemote, RemotePublishMode: remotePublishMode, CreatedAt: now, UpdatedAt: now}
 	err = writeMarkdown(filepath.Join(s.boardDir(), item.ID+".md"), item, item.Description)
 	return hydrateBoard(item), err
 }
@@ -448,6 +490,26 @@ func (s *Store) UpdateBoardDoneArchivePolicy(ref, policy string) (model.Board, e
 	}
 	board.DoneArchivePolicy, board.UpdatedAt = policy, timestamp()
 	return board, writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
+}
+
+func (s *Store) UpdateBoardGitSettings(ref, baseRemote, remotePublishMode string) (model.Board, error) {
+	remotePublishMode, err := normalizeRemotePublishMode(remotePublishMode)
+	if err != nil {
+		return model.Board{}, err
+	}
+	release, err := s.beginWrite()
+	if err != nil {
+		return model.Board{}, err
+	}
+	defer release()
+	board, err := s.ResolveBoard("", ref)
+	if err != nil {
+		return model.Board{}, err
+	}
+	board.BaseRemote = strings.TrimSpace(baseRemote)
+	board.RemotePublishMode = remotePublishMode
+	board.UpdatedAt = timestamp()
+	return hydrateBoard(board), writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
 }
 
 func (s *Store) UpdateBoardPromptTemplate(ref, template string) (model.Board, error) {
@@ -545,6 +607,7 @@ func (s *Store) ResolveBoard(projectRef, ref string) (model.Board, error) {
 type CreateCardInput struct {
 	Project, Board, ID, Lane, Title, Prompt, Provider, Model, Effort string
 	WorkspaceMode, WorkspaceBranch, WorkspaceBaseBranch              string
+	WorkspaceBaseRemote, RemotePublishMode                           string
 	LabelIDs                                                         []string
 	ProviderOptions                                                  map[string]string
 	Origin                                                           *model.CardOrigin
@@ -642,8 +705,22 @@ func (s *Store) CreateCard(input CreateCardInput) (model.Card, error) {
 	if workspaceMode == model.WorkspaceModeProject {
 		input.WorkspaceBranch, input.WorkspaceBaseBranch = "", ""
 	}
+	baseRemote := strings.TrimSpace(input.WorkspaceBaseRemote)
+	if baseRemote == "" {
+		baseRemote = strings.TrimSpace(board.BaseRemote)
+	}
+	if baseRemote == "" {
+		baseRemote = strings.TrimSpace(project.BaseRemote)
+	}
+	remotePublishMode, err := normalizeRemotePublishMode(input.RemotePublishMode)
+	if err != nil {
+		return model.Card{}, err
+	}
+	if strings.TrimSpace(input.RemotePublishMode) == "" {
+		remotePublishMode = board.RemotePublishMode
+	}
 	now := timestamp()
-	item := model.Card{ID: input.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch)}
+	item := model.Card{ID: input.ID, Scope: model.ConversationScopeBoard, ProjectID: project.ID, BoardID: board.ID, Lane: canonicalLane(board, lane), Position: int64(len(existing)+1) * 1024, Title: strings.TrimSpace(input.Title), InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, LabelIDs: labelIDs, Origin: input.Origin, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode}
 	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
 }
 
@@ -678,8 +755,16 @@ func (s *Store) CreateChat(input CreateCardInput) (model.Card, error) {
 	if workspaceMode == model.WorkspaceModeProject {
 		input.WorkspaceBranch, input.WorkspaceBaseBranch = "", ""
 	}
+	baseRemote := strings.TrimSpace(input.WorkspaceBaseRemote)
+	if baseRemote == "" {
+		baseRemote = strings.TrimSpace(project.BaseRemote)
+	}
+	remotePublishMode, err := normalizeRemotePublishMode(input.RemotePublishMode)
+	if err != nil {
+		return model.Card{}, err
+	}
 	now := timestamp()
-	item := model.Card{ID: input.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch)}
+	item := model.Card{ID: input.ID, Scope: model.ConversationScopeChat, ProjectID: project.ID, Position: int64(len(existing)+1) * 1024, Title: title, InitialPrompt: strings.TrimSpace(input.Prompt), Provider: input.Provider, Model: input.Model, Effort: input.Effort, ProviderOptions: cloneStringMap(input.ProviderOptions), Runtime: "idle", RuntimeUpdatedAt: now, LastActivityAt: now, PhaseChangedAt: now, CreatedAt: now, UpdatedAt: now, WorkspaceMode: workspaceMode, WorkspaceBranch: strings.TrimSpace(input.WorkspaceBranch), WorkspaceBaseBranch: strings.TrimSpace(input.WorkspaceBaseBranch), WorkspaceBaseRemote: baseRemote, RemotePublishMode: remotePublishMode}
 	return item, writeMarkdown(filepath.Join(s.cardDir(), item.ID+".md"), item, item.InitialPrompt)
 }
 
@@ -769,6 +854,7 @@ func (s *Store) listCards(includeArchived bool) ([]model.Card, error) {
 		// comment body on every sync mutation as histories grow.
 		comments, _ := listMarkdown(filepath.Join(s.commentDir(), item.ID))
 		item.CommentCount = len(comments)
+		item.TokenUsage = s.cardTokenUsage(item.ID)
 		result = append(result, item)
 	}
 	return result, nil
@@ -1169,7 +1255,12 @@ func (s *Store) RenameCard(ref, title string) (model.Card, error) {
 	return item, s.writeCard(item)
 }
 
-func (s *Store) UpdateCard(ref, title, initialPrompt string) (model.Card, error) {
+type DraftAgentSettings struct {
+	Provider, Model, Effort string
+	ProviderOptions         map[string]string
+}
+
+func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAgentSettings) (model.Card, error) {
 	title, initialPrompt = strings.TrimSpace(title), strings.TrimSpace(initialPrompt)
 	if title == "" {
 		return model.Card{}, errors.New("title is required")
@@ -1189,7 +1280,21 @@ func (s *Store) UpdateCard(ref, title, initialPrompt string) (model.Card, error)
 	if initialPrompt != item.InitialPrompt && item.InitialPromptSentAt != "" {
 		return model.Card{}, errors.New("agent task can only be edited before it is sent")
 	}
-	if title == item.Title && initialPrompt == item.InitialPrompt {
+	if item.MergePending {
+		return model.Card{}, errors.New("card merge is pending")
+	}
+	if len(settings) > 0 {
+		active, leaseErr := s.CardHasRuntimeLease(item.ID)
+		if leaseErr != nil {
+			return model.Card{}, leaseErr
+		}
+		if item.InitialPromptSentAt != "" || active {
+			return model.Card{}, errors.New("agent settings can only be edited before the initial task is sent")
+		}
+		config := settings[0]
+		item.Provider, item.Model, item.Effort, item.ProviderOptions = config.Provider, config.Model, config.Effort, config.ProviderOptions
+	}
+	if len(settings) == 0 && title == item.Title && initialPrompt == item.InitialPrompt {
 		return item, nil
 	}
 	if item.LastActivityAt == "" {
@@ -1219,8 +1324,12 @@ func (s *Store) PinChat(ref string, pinned bool) (model.Card, error) {
 	return item, s.writeCard(item)
 }
 
-func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch string, allowStarted bool) (model.Card, error) {
+func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch, baseRemote, remotePublishMode string, allowStarted bool) (model.Card, error) {
 	mode, err := normalizeWorkspaceMode(mode)
+	if err != nil {
+		return model.Card{}, err
+	}
+	remotePublishMode, err = normalizeRemotePublishMode(remotePublishMode)
 	if err != nil {
 		return model.Card{}, err
 	}
@@ -1243,6 +1352,8 @@ func (s *Store) UpdateCardWorkspaceSelection(ref, mode, branch, baseBranch strin
 	} else {
 		item.WorkspaceBranch, item.WorkspaceBaseBranch = "", ""
 	}
+	item.WorkspaceBaseRemote = strings.TrimSpace(baseRemote)
+	item.RemotePublishMode = remotePublishMode
 	item.UpdatedAt = timestamp()
 	return item, s.writeCard(item)
 }
@@ -1607,4 +1718,25 @@ func cloneState(value model.State) model.State {
 		result.Project = &project
 	}
 	return result
+}
+
+func (s *Store) UpdateBoardHostnames(ref string, values []string, appendValues bool) (model.Board, error) {
+	release, err := s.beginWrite()
+	if err != nil {
+		return model.Board{}, err
+	}
+	defer release()
+	board, err := s.ResolveBoard("", ref)
+	if err != nil {
+		return model.Board{}, err
+	}
+	if appendValues {
+		values = append(append([]string(nil), board.Hostnames...), values...)
+	}
+	board.Hostnames, err = normalizeProjectHostnames(values)
+	if err != nil {
+		return model.Board{}, err
+	}
+	board.UpdatedAt = timestamp()
+	return board, writeMarkdown(filepath.Join(s.boardDir(), board.ID+".md"), board, board.Description)
 }

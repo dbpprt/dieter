@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"sync"
@@ -138,17 +139,36 @@ func TestCatalogIncludesCurrentCodexRegistry(t *testing.T) {
 	if !found {
 		t.Fatal("codex harness is missing")
 	}
-	if codex.DefaultModel != "gpt-5.6-sol" || len(codex.Models) != 7 {
+	if codex.DefaultModel != "gpt-5.6-sol" || len(codex.Models) != 8 {
 		t.Fatalf("codex catalog=%#v", codex)
 	}
-	want := []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"}
+	want := []string{"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark"}
 	for index, id := range want {
 		if codex.Models[index].ID != id {
 			t.Fatalf("model %d=%q want %q", index, codex.Models[index].ID, id)
 		}
 	}
-	if codex.Effort == nil || codex.Effort.Label != "Reasoning" || len(codex.Effort.Options) != 3 || codex.Models[0].DefaultEffort != "low" {
+	if codex.Effort == nil || codex.Effort.Label != "Reasoning" || len(codex.Effort.Options) != 4 ||
+		codex.Models[0].DefaultEffort != "medium" || codex.Models[1].DefaultEffort != "xhigh" {
 		t.Fatalf("codex effort catalog=%#v", codex)
+	}
+	if len(codex.Options) != 1 || codex.Options[0].ID != "fast_mode" || codex.Options[0].Type != "boolean" || codex.Options[0].Default != "false" || !codex.Options[0].Mutable {
+		t.Fatalf("codex options=%#v", codex.Options)
+	}
+	if got, want := codex.Options[0].Models, want[:6]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("codex Fast mode models=%#v want %#v", got, want)
+	}
+	if options, err := ResolveOptions(codex, map[string]string{"fast_mode": "true"}); err != nil || options["fast_mode"] != "true" {
+		t.Fatalf("codex Fast mode options=%#v err=%v", options, err)
+	}
+	if options, err := ResolveOptionsForModel(codex, "gpt-5.3-codex-spark", nil); err != nil || len(options) != 0 {
+		t.Fatalf("Spark options=%#v err=%v", options, err)
+	}
+	if options, err := ResolveOptionsForModel(codex, "gpt-5.3-codex-spark", map[string]string{"fast_mode": "false"}); err != nil || len(options) != 0 {
+		t.Fatalf("legacy Spark defaults=%#v err=%v", options, err)
+	}
+	if _, err := ResolveOptionsForModel(codex, "gpt-5.3-codex-spark", map[string]string{"fast_mode": "true"}); err == nil || !strings.Contains(err.Error(), "not supported for model") {
+		t.Fatalf("Spark Fast mode err=%v", err)
 	}
 }
 
@@ -160,8 +180,8 @@ func TestConfiguredEffortValidationIsProviderAndModelAware(t *testing.T) {
 	if effort, err := ResolveEffort(codex, sol, "high"); err != nil || effort != "high" {
 		t.Fatalf("codex high effort=%q err=%v", effort, err)
 	}
-	if _, err := ResolveEffort(codex, sol, "xhigh"); err == nil || !strings.Contains(err.Error(), "not supported") {
-		t.Fatalf("codex xhigh err=%v", err)
+	if effort, err := ResolveEffort(codex, sol, "xhigh"); err != nil || effort != "xhigh" {
+		t.Fatalf("codex xhigh effort=%q err=%v", effort, err)
 	}
 	if _, err := ResolveEffort(codex, sol, "max"); err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Fatalf("codex max err=%v", err)
@@ -231,6 +251,28 @@ func TestResolveOptionsSupportsAdapterDefinedTypes(t *testing.T) {
 	}
 }
 
+func TestValidateOptionUpdateAllowsOnlyMutableValuesToChange(t *testing.T) {
+	adapter := Adapter{ID: "custom", Options: []ProviderOption{
+		{ID: "fast_mode", Name: "Fast mode", Type: "boolean", Default: "false", Mutable: true},
+		{ID: "session_mode", Name: "Session mode", Type: "enum", Default: "steady", Choices: []ProviderOptionChoice{{Value: "steady", Name: "Steady"}, {Value: "deep", Name: "Deep"}}},
+	}}
+	current, err := ResolveOptions(adapter, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fast, err := ResolveOptions(adapter, map[string]string{"fast_mode": "true"})
+	if err != nil || ValidateOptionUpdate(adapter, current, fast) != nil {
+		t.Fatalf("mutable update=%#v resolveErr=%v validateErr=%v", fast, err, ValidateOptionUpdate(adapter, current, fast))
+	}
+	locked, err := ResolveOptions(adapter, map[string]string{"session_mode": "deep"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ValidateOptionUpdate(adapter, current, locked); err == nil || !strings.Contains(err.Error(), "locked") {
+		t.Fatalf("immutable update err=%v", err)
+	}
+}
+
 func TestPiUsesConfiguredModelsAndThinkingLevels(t *testing.T) {
 	adapter, configuredModel, err := ResolveSelection("pi", "", false)
 	if err != nil {
@@ -255,6 +297,13 @@ func TestLoadCatalogRejectsUnknownModelEffort(t *testing.T) {
 	_, err := LoadCatalog([]byte("version: 1\nharnesses:\n  - id: x\n    name: X\n    adapter: x\n    defaultModel: one\n    effort:\n      label: Thinking\n      options:\n        - id: low\n          name: Low\n    models:\n      - id: one\n        name: One\n        defaultEffort: max\n"))
 	if err == nil || !strings.Contains(err.Error(), "unknown default effort") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestLoadCatalogRejectsUnknownProviderOptionModel(t *testing.T) {
+	_, err := LoadCatalog([]byte("version: 1\nharnesses:\n  - id: x\n    name: X\n    adapter: x\n    defaultModel: one\n    options:\n      - id: fast_mode\n        name: Fast mode\n        type: boolean\n        models: [missing]\n    models:\n      - id: one\n        name: One\n"))
+	if err == nil || !strings.Contains(err.Error(), "invalid model") {
+		t.Fatalf("unknown provider-option model err=%v", err)
 	}
 }
 

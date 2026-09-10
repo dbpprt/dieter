@@ -1551,7 +1551,13 @@ private fun WorkspaceMergeSheet(
                         fontSize = 11.sp,
                     )
                 }
-                Text("Runs locally on the Dieter machine · nothing is pushed.", color = DieterMuted, fontSize = 11.sp)
+                Text(
+                    if (availability.remotePublishMode == "push_base")
+                        "The validated result is pushed to the configured base remote."
+                    else "Runs locally on the Dieter machine · nothing is pushed.",
+                    color = DieterMuted,
+                    fontSize = 11.sp,
+                )
                 Button(
                     onClick = {
                         model.runWorkspaceMergeFlow(

@@ -32,6 +32,13 @@ The model, effort, context, capability, and typed provider-option registry is
 selectable models, an effort/thinking scale, and capability flags such as
 subagents and task-plan.
 
+Provider options appear only for harnesses and models that advertise them.
+Codex exposes `fast_mode` for GPT-5.4, GPT-5.5, GPT-5.6, and GPT-6 Astra chats,
+board tasks, and scheduled task templates. GPT-5.3 Codex and Spark do not show
+or accept the option. It defaults to standard speed and remains changeable
+between turns; Fast mode uses the provider's faster service tier at a higher
+usage rate.
+
 Override the entire registry with any of:
 
 ```sh

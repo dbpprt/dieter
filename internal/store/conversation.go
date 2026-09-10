@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dbpprt/dieter/internal/model"
 )
 
-const conversationProjectionVersion = 4
+const conversationProjectionVersion = 5
 
 const maxConversationEventBytes = 16 << 20
 
@@ -94,7 +95,8 @@ func (s *Store) ForkChat(sourceRef, messageID, title string) (model.Card, error)
 		Project: source.Project.ID, Title: title, Provider: source.Card.Provider,
 		Model: source.Card.Model, Effort: source.Card.Effort,
 		ProviderOptions: source.Card.ProviderOptions,
-		WorkspaceMode:   source.Card.WorkspaceMode,
+		WorkspaceMode:   source.Card.WorkspaceMode, WorkspaceBaseRemote: source.Card.WorkspaceBaseRemote,
+		RemotePublishMode: source.Card.RemotePublishMode,
 	})
 	if err != nil {
 		return model.Card{}, err
@@ -237,9 +239,24 @@ func (s *Store) loadConversation(cardID string) (model.Conversation, error) {
 }
 
 func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID string, data any) (model.ConversationEvent, model.Conversation, error) {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return model.ConversationEvent{}, model.Conversation{}, err
+	}
 	writeKind := "store_changed"
 	if eventType == "ui-chunk" || eventType == "capability" {
 		writeKind = "conversation_changed"
+		if eventType == "ui-chunk" {
+			var chunk struct {
+				Type string `json:"type"`
+			}
+			_ = json.Unmarshal(raw, &chunk)
+			// Usage updates change the Kanban directory projection; text deltas
+			// continue using the inexpensive conversation-only sync route.
+			if chunk.Type == "message-metadata" || chunk.Type == "finish" {
+				writeKind = "store_changed"
+			}
+		}
 	}
 	release, err := s.beginWriteKind(writeKind)
 	if err != nil {
@@ -254,6 +271,14 @@ func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID st
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}
+	return s.appendConversationEvent(card, conversation, eventType, turnID, messageID, data)
+}
+
+// appendConversationEvent persists an event while the caller holds Dieter's
+// cross-process write lock. Keeping the loaded projection and append in the
+// same critical section lets conditional queue operations avoid racing the
+// automatic transition into the next turn.
+func (s *Store) appendConversationEvent(card model.Card, conversation model.Conversation, eventType, turnID, messageID string, data any) (model.ConversationEvent, model.Conversation, error) {
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return model.ConversationEvent{}, model.Conversation{}, err
@@ -315,13 +340,29 @@ func (s *Store) StartQueuedConversationTurn(cardRef, turnID, messageID, queueID,
 }
 
 func (s *Store) StartQueuedConversationTurnParts(cardRef, turnID, messageID, queueID string, parts []model.UIMessagePart) (model.Conversation, error) {
+	release, err := s.beginWriteKind("store_changed")
+	if err != nil {
+		return model.Conversation{}, err
+	}
+	defer release()
+	card, err := s.ResolveCard(cardRef)
+	if err != nil {
+		return model.Conversation{}, err
+	}
+	conversation, err := s.loadConversation(card.ID)
+	if err != nil {
+		return model.Conversation{}, err
+	}
+	if !slices.ContainsFunc(conversation.Queue, func(item model.QueuedMessage) bool { return item.ID == queueID }) {
+		return model.Conversation{}, fmt.Errorf("%w: queued message %q", ErrNotFound, queueID)
+	}
 	createdAt := timestamp()
 	metadata, _ := json.Marshal(map[string]string{"createdAt": createdAt})
 	data := struct {
 		QueueID string          `json:"queueId"`
 		Message model.UIMessage `json:"message"`
 	}{QueueID: queueID, Message: model.UIMessage{ID: messageID, Role: "user", Metadata: metadata, Parts: parts}}
-	_, conversation, err := s.AppendConversationEvent(cardRef, "queued-user-message", turnID, messageID, data)
+	_, conversation, err = s.appendConversationEvent(card, conversation, "queued-user-message", turnID, messageID, data)
 	return conversation, err
 }
 
@@ -362,6 +403,36 @@ func (s *Store) QueueConversationMessagePartsWithID(cardRef, messageID string, p
 	queued := model.QueuedMessage{ID: messageID, Text: text, Parts: parts, CreatedAt: timestamp()}
 	_, conversation, err := s.AppendConversationEvent(cardRef, "queue-message", "", "", queued)
 	return queued, conversation, err
+}
+
+// RemoveQueuedConversationMessage atomically removes one not-yet-started
+// message and returns its full contents so a client can restore it to an
+// editor without losing attachments.
+func (s *Store) RemoveQueuedConversationMessage(cardRef, messageID string) (model.QueuedMessage, model.Conversation, error) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return model.QueuedMessage{}, model.Conversation{}, errors.New("queued message id is required")
+	}
+	release, err := s.beginWriteKind("store_changed")
+	if err != nil {
+		return model.QueuedMessage{}, model.Conversation{}, err
+	}
+	defer release()
+	card, err := s.ResolveCard(cardRef)
+	if err != nil {
+		return model.QueuedMessage{}, model.Conversation{}, err
+	}
+	conversation, err := s.loadConversation(card.ID)
+	if err != nil {
+		return model.QueuedMessage{}, model.Conversation{}, err
+	}
+	index := slices.IndexFunc(conversation.Queue, func(item model.QueuedMessage) bool { return item.ID == messageID })
+	if index < 0 {
+		return model.QueuedMessage{}, model.Conversation{}, fmt.Errorf("%w: queued message %q", ErrNotFound, messageID)
+	}
+	removed := conversation.Queue[index]
+	_, conversation, err = s.appendConversationEvent(card, conversation, "remove-queued-message", "", messageID, removed)
+	return removed, conversation, err
 }
 
 func (s *Store) SetConversationSession(cardRef, turnID string, state json.RawMessage) (model.Conversation, error) {
@@ -467,6 +538,16 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 		var queued model.QueuedMessage
 		if json.Unmarshal(event.Data, &queued) == nil {
 			conversation.Queue = append(conversation.Queue, queued)
+			if queued.MergeSourceID != "" {
+				conversation.MergedSourceIDs = append(conversation.MergedSourceIDs, queued.MergeSourceID)
+			}
+		}
+	case "remove-queued-message":
+		var removed model.QueuedMessage
+		if json.Unmarshal(event.Data, &removed) == nil {
+			conversation.Queue = slices.DeleteFunc(conversation.Queue, func(item model.QueuedMessage) bool {
+				return item.ID == removed.ID
+			})
 		}
 	case "session":
 		var state json.RawMessage

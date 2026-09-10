@@ -340,7 +340,7 @@ enum DieterTheme {
         selection: DieterThemeSelection,
         systemColorScheme: ColorScheme? = nil
     ) {
-        let systemColorScheme = systemColorScheme ?? state.systemColorScheme
+        let systemColorScheme = systemColorScheme ?? DieterSystemAppearance.shared.colorScheme
         let effectiveColorScheme = selection.appearance.colorScheme ?? systemColorScheme
         let key = DieterThemeKey(palette: selection.palette, dark: effectiveColorScheme == .dark)
         state.install(
@@ -394,11 +394,13 @@ private struct DieterStaticProgressViewStyle: ProgressViewStyle {
 
 private struct DieterThemeRootModifier: ViewModifier {
     let selection: DieterThemeSelection
-    @Environment(\.colorScheme) private var colorScheme
-
     func body(content: Content) -> some View {
-        DieterTheme.install(selection: selection, systemColorScheme: colorScheme)
-        return content.progressViewStyle(DieterStaticProgressViewStyle())
+        let systemScheme = DieterSystemAppearance.shared.colorScheme
+        DieterTheme.install(selection: selection, systemColorScheme: systemScheme)
+        return
+            content
+            .preferredColorScheme(selection.appearance.colorScheme ?? systemScheme)
+            .progressViewStyle(DieterStaticProgressViewStyle())
     }
 }
 

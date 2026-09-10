@@ -66,7 +66,8 @@ struct NewConversationSheet: View {
                         .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
                         .overlay(
                             RoundedRectangle(cornerRadius: 10).stroke(
-                                focusedField == .title ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
+                                focusedField == .title
+                                    ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
                                 lineWidth: focusedField == .title ? 2 : 1)
                         )
                         .accessibilityIdentifier("new-card.title")
@@ -81,10 +82,14 @@ struct NewConversationSheet: View {
                     .focused($focusedField, equals: .prompt)
                     .padding(.horizontal, 13).padding(.vertical, 14)
                     .frame(height: 135, alignment: .topLeading)
-                    .background(
-                        attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input,
-                        in: RoundedRectangle(cornerRadius: 10)
-                    )
+                    .background {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(
+                                attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 10))
+                            .onTapGesture { focusedField = .prompt }
+                    }
                     .overlay(
                         RoundedRectangle(cornerRadius: 10).stroke(
                             attachmentDropTargeted
@@ -154,13 +159,17 @@ struct NewConversationSheet: View {
                                 }
                             }
                             newCardWorkspaceButton
-                            newCardMenu(title: "Provider", value: harness?.name ?? "Server default", symbol: "cpu") {
+                            newCardMenu(
+                                title: "Provider", value: harness?.name ?? "Server default", symbol: "cpu"
+                            ) {
                                 ForEach(destinationHarnesses, id: \.id) { item in
                                     Button(item.name) {
                                         guard let selection = HarnessSelection(provider: item.id).resolved(in: [item])
                                         else { return }
-                                        provider = selection.provider; model = selection.model
-                                        effort = selection.effort; providerOptions = selection.providerOptions
+                                        provider = selection.provider
+                                        model = selection.model
+                                        effort = selection.effort
+                                        providerOptions = selection.providerOptions
                                     }
                                 }
                             }
@@ -169,7 +178,10 @@ struct NewConversationSheet: View {
                             ) {
                                 ForEach(harness?.models ?? [], id: \.id) { item in
                                     Button(item.name) {
-                                        model = item.id; effort = item.defaultEffort
+                                        model = item.id
+                                        effort = item.defaultEffort
+                                        providerOptions = ProviderOptionValues.normalized(
+                                            for: harness, model: model, saved: providerOptions)
                                     }
                                 }
                             }
@@ -186,17 +198,22 @@ struct NewConversationSheet: View {
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
 
-                    if !(harness?.options ?? []).isEmpty {
+                    if !ProviderOptionValues.options(for: harness, model: model).isEmpty {
                         HStack(spacing: 7) {
-                            ProviderOptionChips(options: harness?.options ?? [], values: $providerOptions)
+                            ProviderOptionChips(
+                                options: ProviderOptionValues.options(for: harness, model: model),
+                                values: $providerOptions)
                             Spacer()
                         }
                     }
 
                     if harnessCatalogLoading {
-                        Label("Loading models from this project's machine…", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.caption).foregroundStyle(DieterTheme.tertiary)
-                            .accessibilityIdentifier("new-card.harness-loading")
+                        Label(
+                            "Loading models from this project's machine…",
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                        .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                        .accessibilityIdentifier("new-card.harness-loading")
                     } else if let harnessCatalogError {
                         Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
                             .font(.caption).foregroundStyle(DieterTheme.coral)
@@ -226,7 +243,11 @@ struct NewConversationSheet: View {
                     Task { await submit() }
                 } label: {
                     HStack(spacing: 7) {
-                        if submitting { ProgressView().controlSize(.mini) } else { Image(systemName: "sparkles") }
+                        if submitting {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "sparkles")
+                        }
                         Text(
                             deferred
                                 ? "Save to \(selectedLane?.name ?? "board")"
@@ -261,6 +282,13 @@ struct NewConversationSheet: View {
     private func loadDestinationHarnesses() async {
         if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
         if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
+        if workspaceDraft.baseRemote.isEmpty {
+            let boardRemote = store.selectedBoard?.baseRemote ?? ""
+            workspaceDraft.baseRemote = boardRemote.isEmpty ? (project?.baseRemote ?? "") : boardRemote
+        }
+        if let configured = store.selectedBoard?.remotePublishMode, !configured.isEmpty {
+            workspaceDraft.remotePublishMode = configured
+        }
         guard let projectID = project?.id, !projectID.isEmpty else { return }
         harnessCatalogLoading = true
         harnessCatalogError = nil
@@ -299,7 +327,8 @@ struct NewConversationSheet: View {
 
     private var newCardWorkspaceButton: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text("Workspace").font(.system(size: 11, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+            Text("Workspace").font(.system(size: 11, weight: .semibold)).foregroundStyle(
+                DieterTheme.subtle)
             Button {
                 workspacePickerPresented = true
             } label: {

@@ -3,8 +3,8 @@ import DieterAPI
 import DieterCore
 import Foundation
 import GRPCCore
-import Observation
 import OSLog
+import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
@@ -25,12 +25,15 @@ extension DieterStore {
             restored.projections[endpoint.id]?.refreshedAt
             ?? deploymentProjections.compactMap(\.value.refreshedAt).max()
         for (endpointID, projection) in deploymentProjections {
-            if let snapshot = await snapshotDecoder.snapshot(endpointID: endpointID, data: projection.snapshot) {
+            if let snapshot = await snapshotDecoder.snapshot(
+                endpointID: endpointID, data: projection.snapshot)
+            {
                 applyGlobalSnapshot(snapshot, endpointID: endpointID)
             }
         }
         if deploymentProjections.isEmpty,
-            let snapshot = await snapshotDecoder.snapshot(endpointID: endpoint.id, data: restored.snapshot)
+            let snapshot = await snapshotDecoder.snapshot(
+                endpointID: endpoint.id, data: restored.snapshot)
         {
             applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
         }
@@ -43,7 +46,8 @@ extension DieterStore {
         if let persisted = syncDiskState.projections[endpoint.id] {
             syncProjection = persisted
         } else {
-            syncProjection = DieterSyncProjection(cursor: syncDiskState.cursor, snapshot: syncDiskState.snapshot)
+            syncProjection = DieterSyncProjection(
+                cursor: syncDiskState.cursor, snapshot: syncDiskState.snapshot)
             syncDiskState.projections[endpoint.id] = syncProjection
             syncDiskState.cursor = nil
             syncDiskState.snapshot = nil
@@ -97,7 +101,10 @@ extension DieterStore {
     }
 
     func scheduleSyncPersistence() async {
-        do { try await outbox.restore() } catch { show(error); return }
+        do { try await outbox.restore() } catch {
+            show(error)
+            return
+        }
         let checkpoint = persistenceCheckpoint()
         // Clear before the actor hop so a newer frame that arrives while the
         // writer is accepting this state marks the store dirty again.
@@ -146,11 +153,15 @@ extension DieterStore {
                 }
                 guard !Task.isCancelled else { return }
                 self?.connectionStopped(DieterStoreConnectionError.syncEnded, client: rpc)
-            } catch  where Self.isExpectedCancellation(error) {} catch { self?.connectionStopped(error, client: rpc) }
+            } catch  where Self.isExpectedCancellation(error) {} catch {
+                self?.connectionStopped(error, client: rpc)
+            }
         }
     }
 
-    func applySyncFrame(_ frame: Dieter_V1_SyncFrame, endpointID: String, client: DieterRPC? = nil) async {
+    func applySyncFrame(_ frame: Dieter_V1_SyncFrame, endpointID: String, client: DieterRPC? = nil)
+        async
+    {
         guard endpoint.id == endpointID, client == nil || rpc === client else { return }
         let generation = connectionGeneration
         os_signpost(.begin, log: syncPerformanceLog, name: "Apply sync frame")
@@ -188,7 +199,8 @@ extension DieterStore {
                     applySelectedConversationProjection(next, endpointID: endpointID)
                 }
                 projectionChanged = true
-                conversationDirectoryChanged = GlobalProjectionReducer.changesConversationDirectory(frame.delta)
+                conversationDirectoryChanged = GlobalProjectionReducer.changesConversationDirectory(
+                    frame.delta)
             }
         }
         if frame.hasCursor {
@@ -246,7 +258,8 @@ extension DieterStore {
         if conversation != projected { conversation = projected }
         if selectedDetail != projected.detail { selectedDetail = projected.detail }
         conversationLoading = false
-        conversationLastRefreshedAt = conversationRefreshDate(cardID: selectedID, endpointID: endpointID)
+        conversationLastRefreshedAt = conversationRefreshDate(
+            cardID: selectedID, endpointID: endpointID)
     }
 
     func updateSelectedState(base: Dieter_V1_State? = nil) {
@@ -264,12 +277,15 @@ extension DieterStore {
         }
     }
 
-    func projectedConversation(cardID: String, endpointID: String) async -> Dieter_V1_ConversationSnapshot? {
+    func projectedConversation(cardID: String, endpointID: String) async
+        -> Dieter_V1_ConversationSnapshot?
+    {
         if endpointID == endpoint.id, let syncSnapshot {
             return syncSnapshot.conversations.first { $0.detail.card.id == cardID }
         }
         let projection = syncDiskState.projections[endpointID]
-        return await snapshotDecoder.conversation(cardID: cardID, endpointID: endpointID, data: projection?.snapshot)
+        return await snapshotDecoder.conversation(
+            cardID: cardID, endpointID: endpointID, data: projection?.snapshot)
     }
 
     func conversationRefreshDate(cardID: String, endpointID: String) -> Date? {
@@ -334,11 +350,13 @@ extension DieterStore {
     }
 
     func rebuildOutboxOverlays() {
-        pendingCardIDs = Set(outbox.entries.filter { $0.kind != .sendMessage }.map { $0.serverID ?? $0.optimisticID })
+        pendingCardIDs = Set(
+            outbox.entries.filter { $0.kind != .sendMessage }.map { $0.serverID ?? $0.optimisticID })
         pendingMessageIDs = Set(outbox.entries.filter { $0.kind == .sendMessage }.map(\.optimisticID))
         acceptedOutboxIDs = Set(
             outbox.entries.filter { $0.serverID != nil }.flatMap { [$0.optimisticID, $0.serverID!] })
-        failedOutboxIDs = Set(outbox.entries.filter { $0.state == .failed }.map { $0.serverID ?? $0.optimisticID })
+        failedOutboxIDs = Set(
+            outbox.entries.filter { $0.state == .failed }.map { $0.serverID ?? $0.optimisticID })
         machineOutboxSummaries = MachineOutboxSummary.summaries(for: outbox.entries)
         var projectedChats = chats
         let orphanedIDs = Set(
@@ -353,7 +371,8 @@ extension DieterStore {
         for entry in outbox.entries {
             switch entry.kind {
             case .createCard, .createChat:
-                guard let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request),
+                guard
+                    let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request),
                     projectDirectory[request.projectID] != nil
                 else { continue }
                 var card = Dieter_V1_Card()
@@ -374,24 +393,24 @@ extension DieterStore {
                 card.createdAt = DieterTimestamp.string(from: entry.createdAt)
                 card.updatedAt = card.createdAt
                 if entry.kind == .createChat {
-                    if !projectedChats.contains(where: { $0.id == card.id }) { projectedChats.insert(card, at: 0) }
-                } else if card.projectID == selectedProjectID, !state.cards.contains(where: { $0.id == card.id }) {
+                    if !projectedChats.contains(where: { $0.id == card.id }) {
+                        projectedChats.insert(card, at: 0)
+                    }
+                } else if card.projectID == selectedProjectID,
+                    !state.cards.contains(where: { $0.id == card.id })
+                {
                     state.cards.append(card)
                     navigationCards[card.projectID, default: []].append(card)
                 }
             case .sendMessage:
-                guard let request = try? Dieter_V1_SendMessageRequest(serializedBytes: entry.request),
-                    (selectedCardID ?? selectedChatID) == request.cardID,
-                    var snapshot = conversation,
-                    !snapshot.conversation.messages.contains(where: { $0.id == entry.optimisticID })
-                else { continue }
-                var message = Dieter_V1_UiMessage()
-                message.id = entry.optimisticID
-                message.role = "user"
-                message.parts = request.parts
-                snapshot.conversation.messages.append(message)
-                conversation = snapshot
+                continue
             }
+        }
+        if let snapshot = conversation {
+            conversation = DieterOutboxPolicy.overlayOptimisticMessages(
+                snapshot,
+                entries: syncDiskState.outbox
+            )
         }
         if chats != projectedChats { chats = projectedChats }
     }
@@ -410,7 +429,8 @@ extension DieterStore {
                             for: entry, visibleConversationIDs: cardIDs)
                     else { continue }
                     entries[index].serverID = serverID
-                    try DieterOutboxPolicy.retargetDependencies(in: &entries, from: entry.optimisticID, to: serverID)
+                    try DieterOutboxPolicy.retargetDependencies(
+                        in: &entries, from: entry.optimisticID, to: serverID)
                     accepted.append((entry.optimisticID, serverID, entry.kind == .createChat))
                 }
                 entries.removeAll { entry in
@@ -448,14 +468,16 @@ extension DieterStore {
         outbox.start(
             reachable: { [weak self] in
                 guard let self, self.rpc != nil, self.phase.isConnected else { return [] }
-                return [self.endpoint.id] + self.endpoints.filter { $0.online && $0.id != self.endpoint.id }.map(\.id)
+                return [self.endpoint.id]
+                    + self.endpoints.filter { $0.online && $0.id != self.endpoint.id }.map(\.id)
             },
             acquire: { [weak self] endpointID in
                 guard let self else { throw CancellationError() }
                 if endpointID == self.endpoint.id, let rpc = self.rpc {
                     return OutboxTransport(rpc: rpc, release: {})
                 }
-                guard let machine = self.endpoints.first(where: { $0.id == endpointID }), machine.online else {
+                guard let machine = self.endpoints.first(where: { $0.id == endpointID }), machine.online
+                else {
                     throw CancellationError()
                 }
                 let lease = try await self.selectDirectoryDataPlane(for: machine)
@@ -478,7 +500,8 @@ extension DieterStore {
             failed: { [weak self] entry, error in
                 guard let self else { return }
                 if entry.kind != .sendMessage {
-                    self.setOptimisticConversationStatus(entry, status: entry.state == .failed ? "failed" : "pending")
+                    self.setOptimisticConversationStatus(
+                        entry, status: entry.state == .failed ? "failed" : "pending")
                 }
                 self.rebuildOutboxOverlays()
                 outboxLogger.error(
@@ -495,8 +518,10 @@ extension DieterStore {
                     (entries[index].optimisticID == id || entries[index].serverID == id)
                     && entries[index].state == .failed
                 {
-                    entries[index].state = .queued; entries[index].attempts = 0
-                    entries[index].lastError = nil; entries[index].nextAttemptAt = nil
+                    entries[index].state = .queued
+                    entries[index].attempts = 0
+                    entries[index].lastError = nil
+                    entries[index].nextAttemptAt = nil
                 }
             }
             refreshOutboxAfterRetry()
@@ -508,8 +533,10 @@ extension DieterStore {
             try await outbox.update { entries in
                 for index in entries.indices
                 where entries[index].endpointID == machine.id && entries[index].serverID == nil {
-                    entries[index].state = .queued; entries[index].attempts = 0
-                    entries[index].lastError = nil; entries[index].nextAttemptAt = nil
+                    entries[index].state = .queued
+                    entries[index].attempts = 0
+                    entries[index].lastError = nil
+                    entries[index].nextAttemptAt = nil
                 }
             }
             refreshOutboxAfterRetry()
@@ -547,7 +574,8 @@ extension DieterStore {
                 return [entry] + dependent
             }
             removeOptimisticOutboxArtifacts(for: removed)
-            rebuildOutboxOverlays(); startOutboxWorker()
+            rebuildOutboxOverlays()
+            startOutboxWorker()
         } catch { show(error) }
     }
 
@@ -558,9 +586,13 @@ extension DieterStore {
                 DieterOutboxPolicy.removeUndelivered(from: &entries, endpointID: machine.id)
             }
             removeOptimisticOutboxArtifacts(for: removed)
-            rebuildOutboxOverlays(); startOutboxWorker()
+            rebuildOutboxOverlays()
+            startOutboxWorker()
             return removed.count
-        } catch { show(error); return 0 }
+        } catch {
+            show(error)
+            return 0
+        }
     }
 
     func removeOptimisticOutboxArtifacts(for entries: [DieterOutboxEntry]) {
@@ -587,16 +619,23 @@ extension DieterStore {
             snapshot.conversation.messages.removeAll { messageIDs.contains($0.id) }
             conversation = snapshot
         }
+        if !messageIDs.isEmpty {
+            olderConversationMessages.removeAll { messageIDs.contains($0.id) }
+        }
     }
 
     @discardableResult
-    func retargetOptimisticConversation(from optimisticID: String, to serverID: String, endpointID: String? = nil)
+    func retargetOptimisticConversation(
+        from optimisticID: String, to serverID: String, endpointID: String? = nil
+    )
         -> Bool
     {
         let selected = (selectedCardID ?? selectedChatID) == optimisticID
         composer.retarget(
-            from: WorkspaceTarget(endpointID: endpointID ?? endpoint.id, projectID: "", conversationID: optimisticID),
-            to: WorkspaceTarget(endpointID: endpointID ?? endpoint.id, projectID: "", conversationID: serverID)
+            from: WorkspaceTarget(
+                endpointID: endpointID ?? endpoint.id, projectID: "", conversationID: optimisticID),
+            to: WorkspaceTarget(
+                endpointID: endpointID ?? endpoint.id, projectID: "", conversationID: serverID)
         )
         let authoritative =
             state.cards.first(where: { $0.id == serverID })
@@ -697,12 +736,16 @@ extension DieterStore {
         let request = stateRequest()
         do {
             let value = try await rpc.state(request)
-            guard self.rpc === rpc, generation == stateRequestGeneration, selectedProjectID == request.projectID else {
+            guard self.rpc === rpc, generation == stateRequestGeneration,
+                selectedProjectID == request.projectID
+            else {
                 return
             }
             acceptState(value)
         } catch {
-            guard self.rpc === rpc, generation == stateRequestGeneration, selectedProjectID == request.projectID else {
+            guard self.rpc === rpc, generation == stateRequestGeneration,
+                selectedProjectID == request.projectID
+            else {
                 return
             }
             if DieterRPCFailure.isTransient(error) {
@@ -735,11 +778,13 @@ extension DieterStore {
             projectEndpointIDs[project.id] = endpoint.id
         }
         if selectedProjectID.isEmpty || !next.projects.contains(where: { $0.id == selectedProjectID }) {
-            selectedProjectID = next.project.id.isEmpty ? (next.projects.first?.id ?? "") : next.project.id
+            selectedProjectID =
+                next.project.id.isEmpty ? (next.projects.first?.id ?? "") : next.project.id
         }
         if selectedBoardID.isEmpty || !next.boards.contains(where: { $0.id == selectedBoardID }) {
             selectedBoardID =
-                next.boards.first(where: { $0.projectID == selectedProjectID })?.id ?? next.boards.first?.id ?? ""
+                next.boards.first(where: { $0.projectID == selectedProjectID })?.id ?? next.boards.first?.id
+                ?? ""
         }
         rebuildOutboxOverlays()
     }

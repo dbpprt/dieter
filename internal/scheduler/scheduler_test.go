@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,6 +138,38 @@ func TestSchedulePersistsValidatedEffortOnCreatedCard(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("unsupported schedule effort was accepted")
+	}
+}
+
+func TestSchedulePreconfiguresCodexFastModeOnCreatedTask(t *testing.T) {
+	manager, data, project, board := setup(t)
+	schedule, err := manager.Create(store.ScheduleInput{
+		Project: project.ID, Board: board.ID, Name: "Fast work", Cron: "0 9 * * *", Timezone: "UTC",
+		Action: model.ScheduleActionDraft, TitleTemplate: "Fast", PromptTemplate: "Move quickly", Provider: "codex",
+		ProviderOptions: map[string]string{"fast_mode": "true"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := manager.RunNow(schedule.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.ResolveCard(run.CardID)
+	if err != nil || card.ProviderOptions["fast_mode"] != "true" {
+		t.Fatalf("scheduled card=%#v err=%v", card, err)
+	}
+}
+
+func TestScheduleRejectsCodexFastModeForUnsupportedModel(t *testing.T) {
+	manager, _, project, board := setup(t)
+	_, err := manager.Create(store.ScheduleInput{
+		Project: project.ID, Board: board.ID, Name: "Fast Spark work", Cron: "0 9 * * *", Timezone: "UTC",
+		Action: model.ScheduleActionDraft, TitleTemplate: "Fast", PromptTemplate: "Move quickly", Provider: "codex",
+		Model: "gpt-5.3-codex-spark", ProviderOptions: map[string]string{"fast_mode": "true"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "not supported for model") {
+		t.Fatalf("Spark Fast mode schedule err=%v", err)
 	}
 }
 

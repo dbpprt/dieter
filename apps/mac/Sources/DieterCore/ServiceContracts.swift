@@ -93,3 +93,7 @@ package protocol DieterScheduleRPC: AnyObject, Sendable {
 package protocol DieterChatPinRPC: Sendable {
     func pinChat(_ request: Dieter_V1_PinChatRequest) async throws -> Dieter_V1_Card
 }
+
+package protocol DieterCardStartRPC: Sendable {
+    func startCard(_ request: Dieter_V1_StartCardRequest) async throws -> Dieter_V1_StartCardResponse
+}

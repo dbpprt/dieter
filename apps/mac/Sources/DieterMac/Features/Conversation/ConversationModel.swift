@@ -6,6 +6,7 @@ import Observation
 /// persistence are effects supplied by the app composition boundary.
 @MainActor @Observable
 final class ConversationModel {
+    @ObservationIgnored var presentSnapshot: (Dieter_V1_ConversationSnapshot) -> Dieter_V1_ConversationSnapshot = { $0 }
     var selectedCardID: String?
     var selectedChatID: String?
     var conversation: Dieter_V1_ConversationSnapshot? {
@@ -147,7 +148,7 @@ final class ConversationModel {
     ) async {
         if conversation != snapshot {
             resetConversationHistory(from: snapshot)
-            conversation = snapshot
+            conversation = presentSnapshot(snapshot)
         }
         if selectedDetail != snapshot.detail { selectedDetail = snapshot.detail }
         conversationLoading = false
@@ -262,7 +263,7 @@ final class ConversationModel {
                 olderConversationMessages = []
             }
             trimStreamingHistory()
-            conversation = update.snapshot
+            conversation = presentSnapshot(update.snapshot)
             selectedDetail = update.snapshot.detail
             if olderConversationMessages.isEmpty {
                 conversationHistoryStart = Int(update.snapshot.page.start)
@@ -307,7 +308,7 @@ final class ConversationModel {
             }
             conversationHistoryTotal = max(conversationHistoryTotal, Int(update.page.total))
         }
-        conversation = snapshot
+        conversation = presentSnapshot(snapshot)
     }
 
     func returnToLatest() {

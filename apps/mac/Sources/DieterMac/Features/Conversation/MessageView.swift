@@ -20,13 +20,31 @@ struct MessageView: View {
             HStack {
                 Spacer(minLength: 70)
                 VStack(alignment: .leading, spacing: 7) {
-                    ForEach(Array(message.parts.enumerated()), id: \.offset) { _, part in
+                    ForEach(
+                        Array(ConversationMessagePartGroup.coalescingText(message.parts).enumerated()),
+                        id: \.offset
+                    ) { _, part in
                         MessagePartView(messageID: message.id, part: part, inUserBubble: true)
+                    }
+                    if deliveryState == .failed {
+                        HStack(spacing: 8) {
+                            Label("Send failed", systemImage: "exclamationmark.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(DieterTheme.coral)
+                            Spacer(minLength: 8)
+                            Button("Retry") { Task { await context.retryOutboxItem(message.id) } }
+                            Button("Remove", role: .destructive) {
+                                Task { await context.discardOutboxItem(message.id) }
+                            }
+                            .accessibilityIdentifier("conversation.failed-message.remove.\(message.id)")
+                        }
+                        .controlSize(.small)
                     }
                 }
                 .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)
                 .background(
-                    DieterTheme.userMessageBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    DieterTheme.userMessageBackground,
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -34,15 +52,18 @@ struct MessageView: View {
                 }
                 .frame(maxWidth: 620, alignment: .trailing)
             }
+            .opacity(context.isPendingMessage(message.id) && deliveryState != .failed ? 0.52 : 1)
             .overlay(alignment: .bottomTrailing) {
-                MessageDeliveryReceipt(state: deliveryState)
-                    .padding(.trailing, 4)
-                    .padding(.bottom, 4)
+                if deliveryState != .failed {
+                    MessageDeliveryReceipt(state: deliveryState)
+                        .padding(.trailing, 4)
+                        .padding(.bottom, 4)
+                }
             }
             .contextMenu {
                 if deliveryState == .failed {
                     Button("Retry queued message") { Task { await context.retryOutboxItem(message.id) } }
-                    Button("Discard queued message", role: .destructive) {
+                    Button("Remove failed message", role: .destructive) {
                         Task { await context.discardOutboxItem(message.id) }
                     }
                 }
@@ -68,7 +89,6 @@ struct MessageView: View {
         }
     }
 }
-
 struct QueuedMessageView: View {
     @Environment(ConversationContext.self) private var context
     let message: Dieter_V1_QueuedMessage
@@ -195,7 +215,8 @@ struct MessageDeliveryReceipt: View {
         }
         .font(.system(size: 9, weight: .bold))
         .foregroundStyle(
-            state == .failed ? DieterTheme.coral : (state == .queued ? DieterTheme.amber : DieterTheme.tertiary)
+            state == .failed
+                ? DieterTheme.coral : (state == .queued ? DieterTheme.amber : DieterTheme.tertiary)
         )
         .accessibilityLabel(accessibilityLabel)
         .help(accessibilityLabel)
@@ -207,7 +228,7 @@ struct MessageDeliveryReceipt: View {
         case .accepted: "Accepted by daemon"
         case .queued: "Queued for the next turn"
         case .synced: "Synced"
-        case .failed: "Send failed; use the context menu to retry or discard"
+        case .failed: "Send failed; retry or remove this message"
         }
     }
 }

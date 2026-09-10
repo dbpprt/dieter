@@ -32,7 +32,8 @@
                         return
                     }
                     if attempt == 0 {
-                        let titles = NSApp.mainMenu?.items.compactMap(\.submenu).flatMap(\.items).map(\.title) ?? []
+                        let titles =
+                            NSApp.mainMenu?.items.compactMap(\.submenu).flatMap(\.items).map(\.title) ?? []
                         let text = "Window startup menu items: " + titles.joined(separator: " | ")
                         try? text.write(
                             to: outputDirectory().appending(path: "window-startup.log"), atomically: true,
@@ -121,7 +122,8 @@
                     chat: false,
                     provider: harness?.id ?? "mock",
                     model: harness?.defaultModel ?? "",
-                    effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort ?? "",
+                    effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort
+                        ?? "",
                     deferred: true,
                     projectID: project.id,
                     lane: board.lanes.first?.id ?? "backlog"
@@ -165,18 +167,24 @@
                     && store.machines.contains(where: { $0.apiCompatibility == .incompatible })
                 ? "passed"
                 : "failed: startup did not select API \(dieterExpectedAPIVersion) from the mixed fleet"
-            if let incompatibleMachine = store.machines.first(where: { $0.apiCompatibility == .incompatible }) {
+            if let incompatibleMachine = store.machines.first(where: {
+                $0.apiCompatibility == .incompatible
+            }) {
                 await store.connect(to: incompatibleMachine)
                 results["mixed-version-switch-isolation"] =
-                    store.endpoint.id == compatibleEndpointID && store.phase.isConnected && store.workspaceIsLive
-                        && store.machineConnectionErrors[incompatibleMachine.id] != nil && store.errorMessage == nil
+                    store.endpoint.id == compatibleEndpointID && store.phase.isConnected
+                        && store.workspaceIsLive
+                        && store.machineConnectionErrors[incompatibleMachine.id] != nil
+                        && store.errorMessage == nil
                     ? "passed"
                     : "failed: incompatible switch displaced the healthy route or presented a global error"
             } else {
                 results["mixed-version-switch-isolation"] = "failed: legacy fixture machine was absent"
             }
             if let fixtureNote { results["fixture"] = fixtureNote }
-            if let scheduleFixtureError { results["schedule-fixture"] = "failed: \(scheduleFixtureError)" }
+            if let scheduleFixtureError {
+                results["schedule-fixture"] = "failed: \(scheduleFixtureError)"
+            }
 
             // Rapid project/conversation navigation can overlap an explicit route
             // change with an automatic reconnect. A completed stale attempt must
@@ -198,7 +206,8 @@
                 await store.openProject(project.id, section: .schedules)
                 let scheduleReady = await waitUntil(timeout: 10) {
                     store.schedulesAreLoaded
-                        && scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) } == true
+                        && scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) }
+                            == true
                 }
                 results["05-project-schedules"] =
                     store.section == .schedules ? "passed" : "failed: \(store.section.rawValue)"
@@ -212,13 +221,19 @@
                 return
             }
             let originalWindowFrame = window.frame
-            let originalZoomedState = window.isZoomed
+            // AppKit may report isZoomed=false when the minimum window width
+            // exceeds the CI display. Compare against its actual standard zoom.
+            window.performZoom(nil)
+            try? await DieterTaskSleep.seconds(1)
+            let standardZoomFrame = window.frame
+            window.setFrame(originalWindowFrame, display: true)
+            try? await DieterTaskSleep.milliseconds(300)
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
             results["window-titlebar-double-click"] =
-                window.isZoomed != originalZoomedState && window.frame != originalWindowFrame
+                window.frame == standardZoomFrame && window.frame != originalWindowFrame
                 ? "passed"
-                : "failed: hidden title-bar double-click did not toggle the window zoom state"
+                : "failed: hidden title-bar double-click did not toggle zoom (before=\(originalWindowFrame), after=\(window.frame), layout=\(window.contentLayoutRect), expected=\(standardZoomFrame))"
             doubleClickTitleBar(of: window)
             try? await DieterTaskSleep.seconds(1)
             if window.frame != originalWindowFrame {
@@ -239,7 +254,8 @@
             results["board-lane-sort-toggle"] = "dispatched for visual verification"
             if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
                 let boardCards = store.state.cards.filter { $0.boardID == board.id }
-                let largestLane = Dictionary(grouping: boardCards, by: \.lane).values.map(\.count).max() ?? 0
+                let largestLane =
+                    Dictionary(grouping: boardCards, by: \.lane).values.map(\.count).max() ?? 0
                 results["board-stress-total-cards"] =
                     boardCards.count == 100
                     ? "passed"
@@ -251,11 +267,155 @@
             }
             if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
                 await runBoardOpeningChecks(
-                    store: store, window: window, board: board, project: project, results: &results, output: output)
+                    store: store, window: window, board: board, project: project, results: &results,
+                    output: output)
                 await runNavigationResponsivenessChecks(
-                    store: store, window: window, board: board, project: project, results: &results, output: output)
+                    store: store, window: window, board: board, project: project, results: &results,
+                    output: output)
             }
             if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
+                if var draft = store.state.cards.first(where: { $0.boardID == board.id }) {
+                    draft.initialPromptSentAt = ""
+                    draft.lane = "todo"
+                    let editor = NSWindow(
+                        contentRect: NSRect(x: 100, y: 100, width: 620, height: 700),
+                        styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                    editor.isReleasedWhenClosed = false
+                    editor.contentView = NSHostingView(
+                        rootView: EditCardSheet(card: draft).environment(store))
+                    editor.makeKeyAndOrderFront(nil)
+                    try? await DieterTaskSleep.milliseconds(500)
+                    results["draft-agent-settings"] =
+                        NativeUIAccessibility.find("edit-card.agent-settings", in: editor) != nil
+                        ? "passed" : "failed: draft agent controls absent"
+                    capture(editor, to: output.appending(path: "draft-agent-settings.png"))
+                    editor.close()
+                    draft.initialPromptSentAt = "started"
+                    let hover = BoardCardDropState()
+                    let preview = NSWindow(
+                        contentRect: NSRect(x: 100, y: 100, width: 310, height: 210),
+                        styleMask: [.titled, .closable], backing: .buffered, defer: false)
+                    preview.isReleasedWhenClosed = false
+                    preview.contentView = NSHostingView(
+                        rootView: BoardCardView(card: draft, dropState: hover).environment(store).padding())
+                    preview.makeKeyAndOrderFront(nil)
+                    hover.enter(NSItemProvider(object: "board-card|board|todo|source" as NSString)) { _ in
+                        true
+                    }
+                    try? await DieterTaskSleep.milliseconds(2400)
+                    results["card-merge-hover-icon"] =
+                        hover.mergeReady ? "passed" : "failed: merge hover did not arm"
+                    capture(preview, to: output.appending(path: "card-merge-hover-icon.png"))
+                    hover.reset()
+                    preview.close()
+                    window.makeKeyAndOrderFront(nil)
+                }
+                _ = NativeUIAccessibility.click("sidebar.quick-task", in: window)
+                try? await DieterTaskSleep.milliseconds(500)
+                if let content = NativeUIAccessibility.find("quick-task.content", in: window),
+                    let sheet = content.recordedWindow,
+                    let contentFrame = content.recordedFrame,
+                    let titleFrame = NativeUIAccessibility.find("quick-task.title", in: sheet)?.recordedFrame,
+                    let storyFrame = NativeUIAccessibility.find("quick-task.story", in: sheet)?.recordedFrame,
+                    let createFrame = NativeUIAccessibility.find("quick-task.create", in: sheet)?
+                        .recordedFrame
+                {
+                    let sheetFrame = sheet.convertToScreen(sheet.contentLayoutRect)
+                    // Catch the former 700-point shell around a short, narrower form.
+                    let compact =
+                        abs(sheetFrame.height - contentFrame.height) < 48
+                        && abs(sheetFrame.width - contentFrame.width) < 48
+                        && contentFrame.height < 580
+                        && createFrame.minY - contentFrame.minY < 40
+                        && titleFrame.minY > storyFrame.maxY
+                    results["global-quick-task-layout"] =
+                        compact
+                        ? "passed"
+                        : "failed: excess shell space or misplaced title/footer; shell=\(sheetFrame), content=\(contentFrame)"
+                    capture(sheet, to: output.appending(path: "global-quick-task-layout.png"))
+                    _ = NativeUIAccessibility.click("quick-task.story", in: sheet)
+                    try? await DieterTaskSleep.milliseconds(100)
+                    await NativeUIAccessibility.type("Keep this draft after clicking outside", in: sheet)
+                    // Popover dismissal is handled by AppKit's application event
+                    // monitors, which direct NSWindow.sendEvent bypasses.
+                    NativeUIEventDispatcher.click(
+                        window: window, x: window.frame.width - 60, distanceFromTop: 100,
+                        throughApplicationQueue: true)
+                    let dismissed = await NativeUIAccessibility.wait { !sheet.isVisible }
+                    _ = NativeUIAccessibility.click("sidebar.quick-task", in: window)
+                    _ = await NativeUIAccessibility.wait {
+                        NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow != nil
+                    }
+                    let reopened = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
+                    let retained =
+                        reopened != nil && store.quickTaskForm.story == "Keep this draft after clicking outside"
+                    if let reopened {
+                        capture(reopened, to: output.appending(path: "global-quick-task-restored.png"))
+                    }
+                    results["global-quick-task-retains-draft"] =
+                        dismissed && retained
+                        ? "passed"
+                        : "failed: outside dismissal=\(dismissed), restored content=\(retained), story=\(store.quickTaskForm.story)"
+                    if let reopened { _ = NativeUIAccessibility.click("quick-task.cancel", in: reopened) }
+                    try? await DieterTaskSleep.milliseconds(300)
+                    store.quickTaskForm.reset()
+                } else {
+                    results["global-quick-task-layout"] =
+                        "failed: global Quick Task sheet or layout anchors absent"
+                }
+                // Navigation checks finish on Screens; the board launcher only
+                // exists after returning to the fixture board.
+                await store.openBoard(board.id, projectID: project.id)
+                _ = await NativeUIAccessibility.wait {
+                    NativeUIAccessibility.find("board.quick-task", in: window) != nil
+                }
+                let boardQuickTaskClicked = NativeUIAccessibility.click("board.quick-task", in: window)
+                _ = await NativeUIAccessibility.wait {
+                    NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow != nil
+                }
+                if let target = NativeUIAccessibility.find("quick-task.story", in: window),
+                    let popover = target.recordedWindow
+                {
+                    _ = NativeUIAccessibility.click("quick-task.story", in: popover)
+                    try? await DieterTaskSleep.milliseconds(200)
+                    let pasteboard = NSPasteboard.general
+                    let saved = (pasteboard.pasteboardItems ?? []).map { item in
+                        item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in
+                            values[type] = item.data(forType: type)
+                        }
+                    }
+                    let image = NSImage(size: NSSize(width: 24, height: 24))
+                    image.lockFocus()
+                    NSColor.systemGreen.setFill()
+                    NSRect(x: 0, y: 0, width: 24, height: 24).fill()
+                    image.unlockFocus()
+                    pasteboard.clearContents()
+                    pasteboard.writeObjects([image])
+                    if let event = NSEvent.keyEvent(
+                        with: .keyDown, location: .zero, modifierFlags: [.command],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: popover.windowNumber,
+                        context: nil,
+                        characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9)
+                    {
+                        NSApp.postEvent(event, atStart: false)
+                    }
+                    let attached = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find("quick-task.attachments", in: popover) != nil
+                    }
+                    results["quick-task-paste-screenshot"] =
+                        attached ? "passed" : "failed: pasted screenshot preview was absent"
+                    capture(popover, to: output.appending(path: "quick-task-pasted-screenshot.png"))
+                    pasteboard.clearContents()
+                    let items = saved.map { values in
+                        let item = NSPasteboardItem()
+                        for (type, data) in values { item.setData(data, forType: type) }
+                        return item
+                    }
+                    if !items.isEmpty { pasteboard.writeObjects(items) }
+                } else {
+                    results["quick-task-paste-screenshot"] =
+                        "failed: Quick Task popover was absent (section=\(store.section.rawValue), click=\(boardQuickTaskClicked))"
+                }
                 writeReport(results, to: output)
                 NSApp.terminate(nil)
                 return
@@ -265,7 +425,8 @@
 
             store.openScreens()
             try? await DieterTaskSleep.milliseconds(500)
-            results["01a-experimental-screens"] = store.section == .screens ? "passed" : "failed: screens did not open"
+            results["01a-experimental-screens"] =
+                store.section == .screens ? "passed" : "failed: screens did not open"
             await captureAppearances(window, named: "01a-experimental-screens.png", in: output)
             await store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
@@ -286,28 +447,29 @@
             // sync and destabilizes the later RPC-backed steps. Its rows are identical
             // to the inline expansion captured above.
 
-            // Collapse the navigation to capture the compressed rail. The toggle sits
-            // in the header band (x≈174 for the 234pt sidebar); the rail's All chats
-            // destination is the first pill below the search/brand stack.
-            click(window: window, x: 174, distanceFromTop: 56)
+            // Resolve the current controls: Quick Task and sidebar resizing can
+            // move the rail destinations without changing their behavior.
+            let collapseClicked = NativeUIAccessibility.click("sidebar.toggle", in: window)
             try? await DieterTaskSleep.milliseconds(500)
             await captureAppearances(window, named: "01b-navigation-collapsed.png", in: output)
-            let collapsedRailCaptured = store.section == .board
-            click(window: window, x: 30, distanceFromTop: 150)
-            try? await DieterTaskSleep.seconds(1)
+            let collapsedRailCaptured =
+                NativeUIAccessibility.find("sidebar.expand-navigation", in: window) != nil
+            let chatsClicked = NativeUIAccessibility.click("sidebar.all-chats", in: window)
+            _ = await NativeUIAccessibility.wait { store.section == .chats }
             results["navigation-collapse"] =
-                store.section == .chats
+                collapseClicked && collapsedRailCaptured && chatsClicked && store.section == .chats
                 ? "passed"
                 : "failed: collapsed rail did not navigate (rendered=\(collapsedRailCaptured), section=\(store.section.rawValue))"
             store.section = .board
             // Re-expand for the remaining expanded-sidebar interactions.
-            click(window: window, x: 30, distanceFromTop: 56)
+            NativeUIAccessibility.click("sidebar.toggle", in: window)
             try? await DieterTaskSleep.milliseconds(500)
             let steps = [Step(name: "02-global-chats", section: .chats, distanceFromTop: 142)]
             for step in steps {
                 click(window: window, x: 80, distanceFromTop: step.distanceFromTop)
                 try? await DieterTaskSleep.seconds(1)
-                results[step.name] = store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
+                results[step.name] =
+                    store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
                 await captureAppearances(window, named: "\(step.name).png", in: output)
             }
 
@@ -340,13 +502,17 @@
             // Drive them through the store the popover calls into and capture each pane.
             let remaining: [(name: String, section: AppSection, navigate: () async -> Void)] = [
                 ("04-project-files", .files, { await store.openProject(project.id, section: .files) }),
-                ("05-project-schedules", .schedules, { await store.openProject(project.id, section: .schedules) }),
+                (
+                    "05-project-schedules", .schedules,
+                    { await store.openProject(project.id, section: .schedules) }
+                ),
                 ("06-board", .board, { await store.openBoard(board.id, projectID: project.id) }),
             ]
             for step in remaining {
                 await step.navigate()
                 try? await DieterTaskSleep.seconds(1)
-                results[step.name] = store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
+                results[step.name] =
+                    store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
                 await captureAppearances(window, named: "\(step.name).png", in: output)
 
                 if step.section == .files {
@@ -358,7 +524,8 @@
                 if step.section == .schedules {
                     results["05-project-schedules-data"] =
                         store.schedulesAreLoaded
-                            && scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) } == true
+                            && scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) }
+                                == true
                         ? "passed"
                         : "failed: dedicated schedule load did not return the fixture"
                     let cancellationWindow = NSPanel(
@@ -405,12 +572,14 @@
 
             click(window: window, x: 370, distanceFromTop: 215)
             try? await DieterTaskSleep.seconds(1)
-            results["07-card-conversation"] = store.selectedCardID == nil ? "failed: no card selected" : "passed"
+            results["07-card-conversation"] =
+                store.selectedCardID == nil ? "failed: no card selected" : "passed"
             await captureAppearances(window, named: "07-card-conversation.png", in: output)
 
             store.openSettings()
             try? await DieterTaskSleep.milliseconds(700)
-            results["09-settings-general"] = store.section == .settings ? "passed" : "failed: settings did not open"
+            results["09-settings-general"] =
+                store.section == .settings ? "passed" : "failed: settings did not open"
             await captureAppearances(window, named: "09-settings-general.png", in: output)
 
             click(window: window, x: 920, distanceFromTop: 196)
@@ -428,7 +597,8 @@
 
             click(window: window, x: 1_230, distanceFromTop: 376)
             try? await DieterTaskSleep.milliseconds(700)
-            let storedPalette = DieterPalette.resolve(appearanceDefaults.string(forKey: DieterPalette.storageKey))
+            let storedPalette = DieterPalette.resolve(
+                appearanceDefaults.string(forKey: DieterPalette.storageKey))
             results["09c-settings-coral-design"] =
                 storedPalette == .coralSignal
                     && store.themeSelection.palette == .coralSignal
@@ -517,7 +687,9 @@
 
             store.section = .board
             store.closeConversation()
-            let todoLane = board.lanes.first(where: { $0.id.caseInsensitiveCompare("todo") == .orderedSame })
+            let todoLane = board.lanes.first(where: {
+                $0.id.caseInsensitiveCompare("todo") == .orderedSame
+            })
             if let todoLane {
                 let title = "Native UI todo creation \(UUID().uuidString.lowercased())"
                 let harness = store.harnessCatalog.harnesses.first
@@ -527,7 +699,8 @@
                     chat: false,
                     provider: harness?.id ?? "",
                     model: harness?.defaultModel ?? "",
-                    effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort ?? "",
+                    effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort
+                        ?? "",
                     deferred: true,
                     lane: todoLane.id,
                     workspace: ConversationWorkspaceDraft(
@@ -584,7 +757,8 @@
                 chat: true,
                 provider: chatHarness?.id ?? "",
                 model: chatHarness?.defaultModel ?? "",
-                effort: chatHarness?.models.first(where: { $0.id == chatHarness?.defaultModel })?.defaultEffort ?? "",
+                effort: chatHarness?.models.first(where: { $0.id == chatHarness?.defaultModel })?
+                    .defaultEffort ?? "",
                 deferred: false,
                 projectID: project.id
             )
@@ -637,7 +811,8 @@
                         await captureAppearances(window, named: "13e-standalone-chat-pinned.png", in: output)
                         results["13e-pinned-chat-ui"] = "passed"
                     } else {
-                        results["13e-pinned-chat-ui"] = "failed: pinned chat was unavailable for rendered verification"
+                        results["13e-pinned-chat-ui"] =
+                            "failed: pinned chat was unavailable for rendered verification"
                     }
 
                     if let pinnedChat = store.chats.first(where: { $0.id == chatID }) {
@@ -693,7 +868,8 @@
                     $0.destinations.contains { $0.project.name == project.name }
                 }.count >= 2
             results["13g-new-chat-projects-grouped-by-machine"] =
-                duplicateNamesAreGrouped && duplicateDestination?.title == "\(project.name) · Smoke remote Mac"
+                duplicateNamesAreGrouped
+                    && duplicateDestination?.title == "\(project.name) · Smoke remote Mac"
                 ? "passed"
                 : "failed: groups=\(destinationGroups.map(\.title)), selection=\(duplicateDestination?.title ?? "none")"
             await captureAppearances(window, named: "13g-new-chat-project-machine.png", in: output)
@@ -709,15 +885,20 @@
             if let sheet = NSApp.windows.first(where: { $0.isSheet && $0.isVisible }) {
                 await captureAppearances(sheet, named: "14-new-project.png", in: output)
                 results["14-new-project"] = "passed"
-                click(window: sheet, x: 605, distanceFromTop: 260)
-                try? await DieterTaskSleep.seconds(1.5)
+                let browseClicked = NativeUIAccessibility.click("new-project.browse", in: sheet)
+                _ = await NativeUIAccessibility.wait {
+                    NSApp.windows.contains {
+                        $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
+                    }
+                }
                 if let browser = NSApp.windows.first(where: {
                     $0.isSheet && $0.isVisible && $0.windowNumber != sheet.windowNumber
                 }) {
                     await captureAppearances(browser, named: "15-remote-directory-browser.png", in: output)
                     results["15-remote-directory-browser"] = "passed"
                 } else {
-                    results["15-remote-directory-browser"] = "failed: browser sheet not visible"
+                    results["15-remote-directory-browser"] =
+                        "failed: browser sheet not visible (browse click dispatched=\(browseClicked))"
                 }
             } else {
                 results["14-new-project"] = "failed: sheet not visible"
@@ -753,7 +934,8 @@
             linkedWorktreeDraft.boardName = "Main"
             linkedWorktreeDraft.workflow = "review"
             do {
-                let created = try await store.createProject(linkedWorktreeDraft, machineID: projectMachineID)
+                let created = try await store.createProject(
+                    linkedWorktreeDraft, machineID: projectMachineID)
                 let listing = try await store.listProjectDirectories(
                     path: created.project.path, machineID: projectMachineID)
                 results["15c-open-linked-worktree"] =
@@ -809,7 +991,8 @@
                 } else {
                     store.disconnect()
                 }
-                let canceledOfflineMessage = "Canceled offline outbox smoke \(UUID().uuidString.lowercased())"
+                let canceledOfflineMessage =
+                    "Canceled offline outbox smoke \(UUID().uuidString.lowercased())"
                 if let liveCard, let machine = store.machine(forProjectID: liveCard.projectID) {
                     store.composerText = canceledOfflineMessage
                     await store.sendComposer()
@@ -850,19 +1033,24 @@
                     lastConnectedAt: store.lastSyncedAt
                 )
                 let stayedUsable =
-                    store.section == .board && store.selectedBoard?.id == cachedBoard.id && store.errorMessage == nil
-                    && store.hasLoadedWorkspace && !store.phase.isConnected && offlineLabel.hasPrefix("Last connected ")
+                    store.section == .board && store.selectedBoard?.id == cachedBoard.id
+                    && store.errorMessage == nil
+                    && store.hasLoadedWorkspace && !store.phase.isConnected
+                    && offlineLabel.hasPrefix("Last connected ")
                 results["17-offline-cached-board-navigation"] =
                     stayedUsable
                     ? "passed"
                     : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.phase.label), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
-                await captureAppearances(window, named: "17-offline-cached-board-navigation.png", in: output)
+                await captureAppearances(
+                    window, named: "17-offline-cached-board-navigation.png", in: output)
 
                 if let trigger = offlineTrigger(), let liveCard {
                     try? FileManager.default.removeItem(at: trigger)
                     let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
                     let delivered = await waitUntil(timeout: 15) {
-                        guard let machine = store.machine(forProjectID: liveCard.projectID) else { return false }
+                        guard let machine = store.machine(forProjectID: liveCard.projectID) else {
+                            return false
+                        }
                         return store.outboxSummary(for: machine) == nil
                     }
                     if reconnected && delivered {
@@ -870,7 +1058,9 @@
                     }
                     let visible = await waitUntil(timeout: 10) {
                         store.conversationMessages.contains { message in
-                            message.parts.contains { $0.type == "text" && $0.text.hasPrefix("Offline delivery smoke ") }
+                            message.parts.contains {
+                                $0.type == "text" && $0.text.hasPrefix("Offline delivery smoke ")
+                            }
                         }
                     }
                     let canceledStayedAbsent = !store.conversationMessages.contains { message in
@@ -880,9 +1070,11 @@
                         reconnected && delivered && visible && canceledStayedAbsent
                         ? "passed"
                         : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible), canceledAbsent=\(canceledStayedAbsent)"
-                    await captureAppearances(window, named: "17c-reconnected-message-delivered.png", in: output)
+                    await captureAppearances(
+                        window, named: "17c-reconnected-message-delivered.png", in: output)
                 } else {
-                    results["17c-reconnected-message-delivered"] = "failed: reconnect trigger or live card missing"
+                    results["17c-reconnected-message-delivered"] =
+                        "failed: reconnect trigger or live card missing"
                 }
             } catch {
                 results["17-offline-cached-board-navigation"] =
@@ -900,7 +1092,8 @@
                 let visible = await waitUntil(timeout: 5) {
                     NSApp.windows.filter { $0.isVisible && !$0.isSheet && $0.frame.width >= 600 }.count == 1
                 }
-                if let reopenedWindow = NSApp.windows.first(where: { $0.isVisible && $0.frame.width >= 600 }) {
+                if let reopenedWindow = NSApp.windows.first(where: { $0.isVisible && $0.frame.width >= 600 }
+                ) {
                     capture(reopenedWindow, to: output.appending(path: "workspace-window-reopened.png"))
                 }
                 return visible && store.rpc === client && store.selectedProjectID == selection
@@ -927,7 +1120,10 @@
             store: DieterStore, projectID: String, boardID: String, window: NSWindow,
             output: URL, results: inout [String: String]
         ) async {
-            guard let rpc = store.rpc else { results["files-editor-lifecycle"] = "failed: no RPC"; return }
+            guard let rpc = store.rpc else {
+                results["files-editor-lifecycle"] = "failed: no RPC"
+                return
+            }
             let documents = [
                 ("responsiveness-a.md", "# File A\nVisible editor content.\n"),
                 ("responsiveness-b.md", "# File B\nAnother document.\n"),
@@ -935,12 +1131,19 @@
             do {
                 for (path, content) in documents {
                     var create = Dieter_V1_CreateFileRequest()
-                    create.projectID = projectID; create.path = path; create.kind = "file"
+                    create.projectID = projectID
+                    create.path = path
+                    create.kind = "file"
                     _ = try await rpc.createFile(create)
-                    var read = Dieter_V1_ReadFileRequest(); read.projectID = projectID; read.path = path
+                    var read = Dieter_V1_ReadFileRequest()
+                    read.projectID = projectID
+                    read.path = path
                     let blank = try await rpc.readFile(read)
                     var save = Dieter_V1_SaveFileRequest()
-                    save.projectID = projectID; save.path = path; save.content = content; save.revision = blank.revision
+                    save.projectID = projectID
+                    save.path = path
+                    save.content = content
+                    save.revision = blank.revision
                     _ = try await rpc.saveFile(save)
                 }
                 await store.loadFiles()
@@ -955,7 +1158,8 @@
                     }
                     let feedbackTime = start.duration(to: .now)
                     feedbackLatencies.append(
-                        Double(feedbackTime.components.attoseconds) / 1e15 + Double(feedbackTime.components.seconds)
+                        Double(feedbackTime.components.attoseconds) / 1e15 + Double(
+                            feedbackTime.components.seconds)
                             * 1_000)
                     let loaded = await waitUntil(timeout: 5, intervalMilliseconds: 5) {
                         store.selectedFilePath == path && store.fileDocument?.content == content
@@ -965,18 +1169,25 @@
                         Double(start.duration(to: .now).components.attoseconds) / 1e15
                             + Double(start.duration(to: .now).components.seconds) * 1_000)
                     guard clicked && acknowledged && loaded else {
-                        results["files-editor-lifecycle"] = "failed: \(path) did not display its nonempty document"
+                        results["files-editor-lifecycle"] =
+                            "failed: \(path) did not display its nonempty document"
                         return
                     }
                 }
                 results["files-editor-lifecycle"] = "passed"
-                results["files-click-to-selection-ms"] = feedbackLatencies.map { String(format: "%.1f", $0) }.joined(
+                results["files-click-to-selection-ms"] = feedbackLatencies.map {
+                    String(format: "%.1f", $0)
+                }.joined(
                     separator: ", ")
                 results["files-open-to-content-ms"] = latencies.map { String(format: "%.1f", $0) }.joined(
                     separator: ", ")
-                guard let editor = nativeTextViews(in: window.contentView).first(where: { $0.string == documents[0].1 })
+                guard
+                    let editor = nativeTextViews(in: window.contentView).first(where: {
+                        $0.string == documents[0].1
+                    })
                 else {
-                    results["files-edit-save"] = "failed: native editor missing"; return
+                    results["files-edit-save"] = "failed: native editor missing"
+                    return
                 }
                 window.makeFirstResponder(editor)
                 editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
@@ -996,7 +1207,8 @@
                 let revisited = await waitUntil(timeout: 5) {
                     nativeTextViews(in: window.contentView).contains { $0.string == expected }
                 }
-                results["files-warm-revisit"] = revisited ? "passed" : "failed: saved editor was blank on revisit"
+                results["files-warm-revisit"] =
+                    revisited ? "passed" : "failed: saved editor was blank on revisit"
                 await captureAppearances(window, named: "04a-loaded-editor.png", in: output)
                 await store.openFile(path: "missing-responsiveness-file.txt")
                 results["files-failed-read-ends-loading"] =
@@ -1023,7 +1235,8 @@
             store: DieterStore, window: NSWindow, board: Dieter_V1_Board,
             project: Dieter_V1_Project, results: inout [String: String], output: URL
         ) async {
-            var selection: [Double] = [], display: [Double] = []
+            var selection: [Double] = []
+            var display: [Double] = []
             for _ in 0..<3 {
                 store.openScreens()
                 try? await DieterTaskSleep.milliseconds(150)
@@ -1036,26 +1249,32 @@
                 display.append(Date().timeIntervalSince(selected) * 1_000)
                 try? await DieterTaskSleep.milliseconds(150)
             }
-            results["board-open-selection-ms"] = selection.map { String(format: "%.1f", $0) }.joined(separator: ", ")
-            results["board-open-layout-display-ms"] = display.map { String(format: "%.1f", $0) }.joined(separator: ", ")
+            results["board-open-selection-ms"] = selection.map { String(format: "%.1f", $0) }.joined(
+                separator: ", ")
+            results["board-open-layout-display-ms"] = display.map { String(format: "%.1f", $0) }.joined(
+                separator: ", ")
             let tables = nativeTables(in: window.contentView)
             let mounted = tables.reduce(0) { count, table in
                 var rows = 0
                 table.enumerateAvailableRowViews { _, _ in rows += 1 }
                 return count + rows
             }
-            results["board-mounted-card-rows"] = "\(mounted) of \(tables.reduce(0) { $0 + $1.numberOfRows })"
+            results["board-mounted-card-rows"] =
+                "\(mounted) of \(tables.reduce(0) { $0 + $1.numberOfRows })"
             results["board-virtualized"] =
                 tables.reduce(0) { $0 + $1.numberOfRows } == 100 && mounted < 40
                 ? "passed" : "failed: offscreen cards were mounted or missing"
             guard let table = tables.first(where: { $0.numberOfRows == 85 }) else {
-                results["board-scroll-to-last-card"] = "failed: Todo lane missing"; return
+                results["board-scroll-to-last-card"] = "failed: Todo lane missing"
+                return
             }
             table.scrollRowToVisible(84)
             try? await DieterTaskSleep.milliseconds(200)
             let last = BoardCardOrdering.sorted(store.displayedCards.filter { $0.lane == "todo" }).last
-            let lastVisible = last.map { NativeUIAccessibility.find("card.\($0.id)", in: window) != nil } ?? false
-            results["board-scroll-to-last-card"] = lastVisible ? "passed" : "failed: last card unavailable"
+            let lastVisible =
+                last.map { NativeUIAccessibility.find("card.\($0.id)", in: window) != nil } ?? false
+            results["board-scroll-to-last-card"] =
+                lastVisible ? "passed" : "failed: last card unavailable"
             capture(window, to: output.appending(path: "02-board-scrolled-to-last.png"))
             if let last {
                 let clicked = NativeUIAccessibility.click("card.\(last.id)", in: window)
@@ -1071,10 +1290,12 @@
 
         private static func runNavigationResponsivenessChecks(
             store: DieterStore, window: NSWindow,
-            board: Dieter_V1_Board, project: Dieter_V1_Project, results: inout [String: String], output: URL
+            board: Dieter_V1_Board, project: Dieter_V1_Project, results: inout [String: String],
+            output: URL
         ) async {
             if NativeUIAccessibility.find("sidebar.board.\(board.id)", in: window) == nil {
-                let expanded = NativeUIAccessibility.click("sidebar.project.\(project.id).toggle", in: window)
+                let expanded = NativeUIAccessibility.click(
+                    "sidebar.project.\(project.id).toggle", in: window)
                 guard expanded,
                     await NativeUIAccessibility.wait(until: {
                         NativeUIAccessibility.find("sidebar.board.\(board.id)", in: window) != nil
@@ -1118,7 +1339,8 @@
                         )
                     }
                     if repetition == 0 {
-                        capture(window, to: output.appending(path: "navigation-\(section.rawValue.lowercased()).png"))
+                        capture(
+                            window, to: output.appending(path: "navigation-\(section.rawValue.lowercased()).png"))
                     }
                 }
                 results["navigation-\(section.rawValue.lowercased())"] = samples.joined(separator: "; ")
@@ -1139,7 +1361,9 @@
 
         private static func outputDirectory() -> URL {
             let arguments = ProcessInfo.processInfo.arguments
-            if let index = arguments.firstIndex(of: "--ui-smoke-output"), arguments.indices.contains(index + 1) {
+            if let index = arguments.firstIndex(of: "--ui-smoke-output"),
+                arguments.indices.contains(index + 1)
+            {
                 return URL(filePath: arguments[index + 1], directoryHint: .isDirectory)
             }
             return URL(filePath: NSTemporaryDirectory()).appending(
@@ -1161,8 +1385,11 @@
         private static func doubleClickTitleBar(of window: NSWindow) {
             let point = NSPoint(
                 x: window.contentLayoutRect.midX,
-                y: window.contentLayoutRect.maxY + ((window.frame.height - window.contentLayoutRect.maxY) / 2)
+                y: window.contentLayoutRect.maxY
+                    + ((window.frame.height - window.contentLayoutRect.maxY) / 2)
             )
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
             let timestamp = ProcessInfo.processInfo.systemUptime
             for clickCount in [1, 2] {
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
@@ -1177,18 +1404,23 @@
                         clickCount: clickCount,
                         pressure: type == .leftMouseDown ? 1 : 0
                     )
-                    if let event { NSApp.sendEvent(event) }
+                    // Queue the full gesture so AppKit's local event monitors and
+                    // native tracking loop receive the same events as a user click.
+                    if let event { NSApp.postEvent(event, atStart: false) }
                 }
             }
         }
 
-        private static func captureAppearances(_ window: NSWindow, named name: String, in output: URL) async {
+        private static func captureAppearances(_ window: NSWindow, named name: String, in output: URL)
+            async
+        {
             let defaults = DieterAppearance.applicationDefaults()
             let original = defaults.string(forKey: DieterAppearance.storageKey)
             for appearance in [DieterAppearance.dark, DieterAppearance.light] {
                 defaults.set(appearance.rawValue, forKey: DieterAppearance.storageKey)
                 try? await DieterTaskSleep.milliseconds(450)
-                let directory = output.appending(path: "appearance-\(appearance.rawValue)", directoryHint: .isDirectory)
+                let directory = output.appending(
+                    path: "appearance-\(appearance.rawValue)", directoryHint: .isDirectory)
                 try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 capture(window, to: directory.appending(path: name))
             }
@@ -1210,7 +1442,8 @@
         }
 
         private static func writeReport(_ values: [String: String], to directory: URL) {
-            let data = try? JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
+            let data = try? JSONSerialization.data(
+                withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
             try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
             DispatchQueue.main.async { NSApp.terminate(nil) }
         }
@@ -1218,7 +1451,10 @@
 
     @MainActor
     enum NativeUIEventDispatcher {
-        static func click(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
+        static func click(
+            window: NSWindow, x: CGFloat, distanceFromTop: CGFloat,
+            throughApplicationQueue: Bool = false
+        ) {
             guard let content = window.contentView else { return }
             let contentLocation = contentLocation(
                 x: x,
@@ -1243,7 +1479,13 @@
                     clickCount: type == .mouseMoved ? 0 : 1,
                     pressure: type == .leftMouseDown ? 1 : 0
                 )
-                if let event { window.sendEvent(event) }
+                if let event {
+                    if throughApplicationQueue {
+                        NSApp.postEvent(event, atStart: false)
+                    } else {
+                        window.sendEvent(event)
+                    }
+                }
             }
         }
 

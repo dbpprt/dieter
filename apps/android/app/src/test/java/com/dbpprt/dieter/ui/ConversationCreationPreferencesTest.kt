@@ -70,6 +70,16 @@ class ConversationCreationPreferencesTest {
     }
 
     @Test
+    fun quickTaskOptimisticTitleUsesFirstStoryLineAndBoundsIt() {
+        assertEquals("Add keyboard navigation", optimisticQuickTaskTitle("Add keyboard navigation\nKeep focus visible"))
+        val title = optimisticQuickTaskTitle(
+            "Make every Kanban lane fully accessible to keyboard users while preserving card ordering and focus",
+        )
+        assert(title.length <= 80)
+        assert(!title.endsWith(" "))
+    }
+
+    @Test
     fun catalogMustBelongToTheSelectedProjectsDaemon() {
         val hosts = mapOf(
             "project-a" to ProjectHost("gateway#mac", "mac", "Studio Mac", true),

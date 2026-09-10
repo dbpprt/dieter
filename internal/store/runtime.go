@@ -89,6 +89,9 @@ func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string)
 		return RuntimeLease{}, err
 	}
 	defer release()
+	if card, resolveErr := s.ResolveCard(cardID); resolveErr == nil && card.MergedIntoCardID != "" {
+		return RuntimeLease{}, errors.New("card has been merged into another conversation")
+	}
 	dir := filepath.Join(s.runtimeDir(), "leases")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return RuntimeLease{}, err

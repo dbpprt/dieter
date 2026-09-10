@@ -3,8 +3,8 @@ import DieterAPI
 import DieterCore
 import Foundation
 import GRPCCore
-import Observation
 import OSLog
+import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
@@ -32,7 +32,9 @@ extension DieterStore {
         section = .board
         selectCachedBoard(boardID, projectID: projectID)
         resetFileSurface()
-        query = ""; runtimeFilter = ""; labelFilter = ""
+        query = ""
+        runtimeFilter = ""
+        labelFilter = ""
         guard await ensureProjectConnection(projectID, reportOffline: false) else { return }
         guard generation == boardSelectionGeneration, section == .board else { return }
         selectCachedBoard(boardID, projectID: projectID)
@@ -64,14 +66,17 @@ extension DieterStore {
         selectedProjectID = projectID
         fileScopeCardID = nil
         terminalScopeCardID = nil
-        if selectedBoardID.isEmpty || boards(for: projectID).contains(where: { $0.id == selectedBoardID }) == false {
+        if selectedBoardID.isEmpty
+            || boards(for: projectID).contains(where: { $0.id == selectedBoardID }) == false
+        {
             selectedBoardID = boards(for: projectID).first?.id ?? ""
         }
         resetFileSurface()
         updateSelectedState()
         // Schedules owns connection preparation and its paginated reads.
         if destination == .schedules { return }
-        guard await ensureProjectConnection(projectID, reportOffline: false), generation == boardSelectionGeneration,
+        guard await ensureProjectConnection(projectID, reportOffline: false),
+            generation == boardSelectionGeneration,
             selectedProjectID == projectID, section == destination
         else {
             if generation == boardSelectionGeneration, destination == .files {
@@ -91,6 +96,12 @@ extension DieterStore {
         stopTerminalWatch()
         closeConversation()
         section = .chats
+        await refreshChats()
+        if let lastUsedChatID,
+            chats.contains(where: { $0.id == lastUsedChatID && !$0.archived })
+        {
+            await openConversation(cardID: lastUsedChatID, chat: true)
+        }
     }
 
     func openTerminals() async {
@@ -107,7 +118,9 @@ extension DieterStore {
         closeConversation()
         section = .files
         await loadFiles()
-        if let path, !path.isEmpty, selectedProjectID == card.projectID, fileScopeCardID == card.id, section == .files {
+        if let path, !path.isEmpty, selectedProjectID == card.projectID, fileScopeCardID == card.id,
+            section == .files
+        {
             await openFile(path: path)
         }
     }
@@ -193,7 +206,9 @@ extension DieterStore {
         guard selectedMachineID == machineID else { return }
         machineInformationGeneration &+= 1
         let generation = machineInformationGeneration
-        guard let machine = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil)
+        guard
+            let machine = machines.first(where: { $0.id == machineID })
+                ?? (endpoint.id == machineID ? endpoint : nil)
         else {
             machineInformationError = "This machine is no longer enrolled."
             return
@@ -224,7 +239,9 @@ extension DieterStore {
                 borrowedPlane?.release()
             }
             let information = try await client.machineInformation()
-            guard selectedMachineID == machineID, generation == machineInformationGeneration else { return }
+            guard selectedMachineID == machineID, generation == machineInformationGeneration else {
+                return
+            }
             machineInformation[machineID] = information
             var history = machineCPUHistory[machineID, default: []]
             history.append(information.cpuUsagePercent)
@@ -243,7 +260,9 @@ extension DieterStore {
             machineInformationError = nil
         } catch is CancellationError {
         } catch {
-            guard selectedMachineID == machineID, generation == machineInformationGeneration else { return }
+            guard selectedMachineID == machineID, generation == machineInformationGeneration else {
+                return
+            }
             machineInformationError = DieterRPCFailure.message(for: error)
         }
     }
@@ -253,7 +272,8 @@ extension DieterStore {
         confirmation: String
     ) async {
         guard let machineID = selectedMachineID,
-            let machine = machines.first(where: { $0.id == machineID }) ?? (endpoint.id == machineID ? endpoint : nil)
+            let machine = machines.first(where: { $0.id == machineID })
+                ?? (endpoint.id == machineID ? endpoint : nil)
         else { return }
         guard machine.online else {
             show(
@@ -319,21 +339,36 @@ extension DieterStore {
         terminalsModel.active = section == .terminals
         terminalsModel.onCreated = { [weak self] in self?.section = .terminals }
     }
-    func loadTerminals() async { bindTerminals(); await terminalsModel.loadTerminals() }
-    func selectTerminal(_ id: String) { bindTerminals(); terminalsModel.selectTerminal(id) }
-    func createTerminal(projectID: String, name: String, shell: String, workingDirectory: String) async {
+    func loadTerminals() async {
+        bindTerminals()
+        await terminalsModel.loadTerminals()
+    }
+    func selectTerminal(_ id: String) {
+        bindTerminals()
+        terminalsModel.selectTerminal(id)
+    }
+    func createTerminal(projectID: String, name: String, shell: String, workingDirectory: String)
+        async
+    {
         guard await ensureProjectConnection(projectID) else { return }
-        bindTerminals();
+        bindTerminals()
         await terminalsModel.createTerminal(
             projectID: projectID, name: name, shell: shell, workingDirectory: workingDirectory)
     }
-    func sendTerminalInput(id: String, data: Data) { terminalsModel.sendTerminalInput(id: id, data: data) }
+    func sendTerminalInput(id: String, data: Data) {
+        terminalsModel.sendTerminalInput(id: id, data: data)
+    }
     func resizeTerminal(id: String, columns: Int, rows: Int) async {
         await terminalsModel.resizeTerminal(id: id, columns: columns, rows: rows)
     }
-    func renameTerminal(id: String, name: String) async { await terminalsModel.renameTerminal(id: id, name: name) }
+    func renameTerminal(id: String, name: String) async {
+        await terminalsModel.renameTerminal(id: id, name: name)
+    }
     func closeTerminal(id: String) async { await terminalsModel.closeTerminal(id: id) }
-    func startTerminalWatch() { bindTerminals(); terminalsModel.startTerminalWatch() }
+    func startTerminalWatch() {
+        bindTerminals()
+        terminalsModel.startTerminalWatch()
+    }
     func stopTerminalWatch() { terminalsModel.stopTerminalWatch() }
     func acceptTerminalFrame(_ frame: Dieter_V1_TerminalFrame, terminalID: String) async {
         await terminalsModel.acceptTerminalFrame(frame, terminalID: terminalID)

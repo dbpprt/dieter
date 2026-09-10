@@ -2,6 +2,9 @@ import DieterAPI
 
 extension DieterStore {
     func makeConversationContext() -> ConversationContext {
+        conversationModel.presentSnapshot = { [weak self] snapshot in
+            DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: self?.syncDiskState.outbox ?? [])
+        }
         let context = ConversationContext(
             model: conversationModel, composer: composer, worktreeChanges: worktreeChanges,
             card: { [weak self] in self?.selectedCard }, catalog: { [weak self] in self?.harnessCatalog ?? .init() },
@@ -16,6 +19,7 @@ extension DieterStore {
         context.onAddPastedAttachments = { [weak self] providers in self?.addPastedAttachments(providers) }
         context.onArchive = { [weak self] card, archived in await self?.archive(card, archived: archived) }
         context.onAttachPasteboard = { [weak self] pasteboard in self?.attachPasteboard(pasteboard) ?? false }
+        context.onStart = { [weak self] card in await self?.start(card) }
         context.onCancel = { [weak self] card in await self?.cancel(card) }
         context.onCloseConversation = { [weak self] in self?.closeConversation() }
         context.onDiscardOutboxItem = { [weak self] id in await self?.discardOutboxItem(id) }
@@ -30,6 +34,9 @@ extension DieterStore {
         context.onPin = { [weak self] card, pinned in await self?.pin(card, pinned: pinned) }
         context.onRetryFailedTurn = { [weak self] failure in await self?.retryFailedTurn(failure) ?? false }
         context.onRetryOutboxItem = { [weak self] id in await self?.retryOutboxItem(id) }
+        context.onRemoveQueuedMessage = { [weak self] message, edit in
+            await self?.removeQueuedMessage(message, edit: edit) ?? false
+        }
         context.onSendComposer = { [weak self] in await self?.sendComposer() }
         context.onShow = { [weak self] error in self?.show(error) }
         context.onToolOutput = { [weak self] messageID, toolCallID, revision in

@@ -366,6 +366,7 @@ func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateP
 	}
 	board, err := api.server.store.CreateBoard(store.CreateBoardInput{
 		Project: project.ID, Name: boardName, Workflow: request.GetWorkflow(),
+		BaseRemote: request.GetBaseRemote(), RemotePublishMode: request.GetRemotePublishMode(),
 	})
 	if err != nil {
 		return nil, grpcFailure(err)
@@ -374,7 +375,12 @@ func (api *grpcAPI) CreateProject(ctx context.Context, request *dieterv1.CreateP
 }
 
 func (api *grpcAPI) UpdateProject(_ context.Context, request *dieterv1.UpdateProjectRequest) (*dieterv1.Project, error) {
-	value, err := api.server.store.UpdateProject(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path)
+	var hostnames *[]string
+	if request.Hostnames != nil {
+		values := request.Hostnames.GetValues()
+		hostnames = &values
+	}
+	value, err := api.server.store.UpdateProjectWithHostnames(request.GetProjectId(), request.Name, request.Summary, request.Prompt, request.Path, hostnames)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -416,7 +422,18 @@ func (api *grpcAPI) CreateBoard(_ context.Context, request *dieterv1.CreateBoard
 	value, err := api.server.store.CreateBoard(store.CreateBoardInput{
 		Project: request.GetProjectId(), Name: request.GetName(), Workflow: request.GetWorkflow(),
 		Description: request.GetDescription(), DoneArchivePolicy: request.GetDoneArchivePolicy(),
+		BaseRemote: request.GetBaseRemote(), RemotePublishMode: request.GetRemotePublishMode(),
 	})
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
+}
+
+func (api *grpcAPI) UpdateBoardGitSettings(_ context.Context, request *dieterv1.UpdateBoardGitSettingsRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.UpdateBoardGitSettings(
+		request.GetBoardId(), request.GetBaseRemote(), request.GetRemotePublishMode(),
+	)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -495,9 +512,10 @@ func conversationInput(request *dieterv1.CreateConversationRequest) (app.CardInp
 		Project: request.GetProjectId(), Board: request.GetBoardId(), Lane: request.GetLane(),
 		Title: request.GetTitle(), Prompt: request.GetPrompt(), Provider: request.GetProvider(),
 		Model: request.GetModel(), Effort: request.GetEffort(), ProviderOptions: cloneProtoStringMap(request.GetProviderOptions()),
-		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), Attachments: attachments,
+		LabelIDs: append([]string(nil), request.GetLabelIds()...), DeferStart: request.GetDeferStart(), AutoGenerateTitle: request.GetAutoGenerateTitle(), Attachments: attachments,
 		WorkspaceMode: workspaceMode, WorkspaceBranch: request.GetWorkspaceBranch(),
-		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(),
+		WorkspaceBaseBranch: request.GetWorkspaceBaseBranch(), WorkspaceBaseRemote: request.GetWorkspaceBaseRemote(),
+		RemotePublishMode: request.GetRemotePublishMode(),
 	}, nil
 }
 
@@ -1010,6 +1028,14 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *dieterv1.SendMessage
 	return &dieterv1.SendMessageResponse{Sent: !queued, Queued: queued, MessageId: messageID}, nil
 }
 
+func (api *grpcAPI) RemoveQueuedMessage(_ context.Context, request *dieterv1.RemoveQueuedMessageRequest) (*dieterv1.QueuedMessage, error) {
+	removed, _, err := api.server.store.RemoveQueuedConversationMessage(request.GetCardId(), request.GetMessageId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoQueuedMessage(removed), nil
+}
+
 func (api *grpcAPI) AddComment(_ context.Context, request *dieterv1.AddCommentRequest) (*dieterv1.Comment, error) {
 	card, err := api.server.store.ResolveCard(request.GetCardId())
 	if err != nil {
@@ -1127,8 +1153,40 @@ func (api *grpcAPI) RenameCard(_ context.Context, request *dieterv1.RenameCardRe
 	return protoCard(value), nil
 }
 
+func (api *grpcAPI) MergeCard(_ context.Context, request *dieterv1.MergeCardRequest) (*dieterv1.Card, error) {
+	value, err := api.server.app.MergeCard(request.GetCardId(), request.GetTargetCardId())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoCard(value), nil
+}
+
 func (api *grpcAPI) UpdateCard(_ context.Context, request *dieterv1.UpdateCardRequest) (*dieterv1.Card, error) {
-	value, err := api.server.store.UpdateCard(request.GetCardId(), request.GetTitle(), request.GetInitialPrompt())
+	var settings []store.DraftAgentSettings
+	if config := request.GetAgentSettings(); config != nil {
+		provider := config.GetProvider()
+		if provider == "" {
+			provider = "codex"
+		}
+		adapter, selected, err := harness.ResolveSelection(provider, config.GetModel(), os.Getenv("DIETER_ENABLE_MOCK_HARNESS") == "1")
+		if err != nil {
+			return nil, grpcFailure(err)
+		}
+		effort := config.GetEffort()
+		if effort == "" {
+			effort = selected.DefaultEffort
+		}
+		effort, err = harness.ResolveEffort(adapter, selected, effort)
+		if err != nil {
+			return nil, grpcFailure(err)
+		}
+		options, err := harness.ResolveOptionsForModel(adapter, selected.ID, config.GetProviderOptions())
+		if err != nil {
+			return nil, grpcFailure(err)
+		}
+		settings = append(settings, store.DraftAgentSettings{Provider: adapter.ID, Model: selected.ID, Effort: effort, ProviderOptions: options})
+	}
+	value, err := api.server.store.UpdateCard(request.GetCardId(), request.GetTitle(), request.GetInitialPrompt(), settings...)
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
@@ -1557,4 +1615,12 @@ func grpcFailure(err error) error {
 		return status.Error(code, fileErr.message)
 	}
 	return status.Error(codes.InvalidArgument, err.Error())
+}
+
+func (api *grpcAPI) UpdateBoardHostnames(_ context.Context, request *dieterv1.UpdateBoardHostnamesRequest) (*dieterv1.Board, error) {
+	value, err := api.server.store.UpdateBoardHostnames(request.GetBoardId(), request.GetHostnames(), request.GetAppend())
+	if err != nil {
+		return nil, grpcFailure(err)
+	}
+	return protoBoard(value), nil
 }

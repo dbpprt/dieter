@@ -1,20 +1,67 @@
 import DieterAPI
 import Testing
+
 @testable import DieterMac
 
 @Test func conversationWorkspaceDraftPopulatesCreateRequest() {
     var request = Dieter_V1_CreateConversationRequest()
-    ConversationWorkspaceDraft(mode: .worktree, branch: "  feature/mac-git  ", baseBranch: "  release  ").apply(
-        to: &request)
+    ConversationWorkspaceDraft(
+        mode: .worktree,
+        branch: "  feature/mac-git  ",
+        baseBranch: "  release  ",
+        baseRemote: "  private  ",
+        remotePublishMode: RemotePublishMode.pullRequest.rawValue
+    ).apply(to: &request)
 
     #expect(request.workspaceMode == "worktree")
     #expect(request.workspaceBranch == "feature/mac-git")
     #expect(request.workspaceBaseBranch == "release")
+    #expect(request.workspaceBaseRemote == "private")
+    #expect(request.remotePublishMode == "pull_request")
+}
+
+@Test func remotePublishPolicyRoutesReviewActions() {
+    let pullRequest = WorkspaceActionAvailability(
+        agentActive: false,
+        operationActive: false,
+        workspaceState: "ready",
+        workspaceMode: "worktree",
+        changedFiles: 0,
+        hasCommits: true,
+        hasRemote: true,
+        scmAuthenticated: true,
+        hasPullRequest: false,
+        workspaceBranch: "feature/review",
+        baseBranch: "main",
+        remotePublishMode: RemotePublishMode.pullRequest.rawValue
+    )
+    #expect(!pullRequest.allowsMergeFlow)
+    #expect(!pullRequest.allows(.mergeLocal))
+    #expect(pullRequest.allows(.createPullRequest))
+
+    let pushBase = WorkspaceActionAvailability(
+        agentActive: false,
+        operationActive: false,
+        workspaceState: "ready",
+        workspaceMode: "worktree",
+        changedFiles: 0,
+        hasCommits: true,
+        hasRemote: true,
+        scmAuthenticated: true,
+        hasPullRequest: false,
+        workspaceBranch: "feature/direct",
+        baseBranch: "main",
+        remotePublishMode: RemotePublishMode.pushBase.rawValue
+    )
+    #expect(pushBase.allowsMergeFlow)
+    #expect(pushBase.allows(.mergeLocal))
+    #expect(!pushBase.allows(.createPullRequest))
 }
 
 @Test func projectDirectoryDraftDoesNotSendWorktreeBranchOverrides() {
     var request = Dieter_V1_CreateConversationRequest()
-    ConversationWorkspaceDraft(mode: .project, branch: "stale", baseBranch: "main").apply(to: &request)
+    ConversationWorkspaceDraft(mode: .project, branch: "stale", baseBranch: "main").apply(
+        to: &request)
 
     #expect(request.workspaceMode == "project")
     #expect(request.workspaceBranch.isEmpty)

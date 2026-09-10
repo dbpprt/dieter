@@ -116,13 +116,31 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 		t.Fatalf("created project JSON=%q err=%v", createdJSON, err)
 	}
 
+	boardJSON := runDaemonCLI(t, client, output, "board", "git", "--base-remote", "private", "--remote-publish", "pull_request", created.Board.ID)
+	var configuredBoard struct {
+		BaseRemote        string `json:"baseRemote"`
+		RemotePublishMode string `json:"remotePublishMode"`
+	}
+	if err := json.Unmarshal([]byte(boardJSON), &configuredBoard); err != nil || configuredBoard.BaseRemote != "private" || configuredBoard.RemotePublishMode != "pull_request" {
+		t.Fatalf("configured board JSON=%q parsed=%#v err=%v", boardJSON, configuredBoard, err)
+	}
 	runDaemonCLI(t, client, output, "board", "label", "add", "--board", created.Board.ID, "--name", "CLI", "--instructions", "Keep the CLI current")
 	cardJSON := runDaemonCLI(t, client, output, "card", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--lane", "todo", "--title", "Daemon parity", "--prompt", "Exercise the API", "--workspace", "project", "--provider", "mock", "--model", "mock")
 	var card struct {
-		ID string `json:"id"`
+		ID                  string `json:"id"`
+		WorkspaceBaseRemote string `json:"workspaceBaseRemote"`
+		RemotePublishMode   string `json:"remotePublishMode"`
 	}
-	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil || card.ID == "" {
+	if err := json.Unmarshal([]byte(cardJSON), &card); err != nil || card.ID == "" || card.WorkspaceBaseRemote != "private" || card.RemotePublishMode != "pull_request" {
 		t.Fatalf("created card JSON=%q err=%v", cardJSON, err)
+	}
+	quickJSON := runDaemonCLI(t, client, output, "card", "create", "--project", created.Project.ID, "--board", created.Board.ID, "--lane", "todo", "--auto-title", "--prompt", "Add keyboard navigation", "--workspace", "project", "--provider", "mock", "--model", "mock")
+	var quick struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal([]byte(quickJSON), &quick); err != nil || quick.ID == "" || quick.Title != "Add Keyboard Board Navigation" {
+		t.Fatalf("quick task JSON=%q parsed=%#v err=%v", quickJSON, quick, err)
 	}
 	runDaemonCLI(t, client, output, "card", "comment", "--message", "CLI annotation", card.ID)
 	runDaemonCLI(t, client, output, "workspace", "show", card.ID)
@@ -277,6 +295,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	runDaemonCLI(t, client, output, "prompt", "preview", "--card", card.ID)
 	runDaemonCLI(t, client, output, "screen", "capabilities")
 
+	assertProjectHostnameCLI(t, client, output, created.Project.ID)
 	relocated := initTestRepository(t, "relocated")
 	updated := runDaemonCLI(t, client, output, "project", "update", "--path", relocated, created.Project.ID)
 	if !strings.Contains(updated, filepath.Base(relocated)) {
@@ -601,6 +620,9 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := first.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "direct-exec"}); err != nil || firstOutput.String() != "direct-exec" {
 		t.Fatalf("direct remote exec output=%q err=%v", firstOutput.String(), err)
 	}
+	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
 	first.Close()
 
 	directRoute.server.Stop()
@@ -652,6 +674,9 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := second.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "relay-exec"}); err != nil || secondOutput.String() != "relay-exec" {
 		t.Fatalf("relay remote exec output=%q err=%v", secondOutput.String(), err)
 	}
+	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)
 }
 
 func assertMachineOperationAccepted(t *testing.T, raw []byte) {
@@ -659,5 +684,76 @@ func assertMachineOperationAccepted(t *testing.T, raw []byte) {
 	var response dieterv1.MachineOperationResponse
 	if err := protojson.Unmarshal(raw, &response); err != nil || !response.GetAccepted() {
 		t.Fatalf("machine operation response=%q accepted=%v err=%v", raw, response.GetAccepted(), err)
+	}
+}
+
+func TestDaemonCLICardTokenUsage(t *testing.T) {
+	client, output, data := daemonCLIForTest(t)
+	project, err := data.CreateProject(store.CreateProjectInput{Path: initTestRepository(t, "usage"), Name: "Usage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := data.CreateBoard(store.CreateBoardInput{Project: project.ID, Name: "Main", Workflow: "review"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := data.CreateCard(store.CreateCardInput{Project: project.ID, Board: board.ID, Title: "Usage", Prompt: "Count"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{`{"type":"start","messageId":"answer"}`, `{"type":"finish","messageMetadata":{"totalUsage":{"inputTokens":100,"outputTokens":25,"totalTokens":125}}}`} {
+		if _, _, err := data.AppendUIChunk(card.ID, "turn", json.RawMessage(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw := runDaemonCLI(t, client, output, "card", "show", card.ID)
+	var detail dieterv1.CardDetail
+	if err := protojson.Unmarshal([]byte(raw), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.GetCard().GetTokenUsage().GetTotalTokens() != 125 {
+		t.Fatalf("show: %s", raw)
+	}
+	raw = runDaemonCLI(t, client, output, "card", "context", card.ID)
+	var context struct {
+		Usage struct {
+			Total int64 `json:"totalTokens"`
+		} `json:"tokenUsage"`
+	}
+	if err := json.Unmarshal([]byte(raw), &context); err != nil || context.Usage.Total != 125 {
+		t.Fatalf("context: %s %v", raw, err)
+	}
+}
+
+func assertProjectHostnameCLI(t *testing.T, client *CLI, output *bytes.Buffer, projectID string) {
+	t.Helper()
+	boardID := strings.Fields(runDaemonCLI(t, client, output, "board", "list", "--project", projectID, "--format", "ids"))[0]
+	runDaemonCLI(t, client, output, "board", "hostnames", "--hostname", "one.example", boardID)
+	boardJSON := runDaemonCLI(t, client, output, "board", "hostnames", "--append", "--hostname", "two.example", boardID)
+	var board dieterv1.Board
+	if err := protojson.Unmarshal([]byte(boardJSON), &board); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(board.Hostnames, ",") != "one.example,two.example" {
+		t.Fatalf("board hostnames=%v", board.Hostnames)
+	}
+	runDaemonCLI(t, client, output, "board", "hostnames", "--clear", boardID)
+
+	result := runDaemonCLI(t, client, output, "project", "update", "--hostname", "APP.Example.com.", "--hostname", "localhost", projectID)
+	var project dieterv1.Project
+	if err := protojson.Unmarshal([]byte(result), &project); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(project.Hostnames, ",") != "app.example.com,localhost" {
+		t.Fatalf("hostnames=%v", project.Hostnames)
+	}
+	result = runDaemonCLI(t, client, output, "project", "show", projectID)
+	if !strings.Contains(result, "app.example.com") {
+		t.Fatalf("mapping not discoverable: %s", result)
+	}
+	result = runDaemonCLI(t, client, output, "project", "update", "--clear-hostnames", projectID)
+	project.Reset()
+	if err := protojson.Unmarshal([]byte(result), &project); err != nil || len(project.Hostnames) != 0 {
+		t.Fatalf("clear=%s err=%v", result, err)
 	}
 }

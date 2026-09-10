@@ -7,11 +7,14 @@ struct ConversationComposer: View {
     @Binding var fileImporterPresented: Bool
     @FocusState private var composerFocused: Bool
     @State private var attachmentDropTargeted = false
+    @State private var historyNavigation = ComposerHistoryNavigation()
 
     private var harness: Dieter_V1_Harness? {
         context.harnessCatalog.harnesses.first { $0.id == context.composerProvider }
     }
-    private var model: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == context.composerModel } }
+    private var model: Dieter_V1_HarnessModel? {
+        harness?.models.first { $0.id == context.composerModel }
+    }
     private var working: Bool {
         ConversationActivityPresentation.isActive(
             conversationStatus: context.conversation?.conversation.status ?? "",
@@ -22,24 +25,34 @@ struct ConversationComposer: View {
         !context.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !context.composerAttachments.isEmpty
     }
+    private var conversationID: String { context.selectedCardID ?? context.selectedChatID ?? "" }
+    private var historyEntries: [String] {
+        ComposerHistoryNavigation.entries(
+            messages: context.conversationMessages,
+            queuedMessages: context.conversation?.conversation.queue ?? []
+        )
+    }
     var body: some View {
         @Bindable var context = context
         VStack(spacing: 8) {
             if let queue = context.conversation?.conversation.queue, !queue.isEmpty {
-                HStack(spacing: 7) {
-                    Image(systemName: "clock.fill")
-                        .font(.caption)
-                        .foregroundStyle(DieterTheme.amber)
-                    Text("\(queue.count) message\(queue.count == 1 ? "" : "s") queued")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(DieterTheme.text)
-                    Text("Sends after the current turn")
-                        .font(.caption2)
-                        .foregroundStyle(DieterTheme.subtle)
-                    Spacer()
-                }
-                .padding(.horizontal, 4)
-                .accessibilityElement(children: .combine)
+                QueuedMessageTray(
+                    messages: queue,
+                    agentIsWorking: working,
+                    onEdit: { message in
+                        if await context.removeQueuedMessage(message, edit: true) {
+                            composerFocused = true
+                        }
+                    },
+                    onRemove: { message in
+                        _ = await context.removeQueuedMessage(message, edit: false)
+                    },
+                    onSteer: {
+                        if let card = context.selectedCard ?? context.selectedDetail?.card {
+                            await context.cancel(card)
+                        }
+                    }
+                )
             }
             VStack(alignment: .leading, spacing: 0) {
                 TextField("Message the local agent…", text: $context.composerText, axis: .vertical)
@@ -50,14 +63,33 @@ struct ConversationComposer: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                     .accessibilityIdentifier("conversation.composer")
+                    .smokeTarget("conversation.composer")
                     .onKeyPress(.return, phases: .down) { press in
                         if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
                             return .ignored
                         }
-                        if hasDraft { Task { await context.sendComposer() } }
+                        if hasDraft { submitComposer() }
                         return .handled
                     }
+                    .onKeyPress(.upArrow, phases: .down) { press in
+                        guard press.modifiers.isEmpty else { return .ignored }
+                        return navigateHistory(.older) ? .handled : .ignored
+                    }
+                    .onKeyPress(.downArrow, phases: .down) { press in
+                        guard press.modifiers.isEmpty else { return .ignored }
+                        return navigateHistory(.newer) ? .handled : .ignored
+                    }
+                    .onChange(of: context.composerText) { _, text in
+                        var navigation = historyNavigation
+                        navigation.observeTextChange(text)
+                        historyNavigation = navigation
+                    }
                     .frame(minHeight: 54, alignment: .topLeading)
+                    .background {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { composerFocused = true }
+                    }
 
                 if !context.composerAttachments.isEmpty {
                     AttachmentPreviewStrip(attachments: $context.composerAttachments)
@@ -91,7 +123,7 @@ struct ConversationComposer: View {
                     }
 
                     Button {
-                        Task { await context.sendComposer() }
+                        submitComposer()
                     } label: {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 12, weight: .bold))
@@ -114,10 +146,12 @@ struct ConversationComposer: View {
                 .padding(.bottom, 9)
 
             }
-            .background(
-                attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.surface,
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-            )
+            .background {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.surface)
+                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .onTapGesture { composerFocused = true }
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(
@@ -135,6 +169,37 @@ struct ConversationComposer: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(DieterTheme.sidebar)
+        .onChange(of: conversationID) { _, _ in historyNavigation.reset() }
+    }
+
+    private func navigateHistory(_ direction: ComposerHistoryDirection) -> Bool {
+        guard !historyEntries.isEmpty else { return false }
+        let selection = (NSApp.keyWindow?.firstResponder as? NSTextView)?.selectedRange()
+        guard
+            historyNavigation.isBrowsing
+                || ComposerHistoryNavigation.isAtBoundary(
+                    direction,
+                    text: context.composerText,
+                    selection: selection
+                )
+        else { return false }
+
+        var navigation = historyNavigation
+        guard
+            let text = navigation.navigate(
+                direction,
+                entries: historyEntries,
+                currentText: context.composerText
+            )
+        else { return false }
+        historyNavigation = navigation
+        context.composerText = text
+        return true
+    }
+
+    private func submitComposer() {
+        historyNavigation.reset()
+        Task { await context.sendComposer() }
     }
 
     private func composerSettings(showContext: Bool) -> some View {
@@ -150,7 +215,9 @@ struct ConversationComposer: View {
             Menu {
                 ForEach(context.harnessCatalog.harnesses, id: \.id) { item in
                     Button(item.name) {
-                        guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else { return }
+                        guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else {
+                            return
+                        }
                         context.composerProvider = selection.provider
                         context.composerModel = selection.model
                         context.composerEffort = selection.effort
@@ -168,10 +235,16 @@ struct ConversationComposer: View {
                     Button(item.name) {
                         context.composerModel = item.id
                         context.composerEffort = item.defaultEffort
+                        context.composerProviderOptions = ProviderOptionValues.normalized(
+                            for: harness,
+                            model: context.composerModel,
+                            saved: context.composerProviderOptions
+                        )
                     }
                 }
             } label: {
-                DieterChipLabel(title: model?.name ?? context.composerModel, symbol: "terminal", maximumTitleWidth: 190)
+                DieterChipLabel(
+                    title: model?.name ?? context.composerModel, symbol: "terminal", maximumTitleWidth: 190)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -191,11 +264,13 @@ struct ConversationComposer: View {
             }
 
             ProviderOptionChips(
-                options: harness?.options ?? [],
+                options: ProviderOptionValues.options(for: harness, model: context.composerModel),
                 values: Binding(
                     get: { context.composerProviderOptions },
                     set: { context.composerProviderOptions = $0 }
-                ))
+                ),
+                conversationLocked: (context.selectedCard ?? context.selectedDetail?.card)?.initialPromptSentAt
+                    .isEmpty == false)
 
             Spacer(minLength: 0)
             if showContext,

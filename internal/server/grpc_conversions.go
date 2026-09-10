@@ -40,7 +40,7 @@ func protoProject(value model.Project) *dieterv1.Project {
 		Prompt: value.Prompt, Archived: value.Archived, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, BoardCount: int32(value.BoardCount),
 		CardCount: int32(value.CardCount), ChatCount: int32(value.ChatCount), PromptTemplate: value.PromptTemplate,
-		BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch,
+		BaseRemote: value.BaseRemote, BaseBranch: value.BaseBranch, Hostnames: append([]string(nil), value.Hostnames...),
 	}
 	for _, command := range value.ValidationCommands {
 		result.ValidationCommands = append(result.ValidationCommands, protoValidationCommand(command))
@@ -75,6 +75,7 @@ func protoBoard(value model.Board) *dieterv1.Board {
 		Workflow: value.Workflow, Description: value.Description,
 		DoneArchivePolicy: value.DoneArchivePolicy, CreatedAt: value.CreatedAt,
 		UpdatedAt: value.UpdatedAt, PromptTemplate: value.PromptTemplate,
+		BaseRemote: value.BaseRemote, RemotePublishMode: value.RemotePublishMode, Hostnames: append([]string(nil), value.Hostnames...),
 	}
 	for _, item := range value.Labels {
 		result.Labels = append(result.Labels, &dieterv1.Label{Id: item.ID, Name: item.Name, Color: item.Color, Instructions: item.Instructions})
@@ -91,7 +92,8 @@ func protoCard(value model.Card) *dieterv1.Card {
 		BoardId: value.BoardID, Lane: value.Lane, Position: value.Position,
 		Title: value.Title, InitialPrompt: value.InitialPrompt,
 		InitialPromptSentAt: value.InitialPromptSentAt, PhaseChangedAt: value.PhaseChangedAt,
-		Provider: value.Provider, Model: value.Model, Effort: value.Effort,
+		MergedIntoCardId: value.MergedIntoCardID,
+		Provider:         value.Provider, Model: value.Model, Effort: value.Effort,
 		ProviderOptions: cloneProtoStringMap(value.ProviderOptions),
 		Runtime:         value.Runtime, Summary: value.Summary,
 		RuntimeUpdatedAt: value.RuntimeUpdatedAt, LastActivityAt: value.LastActivityAt,
@@ -99,6 +101,12 @@ func protoCard(value model.Card) *dieterv1.Card {
 		Pinned: value.Pinned, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		LabelIds: append([]string(nil), value.LabelIDs...), CommentCount: int32(value.CommentCount),
 		WorkspaceMode: value.WorkspaceMode, WorkspaceBranch: value.WorkspaceBranch, WorkspaceBaseBranch: value.WorkspaceBaseBranch,
+		WorkspaceBaseRemote: value.WorkspaceBaseRemote, RemotePublishMode: value.RemotePublishMode,
+	}
+	if value.TokenUsage != nil {
+		u := value.TokenUsage
+		result.TokenUsage = &dieterv1.TokenUsage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens,
+			TotalTokens: u.TotalTokens, ReportedMessages: u.ReportedMessages, MissingMessages: u.MissingMessages, Partial: u.Partial}
 	}
 	if value.Workspace != nil {
 		result.Workspace = protoWorkspaceSummary(*value.Workspace)
@@ -144,7 +152,7 @@ func protoWorkspace(value model.Workspace) *dieterv1.Workspace {
 		Behind: int32(value.Behind), SizeBytes: value.SizeBytes, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt,
 		IntegratedHeadSha: value.IntegratedHeadSHA, IntegratedResultSha: value.IntegratedResultSHA,
 		IntegrationStrategy: value.IntegrationStrategy, IntegratedAt: value.IntegratedAt,
-		Dirty: value.Dirty,
+		Dirty: value.Dirty, RemotePublishMode: value.RemotePublishMode,
 	}
 }
 
@@ -272,11 +280,15 @@ func protoConversation(value model.Conversation) *dieterv1.Conversation {
 		result.TaskPlans = append(result.TaskPlans, protoTaskPlan(item))
 	}
 	for _, item := range value.Queue {
-		queued := &dieterv1.QueuedMessage{Id: item.ID, Text: item.Text, CreatedAt: item.CreatedAt}
-		for _, part := range item.Parts {
-			queued.Parts = append(queued.Parts, protoMessagePart(part))
-		}
-		result.Queue = append(result.Queue, queued)
+		result.Queue = append(result.Queue, protoQueuedMessage(item))
+	}
+	return result
+}
+
+func protoQueuedMessage(value model.QueuedMessage) *dieterv1.QueuedMessage {
+	result := &dieterv1.QueuedMessage{Id: value.ID, Text: value.Text, CreatedAt: value.CreatedAt}
+	for _, part := range value.Parts {
+		result.Parts = append(result.Parts, protoMessagePart(part))
 	}
 	return result
 }
@@ -436,7 +448,7 @@ func protoHarnessCatalog(values []harness.Adapter) *dieterv1.HarnessCatalog {
 			item.Capabilities = append(item.Capabilities, &dieterv1.HarnessCapability{Id: capability.ID, Level: capability.Level})
 		}
 		for _, option := range value.Options {
-			wireOption := &dieterv1.ProviderOption{Id: option.ID, Name: option.Name, Description: option.Description, Type: option.Type, DefaultValue: option.Default}
+			wireOption := &dieterv1.ProviderOption{Id: option.ID, Name: option.Name, Description: option.Description, Type: option.Type, DefaultValue: option.Default, Mutable: option.Mutable, Models: append([]string(nil), option.Models...)}
 			for _, choice := range option.Choices {
 				wireOption.Choices = append(wireOption.Choices, &dieterv1.ProviderOptionChoice{Value: choice.Value, Name: choice.Name})
 			}

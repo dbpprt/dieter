@@ -2,8 +2,8 @@ import AppKit
 import DieterAPI
 import Foundation
 import GRPCCore
-import Observation
 import OSLog
+import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
@@ -22,13 +22,16 @@ extension DieterStore {
             guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
             let refreshedChats = reconcilePendingChatPins(response.chats)
             notifyTransitions(refreshedChats, endpointID: endpoint.id)
-            let previousProjectIDs = Set(projectEndpointIDs.compactMap { $0.value == endpoint.id ? $0.key : nil })
+            let previousProjectIDs = Set(
+                projectEndpointIDs.compactMap { $0.value == endpoint.id ? $0.key : nil })
             for project in response.projects {
                 projectDirectory[project.id] = project
                 projectEndpointIDs[project.id] = endpoint.id
             }
             let combined = chats.filter { !previousProjectIDs.contains($0.projectID) } + refreshedChats
-            let nextChats = Array(combined.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values).sorted {
+            let nextChats = Array(
+                combined.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values
+            ).sorted {
                 ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt)
                     > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt)
             }
@@ -57,7 +60,8 @@ extension DieterStore {
             knownChat
             ?? state.cards.first(where: { $0.id == cardID })
             ?? navigationCards.values.lazy.compactMap({ $0.first(where: { $0.id == cardID }) }).first
-        let opensChat = chat || knownChat != nil || card?.scope.caseInsensitiveCompare("chat") == .orderedSame
+        let opensChat =
+            chat || knownChat != nil || card?.scope.caseInsensitiveCompare("chat") == .orderedSame
         let projectID = card?.projectID ?? ""
         let endpointID = projectEndpointIDs[projectID] ?? endpoint.id
         stopTerminalWatch()
@@ -71,6 +75,7 @@ extension DieterStore {
         }
         selectedCardID = opensChat ? nil : cardID
         selectedChatID = opensChat ? cardID : nil
+        if opensChat { lastUsedChatID = cardID }
         if opensChat { newChatProjectID = "" }
         resetConversationHistory()
         conversationTask?.cancel()
@@ -115,14 +120,16 @@ extension DieterStore {
         guard selectionGeneration == conversationSelectionGeneration else { return }
         conversationSyncing = true
         if !projectID.isEmpty, !(await ensureProjectConnection(projectID, reportOffline: false)) {
-            guard selectionGeneration == conversationSelectionGeneration, (selectedCardID ?? selectedChatID) == cardID
+            guard selectionGeneration == conversationSelectionGeneration,
+                (selectedCardID ?? selectedChatID) == cardID
             else { return }
             conversationLoading = false
             conversationSyncing = false
             conversationError = "This machine is unavailable. Cached messages remain readable."
             return
         }
-        guard selectionGeneration == conversationSelectionGeneration, (selectedCardID ?? selectedChatID) == cardID
+        guard selectionGeneration == conversationSelectionGeneration,
+            (selectedCardID ?? selectedChatID) == cardID
         else { return }
         guard let rpc else {
             conversationLoading = false
@@ -160,19 +167,24 @@ extension DieterStore {
         }
     }
 
-    func fetchConversation(cardID: String, chat: Bool, rpc: DieterRPC, cancellationRetries: Int = 0) async {
+    func fetchConversation(cardID: String, chat: Bool, rpc: DieterRPC, cancellationRetries: Int = 0)
+        async
+    {
         bindConversation()
         await conversationModel.fetchConversation(
             cardID: cardID, chat: chat, rpc: rpc, cancellationRetries: cancellationRetries)
     }
     func acceptConversation(
-        _ snapshot: Dieter_V1_ConversationSnapshot, chat: Bool, refreshedAt: Date? = Date(), cache: Bool = true
+        _ snapshot: Dieter_V1_ConversationSnapshot, chat: Bool, refreshedAt: Date? = Date(),
+        cache: Bool = true
     ) async {
         bindConversation()
-        await conversationModel.acceptConversation(snapshot, chat: chat, refreshedAt: refreshedAt, cache: cache)
+        await conversationModel.acceptConversation(
+            snapshot, chat: chat, refreshedAt: refreshedAt, cache: cache)
     }
     @discardableResult func loadEarlierMessages() async -> Bool {
-        bindConversation(); return await conversationModel.loadEarlierMessages()
+        bindConversation()
+        return await conversationModel.loadEarlierMessages()
     }
     func resetConversationHistory(from snapshot: Dieter_V1_ConversationSnapshot? = nil) {
         conversationModel.resetConversationHistory(from: snapshot)
@@ -188,11 +200,18 @@ extension DieterStore {
     func closeConversation() {
         conversationSelectionGeneration &+= 1
         conversationRead.cancel()
-        if let selectedChatID, let card = chats.first(where: { $0.id == selectedChatID }) { markChatRead(card) }
-        conversationTask?.cancel(); conversationTask = nil
-        gitOperationTask?.cancel(); gitOperationTask = nil
+        if let selectedChatID, let card = chats.first(where: { $0.id == selectedChatID }) {
+            markChatRead(card)
+        }
+        conversationTask?.cancel()
+        conversationTask = nil
+        gitOperationTask?.cancel()
+        gitOperationTask = nil
         resetWorkspaceSurface()
-        conversation = nil; selectedDetail = nil; selectedCardID = nil; selectedChatID = nil
+        conversation = nil
+        selectedDetail = nil
+        selectedCardID = nil
+        selectedChatID = nil
         conversationLoading = false
         conversationSyncing = false
         conversationLastRefreshedAt = nil
@@ -205,7 +224,9 @@ extension DieterStore {
         DieterRPCFailure.isCancellation(error)
     }
 
-    nonisolated static func retainedHistoryPrefix(current: [Dieter_V1_UiMessage], replacementIDs: Set<String>)
+    nonisolated static func retainedHistoryPrefix(
+        current: [Dieter_V1_UiMessage], replacementIDs: Set<String>
+    )
         -> [Dieter_V1_UiMessage]?
     {
         ConversationModel.retainedHistoryPrefix(current: current, replacementIDs: replacementIDs)
@@ -214,7 +235,8 @@ extension DieterStore {
 
     func sendComposer() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (!text.isEmpty || !composerAttachments.isEmpty), let id = selectedCardID ?? selectedChatID else { return }
+        guard !text.isEmpty || !composerAttachments.isEmpty, let id = selectedCardID ?? selectedChatID
+        else { return }
         let projectID = (selectedCard ?? selectedDetail?.card)?.projectID ?? ""
         let targetEndpointID = projectEndpointIDs[projectID] ?? endpoint.id
         let draft = composer.draft
@@ -225,21 +247,53 @@ extension DieterStore {
         let attachments = draft.attachments
         var parts = attachments
         if !text.isEmpty {
-            var part = Dieter_V1_MessagePart(); part.type = "text"; part.text = text; parts.insert(part, at: 0)
+            var part = Dieter_V1_MessagePart()
+            part.type = "text"
+            part.text = text
+            parts.insert(part, at: 0)
         }
-        var request = Dieter_V1_SendMessageRequest(); request.cardID = id; request.parts = parts
+        var request = Dieter_V1_SendMessageRequest()
+        request.cardID = id
+        request.parts = parts
         request.provider = composerProvider.isEmpty ? (selectedCard?.provider ?? "") : composerProvider
         request.model = composerModel.isEmpty ? (selectedCard?.model ?? "") : composerModel
         request.effort = composerEffort.isEmpty ? (selectedCard?.effort ?? "") : composerEffort
         request.providerOptions = composerProviderOptions
         request.clientID = syncClientID
         request.commandID = UUID().uuidString.lowercased()
-        request.messageID = "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+        request.messageID =
+            "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
         do {
             try await enqueueMessage(request, endpointID: targetEndpointID)
             draft.acceptSend(revision: draftRevision)
         } catch {
             show(error)
+        }
+    }
+
+    /// Dequeues a not-yet-started message. Editing restores its text and every
+    /// attachment ahead of any draft already in the composer, so neither
+    /// queued nor in-progress input is lost.
+    @discardableResult
+    func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage, edit: Bool) async -> Bool {
+        guard let cardID = selectedCardID ?? selectedChatID, let rpc else { return false }
+        do {
+            let removed = try await rpc.removeQueuedMessage(cardID: cardID, messageID: message.id)
+            guard (selectedCardID ?? selectedChatID) == cardID else { return false }
+            if var snapshot = conversation {
+                snapshot.conversation.queue.removeAll { $0.id == removed.id }
+                conversation = snapshot
+            }
+            if edit {
+                let draft = ConversationQueuePresentation.editableDraft(for: removed)
+                let currentText = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+                composerText = [draft.text, currentText].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                composerAttachments = draft.attachments + composerAttachments
+            }
+            return true
+        } catch {
+            show(error)
+            return false
         }
     }
 
@@ -259,7 +313,8 @@ extension DieterStore {
         request.providerOptions = card.providerOptions
         request.clientID = syncClientID
         request.commandID = UUID().uuidString.lowercased()
-        request.messageID = "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+        request.messageID =
+            "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
         do {
             try await enqueueMessage(request, endpointID: targetEndpointID)
             return true
@@ -317,7 +372,9 @@ extension DieterStore {
         try await attachmentLoader.parts(urls: urls, appendingTo: existing)
     }
 
-    func attachmentParts(_ providers: [NSItemProvider], appendingTo existing: [Dieter_V1_MessagePart] = []) async throws
+    func attachmentParts(
+        _ providers: [NSItemProvider], appendingTo existing: [Dieter_V1_MessagePart] = []
+    ) async throws
         -> [Dieter_V1_MessagePart]
     {
         guard existing.count + providers.count <= AttachmentLoader.maximumCount else {
@@ -357,7 +414,9 @@ extension DieterStore {
         guard let input = pasteboardAttachmentInput(pasteboard) else { return false }
         let existing = composerAttachments
         Task {
-            do { composerAttachments = try await attachmentParts(input, appendingTo: existing) } catch { show(error) }
+            do { composerAttachments = try await attachmentParts(input, appendingTo: existing) } catch {
+                show(error)
+            }
         }
         return true
     }
@@ -367,7 +426,8 @@ extension DieterStore {
         _ pasteboard: NSPasteboard,
     ) -> AttachmentPasteboardInput? {
         let urls =
-            (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+            (pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
+                as? [URL]) ?? []
         if !urls.isEmpty { return .urls(urls) }
         let payloads = Self.pasteboardImagePayloads(pasteboard)
         guard !payloads.isEmpty else { return nil }
@@ -394,7 +454,8 @@ extension DieterStore {
         return (pasteboard.pasteboardItems ?? []).compactMap { item in
             let types = item.types.compactMap { UTType($0.rawValue) }
             let type = preferred.first(where: types.contains) ?? types.first { $0.conforms(to: .image) }
-            guard let type, let data = item.data(forType: NSPasteboard.PasteboardType(type.identifier)) else {
+            guard let type, let data = item.data(forType: NSPasteboard.PasteboardType(type.identifier))
+            else {
                 return nil
             }
             return (data, type)
@@ -403,7 +464,9 @@ extension DieterStore {
 
     static func preferredImageTypeIdentifier(for provider: NSItemProvider) -> String? {
         let preferred = [UTType.png, .jpeg, .gif, .heic, .tiff]
-        if let type = preferred.first(where: { provider.hasItemConformingToTypeIdentifier($0.identifier) }) {
+        if let type = preferred.first(where: {
+            provider.hasItemConformingToTypeIdentifier($0.identifier)
+        }) {
             return type.identifier
         }
         return provider.registeredTypeIdentifiers.first {
@@ -428,9 +491,18 @@ extension DieterStore {
     static func loadFileURL(_ provider: NSItemProvider) async throws -> URL? {
         try await withCheckedThrowingContinuation { continuation in
             provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
-                if let error { continuation.resume(throwing: error); return }
-                if let url = item as? URL { continuation.resume(returning: url); return }
-                if let url = item as? NSURL { continuation.resume(returning: url as URL); return }
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                if let url = item as? URL {
+                    continuation.resume(returning: url)
+                    return
+                }
+                if let url = item as? NSURL {
+                    continuation.resume(returning: url as URL)
+                    return
+                }
                 if let data = item as? Data,
                     let value = String(data: data, encoding: .utf8),
                     let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -445,20 +517,26 @@ extension DieterStore {
 
     static func filename(_ value: String, for contentType: UTType) -> String {
         let url = URL(fileURLWithPath: value)
-        guard url.pathExtension.isEmpty, let suffix = contentType.preferredFilenameExtension else { return value }
+        guard url.pathExtension.isEmpty, let suffix = contentType.preferredFilenameExtension else {
+            return value
+        }
         return value + "." + suffix
     }
 
     func addComment() async {
         let text = commentText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let id = selectedCardID ?? selectedChatID, let rpc else { return }
-        var request = Dieter_V1_AddCommentRequest(); request.cardID = id; request.message = text;
+        var request = Dieter_V1_AddCommentRequest()
+        request.cardID = id
+        request.message = text
         request.name = NSFullUserName()
         let draft = composer.draft
         let generation = conversationSelectionGeneration
         do {
             _ = try await rpc.addComment(request)
-            if draft.comment.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft.comment = "" }
+            if draft.comment.trimmingCharacters(in: .whitespacesAndNewlines) == text {
+                draft.comment = ""
+            }
             let detail = try await rpc.card(id: id)
             guard self.rpc === rpc, generation == conversationSelectionGeneration,
                 (selectedCardID ?? selectedChatID) == id
@@ -482,24 +560,35 @@ extension DieterStore {
         projectID: String? = nil,
         lane: String? = nil,
         labelIDs: [String] = [],
-        workspace: ConversationWorkspaceDraft = ConversationWorkspaceDraft()
+        workspace: ConversationWorkspaceDraft = ConversationWorkspaceDraft(),
+        autoGenerateTitle: Bool = false
     ) async {
         let destinationProjectID = projectID ?? selectedProjectID
         var request = Dieter_V1_CreateConversationRequest()
-        request.projectID = destinationProjectID; request.boardID = chat ? "" : selectedBoardID
-        request.lane = lane ?? selectedBoard?.lanes.first?.id ?? "backlog"; request.title = title;
+        request.projectID = destinationProjectID
+        request.boardID = chat ? "" : selectedBoardID
+        request.lane = lane ?? selectedBoard?.lanes.first?.id ?? "backlog"
+        request.title = title
         request.prompt = prompt
-        request.provider = provider; request.model = model; request.effort = effort; request.deferStart = deferred
+        request.provider = provider
+        request.model = model
+        request.effort = effort
+        request.deferStart = deferred
         request.providerOptions = providerOptions
         request.attachments = attachments
         request.labelIds = labelIDs
+        request.autoGenerateTitle = autoGenerateTitle
         workspace.apply(to: &request)
         request.clientID = syncClientID
         request.commandID = UUID().uuidString.lowercased()
         do {
-            let shouldOpenConversation = Self.shouldOpenCreatedConversation(chat: chat, lane: request.lane)
-            let optimisticID = "local_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
-            let target = projectEndpointIDs[destinationProjectID].flatMap { id in endpoints.first { $0.id == id } }
+            let shouldOpenConversation = Self.shouldOpenCreatedConversation(
+                chat: chat, lane: request.lane)
+            let optimisticID =
+                "local_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+            let target = projectEndpointIDs[destinationProjectID].flatMap { id in
+                endpoints.first { $0.id == id }
+            }
             try await enqueueOutbox(
                 DieterOutboxEntry(
                     commandID: request.commandID,
@@ -546,7 +635,9 @@ extension DieterStore {
         guard selectedProjectIsLive, let rpc else { return }
         let original = state.cards.first(where: { $0.id == card.id }) ?? card
         let optimisticPosition =
-            position ?? ((boardCards.filter { $0.id != card.id && $0.lane == lane }.map(\.position).max() ?? 0) + 1_024)
+            position
+            ?? ((boardCards.filter { $0.id != card.id && $0.lane == lane }.map(\.position).max() ?? 0)
+                + 1_024)
 
         let operationID = UUID()
         pendingCardMoves[card.id] = OptimisticCardMove(
@@ -557,7 +648,8 @@ extension DieterStore {
         )
 
         var optimistic = original
-        optimistic.lane = lane; optimistic.position = optimisticPosition
+        optimistic.lane = lane
+        optimistic.position = optimisticPosition
         acceptWorkspaceCard(optimistic)
         movingCardIDs.insert(card.id)
 
@@ -585,20 +677,103 @@ extension DieterStore {
         }
     }
 
+    func start(_ card: Dieter_V1_Card) async {
+        guard await ensureProjectConnection(card.projectID) else { return }
+        guard let client = cardStartRPCOverride ?? rpc else { return }
+        let current = state.cards.first(where: { $0.id == card.id }) ?? card
+        let board = board(id: current.boardID)
+        let hasDraftAttachments =
+            conversation?.detail.card.id == current.id
+            && !(conversation?.conversation.draftAttachments.isEmpty ?? true)
+        guard
+            let optimistic = BoardCardStartPolicy.optimisticCard(
+                current,
+                board: board,
+                hasDraftAttachments: hasDraftAttachments
+            ), pendingCardStarts[current.id] == nil
+        else { return }
+
+        let operationID = UUID()
+        pendingCardStarts[current.id] = .init(
+            operationID: operationID,
+            runningLaneID: optimistic.lane
+        )
+        applyBoardCardMutation(optimistic)
+
+        var request = Dieter_V1_StartCardRequest()
+        request.cardID = current.id
+        request.clientID = syncClientID
+        request.commandID = UUID().uuidString.lowercased()
+        do {
+            let response = try await client.startCard(request)
+            guard pendingCardStarts[current.id]?.operationID == operationID else { return }
+            applyBoardCardMutation(response.card)
+        } catch {
+            guard pendingCardStarts[current.id]?.operationID == operationID else { return }
+            pendingCardStarts.removeValue(forKey: current.id)
+            applyBoardCardMutation(current)
+            show(error)
+        }
+    }
+
+    func applyBoardCardMutation(_ updated: Dieter_V1_Card) {
+        if let index = state.cards.firstIndex(where: { $0.id == updated.id }) {
+            var next = state
+            next.cards[index] = updated
+            state = next
+        }
+        if var cards = navigationCards[updated.projectID],
+            let index = cards.firstIndex(where: { $0.id == updated.id })
+        {
+            cards[index] = updated
+            navigationCards[updated.projectID] = cards
+        }
+        if var detail = selectedDetail, detail.card.id == updated.id {
+            detail.card = updated
+            selectedDetail = detail
+        }
+        if var snapshot = conversation, snapshot.detail.card.id == updated.id {
+            snapshot.detail.card = updated
+            snapshot.conversation.status = updated.runtime
+            conversation = snapshot
+        }
+    }
+
     func rename(_ card: Dieter_V1_Card, title: String) async {
         guard await ensureProjectConnection(card.projectID) else { return }
         guard let rpc else { return }
-        var request = Dieter_V1_RenameCardRequest(); request.cardID = card.id; request.title = title
-        do { _ = try await rpc.renameCard(request); await refreshState(); await refreshChats() } catch { show(error) }
+        var request = Dieter_V1_RenameCardRequest()
+        request.cardID = card.id
+        request.title = title
+        do {
+            _ = try await rpc.renameCard(request)
+            await refreshState()
+            await refreshChats()
+        } catch { show(error) }
+    }
+
+    func merge(_ source: Dieter_V1_Card, into target: Dieter_V1_Card) async {
+        guard await ensureProjectConnection(source.projectID), let rpc else { return }
+        var request = Dieter_V1_MergeCardRequest()
+        request.cardID = source.id
+        request.targetCardID = target.id
+        do {
+            _ = try await rpc.mergeCard(request)
+            await refreshState()
+        } catch { show(error) }
     }
 
     @discardableResult
-    func update(_ card: Dieter_V1_Card, title: String, initialPrompt: String) async -> Bool {
+    func update(
+        _ card: Dieter_V1_Card, title: String, initialPrompt: String,
+        agentSettings: Dieter_V1_DraftAgentSettings? = nil
+    ) async -> Bool {
         guard await ensureProjectConnection(card.projectID), let rpc else { return false }
         var request = Dieter_V1_UpdateCardRequest()
         request.cardID = card.id
         request.title = title
         request.initialPrompt = initialPrompt
+        if let agentSettings { request.agentSettings = agentSettings }
         do {
             _ = try await rpc.updateCard(request)
             await refreshState()
@@ -612,13 +787,17 @@ extension DieterStore {
     func archive(_ card: Dieter_V1_Card, archived: Bool) async {
         guard await ensureProjectConnection(card.projectID) else { return }
         guard let rpc else { return }
-        var request = Dieter_V1_ArchiveCardRequest(); request.cardID = card.id; request.archived = archived
+        var request = Dieter_V1_ArchiveCardRequest()
+        request.cardID = card.id
+        request.archived = archived
         let generation = conversationSelectionGeneration
         do {
             let updated = try await rpc.archiveCard(request)
             guard self.rpc === rpc else { return }
             acceptWorkspaceCard(updated)
-            if generation == conversationSelectionGeneration, (selectedCardID ?? selectedChatID) == card.id {
+            if generation == conversationSelectionGeneration,
+                (selectedCardID ?? selectedChatID) == card.id
+            {
                 closeConversation()
             }
             await refreshState()
@@ -645,13 +824,17 @@ extension DieterStore {
         optimistic.pinned = pinned
         applyChatMutation(optimistic)
 
-        var request = Dieter_V1_PinChatRequest(); request.cardID = card.id; request.pinned = pinned
+        var request = Dieter_V1_PinChatRequest()
+        request.cardID = card.id
+        request.pinned = pinned
         do {
             let updated = try await client.pinChat(request)
             guard pendingChatPins[card.id]?.operationID == operationID else { return }
             applyChatMutation(updated)
         } catch {
-            guard let pending = pendingChatPins[card.id], pending.operationID == operationID else { return }
+            guard let pending = pendingChatPins[card.id], pending.operationID == operationID else {
+                return
+            }
             pendingChatPins.removeValue(forKey: card.id)
             applyChatMutation(pending.original)
             show(error)
@@ -704,7 +887,10 @@ extension DieterStore {
 
     func cancel(_ card: Dieter_V1_Card) async {
         guard await ensureProjectConnection(card.projectID), workspaceIsLive else { return }
-        do { try await rpc?.cancelCard(id: card.id); await refreshState() } catch { show(error) }
+        do {
+            try await rpc?.cancelCard(id: card.id)
+            await refreshState()
+        } catch { show(error) }
     }
 
     func setLabels(_ card: Dieter_V1_Card, ids: [String]) async {
@@ -725,10 +911,14 @@ extension DieterStore {
         }
         labelUpdatingCardIDs.insert(card.id)
 
-        var request = Dieter_V1_SetCardLabelsRequest(); request.cardID = card.id; request.labelIds = normalized
+        var request = Dieter_V1_SetCardLabelsRequest()
+        request.cardID = card.id
+        request.labelIds = normalized
         do {
             let updated = try await rpc.setCardLabels(request)
-            if let pending = pendingCardLabelUpdates[card.id], pending.operationID != operationID { return }
+            if let pending = pendingCardLabelUpdates[card.id], pending.operationID != operationID {
+                return
+            }
             if let index = state.cards.firstIndex(where: { $0.id == updated.id }) {
                 var next = state
                 next.cards[index] = updated
@@ -759,7 +949,8 @@ extension DieterStore {
             async let projects = rpc.archivedProjects().projects
             let cards = boardID.isEmpty ? [] : try await rpc.archivedCards(boardID: boardID).cards
             let loadedProjects = try await projects
-            guard self.rpc === rpc, generation == archiveRequestGeneration, boardID == selectedBoardID else { return }
+            guard self.rpc === rpc, generation == archiveRequestGeneration, boardID == selectedBoardID
+            else { return }
             archivedProjects = loadedProjects
             archivedCards = cards
             await refreshChats(includeArchived: true)

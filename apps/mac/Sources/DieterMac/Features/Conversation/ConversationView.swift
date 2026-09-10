@@ -48,6 +48,17 @@ struct ConversationView: View {
         (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat"
     }
 
+    private var card: Dieter_V1_Card? { context.selectedCard ?? context.selectedDetail?.card }
+    private var startingCard: Bool { card.map { $0.runtime == "starting" } ?? false }
+    private var canStartCard: Bool {
+        guard let card else { return false }
+        return BoardCardStartPolicy.canStart(
+            card,
+            board: context.selectedDetail?.board,
+            hasDraftAttachments: !(context.conversation?.conversation.draftAttachments.isEmpty ?? true)
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ConversationChrome(compact: compact, standalone: standalone, tab: $tab)
@@ -84,6 +95,9 @@ struct ConversationView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if tab == "Conversation" {
+                if let card, canStartCard || startingCard {
+                    ConversationStartCardBanner(card: card, starting: startingCard)
+                }
                 ConversationComposer(fileImporterPresented: $fileImporterPresented)
             }
         }
@@ -100,16 +114,20 @@ struct ConversationView: View {
         .onChange(of: context.selectedCardID) { _, _ in tab = "Conversation" }
         .onChange(of: context.selectedChatID) { _, _ in tab = "Conversation" }
         #if DIETER_UI_SMOKE
-            .onReceive(NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.selectTabNotification)) {
+            .onReceive(
+                NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.selectTabNotification)
+            ) {
                 note in
                 if let name = note.object as? String { tab = name }
             }
         #endif
-        .fileImporter(isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true)
-        { result in
-            if case let .success(urls) = result {
+        .fileImporter(
+            isPresented: $fileImporterPresented, allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result {
                 context.addAttachments(urls)
-            } else if case let .failure(error) = result {
+            } else if case .failure(let error) = result {
                 context.show(error)
             }
         }

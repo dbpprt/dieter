@@ -20,22 +20,28 @@ struct HarnessFields: View {
         }.onChange(of: provider) { _, _ in
             let selection = HarnessSelection(provider: provider).resolved(
                 in: catalog.harnesses, allowServerDefault: true)
-            model = selection?.model ?? ""; effort = selection?.effort ?? ""
+            model = selection?.model ?? ""
+            effort = selection?.effort ?? ""
             providerOptions = selection?.providerOptions ?? [:]
         }
         Picker("Model", selection: $model) {
             Text("Agent default").tag("")
             ForEach(harness?.models ?? [], id: \.id) { Text($0.name).tag($0.id) }
-        }.onChange(of: model) { _, _ in effort = selectedModel?.defaultEffort ?? "" }
+        }.onChange(of: model) { _, _ in
+            effort = selectedModel?.defaultEffort ?? ""
+            providerOptions = ProviderOptionValues.normalized(
+                for: harness, model: model, saved: providerOptions)
+        }
         if let efforts = selectedModel?.efforts, !efforts.isEmpty {
             Picker("Reasoning effort", selection: $effort) {
+                Text("Agent default").tag("")
                 ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
             }
         }
-        ProviderOptionFields(options: harness?.options ?? [], values: $providerOptions)
+        ProviderOptionFields(
+            options: ProviderOptionValues.options(for: harness, model: model), values: $providerOptions)
     }
 }
-
 struct ProviderOptionFields: View {
     let options: [Dieter_V1_ProviderOption]
     @Binding var values: [String: String]
@@ -77,17 +83,22 @@ struct ProviderOptionField: View {
 struct ProviderOptionChips: View {
     let options: [Dieter_V1_ProviderOption]
     @Binding var values: [String: String]
+    var conversationLocked = false
 
     var body: some View {
         ForEach(options, id: \Dieter_V1_ProviderOption.id) { option in
-            ProviderOptionChip(option: option, values: $values)
+            ProviderOptionChip(
+                option: option,
+                values: $values,
+                isEnabled: ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
+            )
         }
     }
 }
-
 struct ProviderOptionChip: View {
     let option: Dieter_V1_ProviderOption
     @Binding var values: [String: String]
+    let isEnabled: Bool
 
     private var currentValue: String { values[option.id, default: option.defaultValue] }
 
@@ -102,20 +113,23 @@ struct ProviderOptionChip: View {
                     symbol: enabled ? "checkmark.circle.fill" : "circle",
                     showsDisclosure: false
                 )
-            }.buttonStyle(.plain).help(option.description_p)
+            }.buttonStyle(.plain).disabled(!isEnabled).help(option.description_p)
         } else if ["enum", "select"].contains(option.type.lowercased()) {
             Menu {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
-                    Button(choice.name.isEmpty ? choice.value : choice.name) { values[option.id] = choice.value }
+                    Button(choice.name.isEmpty ? choice.value : choice.name) {
+                        values[option.id] = choice.value
+                    }
                 }
             } label: {
                 DieterChipLabel(
                     title: option.choices.first(where: { $0.value == currentValue })?.name ?? option.name,
                     symbol: "slider.horizontal.3")
-            }.menuStyle(.borderlessButton).fixedSize().help(option.description_p)
+            }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).help(option.description_p)
         } else {
             TextField(option.name, text: Binding(get: { currentValue }, set: { values[option.id] = $0 }))
-                .textFieldStyle(.roundedBorder).frame(width: 130).help(option.description_p)
+                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).help(
+                    option.description_p)
         }
     }
 }

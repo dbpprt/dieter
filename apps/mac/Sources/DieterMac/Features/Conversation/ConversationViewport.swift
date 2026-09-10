@@ -3,6 +3,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum ConversationQueuePresentation {
+    struct EditableDraft {
+        let text: String
+        let attachments: [Dieter_V1_MessagePart]
+    }
+
     static func deliveredMessages(
         _ messages: [Dieter_V1_UiMessage],
         whileQueued queue: [Dieter_V1_QueuedMessage]
@@ -11,15 +16,23 @@ enum ConversationQueuePresentation {
         return messages.filter { !queuedIDs.contains($0.id) }
     }
 
-    static func canInterrupt(
+    static func canSteer(
         messageID: String,
         queue: [Dieter_V1_QueuedMessage],
         agentIsWorking: Bool
     ) -> Bool {
         agentIsWorking && !messageID.isEmpty && queue.first?.id == messageID
     }
-}
 
+    static func editableDraft(for message: Dieter_V1_QueuedMessage) -> EditableDraft {
+        let textParts = message.parts.filter { $0.type == "text" }.map(\.text)
+        let text = textParts.isEmpty ? message.text : textParts.joined()
+        return EditableDraft(
+            text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+            attachments: message.parts.filter { $0.type != "text" }
+        )
+    }
+}
 struct ConversationAgentWorkingIndicator: View {
     let hasPendingTool: Bool
 

@@ -1,6 +1,6 @@
-import DieterCore
-import DieterAPI
 import Darwin
+import DieterAPI
+import DieterCore
 import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
@@ -41,7 +41,10 @@ package final class DieterRPC: Sendable {
 
     package struct DirectRoute: Sendable {
         package init(host: String, port: Int, daemonID: String, daemonCAPEM: Data, accessToken: String) {
-            self.host = host; self.port = port; self.daemonID = daemonID; self.daemonCAPEM = daemonCAPEM;
+            self.host = host
+            self.port = port
+            self.daemonID = daemonID
+            self.daemonCAPEM = daemonCAPEM
             self.accessToken = accessToken
         }
         let host: String
@@ -56,7 +59,7 @@ package final class DieterRPC: Sendable {
         case relay(daemonID: String)
 
         package var daemonID: String? {
-            if case let .relay(daemonID) = self { return daemonID }
+            if case .relay(let daemonID) = self { return daemonID }
             return nil
         }
     }
@@ -121,13 +124,17 @@ package final class DieterRPC: Sendable {
         let chain = derChain.compactMap { SecCertificateCreateWithData(nil, $0 as CFData) }
         guard chain.count == derChain.count else { return false }
         var trust: SecTrust?
-        guard SecTrustCreateWithCertificates(chain as CFArray, SecPolicyCreateBasicX509(), &trust) == errSecSuccess,
+        guard
+            SecTrustCreateWithCertificates(chain as CFArray, SecPolicyCreateBasicX509(), &trust)
+                == errSecSuccess,
             let trust,
             SecTrustSetAnchorCertificates(trust, [ca] as CFArray) == errSecSuccess,
             SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
             SecTrustEvaluateWithError(trust, nil)
         else { return false }
-        guard let values = SecCertificateCopyValues(leaf, [kSecOIDSubjectAltName] as CFArray, nil) as? [CFString: Any],
+        guard
+            let values = SecCertificateCopyValues(leaf, [kSecOIDSubjectAltName] as CFArray, nil)
+                as? [CFString: Any],
             let subjectAlternativeName = values[kSecOIDSubjectAltName]
         else { return false }
         return containsCertificateValue("spiffe://board/daemon/\(daemonID)", in: subjectAlternativeName)
@@ -148,7 +155,9 @@ package final class DieterRPC: Sendable {
         if let text = value as? String { return text == expected }
         if let url = value as? URL { return url.absoluteString == expected }
         if let url = value as? NSURL { return url.absoluteString == expected }
-        if let values = value as? [Any] { return values.contains { containsCertificateValue(expected, in: $0) } }
+        if let values = value as? [Any] {
+            return values.contains { containsCertificateValue(expected, in: $0) }
+        }
         if let values = value as? [CFString: Any] {
             return values.values.contains { containsCertificateValue(expected, in: $0) }
         }
@@ -174,7 +183,8 @@ package final class DieterRPC: Sendable {
     }
 
     package func route(daemonID: String) async throws -> Dieter_Gateway_V1_DaemonRoute {
-        var request = Dieter_Gateway_V1_DaemonRef(); request.daemonID = daemonID
+        var request = Dieter_Gateway_V1_DaemonRef()
+        request.daemonID = daemonID
         return try await gatewayService.resolveDaemonRoute(
             request: .init(message: request),
             options: Self.boundedUnaryCallOptions()
@@ -182,12 +192,16 @@ package final class DieterRPC: Sendable {
     }
 
     package func rtcConfiguration(daemonID: String) async throws -> Dieter_Gateway_V1_RTCConfiguration {
-        var request = Dieter_Gateway_V1_DaemonRef(); request.daemonID = daemonID
+        var request = Dieter_Gateway_V1_DaemonRef()
+        request.daemonID = daemonID
         return try await gatewayService.getRTCConfiguration(request: .init(message: request))
     }
 
-    package func daemonAccessToken(daemonID: String) async throws -> Dieter_Gateway_V1_DaemonAccessToken {
-        var request = Dieter_Gateway_V1_ExchangeDaemonTokenRequest(); request.daemonID = daemonID
+    package func daemonAccessToken(daemonID: String) async throws
+        -> Dieter_Gateway_V1_DaemonAccessToken
+    {
+        var request = Dieter_Gateway_V1_ExchangeDaemonTokenRequest()
+        request.daemonID = daemonID
         return try await gatewayService.exchangeDaemonToken(
             request: .init(message: request),
             options: Self.boundedUnaryCallOptions()
@@ -195,18 +209,25 @@ package final class DieterRPC: Sendable {
     }
 
     package func revokeDaemon(daemonID: String) async throws {
-        var request = Dieter_Gateway_V1_DaemonRef(); request.daemonID = daemonID
-        _ = try await gatewayService.revokeDaemon(request: .init(message: request)) as Google_Protobuf_Empty
+        var request = Dieter_Gateway_V1_DaemonRef()
+        request.daemonID = daemonID
+        _ =
+            try await gatewayService.revokeDaemon(request: .init(message: request))
+            as Google_Protobuf_Empty
     }
 
     package func renameDaemon(daemonID: String, name: String) async throws -> Dieter_Gateway_V1_Daemon {
-        var request = Dieter_Gateway_V1_RenameDaemonRequest(); request.daemonID = daemonID; request.name = name
+        var request = Dieter_Gateway_V1_RenameDaemonRequest()
+        request.daemonID = daemonID
+        request.name = name
         return try await gatewayService.renameDaemon(request: .init(message: request))
     }
 
     package func health(timeout: Duration? = nil) async throws -> Dieter_V1_HealthResponse {
-        var options = CallOptions.defaults; options.timeout = timeout
-        return try await service.health(request: .init(message: Google_Protobuf_Empty()), options: options)
+        var options = CallOptions.defaults
+        options.timeout = timeout
+        return try await service.health(
+            request: .init(message: Google_Protobuf_Empty()), options: options)
     }
 
     package func runtimeStatus() async throws -> Dieter_V1_RuntimeStatus {
@@ -248,20 +269,25 @@ package final class DieterRPC: Sendable {
         try await service.updatePromptSettings(request: .init(message: request))
     }
 
-    package func setProjectPromptTemplate(_ request: Dieter_V1_SetScopedPromptTemplateRequest) async throws
+    package func setProjectPromptTemplate(_ request: Dieter_V1_SetScopedPromptTemplateRequest)
+        async throws
         -> Dieter_V1_Project
     {
         try await service.setProjectPromptTemplate(request: .init(message: request))
     }
 
-    package func setBoardPromptTemplate(_ request: Dieter_V1_SetScopedPromptTemplateRequest) async throws
+    package func setBoardPromptTemplate(_ request: Dieter_V1_SetScopedPromptTemplateRequest)
+        async throws
         -> Dieter_V1_Board
     {
         try await service.setBoardPromptTemplate(request: .init(message: request))
     }
 
-    package func previewPrompt(_ request: Dieter_V1_PreviewPromptRequest) async throws -> Dieter_V1_PromptPreview {
-        try await service.previewPrompt(request: .init(message: request), options: Self.boundedUnaryCallOptions())
+    package func previewPrompt(_ request: Dieter_V1_PreviewPromptRequest) async throws
+        -> Dieter_V1_PromptPreview
+    {
+        try await service.previewPrompt(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func state(_ request: Dieter_V1_GetStateRequest = .init()) async throws -> Dieter_V1_State {
@@ -287,7 +313,9 @@ package final class DieterRPC: Sendable {
         _ request: Dieter_V1_SyncRequest,
         receive: @Sendable @escaping (Dieter_V1_SyncFrame) async -> Void
     ) async throws {
-        try await service.watchSync(request: .init(message: request), options: Self.attachmentCallOptions()) {
+        try await service.watchSync(
+            request: .init(message: request), options: Self.attachmentCallOptions()
+        ) {
             response in
             for try await frame in response.messages {
                 try Task.checkCancellation()
@@ -317,11 +345,14 @@ package final class DieterRPC: Sendable {
         )
     }
 
-    package func updateSettings(_ request: Dieter_V1_UpdateSettingsRequest) async throws -> Dieter_V1_Settings {
+    package func updateSettings(_ request: Dieter_V1_UpdateSettingsRequest) async throws
+        -> Dieter_V1_Settings
+    {
         try await service.updateSettings(request: .init(message: request))
     }
 
-    package func listDirectories(_ request: Dieter_V1_ListDirectoriesRequest) async throws -> Dieter_V1_DirectoryListing
+    package func listDirectories(_ request: Dieter_V1_ListDirectoriesRequest) async throws
+        -> Dieter_V1_DirectoryListing
     {
         try await service.listDirectories(request: .init(message: request))
     }
@@ -332,17 +363,23 @@ package final class DieterRPC: Sendable {
         try await service.createProject(request: .init(message: request))
     }
 
-    package func updateProject(_ request: Dieter_V1_UpdateProjectRequest) async throws -> Dieter_V1_Project {
+    package func updateProject(_ request: Dieter_V1_UpdateProjectRequest) async throws
+        -> Dieter_V1_Project
+    {
         try await service.updateProject(request: .init(message: request))
     }
 
-    package func updateProjectWorkspaceSettings(_ request: Dieter_V1_UpdateProjectWorkspaceSettingsRequest) async throws
+    package func updateProjectWorkspaceSettings(
+        _ request: Dieter_V1_UpdateProjectWorkspaceSettingsRequest
+    ) async throws
         -> Dieter_V1_Project
     {
         try await service.updateProjectWorkspaceSettings(request: .init(message: request))
     }
 
-    package func archiveProject(_ request: Dieter_V1_ArchiveProjectRequest) async throws -> Dieter_V1_Project {
+    package func archiveProject(_ request: Dieter_V1_ArchiveProjectRequest) async throws
+        -> Dieter_V1_Project
+    {
         try await service.archiveProject(request: .init(message: request))
     }
 
@@ -365,30 +402,55 @@ package final class DieterRPC: Sendable {
         try await service.setBoardArchivePolicy(request: .init(message: request))
     }
 
+    package func updateBoardHostnames(_ request: Dieter_V1_UpdateBoardHostnamesRequest) async throws
+        -> Dieter_V1_Board
+    {
+        try await service.updateBoardHostnames(request: .init(message: request))
+    }
+
+    package func updateBoardGitSettings(_ request: Dieter_V1_UpdateBoardGitSettingsRequest) async throws
+        -> Dieter_V1_Board
+    {
+        try await service.updateBoardGitSettings(request: .init(message: request))
+    }
+
     package func archivedCards(boardID: String) async throws -> Dieter_V1_CardsResponse {
-        var request = Dieter_V1_BoardRef(); request.boardID = boardID
+        var request = Dieter_V1_BoardRef()
+        request.boardID = boardID
         return try await service.listArchivedCards(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
-    package func createBoardLabel(_ request: Dieter_V1_CreateBoardLabelRequest) async throws -> Dieter_V1_Board {
+    package func createBoardLabel(_ request: Dieter_V1_CreateBoardLabelRequest) async throws
+        -> Dieter_V1_Board
+    {
         try await service.createBoardLabel(request: .init(message: request))
     }
 
-    package func updateBoardLabel(_ request: Dieter_V1_UpdateBoardLabelRequest) async throws -> Dieter_V1_Board {
+    package func updateBoardLabel(_ request: Dieter_V1_UpdateBoardLabelRequest) async throws
+        -> Dieter_V1_Board
+    {
         try await service.updateBoardLabel(request: .init(message: request))
     }
 
-    package func deleteBoardLabel(_ request: Dieter_V1_DeleteBoardLabelRequest) async throws -> Dieter_V1_Board {
+    package func deleteBoardLabel(_ request: Dieter_V1_DeleteBoardLabelRequest) async throws
+        -> Dieter_V1_Board
+    {
         try await service.deleteBoardLabel(request: .init(message: request))
     }
 
-    package func createCard(_ request: Dieter_V1_CreateConversationRequest) async throws -> Dieter_V1_Card {
-        try await service.createCard(request: .init(message: request), options: Self.attachmentCallOptions())
+    package func createCard(_ request: Dieter_V1_CreateConversationRequest) async throws
+        -> Dieter_V1_Card
+    {
+        try await service.createCard(
+            request: .init(message: request), options: Self.attachmentCallOptions())
     }
 
-    package func createChat(_ request: Dieter_V1_CreateConversationRequest) async throws -> Dieter_V1_Card {
-        try await service.createChat(request: .init(message: request), options: Self.attachmentCallOptions())
+    package func createChat(_ request: Dieter_V1_CreateConversationRequest) async throws
+        -> Dieter_V1_Card
+    {
+        try await service.createChat(
+            request: .init(message: request), options: Self.attachmentCallOptions())
     }
 
     package func forkChat(_ request: Dieter_V1_ForkChatRequest) async throws -> Dieter_V1_Card {
@@ -396,7 +458,8 @@ package final class DieterRPC: Sendable {
     }
 
     package func chats(includeArchived: Bool = false) async throws -> Dieter_V1_ChatsResponse {
-        var request = Dieter_V1_ListChatsRequest(); request.includeArchived = includeArchived
+        var request = Dieter_V1_ListChatsRequest()
+        request.includeArchived = includeArchived
         return try await service.listChats(
             request: .init(message: request),
             options: Self.boundedUnaryCallOptions()
@@ -404,14 +467,18 @@ package final class DieterRPC: Sendable {
     }
 
     package func card(id: String) async throws -> Dieter_V1_CardDetail {
-        var request = Dieter_V1_GetCardRequest(); request.cardID = id
-        return try await service.getCard(request: .init(message: request), options: Self.boundedUnaryCallOptions())
+        var request = Dieter_V1_GetCardRequest()
+        request.cardID = id
+        return try await service.getCard(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func conversation(cardID: String, limit: Int32 = 30, before: Int32? = nil) async throws
         -> Dieter_V1_ConversationSnapshot
     {
-        var request = Dieter_V1_GetConversationRequest(); request.cardID = cardID; request.limit = limit
+        var request = Dieter_V1_GetConversationRequest()
+        request.cardID = cardID
+        request.limit = limit
         if let before { request.before = before }
         return try await service.getConversation(
             request: .init(message: request), options: Self.attachmentCallOptions(bounded: true))
@@ -423,8 +490,13 @@ package final class DieterRPC: Sendable {
         receive: @Sendable @escaping (Dieter_V1_ConversationUpdate) async -> Void
     ) async throws {
         var request = Dieter_V1_WatchConversationRequest()
-        request.cardID = cardID; request.limit = 30; request.intervalMs = 700; request.afterSeq = sequence
-        try await service.watchConversation(request: .init(message: request), options: Self.attachmentCallOptions()) {
+        request.cardID = cardID
+        request.limit = 30
+        request.intervalMs = 700
+        request.afterSeq = sequence
+        try await service.watchConversation(
+            request: .init(message: request), options: Self.attachmentCallOptions()
+        ) {
             response in
             for try await update in response.messages {
                 try Task.checkCancellation()
@@ -433,12 +505,27 @@ package final class DieterRPC: Sendable {
         }
     }
 
-    package func toolOutput(_ request: Dieter_V1_GetToolOutputRequest) async throws -> Dieter_V1_ToolOutput {
-        try await service.getToolOutput(request: .init(message: request), options: Self.boundedUnaryCallOptions())
+    package func toolOutput(_ request: Dieter_V1_GetToolOutputRequest) async throws
+        -> Dieter_V1_ToolOutput
+    {
+        try await service.getToolOutput(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
-    package func sendMessage(_ request: Dieter_V1_SendMessageRequest) async throws -> Dieter_V1_SendMessageResponse {
-        try await service.sendMessage(request: .init(message: request), options: Self.attachmentCallOptions())
+    package func sendMessage(_ request: Dieter_V1_SendMessageRequest) async throws
+        -> Dieter_V1_SendMessageResponse
+    {
+        try await service.sendMessage(
+            request: .init(message: request), options: Self.attachmentCallOptions())
+    }
+
+    package func removeQueuedMessage(cardID: String, messageID: String) async throws
+        -> Dieter_V1_QueuedMessage
+    {
+        var request = Dieter_V1_RemoveQueuedMessageRequest()
+        request.cardID = cardID
+        request.messageID = messageID
+        return try await service.removeQueuedMessage(request: .init(message: request))
     }
 
     package func addComment(_ request: Dieter_V1_AddCommentRequest) async throws -> Dieter_V1_Comment {
@@ -449,17 +536,29 @@ package final class DieterRPC: Sendable {
         try await service.moveCard(request: .init(message: request))
     }
 
+    package func startCard(_ request: Dieter_V1_StartCardRequest) async throws -> Dieter_V1_StartCardResponse {
+        try await service.startCard(
+            request: .init(message: request),
+            options: Self.boundedUnaryCallOptions()
+        )
+    }
+
     package func setCardLabels(_ request: Dieter_V1_SetCardLabelsRequest) async throws -> Dieter_V1_Card {
         try await service.setCardLabels(request: .init(message: request))
     }
 
     package func cancelCard(id: String) async throws {
-        var request = Dieter_V1_GetCardRequest(); request.cardID = id
+        var request = Dieter_V1_GetCardRequest()
+        request.cardID = id
         _ = try await service.cancelCard(request: .init(message: request)) as Google_Protobuf_Empty
     }
 
     package func renameCard(_ request: Dieter_V1_RenameCardRequest) async throws -> Dieter_V1_Card {
         try await service.renameCard(request: .init(message: request))
+    }
+
+    package func mergeCard(_ request: Dieter_V1_MergeCardRequest) async throws -> Dieter_V1_Card {
+        try await service.mergeCard(request: .init(message: request))
     }
 
     package func updateCard(_ request: Dieter_V1_UpdateCardRequest) async throws -> Dieter_V1_Card {
@@ -474,29 +573,34 @@ package final class DieterRPC: Sendable {
         try await service.pinChat(request: .init(message: request))
     }
 
-    package func updateConversationWorkspace(_ request: Dieter_V1_UpdateConversationWorkspaceRequest) async throws
+    package func updateConversationWorkspace(_ request: Dieter_V1_UpdateConversationWorkspaceRequest)
+        async throws
         -> Dieter_V1_Card
     {
         try await service.updateConversationWorkspace(request: .init(message: request))
     }
 
     package func workspace(cardID: String) async throws -> Dieter_V1_Workspace {
-        var request = Dieter_V1_ConversationRef(); request.cardID = cardID
+        var request = Dieter_V1_ConversationRef()
+        request.cardID = cardID
         return try await service.getWorkspace(request: .init(message: request))
     }
 
     package func projectWorkspaces(projectID: String) async throws -> Dieter_V1_WorkspacesResponse {
-        var request = Dieter_V1_ProjectRef(); request.projectID = projectID
+        var request = Dieter_V1_ProjectRef()
+        request.projectID = projectID
         return try await service.listProjectWorkspaces(request: .init(message: request))
     }
 
     package func changeset(cardID: String) async throws -> Dieter_V1_Changeset {
-        var request = Dieter_V1_GetChangesetRequest(); request.cardID = cardID
+        var request = Dieter_V1_GetChangesetRequest()
+        request.cardID = cardID
         return try await service.getChangeset(request: .init(message: request))
     }
 
     package func changeset(projectID: String) async throws -> Dieter_V1_Changeset {
-        var request = Dieter_V1_GetChangesetRequest(); request.projectID = projectID
+        var request = Dieter_V1_GetChangesetRequest()
+        request.projectID = projectID
         return try await service.getChangeset(request: .init(message: request))
     }
 
@@ -508,34 +612,42 @@ package final class DieterRPC: Sendable {
         try await service.getCommitDiff(request: .init(message: request))
     }
 
-    package func addChangeComment(_ request: Dieter_V1_AddChangeCommentRequest) async throws -> Dieter_V1_ChangeComment
+    package func addChangeComment(_ request: Dieter_V1_AddChangeCommentRequest) async throws
+        -> Dieter_V1_ChangeComment
     {
         try await service.addChangeComment(request: .init(message: request))
     }
 
-    package func changeComments(cardID: String, revision: String = "") async throws -> Dieter_V1_ChangeCommentsResponse
+    package func changeComments(cardID: String, revision: String = "") async throws
+        -> Dieter_V1_ChangeCommentsResponse
     {
-        var request = Dieter_V1_ListChangeCommentsRequest(); request.cardID = cardID; request.revision = revision
+        var request = Dieter_V1_ListChangeCommentsRequest()
+        request.cardID = cardID
+        request.revision = revision
         return try await service.listChangeComments(request: .init(message: request))
     }
 
     package func scmCapabilities(cardID: String) async throws -> Dieter_V1_SCMCapabilities {
-        var request = Dieter_V1_ConversationRef(); request.cardID = cardID
+        var request = Dieter_V1_ConversationRef()
+        request.cardID = cardID
         return try await service.getSCMCapabilities(request: .init(message: request))
     }
 
-    package func startGitOperation(_ request: Dieter_V1_StartGitOperationRequest) async throws -> Dieter_V1_GitOperation
+    package func startGitOperation(_ request: Dieter_V1_StartGitOperationRequest) async throws
+        -> Dieter_V1_GitOperation
     {
         try await service.startGitOperation(request: .init(message: request))
     }
 
     package func gitOperation(id: String) async throws -> Dieter_V1_GitOperation {
-        var request = Dieter_V1_GitOperationRef(); request.operationID = id
+        var request = Dieter_V1_GitOperationRef()
+        request.operationID = id
         return try await service.getGitOperation(request: .init(message: request))
     }
 
     package func cancelGitOperation(id: String) async throws -> Dieter_V1_GitOperation {
-        var request = Dieter_V1_GitOperationRef(); request.operationID = id
+        var request = Dieter_V1_GitOperationRef()
+        request.operationID = id
         return try await service.cancelGitOperation(request: .init(message: request))
     }
 
@@ -545,7 +657,9 @@ package final class DieterRPC: Sendable {
         receive: @Sendable @escaping (Dieter_V1_GitOperationFrame) async -> Void
     ) async throws {
         var request = Dieter_V1_WatchGitOperationRequest()
-        request.operationID = id; request.afterSequence = sequence; request.heartbeatMs = 1_000
+        request.operationID = id
+        request.afterSequence = sequence
+        request.heartbeatMs = 1_000
         try await service.watchGitOperation(request: .init(message: request)) { response in
             for try await frame in response.messages {
                 try Task.checkCancellation()
@@ -555,22 +669,28 @@ package final class DieterRPC: Sendable {
     }
 
     package func listFiles(_ request: Dieter_V1_ListFilesRequest) async throws -> Dieter_V1_FileList {
-        try await service.listFiles(request: .init(message: request), options: Self.boundedUnaryCallOptions())
+        try await service.listFiles(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func readFile(_ request: Dieter_V1_ReadFileRequest) async throws -> Dieter_V1_FileDocument {
-        try await service.readFile(request: .init(message: request), options: Self.boundedUnaryCallOptions())
+        try await service.readFile(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
     package func saveFile(_ request: Dieter_V1_SaveFileRequest) async throws -> Dieter_V1_FileDocument {
         try await service.saveFile(request: .init(message: request))
     }
 
-    package func createFile(_ request: Dieter_V1_CreateFileRequest) async throws -> Dieter_V1_FileEntry {
+    package func createFile(_ request: Dieter_V1_CreateFileRequest) async throws
+        -> Dieter_V1_FileEntry
+    {
         try await service.createFile(request: .init(message: request))
     }
 
-    package func moveFile(_ request: Dieter_V1_MoveFileRequest) async throws -> Dieter_V1_MoveFileResponse {
+    package func moveFile(_ request: Dieter_V1_MoveFileRequest) async throws
+        -> Dieter_V1_MoveFileResponse
+    {
         try await service.moveFile(request: .init(message: request))
     }
 
@@ -578,13 +698,19 @@ package final class DieterRPC: Sendable {
         _ = try await service.deleteFile(request: .init(message: request)) as Google_Protobuf_Empty
     }
 
-    package func terminals(projectID: String = "", cardID: String = "") async throws -> Dieter_V1_TerminalsResponse {
-        var request = Dieter_V1_ListTerminalsRequest(); request.projectID = projectID; request.cardID = cardID
+    package func terminals(projectID: String = "", cardID: String = "") async throws
+        -> Dieter_V1_TerminalsResponse
+    {
+        var request = Dieter_V1_ListTerminalsRequest()
+        request.projectID = projectID
+        request.cardID = cardID
         return try await service.listTerminals(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
-    package func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws -> Dieter_V1_Terminal {
+    package func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws
+        -> Dieter_V1_Terminal
+    {
         try await service.createTerminal(request: .init(message: request))
     }
 
@@ -594,8 +720,12 @@ package final class DieterRPC: Sendable {
         receive: @Sendable @escaping (Dieter_V1_TerminalFrame) async -> Void
     ) async throws {
         var request = Dieter_V1_WatchTerminalRequest()
-        request.terminalID = id; request.afterSequence = sequence; request.heartbeatMs = 15_000
-        try await service.watchTerminal(request: .init(message: request), options: Self.attachmentCallOptions()) {
+        request.terminalID = id
+        request.afterSequence = sequence
+        request.heartbeatMs = 15_000
+        try await service.watchTerminal(
+            request: .init(message: request), options: Self.attachmentCallOptions()
+        ) {
             response in
             for try await frame in response.messages {
                 try Task.checkCancellation()
@@ -605,24 +735,33 @@ package final class DieterRPC: Sendable {
     }
 
     package func writeTerminal(id: String, data: Data) async throws -> Dieter_V1_Terminal {
-        var request = Dieter_V1_TerminalInputRequest(); request.terminalID = id; request.data = data
+        var request = Dieter_V1_TerminalInputRequest()
+        request.terminalID = id
+        request.data = data
         return try await service.writeTerminal(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
-    package func resizeTerminal(id: String, columns: Int, rows: Int) async throws -> Dieter_V1_Terminal {
+    package func resizeTerminal(id: String, columns: Int, rows: Int) async throws
+        -> Dieter_V1_Terminal
+    {
         var request = Dieter_V1_ResizeTerminalRequest()
-        request.terminalID = id; request.columns = Int32(columns); request.rows = Int32(rows)
+        request.terminalID = id
+        request.columns = Int32(columns)
+        request.rows = Int32(rows)
         return try await service.resizeTerminal(request: .init(message: request))
     }
 
     package func renameTerminal(id: String, name: String) async throws -> Dieter_V1_Terminal {
-        var request = Dieter_V1_RenameTerminalRequest(); request.terminalID = id; request.name = name
+        var request = Dieter_V1_RenameTerminalRequest()
+        request.terminalID = id
+        request.name = name
         return try await service.renameTerminal(request: .init(message: request))
     }
 
     package func closeTerminal(id: String) async throws {
-        var request = Dieter_V1_TerminalRef(); request.terminalID = id
+        var request = Dieter_V1_TerminalRef()
+        request.terminalID = id
         _ = try await service.closeTerminal(request: .init(message: request)) as Google_Protobuf_Empty
     }
 
@@ -663,61 +802,77 @@ package final class DieterRPC: Sendable {
     }
 
     package func closeRemoteDesktop(sessionID: String) async throws {
-        var request = Dieter_V1_RemoteDesktopRef(); request.sessionID = sessionID
+        var request = Dieter_V1_RemoteDesktopRef()
+        request.sessionID = sessionID
         _ =
             try await service.closeRemoteDesktop(
                 request: .init(message: request), options: Self.remoteDesktopControlCallOptions()
             ) as Google_Protobuf_Empty
     }
 
-    package func schedules(projectID: String, pageSize: Int32 = 50, pageToken: String = "") async throws
+    package func schedules(projectID: String, pageSize: Int32 = 50, pageToken: String = "")
+        async throws
         -> Dieter_V1_SchedulesResponse
     {
-        var request = Dieter_V1_ListSchedulesRequest(); request.projectID = projectID; request.pageSize = pageSize;
+        var request = Dieter_V1_ListSchedulesRequest()
+        request.projectID = projectID
+        request.pageSize = pageSize
         request.pageToken = pageToken
         return try await service.listSchedules(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
-    package func previewSchedule(_ request: Dieter_V1_PreviewScheduleRequest) async throws -> Dieter_V1_SchedulePreview
+    package func previewSchedule(_ request: Dieter_V1_PreviewScheduleRequest) async throws
+        -> Dieter_V1_SchedulePreview
     {
-        try await service.previewSchedule(request: .init(message: request), options: Self.boundedUnaryCallOptions())
+        try await service.previewSchedule(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 
-    package func createSchedule(_ request: Dieter_V1_SaveScheduleRequest) async throws -> Dieter_V1_Schedule {
+    package func createSchedule(_ request: Dieter_V1_SaveScheduleRequest) async throws
+        -> Dieter_V1_Schedule
+    {
         try await service.createSchedule(request: .init(message: request))
     }
 
-    package func updateSchedule(_ request: Dieter_V1_SaveScheduleRequest) async throws -> Dieter_V1_Schedule {
+    package func updateSchedule(_ request: Dieter_V1_SaveScheduleRequest) async throws
+        -> Dieter_V1_Schedule
+    {
         try await service.updateSchedule(request: .init(message: request))
     }
 
     package func deleteSchedule(id: String) async throws {
-        var request = Dieter_V1_ScheduleRef(); request.scheduleID = id
+        var request = Dieter_V1_ScheduleRef()
+        request.scheduleID = id
         _ = try await service.deleteSchedule(request: .init(message: request)) as Google_Protobuf_Empty
     }
 
     package func runSchedule(id: String) async throws -> Dieter_V1_ScheduleRun {
-        var request = Dieter_V1_ScheduleRef(); request.scheduleID = id
+        var request = Dieter_V1_ScheduleRef()
+        request.scheduleID = id
         return try await service.runSchedule(request: .init(message: request))
     }
 
     package func setScheduleEnabled(id: String, enabled: Bool) async throws -> Dieter_V1_Schedule {
-        var request = Dieter_V1_SetScheduleEnabledRequest(); request.scheduleID = id; request.enabled = enabled
+        var request = Dieter_V1_SetScheduleEnabledRequest()
+        request.scheduleID = id
+        request.enabled = enabled
         return try await service.setScheduleEnabled(request: .init(message: request))
     }
 
     package func scheduleRuns(id: String, pageSize: Int32 = 50, pageToken: String = "") async throws
         -> Dieter_V1_ScheduleRunsResponse
     {
-        var request = Dieter_V1_ListScheduleRunsRequest(); request.scheduleID = id; request.pageSize = pageSize;
+        var request = Dieter_V1_ListScheduleRunsRequest()
+        request.scheduleID = id
+        request.pageSize = pageSize
         request.pageToken = pageToken
         return try await service.listScheduleRuns(
             request: .init(message: request), options: Self.boundedUnaryCallOptions())
     }
 }
 
-extension DieterRPC: DieterScheduleRPC, DieterChatPinRPC {}
+extension DieterRPC: DieterScheduleRPC, DieterChatPinRPC, DieterCardStartRPC {}
 
 package enum DieterTransportTarget {
     package enum HostKind: Equatable {
@@ -736,7 +891,8 @@ package enum DieterTransportTarget {
         // address. inet_pton validates the address portion while the resolver
         // receives the original value including its interface scope.
         let ipv6Host =
-            host.split(separator: "%", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? host
+            host.split(separator: "%", maxSplits: 1, omittingEmptySubsequences: false).first.map(
+                String.init) ?? host
         var ipv6 = in6_addr()
         if ipv6Host.withCString({ inet_pton(AF_INET6, $0, &ipv6) }) == 1 {
             return .ipv6
@@ -762,7 +918,9 @@ private struct BearerInterceptor: ClientInterceptor {
     package let daemonID: String?
     package func intercept<Input: Sendable, Output: Sendable>(
         request: StreamingClientRequest<Input>, context: ClientContext,
-        next: (StreamingClientRequest<Input>, ClientContext) async throws -> StreamingClientResponse<Output>
+        next: (StreamingClientRequest<Input>, ClientContext) async throws -> StreamingClientResponse<
+            Output
+        >
     ) async throws -> StreamingClientResponse<Output> {
         var request = request
         request.metadata.addString("Bearer \(token)", forKey: "authorization")

@@ -1,6 +1,7 @@
 import AppKit
 import DieterAPI
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BoardCardDragPayload: Sendable {
     let cardID: String
@@ -17,7 +18,8 @@ struct BoardCardDragPayload: Sendable {
 
     init?(_ encoded: String) {
         let values = encoded.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
-        guard values.count == 4, values[0] == "board-card", !values[1].isEmpty, !values[3].isEmpty else { return nil }
+        guard values.count == 4, values[0] == "board-card", !values[1].isEmpty, !values[3].isEmpty
+        else { return nil }
         boardID = values[1]
         sourceLane = values[2]
         cardID = values[3]
@@ -37,7 +39,8 @@ struct BoardLabelDragPayload: Sendable {
 
     init?(_ encoded: String) {
         let values = encoded.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
-        guard values.count == 3, values[0] == "board-label", !values[1].isEmpty, !values[2].isEmpty else { return nil }
+        guard values.count == 3, values[0] == "board-label", !values[1].isEmpty, !values[2].isEmpty
+        else { return nil }
         boardID = values[1]
         labelID = values[2]
     }
@@ -51,13 +54,50 @@ enum BoardLabelAssignment {
 
 enum BoardCardEditingPolicy {
     static func canEditDraft(_ card: Dieter_V1_Card) -> Bool {
-        card.lane.caseInsensitiveCompare("todo") == .orderedSame && card.initialPromptSentAt.isEmpty
+        card.lane.caseInsensitiveCompare("todo") == .orderedSame && card.mergedIntoCardID.isEmpty
+            && card.initialPromptSentAt.isEmpty
             && !card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
+enum BoardCardStartPolicy {
+    static func runningLaneID(in board: Dieter_V1_Board?) -> String? {
+        guard let board else { return nil }
+        return board.lanes.first { $0.id.caseInsensitiveCompare("running") == .orderedSame }?.id
+            ?? board.lanes.first { $0.name.caseInsensitiveCompare("running") == .orderedSame }?.id
+    }
+
+    static func canStart(
+        _ card: Dieter_V1_Card,
+        board: Dieter_V1_Board?,
+        hasDraftAttachments: Bool = false
+    ) -> Bool {
+        card.scope == "board" && card.lane.caseInsensitiveCompare("todo") == .orderedSame
+            && card.mergedIntoCardID.isEmpty && card.initialPromptSentAt.isEmpty
+            && (!card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || hasDraftAttachments)
+            && runningLaneID(in: board) != nil
+    }
+
+    static func optimisticCard(
+        _ card: Dieter_V1_Card,
+        board: Dieter_V1_Board?,
+        hasDraftAttachments: Bool = false
+    ) -> Dieter_V1_Card? {
+        guard canStart(card, board: board, hasDraftAttachments: hasDraftAttachments),
+            let runningLaneID = runningLaneID(in: board)
+        else { return nil }
+        var card = card
+        card.lane = runningLaneID
+        card.runtime = "starting"
+        return card
+    }
+}
+
 enum BoardDropOrdering {
-    static func position(before targetCardID: String, movingCardID: String, cards: [Dieter_V1_Card]) -> Int64? {
+    static func position(before targetCardID: String, movingCardID: String, cards: [Dieter_V1_Card])
+        -> Int64?
+    {
         let remaining = cards.filter { $0.id != movingCardID }.sorted { $0.position < $1.position }
         guard let index = remaining.firstIndex(where: { $0.id == targetCardID }) else { return nil }
         let upper = remaining[index].position
@@ -86,7 +126,7 @@ enum BoardCardOrdering {
             let leftDate = createdAt(left.createdAt)
             let rightDate = createdAt(right.createdAt)
             switch (leftDate, rightDate) {
-            case let (leftDate?, rightDate?) where leftDate != rightDate:
+            case (let leftDate?, let rightDate?) where leftDate != rightDate:
                 return direction == .descending ? leftDate > rightDate : leftDate < rightDate
             case (_?, nil):
                 return true
@@ -277,6 +317,7 @@ struct BoardView: View {
 
 struct BoardHeader: View {
     @Environment(DieterStore.self) private var store
+    @State private var quickTaskPresented = false
 
     private var needsAttention: Int {
         store.boardCards.filter { ["waiting_for_user", "review"].contains($0.runtime) }.count
@@ -374,7 +415,8 @@ struct BoardHeader: View {
 
                     Menu {
                         Button("All states") { store.runtimeFilter = "" }
-                        ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
+                        ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
+                            runtime in
                             Button(runtime.capitalized) { store.runtimeFilter = runtime }
                         }
                     } label: {
@@ -386,7 +428,7 @@ struct BoardHeader: View {
                     Button {
                         store.archivePolicyPresented = true
                     } label: {
-                        DieterChipLabel(title: retentionTitle, symbol: "archivebox")
+                        DieterChipLabel(title: "Board settings", symbol: "gearshape")
                     }
                     .buttonStyle(.plain)
 
@@ -407,10 +449,12 @@ struct BoardHeader: View {
                     Button {
                         store.createConversationPresented = true
                     } label: {
-                        Label("New card", systemImage: "plus")
+                        Label("New card", systemImage: "rectangle.badge.plus")
                     }
-                    .buttonStyle(DieterPrimaryButtonStyle())
+                    .buttonStyle(DieterSecondaryButtonStyle())
                     .accessibilityIdentifier("board.new-card")
+
+                    quickTaskButton(compact: false)
                 }
 
                 HStack(spacing: 7) {
@@ -452,11 +496,12 @@ struct BoardHeader: View {
 
                     Menu {
                         Button("All states") { store.runtimeFilter = "" }
-                        ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
+                        ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
+                            runtime in
                             Button(runtime.capitalized) { store.runtimeFilter = runtime }
                         }
                         Divider()
-                        Button(retentionTitle) { store.archivePolicyPresented = true }
+                        Button("Board settings…") { store.archivePolicyPresented = true }
                         Button("Manage labels…") { store.labelsPresented = true }
                     } label: {
                         DieterChipLabel(
@@ -466,17 +511,455 @@ struct BoardHeader: View {
                     }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
 
-                    Button {
-                        store.createConversationPresented = true
+                    Menu {
+                        Button("New card…") { store.createConversationPresented = true }
                     } label: {
-                        Label("New", systemImage: "plus")
+                        Image(systemName: "ellipsis")
+                            .frame(width: 28, height: 28)
                     }
-                    .buttonStyle(DieterPrimaryButtonStyle())
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .help("New card")
                     .accessibilityIdentifier("board.new-card")
+
+                    quickTaskButton(compact: true)
                 }
             }
         }
+    }
+
+    private func quickTaskButton(compact: Bool) -> some View {
+        Button {
+            quickTaskPresented = true
+        } label: {
+            Label(compact ? "Quick" : "Quick task", systemImage: "sparkles")
+        }
+        .buttonStyle(DieterPrimaryButtonStyle())
+        .help("Create a task from its story")
+        .accessibilityIdentifier("board.quick-task")
+        .smokeTarget("board.quick-task")
+        .popover(isPresented: $quickTaskPresented, arrowEdge: .top) {
+            QuickTaskPopover(isPresented: $quickTaskPresented, draft: store.quickTaskForm)
+                .environment(store)
+        }
+    }
+}
+
+struct QuickTaskDraft {
+    static func optimisticTitle(from story: String) -> String {
+        let firstLine =
+            story
+            .split(whereSeparator: { $0.isNewline })
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard firstLine.count > 80 else { return firstLine }
+        let end = firstLine.index(firstLine.startIndex, offsetBy: 80)
+        let prefix = String(firstLine[..<end])
+        guard let boundary = prefix.lastIndex(of: " "),
+            prefix.distance(from: prefix.startIndex, to: boundary) >= 40
+        else {
+            return prefix
+        }
+        return String(prefix[..<boundary])
+    }
+}
+
+@MainActor @Observable
+final class QuickTaskFormState {
+    private struct Choices: Codable {
+        var project: String
+        var boards: [String: String]
+        var provider: String
+        var model: String
+        var effort: String
+        var options: [String: String]
+    }
+    private let defaults: UserDefaults
+    private static let key = "quickTask.lastChoices"
+    private var boards: [String: String] = [:]
+    var story = ""
+    var provider = "" { didSet { saveChoices() } }
+    var model = "" { didSet { saveChoices() } }
+    var effort = "" { didSet { saveChoices() } }
+    var providerOptions: [String: String] = [:] { didSet { saveChoices() } }
+    var attachments: [Dieter_V1_MessagePart] = []
+    var initialized = false
+    var rememberHostname = false
+    var sourceURL = ""
+    var draftProjectID = "" { didSet { saveChoices() } }
+    var draftBoardID = "" {
+        didSet {
+            if !draftProjectID.isEmpty && !draftBoardID.isEmpty { boards[draftProjectID] = draftBoardID }
+            saveChoices()
+        }
+    }
+
+    init(defaults: UserDefaults = DieterAppearance.applicationDefaults()) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: Self.key),
+            let saved = try? JSONDecoder().decode(Choices.self, from: data)
+        {
+            boards = saved.boards
+            draftProjectID = saved.project
+            draftBoardID = saved.boards[saved.project] ?? ""
+            provider = saved.provider
+            model = saved.model
+            effort = saved.effort
+            providerOptions = saved.options
+        }
+    }
+
+    func selectProject(_ id: String, boardIDs: [String]) {
+        draftProjectID = id
+        let remembered = boards[id] ?? ""
+        draftBoardID = boardIDs.contains(remembered) ? remembered : (boardIDs.first ?? "")
+    }
+
+    private func saveChoices() {
+        let choices = Choices(
+            project: draftProjectID, boards: boards, provider: provider, model: model, effort: effort,
+            options: providerOptions)
+        if let data = try? JSONEncoder().encode(choices) { defaults.set(data, forKey: Self.key) }
+    }
+
+    func reset() {
+        story = ""
+        attachments = []
+        rememberHostname = false
+        sourceURL = ""
+    }
+}
+
+struct QuickTaskPopover: View {
+    @Environment(DieterStore.self) private var store
+    @Binding var isPresented: Bool
+    @Binding private var story: String
+    @Binding private var provider: String
+    @Binding private var model: String
+    @Binding private var effort: String
+    @Binding private var providerOptions: [String: String]
+    @Binding private var attachments: [Dieter_V1_MessagePart]
+    @Binding private var initialized: Bool
+    @Binding private var rememberHostname: Bool
+    @Binding private var sourceURL: String
+    @Binding private var draftProjectID: String
+    @Binding private var draftBoardID: String
+    @State private var submitting = false
+    @State private var settingsPresented = false
+    @State private var fileImporterPresented = false
+    @State private var attachmentDropTargeted = false
+    @State private var submissionError: String?
+    private let formDraft: QuickTaskFormState
+    private let capturedBrowser: Bool
+    private let chooseDestination: Bool
+
+    init(
+        isPresented: Binding<Bool>, draft: QuickTaskFormState? = nil,
+        initialAttachments: [Dieter_V1_MessagePart] = [], sourceURL: String = "",
+        capturedBrowser: Bool = false, chooseDestination: Bool = false
+    ) {
+        _isPresented = isPresented
+        let state = draft ?? QuickTaskFormState()
+        if draft == nil {
+            state.attachments = initialAttachments
+            state.sourceURL = sourceURL
+        }
+        formDraft = state
+        let bindings = Bindable(state)
+        _story = bindings.story
+        _provider = bindings.provider
+        _model = bindings.model
+        _effort = bindings.effort
+        _providerOptions = bindings.providerOptions
+        _attachments = bindings.attachments
+        _initialized = bindings.initialized
+        _rememberHostname = bindings.rememberHostname
+        _sourceURL = bindings.sourceURL
+        _draftProjectID = bindings.draftProjectID
+        _draftBoardID = bindings.draftBoardID
+        self.capturedBrowser = capturedBrowser
+        self.chooseDestination = chooseDestination
+    }
+    @FocusState private var storyFocused: Bool
+
+    private var cleanStory: String { story.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var lane: Dieter_V1_Lane? {
+        store.boards(for: draftProjectID).first { $0.id == draftBoardID }?.lanes.first
+    }
+    private var selection: ConversationCreationSelection? {
+        guard !provider.isEmpty else { return nil }
+        return ConversationCreationSelection(
+            provider: provider, model: model, effort: effort, workspaceMode: preferences.workspaceMode)
+    }
+    private var preferences: ConversationCreationPreferences {
+        ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
+    }
+    private var defaultsSummary: String {
+        let laneName = lane?.name ?? "Todo"
+        let workspace = preferences.workspaceMode.title
+        guard let selection,
+            let harness = store.harnessCatalog.harnesses.first(where: { $0.id == selection.provider }),
+            let model = harness.models.first(where: { $0.id == selection.model })
+        else {
+            return "\(laneName) · \(workspace) · Agent defaults"
+        }
+        let fastMode =
+            ProviderOptionValues.normalized(for: harness, model: model.id, saved: providerOptions)[
+                "fast_mode"] == "true"
+        return "\(laneName) · \(workspace) · \(harness.name) / \(model.name)"
+            + (fastMode ? " · Fast" : "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DieterTheme.shell)
+                    .frame(width: 30, height: 30)
+                    .background(DieterTheme.shellDeep.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Quick task").font(.system(size: 18, weight: .semibold)).smokeTarget(
+                        "quick-task.title")
+                    Text("Describe the task. A short title is created automatically.")
+                        .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
+                }
+                Spacer()
+                Button {
+                    settingsPresented.toggle()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 14))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Task agent settings")
+                .accessibilityLabel("Task agent settings")
+                .accessibilityIdentifier("quick-task.settings")
+                .disabled(submitting)
+                .popover(isPresented: $settingsPresented, arrowEdge: .trailing) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Task agent").font(.headline)
+                        HarnessFields(
+                            catalog: store.harnessCatalog,
+                            provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions
+                        )
+                        HStack {
+                            Spacer()
+                            Button("Done") { settingsPresented = false }
+                                .buttonStyle(DieterSecondaryButtonStyle())
+                        }
+                    }
+                    .padding(16)
+                    .frame(width: 310)
+                    .background(DieterTheme.background)
+                    .environment(store)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("DESTINATION").font(.system(size: 10, weight: .semibold)).foregroundStyle(
+                    DieterTheme.tertiary)
+                Picker(
+                    "Project",
+                    selection: Binding(
+                        get: { draftProjectID },
+                        set: { id in
+                            formDraft.selectProject(id, boardIDs: store.boards(for: id).map(\.id))
+                        })
+                ) {
+                    Text("Choose project").tag("")
+                    ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
+                }.accessibilityIdentifier("quick-task.project")
+                Picker("Board", selection: $draftBoardID) {
+                    Text("Choose board").tag("")
+                    ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
+                }.accessibilityIdentifier("quick-task.board")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
+            .disabled(submitting)
+            if let submissionError { Text(submissionError).font(.caption).foregroundStyle(.orange) }
+
+            TextField("What should the agent accomplish?", text: $story, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13)).lineSpacing(2).lineLimit(3...7)
+                .focused($storyFocused)
+                .padding(.horizontal, 12).padding(.vertical, 11)
+                .frame(minHeight: 92, alignment: .topLeading)
+                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9).stroke(
+                        storyFocused ? DieterTheme.shellDeep : DieterTheme.strongBorder,
+                        lineWidth: storyFocused ? 1.5 : 1)
+                )
+                .accessibilityIdentifier("quick-task.story")
+                .smokeTarget("quick-task.story")
+                .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                    Task {
+                        do {
+                            attachments = try await store.attachmentParts(providers, appendingTo: attachments)
+                        } catch { store.show(error) }
+                    }
+                }
+
+            HStack(spacing: 8) {
+                Button {
+                    fileImporterPresented = true
+                } label: {
+                    Label("Attach", systemImage: "paperclip")
+                }
+                .buttonStyle(DieterSecondaryButtonStyle())
+                .accessibilityIdentifier("quick-task.attach")
+                Text("Paste or drop screenshots · 4 files, 6 MB total")
+                    .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+            }
+            if !attachments.isEmpty {
+                AttachmentPreviewStrip(attachments: $attachments)
+                    .accessibilityIdentifier("quick-task.attachments")
+                    .smokeTarget("quick-task.attachments")
+            }
+
+            Group {
+                TextField("Page URL (optional)", text: $sourceURL)
+                    .textFieldStyle(.plain)
+                    .padding(10)
+                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityIdentifier("quick-task.source-url")
+                    .smokeTarget("quick-task.source-url")
+                if let host = CaptureBrowserContext.hostname(sourceURL) {
+                    Toggle("Remember \(host) for this board", isOn: $rememberHostname)
+                        .font(.caption)
+                        .accessibilityIdentifier("quick-task.remember-hostname")
+                }
+                if capturedBrowser && sourceURL.isEmpty {
+                    Text("The browser URL couldn’t be read. You can paste it here.")
+                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                }
+            }
+
+            HStack(spacing: 7) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(defaultsSummary).lineLimit(2)
+            }
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(DieterTheme.tertiary)
+
+            Divider()
+            HStack(spacing: 9) {
+                Button("Cancel") { isPresented = false }
+                    .smokeTarget("quick-task.cancel")
+                    .buttonStyle(DieterSecondaryButtonStyle())
+                Spacer()
+                Button {
+                    Task { await submit() }
+                } label: {
+                    HStack(spacing: 7) {
+                        if submitting {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "sparkles")
+                        }
+                        Text("Add task")
+                    }
+                }
+                .buttonStyle(DieterPrimaryButtonStyle())
+                .disabled(
+                    cleanStory.isEmpty || submitting || draftProjectID.isEmpty || draftBoardID.isEmpty
+                )
+                .keyboardShortcut(.return, modifiers: [.command])
+                .accessibilityIdentifier("quick-task.create")
+                .smokeTarget("quick-task.create")
+            }
+        }
+        .padding(20)
+        .frame(width: 430)
+        .fixedSize(horizontal: false, vertical: true)
+        .smokeTarget("quick-task.content")
+        .background(DieterTheme.background)
+        .attachmentIntake(
+            store: store, importerPresented: $fileImporterPresented, attachments: $attachments
+        )
+        .task {
+            if !initialized {
+                if !chooseDestination && (draftProjectID.isEmpty || capturedBrowser) {
+                    draftProjectID = store.selectedProjectID
+                    draftBoardID = store.selectedBoardID
+                }
+                if provider.isEmpty {
+                    let initial = preferences.resolved(in: store.harnessCatalog.harnesses)
+                    provider = initial?.provider ?? ""
+                    model = initial?.model ?? ""
+                    effort = initial?.effort ?? ""
+                    let harness = store.harnessCatalog.harnesses.first { $0.id == provider }
+                    providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
+                }
+                initialized = true
+            }
+            if !draftProjectID.isEmpty {
+                formDraft.selectProject(
+                    draftProjectID, boardIDs: store.boards(for: draftProjectID).map(\.id))
+            }
+            await Task.yield()
+            storyFocused = true
+        }
+        .onExitCommand { isPresented = false }
+    }
+
+    private func submit() async {
+        let story = cleanStory
+        guard !story.isEmpty else { return }
+        submitting = true
+        submissionError = nil
+        await store.selectProject(draftProjectID)
+        guard store.selectedProjectID == draftProjectID, store.phase.isConnected else {
+            submissionError = "This project is unavailable. Choose another destination or try again."
+            submitting = false
+            return
+        }
+        await store.selectBoard(draftBoardID)
+        guard store.selectedBoard?.id == draftBoardID else {
+            submissionError = "This board is unavailable. Choose another board."
+            submitting = false
+            return
+        }
+        if rememberHostname, let host = CaptureBrowserContext.hostname(sourceURL) {
+            do { try await store.updateBoardHostnames([host], append: true) } catch {
+                submissionError = error.localizedDescription
+                submitting = false
+                return
+            }
+        }
+        let resolved = selection
+        let harness = resolved.flatMap { value in
+            store.harnessCatalog.harnesses.first { $0.id == value.provider }
+        }
+        var workspace = ConversationWorkspaceDraft()
+        workspace.mode = preferences.workspaceMode
+        workspace.baseBranch = store.selectedProject?.baseBranch ?? ""
+        await store.createConversation(
+            title: QuickTaskDraft.optimisticTitle(from: story),
+            prompt: story
+                + (sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "" : "\n\nPage URL: " + sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+            attachments: attachments,
+            chat: false,
+            provider: resolved?.provider ?? "",
+            model: resolved?.model ?? "",
+            effort: resolved?.effort ?? "",
+            providerOptions: ProviderOptionValues.normalized(
+                for: harness, model: resolved?.model ?? "", saved: providerOptions),
+            deferred: true,
+            lane: lane?.id ?? "todo",
+            workspace: workspace,
+            autoGenerateTitle: true
+        )
+        submitting = false
+        formDraft.reset()
+        isPresented = false
     }
 }
 
@@ -520,7 +1003,8 @@ private struct BoardLabelDragPreview: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "tag.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+            Image(systemName: "tag.fill").font(.system(size: 11, weight: .semibold)).foregroundStyle(
+                color)
             Text(label.name).font(.system(size: 12, weight: .semibold))
             Text("Drop onto a card").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
         }
@@ -540,13 +1024,17 @@ struct KanbanView: View {
     private var lanes: [Dieter_V1_Lane] {
         if !board.lanes.isEmpty { return board.lanes }
         return ["backlog", "ready", "running", "review", "done"].map { id in
-            var lane = Dieter_V1_Lane(); lane.id = id; lane.name = id.capitalized; return lane
+            var lane = Dieter_V1_Lane()
+            lane.id = id
+            lane.name = id.capitalized
+            return lane
         }
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let laneWidth = KanbanLaneSizing.laneWidth(availableWidth: geometry.size.width, laneCount: lanes.count)
+            let laneWidth = KanbanLaneSizing.laneWidth(
+                availableWidth: geometry.size.width, laneCount: lanes.count)
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: KanbanLaneSizing.spacing) {
                     ForEach(lanes, id: \.id) { lane in
@@ -564,7 +1052,8 @@ struct KanbanView: View {
                     }
                 }
                 .padding(.horizontal, KanbanLaneSizing.horizontalPadding).padding(.vertical, 12)
-                .frame(minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
+                .frame(
+                    minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
             }
             .background(DieterTheme.background)
         }
@@ -622,7 +1111,8 @@ struct LaneColumn: View {
                 }
                 .font(.caption).foregroundStyle(isDropTargeted ? DieterTheme.shell : DieterTheme.tertiary)
                 .frame(maxWidth: .infinity).padding(.vertical, 28)
-                .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border, style: .init(dash: [5])))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border, style: .init(dash: [5])))
                 Spacer(minLength: 0)
             } else {
                 BoardLaneList(laneID: lane.id, cards: cards, sortDirection: sortDirection)
@@ -693,6 +1183,37 @@ struct LaneInsertionTarget: View {
     }
 }
 
+enum BoardAgentStatus: Equatable {
+    case running, failed, idle
+
+    static func resolve(_ card: Dieter_V1_Card) -> Self {
+        let active = Set(["starting", "running", "active", "working", "streaming", "cancelling"])
+        let status = card.runtime.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if active.contains(status)
+            || card.activeSubagents.contains(where: { active.contains($0.status.lowercased()) })
+        {
+            return .running
+        }
+        return ["failed", "error"].contains(status) ? .failed : .idle
+    }
+
+    var color: Color {
+        switch self {
+        case .running: .green
+        case .failed: .orange
+        case .idle: .white
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .running: "Agent running"
+        case .failed: "Agent turn failed"
+        case .idle: "No agent work in progress"
+        }
+    }
+}
+
 private struct BoardCardDragPreview: View {
     let card: Dieter_V1_Card
 
@@ -700,10 +1221,12 @@ private struct BoardCardDragPreview: View {
         HStack(spacing: 10) {
             Image(systemName: "rectangle.on.rectangle.angled").foregroundStyle(DieterTheme.shell)
             VStack(alignment: .leading, spacing: 3) {
-                Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 12, weight: .semibold))
-                    .lineLimit(2)
+                Text(card.title.isEmpty ? "Untitled card" : card.title).font(
+                    .system(size: 12, weight: .semibold)
+                )
+                .lineLimit(2)
                 HStack(spacing: 6) {
-                    Circle().fill(runtimeColor(card.runtime)).frame(width: 5, height: 5)
+                    Circle().fill(BoardAgentStatus.resolve(card).color).frame(width: 5, height: 5)
                     Text(card.runtime.capitalized).font(.system(size: 9, weight: .medium)).foregroundStyle(
                         DieterTheme.tertiary)
                 }
@@ -712,8 +1235,40 @@ private struct BoardCardDragPreview: View {
         }
         .padding(12).frame(width: 240)
         .background(DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.shell.opacity(0.4)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.shell.opacity(0.4))
+        )
         .shadow(color: Color.black.opacity(0.42), radius: 18, y: 8)
+    }
+}
+
+/// Delay the single-click action until the double-click recognizer has failed.
+/// Opening the conversation on the first mouse-up can otherwise remove the
+/// card before the second click has a chance to open its editor.
+private struct BoardCardClickStyle: PrimitiveButtonStyle {
+    let edit: () -> Void
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .gesture(
+                TapGesture(count: 2)
+                    .exclusively(before: TapGesture(count: 1))
+                    .onEnded { action in
+                        switch action {
+                        case .first: edit()
+                        case .second: configuration.trigger()
+                        }
+                    }
+            )
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(keys: [.return, .space]) { _ in
+                configuration.trigger()
+                return .handled
+            }
+            .accessibilityAction { configuration.trigger() }
+            .accessibilityAction(named: "Edit card", edit)
     }
 }
 
@@ -724,127 +1279,239 @@ struct BoardCardView: View {
     @State private var editPresented = false
     @State private var renameText = ""
     @State private var hovering = false
-    @State private var labelDropTargeted = false
+    @State private var cardDrop = BoardCardDropState()
+    private var labelDropTargeted: Bool {
+        cardDrop.targeted && cardDrop.payload.flatMap(BoardLabelDragPayload.init) != nil
+    }
 
-    var labels: [Dieter_V1_Label] { store.selectedBoard?.labels.filter { card.labelIds.contains($0.id) } ?? [] }
+    init(card: Dieter_V1_Card, dropState: BoardCardDropState = BoardCardDropState()) {
+        self.card = card
+        _cardDrop = State(initialValue: dropState)
+    }
+
+    var labels: [Dieter_V1_Label] {
+        store.selectedBoard?.labels.filter { card.labelIds.contains($0.id) } ?? []
+    }
+    private func canMergePayload(_ value: String) -> Bool {
+        guard let payload = BoardCardDragPayload(value),
+            let source = store.state.cards.first(where: { $0.id == payload.cardID })
+        else { return false }
+        return BoardCardMergePolicy.canMerge(source, into: card)
+    }
+
+    private func performCardDrop(_ value: String, merge: Bool) -> Bool {
+        if let payload = BoardLabelDragPayload(value) {
+            guard payload.boardID == store.selectedBoardID,
+                store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true
+            else { return false }
+            let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
+            guard ids != card.labelIds else { return true }
+            Task { await store.setLabels(card, ids: ids) }
+            return true
+        }
+        guard let payload = BoardCardDragPayload(value),
+            payload.boardID == store.selectedBoardID,
+            let dragged = store.state.cards.first(where: { $0.id == payload.cardID })
+        else { return false }
+        guard payload.cardID != card.id else { return true }
+        if merge {
+            Task { await store.merge(dragged, into: card) }
+            return true
+        }
+        let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted {
+            $0.position < $1.position
+        }
+        let position = BoardDropOrdering.position(
+            before: card.id, movingCardID: payload.cardID, cards: laneCards)
+        Task { await store.move(dragged, lane: card.lane, position: position) }
+        return true
+    }
+
+    private var starting: Bool { store.pendingCardStarts[card.id] != nil }
+    private var canStart: Bool { BoardCardStartPolicy.canStart(card, board: store.selectedBoard) }
+    private var showsRunAction: Bool { canStart || starting }
+    private var runActionAccessibilityLabel: String {
+        let title = card.title.isEmpty ? "card" : card.title
+        return starting ? "Starting \(title)" : "Run \(title)"
+    }
 
     var body: some View {
-        Button {
-            Task { await store.openConversation(cardID: card.id) }
-        } label: {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(alignment: .top) {
-                    Text(card.title.isEmpty ? "Untitled card" : card.title).font(.system(size: 13, weight: .semibold))
-                        .multilineTextAlignment(.leading).lineLimit(3)
-                    Spacer(minLength: 4)
-                    Circle().fill(runtimeColor(card.runtime)).frame(width: 6, height: 6).padding(.top, 5)
-                }
-                if !card.summary.isEmpty {
-                    Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle).lineLimit(3)
-                        .multilineTextAlignment(.leading)
-                }
-                if !labels.isEmpty {
-                    FlowLabels(labels: labels)
-                }
-                HStack(spacing: 7) {
-                    StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
-                    if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
-                    if !card.model.isEmpty {
-                        Text(card.model).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+        ZStack(alignment: .bottomTrailing) {
+            Button {
+                Task { await store.openConversation(cardID: card.id) }
+            } label: {
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(alignment: .top) {
+                        Text(card.title.isEmpty ? "Untitled card" : card.title).font(
+                            .system(size: 13, weight: .semibold)
+                        ).multilineTextAlignment(.leading).lineLimit(3)
+                        Spacer(minLength: 4)
+                        Circle().fill(BoardAgentStatus.resolve(card).color).frame(width: 6, height: 6).padding(
+                            .top, 5
+                        )
+                        .help(BoardAgentStatus.resolve(card).label)
+                        .accessibilityLabel(BoardAgentStatus.resolve(card).label)
                     }
-                    Spacer()
-                    let age = BoardCardActivityText.compact(
-                        updatedAt: card.updatedAt,
-                        lastActivityAt: card.lastActivityAt,
-                        relativeTo: .now
-                    )
-                    if !age.isEmpty {
-                        Text(age)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(DieterTheme.tertiary)
-                            .accessibilityLabel("Last activity \(age)")
+                    if card.hasTokenUsage { TaskTokenUsageBadge(usage: card.tokenUsage) }
+                    if !card.summary.isEmpty {
+                        Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle)
+                            .lineLimit(3).multilineTextAlignment(.leading)
                     }
-                    if card.commentCount > 0 {
-                        Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10))
-                            .foregroundStyle(DieterTheme.tertiary)
+                    if !labels.isEmpty {
+                        FlowLabels(labels: labels)
                     }
-                    if !card.activeSubagents.isEmpty {
-                        Label("\(card.activeSubagents.count)", systemImage: "person.2").font(.system(size: 10))
-                            .foregroundStyle(DieterTheme.shell)
+                    HStack(spacing: 7) {
+                        StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
+                        if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
+                        if !card.model.isEmpty {
+                            Text(card.model).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        let age = BoardCardActivityText.compact(
+                            updatedAt: card.updatedAt,
+                            lastActivityAt: card.lastActivityAt,
+                            relativeTo: .now
+                        )
+                        if !age.isEmpty {
+                            Text(age)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(DieterTheme.tertiary)
+                                .accessibilityLabel("Last activity \(age)")
+                        }
+                        if card.commentCount > 0 {
+                            Label("\(card.commentCount)", systemImage: "text.bubble").font(.system(size: 10))
+                                .foregroundStyle(DieterTheme.tertiary)
+                        }
+                        if !card.activeSubagents.isEmpty {
+                            Label("\(card.activeSubagents.count)", systemImage: "person.2").font(
+                                .system(size: 10)
+                            ).foregroundStyle(DieterTheme.shell)
+                        }
+                        if showsRunAction { Color.clear.frame(width: 24, height: 24) }
                     }
                 }
-            }
-            .padding(12)
-            .background(
-                store.selectedCardID == card.id
-                    ? DieterTheme.elevated.opacity(0.82)
-                    : (hovering ? DieterTheme.raised.opacity(0.9) : DieterTheme.surface),
-                in: RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
-                    .stroke(
-                        labelDropTargeted
-                            ? DieterTheme.eyes.opacity(0.9)
-                            : (store.selectedCardID == card.id ? DieterTheme.shell.opacity(0.45) : DieterTheme.border),
-                        lineWidth: labelDropTargeted ? 1.5 : 1
-                    )
-            )
-            .overlay(alignment: .topTrailing) {
-                if labelDropTargeted {
-                    Image(systemName: "tag.fill")
-                        .font(.system(size: 10, weight: .bold)).foregroundStyle(DieterTheme.eyes)
-                        .padding(7)
-                        .background(DieterTheme.background.opacity(0.9), in: Circle())
-                        .padding(5)
-                        .transition(.scale.combined(with: .opacity))
-                } else if store.labelUpdatingCardIDs.contains(card.id) {
-                    ProgressView().controlSize(.mini).padding(8)
+                .padding(12)
+                .padding(.bottom, card.mergedIntoCardID.isEmpty ? 0 : 28)
+                .background(
+                    store.selectedCardID == card.id
+                        ? DieterTheme.elevated.opacity(0.82)
+                        : (hovering ? DieterTheme.raised.opacity(0.9) : DieterTheme.surface),
+                    in: RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
+                        .stroke(
+                            labelDropTargeted
+                                ? DieterTheme.eyes.opacity(0.9)
+                                : (store.selectedCardID == card.id
+                                    ? DieterTheme.shell.opacity(0.45) : DieterTheme.border),
+                            lineWidth: labelDropTargeted ? 1.5 : 1
+                        )
+                )
+                .overlay(alignment: .topTrailing) {
+                    if labelDropTargeted {
+                        Image(systemName: "tag.fill")
+                            .font(.system(size: 10, weight: .bold)).foregroundStyle(DieterTheme.eyes)
+                            .padding(7)
+                            .background(DieterTheme.background.opacity(0.9), in: Circle())
+                            .padding(5)
+                            .transition(.scale.combined(with: .opacity))
+                    } else if store.labelUpdatingCardIDs.contains(card.id) {
+                        ProgressView().controlSize(.mini).padding(8)
+                    }
                 }
-            }
-            .scaleEffect(labelDropTargeted ? 1.012 : 1)
-            .opacity(store.isPendingCard(card.id) ? 0.52 : 1)
-            .overlay(alignment: .bottomTrailing) {
-                if store.isPendingCard(card.id) {
-                    Image(systemName: store.isFailedOutboxItem(card.id) ? "exclamationmark.circle.fill" : "clock")
+                .scaleEffect(labelDropTargeted ? 1.012 : 1)
+                .opacity(store.isPendingCard(card.id) ? 0.52 : 1)
+                .overlay(alignment: .bottomTrailing) {
+                    if store.isPendingCard(card.id) {
+                        Image(
+                            systemName: store.isFailedOutboxItem(card.id)
+                                ? "exclamationmark.circle.fill" : "clock"
+                        )
                         .font(.caption2)
-                        .foregroundStyle(store.isFailedOutboxItem(card.id) ? DieterTheme.coral : DieterTheme.tertiary)
+                        .foregroundStyle(
+                            store.isFailedOutboxItem(card.id) ? DieterTheme.coral : DieterTheme.tertiary
+                        )
                         .padding(7)
+                    }
                 }
-            }
-            .draggable(BoardCardDragPayload(cardID: card.id, boardID: card.boardID, sourceLane: card.lane).encoded) {
-                BoardCardDragPreview(card: card)
-            }
-            .dropDestination(for: String.self) { values, _ in
-                guard let value = values.first else { return false }
-                if let payload = BoardLabelDragPayload(value) {
-                    guard payload.boardID == store.selectedBoardID,
-                        store.selectedBoard?.labels.contains(where: { $0.id == payload.labelID }) == true
-                    else { return false }
-                    let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
-                    guard ids != card.labelIds else { return true }
-                    Task { await store.setLabels(card, ids: ids) }
-                    return true
+                .draggable(
+                    BoardCardDragPayload(cardID: card.id, boardID: card.boardID, sourceLane: card.lane)
+                        .encoded
+                ) {
+                    BoardCardDragPreview(card: card)
                 }
-                guard let payload = BoardCardDragPayload(value),
-                    payload.boardID == store.selectedBoardID,
-                    let dragged = store.state.cards.first(where: { $0.id == payload.cardID })
-                else { return false }
-                guard payload.cardID != card.id else { return true }
-                let laneCards = store.displayedCards.filter { $0.lane == card.lane }.sorted {
-                    $0.position < $1.position
+                .onDrop(
+                    of: [.text],
+                    delegate: BoardCardDropDelegate(
+                        state: cardDrop, eligible: canMergePayload, drop: performCardDrop)
+                )
+                .overlay {
+                    if cardDrop.mergeReady {
+                        VStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.merge")
+                                .font(.system(size: 26, weight: .semibold))
+                            Text("Release to merge request").font(.caption.weight(.semibold))
+                            Text("Move source to Done").font(.caption2)
+                        }
+                        .foregroundStyle(DieterTheme.text)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(
+                            DieterTheme.background.opacity(0.95), in: RoundedRectangle(cornerRadius: 12)
+                        )
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(DieterTheme.eyes, lineWidth: 2))
+                        .allowsHitTesting(false)
+                        .accessibilityLabel("Release to merge the initial request and move the source to Done")
+                        .accessibilityIdentifier("card-merge.\(card.id)")
+                    }
                 }
-                let position = BoardDropOrdering.position(
-                    before: card.id, movingCardID: payload.cardID, cards: laneCards)
-                Task { await store.move(dragged, lane: card.lane, position: position) }
-                return true
-            } isTargeted: {
-                labelDropTargeted = $0
+                .onDisappear { cardDrop.reset() }
+                .animation(.easeOut(duration: 0.14), value: labelDropTargeted)
             }
-            .animation(.easeOut(duration: 0.14), value: labelDropTargeted)
+            .buttonStyle(BoardCardClickStyle(edit: openEditor))
+            if !card.mergedIntoCardID.isEmpty {
+                Button {
+                    Task { await store.openConversation(cardID: card.mergedIntoCardID) }
+                } label: {
+                    Label("Merged into task", systemImage: "arrow.triangle.merge").font(.caption2)
+                }
+                .buttonStyle(.plain)
+                .padding(8)
+                .background(DieterTheme.background, in: Capsule())
+                .help("Open the task that received this request")
+                .accessibilityIdentifier("card-merge-link.\(card.id)")
+                .padding(6)
+            }
+            if showsRunAction && hovering {
+                Button {
+                    Task { await store.start(card) }
+                } label: {
+                    Group {
+                        if starting {
+                            ProgressView().controlSize(.mini).tint(.white).scaleEffect(0.75)
+                        } else {
+                            Image(systemName: "play.fill").font(.system(size: 8, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(DieterTheme.shellDeep, in: Circle())
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(starting)
+                .help(
+                    starting ? "Starting the saved task" : "Run the saved task and move this card to Running"
+                )
+                .accessibilityLabel(runActionAccessibilityLabel)
+                .accessibilityIdentifier("card-run.\(card.id)")
+                .padding(.trailing, 12).padding(.bottom, 12)
+                .transition(.scale(scale: 0.85).combined(with: .opacity))
+            }
         }
-        .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .contextMenu {
             if store.isFailedOutboxItem(card.id) {
                 Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
@@ -854,12 +1521,17 @@ struct BoardCardView: View {
                 Divider()
             }
             Button("Open conversation") { Task { await store.openConversation(cardID: card.id) } }
-            Group {
-                if BoardCardEditingPolicy.canEditDraft(card) {
-                    Button("Edit card…") { editPresented = true }
+            if showsRunAction {
+                Button(starting ? "Starting task…" : "Run task", systemImage: "play.fill") {
+                    Task { await store.start(card) }
                 }
+                .disabled(starting)
+            }
+            Group {
+                if BoardCardEditingPolicy.canEditDraft(card) { Button("Edit card…") { editPresented = true } }
                 Button("Rename…") {
-                    renameText = card.title; renamePresented = true
+                    renameText = card.title
+                    renamePresented = true
                 }
                 Menu("Move to") {
                     ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { lane in
@@ -870,16 +1542,18 @@ struct BoardCardView: View {
                     Menu("Labels") {
                         ForEach(labels, id: \.id) { label in
                             Button {
-                                var ids = card.labelIds;
+                                var ids = card.labelIds
                                 if let index = ids.firstIndex(of: label.id) {
                                     ids.remove(at: index)
                                 } else {
                                     ids.append(label.id)
-                                }; Task { await store.setLabels(card, ids: ids) }
+                                }
+                                Task { await store.setLabels(card, ids: ids) }
                             } label: {
                                 Label(
                                     label.name,
-                                    systemImage: card.labelIds.contains(label.id) ? "checkmark.circle.fill" : "circle")
+                                    systemImage: card.labelIds.contains(label.id) ? "checkmark.circle.fill" : "circle"
+                                )
                             }
                         }
                     }
@@ -892,22 +1566,36 @@ struct BoardCardView: View {
             }.disabled(!store.projectIsAvailable(card.projectID))
         }
         .accessibilityIdentifier("card.\(card.id)")
+        .accessibilityHint("Click to open chat. Double-click to edit.")
         .smokeTarget("card.\(card.id)")
         .sheet(isPresented: $renamePresented) {
             VStack(alignment: .leading, spacing: 14) {
-                Text("Rename card").font(.title2.weight(.bold)); TextField("Title", text: $renameText);
+                Text("Rename card").font(.title2.weight(.bold))
+                TextField("Title", text: $renameText)
                 HStack {
-                    Spacer(); Button("Cancel") { renamePresented = false };
+                    Spacer()
+                    Button("Cancel") { renamePresented = false }
                     Button("Rename") {
                         Task {
-                            await store.rename(card, title: renameText); renamePresented = false
+                            await store.rename(card, title: renameText)
+                            renamePresented = false
                         }
-                    }.buttonStyle(.borderedProminent).disabled(renameText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }.buttonStyle(.borderedProminent).disabled(
+                        renameText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }.padding(22).frame(width: 440)
         }
         .sheet(isPresented: $editPresented) {
             EditCardSheet(card: card).environment(store)
+        }
+    }
+
+    private func openEditor() {
+        if BoardCardEditingPolicy.canEditDraft(card) {
+            editPresented = true
+        } else {
+            renameText = card.title
+            renamePresented = true
         }
     }
 }
@@ -918,7 +1606,9 @@ enum BoardCardActivityText {
         lastActivityAt: String,
         relativeTo now: Date = Date()
     ) -> String {
-        guard let activity = latest(updatedAt: updatedAt, lastActivityAt: lastActivityAt) else { return "" }
+        guard let activity = latest(updatedAt: updatedAt, lastActivityAt: lastActivityAt) else {
+            return ""
+        }
         let seconds = max(0, Int(now.timeIntervalSince(activity)))
         switch seconds {
         case ..<60: return "now"
@@ -944,7 +1634,7 @@ struct FlowLabels: View {
         HStack(spacing: 4) {
             ForEach(labels.prefix(3), id: \.id) { label in
                 HStack(spacing: 4) {
-                    Circle().fill(Color(hex: label.color) ?? DieterTheme.shellDeep).frame(width: 5, height: 5);
+                    Circle().fill(Color(hex: label.color) ?? DieterTheme.shellDeep).frame(width: 5, height: 5)
                     Text(label.name)
                 }
                 .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.subtle)

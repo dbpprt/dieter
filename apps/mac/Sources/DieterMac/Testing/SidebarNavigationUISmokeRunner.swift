@@ -159,8 +159,8 @@
             try? await DieterTaskSleep.milliseconds(350)
 
             // The saved-expanded project renders second; collapsing it clears the flag.
-            click(window: window, x: chevronX(), distanceFromTop: secondRowTop)
-            try? await DieterTaskSleep.milliseconds(350)
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
+            _ = await NativeUIAccessibility.wait { !loadPreferences().isExpanded(projectIDs[0]) }
 
             await showChats(store: store, window: window)
             let restoredChatPreferences = loadChatPreferences()
@@ -181,8 +181,8 @@
             results["expand-in-relaunched-ui"] =
                 !interacted.isExpanded(projectIDs[0])
                 ? "passed" : "failed: saved expanded project was not rendered second"
-            click(window: window, x: chevronX(), distanceFromTop: secondRowTop)
-            try? await DieterTaskSleep.milliseconds(350)
+            NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
+            _ = await NativeUIAccessibility.wait { loadPreferences().isExpanded(projectIDs[0]) }
         }
 
         private static func seed(_ store: DieterStore) {

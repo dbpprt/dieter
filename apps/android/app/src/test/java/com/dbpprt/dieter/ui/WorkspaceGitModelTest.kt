@@ -127,10 +127,21 @@ class WorkspaceActionAvailabilityTest {
         dirty: Boolean = false,
         workspaceBranch: String = "feature/test",
         baseBranch: String = "main",
+        remotePublishMode: String = "manual",
     ) = WorkspaceActionAvailability(
-        agentActive, operationActive, workspaceState, workspaceMode,
-        changedFiles, hasCommits, hasRemote, scmAuthenticated, hasPullRequest, dirty,
-        workspaceBranch, baseBranch,
+        agentActive = agentActive,
+        operationActive = operationActive,
+        workspaceState = workspaceState,
+        workspaceMode = workspaceMode,
+        changedFiles = changedFiles,
+        hasCommits = hasCommits,
+        hasRemote = hasRemote,
+        scmAuthenticated = scmAuthenticated,
+        hasPullRequest = hasPullRequest,
+        dirty = dirty,
+        workspaceBranch = workspaceBranch,
+        baseBranch = baseBranch,
+        remotePublishMode = remotePublishMode,
     )
 
     @Test
@@ -173,6 +184,24 @@ class WorkspaceActionAvailabilityTest {
         assertFalse(ready.copy(workspaceMode = "project", workspaceBranch = "main").allows(GitOperationKinds.CREATE_PR))
         assertFalse(ready.allows(GitOperationKinds.MERGE_PR))
         assertTrue(ready.copy(hasPullRequest = true).allows(GitOperationKinds.MERGE_PR))
+    }
+
+    @Test
+    fun remotePublishPolicyRoutesReviewActions() {
+        val pullRequest = availability(
+            hasCommits = true,
+            hasRemote = true,
+            scmAuthenticated = true,
+            remotePublishMode = "pull_request",
+        )
+        assertFalse(pullRequest.allowsMergeFlow)
+        assertFalse(pullRequest.allows(GitOperationKinds.MERGE_LOCAL))
+        assertTrue(pullRequest.allows(GitOperationKinds.CREATE_PR))
+
+        val pushBase = pullRequest.copy(remotePublishMode = "push_base")
+        assertTrue(pushBase.allowsMergeFlow)
+        assertTrue(pushBase.allows(GitOperationKinds.MERGE_LOCAL))
+        assertFalse(pushBase.allows(GitOperationKinds.CREATE_PR))
     }
 
     @Test

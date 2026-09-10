@@ -182,9 +182,9 @@ Commands:
   machine      List, route, rename, revoke, inspect, or control machines
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
-  project      Create, browse, open, relocate, archive, and restore projects
-  board        Manage boards, retention, workflows, and board labels
-  card         Fully manage durable board conversations
+  project      Create, browse, map hostnames, relocate, archive, and restore projects
+  board        Manage boards, hostnames, retention, workflows, and labels
+  card         Create, edit, merge, and manage durable board conversations
   chat         Fully manage standalone durable conversations
   workspace    Inspect changes and run durable Git/SCM operations
   file         Browse and edit project/workspace files with revision checks
@@ -906,6 +906,7 @@ Actions:
   list     List boards
   label    Add, list, or remove board labels
   retention Configure when Done conversations are archived
+  git      Configure the default remote and publishing mode
 `)
 		return nil
 	}
@@ -918,6 +919,8 @@ Actions:
 		return c.boardLabel(args[1:])
 	case "retention":
 		return c.boardRetention(args[1:])
+	case "git":
+		return c.boardGit(args[1:])
 	default:
 		return fmt.Errorf("unknown board action %q", args[0])
 	}
@@ -959,18 +962,39 @@ func (c *CLI) boardLabel(args []string) error {
 	}
 }
 func (c *CLI) boardCreate(args []string) error {
-	const usage = "Usage: dieter board create --project PROJECT --name NAME [--workflow direct|review] [--archive-done POLICY]\n"
+	const usage = "Usage: dieter board create --project PROJECT --name NAME [--workflow direct|review] [--archive-done POLICY] [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base]\n"
 	set := flags("board create")
 	project := set.String("project", "", "project")
 	name := set.String("name", "", "name")
 	workflow := set.String("workflow", model.WorkflowReview, "workflow")
 	description := set.String("description", "", "description")
 	archiveDone := set.String("archive-done", model.DoneArchiveNever, "Done archive policy")
+	baseRemote := set.String("base-remote", "", "default Git remote")
+	remotePublish := set.String("remote-publish", model.RemotePublishManual, "remote publish mode")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
 	}
-	item, err := c.Store.CreateBoard(store.CreateBoardInput{Project: *project, Name: *name, Workflow: *workflow, Description: *description, DoneArchivePolicy: *archiveDone})
+	item, err := c.Store.CreateBoard(store.CreateBoardInput{Project: *project, Name: *name, Workflow: *workflow, Description: *description, DoneArchivePolicy: *archiveDone, BaseRemote: *baseRemote, RemotePublishMode: *remotePublish})
+	if err != nil {
+		return err
+	}
+	return jsonOut(c.Out, item)
+}
+
+func (c *CLI) boardGit(args []string) error {
+	const usage = "Usage: dieter board git --base-remote REMOTE --remote-publish manual|pull_request|push_base BOARD\n"
+	set := flags("board git")
+	baseRemote := set.String("base-remote", "", "default Git remote")
+	remotePublish := set.String("remote-publish", "", "remote publish mode")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 || *remotePublish == "" {
+		return errors.New("BOARD and --remote-publish are required")
+	}
+	item, err := c.Store.UpdateBoardGitSettings(set.Arg(0), *baseRemote, *remotePublish)
 	if err != nil {
 		return err
 	}
@@ -1142,10 +1166,11 @@ func splitCSV(value string) []string {
 }
 
 func (c *CLI) cardCreate(args []string) error {
-	const usage = `Usage: dieter card create --project PROJECT --board BOARD --title TITLE [options]
+	const usage = `Usage: dieter card create --project PROJECT --board BOARD (--title TITLE | --auto-title) [options]
 
 Options:
   --lane todo|running    Todo saves a draft; Running sends immediately
+  --auto-title           Generate the title from the task brief with GPT Spark
   --prompt TEXT          Initial task brief
   --prompt-file FILE     Read the task brief from a file or -
   --attach FILE          Attach an image or file (repeat up to 4 times)
@@ -1156,12 +1181,15 @@ Options:
   --workspace MODE       project or worktree (required)
   --branch BRANCH        Optional worktree branch
   --base-branch BRANCH   Optional worktree base-branch override
+  --base-remote REMOTE   Optional board/project remote override
+  --remote-publish MODE  manual, pull_request, or push_base
   --format json|id       Output format
 `
 	set := flags("card create")
 	project := set.String("project", "", "project")
 	board := set.String("board", "", "board")
 	title := set.String("title", "", "title")
+	autoTitle := set.Bool("auto-title", false, "generate title from task brief with GPT Spark")
 	lane := set.String("lane", model.LaneTodo, "lane")
 	prompt := set.String("prompt", "", "prompt")
 	file := set.String("prompt-file", "", "prompt file")
@@ -1175,6 +1203,8 @@ Options:
 	workspaceMode := set.String("workspace", "", "workspace mode")
 	workspaceBranch := set.String("branch", "", "workspace branch")
 	workspaceBaseBranch := set.String("base-branch", "", "workspace base branch")
+	workspaceBaseRemote := set.String("base-remote", "", "workspace base remote")
+	remotePublish := set.String("remote-publish", "", "remote publish mode")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -1186,6 +1216,12 @@ Options:
 	if err != nil {
 		return err
 	}
+	if strings.TrimSpace(*title) == "" && !*autoTitle {
+		return errors.New("--title is required unless --auto-title is set")
+	}
+	if *autoTitle && strings.TrimSpace(value) == "" {
+		return errors.New("--prompt or --prompt-file is required with --auto-title")
+	}
 	parts, err := attachmentParts(attachmentFiles)
 	if err != nil {
 		return err
@@ -1194,6 +1230,8 @@ Options:
 		Project: *project, Board: *board, Lane: *lane, Title: *title, Prompt: value,
 		Provider: *provider, Model: *modelName, Effort: *effort, LabelIDs: splitCSV(*labels), Attachments: parts,
 		WorkspaceMode: *workspaceMode, WorkspaceBranch: *workspaceBranch, WorkspaceBaseBranch: *workspaceBaseBranch,
+		AutoGenerateTitle:   *autoTitle,
+		WorkspaceBaseRemote: *workspaceBaseRemote, RemotePublishMode: *remotePublish,
 	})
 	if err != nil {
 		return err
@@ -1206,11 +1244,13 @@ Options:
 }
 
 func (c *CLI) cardWorkspace(args []string) error {
-	const usage = "Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] CARD\n"
+	const usage = "Usage: dieter card workspace --mode project|worktree [--branch BRANCH] [--base-branch BRANCH] [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base] CARD\n"
 	set := flags("card workspace")
 	mode := set.String("mode", "", "workspace mode")
 	branch := set.String("branch", "", "workspace branch")
 	baseBranch := set.String("base-branch", "", "base branch")
+	baseRemote := set.String("base-remote", "", "base remote")
+	remotePublish := set.String("remote-publish", "", "remote publish mode")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -1218,7 +1258,17 @@ func (c *CLI) cardWorkspace(args []string) error {
 	if set.NArg() != 1 {
 		return errors.New("CARD is required")
 	}
-	value, err := c.Store.UpdateCardWorkspaceSelection(set.Arg(0), *mode, *branch, *baseBranch, false)
+	current, err := c.Store.ResolveCard(set.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *baseRemote == "" {
+		*baseRemote = current.WorkspaceBaseRemote
+	}
+	if *remotePublish == "" {
+		*remotePublish = current.RemotePublishMode
+	}
+	value, err := c.Store.UpdateCardWorkspaceSelection(set.Arg(0), *mode, *branch, *baseBranch, *baseRemote, *remotePublish, false)
 	if err != nil {
 		return err
 	}

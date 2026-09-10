@@ -46,7 +46,8 @@ struct ScheduleEditor: View {
     private var previewKey: String { "\(cron)|\(draft.timezone)" }
 
     private var canSave: Bool {
-        !saving && !draft.boardID.isEmpty && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !saving && !draft.boardID.isEmpty
+            && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !draft.workspaceMode.isEmpty
             && !draft.titleTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !draft.promptTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -108,7 +109,8 @@ struct ScheduleEditor: View {
                         }
 
                         ScheduleEditorSection(
-                            title: "Timing", subtitle: "Choose a recurring pattern or enter cron only when needed",
+                            title: "Timing",
+                            subtitle: "Choose a recurring pattern or enter cron only when needed",
                             symbol: "clock"
                         ) {
                             VStack(alignment: .leading, spacing: 12) {
@@ -243,7 +245,8 @@ struct ScheduleEditor: View {
                     VStack(spacing: 18) {
                         ScheduleEditorSection(
                             title: "Card templates",
-                            subtitle: "Variables are rendered by the daemon for every occurrence", symbol: "curlybraces"
+                            subtitle: "Variables are rendered by the daemon for every occurrence",
+                            symbol: "curlybraces"
                         ) {
                             VStack(alignment: .leading, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 6) {
@@ -296,7 +299,8 @@ struct ScheduleEditor: View {
                         }
 
                         ScheduleEditorSection(
-                            title: "Agent", subtitle: "Choose the harness saved on every card this schedule creates",
+                            title: "Agent",
+                            subtitle: "Choose the harness saved on every card this schedule creates",
                             symbol: "cpu"
                         ) {
                             HarnessFields(
@@ -309,7 +313,9 @@ struct ScheduleEditor: View {
                             symbol: "checkmark.shield"
                         ) {
                             VStack(alignment: .leading, spacing: 10) {
-                                Picker("When a prior scheduled card is still open", selection: $draft.openCardPolicy) {
+                                Picker(
+                                    "When a prior scheduled card is still open", selection: $draft.openCardPolicy
+                                ) {
                                     Text("Skip this occurrence").tag("skip_if_open")
                                     Text("Always create another card").tag("always")
                                 }
@@ -333,14 +339,16 @@ struct ScheduleEditor: View {
             draft.projectID = context.target.projectID
             if !projectBoards.contains(where: { $0.id == draft.boardID }) {
                 draft.boardID =
-                    projectBoards.first(where: { $0.id == context.selectedBoardID })?.id ?? projectBoards.first?.id
+                    projectBoards.first(where: { $0.id == context.selectedBoardID })?.id ?? projectBoards
+                    .first?.id
                     ?? ""
             }
             if draft.provider.isEmpty, let harness = context.harnessCatalog.harnesses.first {
                 draft.provider = harness.id
                 draft.model = harness.defaultModel
-                draft.effort = harness.models.first(where: { $0.id == harness.defaultModel })?.defaultEffort ?? ""
-                draft.providerOptions = ProviderOptionValues.defaults(for: harness)
+                draft.effort =
+                    harness.models.first(where: { $0.id == harness.defaultModel })?.defaultEffort ?? ""
+                draft.providerOptions = ProviderOptionValues.defaults(for: harness, model: draft.model)
             }
         }
         .task(id: previewKey) {
@@ -368,8 +376,10 @@ struct ScheduleEditor: View {
     private func insert(_ variable: String, into field: TemplateField) {
         let token = "{{\(variable)}}"
         switch field {
-        case .title: draft.titleTemplate = ScheduleTemplateRenderer.appending(token, to: draft.titleTemplate)
-        case .prompt: draft.promptTemplate = ScheduleTemplateRenderer.appending(token, to: draft.promptTemplate)
+        case .title:
+            draft.titleTemplate = ScheduleTemplateRenderer.appending(token, to: draft.titleTemplate)
+        case .prompt:
+            draft.promptTemplate = ScheduleTemplateRenderer.appending(token, to: draft.promptTemplate)
         }
         templateField = field
     }
@@ -381,12 +391,14 @@ struct ScheduleEditor: View {
         draft.cron = cron
         draft.labelIds = Array(selectedLabelIDs).sorted()
         draft.misfirePolicy = "latest"
-        let saved = await model.saveSchedule(id: schedule?.id, draft: draft, expectedTarget: context.target)
+        let saved = await model.saveSchedule(
+            id: schedule?.id, draft: draft, expectedTarget: context.target)
         saving = false
         if saved {
             dismiss()
         } else {
-            previewError = model.errorMessage ?? "This project is no longer connected. Close the editor and reconnect."
+            previewError =
+                model.errorMessage ?? "This project is no longer connected. Close the editor and reconnect."
         }
     }
 }

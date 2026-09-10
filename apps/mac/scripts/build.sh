@@ -91,8 +91,21 @@ if [ ! -f "$BUNDLE_MANIFEST" ] || \
     ditto "$WEBRTC_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework"
 fi
 
-codesign --force --sign - "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework" >&2
-codesign --force --deep --sign - "$APP_BUNDLE" >&2
+# Ad-hoc signatures identify each build by its cdhash, invalidating privacy
+# grants after source changes. Prefer one available development identity locally.
+SIGNING_IDENTITY=${DIETER_MAC_SIGNING_IDENTITY:-}
+if [ -z "$SIGNING_IDENTITY" ] && [ "${CI:-}" != "true" ]; then
+    IDENTITIES=$(security find-identity -v -p codesigning | sed -n '/"Apple Development:/s/.*) \([0-9A-F]*\) .*/\1/p')
+    if [ "$(printf '%s\n' "$IDENTITIES" | awk 'NF { n++ } END { print n+0 }')" -eq 1 ]; then
+        SIGNING_IDENTITY=$IDENTITIES
+    fi
+fi
+SIGNING_IDENTITY=${SIGNING_IDENTITY:--}
+if [ "$SIGNING_IDENTITY" = "-" ]; then
+    echo "Ad-hoc signing: privacy permissions may require reapproval after rebuilds. Set DIETER_MAC_SIGNING_IDENTITY for a stable identity." >&2
+fi
+codesign --force --sign "$SIGNING_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/WebRTC.framework" >&2
+codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP_BUNDLE" >&2
 "$SCRIPT_DIR/verify-bundle.sh" "$APP_BUNDLE" >&2
 stat -f '%N %Fm %z %i' \
     "$APP_BUNDLE/Contents/Info.plist" \

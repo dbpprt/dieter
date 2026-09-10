@@ -13,7 +13,8 @@
     /// cannot take the app down.
     @MainActor
     enum ConversationUISmokeRunner {
-        static let openAttachmentPreviewNotification = Notification.Name("dieter.smoke.open-attachment-preview")
+        static let openAttachmentPreviewNotification = Notification.Name(
+            "dieter.smoke.open-attachment-preview")
         private static let syntheticFixtureID = "c_conversation_ui_smoke"
         private static let syntheticTailChatFixtureID = "c_conversation_chat_tail_ui_smoke"
         private static let syntheticCardFixtureID = "c_conversation_card_ui_smoke"
@@ -57,7 +58,7 @@
             progress("wait finished after \(waited)s, phase \(store.phase.label)", in: output)
             guard store.phase.isConnected else {
                 let detail: String
-                if case let .failed(message) = store.phase {
+                if case .failed(let message) = store.phase {
                     detail = message
                 } else {
                     detail = store.phase.label
@@ -127,7 +128,8 @@
             } else {
                 await runHistoryChecks(store: store, window: window, results: &results, output: output)
             }
-            await runActivityIndicatorCheck(store: store, window: window, results: &results, output: output)
+            await runActivityIndicatorCheck(
+                store: store, window: window, results: &results, output: output)
             await runQueuedMessageCheck(store: store, window: window, results: &results, output: output)
             await runViewportChecks(store: store, window: window, results: &results, output: output)
             await runTurnFailureCheck(store: store, window: window, results: &results, output: output)
@@ -185,26 +187,33 @@
             assistant.parts = [text]
             snapshot.conversation.messages = [assistant]
             store.conversation = snapshot
-            let prepared = await NativeUIAccessibility.wait {
-                NativeUIAccessibility.find("conversation.table.next-rows", in: window) != nil
+            // Large tables now share the native selectable message surface.
+            // Verify rendered table cells rather than removed pagination controls.
+            let renderedTable = await NativeUIAccessibility.wait {
+                nativeTextViews(in: window.contentView).contains { view in
+                    let firstRow = (view.string as NSString).range(of: "Row 0")
+                    guard view.isSelectable, firstRow.location != NSNotFound,
+                        view.string.contains("Row 100"),
+                        view.string.contains("Formatted content"),
+                        !view.string.contains("**Formatted content**"),
+                        let style = view.textStorage?.attribute(
+                            .paragraphStyle, at: firstRow.location, effectiveRange: nil) as? NSParagraphStyle
+                    else { return false }
+                    return style.textBlocks.contains { $0 is NSTextTableBlock }
+                }
             }
-            // Preparation mounts the table before the transcript's tail-follow
-            // layout finishes. Wait for that layout before resolving click geometry.
-            try? await DieterTaskSleep.milliseconds(350)
-            capture(window, to: output.appending(path: "03c-large-markdown-table-before.png"))
-            let advanced = prepared && NativeUIAccessibility.click("conversation.table.next-rows", in: window)
-            let rowPage = await NativeUIAccessibility.wait {
-                NativeUIAccessibility.find("conversation.table.rows.1", in: window) != nil
-            }
-            results["large-markdown-table-pagination"] =
-                advanced && rowPage ? "passed" : "failed: next table page unavailable"
+            results["large-markdown-table-selection"] =
+                renderedTable ? "passed" : "failed: selectable native table preview was absent"
             capture(window, to: output.appending(path: "03c-large-markdown-table.png"))
             let opened = NativeUIAccessibility.click("conversation.full-text", in: window)
             let fullText = await NativeUIAccessibility.wait {
                 guard let sheet = window.attachedSheet else { return false }
-                return nativeTextViews(in: sheet.contentView).contains { $0.string == text.text && $0.isSelectable }
+                return nativeTextViews(in: sheet.contentView).contains {
+                    $0.string == text.text && $0.isSelectable
+                }
             }
-            results["large-message-full-text"] = opened && fullText ? "passed" : "failed: complete message unavailable"
+            results["large-message-full-text"] =
+                opened && fullText ? "passed" : "failed: complete message unavailable"
             if let sheet = window.attachedSheet {
                 capture(sheet, to: output.appending(path: "03d-full-message.png"))
                 _ = NativeUIAccessibility.click("conversation.full-text.done", in: sheet)
@@ -251,7 +260,8 @@
                 conversationStatus: snapshot.conversation.status,
                 cardRuntime: snapshot.detail.card.runtime
             )
-            results["turn-failure"] = failure != nil ? "passed" : "failed: failure presentation was not resolved"
+            results["turn-failure"] =
+                failure != nil ? "passed" : "failed: failure presentation was not resolved"
             results["turn-failure-log"] =
                 failure?.log.contains("provider stderr") == true
                 ? "passed"
@@ -379,7 +389,7 @@
                 : "failed: streamed growth forced a detached viewport back to the tail"
             progress("viewport: detached stream growth recorded", in: output)
 
-            click(window: window, x: 985, distanceFromTop: 626)
+            _ = NativeUIAccessibility.click("conversation.jump-to-latest", in: window)
             progress("viewport: posted Jump to latest click", in: output)
             let jumped = await waitForViewport(
                 conversationID: syntheticTailChatFixtureID,
@@ -509,7 +519,8 @@
         ) async {
             var bestID: String?
             var bestTotal = 0
-            let candidates = (store.state.cards + store.chats).sorted { $0.updatedAt > $1.updatedAt }.map(\.id)
+            let candidates = (store.state.cards + store.chats).sorted { $0.updatedAt > $1.updatedAt }.map(
+                \.id)
             for cardID in candidates.prefix(12) {
                 await store.openConversation(cardID: cardID)
                 var waited = 0
@@ -523,7 +534,8 @@
                 }
             }
             guard let bestID, bestTotal >= 120 else {
-                results["history-bounded"] = "skipped: largest recent conversation has \(bestTotal) messages"
+                results["history-bounded"] =
+                    "skipped: largest recent conversation has \(bestTotal) messages"
                 return
             }
             await store.openConversation(cardID: bestID)
@@ -536,7 +548,8 @@
             try? await DieterTaskSleep.seconds(5)
             let loaded = store.conversationMessages.count
             progress(
-                "history: \(loaded) of \(store.conversationHistoryTotal) messages loaded after settling", in: output)
+                "history: \(loaded) of \(store.conversationHistoryTotal) messages loaded after settling",
+                in: output)
             capture(window, to: output.appending(path: "05-long-history.png"))
             results["history-bounded"] =
                 loaded <= bestTotal - 30 && store.conversationHistoryHasMore
@@ -578,7 +591,8 @@
 
             store.composerAttachments = []
             pasteboard.clearContents()
-            pasteboard.setData(smokeImagePNG(), forType: NSPasteboard.PasteboardType(UTType.png.identifier))
+            pasteboard.setData(
+                smokeImagePNG(), forType: NSPasteboard.PasteboardType(UTType.png.identifier))
             postCommandV(window)
             try? await DieterTaskSleep.milliseconds(900)
             results["paste-image-attaches"] =
@@ -630,15 +644,18 @@
                 }
             }
 
-            let pastedText = Array(repeating: "A pasted paragraph should wrap naturally in the composer.", count: 8)
-                .joined(separator: " ")
+            let pastedText = Array(
+                repeating: "A pasted paragraph should wrap naturally in the composer.", count: 8
+            )
+            .joined(separator: " ")
             let typedSuffix = "x"
             store.composerText = ""
             store.composerAttachments = []
             try? await DieterTaskSleep.milliseconds(500)
-            postClick(window: window, x: 850, distanceFromTop: 690)
+            _ = NativeUIAccessibility.click("conversation.composer", in: window)
             try? await DieterTaskSleep.milliseconds(300)
-            progress("paste check focused responder: \(String(describing: window.firstResponder))", in: output)
+            progress(
+                "paste check focused responder: \(String(describing: window.firstResponder))", in: output)
             pasteboard.clearContents()
             pasteboard.setString(pastedText, forType: .string)
             let before = store.composerAttachments.count
@@ -651,7 +668,9 @@
                 : "failed: text paste changed attachments"
             postCharacter(typedSuffix, keyCode: 7, in: window)
             try? await DieterTaskSleep.milliseconds(600)
-            progress("paste check typed suffix; composer now has \(store.composerText.count) characters", in: output)
+            progress(
+                "paste check typed suffix; composer now has \(store.composerText.count) characters",
+                in: output)
             results["paste-text-continues-typing"] =
                 store.composerText == pastedText + typedSuffix
                 ? "passed"
@@ -730,7 +749,7 @@
                         pressure: type == .leftMouseDown ? 1 : 0
                     )
                 else { continue }
-                window.sendEvent(event)
+                NSApp.postEvent(event, atStart: false)
             }
         }
 
@@ -854,7 +873,9 @@
             snapshot.detail.project = project
             snapshot.conversation.cardID = card.id
             snapshot.conversation.status = "idle"
-            snapshot.conversation.messages = [user, firstThought, readCall, secondThought, editCall, answer]
+            snapshot.conversation.messages = [
+                user, firstThought, readCall, secondThought, editCall, answer,
+            ]
 
             if !store.chats.contains(where: { $0.id == card.id }) { store.chats.append(card) }
             store.chatProjects = store.projects
@@ -891,7 +912,8 @@
                 }
                 store.chatProjects = store.projects
             } else {
-                var board = store.state.boards.first(where: { $0.projectID == project.id }) ?? Dieter_V1_Board()
+                var board =
+                    store.state.boards.first(where: { $0.projectID == project.id }) ?? Dieter_V1_Board()
                 if board.id.isEmpty {
                     board.id = "b_conversation_ui_smoke"
                     board.projectID = project.id
@@ -929,8 +951,10 @@
         private static func longTextMessage(id: String, prefix: String) -> Dieter_V1_UiMessage {
             var text = Dieter_V1_MessagePart()
             text.type = "text"
-            text.text = (1...72).map { "\(prefix) line \($0) keeps the transcript taller than its viewport." }
-                .joined(separator: "\n")
+            text.text = (1...72).map {
+                "\(prefix) line \($0) keeps the transcript taller than its viewport."
+            }
+            .joined(separator: "\n")
             var message = Dieter_V1_UiMessage()
             message.id = id
             message.role = "assistant"
@@ -969,6 +993,9 @@
             guard let content = window.contentView else { return }
             window.makeKeyAndOrderFront(nil)
             let location = NSPoint(x: content.bounds.width - 260, y: content.bounds.height * 0.55)
+            var hit = content.hitTest(content.convert(location, from: nil))
+            while hit != nil && !(hit is NSScrollView) { hit = hit?.superview }
+            guard let scroll = hit as? NSScrollView else { return }
             let screenLocation = window.convertPoint(toScreen: location)
             for index in 0..<10 {
                 guard
@@ -988,7 +1015,7 @@
                     value: index == 0 ? 1 : (index == 9 ? 4 : 2)
                 )
                 if let event = NSEvent(cgEvent: cgEvent) {
-                    window.sendEvent(event)
+                    scroll.scrollWheel(with: event)
                 }
                 try? await DieterTaskSleep.milliseconds(20)
             }
@@ -1008,7 +1035,9 @@
 
         static func outputDirectory() -> URL {
             let arguments = ProcessInfo.processInfo.arguments
-            if let index = arguments.firstIndex(of: "--ui-smoke-output"), arguments.indices.contains(index + 1) {
+            if let index = arguments.firstIndex(of: "--ui-smoke-output"),
+                arguments.indices.contains(index + 1)
+            {
                 return URL(filePath: arguments[index + 1], directoryHint: .isDirectory)
             }
             return URL(filePath: NSTemporaryDirectory()).appending(
@@ -1025,7 +1054,8 @@
         }
 
         private static func writeReport(_ values: [String: String], to directory: URL) {
-            let data = try? JSONSerialization.data(withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
+            let data = try? JSONSerialization.data(
+                withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
             try? data?.write(to: directory.appending(path: "report.json"), options: .atomic)
             DispatchQueue.main.async { NSApp.terminate(nil) }
         }

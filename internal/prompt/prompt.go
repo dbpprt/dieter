@@ -21,6 +21,8 @@ Workspace mode: {{workspace.mode}}
 Working tree: {{workspace.path}}
 Branch: {{workspace.branch}}
 Base branch: {{workspace.base_branch}}
+Base remote: {{workspace.base_remote}}
+Remote publishing: {{workspace.remote_publish_mode}}
 
 {{project.instructions_block}}
 
@@ -52,7 +54,8 @@ var allowedVariables = map[string]bool{
 	"scope":        true,
 	"project.name": true, "project.id": true, "project.path": true, "project.registered_path": true, "project.summary": true,
 	"project.instructions": true, "project.instructions_block": true,
-	"workspace.path": true, "workspace.mode": true, "workspace.branch": true, "workspace.base_branch": true, "workspace.base_sha": true,
+	"workspace.path": true, "workspace.mode": true, "workspace.branch": true, "workspace.base_branch": true, "workspace.base_remote": true,
+	"workspace.base_sha": true, "workspace.remote_publish_mode": true,
 	"board.name": true, "board.id": true, "board.workflow": true, "board.description": true,
 	"board.labels": true, "board.target_lane": true,
 	"card.id": true, "card.title": true, "card.lane": true, "card.labels": true,
@@ -197,7 +200,8 @@ func ResolveForWorkspace(settings model.Settings, detail model.CardDetail, label
 		"project.summary": detail.Project.Summary, "project.instructions": detail.Project.Prompt,
 		"project.instructions_block": projectBlock,
 		"workspace.path":             workspacePath, "workspace.mode": workspaceMode, "workspace.branch": workspace.Branch,
-		"workspace.base_branch": workspace.BaseBranch, "workspace.base_sha": workspace.BaseSHA,
+		"workspace.base_branch": workspace.BaseBranch, "workspace.base_remote": workspace.BaseRemote,
+		"workspace.base_sha": workspace.BaseSHA, "workspace.remote_publish_mode": workspace.RemotePublishMode,
 		"board.name": detail.Board.Name, "board.id": detail.Board.ID, "board.workflow": detail.Board.Workflow,
 		"board.description": detail.Board.Description, "board.labels": strings.Join(availableLabels, ", "), "board.target_lane": targetLane,
 		"card.id": detail.Card.ID, "card.title": detail.Card.Title, "card.lane": detail.Card.Lane,
@@ -259,6 +263,12 @@ func BindWorkspace(instructions, registeredPath string, workspace model.Workspac
 	}
 	if branch := strings.TrimSpace(workspace.Branch); branch != "" {
 		lines = append(lines, "- Assigned branch: "+branch)
+	}
+	if remote := strings.TrimSpace(workspace.BaseRemote); remote != "" {
+		lines = append(lines, "- Configured base remote: "+remote)
+	}
+	if publishMode := strings.TrimSpace(workspace.RemotePublishMode); publishMode != "" {
+		lines = append(lines, "- Remote publish mode: "+publishMode)
 	}
 	registeredPath = strings.TrimSpace(registeredPath)
 	if registeredPath != "" && registeredPath != workspacePath {

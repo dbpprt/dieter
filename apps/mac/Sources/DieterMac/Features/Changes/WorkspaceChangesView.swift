@@ -79,7 +79,9 @@ struct WorkspaceChangesView: View {
     @State private var viewedPaths: Set<String> = []
     @State private var viewedRevision = ""
 
-    private var diffMode: WorkspaceDiffViewMode { WorkspaceDiffViewMode(rawValue: diffModeRaw) ?? .inline }
+    private var diffMode: WorkspaceDiffViewMode {
+        WorkspaceDiffViewMode(rawValue: diffModeRaw) ?? .inline
+    }
     private var card: Dieter_V1_Card? { model.card }
     private var workspace: Dieter_V1_Workspace? { model.conversationWorkspace }
     private var changes: Dieter_V1_Changeset? { model.conversationChangeset }
@@ -100,26 +102,32 @@ struct WorkspaceChangesView: View {
     }
     private var visibleOperation: Dieter_V1_GitOperation? {
         guard let operation = model.gitOperation else { return nil }
-        return GitOperationStatus.active(operation.status) || operation.status == "failed" ? operation : nil
+        return GitOperationStatus.active(operation.status) || operation.status == "failed"
+            ? operation : nil
     }
     private var availability: WorkspaceActionAvailability {
         let mode = ConversationWorkspaceMode.projectMode(
             workspace?.mode ?? card?.workspace.mode ?? card?.workspaceMode ?? "project"
         ).rawValue
         return WorkspaceActionAvailability(
-            agentActive: ["starting", "running", "working", "streaming", "waiting", "waiting_for_user", "cancelling"]
-                .contains((card?.runtime ?? "").lowercased()),
+            agentActive: [
+                "starting", "running", "working", "streaming", "waiting", "waiting_for_user", "cancelling",
+            ]
+            .contains((card?.runtime ?? "").lowercased()),
             operationActive: operationActive,
             workspaceState: workspace?.state ?? card?.workspace.state ?? "",
             workspaceMode: mode,
             changedFiles: Int(changes?.files.count ?? Int(card?.workspace.changedFiles ?? 0)),
-            hasCommits: !(changes?.commits.isEmpty ?? true) || (workspace?.ahead ?? card?.workspace.ahead ?? 0) > 0,
+            hasCommits: !(changes?.commits.isEmpty ?? true)
+                || (workspace?.ahead ?? card?.workspace.ahead ?? 0) > 0,
             hasRemote: model.conversationSCMCapabilities?.pushAvailable ?? false,
             scmAuthenticated: model.conversationSCMCapabilities?.authenticated ?? false,
             hasPullRequest: pullRequest != nil,
             workspaceBranch: workspace?.branch ?? card?.workspace.branch ?? "",
             baseBranch: workspace?.baseBranch ?? card?.workspace.baseBranch ?? "",
-            dirty: workspace?.dirty ?? false
+            dirty: workspace?.dirty ?? false,
+            remotePublishMode: workspace?.remotePublishMode ?? card?.remotePublishMode
+                ?? RemotePublishMode.manual.rawValue
         )
     }
 
@@ -151,11 +159,16 @@ struct WorkspaceChangesView: View {
             viewedPaths = []
         }
         #if DIETER_UI_SMOKE
-            .onReceive(NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.openMergeSheetNotification)) {
+            .onReceive(
+                NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.openMergeSheetNotification)
+            ) {
                 _ in
                 mergeSheetPresented = true
             }
-            .onReceive(NotificationCenter.default.publisher(for: WorkspaceUISmokeRunner.closeMergeSheetNotification)) {
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: WorkspaceUISmokeRunner.closeMergeSheetNotification)
+            ) {
                 _ in
                 mergeSheetPresented = false
             }
@@ -244,7 +257,9 @@ struct WorkspaceChangesView: View {
             } label: {
                 Image(systemName: "ellipsis")
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().buttonStyle(DieterIconButtonStyle())
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().buttonStyle(
+                DieterIconButtonStyle()
+            )
             .help("Workspace actions")
             Button {
                 Task { await model.loadWorkspaceSurface() }
@@ -300,8 +315,11 @@ struct WorkspaceChangesView: View {
                 Button {
                     operationKind = .update
                 } label: {
-                    Label(roomy ? "Update from \(baseBranch)" : "Update", systemImage: "arrow.triangle.2.circlepath")
-                        .lineLimit(1).fixedSize()
+                    Label(
+                        roomy ? "Update from \(baseBranch)" : "Update",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                    .lineLimit(1).fixedSize()
                 }
                 .buttonStyle(DieterSecondaryButtonStyle())
                 .disabled(!availability.allows(.update))
@@ -329,7 +347,8 @@ struct WorkspaceChangesView: View {
                     mergeSheetPresented = true
                 } label: {
                     Label(
-                        !compact && roomy ? "Merge into \(baseBranch)…" : "Merge…", systemImage: "arrow.triangle.merge"
+                        !compact && roomy ? "Merge into \(baseBranch)…" : "Merge…",
+                        systemImage: "arrow.triangle.merge"
                     )
                     .lineLimit(1).fixedSize()
                 }
@@ -349,14 +368,18 @@ struct WorkspaceChangesView: View {
 
     @ViewBuilder private var operationMenu: some View {
         Section("Working copy") {
-            Button(GitOperationKind.commit.title, systemImage: "checkmark.circle") { operationKind = .commit }
-                .disabled(!availability.allows(.commit))
+            Button(GitOperationKind.commit.title, systemImage: "checkmark.circle") {
+                operationKind = .commit
+            }
+            .disabled(!availability.allows(.commit))
             Button(GitOperationKind.update.title, systemImage: "arrow.triangle.2.circlepath") {
                 operationKind = .update
             }
             .disabled(!availability.allows(.update))
-            Button(GitOperationKind.validate.title, systemImage: "checkmark.seal") { operationKind = .validate }
-                .disabled(!availability.allows(.validate))
+            Button(GitOperationKind.validate.title, systemImage: "checkmark.seal") {
+                operationKind = .validate
+            }
+            .disabled(!availability.allows(.validate))
             Button(GitOperationKind.push.title, systemImage: "arrow.up.circle") { operationKind = .push }
                 .disabled(!availability.allows(.push))
         }
@@ -368,7 +391,9 @@ struct WorkspaceChangesView: View {
                 .disabled(!availability.allows(.createPullRequest))
             } else {
                 if let url = URL(string: pullRequest?.url ?? "") {
-                    Button("Open pull request", systemImage: "arrow.up.right.square") { NSWorkspace.shared.open(url) }
+                    Button("Open pull request", systemImage: "arrow.up.right.square") {
+                        NSWorkspace.shared.open(url)
+                    }
                 }
                 Button(GitOperationKind.refreshPullRequest.title, systemImage: "arrow.clockwise") {
                     operationKind = .refreshPullRequest
@@ -379,8 +404,10 @@ struct WorkspaceChangesView: View {
                 }
                 .disabled(!availability.allows(.mergePullRequest))
             }
-            Button("Merge into \(baseBranch)…", systemImage: "arrow.triangle.merge") { mergeSheetPresented = true }
-                .disabled(!availability.allowsMergeFlow)
+            Button("Merge into \(baseBranch)…", systemImage: "arrow.triangle.merge") {
+                mergeSheetPresented = true
+            }
+            .disabled(!availability.allowsMergeFlow)
         }
         Section("Workspace") {
             if let card {
@@ -396,8 +423,10 @@ struct WorkspaceChangesView: View {
                     NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: workspace.path)
                 }
             }
-            Button(GitOperationKind.adopt.title + "…", systemImage: "arrow.right.arrow.left") { operationKind = .adopt }
-                .disabled(!availability.allows(.adopt))
+            Button(GitOperationKind.adopt.title + "…", systemImage: "arrow.right.arrow.left") {
+                operationKind = .adopt
+            }
+            .disabled(!availability.allows(.adopt))
             Button(GitOperationKind.cleanup.title, systemImage: "trash") { operationKind = .cleanup }
                 .disabled(!availability.allows(.cleanup))
             Button(GitOperationKind.discard.title, systemImage: "trash.fill", role: .destructive) {
@@ -423,7 +452,9 @@ struct WorkspaceChangesView: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(DieterTheme.coral.opacity(0.08))
-        .overlay(alignment: .bottom) { Rectangle().fill(DieterTheme.coral.opacity(0.22)).frame(height: 1) }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(DieterTheme.coral.opacity(0.22)).frame(height: 1)
+        }
     }
 
     private var conflictBannerTitle: String {
@@ -437,8 +468,9 @@ struct WorkspaceChangesView: View {
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DieterTheme.amber)
             Text(error).font(DieterFont.meta).foregroundStyle(DieterTheme.subtle).lineLimit(2)
             Spacer()
-            Button("Retry") { Task { await model.loadWorkspaceSurface() } }.buttonStyle(.plain).foregroundStyle(
-                DieterTheme.shell)
+            Button("Retry") { Task { await model.loadWorkspaceSurface() } }.buttonStyle(.plain)
+                .foregroundStyle(
+                    DieterTheme.shell)
         }
         .padding(.horizontal, 14).frame(minHeight: 34).background(DieterTheme.amber.opacity(0.08))
     }
@@ -469,10 +501,14 @@ struct WorkspaceChangesView: View {
                 }
                 Text(GitOperationKind(rawValue: operation.kind)?.title ?? operation.kind).font(
                     .system(size: 11, weight: .semibold))
-                Text(operation.status.replacingOccurrences(of: "_", with: " ").capitalized).font(DieterFont.meta)
-                    .foregroundStyle(DieterTheme.tertiary)
+                Text(operation.status.replacingOccurrences(of: "_", with: " ").capitalized).font(
+                    DieterFont.meta
+                )
+                .foregroundStyle(DieterTheme.tertiary)
                 Spacer()
-                if GitOperationStatus.active(operation.status) && operation.status != "waiting_for_resolution" {
+                if GitOperationStatus.active(operation.status)
+                    && operation.status != "waiting_for_resolution"
+                {
                     Button("Cancel") { Task { await model.cancelCurrentGitOperation() } }.buttonStyle(
                         DieterSecondaryButtonStyle(destructive: true))
                 }
@@ -563,8 +599,9 @@ struct WorkspaceChangesView: View {
         )
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 7) {
-                Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold)).foregroundStyle(
-                    DieterTheme.shell)
+                Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(
+                        DieterTheme.shell)
                 Text("PR #\(pr.number)").font(.system(size: 12, weight: .semibold))
                 PullRequestStateBadge(label: presentation.stateLabel, tone: presentation.stateTone)
                 Spacer(minLength: 4)
@@ -601,7 +638,8 @@ struct WorkspaceChangesView: View {
                         )
                         Task {
                             if await model.sendAgentMessage(prompt) {
-                                model.showWorkspaceToast("Asked the agent to address the review on PR #\(pr.number)")
+                                model.showWorkspaceToast(
+                                    "Asked the agent to address the review on PR #\(pr.number)")
                             }
                         }
                     } label: {
@@ -618,10 +656,14 @@ struct WorkspaceChangesView: View {
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
                 .disabled(presentation.mergeBlockedReason != nil || !availability.allows(.mergePullRequest))
-                .opacity(presentation.mergeBlockedReason != nil || !availability.allows(.mergePullRequest) ? 0.55 : 1)
+                .opacity(
+                    presentation.mergeBlockedReason != nil || !availability.allows(.mergePullRequest)
+                        ? 0.55 : 1)
             }
             HStack(spacing: 4) {
-                Text("Pushed from \(workspace?.branch.isEmpty == false ? workspace!.branch : "the workspace branch")")
+                Text(
+                    "Pushed from \(workspace?.branch.isEmpty == false ? workspace!.branch : "the workspace branch")"
+                )
                 Spacer()
                 Button {
                     operationKind = .refreshPullRequest
@@ -669,12 +711,15 @@ struct WorkspaceChangesView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Commits").font(.system(size: 12, weight: .semibold))
                 Text(commitsSubtitle(count: commits.count, branch: branch))
-                    .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary).lineLimit(1).truncationMode(.middle)
+                    .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary).lineLimit(1).truncationMode(
+                        .middle)
             }
             .padding(.horizontal, 11).padding(.top, 11).padding(.bottom, 7)
             if commits.isEmpty {
-                WorkspaceEmptyRow(symbol: "arrow.triangle.branch", title: "No commits ahead of \(baseBranch)")
-                    .padding(.horizontal, 3).padding(.bottom, 8)
+                WorkspaceEmptyRow(
+                    symbol: "arrow.triangle.branch", title: "No commits ahead of \(baseBranch)"
+                )
+                .padding(.horizontal, 3).padding(.bottom, 8)
             } else {
                 VStack(spacing: 0) {
                     ForEach(commits, id: \.sha) { commit in
@@ -694,7 +739,8 @@ struct WorkspaceChangesView: View {
                     Spacer()
                     Button("Copy shas") {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(commits.map(\.sha).joined(separator: "\n"), forType: .string)
+                        NSPasteboard.general.setString(
+                            commits.map(\.sha).joined(separator: "\n"), forType: .string)
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 9, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
@@ -722,10 +768,13 @@ struct WorkspaceChangesView: View {
         {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "info.circle.fill").foregroundStyle(DieterTheme.amber)
-                Text(capabilities.unavailableReason).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(capabilities.unavailableReason).font(.system(size: 10)).foregroundStyle(
+                    DieterTheme.tertiary
+                )
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(10).background(DieterTheme.amber.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            .padding(10).background(
+                DieterTheme.amber.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -736,7 +785,8 @@ struct WorkspaceChangesView: View {
                 color: workspace.state == "conflicted" ? DieterTheme.coral : DieterTheme.diffAddition)
             Text(ConversationWorkspaceMode.projectMode(workspace.mode).shortTitle)
             if workspace.sizeBytes > 0 {
-                Text("· \(ByteCountFormatter.string(fromByteCount: workspace.sizeBytes, countStyle: .file))")
+                Text(
+                    "· \(ByteCountFormatter.string(fromByteCount: workspace.sizeBytes, countStyle: .file))")
             }
             Spacer()
             Button {
@@ -768,7 +818,9 @@ struct WorkspaceChangesView: View {
                         WorkspaceDiffContent(
                             diff: diff,
                             split: diffMode == .split,
-                            comments: model.conversationChangeComments.filter { $0.path == model.selectedChangePath },
+                            comments: model.conversationChangeComments.filter {
+                                $0.path == model.selectedChangePath
+                            },
                             canComment: model.selectedCommitSHA.isEmpty,
                             addComment: { line in selectedCommentLine = line },
                             loadMore: {
@@ -815,7 +867,9 @@ struct WorkspaceChangesView: View {
                 }
             }
             Spacer(minLength: 8)
-            if let file = selectedFile { WorkspaceDeltaLabel(additions: file.additions, deletions: file.deletions) }
+            if let file = selectedFile {
+                WorkspaceDeltaLabel(additions: file.additions, deletions: file.deletions)
+            }
             if !model.selectedChangePath.isEmpty {
                 Button {
                     NSPasteboard.general.clearContents()
@@ -892,8 +946,10 @@ struct WorkspaceChangesView: View {
             }
             Spacer()
             if let files = changes?.files, !files.isEmpty {
-                Text("\(files.filter { viewedPaths.contains($0.path) }.count) of \(files.count) files viewed")
-                    .foregroundStyle(DieterTheme.tertiary)
+                Text(
+                    "\(files.filter { viewedPaths.contains($0.path) }.count) of \(files.count) files viewed"
+                )
+                .foregroundStyle(DieterTheme.tertiary)
             }
         }
         .font(.system(size: 10, weight: .medium))
@@ -944,7 +1000,8 @@ struct WorkspaceChangesView: View {
             HStack {
                 Spacer()
                 Button("Cancel") {
-                    selectedCommentLine = nil; commentBody = ""
+                    selectedCommentLine = nil
+                    commentBody = ""
                 }.buttonStyle(DieterSecondaryButtonStyle())
                 Button("Add comment") { addComment(line) }.buttonStyle(DieterPrimaryButtonStyle())
                     .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -959,7 +1016,9 @@ struct WorkspaceChangesView: View {
         let number = Int32(line.kind == .deletion ? line.oldLine ?? 0 : line.newLine ?? 0)
         let body = commentBody
         Task {
-            if await model.addChangeComment(path: model.selectedChangePath, side: side, line: number, body: body) {
+            if await model.addChangeComment(
+                path: model.selectedChangePath, side: side, line: number, body: body)
+            {
                 selectedCommentLine = nil
                 commentBody = ""
             }

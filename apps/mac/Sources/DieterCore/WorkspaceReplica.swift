@@ -7,6 +7,7 @@ import Observation
 @MainActor @Observable
 package final class WorkspaceReplica {
     package init() {}
+    package var pendingCardStarts: [String: OptimisticCardStart] = [:]
     package var pendingCardMoves: [String: OptimisticCardMove] = [:]
     package var pendingCardLabelUpdates: [String: OptimisticCardLabels] = [:]
     package var pendingBoards: [String: Dieter_V1_Board] = [:]
@@ -19,8 +20,9 @@ package final class WorkspaceReplica {
         let projects = OptimisticWorkspaceProjection.reconcileProjects(next.projects, pending: pendingProjects)
         next.projects = projects.projects; pendingProjects = projects.pending
         let cards = OptimisticCardProjection.reconcile(
-            cards: next.cards, moves: pendingCardMoves, labels: pendingCardLabelUpdates)
-        next.cards = cards.cards; pendingCardMoves = cards.moves; pendingCardLabelUpdates = cards.labels
+            cards: next.cards, moves: pendingCardMoves, labels: pendingCardLabelUpdates, starts: pendingCardStarts)
+        next.cards = cards.cards; pendingCardMoves = cards.moves; pendingCardLabelUpdates = cards.labels;
+        pendingCardStarts = cards.starts
         return next
     }
 

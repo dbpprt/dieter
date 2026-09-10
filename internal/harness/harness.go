@@ -83,6 +83,8 @@ type ProviderOption struct {
 	Type        string                 `json:"type" yaml:"type"`
 	Default     string                 `json:"defaultValue,omitempty" yaml:"default,omitempty"`
 	Choices     []ProviderOptionChoice `json:"choices,omitempty" yaml:"choices,omitempty"`
+	Mutable     bool                   `json:"mutable,omitempty" yaml:"mutable,omitempty"`
+	Models      []string               `json:"models,omitempty" yaml:"models,omitempty"`
 }
 
 type Capability struct {
@@ -288,6 +290,18 @@ func LoadCatalog(data []byte) ([]Adapter, error) {
 		if harness.DefaultModel != "" && !seenModels[harness.DefaultModel] {
 			return nil, fmt.Errorf("harness %q default model %q is not registered", harness.ID, harness.DefaultModel)
 		}
+		for optionIndex := range harness.Options {
+			option := &harness.Options[optionIndex]
+			seenOptionModels := map[string]bool{}
+			for modelIndex := range option.Models {
+				option.Models[modelIndex] = strings.TrimSpace(option.Models[modelIndex])
+				modelID := option.Models[modelIndex]
+				if !seenModels[modelID] || seenOptionModels[modelID] {
+					return nil, fmt.Errorf("harness %q option %q has invalid model %q", harness.ID, option.ID, modelID)
+				}
+				seenOptionModels[modelID] = true
+			}
+		}
 	}
 	return document.Harnesses, nil
 }
@@ -318,6 +332,7 @@ func cloneAdapter(adapter Adapter) Adapter {
 	adapter.Options = append([]ProviderOption(nil), adapter.Options...)
 	for index := range adapter.Options {
 		adapter.Options[index].Choices = append([]ProviderOptionChoice(nil), adapter.Options[index].Choices...)
+		adapter.Options[index].Models = append([]string(nil), adapter.Options[index].Models...)
 	}
 	adapter.Models = append([]Model(nil), adapter.Models...)
 	for index := range adapter.Models {
@@ -335,15 +350,41 @@ func cloneAdapter(adapter Adapter) Adapter {
 	return adapter
 }
 
-// ResolveOptions validates provider-specific values and materializes defaults.
-// The returned map can be persisted with a conversation and passed unchanged
-// through the runtime transport.
+// ResolveOptions validates provider-specific values for the adapter's default
+// model and materializes defaults. Call ResolveOptionsForModel when the model
+// has already been resolved.
 func ResolveOptions(adapter Adapter, requested map[string]string) (map[string]string, error) {
+	return ResolveOptionsForModel(adapter, adapter.DefaultModel, requested)
+}
+
+// OptionSupportsModel reports whether an option applies to a model. An empty
+// model list means the provider option applies to every model in the adapter.
+func OptionSupportsModel(option ProviderOption, modelID string) bool {
+	if len(option.Models) == 0 {
+		return true
+	}
+	for _, supportedModel := range option.Models {
+		if supportedModel == modelID {
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveOptionsForModel validates provider-specific values and materializes
+// defaults only for options supported by the selected model. A persisted
+// unsupported value equal to the option default is ignored for compatibility
+// with conversations created before model-scoped options were advertised.
+func ResolveOptionsForModel(adapter Adapter, modelID string, requested map[string]string) (map[string]string, error) {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		modelID = adapter.DefaultModel
+	}
 	definitions := make(map[string]ProviderOption, len(adapter.Options))
 	resolved := make(map[string]string, len(adapter.Options))
 	for _, option := range adapter.Options {
 		definitions[option.ID] = option
-		if option.Default != "" {
+		if OptionSupportsModel(option, modelID) && option.Default != "" {
 			resolved[option.ID] = option.Default
 		}
 	}
@@ -352,6 +393,12 @@ func ResolveOptions(adapter Adapter, requested map[string]string) (map[string]st
 		option, ok := definitions[id]
 		if !ok {
 			return nil, fmt.Errorf("option %q is not supported for harness %q", id, adapter.ID)
+		}
+		if !OptionSupportsModel(option, modelID) {
+			if value == strings.TrimSpace(option.Default) {
+				continue
+			}
+			return nil, fmt.Errorf("option %q is not supported for model %q of harness %q", id, modelID, adapter.ID)
 		}
 		switch option.Type {
 		case "boolean":
@@ -371,6 +418,18 @@ func ResolveOptions(adapter Adapter, requested map[string]string) (map[string]st
 		resolved[id] = value
 	}
 	return resolved, nil
+}
+
+// ValidateOptionUpdate permits a provider-defined mutable option to change
+// between turns while keeping session-defining options locked. Both maps must
+// already have been materialized with ResolveOptions.
+func ValidateOptionUpdate(adapter Adapter, current, next map[string]string) error {
+	for _, option := range adapter.Options {
+		if !option.Mutable && current[option.ID] != next[option.ID] {
+			return fmt.Errorf("conversation provider options are locked: %q cannot change", option.ID)
+		}
+	}
+	return nil
 }
 
 func ResolveAdapter(id string, includeMock bool) (Adapter, bool) {

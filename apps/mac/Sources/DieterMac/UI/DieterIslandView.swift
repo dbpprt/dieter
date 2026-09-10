@@ -213,6 +213,7 @@ struct DieterIslandView: View {
     @Environment(DieterStore.self) private var store
     @Bindable var presentation: DieterIslandPresentation
     let onRequestExpansion: (Bool) -> Void
+    var onCaptureTask: () -> Void = {}
 
     private var activity: DieterIslandActivity { store.islandActivity }
 
@@ -466,6 +467,13 @@ struct DieterIslandView: View {
                 .buttonStyle(IslandActionButtonStyle(primary: false))
 
                 Spacer()
+                Button(action: onCaptureTask) {
+                    Label("Capture task", systemImage: "viewfinder")
+                }
+                .buttonStyle(IslandActionButtonStyle(primary: true))
+                .help("Select a screen area and create a Quick Task")
+                .accessibilityIdentifier("island.capture-task")
+                .smokeTarget("island.capture-task")
                 if activity.subagentCount > 0 {
                     Label(
                         "\(activity.subagentCount) subagent\(activity.subagentCount == 1 ? "" : "s")",

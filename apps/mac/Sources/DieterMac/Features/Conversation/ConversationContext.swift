@@ -91,6 +91,8 @@ final class ConversationContext {
     func archive(_ card: Dieter_V1_Card, archived: Bool) async { await onArchive(card, archived) }
     @ObservationIgnored var onAttachPasteboard: (NSPasteboard) -> Bool = { _ in false }
     func attachPasteboard(_ pasteboard: NSPasteboard) -> Bool { onAttachPasteboard(pasteboard) }
+    @ObservationIgnored var onStart: (Dieter_V1_Card) async -> Void = { _ in }
+    func start(_ card: Dieter_V1_Card) async { await onStart(card) }
     @ObservationIgnored var onCancel: (Dieter_V1_Card) async -> Void = { _ in }
     func cancel(_ card: Dieter_V1_Card) async { await onCancel(card) }
     @ObservationIgnored var onCloseConversation: () -> Void = {}
@@ -115,6 +117,10 @@ final class ConversationContext {
     func retryFailedTurn(_ failure: ConversationTurnFailure) async -> Bool { await onRetryFailedTurn(failure) }
     @ObservationIgnored var onRetryOutboxItem: (String) async -> Void = { _ in }
     func retryOutboxItem(_ id: String) async { await onRetryOutboxItem(id) }
+    @ObservationIgnored var onRemoveQueuedMessage: (Dieter_V1_QueuedMessage, Bool) async -> Bool = { _, _ in false }
+    func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage, edit: Bool) async -> Bool {
+        await onRemoveQueuedMessage(message, edit)
+    }
     @ObservationIgnored var onSendComposer: () async -> Void = {}
     func sendComposer() async { await onSendComposer() }
     @ObservationIgnored var onShow: (Error) -> Void = { _ in }

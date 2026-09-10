@@ -43,6 +43,10 @@ const (
 	DoneArchiveAfter7Days  = "after_7_days"
 	DoneArchiveAfter30Days = "after_30_days"
 	DoneArchiveAfter90Days = "after_90_days"
+
+	RemotePublishManual      = "manual"
+	RemotePublishPullRequest = "pull_request"
+	RemotePublishPushBase    = "push_base"
 )
 
 // CanonicalWorkspaceMode keeps old durable data and older clients readable
@@ -74,6 +78,7 @@ func WorkflowLanes(workflow string) []Lane {
 }
 
 type Project struct {
+	Hostnames          []string            `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
 	ID                 string              `json:"id" yaml:"id"`
 	Name               string              `json:"name" yaml:"name"`
 	Path               string              `json:"path" yaml:"path"`
@@ -101,17 +106,20 @@ type ValidationCommand struct {
 }
 
 type Board struct {
-	ID                string  `json:"id" yaml:"id"`
-	ProjectID         string  `json:"projectId" yaml:"project_id"`
-	Name              string  `json:"name" yaml:"name"`
-	Workflow          string  `json:"workflow" yaml:"workflow"`
-	Description       string  `json:"description,omitempty" yaml:"-"`
-	PromptTemplate    string  `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
-	DoneArchivePolicy string  `json:"doneArchivePolicy" yaml:"done_archive_policy,omitempty"`
-	CreatedAt         string  `json:"createdAt" yaml:"created_at"`
-	UpdatedAt         string  `json:"updatedAt" yaml:"updated_at"`
-	Labels            []Label `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Lanes             []Lane  `json:"lanes" yaml:"-"`
+	Hostnames         []string `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
+	ID                string   `json:"id" yaml:"id"`
+	ProjectID         string   `json:"projectId" yaml:"project_id"`
+	Name              string   `json:"name" yaml:"name"`
+	Workflow          string   `json:"workflow" yaml:"workflow"`
+	Description       string   `json:"description,omitempty" yaml:"-"`
+	PromptTemplate    string   `json:"promptTemplate,omitempty" yaml:"prompt_template,omitempty"`
+	DoneArchivePolicy string   `json:"doneArchivePolicy" yaml:"done_archive_policy,omitempty"`
+	BaseRemote        string   `json:"baseRemote,omitempty" yaml:"base_remote,omitempty"`
+	RemotePublishMode string   `json:"remotePublishMode" yaml:"remote_publish_mode,omitempty"`
+	CreatedAt         string   `json:"createdAt" yaml:"created_at"`
+	UpdatedAt         string   `json:"updatedAt" yaml:"updated_at"`
+	Labels            []Label  `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Lanes             []Lane   `json:"lanes" yaml:"-"`
 }
 
 type Label struct {
@@ -121,7 +129,22 @@ type Label struct {
 	Instructions string `json:"instructions,omitempty" yaml:"instructions,omitempty"`
 }
 
+// TokenUsage is provider-reported usage for this conversation, excluding fork seed messages.
+// Partial means some messages or token categories were not fully reported.
+type TokenUsage struct {
+	InputTokens      int64 `json:"inputTokens"`
+	OutputTokens     int64 `json:"outputTokens"`
+	TotalTokens      int64 `json:"totalTokens"`
+	ReportedMessages int64 `json:"reportedMessages"`
+	MissingMessages  int64 `json:"missingMessages"`
+	Partial          bool  `json:"partial"`
+}
+
 type Card struct {
+	MergedIntoCardID    string              `json:"mergedIntoCardId,omitempty" yaml:"merged_into_card_id,omitempty"`
+	MergePending        bool                `json:"-" yaml:"merge_pending,omitempty"`
+	MergeParts          []UIMessagePart     `json:"-" yaml:"merge_parts,omitempty"`
+	TokenUsage          *TokenUsage         `json:"tokenUsage,omitempty" yaml:"-"`
 	ID                  string              `json:"id" yaml:"id"`
 	Scope               string              `json:"scope" yaml:"scope,omitempty"`
 	ProjectID           string              `json:"projectId" yaml:"project_id"`
@@ -151,6 +174,8 @@ type Card struct {
 	WorkspaceMode       string              `json:"workspaceMode,omitempty" yaml:"workspace_mode,omitempty"`
 	WorkspaceBranch     string              `json:"workspaceBranch,omitempty" yaml:"workspace_branch,omitempty"`
 	WorkspaceBaseBranch string              `json:"workspaceBaseBranch,omitempty" yaml:"workspace_base_branch,omitempty"`
+	WorkspaceBaseRemote string              `json:"workspaceBaseRemote,omitempty" yaml:"workspace_base_remote,omitempty"`
+	RemotePublishMode   string              `json:"remotePublishMode,omitempty" yaml:"remote_publish_mode,omitempty"`
 	Workspace           *WorkspaceSummary   `json:"workspace,omitempty" yaml:"-"`
 	PullRequest         *PullRequestSummary `json:"pullRequest,omitempty" yaml:"-"`
 }
@@ -164,6 +189,7 @@ type Workspace struct {
 	Mode                string   `json:"mode"`
 	Path                string   `json:"path"`
 	BaseRemote          string   `json:"baseRemote,omitempty"`
+	RemotePublishMode   string   `json:"remotePublishMode,omitempty"`
 	BaseBranch          string   `json:"baseBranch,omitempty"`
 	BaseSHA             string   `json:"baseSha,omitempty"`
 	CurrentBaseSHA      string   `json:"currentBaseSha,omitempty"`
@@ -477,6 +503,7 @@ type Author struct {
 // opaque Session value is produced by AI SDK HarnessAgent.stop and is passed
 // back untouched on the next turn.
 type Conversation struct {
+	MergedSourceIDs   []string    `json:"mergedSourceIds,omitempty"`
 	ProjectionVersion int         `json:"projectionVersion"`
 	CardID            string      `json:"cardId"`
 	Status            string      `json:"status"`
@@ -622,10 +649,11 @@ type PendingTool struct {
 }
 
 type QueuedMessage struct {
-	ID        string          `json:"id"`
-	Text      string          `json:"text"`
-	Parts     []UIMessagePart `json:"parts,omitempty"`
-	CreatedAt string          `json:"createdAt"`
+	MergeSourceID string          `json:"mergeSourceId,omitempty"`
+	ID            string          `json:"id"`
+	Text          string          `json:"text"`
+	Parts         []UIMessagePart `json:"parts,omitempty"`
+	CreatedAt     string          `json:"createdAt"`
 }
 
 type ConversationEvent struct {

@@ -20,7 +20,7 @@ Actions:
   directories PATH  Browse daemon-host directories and Git repositories
   list              List active projects; use --removed for archived projects
   show PROJECT      Show project metadata
-  update PROJECT    Update project path, name, summary, or prompt
+  update PROJECT    Update project path, name, summary, prompt, or browser hostnames
   workspace PROJECT Update Git base and validation commands
   remove PROJECT    Archive a project
   restore PROJECT   Restore an archived project
@@ -82,6 +82,7 @@ Options:
   --workflow direct|review    Initial board workflow
   --base-remote REMOTE        Git base remote
   --base-branch BRANCH        Git base branch
+  --remote-publish MODE       Initial board mode: manual, pull_request, or push_base
   --validation-file FILE      Validation command JSON
   --format json|id            Output format
 `, mode)
@@ -94,6 +95,7 @@ Options:
 	workflow := set.String("workflow", "review", "initial board workflow")
 	baseRemote := set.String("base-remote", "", "Git base remote")
 	baseBranch := set.String("base-branch", "", "Git base branch")
+	remotePublish := set.String("remote-publish", "manual", "initial board remote publish mode")
 	validationFile := set.String("validation-file", "", "validation command JSON")
 	format := set.String("format", "json", "json or id")
 	help, err := parse(set, args, usage, c.Out)
@@ -120,7 +122,7 @@ Options:
 	response, err := client.CreateProject(rpcCtx, &dieterv1.CreateProjectRequest{
 		Mode: mode, Path: set.Arg(0), Name: *name, Summary: *summary, Prompt: promptValue,
 		BoardName: *boardName, Workflow: *workflow, BaseRemote: *baseRemote, BaseBranch: *baseBranch,
-		ValidationCommands: validation,
+		ValidationCommands: validation, RemotePublishMode: *remotePublish,
 	})
 	if err != nil {
 		return err
@@ -255,7 +257,7 @@ func (c *CLI) rpcProjectShow(args []string) error {
 }
 
 func (c *CLI) rpcProjectUpdate(args []string) error {
-	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] PROJECT\n"
+	const usage = "Usage: dieter project update [--path PATH] [--name NAME] [--summary TEXT] [--prompt TEXT|--prompt-file FILE] [--hostname HOST ...|--clear-hostnames] PROJECT\n\nRepeat --hostname to replace the complete list of exact browser hosts (no URL, port, or wildcard).\nUse --clear-hostnames to remove all mappings; omit both flags to preserve them.\n"
 	set := flags("project update")
 	path, name, summary, prompt := &optional{}, &optional{}, &optional{}, &optional{}
 	set.Var(path, "path", "new canonical Git working-tree path on the daemon host")
@@ -263,12 +265,22 @@ func (c *CLI) rpcProjectUpdate(args []string) error {
 	set.Var(summary, "summary", "project summary")
 	set.Var(prompt, "prompt", "project instructions")
 	promptFile := set.String("prompt-file", "", "project instructions file")
+	var hostnames repeatedStrings
+	set.Var(&hostnames, "hostname", "exact browser hostname; repeat to replace the complete hostname list (no URL, port, or wildcard)")
+	clearHostnames := set.Bool("clear-hostnames", false, "remove all browser hostname mappings")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
 	}
 	if set.NArg() != 1 {
 		return errors.New("exactly one PROJECT is required")
+	}
+	if *clearHostnames && len(hostnames) > 0 {
+		return errors.New("--hostname and --clear-hostnames are mutually exclusive")
+	}
+	var hostnameValues *dieterv1.ProjectHostnames
+	if *clearHostnames || len(hostnames) > 0 {
+		hostnameValues = &dieterv1.ProjectHostnames{Values: hostnames}
 	}
 	var promptValue *string
 	if *promptFile != "" {
@@ -291,7 +303,7 @@ func (c *CLI) rpcProjectUpdate(args []string) error {
 		return err
 	}
 	value, err := client.UpdateProject(rpcCtx, &dieterv1.UpdateProjectRequest{
-		ProjectId: project.GetId(), Name: name.ptr(), Summary: summary.ptr(), Prompt: promptValue, Path: path.ptr(),
+		ProjectId: project.GetId(), Name: name.ptr(), Summary: summary.ptr(), Prompt: promptValue, Path: path.ptr(), Hostnames: hostnameValues,
 	})
 	if err != nil {
 		return err
@@ -390,12 +402,15 @@ func (c *CLI) rpcProjectArchive(args []string, archived bool) error {
 
 const boardHelp = `Usage: dieter board <action>
 
+  hostnames BOARD  Replace, append, or clear exact browser hosts
+
 Actions:
   create              Create a fixed direct or review workflow board
   list                List boards
   show BOARD           Show one board
   rename BOARD         Rename a board
   retention BOARD      Configure automatic Done-card archiving
+  git BOARD            Configure the default remote and publishing mode
   label add            Create a board label
   label list           List board labels
   label update LABEL   Update label name, color, or instructions
@@ -418,6 +433,10 @@ func (c *CLI) rpcBoard(args []string) error {
 		return c.rpcBoardRename(args[1:])
 	case "retention":
 		return c.rpcBoardRetention(args[1:])
+	case "hostnames":
+		return c.rpcBoardHostnames(args[1:])
+	case "git":
+		return c.rpcBoardGit(args[1:])
 	case "label", "labels":
 		return c.rpcBoardLabel(args[1:])
 	default:
@@ -458,13 +477,15 @@ func (c *CLI) boardState(ctx context.Context, reference string) (*dieterv1.Board
 }
 
 func (c *CLI) rpcBoardCreate(args []string) error {
-	const usage = "Usage: dieter board create --project PROJECT --name NAME [--workflow direct|review] [--description TEXT] [--archive-done POLICY]\n"
+	const usage = "Usage: dieter board create --project PROJECT --name NAME [--workflow direct|review] [--description TEXT] [--archive-done POLICY] [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base]\n"
 	set := flags("board create")
 	project := set.String("project", "", "project ID or name")
 	name := set.String("name", "", "board name")
 	workflow := set.String("workflow", "review", "direct or review")
 	description := set.String("description", "", "board description")
 	archiveDone := set.String("archive-done", "never", "Done-card archive policy")
+	baseRemote := set.String("base-remote", "", "default Git remote; inherits the project remote when empty")
+	remotePublish := set.String("remote-publish", "manual", "manual, pull_request, or push_base")
 	help, err := parse(set, args, usage, c.Out)
 	if help || err != nil {
 		return err
@@ -485,6 +506,44 @@ func (c *CLI) rpcBoardCreate(args []string) error {
 	value, err := client.CreateBoard(rpcCtx, &dieterv1.CreateBoardRequest{
 		ProjectId: projectValue.GetId(), Name: *name, Workflow: *workflow,
 		Description: *description, DoneArchivePolicy: *archiveDone,
+		BaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
+	})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
+}
+
+func (c *CLI) rpcBoardGit(args []string) error {
+	const usage = "Usage: dieter board git [--base-remote REMOTE] [--remote-publish manual|pull_request|push_base] BOARD\n\nmanual preserves explicit Git actions, pull_request requires PR publishing, and push_base pushes validated local integrations to the configured base branch.\n"
+	set := flags("board git")
+	baseRemote := set.String("base-remote", "", "default Git remote for new conversations")
+	remotePublish := set.String("remote-publish", "", "manual, pull_request, or push_base")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 {
+		return errors.New("exactly one BOARD is required")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	board, _, err := c.boardState(ctx, set.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *baseRemote == "" {
+		*baseRemote = board.GetBaseRemote()
+	}
+	if *remotePublish == "" {
+		*remotePublish = board.GetRemotePublishMode()
+	}
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.UpdateBoardGitSettings(rpcCtx, &dieterv1.UpdateBoardGitSettingsRequest{
+		BoardId: board.GetId(), BaseRemote: *baseRemote, RemotePublishMode: *remotePublish,
 	})
 	if err != nil {
 		return err
@@ -722,4 +781,35 @@ Actions:
 	default:
 		return fmt.Errorf("unknown board label action %q", action)
 	}
+}
+
+func (c *CLI) rpcBoardHostnames(args []string) error {
+	const usage = "Usage: dieter board hostnames [--hostname HOST ...] [--append|--clear] BOARD\n\nReplaces the complete list by default. --append adds without replacing; --clear removes all.\n"
+	set := flags("board hostnames")
+	var hosts repeatedStrings
+	set.Var(&hosts, "hostname", "exact hostname (repeatable)")
+	add := set.Bool("append", false, "append hostnames")
+	clear := set.Bool("clear", false, "clear all hostnames")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 || (*clear && (*add || len(hosts) > 0)) || (!*clear && len(hosts) == 0) {
+		return errors.New("provide BOARD and --hostname or --clear")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	board, _, err := c.boardState(ctx, set.Arg(0))
+	if err != nil {
+		return err
+	}
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.UpdateBoardHostnames(rpcCtx, &dieterv1.UpdateBoardHostnamesRequest{BoardId: board.GetId(), Hostnames: hosts, Append: *add})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
 }

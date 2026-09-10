@@ -32,7 +32,6 @@ struct DieterMacApp: App {
                     palette: store.themeSelection.palette,
                     appearance: store.themeSelection.appearance
                 )
-                .preferredColorScheme(store.themeSelection.appearance.colorScheme)
                 .onAppear {
                     store.reopenWorkspaceWindow = { openWindow(id: "workspace") }
                     store.themeSelection = DieterThemeSelection(
@@ -264,7 +263,6 @@ struct MenuBarContent: View {
             palette: store.themeSelection.palette,
             appearance: store.themeSelection.appearance
         )
-        .preferredColorScheme(store.themeSelection.appearance.colorScheme)
     }
 
     private var header: some View {

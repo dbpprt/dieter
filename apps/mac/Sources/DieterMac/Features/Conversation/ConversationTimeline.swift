@@ -136,7 +136,9 @@ struct ConversationTimeline: View {
                         .frame(maxWidth: .infinity)
                         .id("conversation.history-loading")
                     } else if context.conversationHistoryHasMore {
-                        Button("Load earlier messages · \(messages.count) of \(context.conversationHistoryTotal)") {
+                        Button(
+                            "Load earlier messages · \(messages.count) of \(context.conversationHistoryTotal)"
+                        ) {
                             loadEarlierHistory(proxy: proxy)
                         }
                         .buttonStyle(.plain)
@@ -156,18 +158,6 @@ struct ConversationTimeline: View {
                     ForEach(timelineRows) { row in
                         ConversationTimelineRow(item: row.item, details: row.details)
                             .id(row.id)
-                    }
-
-                    ForEach(queuedMessages, id: \.id) { message in
-                        QueuedMessageView(
-                            message: message,
-                            canInterrupt: ConversationQueuePresentation.canInterrupt(
-                                messageID: message.id,
-                                queue: queuedMessages,
-                                agentIsWorking: agentIsWorking
-                            )
-                        )
-                        .id("queued:\(message.id)")
                     }
 
                     ForEach(projection.unattachedPlans, id: \.id) {
@@ -258,6 +248,7 @@ struct ConversationTimeline: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 12)
                     .accessibilityIdentifier("conversation.jump-to-latest")
+                    .smokeTarget("conversation.jump-to-latest")
                 }
             }
             .onChange(of: showsJumpToLatest) { _, visible in
@@ -389,7 +380,9 @@ struct ConversationTimeline: View {
                     Array(messages[range]),
                     showReasoning: context.showReasoning
                 )
-                if let anchor = ConversationScrollBehavior.anchorItem(containing: anchorMessageID, in: items) {
+                if let anchor = ConversationScrollBehavior.anchorItem(
+                    containing: anchorMessageID, in: items)
+                {
                     proxy.scrollTo(anchor, anchor: .top)
                 }
             }

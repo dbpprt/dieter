@@ -46,6 +46,15 @@ Android clients. Every card is one durable local AI SDK Harness conversation.
 
 ## Repository checks
 
+For local development, use `just check-changed --dry-run` to inspect the affected
+checks, then `just check-changed` to run them. The default includes all
+uncommitted changes; use `--base REF` to include branch changes. Run tests for
+the affected packages/components, and native integration tests only for related
+app, shared schema, or integration fixture changes. Preserve the existing app,
+daemon, and emulator lifecycle rules; report an unavailable integration run
+instead of disrupting a running operator app. Full checks below remain for CI
+and explicitly requested repository-wide validation.
+
 Android builds use Android Studio's bundled JBR. If `JAVA_HOME` is absent or
 points to a removed Homebrew JDK, use:
 

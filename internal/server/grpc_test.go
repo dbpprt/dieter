@@ -176,6 +176,19 @@ func TestGRPCMachineListener(t *testing.T) {
 	if got != "Built locally" {
 		t.Fatalf("assistant response = %q", got)
 	}
+	queued, _, err := data.QueueConversationMessagePartsWithID(card.GetId(), "queued_for_edit", []model.UIMessagePart{
+		{Type: "text", Text: "Edit before running"},
+		{Type: "file", Filename: "context.txt", MediaType: "text/plain", URL: "data:text/plain;base64,Y29udGV4dA=="},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed, err := client.RemoveQueuedMessage(ctx, &dieterv1.RemoveQueuedMessageRequest{
+		CardId: card.GetId(), MessageId: queued.ID,
+	})
+	if err != nil || removed.GetText() != "Edit before running" || len(removed.GetParts()) != 2 {
+		t.Fatalf("removed queued message = %#v, %v", removed, err)
+	}
 	if _, err := client.AddComment(ctx, &dieterv1.AddCommentRequest{CardId: card.GetId(), Message: "Looks good", Name: "Android"}); err != nil {
 		t.Fatal(err)
 	}

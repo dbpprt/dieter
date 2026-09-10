@@ -369,6 +369,7 @@ enum SidebarMachineOrdering {
 }
 
 struct AppSidebar: View {
+    @State private var globalQuickTaskPresented = false
     @Environment(DieterStore.self) private var store
     @Binding var collapsed: Bool
     @State private var projectNavigation = SidebarProjectNavigationPreferences.load(
@@ -387,6 +388,9 @@ struct AppSidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sidebarHeader
+            if collapsed {
+                globalQuickTaskButton
+            }
             searchControl
             allChatsControl
 
@@ -402,13 +406,27 @@ struct AppSidebar: View {
         .background(DieterTheme.sidebar.ignoresSafeArea(.container, edges: .top))
     }
 
+    private var globalQuickTaskButton: some View {
+        SidebarUtilityButton(symbol: "square.and.pencil", help: "Quick task") { globalQuickTaskPresented = true }
+            .accessibilityIdentifier("sidebar.quick-task")
+            .smokeTarget("sidebar.quick-task")
+            .popover(isPresented: $globalQuickTaskPresented, arrowEdge: .trailing) {
+                QuickTaskPopover(
+                    isPresented: $globalQuickTaskPresented, draft: store.quickTaskForm, chooseDestination: true
+                )
+                .environment(store)
+            }
+    }
+
     @ViewBuilder private var sidebarHeader: some View {
         if collapsed {
             SidebarRailToggle { collapsed = false }
                 .help("Expand navigation (⌃⌘S)")
                 .keyboardShortcut("s", modifiers: [.command, .control])
+                .smokeTarget("sidebar.expand-navigation")
                 .accessibilityLabel("Expand navigation")
                 .accessibilityIdentifier("sidebar.toggle")
+                .smokeTarget("sidebar.toggle")
                 .frame(maxWidth: .infinity)
                 .padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
         } else {
@@ -419,7 +437,8 @@ struct AppSidebar: View {
                 SidebarUtilityButton(symbol: "sidebar.left", help: "Collapse navigation (⌃⌘S)") { collapsed = true }
                     .keyboardShortcut("s", modifiers: [.command, .control])
                     .accessibilityIdentifier("sidebar.toggle")
-                SidebarUtilityButton(symbol: "plus", help: "Add Git project") { store.createProjectPresented = true }
+                    .smokeTarget("sidebar.toggle")
+                globalQuickTaskButton
             }
             .padding(.horizontal, 12).padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
         }

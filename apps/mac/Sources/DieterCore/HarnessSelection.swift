@@ -35,12 +35,36 @@ package struct HarnessSelection: Equatable, Sendable {
         }
         return Self(
             provider: harness.id, model: selected?.id ?? "", effort: selected == nil ? "" : effort,
-            providerOptions: ProviderOptionValues.resolved(
-                for: harness, existing: harness.id == provider ? providerOptions : [:]))
+            providerOptions: ProviderOptionValues.normalized(
+                for: harness, model: selected?.id ?? "", saved: harness.id == provider ? providerOptions : [:]))
     }
 }
 
 package enum ProviderOptionValues {
+    package static func options(for harness: Dieter_V1_Harness?, model: String) -> [Dieter_V1_ProviderOption] {
+        guard let harness else { return [] }
+        let selectedModel = model.isEmpty ? harness.defaultModel : model
+        return harness.options.filter { $0.models.isEmpty || $0.models.contains(selectedModel) }
+    }
+
+    package static func defaults(for harness: Dieter_V1_Harness?, model: String?) -> [String: String] {
+        normalized(for: harness, model: model ?? harness?.defaultModel ?? "", saved: [:])
+    }
+
+    package static func normalized(
+        for harness: Dieter_V1_Harness?,
+        model: String,
+        saved: [String: String]
+    ) -> [String: String] {
+        resolved(for: harness, existing: saved).filter { key, _ in
+            options(for: harness, model: model).contains { $0.id == key }
+        }
+    }
+
+    package static func isEnabled(_ option: Dieter_V1_ProviderOption, conversationLocked: Bool) -> Bool {
+        !conversationLocked || option.mutable
+    }
+
     package static func defaults(for harness: Dieter_V1_Harness?) -> [String: String] {
         resolved(for: harness, existing: [:])
     }

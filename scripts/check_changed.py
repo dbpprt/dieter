@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Plan and run local validation from Git changes, without touching services."""
+
+import argparse
+import json
+from pathlib import Path
+import shlex
+import subprocess
+import sys
+
+
+def output(root, *args):
+    return subprocess.check_output(args, cwd=root).decode()
+
+
+def changed_paths(root, base=None):
+    # Disabling rename detection keeps both the deleted and added paths, so
+    # moving code between components validates both sides of the move.
+    revision = output(root, "git", "merge-base", base, "HEAD").strip() if base else "HEAD"
+    tracked = output(root, "git", "diff", "--name-only", "--no-renames", "-z", revision, "--")
+    untracked = output(root, "git", "ls-files", "--others", "--exclude-standard", "-z")
+    return sorted(set(filter(None, (tracked + untracked).split("\0"))))
+
+
+def go_packages(root):
+    raw = output(root, "go", "list", "-json", "./...")
+    decoder = json.JSONDecoder()
+    packages = []
+    while raw.strip():
+        package, end = decoder.raw_decode(raw.lstrip())
+        packages.append(package)
+        raw = raw.lstrip()[end:]
+    return packages
+
+
+def affected_go_packages(root, paths, packages):
+    by_name = {p["ImportPath"]: p for p in packages}
+    if any(p in {"go.mod", "go.sum", "just/daemon.just", "just/gateway.just"}
+           or p.startswith(("api/proto/", "native/")) for p in paths):
+        return sorted(by_name)
+    affected = set()
+    for package in packages:
+        directory = Path(package["Dir"]).relative_to(root).as_posix()
+        owned = {directory + "/" + file for field in ("EmbedFiles", "TestEmbedFiles", "XTestEmbedFiles")
+                 for file in package.get(field, [])}
+        if any(Path(path).parent.as_posix() == directory or path in owned
+               or path.startswith(directory + "/testdata/") for path in paths):
+            affected.add(package["ImportPath"])
+    # Include reverse dependencies, including packages that import a changed
+    # package only from tests. Never guess individual test names from filenames.
+    while True:
+        more = {name for name, p in by_name.items()
+                if affected.intersection(p.get("Imports", []) + p.get("TestImports", []) + p.get("XTestImports", []))}
+        expanded = affected | more
+        if expanded == affected:
+            return sorted(affected)
+        affected = expanded
+
+
+def plan_checks(root, paths, packages=None):
+    commands = []
+
+    def add(*command):
+        if list(command) not in commands:
+            commands.append(list(command))
+
+    # Documentation alone does not require compilers or devices.
+    code = [p for p in paths if not p.endswith((".md", ".txt")) or "/testdata/" in p]
+    schema = any(p.startswith("api/proto/") or p == "scripts/generate-proto.sh" for p in code)
+    fixture = any(p.startswith("scripts/isolated-gateway/") for p in code)
+    brand = any(p.startswith("assets/brand/") for p in code)
+    mac = schema or fixture or brand or any(p.startswith("apps/mac/") or p == "just/mac.just" for p in code)
+    android = schema or fixture or brand or any(p.startswith("apps/android/") or p == "just/android.just" for p in code)
+    mac_integration = mac and (schema or fixture or brand or any(
+        (p.startswith("apps/mac/") and not p.startswith("apps/mac/Tests/")) or p == "just/mac.just" for p in code))
+    android_integration = android and (schema or fixture or brand or any(
+        (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
+        or p == "just/android.just" for p in code))
+
+    if any(p.startswith("scripts/check_changed") or p == "justfile" for p in code):
+        add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
+    if any(p == "justfile" or p.startswith("just/") for p in code):
+        add("just", "justfile-check")
+    if any(p.startswith(".github/workflows/") or p == "just/release.just" for p in code):
+        add("just", "workflow-check")
+    if schema:
+        add("just", "proto")
+    go_changed = schema or any(
+        p.endswith(".go") or p in {"go.mod", "go.sum", "just/daemon.just", "just/gateway.just"}
+        or p.startswith(("config/", "native/", "internal/", "api/gen/")) for p in code)
+    if go_changed:
+        affected = affected_go_packages(root, code, go_packages(root) if packages is None else packages)
+        if schema and not affected:
+            affected = ["./..."]
+        if affected:
+            add("go", "test", "-race", *affected)
+            add("go", "vet", *affected)
+    if any(p.startswith("internal/harness/runtime/") or p in {"config/harnesses.yaml", "just/harness.just"} for p in code):
+        add("just", "harness", "test")
+    if mac:
+        add("just", "mac", "test")
+    if android:
+        add("just", "android", "test")
+    if mac_integration:
+        add("just", "mac", "smoke-all")
+    if android_integration:
+        add("just", "android", "connected-test")
+    if brand or any(p.startswith("landingpage/") or p == "just/site.just" for p in code):
+        add("just", "site", "build")
+    return commands
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base", help="Compare the working tree with the merge base of this ref and HEAD.")
+    parser.add_argument("--dry-run", action="store_true", help="Print changed paths and commands without running checks.")
+    args = parser.parse_args()
+    root = Path(output(Path.cwd(), "git", "rev-parse", "--show-toplevel").strip())
+    paths = changed_paths(root, args.base)
+    commands = plan_checks(root, paths)
+    print("Changed paths:", flush=True)
+    for path in paths:
+        print("  " + path, flush=True)
+    if not commands:
+        print("No affected code checks.", flush=True)
+        return 0
+    print("Selected checks (native clients use their complete module test suite):", flush=True)
+    for command in commands:
+        print("  " + shlex.join(command), flush=True)
+    if args.dry_run:
+        return 0
+    for command in commands:
+        if command == ["just", "mac", "smoke-all"]:
+            # The smoke driver refuses concurrent app processes. Check before
+            # packaging so a known lifecycle conflict doesn't waste a build.
+            running = subprocess.run(["pgrep", "-x", "DieterMac"], capture_output=True, text=True)
+            if running.returncode == 0:
+                print("Mac integration tests blocked: DieterMac is running (PIDs "
+                      + ", ".join(running.stdout.split()) + "). Quit the app before rerunning; "
+                      "no app or daemon was stopped.", file=sys.stderr)
+                return 1
+            if running.returncode != 1:
+                print("Could not check for running DieterMac processes.", file=sys.stderr)
+                return 1
+        print("Running " + shlex.join(command), flush=True)
+        result = subprocess.run(command, cwd=root)
+        if result.returncode:
+            return result.returncode
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (subprocess.CalledProcessError, OSError) as error:
+        print(f"Change detection failed: {error}", file=sys.stderr)
+        sys.exit(1)

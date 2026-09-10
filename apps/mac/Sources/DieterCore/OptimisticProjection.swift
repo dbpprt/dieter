@@ -39,18 +39,33 @@ package struct OptimisticCardLabels: Equatable, Sendable {
     }
 }
 
+package struct OptimisticCardStart: Equatable, Sendable {
+    package let operationID: UUID
+    package let runningLaneID: String
+    package init(operationID: UUID, runningLaneID: String) {
+        self.operationID = operationID; self.runningLaneID = runningLaneID
+    }
+    package func isConfirmed(by card: Dieter_V1_Card) -> Bool { !card.initialPromptSentAt.isEmpty }
+    package func applying(to card: Dieter_V1_Card) -> Dieter_V1_Card {
+        var card = card; card.lane = runningLaneID; card.runtime = "starting"; return card
+    }
+}
+
 package struct OptimisticCardProjection {
     package let cards: [Dieter_V1_Card]
     package let moves: [String: OptimisticCardMove]
     package let labels: [String: OptimisticCardLabels]
+    package let starts: [String: OptimisticCardStart]
 
     package static func reconcile(
         cards: [Dieter_V1_Card],
         moves: [String: OptimisticCardMove],
-        labels: [String: OptimisticCardLabels]
+        labels: [String: OptimisticCardLabels],
+        starts: [String: OptimisticCardStart] = [:]
     ) -> OptimisticCardProjection {
         var remainingMoves = moves
         var remainingLabels = labels
+        var remainingStarts = starts
         let projected = cards.map { serverCard in
             var card = serverCard
             if let move = moves[card.id] {
@@ -67,9 +82,16 @@ package struct OptimisticCardProjection {
                     card = labelUpdate.applying(to: card)
                 }
             }
+            if let start = starts[card.id] {
+                if start.isConfirmed(by: serverCard) {
+                    remainingStarts.removeValue(forKey: card.id)
+                } else {
+                    card = start.applying(to: card)
+                }
+            }
             return card
         }
-        return .init(cards: projected, moves: remainingMoves, labels: remainingLabels)
+        return .init(cards: projected, moves: remainingMoves, labels: remainingLabels, starts: remainingStarts)
     }
 }
 

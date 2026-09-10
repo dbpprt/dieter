@@ -10,6 +10,8 @@ struct ConversationWorkspacePickerSheet: View {
     @State private var draftMode: ConversationWorkspaceMode
     @State private var draftBranch: String
     @State private var draftBaseBranch: String
+    @State private var draftBaseRemote: String
+    @State private var draftRemotePublishMode: String
     @FocusState private var branchFocused: Bool
 
     init(
@@ -23,6 +25,10 @@ struct ConversationWorkspacePickerSheet: View {
         _draftBaseBranch = State(
             initialValue: draft.wrappedValue.baseBranch.isEmpty
                 ? (project?.baseBranch ?? "") : draft.wrappedValue.baseBranch)
+        _draftBaseRemote = State(
+            initialValue: draft.wrappedValue.baseRemote.isEmpty
+                ? (project?.baseRemote ?? "") : draft.wrappedValue.baseRemote)
+        _draftRemotePublishMode = State(initialValue: draft.wrappedValue.remotePublishMode)
     }
 
     var body: some View {
@@ -102,6 +108,23 @@ struct ConversationWorkspacePickerSheet: View {
                     }
                 }
 
+                HStack(alignment: .top, spacing: 12) {
+                    workspaceField(title: "Remote", detail: "Snapshotted for this conversation.") {
+                        TextField("No remote", text: $draftBaseRemote)
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityIdentifier("workspace.base-remote")
+                    }
+                    workspaceField(
+                        title: "Publishing",
+                        detail: RemotePublishMode(rawValue: draftRemotePublishMode)?.detail ?? ""
+                    ) {
+                        Picker("Publishing", selection: $draftRemotePublishMode) {
+                            ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+                        }
+                        .labelsHidden().pickerStyle(.menu)
+                    }
+                }
+
                 workspaceNotice
             }
             .padding(.horizontal, 24).padding(.bottom, 22)
@@ -147,7 +170,8 @@ struct ConversationWorkspacePickerSheet: View {
                     ? "Dieter creates a lightweight Git worktree that shares the repository’s object store—no second clone."
                     : "The agent uses \(abbreviatedProjectPath). Other conversations can see its changes, so concurrent work is restricted."
             )
-            .font(.caption).foregroundStyle(DieterTheme.subtle).fixedSize(horizontal: false, vertical: true)
+            .font(.caption).foregroundStyle(DieterTheme.subtle).fixedSize(
+                horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 13).padding(.vertical, 11)
@@ -220,8 +244,12 @@ struct ConversationWorkspacePickerSheet: View {
 
     private func applySelection() {
         draft.mode = draftMode
-        draft.branch = draftMode == .worktree ? draftBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        draft.baseBranch = draftMode == .worktree ? draftBaseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        draft.branch =
+            draftMode == .worktree ? draftBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        draft.baseBranch =
+            draftMode == .worktree ? draftBaseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        draft.baseRemote = draftBaseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft.remotePublishMode = draftRemotePublishMode
         dismiss()
     }
 }

@@ -37,6 +37,9 @@ them together in one native workspace.
   data or harness credentials through the gateway.
 - **Resume real work.** Chats, boards, queues, terminals, files, schedules, and
   conversation history survive client disconnects and daemon restarts.
+- **Steer without losing your place.** Follow-ups wait visibly behind the
+  active turn and can be steered next, removed, or returned to the composer for
+  editing before they run.
 - **Use native clients.** The macOS and Android apps automatically route each
   project to the machine that owns it.
 - **Bring your existing agent setup.** Dieter uses each harness's normal local
@@ -128,6 +131,15 @@ macOS uses the signed-in user's normal System Events authorization. Linux uses
 non-interactive systemd-logind authorization and never accepts a sudo password;
 an administrator must grant the daemon user the relevant PolicyKit permission
 before the commands are advertised as available.
+
+Messages submitted during an active turn wait in that conversation's durable
+queue. Native clients can steer the next message, discard any queued message,
+or return it to the composer for editing. Automation can dequeue the complete
+payload (including attachments) as JSON:
+
+```sh
+dieter card queue remove --message <message-id> <card-id>
+```
 
 Automatic daemon update is intentionally limited to a running
 Homebrew-managed macOS service. Dieter runs `brew update`, upgrades only
@@ -299,6 +311,24 @@ dieter project open ~/Development/my-project
 dieter daemon start
 ```
 
+Create a story-only quick task with the same daemon-side GPT Spark 4–6 word
+title generation used by the native Kanban popover:
+
+```sh
+dieter card create --project PROJECT --board BOARD --lane todo \
+  --auto-title --prompt "Add keyboard navigation to the board" \
+  --workspace worktree
+```
+
+Each board can snapshot its own Git remote into newly created cards and choose
+how reviewed work is published. `manual` keeps remote actions explicit,
+`pull_request` routes delivery through a PR, and `push_base` pushes the
+validated local integration to the configured base branch:
+
+```sh
+dieter board git --base-remote private --remote-publish pull_request BOARD_ID
+```
+
 To reach it through your gateway, enroll the machine once:
 
 ```sh
@@ -359,8 +389,43 @@ list. A daemon retains its last successfully discovered catalog across
 transient refresh failures and performs one bounded provider refresh when a
 create or resume request names a model that is not in its current catalog.
 See the [DSH integration proposal and operational notes](docs/deepseek-dsh-harness.md).
+An optional model `defaultEffort` is Dieter's default for new conversations and
+overrides the provider-discovered default when that model supports the selected
+level. Pass `--effort default` to explicitly use the provider's native default.
+Codex advertises a mutable `fast_mode` option for GPT-5.4, GPT-5.5, GPT-5.6,
+and GPT-6 Astra models: native clients expose it for chats, board tasks, and
+scheduled task templates, while the CLI accepts
+`--provider-option fast_mode=true`. GPT-5.3 Codex and Spark do not expose Fast
+mode. Turning it off explicitly selects the standard service tier for that
+conversation.
 
 ## Development
+
+For local iteration, detect changes and run only the affected components:
+
+```sh
+just check-changed --dry-run
+just check-changed
+just check-changed --base origin/main
+```
+
+This requires Python 3 and includes staged, unstaged, deleted, renamed, and
+untracked files. By default it compares with `HEAD`; `--base REF` includes branch
+changes since the merge base with that ref. Documentation-only edits skip tests.
+Go changes run race tests and vet for affected packages and their reverse
+dependencies (including test imports and embedded files). Native changes run
+the affected client's complete unit test suite because each client is one
+application module. App code, resources, or build configuration also select
+that client's integration suite: macOS packaged smoke tests or Android connected
+tests. Unit-test-only edits do not select device tests. Shared protobuf and
+native fixture changes select both clients. Harness and website changes select
+their own checks.
+
+Checks stop on the first failure. Mac smoke tests require no Dieter app to be
+running; Android connected tests require a healthy configured emulator and use
+the existing instrumentation configuration, including its opt-in gateway tests.
+The command never stops an app or daemon, starts an emulator, or changes gateway
+credentials. `--dry-run` shows the exact commands without executing them.
 
 Install the pinned JavaScript harness runtime and run the full Go checks:
 
@@ -428,3 +493,95 @@ Dieter is available under the [MIT License](LICENSE). Brand assets and usage
 guidance live in [`assets/brand`](assets/brand/README.md).
 
 <p align="center"><sub>Made with &hearts; in Berlin.</sub></p>
+
+Kanban cards display cumulative provider-reported token usage, with input/output
+counts (hover on macOS). `dieter card show CARD` includes `card.tokenUsage`, and
+`dieter card context CARD` includes `tokenUsage`; JSON card lists carry it too.
+The aggregate counts each assistant message once, preferring cumulative
+`totalUsage` over the last request's `usage`. Last-request-only data, missing
+messages, and missing input/output categories are marked partial. Missing usage
+is not presented as zero. Existing transcripts are included; copied fork history
+and separate subagent counters are excluded to avoid attributing inherited or
+potentially overlapping usage. These are reported tokens, not cost estimates.
+
+### Merge a card's request into another task
+
+`dieter card merge --into TARGET CARD` queues the source card's initial request
+and attachments in a started target on the same board, moves the idle source to
+Done, and saves its `mergedIntoCardId` link. The source must have no active turn
+or queued messages. Retrying the same merge is safe. Both conversations and
+workspaces are retained; this operation does not merge Git branches.
+
+On macOS, drag a card over a started task and hold for two seconds. A merge icon
+and “Release to merge request” appear; dropping then performs the merge.
+Dropping earlier keeps the usual card ordering behavior.
+
+Draft agent settings can be changed in Edit card or with
+`dieter card update --provider codex --model MODEL --effort high --provider-option fast_mode=true CARD`.
+Settings are locked once the initial request has been sent. These commands also
+support the global `--machine ID|NAME` option for direct TLS or gateway relay.
+
+### Capture a Quick Task on macOS
+
+Use **Capture task** in the expanded Dieter Island, then drag to select a screen
+area (Escape cancels). The screenshot opens in a Quick Task draft with project
+and board selection, the usual agent controls, and an editable page URL when
+the foreground app is a supported browser. Nothing is submitted until **Add
+task**. Safari and Chromium browsers can request macOS Automation access to read
+the current tab; Firefox uses existing Accessibility access. If the URL cannot
+be read, paste it into the draft. Screen capture requires macOS Screen Recording
+permission. Temporary capture files are removed after attachment import.
+
+This uses the existing card-creation API; CLI automation can create the same
+request with `dieter card create --project PROJECT --board BOARD --auto-title --prompt TEXT --attach SCREENSHOT` and include the page URL in the prompt.
+
+### Browser capture project routing
+
+Agents can maintain exact browser hostnames on a project through the daemon:
+
+```sh
+dieter project update --hostname app.example.com --hostname localhost PROJECT_ID
+dieter project show PROJECT_ID
+dieter project update --clear-hostnames PROJECT_ID
+```
+
+`--hostname` is repeatable and replaces the complete list; omitting both hostname
+flags preserves it. Use `--machine ID|NAME` for projects on another daemon.
+Hostnames are lowercase, deduplicated, and stored centrally with project metadata.
+Use bare DNS names (punycode for international names) or IP addresses, without
+URLs, ports, paths, or wildcards. Up to 64 names are allowed. URL ports and schemes
+do not affect matching; subdomains require their own entries.
+
+Capture task first tries board mappings, then uses the browser URL to select a
+project when exactly one active project matches. Multiple matches require a manual destination choice; no match
+asks for a destination. The user still reviews and submits the
+Quick Task. Mappings do not grant access to a website or start any task.
+
+Local Mac builds automatically use the sole available Apple Development signing
+identity, so macOS privacy grants can survive rebuilds. Set
+`DIETER_MAC_SIGNING_IDENTITY` to a specific certificate fingerprint when multiple
+identities are installed, or `-` for ad-hoc signing. CI and machines without a
+single development identity retain ad-hoc signing. Switching from an old ad-hoc
+build may require granting Screen Recording to the newly signed Dieter app once.
+
+Board hostname mappings take priority over project mappings for Capture task.
+Users can edit URLs/hostnames in Board settings or remember a captured URL's
+hostname for the selected board when saving a Quick Task. Global Quick Task is
+available in the sidebar and always shows project and board selectors. Unmatched
+or ambiguous captures stage a draft with no destination until the user chooses.
+Tasks are saved as drafts; capture does not start an agent. The sidebar and board
+Quick Task popovers keep their draft in memory when dismissed, including attachments
+and agent settings. Submitting or restarting clears task text and attachments,
+while the last project, board per project, and agent settings are remembered.
+Projects without a previous board selection default to their first board.
+
+```sh
+dieter board hostnames --hostname app.example.com BOARD_ID
+dieter board hostnames --append --hostname preview.example.com BOARD_ID
+dieter board hostnames --clear BOARD_ID
+dieter board show BOARD_ID
+```
+
+The default replaces the full list; `--append` adds atomically and deduplicates.
+CLI inputs are bare hostnames; Board settings also accepts HTTP(S) URLs and stores
+only their hostname. The same exact-host matching and 64-host limit apply.

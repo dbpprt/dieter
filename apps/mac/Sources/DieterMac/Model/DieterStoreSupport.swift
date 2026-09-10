@@ -2,8 +2,8 @@ import AppKit
 import DieterAPI
 import Foundation
 import GRPCCore
-import Observation
 import OSLog
+import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
@@ -81,7 +81,7 @@ enum DieterStoreConnectionError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case let .incompatible(found):
+        case .incompatible(let found):
             "Dieter API \(found.isEmpty ? "unknown" : found) is incompatible; macOS requires \(dieterExpectedAPIVersion)."
         case .syncEnded:
             "Live updates stopped unexpectedly."
@@ -287,7 +287,9 @@ struct ProjectFileNavigation: Equatable, Sendable {
 }
 
 enum MachineRoutingPolicy {
-    static func preferredDaemonID(newEndpoint: DieterEndpoint?, currentEndpoint: DieterEndpoint) -> String? {
+    static func preferredDaemonID(newEndpoint: DieterEndpoint?, currentEndpoint: DieterEndpoint)
+        -> String?
+    {
         newEndpoint?.daemonID ?? (newEndpoint == nil ? currentEndpoint.daemonID : nil)
     }
 
@@ -346,7 +348,8 @@ enum DieterAttachmentError: LocalizedError {
         case .totalTooLarge: "Attachments must total at most 6 MB."
         case .empty(let name): "\(name) is empty."
         case .notAFile(let name): "\(name) is not a regular file."
-        case .unsupportedPaste: "The clipboard does not contain an image or file that Dieter can attach."
+        case .unsupportedPaste:
+            "The clipboard does not contain an image or file that Dieter can attach."
         case .invalidImage: "The pasted image could not be decoded."
         }
     }

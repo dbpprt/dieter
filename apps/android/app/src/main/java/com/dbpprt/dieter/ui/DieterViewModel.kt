@@ -1006,6 +1006,18 @@ class DieterViewModel(
 
     fun discardOutboxItem(id: String) {
         connectionManager.discardOutboxItem(id)
+        _state.update { current ->
+            val conversation = current.conversation?.toBuilder()?.setConversation(
+                current.conversation.conversation.toBuilder()
+                    .clearMessages()
+                    .addAllMessages(current.conversation.conversation.messagesList.filterNot { it.id == id }),
+            )?.build()
+            current.copy(
+                conversation = conversation,
+                olderMessages = current.olderMessages.filterNot { it.id == id },
+            )
+        }
+        _state.value.selectedCardId?.let(::rememberConversation)
         if (_state.value.selectedCardId == id) closeDetail()
     }
 
@@ -1365,6 +1377,7 @@ class DieterViewModel(
         workspaceMode: String = ConversationWorkspaceMode.WORKTREE.wire,
         workspaceBranch: String = "",
         workspaceBaseBranch: String = "",
+        autoGenerateTitle: Boolean = false,
     ) = action(ensureProjectRoute = false) {
         val current = _state.value
         check(current.project != null) { "Select a project before creating a conversation." }
@@ -1382,6 +1395,7 @@ class DieterViewModel(
             .setWorkspaceMode(selectedWorkspaceMode.wire)
             .setWorkspaceBranch(workspaceBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
             .setWorkspaceBaseBranch(workspaceBaseBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
+            .setAutoGenerateTitle(autoGenerateTitle)
             .addAllLabelIds(if (chat) emptyList() else labelIds)
             .setDeferStart(deferStart)
             .addAllAttachments(attachments)
@@ -1399,6 +1413,30 @@ class DieterViewModel(
         if (shouldOpenCreatedConversation(chat, lane)) {
             openCard(card, if (chat) Destination.CHATS else Destination.BOARD)
         }
+    }
+
+    fun createQuickTask(story: String) {
+        val cleanStory = story.trim()
+        if (cleanStory.isEmpty()) return
+        val current = _state.value
+        val defaults = resolveConversationCreationPreferences(conversationCreationPreferences, current.harnesses)
+        val harness = current.harnesses.firstOrNull { it.id == defaults.provider }
+        val lane = current.board?.lanesList?.firstOrNull()?.id.orEmpty().ifBlank { "todo" }
+        createConversation(
+            title = optimisticQuickTaskTitle(cleanStory),
+            prompt = cleanStory,
+            chat = false,
+            provider = defaults.provider,
+            model = defaults.model,
+            effort = defaults.effort,
+            providerOptions = providerOptionValues(harness, model = defaults.model),
+            lane = lane,
+            labelIds = emptyList(),
+            deferStart = !lane.equals("running", ignoreCase = true),
+            workspaceMode = defaults.workspaceMode.wire,
+            workspaceBaseBranch = current.project?.baseBranch.orEmpty(),
+            autoGenerateTitle = true,
+        )
     }
 
     fun sendMessage(
@@ -2836,7 +2874,14 @@ class DieterViewModel(
         refreshStateOnce()
     }
 
-    fun createBoard(name: String, workflow: String, description: String, openAfterCreate: Boolean = false) = action {
+    fun createBoard(
+        name: String,
+        workflow: String,
+        description: String,
+        openAfterCreate: Boolean = false,
+        baseRemote: String = _state.value.project?.baseRemote.orEmpty(),
+        remotePublishMode: String = "manual",
+    ) = action {
         val board = repository.createBoard(
             CreateBoardRequest.newBuilder()
                 .setProjectId(_state.value.selectedProjectId)
@@ -2844,6 +2889,8 @@ class DieterViewModel(
                 .setWorkflow(workflow)
                 .setDescription(description)
                 .setDoneArchivePolicy("never")
+                .setBaseRemote(baseRemote.trim())
+                .setRemotePublishMode(remotePublishMode)
                 .build(),
         )
         _state.update {
@@ -2859,6 +2906,11 @@ class DieterViewModel(
 
     fun setBoardArchivePolicy(policy: String) = action {
         repository.setBoardArchivePolicy(_state.value.selectedBoardId, policy)
+        refreshStateOnce()
+    }
+
+    fun updateBoardGitSettings(baseRemote: String, remotePublishMode: String) = action {
+        repository.updateBoardGitSettings(_state.value.selectedBoardId, baseRemote, remotePublishMode)
         refreshStateOnce()
     }
 

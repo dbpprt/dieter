@@ -346,6 +346,32 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "UpdateBoardHostnames" metadata.
+        public enum UpdateBoardHostnames: Sendable {
+            /// Request type for "UpdateBoardHostnames".
+            public typealias Input = Dieter_V1_UpdateBoardHostnamesRequest
+            /// Response type for "UpdateBoardHostnames".
+            public typealias Output = Dieter_V1_Board
+            /// Descriptor for "UpdateBoardHostnames".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "UpdateBoardHostnames",
+                type: .unary
+            )
+        }
+        /// Namespace for "UpdateBoardGitSettings" metadata.
+        public enum UpdateBoardGitSettings: Sendable {
+            /// Request type for "UpdateBoardGitSettings".
+            public typealias Input = Dieter_V1_UpdateBoardGitSettingsRequest
+            /// Response type for "UpdateBoardGitSettings".
+            public typealias Output = Dieter_V1_Board
+            /// Descriptor for "UpdateBoardGitSettings".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "UpdateBoardGitSettings",
+                type: .unary
+            )
+        }
         /// Namespace for "ListArchivedCards" metadata.
         public enum ListArchivedCards: Sendable {
             /// Request type for "ListArchivedCards".
@@ -528,6 +554,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "RemoveQueuedMessage" metadata.
+        public enum RemoveQueuedMessage: Sendable {
+            /// Request type for "RemoveQueuedMessage".
+            public typealias Input = Dieter_V1_RemoveQueuedMessageRequest
+            /// Response type for "RemoveQueuedMessage".
+            public typealias Output = Dieter_V1_QueuedMessage
+            /// Descriptor for "RemoveQueuedMessage".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "RemoveQueuedMessage",
+                type: .unary
+            )
+        }
         /// Namespace for "AddComment" metadata.
         public enum AddComment: Sendable {
             /// Request type for "AddComment".
@@ -551,6 +590,19 @@ public enum Dieter_V1_DieterService: Sendable {
             public static let descriptor = GRPCCore.MethodDescriptor(
                 service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
                 method: "MoveCard",
+                type: .unary
+            )
+        }
+        /// Namespace for "MergeCard" metadata.
+        public enum MergeCard: Sendable {
+            /// Request type for "MergeCard".
+            public typealias Input = Dieter_V1_MergeCardRequest
+            /// Response type for "MergeCard".
+            public typealias Output = Dieter_V1_Card
+            /// Descriptor for "MergeCard".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "MergeCard",
                 type: .unary
             )
         }
@@ -1309,6 +1361,8 @@ public enum Dieter_V1_DieterService: Sendable {
             CreateBoard.descriptor,
             RenameBoard.descriptor,
             SetBoardArchivePolicy.descriptor,
+            UpdateBoardHostnames.descriptor,
+            UpdateBoardGitSettings.descriptor,
             ListArchivedCards.descriptor,
             CreateBoardLabel.descriptor,
             UpdateBoardLabel.descriptor,
@@ -1323,8 +1377,10 @@ public enum Dieter_V1_DieterService: Sendable {
             WatchConversation.descriptor,
             GetToolOutput.descriptor,
             SendMessage.descriptor,
+            RemoveQueuedMessage.descriptor,
             AddComment.descriptor,
             MoveCard.descriptor,
+            MergeCard.descriptor,
             StartCard.descriptor,
             SetCardLabels.descriptor,
             CancelCard.descriptor,
@@ -1886,6 +1942,44 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
+        /// Call the "UpdateBoardHostnames" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateBoardHostnamesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateBoardHostnamesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateBoardHostnames<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateBoardHostnamesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UpdateBoardGitSettings" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateBoardGitSettingsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateBoardGitSettingsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateBoardGitSettings<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateBoardGitSettingsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "ListArchivedCards" method.
         ///
         /// - Parameters:
@@ -2152,6 +2246,31 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_SendMessageResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
+        /// Call the "RemoveQueuedMessage" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > RemoveQueuedMessage dequeues content that has not started yet and returns
+        /// > the full message so clients can either discard it or restore it to an
+        /// > editor without losing attachments.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoveQueuedMessageRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoveQueuedMessageRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_QueuedMessage` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func removeQueuedMessage<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoveQueuedMessageRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoveQueuedMessageRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_QueuedMessage>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_QueuedMessage>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "AddComment" method.
         ///
         /// - Parameters:
@@ -2185,6 +2304,25 @@ extension Dieter_V1_DieterService {
         func moveCard<Result>(
             request: GRPCCore.ClientRequest<Dieter_V1_MoveCardRequest>,
             serializer: some GRPCCore.MessageSerializer<Dieter_V1_MoveCardRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "MergeCard" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_MergeCardRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MergeCardRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func mergeCard<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MergeCardRequest>,
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result
@@ -4050,6 +4188,66 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "UpdateBoardHostnames" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateBoardHostnamesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateBoardHostnamesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateBoardHostnames<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateBoardHostnamesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.UpdateBoardHostnames.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "UpdateBoardGitSettings" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_UpdateBoardGitSettingsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_UpdateBoardGitSettingsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Board` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateBoardGitSettings<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_UpdateBoardGitSettingsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Board>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.UpdateBoardGitSettings.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "ListArchivedCards" method.
         ///
         /// - Parameters:
@@ -4468,6 +4666,42 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "RemoveQueuedMessage" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > RemoveQueuedMessage dequeues content that has not started yet and returns
+        /// > the full message so clients can either discard it or restore it to an
+        /// > editor without losing attachments.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoveQueuedMessageRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoveQueuedMessageRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_QueuedMessage` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func removeQueuedMessage<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoveQueuedMessageRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoveQueuedMessageRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_QueuedMessage>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_QueuedMessage>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.RemoveQueuedMessage.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "AddComment" method.
         ///
         /// - Parameters:
@@ -4521,6 +4755,36 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.MoveCard.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "MergeCard" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_MergeCardRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_MergeCardRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_Card` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func mergeCard<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_MergeCardRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_Card>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.MergeCard.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -6859,6 +7123,56 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "UpdateBoardHostnames" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_UpdateBoardHostnamesRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateBoardHostnames<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateBoardHostnames(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateBoardHostnamesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Board>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateBoardGitSettings" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_UpdateBoardGitSettingsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateBoardGitSettings<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateBoardGitSettings(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_UpdateBoardGitSettingsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Board>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListArchivedCards" method.
     ///
     /// - Parameters:
@@ -7207,6 +7521,37 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "RemoveQueuedMessage" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > RemoveQueuedMessage dequeues content that has not started yet and returns
+    /// > the full message so clients can either discard it or restore it to an
+    /// > editor without losing attachments.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RemoveQueuedMessageRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func removeQueuedMessage<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RemoveQueuedMessageRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_QueuedMessage>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.removeQueuedMessage(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoveQueuedMessageRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_QueuedMessage>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "AddComment" method.
     ///
     /// - Parameters:
@@ -7251,6 +7596,31 @@ extension Dieter_V1_DieterService.ClientProtocol {
         try await self.moveCard(
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_MoveCardRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Card>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MergeCard" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_MergeCardRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func mergeCard<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.mergeCard(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_MergeCardRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_Card>(),
             options: options,
             onResponse: handleResponse
@@ -9407,6 +9777,64 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "UpdateBoardHostnames" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateBoardHostnames<Result>(
+        _ message: Dieter_V1_UpdateBoardHostnamesRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateBoardHostnamesRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateBoardHostnames(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateBoardGitSettings" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateBoardGitSettings<Result>(
+        _ message: Dieter_V1_UpdateBoardGitSettingsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Board>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_UpdateBoardGitSettingsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateBoardGitSettings(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ListArchivedCards" method.
     ///
     /// - Parameters:
@@ -9811,6 +10239,41 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "RemoveQueuedMessage" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > RemoveQueuedMessage dequeues content that has not started yet and returns
+    /// > the full message so clients can either discard it or restore it to an
+    /// > editor without losing attachments.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func removeQueuedMessage<Result>(
+        _ message: Dieter_V1_RemoveQueuedMessageRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_QueuedMessage>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RemoveQueuedMessageRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.removeQueuedMessage(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "AddComment" method.
     ///
     /// - Parameters:
@@ -9863,6 +10326,35 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.moveCard(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "MergeCard" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func mergeCard<Result>(
+        _ message: Dieter_V1_MergeCardRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_Card>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_MergeCardRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.mergeCard(
             request: request,
             options: options,
             onResponse: handleResponse

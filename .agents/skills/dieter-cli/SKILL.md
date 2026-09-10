@@ -86,6 +86,10 @@ dieter card send --message "Inspect these inputs." \
   --attach screenshot.png --attach notes.pdf <card-id>
 ```
 
+When `--effort` is omitted for a new card or chat, Dieter uses that model's
+`defaultEffort` from the harness registry. Pass `--effort default` to defer to
+the provider's native default instead.
+
 Use `card poll` for one bounded update and `card watch` for JSON Lines streaming.
 Fetch a large tool payload separately with `card tool-output` when the transcript
 contains only its bounded preview.
@@ -117,15 +121,35 @@ Paths passed to project commands are paths on the targeted daemon host:
 ```sh
 dieter project directories /path/on/daemon
 dieter project open --prompt-file prompt.md /path/on/daemon/repo
-dieter board create --project <project-id> --name Delivery --workflow review
+dieter board create --project <project-id> --name Delivery --workflow review \
+  --base-remote origin --remote-publish pull_request
+dieter board git --base-remote private --remote-publish push_base <board-id>
 dieter card create --project <project-id> --board <board-id> \
   --lane todo --title "Implement recovery" --prompt-file task.md \
   --workspace worktree --format id
+
+# Story-only quick task: GPT Spark generates a 4–6 word persisted title while
+# the normal card defaults remain unchanged.
+dieter card create --project <project-id> --board <board-id> \
+  --lane todo --auto-title --prompt "Add keyboard navigation" \
+  --workspace worktree --format id
 ```
+
+Harness-defined options use repeatable `--provider-option KEY=VALUE` flags.
+For example, Codex chats and tasks using GPT-5.4, GPT-5.5, GPT-5.6, or GPT-6
+Astra can select Fast mode with `--provider-option fast_mode=true`; schedules
+accept the same option and apply it to every task they create. GPT-5.3 Codex
+and Spark do not support this option.
 
 `card start` admits a draft's first turn. `card send` admits a human follow-up.
 Both return without waiting for the agent to finish. Do not replay either just
 because the client disconnected; inspect the card and conversation first.
+Messages sent during an active turn are queued in order. Remove one that has
+not started yet—and receive its complete text and attachments as JSON—with:
+
+```sh
+dieter card queue remove --message <message-id> <card-id>
+```
 
 Boards own their labels. Use label IDs for filtering and assignment:
 
@@ -200,6 +224,12 @@ Worktree targets additionally support `update`, `continue_conflict`,
 `abort_conflict`, `merge_local`, `push`, `cleanup`, `discard`, `adopt`,
 `create_pr`, `refresh_pr`, and `merge_pr`. Inspect help and current state before
 destructive or externally visible Git operations.
+
+New board cards snapshot the board's configured remote and publish mode. The
+`manual` mode preserves explicit local merge, branch push, and PR choices;
+`pull_request` prevents a local base merge; and `push_base` publishes the
+validated integration result to the configured base branch during
+`merge_local`. Existing conversations keep their snapshotted values.
 
 ## Run commands on a daemon host
 
@@ -298,3 +328,69 @@ delete data without explicit authorization.
 - Never stop or replace an operator's live daemon for testing. Use isolated
   temporary daemon/gateway instances on random loopback ports.
 - Never edit `DIETER_HOME` manually during normal operation.
+
+## Task token usage
+
+`dieter card show CARD` returns `card.tokenUsage`; `dieter card context CARD`
+returns `tokenUsage`. JSON card/chat listings include the same summary without
+fetching transcripts. Fields are `inputTokens`, `outputTokens`, `totalTokens`,
+`reportedMessages`, `missingMessages`, and `partial`. Treat partial counts as
+incomplete provider data. Copied fork history and separate subagent counters
+are excluded; the summary is not a billing estimate.
+
+### Merge a card's request into another task
+
+`dieter card merge --into TARGET CARD` queues the source card's initial request
+and attachments in a started target on the same board, moves the idle source to
+Done, and saves its `mergedIntoCardId` link. The source must have no active turn
+or queued messages. Retrying the same merge is safe. Both conversations and
+workspaces are retained; this operation does not merge Git branches.
+
+On macOS, drag a card over a started task and hold for two seconds. A merge icon
+and “Release to merge request” appear; dropping then performs the merge.
+Dropping earlier keeps the usual card ordering behavior.
+
+Draft agent settings can be changed in Edit card or with
+`dieter card update --provider codex --model MODEL --effort high --provider-option fast_mode=true CARD`.
+Settings are locked once the initial request has been sent. These commands also
+support the global `--machine ID|NAME` option for direct TLS or gateway relay.
+
+### Browser capture project routing
+
+Agents can maintain exact browser hostnames on a project through the daemon:
+
+```sh
+dieter project update --hostname app.example.com --hostname localhost PROJECT_ID
+dieter project show PROJECT_ID
+dieter project update --clear-hostnames PROJECT_ID
+```
+
+`--hostname` is repeatable and replaces the complete list; omitting both hostname
+flags preserves it. Use `--machine ID|NAME` for projects on another daemon.
+Hostnames are lowercase, deduplicated, and stored centrally with project metadata.
+Use bare DNS names (punycode for international names) or IP addresses, without
+URLs, ports, paths, or wildcards. Up to 64 names are allowed. URL ports and schemes
+do not affect matching; subdomains require their own entries.
+
+Capture task first tries board mappings, then uses the browser URL to select a
+project when exactly one active project matches. Multiple matches require a manual destination choice; no match
+asks for a destination. The user still reviews and submits the
+Quick Task. Mappings do not grant access to a website or start any task.
+
+Board hostname mappings take priority over project mappings for Capture task.
+Users can edit URLs/hostnames in Board settings or remember a captured URL's
+hostname for the selected board when saving a Quick Task. Global Quick Task is
+available in the sidebar and always shows project and board selectors. Unmatched
+or ambiguous captures stage a draft with no destination until the user chooses.
+Tasks are saved as drafts; capture does not start an agent.
+
+```sh
+dieter board hostnames --hostname app.example.com BOARD_ID
+dieter board hostnames --append --hostname preview.example.com BOARD_ID
+dieter board hostnames --clear BOARD_ID
+dieter board show BOARD_ID
+```
+
+The default replaces the full list; `--append` adds atomically and deduplicates.
+CLI inputs are bare hostnames; Board settings also accepts HTTP(S) URLs and stores
+only their hostname. The same exact-host matching and 64-host limit apply.

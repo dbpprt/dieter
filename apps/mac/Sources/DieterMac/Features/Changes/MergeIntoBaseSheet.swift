@@ -52,7 +52,8 @@ struct MergeIntoBaseSheet: View {
             !operation.validationResults.isEmpty
         else { return nil }
         let passed = operation.validationResults.allSatisfy { $0.exitCode == 0 }
-        let name = operation.validationResults.count == 1 ? operation.validationResults[0].name : "validation"
+        let name =
+            operation.validationResults.count == 1 ? operation.validationResults[0].name : "validation"
         return (name, passed, WorkspaceRelativeTime.compact(operation.finishedAt))
     }
     private var mergeButtonTitle: String {
@@ -117,7 +118,9 @@ struct MergeIntoBaseSheet: View {
 
     private func branchChip(_ name: String, tinted: Bool) -> some View {
         HStack(spacing: 5) {
-            if tinted { Image(systemName: "arrow.triangle.branch").font(.system(size: 9, weight: .semibold)) }
+            if tinted {
+                Image(systemName: "arrow.triangle.branch").font(.system(size: 9, weight: .semibold))
+            }
             Text(name).font(.system(size: 11, weight: .medium, design: .monospaced))
         }
         .foregroundStyle(tinted ? DieterTheme.shell : DieterTheme.text)
@@ -174,10 +177,12 @@ struct MergeIntoBaseSheet: View {
 
     private var mergeFailedNotice: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DieterTheme.coral).frame(width: 18)
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DieterTheme.coral).frame(
+                width: 18)
             VStack(alignment: .leading, spacing: 3) {
-                Text("The last merge attempt failed").font(.system(size: 11, weight: .semibold)).foregroundStyle(
-                    DieterTheme.text)
+                Text("The last merge attempt failed").font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(
+                        DieterTheme.text)
                 Text(
                     model.gitOperation?.error.isEmpty == false
                         ? model.gitOperation!.error
@@ -206,21 +211,25 @@ struct MergeIntoBaseSheet: View {
                     .disabled(running)
                     .accessibilityIdentifier("merge.subject")
             }
-            TextField("Optional description — drafted from the card, edit freely.", text: $bodyText, axis: .vertical)
-                .lineLimit(3...6)
-                .textFieldStyle(.plain).font(DieterFont.body)
-                .padding(.horizontal, 11).padding(.vertical, 9)
-                .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border))
-                .disabled(running)
+            TextField(
+                "Optional description — drafted from the card, edit freely.", text: $bodyText,
+                axis: .vertical
+            )
+            .lineLimit(3...6)
+            .textFieldStyle(.plain).font(DieterFont.body)
+            .padding(.horizontal, 11).padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 66, alignment: .topLeading)
+            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border))
+            .disabled(running)
         }
     }
 
     private var strategyAndAfterMerge: some View {
         HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: 7) {
-                Text("STRATEGY").font(DieterFont.sectionLabel).tracking(0.45).foregroundStyle(DieterTheme.tertiary)
+                Text("STRATEGY").font(DieterFont.sectionLabel).tracking(0.45).foregroundStyle(
+                    DieterTheme.tertiary)
                 Picker("Merge strategy", selection: $strategy) {
                     Text("Squash").tag("squash")
                     Text("Merge commit").tag("merge_commit")
@@ -235,9 +244,11 @@ struct MergeIntoBaseSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .leading, spacing: 7) {
-                Text("AFTER MERGE").font(DieterFont.sectionLabel).tracking(0.45).foregroundStyle(DieterTheme.tertiary)
+                Text("AFTER MERGE").font(DieterFont.sectionLabel).tracking(0.45).foregroundStyle(
+                    DieterTheme.tertiary)
                 Toggle("Remove worktree & branch", isOn: $removeWorkspace)
-                    .font(.system(size: 11, weight: .medium)).toggleStyle(.switch).controlSize(.small).disabled(running)
+                    .font(.system(size: 11, weight: .medium)).toggleStyle(.switch).controlSize(.small)
+                    .disabled(running)
                 Text(
                     removeWorkspace
                         ? (isChat ? "The chat keeps its full history." : "Card moves to Done.")
@@ -269,7 +280,8 @@ struct MergeIntoBaseSheet: View {
                 Image(systemName: "exclamationmark.triangle").foregroundStyle(DieterTheme.coral).font(
                     .system(size: 13, weight: .semibold))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(conflictTitle).font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.coral)
+                    Text(conflictTitle).font(.system(size: 12, weight: .semibold)).foregroundStyle(
+                        DieterTheme.coral)
                     Text("Merge is blocked until conflicts are resolved.")
                         .font(DieterFont.meta).foregroundStyle(DieterTheme.coral.opacity(0.8))
                 }
@@ -281,10 +293,13 @@ struct MergeIntoBaseSheet: View {
             ForEach(model.gitOperation?.conflicts ?? [], id: \.path) { conflict in
                 HStack(spacing: 9) {
                     Text("!")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(DieterTheme.coral)
+                        .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(
+                            DieterTheme.coral
+                        )
                         .frame(width: 20, height: 20).background(
                             DieterTheme.coral.opacity(0.11), in: RoundedRectangle(cornerRadius: 5))
-                    Text(conflict.path).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1)
+                    Text(conflict.path).font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
                     if conflict.hunkCount > 0 {
@@ -360,8 +375,12 @@ struct MergeIntoBaseSheet: View {
                     .buttonStyle(DieterPrimaryButtonStyle())
                     .disabled(true).opacity(0.45)
             } else {
-                Text("Runs locally · nothing is pushed")
-                    .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                Text(
+                    availability.remotePublishMode == RemotePublishMode.pushBase.rawValue
+                        ? "Validated result is pushed to the configured base remote"
+                        : "Runs locally · nothing is pushed"
+                )
+                .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
                 if mergeFailedConflict {
                     Button {
@@ -421,7 +440,9 @@ struct MergeIntoBaseSheet: View {
             switch kind {
             case .update: parameters = ["fetch": "true", "validate": "false"]
             case .continueConflict:
-                parameters = ["conflicted_operation_id": model.gitOperation?.id ?? "", "validate": String(validate)]
+                parameters = [
+                    "conflicted_operation_id": model.gitOperation?.id ?? "", "validate": String(validate),
+                ]
             case .abortConflict: parameters = ["conflicted_operation_id": model.gitOperation?.id ?? ""]
             default: parameters = [:]
             }

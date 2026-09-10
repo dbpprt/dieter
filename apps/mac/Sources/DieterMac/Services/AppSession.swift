@@ -13,6 +13,13 @@ import UserNotifications
 // Application lifetime and feature composition. Window selection and feature
 // effects have dedicated owners; compatibility accessors live separately.
 final class AppSession {
+    let quickTaskForm = QuickTaskFormState()
+    var lastUsedChatID: String?
+    let cardStartRPCOverride: (any DieterCardStartRPC)?
+    var pendingCardStarts: [String: OptimisticCardStart] {
+        get { replica.pendingCardStarts }
+        set { replica.pendingCardStarts = newValue }
+    }
     struct PendingChatPin {
         let operationID: UUID
         let pinned: Bool
@@ -229,6 +236,7 @@ final class AppSession {
         environment: DieterAppEnvironment? = nil,
         scheduleRPCOverride: (any DieterScheduleRPC)? = nil,
         chatPinRPCOverride: (any DieterChatPinRPC)? = nil,
+        cardStartRPCOverride: (any DieterCardStartRPC)? = nil,
         syncPersistenceOverride: DieterSyncPersistence? = nil,
         outboxOverride: DurableOutbox? = nil,
         themeDefaultsOverride: UserDefaults? = nil,
@@ -236,6 +244,7 @@ final class AppSession {
     ) {
         self.scheduleRPCOverride = scheduleRPCOverride
         self.chatPinRPCOverride = chatPinRPCOverride
+        self.cardStartRPCOverride = cardStartRPCOverride
         let environment = environment ?? (restoreSync ? .live() : .testing(defaults: themeDefaultsOverride))
         self.environment = environment
         connections = ConnectionManager(factory: environment.clients, clock: environment.clock)
@@ -250,7 +259,9 @@ final class AppSession {
             ?? DurableOutbox(journal: OutboxJournal(url: persistence.outboxJournalURL, legacyURL: persistence.fileURL))
         let themeDefaults = themeDefaultsOverride ?? environment.defaults
         self.themeDefaults = themeDefaults
-        themeSelection = DieterThemeSelection.load(from: themeDefaults)
+        let initialTheme = DieterThemeSelection.load(from: themeDefaults)
+        themeSelection = initialTheme
+        DieterTheme.install(selection: initialTheme)
         let arguments = environment.arguments
         if let flag = arguments.firstIndex(of: "--dieter-access-token-file"), arguments.indices.contains(flag + 1),
             let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)

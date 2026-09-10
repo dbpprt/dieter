@@ -106,6 +106,12 @@ const (
 	// DieterServiceSetBoardArchivePolicyProcedure is the fully-qualified name of the DieterService's
 	// SetBoardArchivePolicy RPC.
 	DieterServiceSetBoardArchivePolicyProcedure = "/dieter.v1.DieterService/SetBoardArchivePolicy"
+	// DieterServiceUpdateBoardHostnamesProcedure is the fully-qualified name of the DieterService's
+	// UpdateBoardHostnames RPC.
+	DieterServiceUpdateBoardHostnamesProcedure = "/dieter.v1.DieterService/UpdateBoardHostnames"
+	// DieterServiceUpdateBoardGitSettingsProcedure is the fully-qualified name of the DieterService's
+	// UpdateBoardGitSettings RPC.
+	DieterServiceUpdateBoardGitSettingsProcedure = "/dieter.v1.DieterService/UpdateBoardGitSettings"
 	// DieterServiceListArchivedCardsProcedure is the fully-qualified name of the DieterService's
 	// ListArchivedCards RPC.
 	DieterServiceListArchivedCardsProcedure = "/dieter.v1.DieterService/ListArchivedCards"
@@ -145,11 +151,16 @@ const (
 	// DieterServiceSendMessageProcedure is the fully-qualified name of the DieterService's SendMessage
 	// RPC.
 	DieterServiceSendMessageProcedure = "/dieter.v1.DieterService/SendMessage"
+	// DieterServiceRemoveQueuedMessageProcedure is the fully-qualified name of the DieterService's
+	// RemoveQueuedMessage RPC.
+	DieterServiceRemoveQueuedMessageProcedure = "/dieter.v1.DieterService/RemoveQueuedMessage"
 	// DieterServiceAddCommentProcedure is the fully-qualified name of the DieterService's AddComment
 	// RPC.
 	DieterServiceAddCommentProcedure = "/dieter.v1.DieterService/AddComment"
 	// DieterServiceMoveCardProcedure is the fully-qualified name of the DieterService's MoveCard RPC.
 	DieterServiceMoveCardProcedure = "/dieter.v1.DieterService/MoveCard"
+	// DieterServiceMergeCardProcedure is the fully-qualified name of the DieterService's MergeCard RPC.
+	DieterServiceMergeCardProcedure = "/dieter.v1.DieterService/MergeCard"
 	// DieterServiceStartCardProcedure is the fully-qualified name of the DieterService's StartCard RPC.
 	DieterServiceStartCardProcedure = "/dieter.v1.DieterService/StartCard"
 	// DieterServiceSetCardLabelsProcedure is the fully-qualified name of the DieterService's
@@ -346,6 +357,8 @@ type DieterServiceClient interface {
 	CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error)
 	RenameBoard(context.Context, *connect.Request[v1.RenameBoardRequest]) (*connect.Response[v1.Board], error)
 	SetBoardArchivePolicy(context.Context, *connect.Request[v1.SetBoardArchivePolicyRequest]) (*connect.Response[v1.Board], error)
+	UpdateBoardHostnames(context.Context, *connect.Request[v1.UpdateBoardHostnamesRequest]) (*connect.Response[v1.Board], error)
+	UpdateBoardGitSettings(context.Context, *connect.Request[v1.UpdateBoardGitSettingsRequest]) (*connect.Response[v1.Board], error)
 	ListArchivedCards(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.CardsResponse], error)
 	CreateBoardLabel(context.Context, *connect.Request[v1.CreateBoardLabelRequest]) (*connect.Response[v1.Board], error)
 	UpdateBoardLabel(context.Context, *connect.Request[v1.UpdateBoardLabelRequest]) (*connect.Response[v1.Board], error)
@@ -360,8 +373,13 @@ type DieterServiceClient interface {
 	WatchConversation(context.Context, *connect.Request[v1.WatchConversationRequest]) (*connect.ServerStreamForClient[v1.ConversationUpdate], error)
 	GetToolOutput(context.Context, *connect.Request[v1.GetToolOutputRequest]) (*connect.Response[v1.ToolOutput], error)
 	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error)
+	// RemoveQueuedMessage dequeues content that has not started yet and returns
+	// the full message so clients can either discard it or restore it to an
+	// editor without losing attachments.
+	RemoveQueuedMessage(context.Context, *connect.Request[v1.RemoveQueuedMessageRequest]) (*connect.Response[v1.QueuedMessage], error)
 	AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error)
 	MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error)
+	MergeCard(context.Context, *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error)
 	// StartCard is an idempotent admission command. It durably admits the
 	// initial turn and returns the fresh card projection without waiting for
 	// the agent turn to finish.
@@ -591,6 +609,18 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("SetBoardArchivePolicy")),
 			connect.WithClientOptions(opts...),
 		),
+		updateBoardHostnames: connect.NewClient[v1.UpdateBoardHostnamesRequest, v1.Board](
+			httpClient,
+			baseURL+DieterServiceUpdateBoardHostnamesProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("UpdateBoardHostnames")),
+			connect.WithClientOptions(opts...),
+		),
+		updateBoardGitSettings: connect.NewClient[v1.UpdateBoardGitSettingsRequest, v1.Board](
+			httpClient,
+			baseURL+DieterServiceUpdateBoardGitSettingsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("UpdateBoardGitSettings")),
+			connect.WithClientOptions(opts...),
+		),
 		listArchivedCards: connect.NewClient[v1.BoardRef, v1.CardsResponse](
 			httpClient,
 			baseURL+DieterServiceListArchivedCardsProcedure,
@@ -675,6 +705,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("SendMessage")),
 			connect.WithClientOptions(opts...),
 		),
+		removeQueuedMessage: connect.NewClient[v1.RemoveQueuedMessageRequest, v1.QueuedMessage](
+			httpClient,
+			baseURL+DieterServiceRemoveQueuedMessageProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("RemoveQueuedMessage")),
+			connect.WithClientOptions(opts...),
+		),
 		addComment: connect.NewClient[v1.AddCommentRequest, v1.Comment](
 			httpClient,
 			baseURL+DieterServiceAddCommentProcedure,
@@ -685,6 +721,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceMoveCardProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("MoveCard")),
+			connect.WithClientOptions(opts...),
+		),
+		mergeCard: connect.NewClient[v1.MergeCardRequest, v1.Card](
+			httpClient,
+			baseURL+DieterServiceMergeCardProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("MergeCard")),
 			connect.WithClientOptions(opts...),
 		),
 		startCard: connect.NewClient[v1.StartCardRequest, v1.StartCardResponse](
@@ -1053,6 +1095,8 @@ type dieterServiceClient struct {
 	createBoard                    *connect.Client[v1.CreateBoardRequest, v1.Board]
 	renameBoard                    *connect.Client[v1.RenameBoardRequest, v1.Board]
 	setBoardArchivePolicy          *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
+	updateBoardHostnames           *connect.Client[v1.UpdateBoardHostnamesRequest, v1.Board]
+	updateBoardGitSettings         *connect.Client[v1.UpdateBoardGitSettingsRequest, v1.Board]
 	listArchivedCards              *connect.Client[v1.BoardRef, v1.CardsResponse]
 	createBoardLabel               *connect.Client[v1.CreateBoardLabelRequest, v1.Board]
 	updateBoardLabel               *connect.Client[v1.UpdateBoardLabelRequest, v1.Board]
@@ -1067,8 +1111,10 @@ type dieterServiceClient struct {
 	watchConversation              *connect.Client[v1.WatchConversationRequest, v1.ConversationUpdate]
 	getToolOutput                  *connect.Client[v1.GetToolOutputRequest, v1.ToolOutput]
 	sendMessage                    *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
+	removeQueuedMessage            *connect.Client[v1.RemoveQueuedMessageRequest, v1.QueuedMessage]
 	addComment                     *connect.Client[v1.AddCommentRequest, v1.Comment]
 	moveCard                       *connect.Client[v1.MoveCardRequest, v1.Card]
+	mergeCard                      *connect.Client[v1.MergeCardRequest, v1.Card]
 	startCard                      *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
 	setCardLabels                  *connect.Client[v1.SetCardLabelsRequest, v1.Card]
 	cancelCard                     *connect.Client[v1.GetCardRequest, emptypb.Empty]
@@ -1252,6 +1298,16 @@ func (c *dieterServiceClient) SetBoardArchivePolicy(ctx context.Context, req *co
 	return c.setBoardArchivePolicy.CallUnary(ctx, req)
 }
 
+// UpdateBoardHostnames calls dieter.v1.DieterService.UpdateBoardHostnames.
+func (c *dieterServiceClient) UpdateBoardHostnames(ctx context.Context, req *connect.Request[v1.UpdateBoardHostnamesRequest]) (*connect.Response[v1.Board], error) {
+	return c.updateBoardHostnames.CallUnary(ctx, req)
+}
+
+// UpdateBoardGitSettings calls dieter.v1.DieterService.UpdateBoardGitSettings.
+func (c *dieterServiceClient) UpdateBoardGitSettings(ctx context.Context, req *connect.Request[v1.UpdateBoardGitSettingsRequest]) (*connect.Response[v1.Board], error) {
+	return c.updateBoardGitSettings.CallUnary(ctx, req)
+}
+
 // ListArchivedCards calls dieter.v1.DieterService.ListArchivedCards.
 func (c *dieterServiceClient) ListArchivedCards(ctx context.Context, req *connect.Request[v1.BoardRef]) (*connect.Response[v1.CardsResponse], error) {
 	return c.listArchivedCards.CallUnary(ctx, req)
@@ -1322,6 +1378,11 @@ func (c *dieterServiceClient) SendMessage(ctx context.Context, req *connect.Requ
 	return c.sendMessage.CallUnary(ctx, req)
 }
 
+// RemoveQueuedMessage calls dieter.v1.DieterService.RemoveQueuedMessage.
+func (c *dieterServiceClient) RemoveQueuedMessage(ctx context.Context, req *connect.Request[v1.RemoveQueuedMessageRequest]) (*connect.Response[v1.QueuedMessage], error) {
+	return c.removeQueuedMessage.CallUnary(ctx, req)
+}
+
 // AddComment calls dieter.v1.DieterService.AddComment.
 func (c *dieterServiceClient) AddComment(ctx context.Context, req *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error) {
 	return c.addComment.CallUnary(ctx, req)
@@ -1330,6 +1391,11 @@ func (c *dieterServiceClient) AddComment(ctx context.Context, req *connect.Reque
 // MoveCard calls dieter.v1.DieterService.MoveCard.
 func (c *dieterServiceClient) MoveCard(ctx context.Context, req *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error) {
 	return c.moveCard.CallUnary(ctx, req)
+}
+
+// MergeCard calls dieter.v1.DieterService.MergeCard.
+func (c *dieterServiceClient) MergeCard(ctx context.Context, req *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error) {
+	return c.mergeCard.CallUnary(ctx, req)
 }
 
 // StartCard calls dieter.v1.DieterService.StartCard.
@@ -1644,6 +1710,8 @@ type DieterServiceHandler interface {
 	CreateBoard(context.Context, *connect.Request[v1.CreateBoardRequest]) (*connect.Response[v1.Board], error)
 	RenameBoard(context.Context, *connect.Request[v1.RenameBoardRequest]) (*connect.Response[v1.Board], error)
 	SetBoardArchivePolicy(context.Context, *connect.Request[v1.SetBoardArchivePolicyRequest]) (*connect.Response[v1.Board], error)
+	UpdateBoardHostnames(context.Context, *connect.Request[v1.UpdateBoardHostnamesRequest]) (*connect.Response[v1.Board], error)
+	UpdateBoardGitSettings(context.Context, *connect.Request[v1.UpdateBoardGitSettingsRequest]) (*connect.Response[v1.Board], error)
 	ListArchivedCards(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.CardsResponse], error)
 	CreateBoardLabel(context.Context, *connect.Request[v1.CreateBoardLabelRequest]) (*connect.Response[v1.Board], error)
 	UpdateBoardLabel(context.Context, *connect.Request[v1.UpdateBoardLabelRequest]) (*connect.Response[v1.Board], error)
@@ -1658,8 +1726,13 @@ type DieterServiceHandler interface {
 	WatchConversation(context.Context, *connect.Request[v1.WatchConversationRequest], *connect.ServerStream[v1.ConversationUpdate]) error
 	GetToolOutput(context.Context, *connect.Request[v1.GetToolOutputRequest]) (*connect.Response[v1.ToolOutput], error)
 	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error)
+	// RemoveQueuedMessage dequeues content that has not started yet and returns
+	// the full message so clients can either discard it or restore it to an
+	// editor without losing attachments.
+	RemoveQueuedMessage(context.Context, *connect.Request[v1.RemoveQueuedMessageRequest]) (*connect.Response[v1.QueuedMessage], error)
 	AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error)
 	MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error)
+	MergeCard(context.Context, *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error)
 	// StartCard is an idempotent admission command. It durably admits the
 	// initial turn and returns the fresh card projection without waiting for
 	// the agent turn to finish.
@@ -1885,6 +1958,18 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("SetBoardArchivePolicy")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceUpdateBoardHostnamesHandler := connect.NewUnaryHandler(
+		DieterServiceUpdateBoardHostnamesProcedure,
+		svc.UpdateBoardHostnames,
+		connect.WithSchema(dieterServiceMethods.ByName("UpdateBoardHostnames")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceUpdateBoardGitSettingsHandler := connect.NewUnaryHandler(
+		DieterServiceUpdateBoardGitSettingsProcedure,
+		svc.UpdateBoardGitSettings,
+		connect.WithSchema(dieterServiceMethods.ByName("UpdateBoardGitSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceListArchivedCardsHandler := connect.NewUnaryHandler(
 		DieterServiceListArchivedCardsProcedure,
 		svc.ListArchivedCards,
@@ -1969,6 +2054,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("SendMessage")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceRemoveQueuedMessageHandler := connect.NewUnaryHandler(
+		DieterServiceRemoveQueuedMessageProcedure,
+		svc.RemoveQueuedMessage,
+		connect.WithSchema(dieterServiceMethods.ByName("RemoveQueuedMessage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceAddCommentHandler := connect.NewUnaryHandler(
 		DieterServiceAddCommentProcedure,
 		svc.AddComment,
@@ -1979,6 +2070,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceMoveCardProcedure,
 		svc.MoveCard,
 		connect.WithSchema(dieterServiceMethods.ByName("MoveCard")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceMergeCardHandler := connect.NewUnaryHandler(
+		DieterServiceMergeCardProcedure,
+		svc.MergeCard,
+		connect.WithSchema(dieterServiceMethods.ByName("MergeCard")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceStartCardHandler := connect.NewUnaryHandler(
@@ -2369,6 +2466,10 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceRenameBoardHandler.ServeHTTP(w, r)
 		case DieterServiceSetBoardArchivePolicyProcedure:
 			dieterServiceSetBoardArchivePolicyHandler.ServeHTTP(w, r)
+		case DieterServiceUpdateBoardHostnamesProcedure:
+			dieterServiceUpdateBoardHostnamesHandler.ServeHTTP(w, r)
+		case DieterServiceUpdateBoardGitSettingsProcedure:
+			dieterServiceUpdateBoardGitSettingsHandler.ServeHTTP(w, r)
 		case DieterServiceListArchivedCardsProcedure:
 			dieterServiceListArchivedCardsHandler.ServeHTTP(w, r)
 		case DieterServiceCreateBoardLabelProcedure:
@@ -2397,10 +2498,14 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceGetToolOutputHandler.ServeHTTP(w, r)
 		case DieterServiceSendMessageProcedure:
 			dieterServiceSendMessageHandler.ServeHTTP(w, r)
+		case DieterServiceRemoveQueuedMessageProcedure:
+			dieterServiceRemoveQueuedMessageHandler.ServeHTTP(w, r)
 		case DieterServiceAddCommentProcedure:
 			dieterServiceAddCommentHandler.ServeHTTP(w, r)
 		case DieterServiceMoveCardProcedure:
 			dieterServiceMoveCardHandler.ServeHTTP(w, r)
+		case DieterServiceMergeCardProcedure:
+			dieterServiceMergeCardHandler.ServeHTTP(w, r)
 		case DieterServiceStartCardProcedure:
 			dieterServiceStartCardHandler.ServeHTTP(w, r)
 		case DieterServiceSetCardLabelsProcedure:
@@ -2622,6 +2727,14 @@ func (UnimplementedDieterServiceHandler) SetBoardArchivePolicy(context.Context, 
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SetBoardArchivePolicy is not implemented"))
 }
 
+func (UnimplementedDieterServiceHandler) UpdateBoardHostnames(context.Context, *connect.Request[v1.UpdateBoardHostnamesRequest]) (*connect.Response[v1.Board], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateBoardHostnames is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) UpdateBoardGitSettings(context.Context, *connect.Request[v1.UpdateBoardGitSettingsRequest]) (*connect.Response[v1.Board], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateBoardGitSettings is not implemented"))
+}
+
 func (UnimplementedDieterServiceHandler) ListArchivedCards(context.Context, *connect.Request[v1.BoardRef]) (*connect.Response[v1.CardsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ListArchivedCards is not implemented"))
 }
@@ -2678,12 +2791,20 @@ func (UnimplementedDieterServiceHandler) SendMessage(context.Context, *connect.R
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SendMessage is not implemented"))
 }
 
+func (UnimplementedDieterServiceHandler) RemoveQueuedMessage(context.Context, *connect.Request[v1.RemoveQueuedMessageRequest]) (*connect.Response[v1.QueuedMessage], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.RemoveQueuedMessage is not implemented"))
+}
+
 func (UnimplementedDieterServiceHandler) AddComment(context.Context, *connect.Request[v1.AddCommentRequest]) (*connect.Response[v1.Comment], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.AddComment is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) MoveCard(context.Context, *connect.Request[v1.MoveCardRequest]) (*connect.Response[v1.Card], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.MoveCard is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) MergeCard(context.Context, *connect.Request[v1.MergeCardRequest]) (*connect.Response[v1.Card], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.MergeCard is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) StartCard(context.Context, *connect.Request[v1.StartCardRequest]) (*connect.Response[v1.StartCardResponse], error) {

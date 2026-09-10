@@ -13,13 +13,14 @@ import (
 // RPC must have an equivalent, documented CLI entry point. Adding an RPC makes
 // this test fail until the feature team wires and documents its CLI operation.
 var rpcCommand = map[string]string{
-	"Health": "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
+	"UpdateBoardHostnames": "board hostnames",
+	"Health":               "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
 	"GetState": "status", "WatchState": "watch state", "WatchSync": "watch sync", "GetHarnesses": "harness list",
 	"GetSettings": "settings show", "GetSettingsOptions": "settings options", "UpdateSettings": "settings update",
 	"GetPromptSettings": "prompt show", "UpdatePromptSettings": "prompt update", "SetProjectPromptTemplate": "prompt project", "SetBoardPromptTemplate": "prompt board", "PreviewPrompt": "prompt preview",
 	"ListDirectories": "project directories", "CreateProject": "project open", "UpdateProject": "project update", "UpdateProjectWorkspaceSettings": "project workspace", "ArchiveProject": "project remove", "ListArchivedProjects": "project list",
-	"CreateBoard": "board create", "RenameBoard": "board rename", "SetBoardArchivePolicy": "board retention", "ListArchivedCards": "card list", "CreateBoardLabel": "board label add", "UpdateBoardLabel": "board label update", "DeleteBoardLabel": "board label remove",
-	"CreateCard": "card create", "CreateChat": "chat create", "ForkChat": "card fork", "ListChats": "chat list", "GetCard": "card show", "GetConversation": "card transcript", "PollConversation": "card poll", "WatchConversation": "card watch", "GetToolOutput": "card tool-output", "SendMessage": "card send", "AddComment": "card comment", "MoveCard": "card move", "StartCard": "card start", "SetCardLabels": "card labels", "CancelCard": "card cancel", "RenameCard": "card rename", "UpdateCard": "card update", "ArchiveCard": "card archive", "PinChat": "chat pin",
+	"CreateBoard": "board create", "RenameBoard": "board rename", "SetBoardArchivePolicy": "board retention", "UpdateBoardGitSettings": "board git", "ListArchivedCards": "card list", "CreateBoardLabel": "board label add", "UpdateBoardLabel": "board label update", "DeleteBoardLabel": "board label remove",
+	"CreateCard": "card create", "CreateChat": "chat create", "ForkChat": "card fork", "ListChats": "chat list", "GetCard": "card show", "GetConversation": "card transcript", "PollConversation": "card poll", "WatchConversation": "card watch", "GetToolOutput": "card tool-output", "SendMessage": "card send", "RemoveQueuedMessage": "card queue remove", "AddComment": "card comment", "MoveCard": "card move", "MergeCard": "card merge", "StartCard": "card start", "SetCardLabels": "card labels", "CancelCard": "card cancel", "RenameCard": "card rename", "UpdateCard": "card update", "ArchiveCard": "card archive", "PinChat": "chat pin",
 	"UpdateConversationWorkspace": "card workspace", "GetWorkspace": "workspace show", "ListProjectWorkspaces": "workspace list", "GetChangeset": "workspace changes", "GetFileDiff": "workspace diff", "GetCommitDiff": "workspace diff", "AddChangeComment": "workspace comment", "ListChangeComments": "workspace comments", "GetSCMCapabilities": "workspace scm", "StartGitOperation": "workspace run", "GetGitOperation": "workspace operation", "WatchGitOperation": "workspace watch", "CancelGitOperation": "workspace cancel",
 	"ListFiles": "file list", "ReadFile": "file read", "SaveFile": "file save", "CreateFile": "file create", "MoveFile": "file move", "DeleteFile": "file delete",
 	"ListTerminals": "terminal list", "CreateTerminal": "terminal create", "WatchTerminal": "terminal watch", "WriteTerminal": "terminal write", "ResizeTerminal": "terminal resize", "RenameTerminal": "terminal rename", "CloseTerminal": "terminal close",
@@ -54,9 +55,9 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"machine", "machine list", "machine gateway", "machine watch", "machine show", "machine route", "machine info", "machine rename", "machine revoke", "machine restart", "machine shutdown", "machine update", "machine rtc",
 		"status", "storage", "harness", "harness list", "watch", "watch state", "watch sync",
 		"project", "project create", "project open", "project directories", "project list", "project show", "project update", "project workspace", "project remove", "project restore",
-		"board", "board create", "board list", "board show", "board rename", "board retention", "board label", "board label add", "board label list", "board label update", "board label remove",
-		"card", "card create", "card list", "card show", "card context", "card transcript", "card poll", "card watch", "card tool-output", "card fork", "card send", "card comment", "card move", "card start", "card labels", "card cancel", "card rename", "card update", "card archive", "card unarchive", "card workspace",
-		"chat", "chat create", "chat list", "chat show", "chat context", "chat transcript", "chat poll", "chat watch", "chat tool-output", "chat fork", "chat send", "chat comment", "chat start", "chat labels", "chat cancel", "chat rename", "chat update", "chat archive", "chat unarchive", "chat workspace", "chat pin", "chat unpin",
+		"board", "board hostnames", "board create", "board list", "board show", "board rename", "board retention", "board git", "board label", "board label add", "board label list", "board label update", "board label remove",
+		"card", "card create", "card list", "card show", "card context", "card transcript", "card poll", "card watch", "card tool-output", "card fork", "card send", "card queue", "card queue remove", "card comment", "card merge", "card move", "card start", "card labels", "card cancel", "card rename", "card update", "card archive", "card unarchive", "card workspace",
+		"chat", "chat create", "chat list", "chat show", "chat context", "chat transcript", "chat poll", "chat watch", "chat tool-output", "chat fork", "chat send", "chat queue", "chat queue remove", "chat comment", "chat start", "chat labels", "chat cancel", "chat rename", "chat update", "chat archive", "chat unarchive", "chat workspace", "chat pin", "chat unpin",
 		"workspace", "workspace show", "workspace list", "workspace changes", "workspace diff", "workspace comments", "workspace comment", "workspace scm", "workspace operation", "workspace watch", "workspace run", "workspace cancel",
 		"file", "file list", "file read", "file save", "file create", "file move", "file delete",
 		"terminal", "terminal list", "terminal create", "terminal attach", "terminal watch", "terminal write", "terminal resize", "terminal rename", "terminal close",
@@ -81,5 +82,20 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 				t.Fatalf("dieter %s --help did not print usage: %q", path, output.String())
 			}
 		})
+	}
+}
+
+func TestProjectUpdateHelpDiscoversHostnames(t *testing.T) {
+	c := New(store.New(t.TempDir()))
+	c.DaemonMode = true
+	var output bytes.Buffer
+	c.Out = &output
+	if err := c.Run([]string{"project", "update", "--help"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, flag := range []string{"--hostname", "--clear-hostnames"} {
+		if !strings.Contains(output.String(), flag) {
+			t.Fatalf("missing %s in %s", flag, output.String())
+		}
 	}
 }

@@ -10,6 +10,8 @@ struct NewBoardSheet: View {
     @State private var description = ""
     @State private var workflow = BoardWorkflow.review.rawValue
     @State private var doneArchivePolicy = DoneArchivePolicy.never.rawValue
+    @State private var baseRemote = ""
+    @State private var remotePublishMode = RemotePublishMode.manual.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -28,20 +30,29 @@ struct NewBoardSheet: View {
             Picker("Archive Done conversations", selection: $doneArchivePolicy) {
                 ForEach(DoneArchivePolicy.allCases) { option in Text(option.title).tag(option.rawValue) }
             }
+            TextField("Default Git remote", text: $baseRemote)
+            Picker("Remote publishing", selection: $remotePublishMode) {
+                ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+            }
+            Text(RemotePublishMode(rawValue: remotePublishMode)?.detail ?? "")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Spacer(); Button("Cancel") { dismiss() };
+                Spacer()
+                Button("Cancel") { dismiss() }
                 Button("Create") {
                     Task {
                         await store.createBoard(
                             name: name, workflow: workflow, description: description,
-                            doneArchivePolicy: doneArchivePolicy)
+                            doneArchivePolicy: doneArchivePolicy, baseRemote: baseRemote,
+                            remotePublishMode: remotePublishMode)
                     }
-                }.buttonStyle(.borderedProminent).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }.buttonStyle(.borderedProminent).disabled(
+                    name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }.padding(24).frame(width: 540)
+            .onAppear { baseRemote = store.selectedProject?.baseRemote ?? "" }
     }
 }
-
 struct RenameBoardSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss

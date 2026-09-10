@@ -184,6 +184,10 @@ func (api *connectAPI) SetBoardArchivePolicy(ctx context.Context, request *conne
 	return connectUnary(ctx, request, api.core.SetBoardArchivePolicy)
 }
 
+func (api *connectAPI) UpdateBoardGitSettings(ctx context.Context, request *connect.Request[dieterv1.UpdateBoardGitSettingsRequest]) (*connect.Response[dieterv1.Board], error) {
+	return connectUnary(ctx, request, api.core.UpdateBoardGitSettings)
+}
+
 func (api *connectAPI) ListArchivedCards(ctx context.Context, request *connect.Request[dieterv1.BoardRef]) (*connect.Response[dieterv1.CardsResponse], error) {
 	return connectUnary(ctx, request, api.core.ListArchivedCards)
 }
@@ -240,6 +244,10 @@ func (api *connectAPI) SendMessage(ctx context.Context, request *connect.Request
 	return connectUnary(ctx, request, api.core.SendMessage)
 }
 
+func (api *connectAPI) RemoveQueuedMessage(ctx context.Context, request *connect.Request[dieterv1.RemoveQueuedMessageRequest]) (*connect.Response[dieterv1.QueuedMessage], error) {
+	return connectUnary(ctx, request, api.core.RemoveQueuedMessage)
+}
+
 func (api *connectAPI) AddComment(ctx context.Context, request *connect.Request[dieterv1.AddCommentRequest]) (*connect.Response[dieterv1.Comment], error) {
 	return connectUnary(ctx, request, api.core.AddComment)
 }
@@ -262,6 +270,10 @@ func (api *connectAPI) CancelCard(ctx context.Context, request *connect.Request[
 
 func (api *connectAPI) RenameCard(ctx context.Context, request *connect.Request[dieterv1.RenameCardRequest]) (*connect.Response[dieterv1.Card], error) {
 	return connectUnary(ctx, request, api.core.RenameCard)
+}
+
+func (api *connectAPI) MergeCard(ctx context.Context, request *connect.Request[dieterv1.MergeCardRequest]) (*connect.Response[dieterv1.Card], error) {
+	return connectUnary(ctx, request, api.core.MergeCard)
 }
 
 func (api *connectAPI) UpdateCard(ctx context.Context, request *connect.Request[dieterv1.UpdateCardRequest]) (*connect.Response[dieterv1.Card], error) {
@@ -398,4 +410,8 @@ func connectCode(code codes.Code) connect.Code {
 	default:
 		return connect.CodeUnknown
 	}
+}
+
+func (api *connectAPI) UpdateBoardHostnames(ctx context.Context, request *connect.Request[dieterv1.UpdateBoardHostnamesRequest]) (*connect.Response[dieterv1.Board], error) {
+	return connectUnary(ctx, request, api.core.UpdateBoardHostnames)
 }
