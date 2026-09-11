@@ -10,6 +10,14 @@ package enum DieterConversationID {
 }
 
 package enum DieterRPCFailure {
+    /// A cancelled transport is recoverable when the caller still wants the
+    /// read. This must never be used to replay a mutation after dispatch.
+    package static func canRetryRead(_ error: Error) -> Bool {
+        guard !Task.isCancelled else { return false }
+        return error is CancellationError || isTransient(error)
+            || (error as? RuntimeError)?.code == .clientIsStopped
+    }
+
     package static func isCancellation(_ error: Error) -> Bool {
         Task.isCancelled || error is CancellationError || (error as? RPCError)?.code == .cancelled
     }

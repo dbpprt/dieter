@@ -775,6 +775,15 @@ private struct StandaloneChatStartView: View {
     @State private var destinationHarnesses: [Dieter_V1_Harness] = []
     @State private var harnessCatalogLoading = false
     @State private var harnessCatalogError: String?
+    @State private var harnessCatalogRetry = 0
+    @State private var harnessCatalogRequestID = UUID()
+
+    private struct HarnessLoadID: Hashable {
+        let projectID: String
+        let endpointID: String
+        let connected: Bool
+        let retry: Int
+    }
 
     private let suggestions = [
         (
@@ -875,7 +884,11 @@ private struct StandaloneChatStartView: View {
         )
         .onAppear { chooseProject() }
         .onChange(of: store.newChatProjectID) { _, value in if !value.isEmpty { projectID = value } }
-        .task(id: projectID) { await loadDestinationHarnesses(for: projectID) }
+        .task(
+            id: HarnessLoadID(
+                projectID: projectID, endpointID: store.endpoint.id,
+                connected: store.phase.isConnected, retry: harnessCatalogRetry)
+        ) { await loadDestinationHarnesses(for: projectID) }
     }
 
     private var canSubmit: Bool {
@@ -894,9 +907,13 @@ private struct StandaloneChatStartView: View {
                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 .accessibilityIdentifier("chats.new.harness-loading")
             } else if let harnessCatalogError {
-                Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
-                    .font(.caption2).foregroundStyle(DieterTheme.coral)
-                    .accessibilityIdentifier("chats.new.harness-error")
+                HStack {
+                    Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(DieterTheme.coral)
+                        .accessibilityIdentifier("chats.new.harness-error")
+                    Button("Retry") { harnessCatalogRetry += 1 }
+                        .accessibilityIdentifier("chats.new.harness-retry")
+                }.font(.caption2)
             }
 
             ComposerSurface(focused: promptFocused, dropTargeted: attachmentDropTargeted) {
@@ -1074,23 +1091,33 @@ private struct StandaloneChatStartView: View {
     }
 
     private func loadDestinationHarnesses(for requestedProjectID: String) async {
+        guard !Task.isCancelled else { return }
+        let requestID = UUID()
+        harnessCatalogRequestID = requestID
         guard !requestedProjectID.isEmpty else {
             destinationHarnesses = []
             return
         }
         harnessCatalogLoading = true
         harnessCatalogError = nil
-        defer { if projectID == requestedProjectID { harnessCatalogLoading = false } }
+        defer { if harnessCatalogRequestID == requestID { harnessCatalogLoading = false } }
         let catalog: Dieter_V1_HarnessCatalog
         do {
             catalog = try await store.loadHarnessCatalog(forProjectID: requestedProjectID)
         } catch {
-            guard projectID == requestedProjectID else { return }
+            guard !Task.isCancelled, harnessCatalogRequestID == requestID,
+                projectID == requestedProjectID
+            else { return }
             destinationHarnesses = []
-            harnessCatalogError = DieterRPCFailure.message(for: error)
+            harnessCatalogError =
+                DieterRPCFailure.isCancellation(error)
+                ? "The connection was interrupted while loading models. Try again."
+                : DieterRPCFailure.message(for: error)
             return
         }
-        guard projectID == requestedProjectID else { return }
+        guard !Task.isCancelled, harnessCatalogRequestID == requestID,
+            projectID == requestedProjectID
+        else { return }
         destinationHarnesses = catalog.harnesses
         let initializing = provider.isEmpty
         let preferences =

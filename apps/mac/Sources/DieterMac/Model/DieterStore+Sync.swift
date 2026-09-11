@@ -153,7 +153,7 @@ extension DieterStore {
                 }
                 guard !Task.isCancelled else { return }
                 self?.connectionStopped(DieterStoreConnectionError.syncEnded, client: rpc)
-            } catch  where Self.isExpectedCancellation(error) {} catch {
+            } catch {
                 self?.connectionStopped(error, client: rpc)
             }
         }

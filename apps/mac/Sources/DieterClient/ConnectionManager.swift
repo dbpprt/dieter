@@ -59,8 +59,8 @@ private let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", catego
     }
 
     private func lease(_ plane: DataPlaneConnection, key: Key, expires: Date, generation: UInt64) -> DataPlaneLease {
-        DataPlaneLease(plane: plane) { [weak self] in
-            guard let self, self.generation == generation, self.clock.now() < expires else {
+        DataPlaneLease(plane: plane) { [weak self] reusable in
+            guard reusable, let self, self.generation == generation, self.clock.now() < expires else {
                 plane.shutdown(); return
             }
             if let previous = self.idle.removeValue(forKey: key) { previous.timer.cancel(); previous.plane.shutdown() }

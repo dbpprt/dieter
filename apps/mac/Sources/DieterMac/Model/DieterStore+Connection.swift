@@ -405,7 +405,9 @@ extension DieterStore {
                         client: client
                     )
                 }
-            } catch  where Self.isExpectedCancellation(error) {} catch {
+            } catch {
+                // Only the owner cancelling this task is expected. A remote
+                // cancellation still means our active transport needs recovery.
                 self?.connectionStopped(error, client: client)
             }
         }
@@ -670,6 +672,7 @@ extension DieterStore {
 
     @discardableResult
     func ensureProjectConnection(_ projectID: String, reportOffline: Bool = true) async -> Bool {
+        guard !Task.isCancelled else { return false }
         guard let target = machine(forProjectID: projectID) else { return true }
         guard target.apiCompatibility != .incompatible else {
             machineConnectionErrors[target.id] = target.incompatibilityDescription
@@ -682,10 +685,14 @@ extension DieterStore {
             }
             return false
         }
-        guard target.id != endpoint.id else { return true }
+        if target.id == endpoint.id, phase.isConnected, rpc != nil { return true }
         selectedProjectID = projectID
         await connect(to: target)
-        return phase.isConnected && endpoint.id == target.id
+        let connected = !Task.isCancelled && phase.isConnected && endpoint.id == target.id && rpc != nil
+        if !connected, reportOffline, !Task.isCancelled {
+            errorMessage = machineConnectionErrors[target.id] ?? "Could not connect to \(target.name). Try again."
+        }
+        return connected
     }
 
     func cachedHarnessCatalog(forProjectID projectID: String) -> Dieter_V1_HarnessCatalog? {
@@ -703,6 +710,7 @@ extension DieterStore {
     }
 
     func loadHarnessCatalog(forProjectID projectID: String) async throws -> Dieter_V1_HarnessCatalog {
+        try Task.checkCancellation()
         let endpointID = ConversationHarnessCatalogDirectory.endpointID(
             projectID: projectID,
             activeEndpointID: endpoint.id,
@@ -711,27 +719,47 @@ extension DieterStore {
         if let cached = harnessCatalogsByEndpoint[endpointID], !cached.harnesses.isEmpty {
             return cached
         }
-        if endpointID == endpoint.id {
-            guard let rpc else {
-                throw NSError(
-                    domain: "DieterHarnessCatalog", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "This machine is unavailable."])
+        if endpointID == endpoint.id, phase.isConnected, let rpc {
+            do {
+                let catalog = try await rpc.harnesses()
+                try Task.checkCancellation()
+                if self.rpc === rpc, endpoint.id == endpointID { harnessCatalog = catalog }
+                harnessCatalogsByEndpoint[endpointID] = catalog
+                return catalog
+            } catch {
+                guard DieterRPCFailure.canRetryRead(error) else { throw error }
+                connectionStopped(error, client: rpc)
             }
-            let catalog = try await rpc.harnesses()
-            if self.rpc === rpc, endpoint.id == endpointID { harnessCatalog = catalog }
-            harnessCatalogsByEndpoint[endpointID] = catalog
-            return catalog
         }
         guard let machine = endpoints.first(where: { $0.id == endpointID }), machine.online else {
             throw NSError(
                 domain: "DieterHarnessCatalog", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "The project's machine is offline."])
         }
-        let plane = try await selectDirectoryDataPlane(for: machine)
-        defer { plane.release() }
-        let catalog = try await plane.rpc.harnesses()
+        let catalog: Dieter_V1_HarnessCatalog
+        do {
+            catalog = try await readHarnessCatalog(on: machine)
+        } catch {
+            guard DieterRPCFailure.canRetryRead(error) else { throw error }
+            catalog = try await readHarnessCatalog(on: machine)
+        }
         harnessCatalogsByEndpoint[endpointID] = catalog
         return catalog
+    }
+
+    private func readHarnessCatalog(on machine: DieterEndpoint) async throws -> Dieter_V1_HarnessCatalog {
+        let plane = try await selectDirectoryDataPlane(for: machine)
+        do {
+            let catalog = try await plane.rpc.harnesses()
+            try Task.checkCancellation()
+            plane.release()
+            return catalog
+        } catch {
+            // A failed read must not put its cancelled transport back in the
+            // idle pool for the next model load or user action.
+            plane.release(reusable: false)
+            throw error
+        }
     }
 
     func refreshMachineDirectory(includeArchivedChats: Bool = false) async {
