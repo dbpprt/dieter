@@ -351,12 +351,12 @@ extension DieterStore {
 
     func rebuildOutboxOverlays() {
         pendingCardIDs = Set(
-            outbox.entries.filter { $0.kind != .sendMessage }.map { $0.serverID ?? $0.optimisticID })
+            outbox.entries.filter { $0.kind != .sendMessage }.flatMap { DieterOutboxPolicy.conversationIDs(for: $0) })
         pendingMessageIDs = Set(outbox.entries.filter { $0.kind == .sendMessage }.map(\.optimisticID))
         acceptedOutboxIDs = Set(
             outbox.entries.filter { $0.serverID != nil }.flatMap { [$0.optimisticID, $0.serverID!] })
         failedOutboxIDs = Set(
-            outbox.entries.filter { $0.state == .failed }.map { $0.serverID ?? $0.optimisticID })
+            outbox.entries.filter { $0.state == .failed }.flatMap { DieterOutboxPolicy.conversationIDs(for: $0) })
         machineOutboxSummaries = MachineOutboxSummary.summaries(for: outbox.entries)
         var projectedChats = chats
         let orphanedIDs = Set(
@@ -444,7 +444,8 @@ extension DieterStore {
     func reconcileOutboxWithProjection() async {
         guard let snapshot = syncSnapshot else { return }
         let endpointID = endpoint.id
-        let cardIDs = Set((snapshot.state.cards + snapshot.state.chats).map(\.id))
+        let cards = snapshot.state.cards + snapshot.state.chats
+        let cardIDs = Set(cards.map(\.id))
         do {
             let accepted = try await outbox.update { entries -> [(String, String, Bool)] in
                 var accepted: [(String, String, Bool)] = []
@@ -452,7 +453,9 @@ extension DieterStore {
                     let entry = entries[index]
                     guard entry.endpointID == endpointID,
                         let serverID = DieterOutboxPolicy.synchronizedConversationID(
-                            for: entry, visibleConversationIDs: cardIDs)
+                            for: entry, visibleConversationIDs: cardIDs),
+                        let card = cards.first(where: { $0.id == serverID }),
+                        DieterOutboxPolicy.creationIsComplete(entry, card: card)
                     else { continue }
                     entries[index].serverID = serverID
                     try DieterOutboxPolicy.retargetDependencies(
@@ -461,7 +464,10 @@ extension DieterStore {
                 }
                 entries.removeAll { entry in
                     guard entry.endpointID == endpointID, let serverID = entry.serverID else { return false }
-                    return entry.kind == .sendMessage || cardIDs.contains(serverID)
+                    return entry.kind == .sendMessage
+                        || cards.contains {
+                            $0.id == serverID && DieterOutboxPolicy.creationIsComplete(entry, card: $0)
+                        }
                 }
                 return accepted
             }
@@ -541,8 +547,8 @@ extension DieterStore {
             try await outbox.update { entries in
                 for index in entries.indices
                 where
-                    (entries[index].optimisticID == id || entries[index].serverID == id)
-                    && entries[index].state == .failed
+                    DieterOutboxPolicy.conversationIDs(for: entries[index]).contains(id)
+                    && entries[index].state != .queued
                 {
                     entries[index].state = .queued
                     entries[index].attempts = 0
@@ -584,7 +590,7 @@ extension DieterStore {
             let removed = try await outbox.update { entries -> [DieterOutboxEntry] in
                 guard
                     let index = entries.firstIndex(where: {
-                        ($0.optimisticID == id || $0.serverID == id) && $0.serverID == nil
+                        DieterOutboxPolicy.conversationIDs(for: $0).contains(id) && $0.serverID == nil
                     })
                 else { return [] }
                 let entry = entries.remove(at: index)

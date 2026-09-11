@@ -560,6 +560,10 @@ func (api *grpcAPI) idempotentConversation(ctx context.Context, request *dieterv
 		if existing.Scope != scope {
 			return nil, status.Error(codes.AlreadyExists, "command_id resolved to another conversation scope")
 		}
+		existing, resolveErr = api.completeConversationCreation(existing, request)
+		if resolveErr != nil {
+			return nil, grpcFailure(resolveErr)
+		}
 		if saveErr := api.server.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: kind, CardID: cardID}); saveErr != nil {
 			return nil, grpcFailure(saveErr)
 		}
@@ -585,6 +589,38 @@ func (api *grpcAPI) idempotentConversation(ctx context.Context, request *dieterv
 		return nil, grpcFailure(err)
 	}
 	return protoCard(value), nil
+}
+
+// Creation persists the draft before admitting its first turn. A resource or
+// workspace failure can therefore leave the deterministic ID present without
+// completing the command. Retry admission only when durable state proves no
+// turn was admitted; never turn an ambiguous retry into another agent message.
+func (api *grpcAPI) completeConversationCreation(card model.Card, request *dieterv1.CreateConversationRequest) (model.Card, error) {
+	shouldStart := !request.GetDeferStart() &&
+		(card.Scope == model.ConversationScopeChat || strings.EqualFold(request.GetLane(), model.LaneRunning))
+	if !shouldStart || card.InitialPromptSentAt != "" {
+		return card, nil
+	}
+	conversation, err := api.server.store.Conversation(card.ID)
+	if err != nil {
+		return card, err
+	}
+	if len(conversation.Messages) != 0 || conversation.ActiveTurn != nil || len(conversation.Session) != 0 || len(conversation.Queue) != 0 {
+		return card, status.Error(codes.FailedPrecondition, "conversation has turn state; inspect it before resuming")
+	}
+	// A failed draft-attachment write can also leave the card present. Keep
+	// the original request's files; StartCard merges any persisted copies.
+	attachments, err := modelUserAttachmentParts(request.GetAttachments())
+	if err != nil {
+		return card, err
+	}
+	parts := append([]model.UIMessagePart{{Type: "text", Text: card.InitialPrompt}}, attachments...)
+	updates, err := api.server.app.StartCardWithMessageParts(card.ID, parts, card.Provider, card.Model, card.Effort, card.ProviderOptions, "")
+	if err != nil {
+		return card, err
+	}
+	go drainUpdates(updates)
+	return api.server.store.ResolveCard(card.ID)
 }
 
 func cloneProtoStringMap(values map[string]string) map[string]string {

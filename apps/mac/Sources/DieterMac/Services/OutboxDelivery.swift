@@ -1,5 +1,6 @@
 import DieterAPI
 import Foundation
+import GRPCCore
 
 struct OutboxTransport {
     let rpc: any OutboxRPC
@@ -58,10 +59,14 @@ extension DurableOutbox {
                     switch entry.kind {
                     case .createCard:
                         let request = try Dieter_V1_CreateConversationRequest(serializedBytes: entry.request)
-                        entry.serverID = try await deliveryRPC.createCard(request).id
+                        let card = try await deliveryRPC.createCard(request)
+                        try Self.validateCreation(entry, card: card)
+                        entry.serverID = card.id
                     case .createChat:
                         let request = try Dieter_V1_CreateConversationRequest(serializedBytes: entry.request)
-                        entry.serverID = try await deliveryRPC.createChat(request).id
+                        let card = try await deliveryRPC.createChat(request)
+                        try Self.validateCreation(entry, card: card)
+                        entry.serverID = card.id
                     case .sendMessage:
                         let request = try Dieter_V1_SendMessageRequest(serializedBytes: entry.request)
                         let response = try await deliveryRPC.sendMessage(request)
@@ -115,6 +120,16 @@ extension DurableOutbox {
                     failed(entry, error)
                 }
             }
+        }
+    }
+
+    private static func validateCreation(_ entry: DieterOutboxEntry, card: Dieter_V1_Card) throws {
+        guard DieterOutboxPolicy.creationIsComplete(entry, card: card) else {
+            throw RPCError(
+                code: .failedPrecondition,
+                message:
+                    "The conversation was saved, but its first turn was not started. Check the machine's available storage and update its daemon before retrying."
+            )
         }
     }
 

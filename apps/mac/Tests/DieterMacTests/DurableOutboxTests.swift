@@ -163,6 +163,104 @@ private actor DelayedOutboxDelivery: OutboxRPC {
     }
 }
 
+@Test(arguments: ["chat", "running", "deferred", "todo"]) @MainActor
+func savedDraftDoesNotAcknowledgeRequiredFirstTurn(mode: String) async throws {
+    let root = outboxTestRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let outbox = DurableOutbox(journal: journal(at: root))
+    let store = DieterStore(outboxOverride: outbox, restoreSync: false)
+    var project = Dieter_V1_Project()
+    project.id = "project"
+    store.projectDirectory = [project.id: project]
+    store.projectEndpointIDs = [project.id: store.endpoint.id]
+    store.selectedProjectID = project.id
+    let chat = mode == "chat" || mode == "deferred"
+    let requiresStart = mode == "chat" || mode == "running"
+    var request = Dieter_V1_CreateConversationRequest()
+    request.projectID = project.id
+    request.boardID = chat ? "" : "board"
+    request.lane = mode == "running" ? "running" : "todo"
+    request.deferStart = mode == "deferred"
+    var entry = DieterOutboxEntry(
+        commandID: "storage-retry", clientID: "test", endpointID: store.endpoint.id,
+        kind: chat ? .createChat : .createCard, request: try request.serializedData(),
+        optimisticID: "local_create", attempts: 1, createdAt: Date())
+    entry.state = .retrying
+    entry.lastError = "insufficient free disk space to start an agent turn"
+    try await outbox.enqueue(entry)
+    var draft = Dieter_V1_Card()
+    draft.id = try #require(
+        DieterOutboxPolicy.expectedConversationID(clientID: entry.clientID, commandID: entry.commandID))
+    draft.projectID = request.projectID
+    draft.boardID = request.boardID
+    draft.scope = chat ? "chat" : "board"
+    draft.runtime = "idle"
+    var snapshot = Dieter_V1_GlobalSnapshot()
+    snapshot.state.projects = [project]
+    if chat { snapshot.state.chats = [draft] } else { snapshot.state.cards = [draft] }
+    store.applyGlobalSnapshot(snapshot, endpointID: store.endpoint.id)
+    store.syncSnapshot = snapshot
+    await store.reconcileOutboxWithProjection()
+
+    if requiresStart {
+        #expect(outbox.entries == [entry])
+        #expect(store.pendingCardIDs.contains(draft.id))
+        #expect(store.failedCreationError(draft.id) == entry.lastError)
+        #expect(store.failedCreationError(entry.optimisticID) == entry.lastError)
+        #expect((chat ? store.chats : store.state.cards).map(\.id) == [draft.id])
+        #expect(try await journal(at: root).load().entries == [entry])
+
+        draft.initialPromptSentAt = "2026-09-11T20:30:00Z"
+        draft.runtime = "running"
+        if chat { snapshot.state.chats = [draft] } else { snapshot.state.cards = [draft] }
+        store.applyGlobalSnapshot(snapshot, endpointID: store.endpoint.id)
+        store.syncSnapshot = snapshot
+        await store.reconcileOutboxWithProjection()
+    }
+    #expect(outbox.entries.isEmpty)
+    #expect(!store.pendingCardIDs.contains(draft.id))
+    #expect(store.failedCreationError(draft.id) == nil)
+}
+
+private actor UnstartedCreationDelivery: OutboxRPC {
+    func createCard(_ request: Dieter_V1_CreateConversationRequest) async throws -> Dieter_V1_Card {
+        var card = Dieter_V1_Card()
+        card.id = "saved-draft"
+        card.runtime = "idle"
+        return card
+    }
+    func createChat(_ request: Dieter_V1_CreateConversationRequest) async throws -> Dieter_V1_Card {
+        try await createCard(request)
+    }
+    func sendMessage(_ request: Dieter_V1_SendMessageRequest) async throws -> Dieter_V1_SendMessageResponse {
+        throw CancellationError()
+    }
+}
+
+@Test @MainActor func outboxRejectsLegacyDaemonAcknowledgementForUnstartedChat() async throws {
+    let root = outboxTestRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let outbox = DurableOutbox(journal: journal(at: root))
+    var request = Dieter_V1_CreateConversationRequest()
+    request.prompt = "Start this chat"
+    let entry = DieterOutboxEntry(
+        commandID: "unstarted", clientID: "test", endpointID: "machine", kind: .createChat,
+        request: try request.serializedData(), optimisticID: "local_unstarted", attempts: 0, createdAt: Date())
+    try await outbox.enqueue(entry)
+    var failed = false
+    outbox.start(
+        reachable: { ["machine"] },
+        acquire: { _ in OutboxTransport(rpc: UnstartedCreationDelivery(), release: {}) },
+        committed: { _ in Issue.record("An unstarted chat was acknowledged") },
+        failed: { _, _ in failed = true }, storageFailed: { Issue.record($0) })
+    await outbox.workerTask?.value
+    let saved = try #require(try await journal(at: root).load().entries.first)
+    #expect(failed)
+    #expect(saved.serverID == nil)
+    #expect(saved.state == .failed)
+    #expect(saved.lastError?.contains("first turn was not started") == true)
+}
+
 @Test @MainActor func retiredOutboxWorkerPersistsAcknowledgementWithoutPublishingIntoSuccessor() async throws {
     let root = outboxTestRoot()
     defer { try? FileManager.default.removeItem(at: root) }

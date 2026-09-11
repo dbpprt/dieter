@@ -269,26 +269,27 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
     var body: some View {
         GeometryReader { geometry in
             let width = ChatPaneSizing.resolvedWidth(CGFloat(storedWidth), workspaceWidth: geometry.size.width)
-            ZStack(alignment: .topLeading) {
-                HStack(spacing: 0) {
-                    browser
-                        .frame(width: width, height: geometry.size.height)
-                        .clipped()
-                        .background {
-                            DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true)
-                        }
+            HStack(spacing: 0) {
+                browser
+                    .frame(width: width, height: geometry.size.height)
+                    .clipped()
+                    .background {
+                        DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true)
+                    }
 
-                    detail
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
-                        .background {
-                            DieterPaneBackground(role: .content, extendsUnderTitlebar: true)
-                        }
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("chats.detail-pane")
-                        .smokeTarget("chats.detail-pane")
-                }
-
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .background {
+                        DieterPaneBackground(role: .content, extendsUnderTitlebar: true)
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("chats.detail-pane")
+                    .smokeTarget("chats.detail-pane")
+            }
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .overlay(alignment: .topLeading) {
+                // The titlebar-spanning divider must not enlarge the panes.
                 // Keep the generous drag target without inserting layout space.
                 // The one-point separator is painted directly over the touching
                 // pane edges, eliminating the exposed window-background seam.

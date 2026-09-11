@@ -74,7 +74,7 @@ struct CreationFailureBanner: View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Conversation was not created")
+                    Text("Conversation needs attention")
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(DieterTheme.text)
                     Text(failure)
@@ -89,7 +89,7 @@ struct CreationFailureBanner: View {
                     .accessibilityHidden(true)
             }
             Text(
-                "Nothing was started on the daemon. Retry the same idempotent request, or discard it and choose another model."
+                "Your request is saved. Resolve the error and retry, or discard the pending request."
             )
             .font(.caption)
             .foregroundStyle(DieterTheme.tertiary)

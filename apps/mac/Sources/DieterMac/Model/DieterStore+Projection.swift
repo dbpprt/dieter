@@ -120,7 +120,7 @@ extension DieterStore {
     func isFailedOutboxItem(_ id: String) -> Bool { failedOutboxIDs.contains(id) }
     func failedCreationError(_ id: String) -> String? {
         outbox.entries.first { entry in
-            (entry.optimisticID == id || entry.serverID == id) && entry.state == .failed
+            DieterOutboxPolicy.conversationIDs(for: entry).contains(id) && entry.lastError != nil
                 && (entry.kind == .createCard || entry.kind == .createChat)
         }?.lastError
     }

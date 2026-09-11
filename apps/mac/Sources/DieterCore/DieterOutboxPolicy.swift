@@ -76,9 +76,9 @@ package enum DieterConversationOpenFailurePolicy {
 
 package enum DieterOutboxPolicy {
     /// Idempotent conversation creates use the same deterministic identifier
-    /// on the daemon. Knowing it lets the sync stream acknowledge a create
-    /// before the unary CreateCard/CreateChat response returns, avoiding a
-    /// transient authoritative row beside its optimistic counterpart.
+    /// on the daemon. Correlate the streamed draft before the unary response
+    /// returns to avoid duplicate rows. Acknowledgment additionally requires
+    /// first-turn admission when the command requested an immediate start.
     package static func expectedConversationID(clientID: String, commandID: String) -> String? {
         let clientID = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
         let commandID = commandID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -99,6 +99,28 @@ package enum DieterOutboxPolicy {
             visibleConversationIDs.contains(expected)
         else { return nil }
         return expected
+    }
+
+    package static func creationRequiresStart(_ entry: DieterOutboxEntry) -> Bool {
+        guard entry.kind == .createChat || entry.kind == .createCard,
+            let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request)
+        else { return false }
+        return !request.deferStart && (entry.kind == .createChat || request.lane.lowercased() == "running")
+    }
+
+    package static func creationIsComplete(_ entry: DieterOutboxEntry, card: Dieter_V1_Card) -> Bool {
+        !creationRequiresStart(entry) || !card.initialPromptSentAt.isEmpty
+    }
+
+    package static func conversationIDs(for entry: DieterOutboxEntry) -> [String] {
+        var ids = [entry.optimisticID]
+        if let serverID = entry.serverID { ids.append(serverID) }
+        if entry.kind == .createChat || entry.kind == .createCard,
+            let expected = expectedConversationID(clientID: entry.clientID, commandID: entry.commandID)
+        {
+            ids.append(expected)
+        }
+        return ids
     }
 
     package static func retargetedCards(
