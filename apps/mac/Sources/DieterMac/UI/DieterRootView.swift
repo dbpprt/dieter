@@ -642,6 +642,12 @@ private struct SidebarProjectRow: View {
         store.machine(forProjectID: project.id)
     }
 
+    private var accessibilityLabel: String {
+        guard let projectMachine else { return project.name }
+        let presence = projectMachineOnline == true ? "online" : "offline"
+        return "\(project.name), hosted on \(projectMachine.name), \(presence)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
@@ -658,6 +664,9 @@ private struct SidebarProjectRow: View {
                         if let projectMachine {
                             ProjectMachineBadge(machine: projectMachine, online: projectMachineOnline == true)
                                 .accessibilityIdentifier("sidebar.project.\(project.id).machine")
+                                .smokeTarget(
+                                    "sidebar.project.\(project.id).machine.\(projectMachineOnline == true ? "online" : "offline")"
+                                )
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -665,6 +674,7 @@ private struct SidebarProjectRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("\(project.name) — boards, files, changes, schedules")
+                .accessibilityLabel(accessibilityLabel)
                 .accessibilityIdentifier("sidebar.project.\(project.id)")
 
                 Button {
@@ -762,7 +772,7 @@ private struct ProjectMachineBadge: View {
     var body: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(online ? DieterTheme.eyes : DieterTheme.tertiary)
+                .fill(online ? DieterTheme.machineOnline : DieterTheme.machineOffline)
                 .frame(width: 5, height: 5)
             Text(machine.name)
                 .font(.system(size: 8.5, weight: .semibold))
@@ -916,7 +926,7 @@ private struct ProjectAvatar: View {
             .overlay(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous).stroke(DieterTheme.border))
             .overlay(alignment: .bottomTrailing) {
                 if let online {
-                    Circle().fill(online ? DieterTheme.eyes : DieterTheme.tertiary)
+                    Circle().fill(online ? DieterTheme.machineOnline : DieterTheme.machineOffline)
                         .frame(width: size * 0.3, height: size * 0.3)
                         .overlay(Circle().stroke(DieterTheme.sidebar, lineWidth: 1.5))
                         .offset(x: size * 0.12, y: size * 0.12)

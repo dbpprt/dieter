@@ -30,6 +30,35 @@ import Testing
     }
 }
 
+@Test @MainActor func allChatsPaneTreatmentsRenderAcrossAppearances() {
+    defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+
+    for scheme in [ColorScheme.light, .dark] {
+        DieterTheme.install(palette: .monochrome, colorScheme: scheme)
+        let fixture = HStack(spacing: 0) {
+            VStack {
+                DieterSearchField(text: .constant(""), placeholder: "Search chats")
+                    .padding(16)
+                Spacer()
+            }
+            .frame(width: 320)
+            .background { DieterPaneBackground(role: .navigation) }
+
+            Color.clear
+                .frame(width: 600)
+                .background { DieterPaneBackground(role: .content) }
+        }
+        .frame(height: 600)
+        .environment(\.colorScheme, scheme)
+
+        let renderer = ImageRenderer(content: fixture)
+        renderer.proposedSize = .init(width: 920, height: 600)
+        let image = renderer.nsImage
+        #expect(image != nil)
+        #expect(image?.size == NSSize(width: 920, height: 600))
+    }
+}
+
 @Test @MainActor func conversationInspectorHeaderWrapsLongTitlesAtMinimumWidth() {
     let store = DieterStore(restoreSync: false)
     var card = Dieter_V1_Card()

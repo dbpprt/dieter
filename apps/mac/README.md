@@ -27,9 +27,10 @@ The 41 view-level design references are indexed in
 extracted from the source design PDF by `design/extract_reference_images.py`;
 the source PDF itself is not checked in.
 
-The navigation sidebar, board actions, Quick Task popovers, and Island use the
-native macOS 26 Liquid Glass appearance. Cards and transcripts keep solid content
-surfaces for readability. Native materials follow system accessibility settings.
+The navigation sidebar, All Chats browser, board actions, Quick Task popovers,
+and Island use the native macOS 26 Liquid Glass appearance. Cards, conversation
+canvases, and transcripts keep solid content surfaces for readability. Native
+materials follow system accessibility settings.
 
 ## Develop
 

@@ -138,6 +138,7 @@ struct SubagentTimelineCard: View {
 
 struct SubagentsView: View {
     @Environment(ConversationContext.self) private var context
+    var background: Color = DieterTheme.background
     private var agents: [Dieter_V1_Subagent] { context.conversation?.conversation.subagents ?? [] }
     private var running: Int { agents.filter { ["running", "pending"].contains($0.status) }.count }
 
@@ -174,7 +175,7 @@ struct SubagentsView: View {
                         .padding(.top, 3)
                 }
             }.padding(18)
-        }.background(DieterTheme.background)
+        }.background(background)
     }
 }
 

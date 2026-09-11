@@ -199,6 +199,23 @@ struct DieterThemePerformanceTests {
         }
     }
 
+    @Test @MainActor func machinePresenceColorsRemainGreenAndRedAcrossThemes() throws {
+        defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
+
+        for palette in DieterPalette.allCases {
+            for scheme in [ColorScheme.light, .dark] {
+                DieterTheme.install(palette: palette, colorScheme: scheme)
+                let online = try #require(NSColor(DieterTheme.machineOnline).usingColorSpace(.sRGB))
+                let offline = try #require(NSColor(DieterTheme.machineOffline).usingColorSpace(.sRGB))
+
+                #expect(online.greenComponent > online.redComponent)
+                #expect(online.greenComponent > online.blueComponent)
+                #expect(offline.redComponent > offline.greenComponent)
+                #expect(offline.redComponent > offline.blueComponent)
+            }
+        }
+    }
+
     @Test @MainActor func productionChatListWithManyRunningRowsSettlesInAHostedView() throws {
         let fixture = makeProductionChatListFixture()
         let view = NSHostingView(rootView: productionChatList(store: fixture.store))

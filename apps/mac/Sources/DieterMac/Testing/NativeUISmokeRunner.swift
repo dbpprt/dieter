@@ -575,6 +575,24 @@
                     store.section == step.section ? "passed" : "failed: \(store.section.rawValue)"
                 await captureAppearances(window, named: "\(step.name).png", in: output)
             }
+            let browserPane = NativeUIAccessibility.find("chats.browser-pane", in: window)
+            let detailPane = NativeUIAccessibility.find("chats.detail-pane", in: window)
+            let browserFrame = browserPane.map { $0.recordedFrame ?? $0.frame }
+            let detailFrame = detailPane.map { $0.recordedFrame ?? $0.frame }
+            if let browserFrame, let detailFrame {
+                let browserWidthValid =
+                    browserFrame.width >= ChatPaneSizing.minimumWidth - 1
+                    && browserFrame.width <= ChatPaneSizing.maximumWidth + 1
+                let detailWidthValid = detailFrame.width >= ChatPaneSizing.minimumDetailWidth - 1
+                let panesAreAdjacent = detailFrame.minX >= browserFrame.maxX
+                results["02b-all-chats-surface-layout"] =
+                    browserWidthValid && detailWidthValid && panesAreAdjacent
+                    ? "passed"
+                    : "failed: browser=\(browserFrame) detail=\(detailFrame)"
+            } else {
+                results["02b-all-chats-surface-layout"] =
+                    "failed: browser=\(browserFrame.map { String(describing: $0) } ?? "missing") detail=\(detailFrame.map { String(describing: $0) } ?? "missing")"
+            }
 
             // Fast local reads can mount and remove the compact loading feedback in
             // one display cycle. Exercise that lifetime repeatedly because a task

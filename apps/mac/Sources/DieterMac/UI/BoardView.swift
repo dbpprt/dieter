@@ -199,7 +199,8 @@ struct BoardView: View {
                 ConversationView(
                     compact: true,
                     maximized: conversationMaximized,
-                    onToggleMaximize: { conversationMaximized.toggle() }
+                    onToggleMaximize: { conversationMaximized.toggle() },
+                    surfaceStyle: .inherited
                 )
                 .ignoresSafeArea(.container, edges: usesTitlebarSpace ? .top : [])
                 .background(DieterTheme.surface)

@@ -70,6 +70,7 @@ enum WorkspaceDiffViewMode: String, CaseIterable, Identifiable {
 
 struct WorkspaceChangesView: View {
     @Bindable var model: WorktreeChangesModel
+    var background: Color = DieterTheme.background
     @State private var operationKind: GitOperationKind?
     @State private var mergeSheetPresented = false
     @State private var selectedCommentLine: UnifiedDiffLine?
@@ -141,7 +142,7 @@ struct WorkspaceChangesView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .background(DieterTheme.background)
+        .background(background)
         .task(id: model.bindingGeneration) {
             guard let id = card?.id, DieterConversationID.isServerBacked(id) else { return }
             await model.loadWorkspaceSurface()

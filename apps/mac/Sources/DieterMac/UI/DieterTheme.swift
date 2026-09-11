@@ -380,6 +380,11 @@ enum DieterTheme {
     static var amber: Color { state.colors.amber }
     static var coral: Color { state.colors.coral }
 
+    /// Machine reachability must remain immediately recognizable in every
+    /// decorative palette and appearance.
+    static var machineOnline: Color { Color(nsColor: .systemGreen) }
+    static var machineOffline: Color { Color(nsColor: .systemRed) }
+
     /// Git additions remain green regardless of the decorative app palette.
     static var diffAddition: Color { Color(rgb: state.installedKey.dark ? 0x85BD93 : 0x277642) }
     static var reviewAccent: Color { Color(rgb: 0xF28B7A) }
@@ -498,6 +503,32 @@ struct FluidPaneChrome<Primary: View, Secondary: View>: View {
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background)
+    }
+}
+
+enum DieterPaneRole: Equatable {
+    case navigation
+    case content
+}
+
+/// Shared full-pane treatments for the macOS 26 window hierarchy. Navigation
+/// may use Liquid Glass, while primary content stays on one solid canvas so
+/// text remains readable and child views do not build an opaque patchwork.
+struct DieterPaneBackground: View {
+    let role: DieterPaneRole
+    var extendsUnderTitlebar = false
+
+    @ViewBuilder var body: some View {
+        switch role {
+        case .navigation:
+            Rectangle()
+                .fill(.clear)
+                .glassEffect(.regular, in: Rectangle())
+                .ignoresSafeArea(.container, edges: extendsUnderTitlebar ? .top : [])
+        case .content:
+            DieterTheme.surface
+                .ignoresSafeArea(.container, edges: extendsUnderTitlebar ? .top : [])
+        }
     }
 }
 
@@ -749,8 +780,10 @@ struct DieterSearchField: View {
             }
         }
         .padding(.horizontal, 10).frame(height: 30)
-        .background(
-            DieterTheme.surface, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
+        .glassEffect(
+            .regular.interactive(),
+            in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
+        )
     }
 }
 

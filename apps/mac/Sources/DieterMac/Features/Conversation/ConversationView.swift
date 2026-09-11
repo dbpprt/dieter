@@ -25,11 +25,17 @@ enum ConversationRefreshText {
     }
 }
 
+enum ConversationSurfaceStyle: Equatable {
+    case canvas
+    case inherited
+}
+
 struct ConversationView: View {
     @Environment(ConversationContext.self) private var context
     var compact = false
     var maximized = false
     var onToggleMaximize: (() -> Void)? = nil
+    var surfaceStyle: ConversationSurfaceStyle = .canvas
     @State private var tab = "Conversation"
     @State private var fileImportRequest: ConversationFileImportRequest?
 
@@ -67,9 +73,9 @@ struct ConversationView: View {
                             Task { await context.openConversation(cardID: id, chat: standalone) }
                         })
                 } else if tab == "Subagents" {
-                    SubagentsView()
+                    SubagentsView(background: .clear)
                 } else if tab == "Comments" {
-                    CommentsView(composerBackground: compact ? .clear : DieterTheme.sidebar)
+                    CommentsView(composerBackground: .clear)
                 } else if tab == "Changes" {
                     let card = context.selectedCard ?? context.selectedDetail?.card
                     if ConversationWorkspaceMode.projectMode(
@@ -78,10 +84,10 @@ struct ConversationView: View {
                     {
                         ProjectDirectoryChangesRedirect()
                     } else {
-                        WorkspaceChangesView(model: context.worktreeChanges)
+                        WorkspaceChangesView(model: context.worktreeChanges, background: .clear)
                     }
                 } else {
-                    ConversationTimeline(background: compact ? .clear : DieterTheme.background)
+                    ConversationTimeline(background: .clear)
                         .id(context.selectedCardID ?? context.selectedChatID ?? "")
                 }
             }
@@ -102,7 +108,7 @@ struct ConversationView: View {
                 }
             }
         }
-        .background(compact ? Color.clear : DieterTheme.background)
+        .background(surfaceStyle == .canvas ? DieterTheme.surface : Color.clear)
         .overlay(alignment: .bottom) {
             if let toast = context.workspaceToast {
                 WorkspaceToastView(toast: toast)

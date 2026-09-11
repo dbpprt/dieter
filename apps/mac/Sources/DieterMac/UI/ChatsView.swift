@@ -39,7 +39,7 @@ struct ChatsView: View {
         let displayedPinned = Array(projection.pinned[pinnedPage.lowerBound..<pinnedPage.upperBound])
         ChatPaneSplit {
             VStack(spacing: 0) {
-                FluidPaneChrome(background: DieterTheme.sidebar, spacing: 9) {
+                FluidPaneChrome(background: .clear, spacing: 9) {
                     HStack(spacing: 8) {
                         PaneTitleBlock(
                             title: showArchived ? "Archived chats" : "Chats",
@@ -53,14 +53,18 @@ struct ChatsView: View {
                         } label: {
                             Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
                         }
-                        .buttonStyle(DieterIconButtonStyle(active: showArchived)).help(
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.circle)
+                        .controlSize(.small)
+                        .tint(showArchived ? DieterTheme.shell : nil)
+                        .help(
                             showArchived ? "Show active chats" : "Show archived chats")
                         Button {
                             store.beginStandaloneChat()
                         } label: {
                             Label("New chat", systemImage: "plus")
                         }
-                        .buttonStyle(DieterPrimaryButtonStyle()).disabled(showArchived).help(
+                        .buttonStyle(.glassProminent).disabled(showArchived).help(
                             "New standalone chat"
                         )
                         .accessibilityIdentifier("chats.new")
@@ -136,13 +140,15 @@ struct ChatsView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(DieterTheme.sidebar)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("chats.browser-pane")
+            .smokeTarget("chats.browser-pane")
         } detail: {
             if store.selectedChatID != nil {
-                ConversationView().environment(store.conversationContext)
+                ConversationView(surfaceStyle: .inherited).environment(store.conversationContext)
             } else if showArchived {
                 VStack(spacing: 0) {
-                    FluidPaneChrome {
+                    FluidPaneChrome(background: .clear) {
                         PaneTitleBlock(
                             title: "Archived conversations", subtitle: "Select a chat to inspect or restore",
                             symbol: "archivebox")
@@ -151,7 +157,7 @@ struct ChatsView: View {
                         Image(systemName: "archivebox").font(.system(size: 34)).foregroundStyle(.secondary)
                         Text("Archived chats").font(.title2.weight(.bold))
                         Text("Select a conversation to restore or review it.").foregroundStyle(.secondary)
-                    }.frame(maxWidth: .infinity, maxHeight: .infinity).background(DieterTheme.background)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 StandaloneChatStartView()
@@ -210,7 +216,11 @@ private struct ChatPaneResizeDivider: View {
         ZStack {
             Rectangle().fill(Color.clear)
             Rectangle()
-                .fill(hovering ? DieterTheme.shell.opacity(0.62) : DieterTheme.paneSeparator)
+                .fill(
+                    hovering
+                        ? DieterTheme.shell.opacity(0.62)
+                        : Color(nsColor: .separatorColor).opacity(0.55)
+                )
                 .frame(width: hovering ? 2 : 1)
         }
         .frame(width: ChatPaneSizing.dividerWidth)
@@ -259,6 +269,9 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
                 browser
                     .frame(width: width, height: geometry.size.height)
                     .clipped()
+                    .background {
+                        DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true)
+                    }
 
                 ChatPaneResizeDivider(
                     width: width,
@@ -289,6 +302,12 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
+                    .background {
+                        DieterPaneBackground(role: .content, extendsUnderTitlebar: true)
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("chats.detail-pane")
+                    .smokeTarget("chats.detail-pane")
             }
         }
     }
@@ -768,7 +787,7 @@ private struct StandaloneChatStartView: View {
     private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
     var body: some View {
         VStack(spacing: 0) {
-            FluidPaneChrome(background: DieterTheme.sidebar, spacing: 8) {
+            FluidPaneChrome(background: .clear, spacing: 8) {
                 HStack {
                     PaneTitleBlock(
                         title: "New chat",
@@ -831,9 +850,7 @@ private struct StandaloneChatStartView: View {
 
             newChatComposer
                 .padding(.horizontal, 14).padding(.vertical, 12)
-                .background(DieterTheme.sidebar)
         }
-        .background(DieterTheme.background)
         .attachmentIntake(
             store: store,
             importerPresented: $fileImporterPresented,

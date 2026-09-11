@@ -51,6 +51,14 @@
                 sidebarMachineNames == expectedMachineNames
                 ? "passed"
                 : "failed: \(sidebarMachineNames.joined(separator: ","))"
+            let expectedProjectMachinePresence = ["online", "offline", "online"]
+            let projectMachinePresence = zip(projectIDs, expectedProjectMachinePresence).map { projectID, status in
+                NativeUIAccessibility.find("sidebar.project.\(projectID).machine.\(status)", in: window) != nil
+            }
+            results["project-machine-presence"] =
+                projectMachinePresence.allSatisfy { $0 }
+                ? "passed"
+                : "failed: \(projectMachinePresence)"
             switch phase {
             case "prepare":
                 await prepare(store: store, window: window, results: &results)
@@ -232,7 +240,8 @@
             store.navigationCards = Dictionary(uniqueKeysWithValues: projectIDs.map { ($0, []) })
             store.endpoint = machine
             store.endpoints = machines
-            store.projectEndpointIDs = Dictionary(uniqueKeysWithValues: projectIDs.map { ($0, machine.id) })
+            store.projectEndpointIDs = Dictionary(
+                uniqueKeysWithValues: zip(projectIDs, machines).map { pair in (pair.0, pair.1.id) })
             store.machineConnectionStatuses = Dictionary(
                 uniqueKeysWithValues: machines.map {
                     ($0.id, MachineConnectionStatus(route: .local, latencyMilliseconds: 3))

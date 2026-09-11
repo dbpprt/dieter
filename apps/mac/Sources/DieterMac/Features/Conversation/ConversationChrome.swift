@@ -40,7 +40,7 @@ struct ConversationChrome: View {
     private var subagentCount: Int { context.conversation?.conversation.subagents.count ?? 0 }
 
     var body: some View {
-        FluidPaneChrome(background: compact ? .clear : DieterTheme.background, spacing: 8) {
+        FluidPaneChrome(background: .clear, spacing: 8) {
             if compact {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 12) {
