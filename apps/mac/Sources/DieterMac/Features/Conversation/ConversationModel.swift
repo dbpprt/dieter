@@ -211,6 +211,72 @@ final class ConversationModel {
         }
     }
 
+    /// Advance through a detached retained window without joining it to a
+    /// noncontiguous live tail. The same bounded history RPC serves both edges.
+    @discardableResult
+    func loadLaterMessages() async -> Bool {
+        guard browsingEarlierHistory, !conversationHistoryLoading,
+            let cardID = selectedCardID ?? selectedChatID, let rpc
+        else { return false }
+        let end = conversationHistoryStart + olderConversationMessages.count
+        let total = max(conversationHistoryTotal, Int(conversation?.page.total ?? 0))
+        guard end < total else {
+            browsingEarlierHistory = false
+            return false
+        }
+        let requestID = UUID()
+        conversationHistoryRequestID = requestID
+        conversationHistoryLoading = true
+        defer {
+            if conversationHistoryRequestID == requestID {
+                conversationHistoryRequestID = nil
+                conversationHistoryLoading = false
+            }
+        }
+        do {
+            let page = try await rpc.conversation(
+                cardID: cardID, limit: conversationPageSize,
+                before: Int32(min(total, end + Int(conversationPageSize))))
+            guard self.rpc === rpc, conversationHistoryRequestID == requestID,
+                (selectedCardID ?? selectedChatID) == cardID
+            else { return false }
+            let pageStart = Int(page.page.start)
+            // A concurrently rewritten transcript must never leave an
+            // invisible gap between retained and newly fetched messages.
+            guard pageStart <= end else {
+                conversationError = "Conversation history changed. Jump to latest to refresh it."
+                return false
+            }
+            let pageEnd = pageStart + page.conversation.messages.count
+            guard pageEnd > end else { return false }
+            let liveStart = conversation.map { Int($0.page.start) } ?? total
+            let reconnectsLive = pageEnd >= liveStart
+            let liveIDs = reconnectsLive ? Set(conversation?.conversation.messages.map(\.id) ?? []) : []
+            var seen = Set<String>()
+            let merged = (olderConversationMessages + page.conversation.messages).filter { message in
+                (message.id.isEmpty || !liveIDs.contains(message.id))
+                    && (message.id.isEmpty || seen.insert(message.id).inserted)
+            }
+            let window = TranscriptRetention.window(merged, keepingEarlier: false)
+            olderConversationMessages = window.messages
+            conversationHistoryStart += window.removed
+            conversationHistoryHasMore = conversationHistoryStart > 0
+            conversationHistoryTotal = max(total, Int(page.page.total))
+            if reconnectsLive { browsingEarlierHistory = false }
+            return true
+        } catch {
+            guard self.rpc === rpc, conversationHistoryRequestID == requestID,
+                (selectedCardID ?? selectedChatID) == cardID
+            else { return false }
+            if DieterRPCFailure.isTransient(error) {
+                onTransportFailure(error, rpc)
+            } else {
+                conversationError = "Could not load later messages: \(error.localizedDescription)"
+            }
+            return false
+        }
+    }
+
     func resetConversationHistory(from snapshot: Dieter_V1_ConversationSnapshot? = nil) {
         conversationHistoryRequestID = nil
         browsingEarlierHistory = false

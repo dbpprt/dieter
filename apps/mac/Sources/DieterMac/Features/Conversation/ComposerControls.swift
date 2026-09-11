@@ -1,3 +1,4 @@
+import AppKit
 import DieterAPI
 import SwiftUI
 
@@ -9,22 +10,17 @@ struct ComposerSurface<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0, content: content)
-            .background {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(dropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.surface)
-                    .allowsHitTesting(false)
-            }
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(
                         dropTargeted
                             ? DieterTheme.shell
-                            : (focused ? DieterTheme.shellDeep.opacity(0.55) : DieterTheme.border),
+                            : (focused ? DieterTheme.shellDeep.opacity(0.55) : .clear),
                         lineWidth: dropTargeted ? 1.5 : 1
                     )
                     .allowsHitTesting(false)
             }
-            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
             .animation(.easeOut(duration: 0.16), value: focused)
             .animation(.easeOut(duration: 0.12), value: dropTargeted)
     }
@@ -41,6 +37,12 @@ struct ComposerTextInput: View {
             .font(.system(size: 14))
             .lineLimit(1...5)
             .focused(focus)
+            .onKeyPress(.return, phases: .down) { press in
+                Self.insertLineBreak(
+                    shiftPressed: press.modifiers.contains(.shift),
+                    responder: NSApp.keyWindow?.firstResponder
+                ) ? .handled : .ignored
+            }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .frame(minHeight: 44, alignment: .topLeading)
@@ -49,6 +51,15 @@ struct ComposerTextInput: View {
                     .contentShape(Rectangle())
                     .onTapGesture { focus.wrappedValue = true }
             }
+    }
+
+    /// AppKit's field editor treats Return as submission even for a vertical
+    /// TextField. Explicitly use its multiline editing command so the binding,
+    /// selection, undo, and native height all update together.
+    static func insertLineBreak(shiftPressed: Bool, responder: NSResponder?) -> Bool {
+        guard shiftPressed, let editor = responder as? NSTextView, editor.isEditable else { return false }
+        editor.insertNewlineIgnoringFieldEditor(nil)
+        return true
     }
 }
 

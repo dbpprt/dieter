@@ -23,7 +23,7 @@ import Testing
         await settleBoardLane(root)
         let table = try #require(boardLaneNativeTable(in: root))
         try #require(table.numberOfRows == cards.count)
-        try assertBoardLaneRowsFitContent(table: table, cards: cards, store: store)
+        try assertBoardLaneRowsFitContent(table: table, root: root, cards: cards, store: store)
 
         // Adding a footer to an existing card must resize its native row and
         // move the following card without a scroll or a selection to repair it.
@@ -33,7 +33,7 @@ import Testing
         root.rootView = AnyView(boardLaneFixtureView(cards: cards, store: store))
         await settleBoardLane(root)
         let updatedTable = try #require(boardLaneNativeTable(in: root))
-        try assertBoardLaneRowsFitContent(table: updatedTable, cards: cards, store: store)
+        try assertBoardLaneRowsFitContent(table: updatedTable, root: root, cards: cards, store: store)
         #expect(updatedTable.rect(ofRow: 1).height > previousHeight)
 
         cards[1].mergedIntoCardID = ""
@@ -91,15 +91,23 @@ import Testing
 }
 
 @MainActor private func assertBoardLaneRowsFitContent(
-    table: NSTableView, cards: [Dieter_V1_Card], store: DieterStore
+    table: NSTableView, root: NSView, cards: [Dieter_V1_Card], store: DieterStore
 ) throws {
     for (index, card) in cards.enumerated() {
         let cell = try #require(table.view(atColumn: 0, row: index, makeIfNecessary: false))
+        let cellFrame = cell.convert(cell.bounds, to: root)
+        #expect(abs(cellFrame.minX - root.bounds.minX) < 1)
+        #expect(abs(cellFrame.maxX - root.bounds.maxX) < 1)
+        if index == 0 {
+            // The insertion area uses the header gap; the card itself must
+            // align with the empty placeholder at the lane content origin.
+            #expect(abs(cellFrame.minY + LaneInsertionTarget.beforeCardHeight - root.bounds.minY) < 1)
+        }
         let rowFrame = table.rect(ofRow: index)
         let content = NSHostingView(
             rootView: BoardLaneRow(card: card, laneID: "todo", isLast: index == cards.count - 1)
                 .environment(store)
-                .frame(width: max(1, cell.bounds.width - 2)))
+                .frame(width: max(1, cell.bounds.width)))
         content.layoutSubtreeIfNeeded()
         #expect(
             rowFrame.height >= content.fittingSize.height - 1,

@@ -43,6 +43,7 @@ import Testing
     func height() -> CGFloat {
         let host = NSHostingView(
             rootView: ConversationChrome(compact: true, standalone: false, tab: .constant("Conversation"))
+                .environment(store)
                 .environment(store.conversationContext)
                 .frame(width: 320))
         let size = host.fittingSize

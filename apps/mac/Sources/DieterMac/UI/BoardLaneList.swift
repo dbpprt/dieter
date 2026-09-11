@@ -13,7 +13,7 @@ struct BoardLaneList: View {
         List {
             ForEach(cards, id: \.id) { card in
                 BoardLaneRow(card: card, laneID: laneID, isLast: card.id == cards.last?.id)
-                    .listRowInsets(EdgeInsets(top: 0, leading: 1, bottom: 0, trailing: 1))
+                    .listRowInsets(.all, 0)
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
@@ -22,6 +22,13 @@ struct BoardLaneList: View {
         .contentMargins(.all, 0, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Plain List retains 8/9 points of native cell padding even with zero
+        // row insets. Offset that here so LaneColumn owns the visible inset.
+        .padding(.leading, -8)
+        .padding(.trailing, -9)
+        // Keep the first insertion target in the header gap, so the first
+        // card starts at the same height as an empty lane's drop placeholder.
+        .padding(.top, -LaneInsertionTarget.beforeCardHeight)
         .foregroundStyle(DieterTheme.text)
         .accessibilityIdentifier("board.lane.\(laneID)")
         .id(

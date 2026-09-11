@@ -90,7 +90,8 @@ struct DieterRootView: View {
                 }
                 Group {
                     switch store.section {
-                    case .board: BoardView()
+                    case .board:
+                        BoardView(usesTitlebarSpace: sidebarVisibility != .detailOnly)
                     case .chats: ChatsView()
                     case .terminals:
                         TerminalsView(model: store.terminalsModel, showAll: { await store.showAllTerminals() })
@@ -131,8 +132,10 @@ struct DieterRootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                GlobalQuickTaskButton()
+            if store.section != .board || store.selectedCardID == nil {
+                ToolbarItem(placement: .primaryAction) {
+                    GlobalQuickTaskButton()
+                }
             }
         }
         .animation(.easeOut(duration: 0.18), value: workspaceSurfaceTreatment)

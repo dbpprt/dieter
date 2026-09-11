@@ -183,6 +183,7 @@ enum BoardPresentationState: Equatable {
 
 struct BoardView: View {
     @Environment(DieterStore.self) private var store
+    var usesTitlebarSpace = false
     @State private var conversationMaximized = false
 
     var body: some View {
@@ -190,6 +191,7 @@ struct BoardView: View {
             board: AnyView(
                 boardContent.environment(store)
                     .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+                    .background(DieterTheme.surface)
                     .smokeTarget("board.canvas")
                     .dieterThemeRoot(
                         palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
@@ -199,6 +201,8 @@ struct BoardView: View {
                     maximized: conversationMaximized,
                     onToggleMaximize: { conversationMaximized.toggle() }
                 )
+                .ignoresSafeArea(.container, edges: usesTitlebarSpace ? .top : [])
+                .background(DieterTheme.surface)
                 .environment(store)
                 .environment(store.conversationContext)
                 .dieterThemeRoot(
@@ -208,6 +212,13 @@ struct BoardView: View {
             onRequestMaximize: { conversationMaximized = true }
         )
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+        // The board host still uses its native safe-area constraints. Only the
+        // conversation occupies the otherwise empty toolbar space beside the
+        // sidebar; a hidden sidebar keeps room for the window controls.
+        .ignoresSafeArea(
+            .container, edges: usesTitlebarSpace && store.selectedCardID != nil ? .top : []
+        )
+        .background(DieterTheme.surface)
         .onChange(of: store.selectedCardID) { _, cardID in
             if cardID == nil { conversationMaximized = false }
         }
@@ -274,7 +285,7 @@ struct BoardHeader: View {
     }
 
     var body: some View {
-        FluidPaneChrome(background: DieterTheme.background, spacing: 7) {
+        FluidPaneChrome(background: .clear, spacing: 7) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(store.selectedBoard?.name ?? "Board")
@@ -1027,7 +1038,6 @@ struct KanbanView: View {
                 )
                 .frame(height: geometry.size.height, alignment: .top)
             }
-            .background(DieterTheme.background)
         }
     }
 }
@@ -1100,7 +1110,7 @@ struct LaneColumn: View {
         }
         .padding(10)
         .background(
-            isDropTargeted ? DieterTheme.shellDeep.opacity(0.08) : DieterTheme.surface.opacity(0.45),
+            isDropTargeted ? DieterTheme.shellDeep.opacity(0.08) : DieterTheme.background.opacity(0.35),
             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
         )
         .overlay(
@@ -1123,6 +1133,8 @@ struct LaneColumn: View {
 }
 
 struct LaneInsertionTarget: View {
+    static let beforeCardHeight: CGFloat = 9
+
     @Environment(DieterStore.self) private var store
     let laneID: String
     let beforeCardID: String?
@@ -1138,7 +1150,7 @@ struct LaneInsertionTarget: View {
                 }.padding(.horizontal, 2)
             }
         }
-        .frame(height: beforeCardID == nil ? 12 : 9)
+        .frame(height: beforeCardID == nil ? 12 : Self.beforeCardHeight)
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { values, _ in
             guard let value = values.first, let payload = BoardCardDragPayload(value),

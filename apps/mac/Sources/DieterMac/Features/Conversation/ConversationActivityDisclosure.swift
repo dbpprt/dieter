@@ -164,6 +164,7 @@ struct ConversationTimelineDisplayGroupView: View {
     let group: ConversationTimelineDisplayGroup
     let showReasoning: Bool
     let isLatest: Bool
+    var scrollAnchors: ConversationScrollAnchorController?
 
     var body: some View {
         if group.isActivity {
@@ -178,7 +179,15 @@ struct ConversationTimelineDisplayGroupView: View {
                     ForEach(group.rows) { row in
                         ConversationTimelineRow(
                             item: row.item, details: row.details,
-                            isLatest: isLatest && row.id == group.rows.last?.id, expandedActivity: true)
+                            isLatest: isLatest && row.id == group.rows.last?.id, expandedActivity: true
+                        )
+                        .background {
+                            if let scrollAnchors {
+                                ConversationScrollAnchorProbe(
+                                    controller: scrollAnchors,
+                                    messageIDs: row.item.messages.map(\.id), priority: 1)
+                            }
+                        }
                     }
                 }
             }
