@@ -1160,6 +1160,10 @@
                 results["attachment-upload-picker"] = "failed: card fixture unavailable"
                 return
             }
+            // Finish the previous resize check's native editing session before
+            // seeding either draft. A field editor can otherwise commit its old
+            // buffer when Attach takes focus, invalidating this fixture mid-click.
+            window.makeFirstResponder(nil)
             let originalDraft = store.composer.draft
             let originalText = originalDraft.text
             let originalAttachments = originalDraft.attachments
@@ -1184,6 +1188,7 @@
             store.selectedCardID = originalID
             defer {
                 nativeUploadPanel(in: window)?.cancel(nil)
+                window.makeFirstResponder(nil)
                 originalDraft.text = originalText
                 originalDraft.attachments = originalAttachments
                 store.selectedCardID = originalID
@@ -1197,8 +1202,12 @@
                     && targetDraft.text == "Keep the upload destination draft" && targetDraft.attachments == [marker]
             }
 
-            guard await openAttachmentUploadChoice(in: window) else {
-                results["attachment-upload-picker"] = "failed: Upload choice unavailable"
+            guard await waitForStableControl("conversation.composer-shell", in: window) else {
+                results["attachment-upload-picker"] = "failed: seeded composer did not settle"
+                return
+            }
+            if let failure = await openAttachmentUploadChoice(in: window) {
+                results["attachment-upload-picker"] = "failed: \(failure)"
                 return
             }
             let uploaded = NativeUIAccessibility.click("conversation.attach.upload", in: window)
@@ -1214,8 +1223,9 @@
             results["attachment-upload-cancel"] =
                 cancelled && draftsIntact()
                 ? "passed" : "failed: Cancel left the picker open or changed an existing draft"
-            guard cancelled, await openAttachmentUploadChoice(in: window) else {
-                results["attachment-upload-navigation"] = "failed: Upload choice did not reopen after cancellation"
+            guard cancelled else { return }
+            if let failure = await openAttachmentUploadChoice(in: window) {
+                results["attachment-upload-navigation"] = "failed: after cancellation, \(failure)"
                 return
             }
 
@@ -1244,16 +1254,37 @@
                 : "failed: click=\(clicked), dispatched=\(uploadDispatched), dismissed=\(pickerDismissed), picker=\(pickerAppeared), drafts intact=\(draftsIntact())"
         }
 
-        private static func openAttachmentUploadChoice(in window: NSWindow) async -> Bool {
+        /// Return the failed native stage rather than hiding activation, layout,
+        /// and hit-testing failures behind a missing Upload choice. Keep a single
+        /// pointer gesture so retries cannot mask an unresponsive attachment UI.
+        private static func openAttachmentUploadChoice(in window: NSWindow) async -> String? {
             if attachmentChoicesVisible(in: window) {
                 return await waitForStableControl("conversation.attach.upload", in: window)
+                    ? nil : "existing Upload choice did not settle"
             }
-            guard await prepareComposerWindow(window),
-                await waitForStableControl("conversation.attach", in: window),
-                NativeUIAccessibility.click("conversation.attach", in: window),
-                await NativeUIAccessibility.wait(timeout: 5, until: { attachmentChoicesVisible(in: window) })
-            else { return false }
+            guard await prepareComposerWindow(window) else {
+                return
+                    "composer window not ready (active=\(NSApp.isActive), key=\(window.isKeyWindow), sheet=\(window.attachedSheet != nil))"
+            }
+            guard await waitForStableControl("conversation.attach", in: window) else {
+                return "Attach control did not settle"
+            }
+            guard let target = NativeUIAccessibility.find("conversation.attach", in: window),
+                let frame = target.recordedFrame, let host = target.recordedWindow,
+                host.frame.insetBy(dx: -1, dy: -1).contains(frame)
+            else {
+                return "Attach control is outside its window"
+            }
+            guard NativeUIAccessibility.click("conversation.attach", in: window) else {
+                return "Attach pointer gesture could not be delivered"
+            }
+            guard await NativeUIAccessibility.wait(timeout: 5, until: { attachmentChoicesVisible(in: window) }) else {
+                let currentFrame = NativeUIAccessibility.find("conversation.attach", in: window)?.recordedFrame
+                return
+                    "Attach pointer gesture did not expose choices (before=\(frame), after=\(String(describing: currentFrame)), active=\(NSApp.isActive), key=\(window.isKeyWindow), sheet=\(window.attachedSheet != nil))"
+            }
             return await waitForStableControl("conversation.attach.upload", in: window)
+                ? nil : "Upload choice appeared but did not settle"
         }
 
         private static func prepareComposerWindow(_ window: NSWindow) async -> Bool {

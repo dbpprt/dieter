@@ -411,21 +411,32 @@
                         window: window, x: window.frame.width - 60, distanceFromTop: window.frame.height - 70,
                         throughApplication: true)
                     let dismissed = await waitUntil(timeout: 5) { !sheet.isVisible }
+                    // The outside click can also open the card beneath it. That
+                    // moves Quick Task from the toolbar into the conversation
+                    // header; settle the board before resolving its next target.
+                    let reopenToolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
                     let reopenReady = await waitForBoardControl("sidebar.quick-task", in: window)
-                    let reopenClicked = reopenReady && NativeUIAccessibility.click("sidebar.quick-task", in: window)
+                    let reopenClicked =
+                        reopenToolbarUncovered && reopenReady
+                        && NativeUIAccessibility.click("sidebar.quick-task", in: window)
                     _ = await waitUntil(timeout: 5) {
                         NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
                     }
                     let reopened = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
+                    var restoredEditorText: String?
+                    if let reopened, await focusQuickTaskStory(in: reopened) {
+                        restoredEditorText = (reopened.firstResponder as? NSTextView)?.string
+                    }
                     let retained =
-                        reopened != nil && store.quickTaskForm.story == "Keep this draft after clicking outside"
+                        restoredEditorText == "Keep this draft after clicking outside"
+                        && store.quickTaskForm.story == "Keep this draft after clicking outside"
                     if let reopened {
                         capture(reopened, to: output.appending(path: "global-quick-task-restored.png"))
                     }
                     results["global-quick-task-retains-draft"] =
                         storyFocused && storyEntered && dismissed && reopenClicked && retained
                         ? "passed"
-                        : "failed: focus=\(storyFocused), typed=\(storyEntered), outside dismissal=\(dismissed), reopen=\(reopenClicked), restored content=\(retained), story=\(store.quickTaskForm.story)"
+                        : "failed: focus=\(storyFocused), typed=\(storyEntered), outside dismissal=\(dismissed), toolbar uncovered=\(reopenToolbarUncovered), reopen=\(reopenClicked), restored content=\(retained), editor=\(String(describing: restoredEditorText)), story=\(store.quickTaskForm.story)"
                     if let reopened {
                         if await waitForBoardControl("quick-task.cancel", in: reopened) {
                             _ = NativeUIAccessibility.click("quick-task.cancel", in: reopened)
