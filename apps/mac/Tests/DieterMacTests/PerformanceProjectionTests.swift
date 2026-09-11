@@ -202,6 +202,8 @@ import Testing
     #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: nil) == 440..<500)
     #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: 0) == 0..<60)
     #expect(ConversationRenderWindow.range(messageCount: 500, requestedStart: 450) == 440..<500)
+    #expect(ConversationRenderWindow.range(messageCount: 500, position: .pagingEarlier(from: 440)) == 410..<470)
+    #expect(ConversationRenderWindow.range(messageCount: 500, position: .pagingLater(from: 469)) == 439..<499)
 }
 
 @Test func diffProjectionIndexesCommentsWhileBuildingRows() {

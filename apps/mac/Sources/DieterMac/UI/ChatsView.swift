@@ -1,3 +1,4 @@
+import AppKit
 import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -36,7 +37,7 @@ struct ChatsView: View {
         let pinnedPage = LaneCardPage.resolve(
             total: projection.pinned.count, requestedPage: pinnedPageIndex)
         let displayedPinned = Array(projection.pinned[pinnedPage.lowerBound..<pinnedPage.upperBound])
-        HSplitView {
+        ChatPaneSplit {
             VStack(spacing: 0) {
                 FluidPaneChrome(background: DieterTheme.sidebar, spacing: 9) {
                     HStack(spacing: 8) {
@@ -134,12 +135,9 @@ struct ChatsView: View {
                     }.padding(.horizontal, 8).padding(.vertical, 11)
                 }
             }
-            .frame(
-                minWidth: 285, idealWidth: DieterMetrics.browserWidth,
-                maxWidth: DieterMetrics.browserMaximumWidth
-            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DieterTheme.sidebar)
-
+        } detail: {
             if store.selectedChatID != nil {
                 ConversationView().environment(store.conversationContext)
             } else if showArchived {
@@ -184,6 +182,115 @@ struct ChatsView: View {
             return
         }
         pinnedChatNavigation.save(to: DieterAppearance.applicationDefaults())
+    }
+}
+
+enum ChatPaneSizing {
+    static let minimumWidth: CGFloat = 285
+    static let defaultWidth = DieterMetrics.browserWidth
+    static let maximumWidth = DieterMetrics.browserMaximumWidth
+    static let dividerWidth: CGFloat = 7
+    static let minimumDetailWidth: CGFloat = 327
+
+    static func resolvedWidth(_ requestedWidth: CGFloat, workspaceWidth: CGFloat) -> CGFloat {
+        let available = max(0, workspaceWidth - minimumDetailWidth - dividerWidth)
+        guard available >= minimumWidth else { return available }
+        return min(max(requestedWidth, minimumWidth), min(maximumWidth, available))
+    }
+}
+
+private struct ChatPaneResizeDivider: View {
+    let width: CGFloat
+    let onChanged: (CGFloat) -> Void
+    let onEnded: () -> Void
+    let onAdjust: (AccessibilityAdjustmentDirection) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(Color.clear)
+            Rectangle()
+                .fill(hovering ? DieterTheme.shell.opacity(0.62) : DieterTheme.paneSeparator)
+                .frame(width: hovering ? 2 : 1)
+        }
+        .frame(width: ChatPaneSizing.dividerWidth)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { onChanged($0.translation.width) }
+                .onEnded { _ in onEnded() }
+        )
+        .onHover { isHovering in
+            if isHovering, !hovering { NSCursor.resizeLeftRight.push() }
+            if !isHovering, hovering { NSCursor.pop() }
+            hovering = isHovering
+        }
+        .onDisappear {
+            if hovering { NSCursor.pop() }
+        }
+        .accessibilityLabel("Resize chat browser")
+        .accessibilityValue("\(Int(width)) points")
+        .accessibilityAdjustableAction { direction in onAdjust(direction) }
+        .accessibilityIdentifier("chats.resize-divider")
+    }
+}
+
+/// Unlike AppKit's HSplitView bridge, this split never renegotiates the
+/// browser width from the selected conversation's intrinsic content size.
+/// That keeps navigation stationary while chat Markdown is prepared or wraps.
+private struct ChatPaneSplit<Browser: View, Detail: View>: View {
+    let browser: Browser
+    let detail: Detail
+    @AppStorage("dieter.chatBrowserPaneWidth") private var storedWidth = Double(ChatPaneSizing.defaultWidth)
+    @State private var dragStartWidth: CGFloat?
+
+    init(
+        @ViewBuilder browser: () -> Browser,
+        @ViewBuilder detail: () -> Detail
+    ) {
+        self.browser = browser()
+        self.detail = detail()
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = ChatPaneSizing.resolvedWidth(CGFloat(storedWidth), workspaceWidth: geometry.size.width)
+            HStack(spacing: 0) {
+                browser
+                    .frame(width: width, height: geometry.size.height)
+                    .clipped()
+
+                ChatPaneResizeDivider(
+                    width: width,
+                    onChanged: { translation in
+                        let startWidth = dragStartWidth ?? width
+                        if dragStartWidth == nil { dragStartWidth = startWidth }
+                        storedWidth = Double(
+                            ChatPaneSizing.resolvedWidth(
+                                startWidth + translation,
+                                workspaceWidth: geometry.size.width
+                            ))
+                    },
+                    onEnded: { dragStartWidth = nil },
+                    onAdjust: { direction in
+                        switch direction {
+                        case .increment:
+                            storedWidth = Double(
+                                ChatPaneSizing.resolvedWidth(width + 20, workspaceWidth: geometry.size.width))
+                        case .decrement:
+                            storedWidth = Double(
+                                ChatPaneSizing.resolvedWidth(width - 20, workspaceWidth: geometry.size.width))
+                        @unknown default:
+                            break
+                        }
+                    }
+                )
+
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+        }
     }
 }
 

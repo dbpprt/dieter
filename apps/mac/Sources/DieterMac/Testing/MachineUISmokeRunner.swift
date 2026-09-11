@@ -1,6 +1,43 @@
 #if DIETER_UI_SMOKE
     import AppKit
+    import DieterAPI
     import Foundation
+
+    /// Machine smoke validates the daemon's telemetry contract, including the
+    /// explicit absence reported by virtual Macs without a GPU passthrough.
+    enum MachineGPUTelemetrySmokeCheck {
+        static func result(for information: Dieter_V1_MachineInformation) -> String {
+            guard information.hasGpu else { return "failed: GPU telemetry was absent" }
+            let telemetry = information.gpu
+            switch telemetry.state {
+            case .unavailable:
+                guard telemetry.devices.isEmpty else {
+                    return "failed: unavailable GPU telemetry contained devices"
+                }
+                guard !telemetry.unavailableReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return "failed: unavailable GPU telemetry omitted its reason"
+                }
+                return "passed: GPU telemetry unavailable (\(telemetry.unavailableReason))"
+            case .noDevices:
+                return telemetry.devices.isEmpty
+                    ? "passed: no GPU devices reported" : "failed: no-devices GPU telemetry contained devices"
+            case .partial, .available:
+                guard !telemetry.devices.isEmpty else { return "failed: GPU telemetry state required devices" }
+                guard
+                    telemetry.devices.allSatisfy({
+                        !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            && !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    })
+                else { return "failed: GPU device identity was incomplete" }
+                guard Set(telemetry.devices.map(\.id)).count == telemetry.devices.count else {
+                    return "failed: GPU device identities were duplicated"
+                }
+                return "passed"
+            case .unspecified, .UNRECOGNIZED:
+                return "failed: GPU telemetry state was unspecified or unrecognized"
+            }
+        }
+    }
 
     /// Focused packaged-app verification for the authenticated machine path. Its
     /// restart check is hard-gated to the isolated fixture's advertised version;
@@ -67,8 +104,7 @@
                     ? "failed: telemetry was incomplete" : "passed",
                 "dieter-processes": information.processes.contains(where: { $0.kind == "daemon" })
                     ? "passed" : "failed: daemon process was absent",
-                "gpu": information.hasGpu && !information.gpu.devices.isEmpty
-                    ? "passed" : "failed: GPU telemetry was absent",
+                "gpu": MachineGPUTelemetrySmokeCheck.result(for: information),
                 "daemon-version": information.hasDaemonBuild && !information.daemonBuild.releaseVersion.isEmpty
                     ? "passed" : "failed: daemon build identity was absent",
                 "gateway-version": store.gatewayInformation[machine.credentialID]?.releaseVersion.isEmpty == false

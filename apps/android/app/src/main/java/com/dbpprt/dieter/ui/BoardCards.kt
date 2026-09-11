@@ -245,6 +245,14 @@ internal fun SwipeableWorkCard(
     val revealDistance = with(density) { 264.dp.toPx() }
     var dragOffset by remember(card.id) { mutableFloatStateOf(0f) }
     val labelDropTargeted = labelDragState.isTargeted(card.id)
+    // The action must read as enabled in every palette. A translucent shell
+    // fill paired with the deeper shell tint collapses to near-identical
+    // colors on dark surfaces.
+    val moveContainerColor = DieterShellDeep
+    val moveContentColor = listOf(
+        MaterialTheme.colorScheme.onBackground,
+        MaterialTheme.colorScheme.onPrimary,
+    ).maxBy { colorContrastRatio(it, moveContainerColor) }
 
     DisposableEffect(labelDragState, card.id) {
         onDispose { labelDragState.unregisterCard(card.id) }
@@ -277,14 +285,16 @@ internal fun SwipeableWorkCard(
                 icon = Icons.Outlined.Edit,
                 containerColor = DieterSurface,
                 contentColor = MaterialTheme.colorScheme.onSurface,
+                enabled = revealed,
                 modifier = Modifier.testTag("edit-card-${card.id}"),
                 onClick = onEdit,
             )
             SwipeCardAction(
                 label = "Move",
                 icon = Icons.AutoMirrored.Outlined.DriveFileMove,
-                containerColor = DieterShell.copy(alpha = 0.24f),
-                contentColor = DieterShellDeep,
+                containerColor = moveContainerColor,
+                contentColor = moveContentColor,
+                enabled = revealed,
                 modifier = Modifier.testTag("move-card-${card.id}"),
                 onClick = onMove,
             )
@@ -293,6 +303,7 @@ internal fun SwipeableWorkCard(
                 icon = Icons.Outlined.Archive,
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                enabled = revealed,
                 modifier = Modifier.testTag("archive-card-${card.id}"),
                 onClick = onArchive,
             )
@@ -334,11 +345,13 @@ internal fun SwipeCardAction(
     icon: ImageVector,
     containerColor: Color,
     contentColor: Color,
+    enabled: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.width(88.dp).fillMaxHeight(),
         color = containerColor,
         contentColor = contentColor,

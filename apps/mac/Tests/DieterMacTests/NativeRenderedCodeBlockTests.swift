@@ -6,6 +6,36 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct NativeRenderedCodeBlockTests {
+    @Test func codeBlockSelectionCacheIsReplacedBeforeShortDocumentResizeCallbacks() throws {
+        let source = "Intro\n\n```swift\nprint(1)\n```\n\n```mermaid\ngraph LR\n A-->B\n```\n"
+        let fixture = try EditorFixture(source)
+        let coordinator = fixture.coordinator
+        let outgoingTokens = coordinator.cachedCodeBlockTokens
+        #expect(outgoingTokens.count == 2)
+        var selections: [CodeBlockSelection] = []
+        coordinator.onCodeBlockSelectionChange = { selections = $0 }
+
+        coordinator.rebuildTextStorageAndStyle(fixture.editor, from: "Short 🚀")
+        #expect(coordinator.cachedCodeBlockTokens.isEmpty)
+        coordinator.updateCodeBlockSelection(textView: fixture.editor)
+        #expect(selections.isEmpty)
+
+        // A resize can also precede the parse refresh of a native text edit.
+        // Such an old token must be ignored even outside a full rebuild.
+        coordinator.cachedCodeBlockTokens = outgoingTokens
+        coordinator.activeTokenIndices = []
+        coordinator.updateCodeBlockSelection(textView: fixture.editor)
+        #expect(selections.isEmpty)
+
+        let incoming = "Intro\n\n```swift\nprint(2)\n```\n"
+        coordinator.rebuildTextStorageAndStyle(fixture.editor, from: incoming)
+        #expect(coordinator.cachedCodeBlockTokens.count == 1)
+        coordinator.updateCodeBlockSelection(textView: fixture.editor)
+        #expect(selections.count == 1)
+        #expect(selections.first?.code.contains("print(2)") == true)
+        #expect(fixture.editor.string == incoming)
+    }
+
     @Test func initialDiagramCollapsesHundredsOfSourceLinesWithoutChangingMarkdown() throws {
         let json = (0..<650).map { "  \"field\($0)\": \($0)," }.joined(separator: "\n")
         let source =

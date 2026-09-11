@@ -14,6 +14,9 @@ import AppKit
 
 extension NativeTextViewCoordinator {
     func updateCodeBlockSelection(textView: NSTextView, parsed: ParsedDocument? = nil) {
+        // Replacing text storage can synchronously resize the clip view. Its
+        // notification must not consult tokens from a half-rebuilt document.
+        guard !isRebuildingDocument else { return }
         guard let textContainer = textView.textContainer else {
             onCodeBlockSelectionChange?([])
             return
@@ -75,9 +78,19 @@ extension NativeTextViewCoordinator {
 
         let selections: [CodeBlockSelection] = cachedCodeBlockTokens.compactMap { originalIndex, token in
             guard !activeTokenIndices.contains(originalIndex) else { return nil }
+            // Scroll/resize notifications may arrive between a native edit and
+            // its parse refresh. Validate every range before indexing storage or
+            // extracting code/language; NSTextStorage raises an ObjC exception
+            // rather than a catchable Swift error for an out-of-bounds lookup.
+            guard token.range.length > 0,
+                  Self.codeBlockRange(token.range, fits: nsText.length),
+                  Self.codeBlockRange(token.contentRange, fits: nsText.length),
+                  token.markerRanges.allSatisfy({ Self.codeBlockRange($0, fits: nsText.length) }),
+                  let storage = textView.textStorage,
+                  Self.codeBlockRange(token.range, fits: storage.length) else { return nil }
             if let visibleRange, NSIntersectionRange(token.range, visibleRange).length == 0 { return nil }
             // A code-copy overlay must not cover a rendered diagram's click target.
-            if textView.textStorage?.attribute(.renderedCodeBlockRange, at: token.range.location, effectiveRange: nil) != nil { return nil }
+            if storage.attribute(.renderedCodeBlockRange, at: token.range.location, effectiveRange: nil) != nil { return nil }
             guard var boundingRect = textView.viewRect(forCharacterRange: token.range, using: layoutBridge) else { return nil }
 
             boundingRect.origin.x = textView.frame.origin.x + textView.textContainerOrigin.x - scrollOffset.x
@@ -92,5 +105,10 @@ extension NativeTextViewCoordinator {
         }
 
         onCodeBlockSelectionChange?(selections)
+    }
+
+    private static func codeBlockRange(_ range: NSRange, fits length: Int) -> Bool {
+        range.location >= 0 && range.length >= 0 && range.location <= length
+            && range.length <= length - range.location
     }
 }

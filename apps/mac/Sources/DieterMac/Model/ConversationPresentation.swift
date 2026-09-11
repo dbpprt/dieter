@@ -133,15 +133,56 @@ enum ConversationRenderWindow {
     static let maximumTextBytes = 16_000
     static let maximumParts = 160
 
-    static func range(messages: [Dieter_V1_UiMessage], requestedStart: Int?) -> Range<Int> {
+    enum Position: Equatable {
+        case latest
+        case startingAt(Int, minimumMessages: Int = 1)
+        case pagingEarlier(from: Int)
+        case pagingLater(from: Int)
+
+        func afterUserScroll(isAtLatest: Bool, renderedRange: Range<Int>) -> Self {
+            if isAtLatest { return .latest }
+            // Freeze the chosen start so appends cannot evict the text being
+            // read. Paging retains its two-message overlap even for large rows.
+            switch self {
+            case .latest:
+                return .startingAt(renderedRange.lowerBound)
+            case .pagingEarlier, .pagingLater:
+                return .startingAt(renderedRange.lowerBound, minimumMessages: 2)
+            case .startingAt:
+                return self
+            }
+        }
+    }
+
+    static func range(messages: [Dieter_V1_UiMessage], position: Position) -> Range<Int> {
         guard !messages.isEmpty else { return 0..<0 }
-        let forward = requestedStart != nil
-        let start = min(max(0, requestedStart ?? (messages.count - 1)), messages.count - 1)
-        var lower = start, upper = start, bytes = 0, parts = 0
-        let candidates =
-            forward
-            ? Array(start..<min(messages.count, start + maximumMessages))
-            : Array(max(0, start - maximumMessages + 1)...start).reversed().map { $0 }
+        switch position {
+        case .pagingEarlier(let requestedAnchor):
+            let anchor = min(max(0, requestedAnchor), messages.count - 1)
+            return centeredRange(messages: messages, anchor: anchor, requiredIndex: max(0, anchor - 1))
+        case .pagingLater(let requestedAnchor):
+            let anchor = min(max(0, requestedAnchor), messages.count - 1)
+            return centeredRange(
+                messages: messages,
+                anchor: anchor,
+                requiredIndex: min(messages.count - 1, anchor + 1)
+            )
+        case .latest, .startingAt:
+            break
+        }
+        let anchor: Int
+        switch position {
+        case .latest:
+            anchor = messages.count - 1
+        case .startingAt(let index, let minimumMessages):
+            return forwardRange(
+                messages: messages, start: min(max(0, index), messages.count - 1),
+                minimumMessages: minimumMessages)
+        case .pagingEarlier, .pagingLater:
+            preconditionFailure("paging windows return before directional layout")
+        }
+        var lower = anchor, upper = anchor, bytes = 0, parts = 0
+        let candidates = Array(max(0, anchor - maximumMessages + 1)...anchor).reversed().map { $0 }
         for index in candidates {
             let message = messages[index]
             let cost = message.parts.reduce(0) {
@@ -158,12 +199,63 @@ enum ConversationRenderWindow {
         return lower..<upper
     }
 
-    static func range(messageCount: Int, requestedStart: Int?) -> Range<Int> {
-        guard messageCount > maximumMessages else { return 0..<messageCount }
-        if let requestedStart {
-            let start = min(max(0, requestedStart), messageCount - maximumMessages)
-            return start..<(start + maximumMessages)
+    private static func centeredRange(
+        messages: [Dieter_V1_UiMessage],
+        anchor: Int,
+        requiredIndex: Int
+    ) -> Range<Int> {
+        let idealStart = max(
+            0,
+            min(anchor - maximumMessages / 2, messages.count - maximumMessages)
+        )
+        let ideal = forwardRange(messages: messages, start: idealStart, minimumMessages: 2)
+        if ideal.contains(anchor), ideal.contains(requiredIndex) { return ideal }
+        return forwardRange(messages: messages, start: min(anchor, requiredIndex), minimumMessages: 2)
+    }
+
+    private static func forwardRange(
+        messages: [Dieter_V1_UiMessage],
+        start: Int,
+        minimumMessages: Int = 1
+    ) -> Range<Int> {
+        var upper = start, bytes = 0, parts = 0
+        for index in start..<min(messages.count, start + maximumMessages) {
+            let message = messages[index]
+            let cost = message.parts.reduce(0) {
+                $0 + min($1.text.utf8.count, ConversationRenderCache.maximumPreviewCharacters)
+            }
+            if upper - start >= minimumMessages,
+                bytes + cost > maximumTextBytes || parts + message.parts.count > maximumParts
+            {
+                break
+            }
+            bytes += cost
+            parts += message.parts.count
+            upper = index + 1
         }
-        return (messageCount - maximumMessages)..<messageCount
+        return start..<upper
+    }
+
+    static func range(messages: [Dieter_V1_UiMessage], requestedStart: Int?) -> Range<Int> {
+        range(messages: messages, position: requestedStart.map { Position.startingAt($0) } ?? .latest)
+    }
+
+    static func range(messageCount: Int, position: Position) -> Range<Int> {
+        guard messageCount > 0 else { return 0..<0 }
+        switch position {
+        case .latest:
+            return max(0, messageCount - maximumMessages)..<messageCount
+        case .startingAt(let requestedStart, _):
+            let start = min(max(0, requestedStart), max(0, messageCount - maximumMessages))
+            return start..<min(messageCount, start + maximumMessages)
+        case .pagingEarlier(let requestedAnchor), .pagingLater(let requestedAnchor):
+            let anchor = min(max(0, requestedAnchor), messageCount - 1)
+            let start = max(0, min(anchor - maximumMessages / 2, messageCount - maximumMessages))
+            return start..<min(messageCount, start + maximumMessages)
+        }
+    }
+
+    static func range(messageCount: Int, requestedStart: Int?) -> Range<Int> {
+        range(messageCount: messageCount, position: requestedStart.map { Position.startingAt($0) } ?? .latest)
     }
 }

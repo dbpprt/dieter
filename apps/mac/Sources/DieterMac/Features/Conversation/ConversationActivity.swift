@@ -41,9 +41,12 @@ struct TaskPlanView: View {
                                     ? task.activeForm : task.content
                             )
                             .font(.caption).foregroundStyle(
-                                task.status == "pending" ? DieterTheme.subtle : DieterTheme.text)
+                                task.status == "pending" ? DieterTheme.subtle : DieterTheme.text
+                            )
+                            .fixedSize(horizontal: false, vertical: true)
                             if !task.blocker.isEmpty {
                                 Text(task.blocker).font(.caption2).foregroundStyle(DieterTheme.coral)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                         }
                         Spacer()
@@ -53,6 +56,8 @@ struct TaskPlanView: View {
         }
         .background(DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func planIcon(_ status: String) -> String {

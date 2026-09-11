@@ -17,3 +17,8 @@ Collapsed diagrams skip syntax highlighting and use a bounded number of attribut
 ranges regardless of source line count. Completed images and width changes update
 only existing diagram anchors, avoiding whole-document restyling and preserving
 unrelated presentation, source text, and undo history.
+
+Code-block overlay tokens are cleared and reseeded when rebuilding a document.
+Resize callbacks defer selection work during that rebuild, and stale token
+ranges are rejected before text-storage access. Switching from diagrams to a
+shorter document therefore cannot index the new text with the old fence ranges.

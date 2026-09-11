@@ -25,6 +25,10 @@ extension NativeTextViewCoordinator {
         // at the end of this method.
         isRebuildingDocument = true
         defer { isRebuildingDocument = false }
+        // Document switches and external source replacements invalidate the
+        // overlay cache before any storage mutation can emit resize callbacks.
+        cachedCodeBlockTokens = []
+        lastCodeSelKey = nil
         // A rebuild means a different document (or a mode flip): drop the caret
         // ink resolved for the old one instead of carrying it into this text.
         resolvedCaretColor = nil
@@ -151,6 +155,10 @@ extension NativeTextViewCoordinator {
         textView.textStorage?.beginEditing()
         textView.textStorage?.setAttributedString(built)
         textView.textStorage?.endEditing()
+
+        // A rebuild bypasses textDidChange. Seed the incoming parse explicitly,
+        // including an empty cache for prose-only documents and raw source mode.
+        cachedCodeBlockTokens = parsedForReplay?.codeBlockTokensWithIndices ?? []
 
 
         textView.typingAttributes = TextStylingService.makeBaseTypingAttributes(

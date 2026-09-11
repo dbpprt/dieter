@@ -88,8 +88,12 @@ enum ConversationScrollBehavior {
     static let bottomID = "conversation.bottom"
     private static let latestTolerance: CGFloat = 2
 
-    static func isAtLatest(visibleMaxY: CGFloat, contentHeight: CGFloat) -> Bool {
-        visibleMaxY >= contentHeight - latestTolerance
+    static func isAtLatest(
+        visibleMaxY: CGFloat,
+        contentHeight: CGFloat,
+        renderedThroughLatest: Bool = true
+    ) -> Bool {
+        renderedThroughLatest && visibleMaxY >= contentHeight - latestTolerance
     }
 
     static func followsLatest(_ viewportMode: ConversationViewportMode) -> Bool {

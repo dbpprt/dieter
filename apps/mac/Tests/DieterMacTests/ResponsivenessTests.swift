@@ -161,6 +161,10 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     #expect(tail.count == 1)
     let earlier = ConversationRenderWindow.range(messages: messages, requestedStart: 0)
     #expect(earlier == 0..<1)
+    let pagedEarlier = ConversationRenderWindow.range(messages: messages, position: .pagingEarlier(from: 100))
+    #expect(pagedEarlier == 99..<101)
+    let pagedLater = ConversationRenderWindow.range(messages: messages, position: .pagingLater(from: 100))
+    #expect(pagedLater == 100..<102)
 }
 
 @Test(arguments: ["text bytes", "message parts", "message count"])
@@ -186,11 +190,14 @@ func detachedConversationRenderWindowRetainsReadMessagesWhenTheTailAdvances(budg
     // Scrolling away pins the displayed window before another answer arrives.
     // Appends must not replace those rows just because the live tail exceeds a
     // rendering budget; changing only the scroll offset cannot prevent that.
+    let pinnedPosition = ConversationRenderWindow.Position.latest.afterUserScroll(
+        isAtLatest: false, renderedRange: readingRange)
+    #expect(pinnedPosition == .startingAt(readingRange.lowerBound))
     let pinnedStart = readingRange.lowerBound
     for index in originalCount..<(originalCount + 3) {
         messages.append(message(index))
         let latest = ConversationRenderWindow.range(messages: messages, requestedStart: nil)
-        let pinned = ConversationRenderWindow.range(messages: messages, requestedStart: pinnedStart)
+        let pinned = ConversationRenderWindow.range(messages: messages, position: pinnedPosition)
         #expect(latest.lowerBound > readingRange.lowerBound)
         #expect(latest.upperBound == messages.count)
         #expect(pinned == readingRange)
@@ -245,4 +252,28 @@ func detachedConversationRenderWindowRetainsReadMessagesWhenTheTailAdvances(budg
     #expect(store.syncSnapshot == nil)
     store.activateSyncProjection(for: store.endpoint, decodedSnapshot: current, decodedData: currentData)
     #expect(store.syncSnapshot?.state.projects.first?.name == "new")
+}
+
+@Test(arguments: [false, true])
+func completedConversationPagingPinsTheWindowWhileKeepingLargeMessageOverlap(oversized: Bool) {
+    var part = Dieter_V1_MessagePart()
+    part.type = "text"
+    part.text = String(repeating: "x", count: oversized ? 9_000 : 1)
+    let messages = (0..<500).map { index in
+        var message = Dieter_V1_UiMessage()
+        message.id = "message-\(index)"
+        message.parts = [part]
+        return message
+    }
+    for position in [ConversationRenderWindow.Position.pagingEarlier(from: 498), .pagingLater(from: 498)] {
+        let renderedRange = ConversationRenderWindow.range(messages: messages, position: position)
+        let pinned = position.afterUserScroll(isAtLatest: false, renderedRange: renderedRange)
+        #expect(ConversationRenderWindow.range(messages: messages, position: pinned) == renderedRange)
+        #expect(renderedRange.contains(498))
+        #expect(renderedRange.count >= 2)
+        let growing = messages + Array(messages.suffix(3))
+        #expect(
+            ConversationRenderWindow.range(messages: growing, position: pinned).lowerBound == renderedRange.lowerBound)
+        #expect(pinned.afterUserScroll(isAtLatest: true, renderedRange: renderedRange) == .latest)
+    }
 }
