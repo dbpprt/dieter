@@ -23,7 +23,7 @@ import Testing
 }
 
 @Test(arguments: [CGFloat(1024), 1200]) @MainActor
-func boardConversationUsesANativeSidebarAndRestoresItsDraftAndWidth(preferredWidth: CGFloat) async {
+func boardConversationUsesABorderlessNativePaneAndRestoresItsDraftAndWidth(preferredWidth: CGFloat) async {
     let suite = "BoardConversationOverlayTests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -59,7 +59,7 @@ func boardConversationUsesANativeSidebarAndRestoresItsDraftAndWidth(preferredWid
     let host = controller.inspector.conversationHost
     #expect(abs(controller.inspector.conversationFrame.width - 480) < 2)
     expectBoardBackgroundExtendsBehindSidebarWithoutOverlappingContent(controller.inspector)
-    #expect(controller.inspector.conversationItem.behavior == .sidebar)
+    #expect(controller.inspector.conversationItem.behavior == .default)
     #expect(!controller.inspector.splitView(split, canCollapseSubview: controller.inspector.boardBackground))
     #expect(!controller.inspector.splitView(split, canCollapseSubview: host))
     #expect(controller.inspector.splitViewItems.allSatisfy { !$0.canCollapseFromWindowResize })
@@ -341,19 +341,18 @@ private func expectBoardBackgroundExtendsBehindSidebarWithoutOverlappingContent(
     #expect(inspector.boardHost.userInterfaceLayoutDirection == NSApp.userInterfaceLayoutDirection)
     #expect(inspector.conversationHost.userInterfaceLayoutDirection == NSApp.userInterfaceLayoutDirection)
     #expect(!background.automaticallyPlacesContentView)
-    // Only the reflected background extends under the floating native sidebar.
-    // The Kanban host occupies the remaining safe area and keeps normal input.
-    #expect(abs(backgroundFrame.maxX - split.bounds.maxX) < 2)
-    #expect(backgroundFrame.maxX > boardFrame.maxX + 300)
+    // A regular conversation pane has no floating sidebar outline or overlap.
+    // The Kanban host occupies its complete safe area and keeps normal input.
+    #expect(abs(backgroundFrame.maxX - boardFrame.maxX) < 2)
     #expect(abs(boardFrame.minX - safeFrame.minX) < 2)
     #expect(abs(boardFrame.width - safeFrame.width) < 2)
     #expect(abs(boardFrame.maxX - sidebarFrame.minX) < 2)
     #expect(boardFrame.maxX <= chatFrame.minX)
     #expect(chatFrame.maxX <= sidebarFrame.maxX)
     #expect(abs(boardFrame.width + sidebarFrame.width - split.bounds.width) < 2)
-    #expect(background.safeAreaInsets.right >= sidebarFrame.width - 2)
+    #expect(background.safeAreaInsets.right == 0)
     if let nativeSplit = split as? BoardConversationSplitView {
         #expect(abs(nativeSplit.dividerTrackingRect.minX - sidebarFrame.minX) < 1)
-        #expect(nativeSplit.dividerTrackingRect.maxX < backgroundFrame.maxX)
+        #expect(abs(nativeSplit.dividerTrackingRect.minX - backgroundFrame.maxX) < 2)
     }
 }

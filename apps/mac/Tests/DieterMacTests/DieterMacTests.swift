@@ -1080,6 +1080,15 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(ConversationScrollBehavior.isAtLatest(visibleMaxY: 999, contentHeight: 1_000))
     #expect(!ConversationScrollBehavior.isAtLatest(visibleMaxY: 950, contentHeight: 1_000))
     #expect(
+        ConversationScrollBehavior.isAtLatest(
+            visibleMaxY: 1_828, contentHeight: 1_730, bottomInset: 98))
+    #expect(
+        !ConversationScrollBehavior.isAtLatest(
+            visibleMaxY: 1_828, contentHeight: 1_730, bottomInset: 159))
+    #expect(
+        ConversationScrollBehavior.isAtLatest(
+            visibleMaxY: 1_889, contentHeight: 1_730, bottomInset: 159))
+    #expect(
         !ConversationScrollBehavior.isAtLatest(
             visibleMaxY: 1_000,
             contentHeight: 1_000,

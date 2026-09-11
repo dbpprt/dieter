@@ -86,14 +86,19 @@ struct ConversationView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if tab == "Conversation" {
-                if let card, canStartCard || startingCard {
-                    ConversationStartCardBanner(card: card, starting: startingCard)
-                }
-                ConversationComposer(background: compact ? .clear : DieterTheme.sidebar) {
-                    guard !conversationID.isEmpty else { return }
-                    fileImportRequest = ConversationFileImportRequest(conversationID: conversationID)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if tab == "Conversation" {
+                    // Let the transcript scroll behind the glass while its
+                    // bottom anchor stays above the composer's measured height.
+                    VStack(spacing: 0) {
+                        if let card, canStartCard || startingCard {
+                            ConversationStartCardBanner(card: card, starting: startingCard)
+                        }
+                        ConversationComposer(background: .clear) {
+                            guard !conversationID.isEmpty else { return }
+                            fileImportRequest = ConversationFileImportRequest(conversationID: conversationID)
+                        }
+                    }
                 }
             }
         }

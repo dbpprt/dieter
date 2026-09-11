@@ -3,24 +3,6 @@ import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum ConversationWindowAnchor: Equatable {
-    case earlier(messageID: String)
-    case later(messageID: String)
-
-    var messageID: String {
-        switch self {
-        case .earlier(let messageID), .later(let messageID): messageID
-        }
-    }
-
-    var edge: UnitPoint {
-        switch self {
-        case .earlier: .top
-        case .later: .bottom
-        }
-    }
-}
-
 struct ConversationTimelineRow: View {
     @Environment(ConversationContext.self) private var context
     let item: ConversationTimelineItem
@@ -82,6 +64,10 @@ struct ConversationTimeline: View {
     // The native sidebar supplies its own adaptive glass behind the transcript.
     var background: Color = DieterTheme.background
     @State private var historyLoadInFlight = false
+    @State private var loadingEarlier = true
+    @State private var contentCanScroll = true
+    @State private var blockedHistoryEdge: Bool?
+    @State private var restoringOffset: CGFloat?
     @State private var isAtRenderedEnd = true
     @State private var userScrollInProgress = false
     @State private var viewportMode = ConversationViewportMode.awaitingInitial(conversationID: "")
@@ -90,13 +76,15 @@ struct ConversationTimeline: View {
     @State private var projection = ConversationTimelineProjection.empty
     @State private var projectionConversationID = ""
     @State private var renderWindowPosition = ConversationRenderWindow.Position.latest
-    @State private var pendingWindowAnchor: ConversationWindowAnchor?
+    @State private var pendingWindowAnchor: ConversationScrollAnchorController.Anchor?
+    @State private var scrollAnchors = ConversationScrollAnchorController()
+    @State private var windowChangeInFlight = false
+    @State private var historyRequestID: UUID?
     @State private var tailScrollRequest = 0
     @State private var jumpToLatestHovered = false
 
     private var messages: [Dieter_V1_UiMessage] { context.conversationMessages }
     private var liveMessages: [Dieter_V1_UiMessage] { context.liveActivityMessages }
-    private var timelineItems: [ConversationTimelineItem] { projection.items }
     private var plans: [Dieter_V1_TaskPlan] { context.conversation?.conversation.taskPlans ?? [] }
     private var subagents: [Dieter_V1_Subagent] { context.conversation?.conversation.subagents ?? [] }
     private var queuedMessages: [Dieter_V1_QueuedMessage] {
@@ -167,50 +155,12 @@ struct ConversationTimeline: View {
                 // anchor-translation cycle that can trap AttributeGraph in one
                 // transaction indefinitely.
                 VStack(alignment: .leading, spacing: 15) {
-                    if context.model.browsingEarlierHistory {
-                        HStack {
-                            Text("Viewing earlier history")
-                            Spacer()
-                            Button("Return to latest") { context.model.returnToLatest() }
-                        }
-                        .font(.caption)
-                        .accessibilityIdentifier("conversation.history-window")
-                    }
                     if projectionConversationID != conversationID && !messages.isEmpty {
                         LoadFeedback(title: "Preparing conversation…", compact: true)
                             .accessibilityIdentifier("conversation.preparing")
                     }
-                    if renderRange.lowerBound > 0 {
-                        Button("Show earlier messages") {
-                            showEarlierMessages()
-                        }
-                        .buttonStyle(.borderless)
-                        .frame(maxWidth: .infinity)
-                        .onScrollVisibilityChange(threshold: 0.8) { visible in
-                            if visible, userScrollInProgress, viewportMode == .detached { showEarlierMessages() }
-                        }
-                    } else if context.conversationHistoryLoading {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Loading earlier messages…")
-                                .font(.caption)
-                                .foregroundStyle(DieterTheme.tertiary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .id("conversation.history-loading")
-                    } else if context.conversationHistoryHasMore {
-                        Button(
-                            "Load earlier messages · \(messages.count) of \(context.conversationHistoryTotal)"
-                        ) {
-                            loadEarlierHistory()
-                        }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                        .foregroundStyle(DieterTheme.tertiary)
-                        .frame(maxWidth: .infinity)
-                        .onScrollVisibilityChange(threshold: 0.8) { visible in
-                            if visible, userScrollInProgress, viewportMode == .detached { loadEarlierHistory() }
-                        }
+                    if renderRange.lowerBound > 0 || context.conversationHistoryHasMore {
+                        historyEdge(loading: historyLoadInFlight && loadingEarlier, earlier: true)
                     }
 
                     if messages.isEmpty && !agentIsWorking {
@@ -225,9 +175,15 @@ struct ConversationTimeline: View {
                         ConversationTimelineDisplayGroupView(
                             group: group, showReasoning: context.showReasoning,
                             isLatest: !context.model.browsingEarlierHistory && renderRange.upperBound == messages.count
-                                && group.id == timelineGroups.last?.id
+                                && group.id == timelineGroups.last?.id,
+                            scrollAnchors: scrollAnchors
                         )
                         .id(group.id)
+                        .background {
+                            ConversationScrollAnchorProbe(
+                                controller: scrollAnchors,
+                                messageIDs: group.rows.flatMap(\.item.messages).map(\.id))
+                        }
                     }
 
                     ForEach(projection.unattachedPlans, id: \.id) {
@@ -275,17 +231,8 @@ struct ConversationTimeline: View {
                         )
                         .id("conversation.turn-failure")
                     }
-                    if renderRange.upperBound < messages.count {
-                        Button("Show later messages") {
-                            showLaterMessages()
-                        }
-                        .buttonStyle(.borderless)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityIdentifier("conversation.show-later")
-                        .smokeTarget("conversation.show-later")
-                        .onScrollVisibilityChange(threshold: 0.8) { visible in
-                            if visible, userScrollInProgress, viewportMode == .detached { showLaterMessages() }
-                        }
+                    if renderRange.upperBound < messages.count || context.model.browsingEarlierHistory {
+                        historyEdge(loading: historyLoadInFlight && !loadingEarlier, earlier: false)
                     }
                     Color.clear.frame(height: 17).id(ConversationScrollBehavior.bottomID)
                 }
@@ -294,19 +241,31 @@ struct ConversationTimeline: View {
             // Growing messages must not move the reading position after a user
             // scrolls away. Live following is driven explicitly by tail requests.
             .defaultScrollAnchor(.top, for: .sizeChanges)
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
             .textSelection(.enabled)
             .background(background)
+            .background {
+                ConversationScrollIntentProbe(controller: scrollAnchors, onScrollIntent: handleUserScrollIntent)
+            }
             .smokeTarget("conversation.viewport")
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                ConversationScrollBehavior.isAtLatest(
-                    visibleMaxY: geometry.visibleRect.maxY,
-                    contentHeight: geometry.contentSize.height
-                )
-            } action: { _, atLatest in
-                isAtRenderedEnd = atLatest
+            .onScrollGeometryChange(for: ConversationScrollSample.self) { geometry in
+                ConversationScrollSample(geometry)
+            } action: { previous, current in
+                isAtRenderedEnd = current.atEnd
+                contentCanScroll = current.canScroll
+                if let restoringOffset {
+                    if abs(current.offset - restoringOffset) < 2 { self.restoringOffset = nil }
+                    return
+                }
+                guard !windowChangeInFlight, !historyLoadInFlight else { return }
                 if userScrollInProgress {
                     updateViewportAfterUserScroll()
-                } else if !atLatest, ConversationScrollBehavior.followsLatest(viewportMode) {
+                    if current.offset < previous.offset, current.nearStart {
+                        showEarlierMessages()
+                    } else if current.offset > previous.offset, current.nearEnd {
+                        showLaterMessages()
+                    }
+                } else if !current.atEnd, ConversationScrollBehavior.followsLatest(viewportMode) {
                     requestTailScroll()
                 }
             }
@@ -314,6 +273,8 @@ struct ConversationTimeline: View {
                 let wasUserDriven = ConversationScrollBehavior.isUserDriven(oldPhase)
                 let isUserDriven = ConversationScrollBehavior.isUserDriven(newPhase)
                 userScrollInProgress = isUserDriven
+                if !isUserDriven || !wasUserDriven { restoringOffset = nil }
+                guard !windowChangeInFlight, !historyLoadInFlight else { return }
                 if isUserDriven, !isAtLatest {
                     updateViewportAfterUserScroll()
                 } else if wasUserDriven, !isUserDriven {
@@ -323,7 +284,7 @@ struct ConversationTimeline: View {
             .overlay(alignment: .bottom) {
                 if showsJumpToLatest {
                     Button {
-                        viewportMode = .followingLatest
+                        returnToLatest()
                         scrollToLatest(proxy)
                         requestTailScroll()
                     } label: {
@@ -331,9 +292,7 @@ struct ConversationTimeline: View {
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 13)
                             .frame(height: 34)
-                            .background(DieterTheme.elevated, in: Capsule())
-                            .overlay(Capsule().stroke(DieterTheme.border))
-                            .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                            .glassEffect(.regular.interactive(), in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 12)
@@ -365,6 +324,11 @@ struct ConversationTimeline: View {
                 renderWindowPosition = .latest
                 pendingWindowAnchor = nil
                 historyLoadInFlight = false
+                windowChangeInFlight = false
+                historyRequestID = nil
+                blockedHistoryEdge = nil
+                restoringOffset = nil
+                contentCanScroll = true
                 projection = .empty
                 projectionConversationID = ""
                 viewportMode = .awaitingInitial(conversationID: selectedID)
@@ -404,19 +368,19 @@ struct ConversationTimeline: View {
                 else { return }
                 projection = next
                 projectionConversationID = key.conversationID
-                if let request = pendingWindowAnchor {
+                if windowChangeInFlight {
+                    let anchor = pendingWindowAnchor
                     renderWindowPosition = renderWindowPosition.afterUserScroll(
                         isAtLatest: false, renderedRange: range)
-                    pendingWindowAnchor = nil
-                    guard
-                        let anchor = ConversationScrollBehavior.anchorItem(
-                            containing: request.messageID,
-                            in: next.items
-                        )
-                    else { return }
                     await Task.yield()
                     guard key == projectionKey, key.conversationID == conversationID else { return }
-                    proxy.scrollTo(anchor, anchor: request.edge)
+                    if let anchor, scrollAnchors.restore(anchor) {
+                        restoringOffset = scrollAnchors.lastRestoredOffset
+                    }
+                    await Task.yield()
+                    guard key == projectionKey, key.conversationID == conversationID else { return }
+                    pendingWindowAnchor = nil
+                    windowChangeInFlight = false
                 }
                 if ConversationScrollBehavior.followsLatest(viewportMode) {
                     requestTailScroll()
@@ -454,12 +418,15 @@ struct ConversationTimeline: View {
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy) {
-        renderWindowPosition = .latest
-        pendingWindowAnchor = nil
         proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom)
     }
 
     private func updateViewportAfterUserScroll() {
+        guard !windowChangeInFlight, !historyLoadInFlight else { return }
+        if isAtLatest {
+            returnToLatest()
+            return
+        }
         viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: isAtLatest)
         renderWindowPosition = renderWindowPosition.afterUserScroll(
             isAtLatest: isAtLatest, renderedRange: renderRange)
@@ -469,49 +436,138 @@ struct ConversationTimeline: View {
         tailScrollRequest &+= 1
     }
 
-    private func showEarlierMessages() {
-        guard pendingWindowAnchor == nil, !historyLoadInFlight,
-            let anchorMessageID = timelineItems.first?.messages.first?.id,
-            let anchorIndex = messages.firstIndex(where: { $0.id == anchorMessageID })
-        else { return }
-        let nextPosition = ConversationRenderWindow.Position.pagingEarlier(from: anchorIndex)
-        guard ConversationRenderWindow.range(messages: messages, position: nextPosition) != renderRange else { return }
-        viewportMode = .detached
-        pendingWindowAnchor = .earlier(messageID: anchorMessageID)
-        renderWindowPosition = nextPosition
+    private func returnToLatest() {
+        historyRequestID = nil
+        historyLoadInFlight = false
+        blockedHistoryEdge = nil
+        restoringOffset = nil
+        pendingWindowAnchor = nil
+        windowChangeInFlight = false
+        viewportMode = .followingLatest
+        renderWindowPosition = .latest
+        // Release pages collected during scrollback and rejoin the live window,
+        // including after the bounded history cache has evicted its newer end.
+        context.model.returnToLatest()
+        requestTailScroll()
     }
 
-    private func showLaterMessages() {
-        guard pendingWindowAnchor == nil, !historyLoadInFlight,
-            let anchorMessageID = timelineItems.last?.messages.last?.id,
-            let anchorIndex = messages.firstIndex(where: { $0.id == anchorMessageID })
-        else { return }
-        let nextPosition = ConversationRenderWindow.Position.pagingLater(from: anchorIndex)
-        guard ConversationRenderWindow.range(messages: messages, position: nextPosition) != renderRange else { return }
-        viewportMode = .detached
-        pendingWindowAnchor = .later(messageID: anchorMessageID)
-        renderWindowPosition = nextPosition
+    private func historyEdge(loading: Bool, earlier: Bool) -> some View {
+        HStack(spacing: 8) {
+            if loading {
+                ProgressView().controlSize(.small)
+                Text(earlier ? "Loading earlier messages…" : "Loading later messages…")
+                    .font(.caption).foregroundStyle(DieterTheme.tertiary)
+            } else if !contentCanScroll || blockedHistoryEdge == earlier {
+                // A collapsed activity group or hidden reasoning may not be
+                // tall enough to scroll. Keep that history reachable as well.
+                Button(earlier ? "Load earlier messages" : "Load later messages") {
+                    if earlier {
+                        showEarlierMessages(preservingPosition: false)
+                    } else {
+                        showLaterMessages(preservingPosition: false)
+                    }
+                }
+                .buttonStyle(.borderless).font(.caption)
+            } else {
+                Color.clear
+            }
+        }
+        .frame(maxWidth: .infinity).frame(height: 18)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(earlier ? "conversation.history.earlier" : "conversation.history.later")
+        .smokeTarget(earlier ? "conversation.history.earlier" : "conversation.history.later")
+        .accessibilityLabel(earlier ? "Earlier conversation history" : "Later conversation history")
+        .accessibilityAction(named: earlier ? "Load earlier messages" : "Load later messages") {
+            if earlier {
+                showEarlierMessages(preservingPosition: false)
+            } else {
+                showLaterMessages(preservingPosition: false)
+            }
+        }
     }
 
-    private func loadEarlierHistory() {
-        guard !historyLoadInFlight, pendingWindowAnchor == nil else { return }
+    private func handleUserScrollIntent(_ delta: CGFloat) {
+        guard !windowChangeInFlight, !historyLoadInFlight else { return }
+        let earlier = delta > 0
+        guard scrollAnchors.isAtEdge(earlier: earlier) else { return }
+        restoringOffset = nil
+        if earlier {
+            showEarlierMessages()
+        } else if renderRange.upperBound == messages.count, !context.model.browsingEarlierHistory {
+            returnToLatest()
+        } else {
+            showLaterMessages()
+        }
+    }
+
+    private func showEarlierMessages(preservingPosition: Bool = true) {
+        guard !windowChangeInFlight, !historyLoadInFlight else { return }
+        if renderRange.lowerBound == 0 {
+            if context.conversationHistoryHasMore { loadHistory(earlier: true) }
+            return
+        }
+        moveRenderWindow(earlier: true, preservingPosition: preservingPosition)
+    }
+
+    private func showLaterMessages(preservingPosition: Bool = true) {
+        guard !windowChangeInFlight, !historyLoadInFlight else { return }
+        if renderRange.upperBound == messages.count {
+            if context.model.browsingEarlierHistory { loadHistory(earlier: false) }
+            return
+        }
+        moveRenderWindow(earlier: false, preservingPosition: preservingPosition)
+    }
+
+    private func moveRenderWindow(earlier: Bool, preservingPosition: Bool) {
+        let anchor = preservingPosition ? scrollAnchors.capture(preferBottom: !earlier) : nil
+        let fallback = earlier ? renderRange.lowerBound : max(renderRange.lowerBound, renderRange.upperBound - 1)
+        let index = fallback
+        let next: ConversationRenderWindow.Position = earlier ? .pagingEarlier(from: index) : .pagingLater(from: index)
+        let nextRange = ConversationRenderWindow.range(messages: messages, position: next)
+        guard earlier ? nextRange.lowerBound < renderRange.lowerBound : nextRange.upperBound > renderRange.upperBound
+        else { return }
+        if let anchor, !messages[nextRange].contains(where: { $0.id == anchor.messageID }) {
+            // Wait until the reader reaches the retained overlap instead of
+            // evicting a partly visible oversized message. A fallback remains
+            // available when hidden messages make that overlap unreachable.
+            blockedHistoryEdge = earlier
+            return
+        }
+        blockedHistoryEdge = nil
+        viewportMode = .detached
+        pendingWindowAnchor = anchor
+        windowChangeInFlight = true
+        renderWindowPosition = next
+    }
+
+    private func loadHistory(earlier: Bool) {
+        guard !historyLoadInFlight, !windowChangeInFlight else { return }
+        let requestID = UUID()
+        historyRequestID = requestID
         historyLoadInFlight = true
+        loadingEarlier = earlier
+        blockedHistoryEdge = nil
         viewportMode = .detached
-        // Anchor by message id, not timeline-item id: prepending a page can
-        // merge the current first item into a differently-identified tool
-        // group, and a missed scroll restore leaves the viewport at offset
-        // zero, which would chain-load the entire history.
-        let anchorMessageID = timelineItems.first?.messages.first?.id
+        let selectedID = conversationID
+        let anchor = scrollAnchors.capture(preferBottom: !earlier)
+        let fallbackID = earlier ? messages.first?.id : messages.last?.id
         Task { @MainActor in
-            let loaded = await context.loadEarlierMessages()
+            let loaded = earlier ? await context.loadEarlierMessages() : await context.model.loadLaterMessages()
+            guard historyRequestID == requestID, selectedID == conversationID else { return }
+            historyRequestID = nil
             if loaded {
-                if let anchorMessageID,
-                    let anchorIndex = messages.firstIndex(where: { $0.id == anchorMessageID })
-                {
-                    pendingWindowAnchor = .earlier(messageID: anchorMessageID)
-                    renderWindowPosition = .pagingEarlier(from: anchorIndex)
+                // The user may keep scrolling during the network request. The
+                // old projection is still mounted here; retain its current
+                // visible point rather than restoring the request's old offset.
+                let anchor = scrollAnchors.capture(preferBottom: !earlier) ?? anchor
+                let anchorID = anchor?.messageID ?? fallbackID
+                let index = anchorID.flatMap { id in messages.firstIndex { $0.id == id } }
+                pendingWindowAnchor = anchor
+                windowChangeInFlight = true
+                if let index {
+                    renderWindowPosition = earlier ? .pagingEarlier(from: index) : .pagingLater(from: index)
                 } else {
-                    renderWindowPosition = .startingAt(0)
+                    renderWindowPosition = earlier ? .startingAt(0) : .latest
                 }
             }
             historyLoadInFlight = false

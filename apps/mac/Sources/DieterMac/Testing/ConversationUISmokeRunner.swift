@@ -526,7 +526,7 @@
             store.conversation = snapshot
             let secondGrowthPresented = await NativeUIAccessibility.wait {
                 nativeTextViews(in: window.contentView).contains { $0.string.contains("Second streamed model answer") }
-                    || NativeUIAccessibility.find("conversation.show-later", in: window) != nil
+                    || NativeUIAccessibility.find("conversation.history.later", in: window) != nil
             }
             try? await DieterTaskSleep.milliseconds(800)
             let updatedReadingOffset = streamedConversationScrollView(window)?.documentVisibleRect.origin.y
@@ -2271,6 +2271,13 @@
                         progress(
                             "Wheel window=\(event.windowNumber), point=\(event.locationInWindow), phase=\(event.phase.rawValue), delta=\(event.scrollingDeltaY), clip=\(scroll.documentVisibleRect)",
                             in: outputDirectory())
+                    }
+                    // Direct native delivery bypasses the application's local
+                    // event monitors. Exercise the transcript's edge intent too.
+                    var pending = [content]
+                    while let view = pending.popLast() {
+                        (view as? ConversationScrollIntentProbe.MonitorView)?.handleScrollEvent(event)
+                        pending.append(contentsOf: view.subviews)
                     }
                     scroll.scrollWheel(with: event)
                 }

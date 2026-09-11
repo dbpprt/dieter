@@ -26,8 +26,8 @@ enum BoardConversationSizing {
     }
 }
 
-/// A native trailing sidebar sits beside the board. Both hosting views
-/// survive resize/maximize/restore, retaining the draft and transcript viewport.
+/// A native conversation pane sits beside the board with a thin resize divider.
+/// Both hosting views survive resize/maximize/restore, retaining the draft and transcript viewport.
 struct BoardConversationOverlay: NSViewControllerRepresentable {
     let board: AnyView
     let conversation: AnyView
@@ -106,13 +106,11 @@ final class BoardConversationSplitController: NSSplitViewController {
     private(set) var presented = false
     private(set) var maximized = false
 
-    // A logical leading sidebar gets AppKit's background extension behavior.
-    // Only the split's direction is mirrored, placing that sidebar on the right.
+    // Mirror only the split so its first, width-controlled item sits on the right.
     var conversationItem: NSSplitViewItem { splitViewItems[0] }
     var boardItem: NSSplitViewItem { splitViewItems[1] }
 
-    // Native sidebars inset their content inside the split item. Persist and
-    // compare the entire pane, so repeated restore does not subtract its chrome.
+    // Persist and compare the entire pane throughout resize and restore.
     var conversationFrame: CGRect {
         guard splitView.arrangedSubviews.count == 2 else { return .zero }
         return splitView.arrangedSubviews[0].frame
@@ -138,8 +136,7 @@ final class BoardConversationSplitController: NSSplitViewController {
         boardHost.userInterfaceLayoutDirection = contentDirection
         boardBackground.userInterfaceLayoutDirection = contentDirection
         conversationHost.userInterfaceLayoutDirection = contentDirection
-        // AppKit mirrors and blurs the board's edges underneath the floating
-        // sidebar. Its real, interactive content stays inside the safe area.
+        // Keep the board's interactive content inside its native safe area.
         boardBackground.automaticallyPlacesContentView = false
         boardBackground.contentView = boardHost
         boardHost.translatesAutoresizingMaskIntoConstraints = false
@@ -164,7 +161,9 @@ final class BoardConversationSplitController: NSSplitViewController {
         board.canCollapseFromWindowResize = false
         board.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
         board.holdingPriority = NSLayoutConstraint.Priority(200)
-        let conversation = NSSplitViewItem(sidebarWithViewController: conversationController)
+        // Sidebar items add a rounded glass outline. A regular item keeps the
+        // conversation flush with the board while retaining native resizing.
+        let conversation = NSSplitViewItem(viewController: conversationController)
         conversation.minimumThickness = BoardConversationSizing.minimumWidth
         conversation.maximumThickness = BoardConversationSizing.maximumWidth
         conversation.canCollapse = false
@@ -208,8 +207,7 @@ final class BoardConversationSplitController: NSSplitViewController {
         self.presented = presented
         self.maximized = maximized
         (splitView as? BoardConversationSplitView)?.maximized = maximized
-        // A collapsed content item must stop extending behind its sibling so
-        // AppKit can give the maximized conversation the entire split width.
+        // Let AppKit give the maximized conversation the entire split width.
         boardItem.automaticallyAdjustsSafeAreaInsets = !maximized
         if maximized {
             conversationItem.maximumThickness = 1_000_000
@@ -219,9 +217,8 @@ final class BoardConversationSplitController: NSSplitViewController {
             updateMaximumThickness()
         }
         if presented, !maximized {
-            // AppKit can retain a zero-width overlay constraint after revealing
-            // a mirrored sidebar or restoring the extended content item. Reset
-            // that native constraint by reinserting the same item and host.
+            // Reset collapsed layout constraints while retaining the same host
+            // and its draft and transcript state.
             let conversation = conversationItem
             removeSplitViewItem(conversation)
             conversation.isCollapsed = false
@@ -287,8 +284,7 @@ final class BoardConversationSplitView: NSSplitView {
         guard !maximized, arrangedSubviews.count == 2,
             !isSubviewCollapsed(arrangedSubviews[0])
         else { return .zero }
-        // The board's background extends beneath the sidebar. Track the
-        // physically right sidebar edge, not the background's full width.
+        // Track the leading edge of the physically right conversation pane.
         return CGRect(
             x: arrangedSubviews[0].frame.minX, y: bounds.minY,
             width: dividerThickness, height: bounds.height)

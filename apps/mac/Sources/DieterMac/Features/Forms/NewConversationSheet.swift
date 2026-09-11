@@ -23,6 +23,7 @@ struct NewConversationSheet: View {
     @State private var destinationHarnesses: [Dieter_V1_Harness] = []
     @State private var harnessCatalogLoading = false
     @State private var harnessCatalogError: String?
+    @State private var draftInitialized = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case title, prompt }
@@ -39,247 +40,270 @@ struct NewConversationSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("BOARD  /  AGENT WORKSPACE")
-                        .font(DieterFont.sectionLabel).tracking(1.4)
-                        .foregroundStyle(DieterTheme.tertiary)
-                    Text("New conversation").font(.system(size: 20, weight: .semibold))
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("New card").font(.title2.weight(.semibold))
+                    Text("\(project?.name ?? "Project") · \(store.selectedBoard?.name ?? "Board")")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
-                }
-                .buttonStyle(DieterIconButtonStyle()).help("Close")
             }
-            .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 15)
+            .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 8)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 17) {
-                    newCardLabel("Conversation title")
-                    TextField("What should this agent accomplish?", text: $title)
-                        .textFieldStyle(.plain).font(.system(size: 15, weight: .medium))
+            Form {
+                Section {
+                    TextField("Title", text: $title, prompt: Text("A short name for this task"))
+                        .textFieldStyle(.roundedBorder)
                         .focused($focusedField, equals: .title)
-                        .padding(.horizontal, 14).frame(height: 46)
-                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10).stroke(
-                                focusedField == .title
-                                    ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
-                                lineWidth: focusedField == .title ? 2 : 1)
-                        )
+                        .onSubmit { focusedField = .prompt }
                         .accessibilityIdentifier("new-card.title")
+                        .smokeTarget("new-card.title")
 
-                    newCardLabel("Initial task")
-                    TextField(
-                        "Give the agent a concrete outcome, context, and acceptance criteria…", text: $prompt,
-                        axis: .vertical
-                    )
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14)).lineSpacing(3).lineLimit(1...7)
-                    .focused($focusedField, equals: .prompt)
-                    .padding(.horizontal, 13).padding(.vertical, 14)
-                    .frame(height: 135, alignment: .topLeading)
-                    .background {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(
-                                attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input
-                            )
-                            .contentShape(RoundedRectangle(cornerRadius: 10))
-                            .onTapGesture { focusedField = .prompt }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Task")
+                            Text("Optional").foregroundStyle(.tertiary)
+                        }
+                        taskEditor
+                        HStack(spacing: 10) {
+                            Button {
+                                fileImporterPresented = true
+                            } label: {
+                                Label("Attach files…", systemImage: "paperclip")
+                            }
+                            .buttonStyle(.bordered).controlSize(.small)
+                            .help("Attach up to 4 files, or drop files and paste images into the task")
+                            .accessibilityIdentifier("new-card.attach")
+                            .smokeTarget("new-card.attach")
+                            Spacer()
+                            Text("4 files · 6 MB total").font(.caption).foregroundStyle(.secondary)
+                        }
+                        if !attachments.isEmpty {
+                            AttachmentPreviewStrip(attachments: $attachments)
+                        }
                     }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10).stroke(
-                            attachmentDropTargeted
-                                ? DieterTheme.shell
-                                : (focusedField == .prompt
-                                    ? DieterTheme.shellDeep.opacity(0.72) : DieterTheme.strongBorder),
-                            lineWidth: attachmentDropTargeted || focusedField == .prompt ? 1.5 : 1
+                }
+
+                Section {
+                    Picker("Start in", selection: $lane) {
+                        ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { item in
+                            Text(item.name).tag(item.id)
+                        }
+                    }
+                    .accessibilityIdentifier("new-card.lane")
+                    .smokeTarget("new-card.lane")
+                    LabeledContent("Workspace") {
+                        Picker("Workspace", selection: $workspaceDraft.mode) {
+                            Text("New worktree").tag(ConversationWorkspaceMode.worktree)
+                            Text("Project folder").tag(ConversationWorkspaceMode.project)
+                        }
+                        .labelsHidden()
+                        .accessibilityIdentifier("new-card.workspace-mode")
+                        Button("Options…") { workspacePickerPresented = true }
+                            .controlSize(.small)
+                            .accessibilityIdentifier("new-card.workspace")
+                            .smokeTarget("new-card.workspace")
+                            .help("Configure the branch, base and publishing options")
+                    }
+                    .help(workspaceDraft.mode.detail)
+
+                    if harnessCatalogLoading {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading available models…").foregroundStyle(.secondary)
+                        }
+                        .accessibilityIdentifier("new-card.harness-loading")
+                    } else if let harnessCatalogError {
+                        HStack(alignment: .top) {
+                            Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                            Button("Retry") { Task { await loadDestinationHarnesses() } }
+                                .accessibilityIdentifier("new-card.harness-retry")
+                        }
+                        .accessibilityIdentifier("new-card.harness-error")
+                    } else {
+                        Picker("Provider", selection: providerSelection) {
+                            ForEach(destinationHarnesses, id: \.id) { item in
+                                Text(item.name).tag(item.id)
+                            }
+                        }
+                        .disabled(destinationHarnesses.count < 2)
+                        .accessibilityIdentifier("new-card.provider")
+                        .smokeTarget("new-card.provider")
+                        Picker("Model", selection: modelSelection) {
+                            if harness?.models.isEmpty != false { Text("Provider default").tag("") }
+                            ForEach(harness?.models ?? [], id: \.id) { item in
+                                Text(item.name).tag(item.id)
+                            }
+                        }
+                        .disabled(harness?.models.isEmpty != false)
+                        .accessibilityIdentifier("new-card.model")
+                        .smokeTarget("new-card.model")
+                        if let efforts = selectedModel?.efforts, !efforts.isEmpty {
+                            Picker("Reasoning", selection: $effort) {
+                                Text("Default").tag("")
+                                ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
+                            }
+                            .accessibilityIdentifier("new-card.reasoning")
+                            .smokeTarget("new-card.reasoning")
+                        }
+                        ProviderOptionFields(
+                            options: ProviderOptionValues.options(for: harness, model: model),
+                            values: $providerOptions
                         )
-                    )
-                    .accessibilityIdentifier("new-card.prompt")
-                    .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
-                        Task {
-                            do {
-                                attachments = try await store.attachmentParts(providers, appendingTo: attachments)
-                            } catch { store.show(error) }
-                        }
-                    }
-
-                    HStack(spacing: 9) {
-                        Button {
-                            fileImporterPresented = true
-                        } label: {
-                            Label("Attach images or files", systemImage: "paperclip")
-                        }
-                        .buttonStyle(DieterSecondaryButtonStyle())
-                        Text("or drop files above · paste an image with ⌘V · 4 files, 6 MB total")
-                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                    }
-                    if !attachments.isEmpty {
-                        AttachmentPreviewStrip(attachments: $attachments)
+                        .toggleStyle(.switch)
                     }
 
                     if let labels = store.selectedBoard?.labels, !labels.isEmpty {
-                        newCardLabel("Labels")
-                        DieterFlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
-                            ForEach(labels, id: \.id) { label in
-                                let selected = selectedLabelIDs.contains(label.id)
-                                let tint = Color(hex: label.color) ?? DieterTheme.shell
-                                Button {
-                                    if selected {
-                                        selectedLabelIDs.remove(label.id)
-                                    } else {
-                                        selectedLabelIDs.insert(label.id)
+                        LabeledContent("Labels") {
+                            DieterFlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
+                                ForEach(labels, id: \.id) { label in
+                                    Toggle(isOn: labelSelection(label.id)) {
+                                        HStack(spacing: 5) {
+                                            Circle().fill(Color(hex: label.color) ?? .accentColor)
+                                                .frame(width: 6, height: 6)
+                                            Text(label.name)
+                                        }
                                     }
-                                } label: {
-                                    HStack(spacing: 7) {
-                                        Image(systemName: selected ? "checkmark.square.fill" : "square")
-                                            .foregroundStyle(selected ? tint : DieterTheme.tertiary)
-                                        Circle().fill(tint).frame(width: 6, height: 6)
-                                        Text(label.name)
-                                    }
-                                    .font(.caption.weight(.medium)).foregroundStyle(
-                                        selected ? DieterTheme.text : DieterTheme.subtle
-                                    )
-                                    .padding(.horizontal, 9).frame(height: 28)
-                                    .background(tint.opacity(selected ? 0.17 : 0.08), in: Capsule())
-                                }.buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack(alignment: .top, spacing: 11) {
-                            newCardMenu(title: "Start in", value: laneTitle, symbol: "arrow.right.circle") {
-                                ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { item in
-                                    Button(item.name) { lane = item.id }
-                                }
-                            }
-                            newCardWorkspaceButton
-                            newCardMenu(
-                                title: "Provider", value: harness?.name ?? "Server default", symbol: "cpu"
-                            ) {
-                                ForEach(destinationHarnesses, id: \.id) { item in
-                                    Button(item.name) {
-                                        guard let selection = HarnessSelection(provider: item.id).resolved(in: [item])
-                                        else { return }
-                                        provider = selection.provider
-                                        model = selection.model
-                                        effort = selection.effort
-                                        providerOptions = selection.providerOptions
-                                    }
-                                }
-                            }
-                            newCardMenu(
-                                title: "Model", value: selectedModel?.name ?? "Agent default", symbol: "terminal"
-                            ) {
-                                ForEach(harness?.models ?? [], id: \.id) { item in
-                                    Button(item.name) {
-                                        model = item.id
-                                        effort = item.defaultEffort
-                                        providerOptions = ProviderOptionValues.normalized(
-                                            for: harness, model: model, saved: providerOptions)
-                                    }
-                                }
-                            }
-                            newCardMenu(
-                                title: "Reasoning", value: effort.isEmpty ? "Default" : effort.capitalized,
-                                symbol: "sparkles"
-                            ) {
-                                ForEach(selectedModel?.efforts ?? [], id: \.self) { value in
-                                    Button(value.capitalized) { effort = value }
+                                    .toggleStyle(.button).controlSize(.small)
+                                    .accessibilityIdentifier("new-card.label.\(label.id)")
                                 }
                             }
                         }
-                        Text(workspaceDraft.mode.detail)
-                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
-
-                    if !ProviderOptionValues.options(for: harness, model: model).isEmpty {
-                        HStack(spacing: 7) {
-                            ProviderOptionChips(
-                                options: ProviderOptionValues.options(for: harness, model: model),
-                                values: $providerOptions)
-                            Spacer()
-                        }
-                    }
-
-                    if harnessCatalogLoading {
-                        Label(
-                            "Loading models from this project's machine…",
-                            systemImage: "arrow.triangle.2.circlepath"
-                        )
-                        .font(.caption).foregroundStyle(DieterTheme.tertiary)
-                        .accessibilityIdentifier("new-card.harness-loading")
-                    } else if let harnessCatalogError {
-                        Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(DieterTheme.coral)
-                            .accessibilityIdentifier("new-card.harness-error")
-                    }
-
-                    HStack(spacing: 10) {
-                        Image(systemName: "lock").foregroundStyle(DieterTheme.shell)
-                        Text(
-                            "Dieter persists one local harness session and transcript for this card on \(store.endpoint.name)."
-                        )
-                        .font(.caption).foregroundStyle(DieterTheme.shell)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 13).frame(minHeight: 42)
-                    .background(DieterTheme.shellDeep.opacity(0.09), in: RoundedRectangle(cornerRadius: 9))
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.shellDeep.opacity(0.28)))
                 }
-                .padding(.horizontal, 24).padding(.bottom, 18)
             }
+            .formStyle(.grouped)
+            .pickerStyle(.menu)
+            .scrollContentBackground(.hidden)
+            .disabled(submitting)
 
-            Divider().overlay(DieterTheme.border)
+            Divider()
             HStack(spacing: 10) {
-                Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
-                Button {
+                Text(deferred ? "Saves a draft. Run it when you're ready." : "The agent will start right away.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if submitting { ProgressView().controlSize(.small) }
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(.glass)
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(submitting)
+                    .accessibilityIdentifier("new-card.cancel")
+                Button(deferred ? "Save to \(selectedLane?.name ?? "board")" : "Start task") {
                     Task { await submit() }
-                } label: {
-                    HStack(spacing: 7) {
-                        if submitting {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Image(systemName: "sparkles")
-                        }
-                        Text(
-                            deferred
-                                ? "Save to \(selectedLane?.name ?? "board")"
-                                : "Start in \(selectedLane?.name ?? "Running")")
-                    }
                 }
-                .buttonStyle(DieterPrimaryButtonStyle()).disabled(!canSubmit)
+                .buttonStyle(.glassProminent)
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("\(deferred ? "Save card" : "Start task") (⌘Return)")
+                .disabled(!canSubmit)
                 .accessibilityIdentifier("new-card.create")
+                .smokeTarget("new-card.create")
             }
-            .padding(.horizontal, 24).padding(.vertical, 14)
+            .padding(20)
         }
-        .frame(width: 700, height: 660)
-        .background(DieterTheme.background)
+        .frame(width: 600, height: 680)
+        .interactiveDismissDisabled(submitting)
         .sheet(isPresented: $workspacePickerPresented) {
-            ConversationWorkspacePickerSheet(
-                project: project,
-                draft: $workspaceDraft
-            )
+            ConversationWorkspacePickerSheet(project: project, draft: $workspaceDraft)
         }
-        .attachmentIntake(
-            store: store,
-            importerPresented: $fileImporterPresented,
-            attachments: $attachments
-        )
+        .attachmentIntake(store: store, importerPresented: $fileImporterPresented, attachments: $attachments)
         .task {
+            // Establish focus before the asynchronous catalog request; its
+            // completion must not take focus away from a task being edited.
+            if focusedField == nil { focusedField = .title }
+            initializeDraft()
             await loadDestinationHarnesses()
-            await Task.yield()
-            focusedField = .title
         }
     }
 
-    private func loadDestinationHarnesses() async {
+    private var taskEditor: some View {
+        TextEditor(text: $prompt)
+            .font(.body)
+            .focused($focusedField, equals: .prompt)
+            .onKeyPress(.tab, phases: .down) { event in
+                guard !event.modifiers.contains(.option) else { return .ignored }
+                if event.modifiers.contains(.shift) {
+                    NSApp.keyWindow?.selectPreviousKeyView(nil)
+                } else {
+                    NSApp.keyWindow?.selectNextKeyView(nil)
+                }
+                return .handled
+            }
+            .scrollContentBackground(.hidden)
+            .padding(6)
+            .frame(height: 96)
+            .background(.background, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(alignment: .topLeading) {
+                if prompt.isEmpty {
+                    Text("Describe the outcome, context, and anything the agent should know…")
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 11).padding(.vertical, 8)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(
+                        attachmentDropTargeted || focusedField == .prompt
+                            ? Color.accentColor : Color(nsColor: .separatorColor),
+                        lineWidth: attachmentDropTargeted || focusedField == .prompt ? 1.5 : 1
+                    )
+                    .allowsHitTesting(false)
+            }
+            .accessibilityLabel("Initial task")
+            .accessibilityIdentifier("new-card.prompt")
+            .smokeTarget("new-card.prompt")
+            .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                Task {
+                    do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) } catch {
+                        store.show(error)
+                    }
+                }
+            }
+    }
+
+    private var providerSelection: Binding<String> {
+        Binding(
+            get: { provider },
+            set: { id in
+                guard let item = destinationHarnesses.first(where: { $0.id == id }),
+                    let selection = HarnessSelection(provider: id).resolved(in: [item])
+                else { return }
+                provider = selection.provider
+                model = selection.model
+                effort =
+                    item.models.first(where: { $0.id == model })?.efforts.contains(selection.effort) == true
+                    ? selection.effort : ""
+                providerOptions = selection.providerOptions
+            })
+    }
+
+    private var modelSelection: Binding<String> {
+        Binding(
+            get: { model },
+            set: { id in
+                model = id
+                effort = harness?.models.first(where: { $0.id == id })?.defaultEffort ?? ""
+                providerOptions = ProviderOptionValues.normalized(for: harness, model: id, saved: providerOptions)
+            })
+    }
+
+    private func labelSelection(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedLabelIDs.contains(id) },
+            set: { selected in
+                if selected { selectedLabelIDs.insert(id) } else { selectedLabelIDs.remove(id) }
+            })
+    }
+
+    private func initializeDraft() {
+        guard !draftInitialized else { return }
+        draftInitialized = true
+        workspaceDraft.mode =
+            ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults()).workspaceMode
         if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
         if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
         if workspaceDraft.baseRemote.isEmpty {
@@ -289,7 +313,13 @@ struct NewConversationSheet: View {
         if let configured = store.selectedBoard?.remotePublishMode, !configured.isEmpty {
             workspaceDraft.remotePublishMode = configured
         }
-        guard let projectID = project?.id, !projectID.isEmpty else { return }
+    }
+
+    private func loadDestinationHarnesses() async {
+        guard let projectID = project?.id, !projectID.isEmpty else {
+            harnessCatalogError = "Choose a project before creating a card."
+            return
+        }
         harnessCatalogLoading = true
         harnessCatalogError = nil
         defer { harnessCatalogLoading = false }
@@ -298,6 +328,10 @@ struct NewConversationSheet: View {
         } catch {
             harnessCatalogError = DieterRPCFailure.message(for: error)
             destinationHarnesses = []
+            return
+        }
+        guard !destinationHarnesses.isEmpty else {
+            harnessCatalogError = "No providers are available on this project's machine."
             return
         }
         let initializing = provider.isEmpty
@@ -312,87 +346,14 @@ struct NewConversationSheet: View {
         let previousProvider = provider
         provider = selection.provider
         model = selection.model
-        effort = selection.effort
-        if initializing { workspaceDraft.mode = selection.workspaceMode }
-        providerOptions = ProviderOptionValues.resolved(
+        effort =
+            harness.models.first(where: { $0.id == model })?.efforts.contains(selection.effort) == true
+            ? selection.effort : ""
+        providerOptions = ProviderOptionValues.normalized(
             for: harness,
-            existing: previousProvider == selection.provider ? providerOptions : [:]
+            model: model,
+            saved: previousProvider == selection.provider ? providerOptions : [:]
         )
-    }
-
-    private var laneTitle: String {
-        let title = selectedLane?.name ?? "Todo"
-        return deferred ? "\(title) · draft" : "\(title) · starts agent"
-    }
-
-    private var newCardWorkspaceButton: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Workspace").font(.system(size: 11, weight: .semibold)).foregroundStyle(
-                DieterTheme.subtle)
-            Button {
-                workspacePickerPresented = true
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: workspaceChoice.symbol)
-                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.shell)
-                    Text(workspaceChoice.title).lineLimit(1)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 7, weight: .bold)).foregroundStyle(DieterTheme.tertiary)
-                }
-                .font(.system(size: 11, weight: .semibold)).foregroundStyle(DieterTheme.text)
-                .padding(.horizontal, 10).frame(height: 38)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
-                .contentShape(RoundedRectangle(cornerRadius: 8))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("new-card.workspace")
-            .smokeTarget("new-card.workspace")
-            .help("Choose where this agent should work")
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var workspaceChoice: ConversationWorkspaceMode {
-        workspaceDraft.mode
-    }
-
-    private func newCardLabel(_ title: String) -> some View {
-        Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
-            .padding(.bottom, -10)
-    }
-
-    private func newCardMenu<Content: View>(
-        title: String,
-        value: String,
-        symbol: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
-            // The borderless menu style strips background/overlay chrome from its
-            // label, so the field chrome has to live on the Menu itself.
-            Menu(content: content) {
-                HStack(spacing: 7) {
-                    Image(systemName: symbol).font(.system(size: 10, weight: .semibold)).foregroundStyle(
-                        DieterTheme.shell)
-                    Text(value).lineLimit(1)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold)).foregroundStyle(
-                        DieterTheme.tertiary)
-                }
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(DieterTheme.subtle)
-                .padding(.horizontal, 10)
-                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden)
-            .frame(maxWidth: .infinity, minHeight: 38)
-            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private func submit() async {

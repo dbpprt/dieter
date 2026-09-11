@@ -146,6 +146,11 @@ struct ConversationChrome: View {
     }
     private var sidebarActions: some View {
         HStack(spacing: 3) {
+            if onToggleMaximize != nil {
+                GlobalQuickTaskButton()
+                    .labelStyle(.iconOnly)
+                    .frame(width: 24, height: 24)
+            }
             conversationMenu
             if let onToggleMaximize {
                 Button(action: onToggleMaximize) {
