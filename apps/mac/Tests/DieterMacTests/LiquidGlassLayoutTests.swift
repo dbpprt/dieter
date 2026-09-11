@@ -30,7 +30,7 @@ import Testing
     }
 }
 
-@Test @MainActor func allChatsPaneTreatmentsRenderAcrossAppearances() {
+@Test @MainActor func allChatsContinuousCanvasRendersAcrossAppearances() {
     defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
 
     for scheme in [ColorScheme.light, .dark] {

@@ -511,9 +511,10 @@ enum DieterPaneRole: Equatable {
     case content
 }
 
-/// Shared full-pane treatments for the macOS 26 window hierarchy. Navigation
-/// may use Liquid Glass, while primary content stays on one solid canvas so
-/// text remains readable and child views do not build an opaque patchwork.
+/// Shared full-pane treatments for the All Chats hierarchy. Both nested panes
+/// use the same continuous canvas; the root NavigationSplitView remains the one
+/// full-height glass navigation surface, while individual chat actions use
+/// native glass controls.
 struct DieterPaneBackground: View {
     let role: DieterPaneRole
     var extendsUnderTitlebar = false
@@ -521,9 +522,7 @@ struct DieterPaneBackground: View {
     @ViewBuilder var body: some View {
         switch role {
         case .navigation:
-            Rectangle()
-                .fill(.clear)
-                .glassEffect(.regular, in: Rectangle())
+            DieterTheme.surface
                 .ignoresSafeArea(.container, edges: extendsUnderTitlebar ? .top : [])
         case .content:
             DieterTheme.surface

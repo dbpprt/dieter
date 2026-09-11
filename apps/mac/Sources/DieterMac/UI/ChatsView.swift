@@ -195,11 +195,14 @@ enum ChatPaneSizing {
     static let minimumWidth: CGFloat = 285
     static let defaultWidth = DieterMetrics.browserWidth
     static let maximumWidth = DieterMetrics.browserMaximumWidth
-    static let dividerWidth: CGFloat = 7
+    static let dividerHitWidth: CGFloat = 7
+    static let dividerLineWidth: CGFloat = 1
     static let minimumDetailWidth: CGFloat = 327
 
     static func resolvedWidth(_ requestedWidth: CGFloat, workspaceWidth: CGFloat) -> CGFloat {
-        let available = max(0, workspaceWidth - minimumDetailWidth - dividerWidth)
+        // The resize target overlays the pane boundary, so it must not reserve
+        // a transparent strip between the browser and conversation canvases.
+        let available = max(0, workspaceWidth - minimumDetailWidth)
         guard available >= minimumWidth else { return available }
         return min(max(requestedWidth, minimumWidth), min(maximumWidth, available))
     }
@@ -221,9 +224,9 @@ private struct ChatPaneResizeDivider: View {
                         ? DieterTheme.shell.opacity(0.62)
                         : Color(nsColor: .separatorColor).opacity(0.55)
                 )
-                .frame(width: hovering ? 2 : 1)
+                .frame(width: hovering ? 2 : ChatPaneSizing.dividerLineWidth)
         }
-        .frame(width: ChatPaneSizing.dividerWidth)
+        .frame(width: ChatPaneSizing.dividerHitWidth)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -242,6 +245,7 @@ private struct ChatPaneResizeDivider: View {
         .accessibilityValue("\(Int(width)) points")
         .accessibilityAdjustableAction { direction in onAdjust(direction) }
         .accessibilityIdentifier("chats.resize-divider")
+        .smokeTarget("chats.resize-divider")
     }
 }
 
@@ -265,14 +269,29 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
     var body: some View {
         GeometryReader { geometry in
             let width = ChatPaneSizing.resolvedWidth(CGFloat(storedWidth), workspaceWidth: geometry.size.width)
-            HStack(spacing: 0) {
-                browser
-                    .frame(width: width, height: geometry.size.height)
-                    .clipped()
-                    .background {
-                        DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true)
-                    }
+            ZStack(alignment: .topLeading) {
+                HStack(spacing: 0) {
+                    browser
+                        .frame(width: width, height: geometry.size.height)
+                        .clipped()
+                        .background {
+                            DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true)
+                        }
 
+                    detail
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                        .background {
+                            DieterPaneBackground(role: .content, extendsUnderTitlebar: true)
+                        }
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("chats.detail-pane")
+                        .smokeTarget("chats.detail-pane")
+                }
+
+                // Keep the generous drag target without inserting layout space.
+                // The one-point separator is painted directly over the touching
+                // pane edges, eliminating the exposed window-background seam.
                 ChatPaneResizeDivider(
                     width: width,
                     onChanged: { translation in
@@ -298,16 +317,10 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
                         }
                     }
                 )
-
-                detail
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-                    .background {
-                        DieterPaneBackground(role: .content, extendsUnderTitlebar: true)
-                    }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("chats.detail-pane")
-                    .smokeTarget("chats.detail-pane")
+                .frame(height: geometry.size.height)
+                .ignoresSafeArea(.container, edges: .top)
+                .offset(x: width - ChatPaneSizing.dividerHitWidth / 2)
+                .zIndex(1)
             }
         }
     }

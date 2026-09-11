@@ -120,6 +120,7 @@
             }
 
             await showChats(store: store, window: window)
+            recordNavigationBoundaries(in: window, results: &results)
             let chatWasVisible = NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) != nil
             let clicked = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
             let saved = await NativeUIAccessibility.wait {
@@ -168,6 +169,7 @@
             _ = await NativeUIAccessibility.wait { !loadPreferences().isExpanded(projectIDs[0]) }
 
             await showChats(store: store, window: window)
+            recordNavigationBoundaries(in: window, results: &results)
             let restoredChatPreferences = loadChatPreferences()
             results["chat-restored-collapse"] =
                 restoredChatPreferences.isCollapsed(projectIDs[0])
@@ -188,6 +190,31 @@
                 ? "passed" : "failed: saved expanded project was not rendered second"
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
             _ = await NativeUIAccessibility.wait { loadPreferences().isExpanded(projectIDs[0]) }
+        }
+
+        private static func recordNavigationBoundaries(in window: NSWindow, results: inout [String: String]) {
+            let main = NativeUIAccessibility.find("sidebar.main-pane", in: window)
+            let browser = NativeUIAccessibility.find("chats.browser-pane", in: window)
+            let detail = NativeUIAccessibility.find("chats.detail-pane", in: window)
+            let divider = NativeUIAccessibility.find("chats.resize-divider", in: window)
+            guard
+                let mainFrame = main.map({ $0.recordedFrame ?? $0.frame }),
+                let browserFrame = browser.map({ $0.recordedFrame ?? $0.frame }),
+                let detailFrame = detail.map({ $0.recordedFrame ?? $0.frame }),
+                let dividerFrame = divider.map({ $0.recordedFrame ?? $0.frame })
+            else {
+                results["navigation-boundaries"] = "failed: missing pane"
+                return
+            }
+            let systemDivider = browserFrame.minX - mainFrame.maxX
+            let chatDivider = detailFrame.minX - browserFrame.maxX
+            let dividerTopGap = window.frame.maxY - dividerFrame.maxY
+            results["navigation-boundaries"] =
+                systemDivider >= 0 && systemDivider <= 1.5
+                    && abs(chatDivider) < 1
+                    && dividerTopGap >= 0 && dividerTopGap <= 1.5
+                ? "passed"
+                : "failed: system=\(systemDivider) chat=\(chatDivider) top=\(dividerTopGap)"
         }
 
         private static func seed(_ store: DieterStore) {

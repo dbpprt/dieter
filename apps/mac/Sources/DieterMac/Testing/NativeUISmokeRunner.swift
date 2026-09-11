@@ -584,11 +584,12 @@
                     browserFrame.width >= ChatPaneSizing.minimumWidth - 1
                     && browserFrame.width <= ChatPaneSizing.maximumWidth + 1
                 let detailWidthValid = detailFrame.width >= ChatPaneSizing.minimumDetailWidth - 1
-                let panesAreAdjacent = detailFrame.minX >= browserFrame.maxX
+                let paneGap = detailFrame.minX - browserFrame.maxX
+                let panesAreAdjacent = abs(paneGap) < 1
                 results["02b-all-chats-surface-layout"] =
                     browserWidthValid && detailWidthValid && panesAreAdjacent
                     ? "passed"
-                    : "failed: browser=\(browserFrame) detail=\(detailFrame)"
+                    : "failed: browser=\(browserFrame) detail=\(detailFrame) gap=\(paneGap)"
             } else {
                 results["02b-all-chats-surface-layout"] =
                     "failed: browser=\(browserFrame.map { String(describing: $0) } ?? "missing") detail=\(detailFrame.map { String(describing: $0) } ?? "missing")"

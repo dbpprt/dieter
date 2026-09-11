@@ -131,6 +131,10 @@ struct DieterRootView: View {
             .navigationSmokeDestination(store.section)
         }
         .navigationSplitViewStyle(.balanced)
+        // The system glass sidebar is intentionally inset and rounded on macOS
+        // 26. A continuous canvas underneath it prevents the window background
+        // from showing through as a gap beside the nested Chats browser.
+        .background(DieterTheme.surface)
         .toolbar {
             if store.section != .board || store.selectedCardID == nil {
                 ToolbarItem(placement: .primaryAction) {
@@ -360,6 +364,9 @@ struct AppSidebar: View {
             }
             sidebarFooter
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("sidebar.main-pane")
+        .smokeTarget("sidebar.main-pane")
     }
 
     private var sidebarHeader: some View {
