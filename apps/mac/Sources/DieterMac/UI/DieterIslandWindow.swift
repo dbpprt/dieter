@@ -1,4 +1,5 @@
 import AppKit
+import ColorSync
 import Observation
 import QuartzCore
 import SwiftUI
@@ -9,6 +10,51 @@ enum DieterIslandEdge: String {
     func pushed(horizontal: CGFloat, vertical: CGFloat) -> Self {
         guard abs(horizontal) >= 40, abs(horizontal) > abs(vertical) else { return self }
         return horizontal < 0 ? .left : .right
+    }
+}
+
+struct DieterIslandDisplay: Equatable, Identifiable {
+    let id: String
+    let name: String
+    let geometry: DieterIslandDisplayGeometry
+    let isBuiltin: Bool
+
+    static func selected(
+        preferredID: String?, displays: [Self], mainDisplayID: String?
+    ) -> Self? {
+        displays.first { $0.id == preferredID }
+            ?? displays.first { $0.isBuiltin && $0.geometry.hasPhysicalNotch }
+            ?? displays.first { $0.id == mainDisplayID }
+            ?? displays.first
+    }
+
+    static func containing(_ point: CGPoint, in displays: [Self]) -> Self? {
+        displays.first { $0.geometry.screenFrame.contains(point) }
+    }
+
+    static func titles(for displays: [Self]) -> [String: String] {
+        let counts = Dictionary(grouping: displays, by: \.name).mapValues(\.count)
+        return Dictionary(
+            uniqueKeysWithValues: displays.enumerated().map { index, display in
+                (
+                    display.id,
+                    counts[display.name, default: 0] > 1 ? "\(display.name) · Display \(index + 1)" : display.name
+                )
+            })
+    }
+}
+
+struct DieterIslandDrag {
+    let displayID: String
+    let frame: CGRect
+    let pointer: CGPoint
+
+    func frame(at point: CGPoint) -> CGRect {
+        frame.offsetBy(dx: point.x - pointer.x, dy: point.y - pointer.y)
+    }
+
+    func translation(to point: CGPoint) -> CGSize {
+        CGSize(width: point.x - pointer.x, height: pointer.y - point.y)
     }
 }
 
@@ -141,6 +187,7 @@ private struct DieterIslandThemeRoot<Content: View>: View {
 @MainActor
 final class DieterIslandController: NSObject {
     private let store: DieterStore
+    private let defaults: UserDefaults
     private let presentation = DieterIslandPresentation()
     private lazy var captureTask = CaptureTaskController(store: store)
     private var panel: DieterIslandPanel?
@@ -149,10 +196,10 @@ final class DieterIslandController: NSObject {
     private var localPointerMonitor: Any?
     private var closeTask: Task<Void, Never>?
     private var screenObserver: NSObjectProtocol?
-    private var edge =
-        DieterIslandEdge(
-            rawValue: DieterAppearance.applicationDefaults().string(forKey: "DieterIslandEdge") ?? "right") ?? .right
+    private var edge: DieterIslandEdge
     private var dragging = false
+    private var drag: DieterIslandDrag?
+    private var choosingDisplay = false
     private var enabled = false
     private var started = false
     #if DIETER_UI_SMOKE
@@ -161,8 +208,10 @@ final class DieterIslandController: NSObject {
         private let automaticHoverEnabled = true
     #endif
 
-    init(store: DieterStore) {
+    init(store: DieterStore, defaults: UserDefaults = DieterAppearance.applicationDefaults()) {
         self.store = store
+        self.defaults = defaults
+        edge = DieterIslandEdge(rawValue: defaults.string(forKey: "DieterIslandEdge") ?? "right") ?? .right
     }
 
     #if DIETER_UI_SMOKE
@@ -174,6 +223,17 @@ final class DieterIslandController: NSObject {
     var islandWindow: NSWindow? { panel }
     var isVisible: Bool { panel?.isVisible == true }
     var isExpanded: Bool { presentation.expanded }
+    var currentDisplayID: String? { presentation.currentDisplayID }
+    var availableDisplays: [DieterIslandDisplay] { attachedDisplays() }
+
+    func moveToDisplay(_ id: String?) {
+        guard id == nil || attachedDisplays().contains(where: { $0.id == id }) else { return }
+        DieterIslandPreferences.setDisplayID(id, in: defaults)
+        cancelDrag()
+        closeTask?.cancel()
+        closeTask = nil
+        configurePanelIfNeeded(forceLayout: true)
+    }
 
     func start(enabled: Bool) {
         self.enabled = enabled
@@ -197,6 +257,7 @@ final class DieterIslandController: NSObject {
 
     func setExpanded(_ expanded: Bool, animated: Bool = true) {
         guard enabled, let panel, let geometry, presentation.expanded != expanded else { return }
+        cancelDrag()
         closeTask?.cancel()
         closeTask = nil
         presentation.expanded = expanded
@@ -219,7 +280,7 @@ final class DieterIslandController: NSObject {
     }
 
     private func checkPointerLocation() {
-        guard automaticHoverEnabled, enabled, !dragging, let panel else { return }
+        guard automaticHoverEnabled, enabled, !dragging, !choosingDisplay, let panel else { return }
         let point = NSEvent.mouseLocation
         if panel.frame.insetBy(dx: -5, dy: -5).contains(point) {
             closeTask?.cancel()
@@ -241,6 +302,7 @@ final class DieterIslandController: NSObject {
         guard !captureTask.capturing else { return }
         guard enabled else {
             closeTask?.cancel()
+            cancelDrag()
             presentation.expanded = false
             removePointerMonitors()
             panel?.orderOut(nil)
@@ -253,6 +315,7 @@ final class DieterIslandController: NSObject {
 
     private func screenConfigurationChanged() {
         guard enabled else { return }
+        cancelDrag()
         geometry = nil
         configurePanelIfNeeded(forceLayout: true)
     }
@@ -268,22 +331,25 @@ final class DieterIslandController: NSObject {
 
     private func activityProjectionChanged() {
         defer { observeActivityProjection() }
-        guard enabled, presentation.expanded, let panel, let geometry else { return }
+        guard enabled, !dragging, presentation.expanded, let panel, let geometry else { return }
         let frame = targetFrame(expanded: true, geometry: geometry)
         if panel.frame != frame { panel.setFrame(frame, display: true) }
     }
 
     private func configurePanelIfNeeded(forceLayout: Bool = false) {
-        guard let screen = selectedScreen() else { return }
-        let newGeometry = DieterIslandDisplayGeometry.resolve(
-            screenFrame: screen.frame,
-            visibleFrame: screen.visibleFrame,
-            safeAreaTop: screen.safeAreaInsets.top,
-            auxiliaryLeftWidth: screen.auxiliaryTopLeftArea?.width,
-            auxiliaryRightWidth: screen.auxiliaryTopRightArea?.width
-        )
+        let displays = attachedDisplays()
+        let preferredID = DieterIslandPreferences.displayID(in: defaults)
+        guard
+            let display = DieterIslandDisplay.selected(
+                preferredID: preferredID, displays: displays, mainDisplayID: NSScreen.main.flatMap(displayID)
+            )
+        else { return }
+        let newGeometry = display.geometry
         geometry = newGeometry
         presentation.hasPhysicalNotch = newGeometry.hasPhysicalNotch
+        presentation.displays = displays
+        presentation.preferredDisplayID = preferredID
+        presentation.currentDisplayID = display.id
         if panel == nil {
             let panel = DieterIslandPanel(frame: newGeometry.windowFrame(expanded: false, edge: edge))
             panel.contentView = NSHostingView(
@@ -291,17 +357,21 @@ final class DieterIslandController: NSObject {
                     DieterIslandView(
                         presentation: presentation,
                         onRequestExpansion: { [weak self] expanded in self?.setExpanded(expanded) },
-                        onDragChanged: { [weak self] in
-                            guard let self, self.geometry?.hasPhysicalNotch == false else { return }
-                            self.dragging = true
+                        onDragChanged: { [weak self] translation in self?.dragIsland(translation) },
+                        onDragEnded: { [weak self] in self?.finishDrag() },
+                        onSelectDisplay: { [weak self] id in self?.moveToDisplay(id) },
+                        onDisplayPickerChanged: { [weak self] presented in
+                            guard let self else { return }
+                            self.choosingDisplay = presented
                             self.closeTask?.cancel()
                             self.closeTask = nil
+                            if !presented { self.checkPointerLocation() }
                         },
-                        onDragEnded: { [weak self] translation in self?.pushIsland(translation) },
                         onCaptureTask: { [weak self] in
                             guard let self else { return }
                             self.captureTask.capture(
                                 hideIsland: {
+                                    self.cancelDrag()
                                     self.closeTask?.cancel()
                                     self.removePointerMonitors()
                                     self.panel?.orderOut(nil)
@@ -323,13 +393,29 @@ final class DieterIslandController: NSObject {
         }
     }
 
-    private func selectedScreen() -> NSScreen? {
-        NSScreen.screens.first(where: { screen in
-            guard screen.safeAreaInsets.top > 0,
-                let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-            else { return false }
-            return CGDisplayIsBuiltin(displayID) != 0
-        }) ?? NSScreen.main ?? NSScreen.screens.first
+    private func displayID(_ screen: NSScreen) -> String? {
+        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        else { return nil }
+        guard let uuid = CGDisplayCreateUUIDFromDisplayID(number)?.takeRetainedValue() else { return nil }
+        return CFUUIDCreateString(nil, uuid) as String
+    }
+
+    private func attachedDisplays() -> [DieterIslandDisplay] {
+        NSScreen.screens.compactMap { screen in
+            guard let id = displayID(screen),
+                let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+            else { return nil }
+            return DieterIslandDisplay(
+                id: id, name: screen.localizedName,
+                geometry: .resolve(
+                    screenFrame: screen.frame, visibleFrame: screen.visibleFrame,
+                    safeAreaTop: screen.safeAreaInsets.top,
+                    auxiliaryLeftWidth: screen.auxiliaryTopLeftArea?.width,
+                    auxiliaryRightWidth: screen.auxiliaryTopRightArea?.width
+                ),
+                isBuiltin: CGDisplayIsBuiltin(number) != 0
+            )
+        }
     }
 
     private func targetFrame(expanded: Bool, geometry: DieterIslandDisplayGeometry) -> CGRect {
@@ -339,13 +425,58 @@ final class DieterIslandController: NSObject {
         )
     }
 
+    private func dragIsland(_ translation: CGSize) {
+        guard enabled, !choosingDisplay, let panel, let displayID = presentation.currentDisplayID else { return }
+        let point = NSEvent.mouseLocation
+        if drag == nil {
+            drag = DieterIslandDrag(
+                displayID: displayID, frame: panel.frame,
+                pointer: CGPoint(x: point.x - translation.width, y: point.y + translation.height)
+            )
+            dragging = true
+            closeTask?.cancel()
+            closeTask = nil
+        }
+        if let drag { panel.setFrameOrigin(drag.frame(at: point).origin) }
+    }
+
+    private func finishDrag() {
+        guard let drag, let panel else { return }
+        let point = NSEvent.mouseLocation
+        let translation = drag.translation(to: point)
+        cancelDrag()
+        if let destination = DieterIslandDisplay.containing(point, in: attachedDisplays()),
+            destination.id != drag.displayID
+        {
+            edge = point.x < destination.geometry.screenFrame.midX ? .left : .right
+            defaults.set(edge.rawValue, forKey: "DieterIslandEdge")
+            presentation.expanded = false
+            panel.ignoresMouseEvents = true
+            moveToDisplay(destination.id)
+        } else if let geometry, geometry.hasPhysicalNotch {
+            panel.setFrame(targetFrame(expanded: presentation.expanded, geometry: geometry), display: true)
+            checkPointerLocation()
+        } else {
+            pushIsland(translation)
+        }
+    }
+
+    private func cancelDrag() {
+        drag = nil
+        dragging = false
+    }
+
     private func pushIsland(_ translation: CGSize) {
         dragging = false
         guard let geometry, !geometry.hasPhysicalNotch, let panel else { return }
         let destination = edge.pushed(horizontal: translation.width, vertical: translation.height)
-        guard destination != edge else { checkPointerLocation(); return }
+        guard destination != edge else {
+            panel.setFrame(targetFrame(expanded: presentation.expanded, geometry: geometry), display: true)
+            checkPointerLocation()
+            return
+        }
         edge = destination
-        DieterAppearance.applicationDefaults().set(edge.rawValue, forKey: "DieterIslandEdge")
+        defaults.set(edge.rawValue, forKey: "DieterIslandEdge")
         closeTask?.cancel()
         closeTask = nil
         presentation.expanded = false
@@ -357,7 +488,10 @@ final class DieterIslandController: NSObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             panel.animator().setFrame(frame, display: true)
         } completionHandler: { [weak self] in
-            Task { @MainActor [weak self] in self?.dragging = false }
+            Task { @MainActor [weak self] in
+                guard let self, self.drag == nil else { return }
+                self.dragging = false
+            }
         }
     }
 

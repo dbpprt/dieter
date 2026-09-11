@@ -181,6 +181,8 @@ def plan_checks(root, paths, packages=None):
             add("go", "vet", *affected)
     if any(p.startswith("internal/harness/runtime/") or p in {"config/harnesses.yaml", "just/harness.just"} for p in code):
         add("just", "harness", "test")
+    if any(p.startswith(("apps/mac/MarkdownPreview/", "apps/mac/Sources/DieterMac/Resources/MarkdownPreview/")) for p in code):
+        add("just", "mac", "markdown-check")
     if mac:
         add("just", "mac", "test")
     if android:

@@ -132,6 +132,8 @@ struct TurnFailureLogSheet: View {
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("conversation.failure.done")
+                    .smokeTarget("conversation.failure.done")
             }
             ScrollView([.horizontal, .vertical]) {
                 Text(log)
@@ -155,5 +157,6 @@ struct TurnFailureLogSheet: View {
         .frame(minWidth: 640, minHeight: 440)
         .background(DieterTheme.surface)
         .accessibilityIdentifier("conversation.failure.log-sheet")
+        .smokeTarget("conversation.failure.log-sheet")
     }
 }

@@ -369,40 +369,50 @@ support the global `--machine ID|NAME` option for direct TLS or gateway relay.
 
 ### Browser capture project routing
 
-Agents can maintain exact browser hostnames on a project through the daemon:
+Agents can maintain browser host mappings, with optional ports, on a project
+through the daemon:
 
 ```sh
-dieter project update --hostname app.example.com --hostname localhost PROJECT_ID
+dieter project update --hostname app.example.com --hostname localhost:4018 PROJECT_ID
 dieter project show PROJECT_ID
 dieter project update --clear-hostnames PROJECT_ID
 ```
 
 `--hostname` is repeatable and replaces the complete list; omitting both hostname
 flags preserves it. Use `--machine ID|NAME` for projects on another daemon.
-Hostnames are lowercase, deduplicated, and stored centrally with project metadata.
-Use bare DNS names (punycode for international names) or IP addresses, without
-URLs, ports, paths, or wildcards. Up to 64 names are allowed. URL ports and schemes
-do not affect matching; subdomains require their own entries.
+Mappings are stored centrally with project metadata. CLI inputs accept DNS names
+(punycode for international names) or IPv4 addresses, optionally followed by
+`:port`. Use bare IPv6 addresses for host-only mappings and brackets for an IPv6
+address with a port, such as `'[::1]:4018'`. Ports must be numeric and between 1
+and 65535. Hostnames are lowercased and trailing dots removed; IP addresses and
+ports are canonicalized. The list is deduplicated, sorted, and limited to 64
+entries. CLI inputs cannot contain URLs, paths, or wildcards; subdomains require
+their own entries.
 
-Capture task first tries board mappings, then uses the browser URL to select a
-project when exactly one active project matches. Multiple matches require a manual destination choice; no match
-asks for a destination. The user still reviews and submits the
-Quick Task. Mappings do not grant access to a website or start any task.
+Capture task checks board mappings before mappings on active projects. Within each scope,
+an exact host-and-port match wins; if none exists, a bare-host mapping matches
+that host on any port. Matching uses the URL's explicit port, or port 80 for HTTP
+and 443 for HTTPS when omitted. For example, `localhost:4018` takes priority over
+`localhost` within board mappings. Multiple equally specific destinations require
+a manual choice; no match also asks for a destination. The user still reviews
+and submits the Quick Task. Mappings do not grant access to a website or start
+any task.
 
 Board hostname mappings take priority over project mappings for Capture task.
-Users can edit URLs/hostnames in Board settings or remember a captured URL's
-hostname for the selected board when saving a Quick Task. Global Quick Task is
+Users can edit URLs/host mappings in Board settings or remember a captured URL's
+host mapping for the selected board when saving a Quick Task. Global Quick Task is
 available in the sidebar and always shows project and board selectors. Unmatched
 or ambiguous captures stage a draft with no destination until the user chooses.
 Tasks are saved as drafts; capture does not start an agent.
 
 ```sh
-dieter board hostnames --hostname app.example.com BOARD_ID
+dieter board hostnames --hostname localhost:4018 --hostname '[::1]:4018' BOARD_ID
 dieter board hostnames --append --hostname preview.example.com BOARD_ID
 dieter board hostnames --clear BOARD_ID
 dieter board show BOARD_ID
 ```
 
 The default replaces the full list; `--append` adds atomically and deduplicates.
-CLI inputs are bare hostnames; Board settings also accepts HTTP(S) URLs and stores
-only their hostname. The same exact-host matching and 64-host limit apply.
+CLI inputs use the host or host-and-port format above. Board settings also accepts
+HTTP(S) URLs and stores their hostname plus an explicit port when present. The
+same normalization, matching rules, and 64-entry limit apply.

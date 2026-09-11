@@ -9,12 +9,29 @@ enum ComposerHistoryDirection {
     case newer
 }
 
+enum ComposerQueueRecall {
+    static func newestMessage(
+        text: String,
+        attachments: [Dieter_V1_MessagePart],
+        queue: [Dieter_V1_QueuedMessage]
+    ) -> Dieter_V1_QueuedMessage? {
+        guard text.isEmpty, attachments.isEmpty else { return nil }
+        return queue.last
+    }
+}
+
 struct ComposerHistoryNavigation {
     private(set) var selectedIndex: Int?
     private(set) var selectedText: String?
     private var preservedDraft = ""
 
     var isBrowsing: Bool { selectedIndex != nil }
+
+    static func acceptsArrow(modifiers: EventModifiers) -> Bool {
+        // AppKit marks ordinary arrow keys as function/numeric-pad events.
+        // Only user shortcuts should prevent recall or history navigation.
+        modifiers.intersection([.shift, .control, .option, .command]).isEmpty
+    }
 
     static func entries(
         messages: [Dieter_V1_UiMessage],

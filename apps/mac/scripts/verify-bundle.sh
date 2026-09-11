@@ -19,6 +19,20 @@ if [ ! -x "$WEBRTC_BINARY" ]; then
     echo "WebRTC.framework is missing from $APP_BUNDLE" >&2
     exit 1
 fi
+for resource in \
+    DieterMac_DieterMac.bundle/MarkdownPreview/index.html \
+    DieterMac_DieterMac.bundle/MarkdownPreview/app.js \
+    DieterMac_DieterMac.bundle/MarkdownPreview/app.css \
+    DieterMac_DieterMac.bundle/MarkdownPreview/LICENSES.txt \
+    DieterMac_DieterMac.bundle/MarkdownEditorLicenses.txt \
+    Highlighter_Highlighter.bundle/highlight.min.js \
+    Highlighter_Highlighter.bundle/atom-one-light.css \
+    Highlighter_Highlighter.bundle/atom-one-dark.css; do
+    if [ ! -f "$APP_BUNDLE/Contents/Resources/$resource" ]; then
+        echo "Markdown resource is missing from $APP_BUNDLE: $resource" >&2
+        exit 1
+    fi
+done
 if ! otool -L "$DIETER_BINARY" | grep -Fq '@rpath/WebRTC.framework/WebRTC'; then
     echo "DieterMac does not link the expected WebRTC framework" >&2
     exit 1

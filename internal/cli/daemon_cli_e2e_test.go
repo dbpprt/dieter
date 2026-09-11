@@ -728,31 +728,59 @@ func TestDaemonCLICardTokenUsage(t *testing.T) {
 	}
 }
 
+func TestDaemonCLIHostnamePortsEndToEnd(t *testing.T) {
+	client, output, _ := daemonCLIForTest(t)
+	projectID := strings.TrimSpace(runDaemonCLI(t, client, output, "project", "open", "--format", "id", initTestRepository(t, "hostname-ports")))
+	assertProjectHostnameCLI(t, client, output, projectID)
+}
+
 func assertProjectHostnameCLI(t *testing.T, client *CLI, output *bytes.Buffer, projectID string) {
 	t.Helper()
 	boardID := strings.Fields(runDaemonCLI(t, client, output, "board", "list", "--project", projectID, "--format", "ids"))[0]
-	runDaemonCLI(t, client, output, "board", "hostnames", "--hostname", "one.example", boardID)
-	boardJSON := runDaemonCLI(t, client, output, "board", "hostnames", "--append", "--hostname", "two.example", boardID)
+	runDaemonCLI(t, client, output, "board", "hostnames", "--hostname", "one.example", "--hostname", "localhost:4018", boardID)
+	boardJSON := runDaemonCLI(t, client, output, "board", "hostnames", "--append", "--hostname", "two.example:65535", "--hostname", "LOCALHOST:04018", "--hostname", "[0:0:0:0:0:0:0:1]:4018", boardID)
 	var board dieterv1.Board
 	if err := protojson.Unmarshal([]byte(boardJSON), &board); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(board.Hostnames, ",") != "one.example,two.example" {
+	const boardMappings = "[::1]:4018,localhost:4018,one.example,two.example:65535"
+	if strings.Join(board.Hostnames, ",") != boardMappings {
 		t.Fatalf("board hostnames=%v", board.Hostnames)
+	}
+	for _, operation := range [][]string{
+		{"board", "hostnames", "--hostname", "valid.example:80", "--hostname", "localhost:0", boardID},
+		{"board", "hostnames", "--append", "--hostname", "valid.example:80", "--hostname", "[::1]:65536", boardID},
+	} {
+		output.Reset()
+		if err := client.Run(operation); err == nil {
+			t.Fatalf("accepted invalid mapping: %v", operation)
+		}
+		board.Reset()
+		boardJSON = runDaemonCLI(t, client, output, "board", "show", boardID)
+		if err := protojson.Unmarshal([]byte(boardJSON), &board); err != nil || strings.Join(board.Hostnames, ",") != boardMappings {
+			t.Fatalf("invalid board mutation leaked: %s err=%v", boardJSON, err)
+		}
 	}
 	runDaemonCLI(t, client, output, "board", "hostnames", "--clear", boardID)
 
-	result := runDaemonCLI(t, client, output, "project", "update", "--hostname", "APP.Example.com.", "--hostname", "localhost", projectID)
+	result := runDaemonCLI(t, client, output, "project", "update", "--hostname", "APP.Example.com.", "--hostname", "APP.Example.com.:443", "--hostname", "localhost:04018", "--hostname", "127.0.0.1:4018", "--hostname", "::1", "--hostname", "[::1]:4018", projectID)
 	var project dieterv1.Project
 	if err := protojson.Unmarshal([]byte(result), &project); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(project.Hostnames, ",") != "app.example.com,localhost" {
+	const projectMappings = "127.0.0.1:4018,::1,[::1]:4018,app.example.com,app.example.com:443,localhost:4018"
+	if strings.Join(project.Hostnames, ",") != projectMappings {
 		t.Fatalf("hostnames=%v", project.Hostnames)
 	}
+	name := project.Name
+	output.Reset()
+	if err := client.Run([]string{"project", "update", "--name", "Invalid partial update", "--hostname", "valid.example:80", "--hostname", "localhost:https", projectID}); err == nil {
+		t.Fatal("accepted invalid project port")
+	}
 	result = runDaemonCLI(t, client, output, "project", "show", projectID)
-	if !strings.Contains(result, "app.example.com") {
-		t.Fatalf("mapping not discoverable: %s", result)
+	project.Reset()
+	if err := protojson.Unmarshal([]byte(result), &project); err != nil || project.Name != name || strings.Join(project.Hostnames, ",") != projectMappings {
+		t.Fatalf("invalid project mutation leaked: %s err=%v", result, err)
 	}
 	result = runDaemonCLI(t, client, output, "project", "update", "--clear-hostnames", projectID)
 	project.Reset()

@@ -52,6 +52,8 @@ struct ConversationWorkspacePickerSheet: View {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
                 }
                 .buttonStyle(DieterIconButtonStyle()).help("Close")
+                .accessibilityIdentifier("workspace.close")
+                .smokeTarget("workspace.close")
             }
             .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 18)
 
@@ -84,6 +86,7 @@ struct ConversationWorkspacePickerSheet: View {
                                     .textFieldStyle(.plain)
                                     .focused($branchFocused)
                                     .accessibilityIdentifier("workspace.branch")
+                                    .smokeTarget("workspace.branch")
                             }
                             .padding(.horizontal, 12).frame(height: 42)
                             .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
@@ -99,6 +102,7 @@ struct ConversationWorkspacePickerSheet: View {
                                 TextField("Current branch", text: $draftBaseBranch)
                                     .textFieldStyle(.plain)
                                     .accessibilityIdentifier("workspace.base-branch")
+                                    .smokeTarget("workspace.base-branch")
                             }
                             .padding(.horizontal, 12).frame(height: 42)
                             .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
@@ -143,6 +147,7 @@ struct ConversationWorkspacePickerSheet: View {
                 .buttonStyle(DieterPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("workspace.confirm")
+                .smokeTarget("workspace.confirm")
             }
             .padding(.horizontal, 24).padding(.vertical, 14)
         }
@@ -226,6 +231,7 @@ struct ConversationWorkspacePickerSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("workspace.mode.\(option.rawValue)")
+        .smokeTarget("workspace.mode.\(option.rawValue)")
     }
 
     private func workspaceField<Content: View>(

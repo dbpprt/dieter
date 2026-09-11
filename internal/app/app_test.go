@@ -145,16 +145,19 @@ type restartRunner struct {
 	mu          sync.Mutex
 	requests    []harness.Request
 	started     chan struct{}
-	resumed     chan struct{}
+	resumed     chan error
 	suspend     chan struct{}
 	suspendOnce sync.Once
 }
 
-func (runner *restartRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+func (runner *restartRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) (runErr error) {
 	runner.mu.Lock()
 	runner.requests = append(runner.requests, request)
 	runner.mu.Unlock()
 	if request.Continue {
+		// Always report completion, including a failed durable emit. Buffering
+		// keeps the worker able to exit if the test has already timed out.
+		defer func() { runner.resumed <- runErr }()
 		for _, chunk := range []string{
 			`{"type":"text-delta","id":"text","delta":" after restart"}`,
 			`{"type":"text-end","id":"text"}`,
@@ -167,7 +170,6 @@ func (runner *restartRunner) Run(ctx context.Context, request harness.Request, e
 		if err := emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"session":"resumed"}}`)}); err != nil {
 			return err
 		}
-		close(runner.resumed)
 		return nil
 	}
 	for _, chunk := range []string{
@@ -1465,7 +1467,38 @@ func TestReconcileOrphanedTurnAndRepeatedCancelAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestRestartRunnerReportsContinuationEmitErrors(t *testing.T) {
+	for failureIndex := range 4 {
+		t.Run(strconv.Itoa(failureIndex), func(t *testing.T) {
+			runner := &restartRunner{resumed: make(chan error, 1)}
+			failure := errors.New("durable continuation write failed")
+			emits := 0
+			err := runner.Run(context.Background(), harness.Request{Continue: true}, func(harness.Output) error {
+				emits++
+				if emits == failureIndex+1 {
+					return failure
+				}
+				return nil
+			})
+			if !errors.Is(err, failure) {
+				t.Fatalf("runner error=%v", err)
+			}
+			select {
+			case reported := <-runner.resumed:
+				if !errors.Is(reported, failure) {
+					t.Fatalf("reported error=%v", reported)
+				}
+			default:
+				t.Fatal("continuation error was hidden behind an unfinished signal")
+			}
+		})
+	}
+}
+
 func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
+	// Resumption emits several fsynced events and snapshots. This is an
+	// integration/lifecycle assertion, not a two-second disk benchmark.
+	const timeout = 10 * time.Second
 	providers := []struct {
 		provider string
 		model    string
@@ -1480,8 +1513,32 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 	}
 	for _, provider := range providers {
 		t.Run(provider.provider, func(t *testing.T) {
+			trackService := func(service *Service) {
+				t.Cleanup(func() {
+					service.mu.Lock()
+					turns := make([]*activeTurn, 0, len(service.active))
+					for _, turn := range service.active {
+						turns = append(turns, turn)
+					}
+					service.mu.Unlock()
+					for _, turn := range turns {
+						turn.cancel()
+					}
+					timer := time.NewTimer(timeout)
+					defer timer.Stop()
+					for _, turn := range turns {
+						select {
+						case <-turn.done:
+						case <-timer.C:
+							t.Error("restart fixture did not stop before temporary-store cleanup")
+							return
+						}
+					}
+				})
+			}
 			service, _, project, board := appSetup(t)
-			runner := &restartRunner{started: make(chan struct{}), resumed: make(chan struct{}), suspend: make(chan struct{})}
+			trackService(service)
+			runner := &restartRunner{started: make(chan struct{}), resumed: make(chan error, 1), suspend: make(chan struct{})}
 			service.Runner = runner
 			card, err := service.CreateCard(context.Background(), CardInput{
 				Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
@@ -1498,10 +1555,10 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			go drainTurnUpdates(updates)
 			select {
 			case <-runner.started:
-			case <-time.After(2 * time.Second):
+			case <-time.After(timeout):
 				t.Fatal("initial turn did not start")
 			}
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			if err := service.SuspendActiveTurns(shutdownCtx); err != nil {
 				t.Fatal(err)
@@ -1523,16 +1580,29 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 				t.Fatal(err)
 			}
 			restarted := New(service.Store, runner)
+			trackService(restarted)
 			recovered, err := restarted.ReconcileOrphanedTurns()
 			if err != nil || len(recovered) != 1 || recovered[0] != card.ID {
 				t.Fatalf("recovered=%#v err=%v", recovered, err)
 			}
+			restarted.mu.Lock()
+			continuedTurn := restarted.active[card.ID]
+			restarted.mu.Unlock()
 			select {
-			case <-runner.resumed:
-			case <-time.After(2 * time.Second):
+			case err := <-runner.resumed:
+				if err != nil {
+					t.Fatalf("continued turn failed: %v", err)
+				}
+			case <-time.After(timeout):
 				t.Fatal("continued turn did not finish")
 			}
-			waitFor(t, func() bool { return !hasActiveTurn(restarted, project.ID) })
+			if continuedTurn != nil {
+				select {
+				case <-continuedTurn.done:
+				case <-time.After(timeout):
+					t.Fatal("continued turn did not complete its durable lifecycle")
+				}
+			}
 			conversation, err := service.Store.Conversation(card.ID)
 			if err != nil || conversation.Status != "idle" || conversation.ActiveTurn != nil || len(conversation.Messages) != 2 || conversation.Messages[1].ID != responseMessageID || conversation.Messages[1].Parts[0].Text != "before restart after restart" {
 				t.Fatalf("continued conversation=%#v err=%v", conversation, err)

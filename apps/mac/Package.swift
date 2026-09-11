@@ -17,6 +17,7 @@ let package = Package(
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.5.1"),
+        .package(path: "Vendor/swift-markdown-engine"),
     ],
     targets: [
         .target(
@@ -58,8 +59,11 @@ let package = Package(
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
+                .product(name: "MarkdownEngine", package: "swift-markdown-engine"),
+                .product(name: "MarkdownEngineCodeBlocks", package: "swift-markdown-engine"),
                 "WebRTC",
             ],
+            resources: [.copy("Resources/MarkdownPreview"), .copy("Resources/MarkdownEditorLicenses.txt")],
             swiftSettings: [
                 .define("DIETER_UI_SMOKE", .when(configuration: .debug))
             ],
@@ -86,6 +90,7 @@ let package = Package(
             name: "DieterMacTests",
             dependencies: [
                 "DieterMac",
+                .product(name: "MarkdownEngine", package: "swift-markdown-engine"),
                 "DieterAPI",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ]

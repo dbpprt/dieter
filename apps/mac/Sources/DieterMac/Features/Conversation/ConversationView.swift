@@ -25,40 +25,6 @@ enum ConversationRefreshText {
     }
 }
 
-enum ConversationActivityPresentation {
-    private static let activeStatuses = Set(["starting", "running", "working", "streaming", "cancelling"])
-
-    static func isActive(conversationStatus: String, cardRuntime: String) -> Bool {
-        activeStatuses.contains(conversationStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
-            || activeStatuses.contains(cardRuntime.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
-    }
-
-    static func turnStart(messages: [Dieter_V1_UiMessage], runtimeUpdatedAt: String) -> Date? {
-        if let user = messages.last(where: { $0.role == "user" }),
-            let metadata = try? JSONSerialization.jsonObject(with: user.metadataJson) as? [String: Any],
-            let value = metadata["createdAt"] as? String,
-            let date = DieterTimestamp.date(from: value)
-        {
-            return date
-        }
-        return DieterTimestamp.date(from: runtimeUpdatedAt)
-    }
-
-    static func liveLabel(pendingTools: [Dieter_V1_PendingTool], plans: [Dieter_V1_TaskPlan]) -> String {
-        if let tool = pendingTools.first, !tool.toolName.isEmpty { return "Running \(tool.toolName)…" }
-        if let task = plans.last?.phases.flatMap(\.tasks).first(where: { $0.status == "in_progress" }),
-            !task.activeForm.isEmpty
-        {
-            return task.activeForm
-        }
-        return label(hasPendingTool: !pendingTools.isEmpty)
-    }
-
-    static func label(hasPendingTool: Bool) -> String {
-        hasPendingTool ? "Working…" : "Thinking…"
-    }
-}
-
 struct ConversationView: View {
     @Environment(ConversationContext.self) private var context
     var compact = false
@@ -103,7 +69,7 @@ struct ConversationView: View {
                 } else if tab == "Subagents" {
                     SubagentsView()
                 } else if tab == "Comments" {
-                    CommentsView()
+                    CommentsView(composerBackground: compact ? .clear : DieterTheme.sidebar)
                 } else if tab == "Changes" {
                     let card = context.selectedCard ?? context.selectedDetail?.card
                     if ConversationWorkspaceMode.projectMode(
@@ -115,7 +81,7 @@ struct ConversationView: View {
                         WorkspaceChangesView(model: context.worktreeChanges)
                     }
                 } else {
-                    ConversationTimeline()
+                    ConversationTimeline(background: compact ? .clear : DieterTheme.background)
                         .id(context.selectedCardID ?? context.selectedChatID ?? "")
                 }
             }
@@ -125,7 +91,7 @@ struct ConversationView: View {
                 if let card, canStartCard || startingCard {
                     ConversationStartCardBanner(card: card, starting: startingCard)
                 }
-                ConversationComposer {
+                ConversationComposer(background: compact ? .clear : DieterTheme.sidebar) {
                     guard !conversationID.isEmpty else { return }
                     fileImportRequest = ConversationFileImportRequest(conversationID: conversationID)
                 }

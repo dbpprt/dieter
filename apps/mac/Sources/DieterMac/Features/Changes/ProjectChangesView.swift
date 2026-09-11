@@ -453,7 +453,10 @@ struct ProjectChangesView: View {
                                     diffMode == mode ? DieterTheme.elevated : .clear,
                                     in: RoundedRectangle(cornerRadius: 4))
                         }.buttonStyle(.plain).accessibilityLabel("\(mode) diff").accessibilityAddTraits(
-                            diffMode == mode ? .isSelected : [])
+                            diffMode == mode ? .isSelected : []
+                        )
+                        .accessibilityIdentifier("project-changes.diff-mode.\(mode.lowercased())")
+                        .smokeTarget("project-changes.diff-mode.\(mode.lowercased())")
                     }
                 }.padding(2).background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
                     .overlay { RoundedRectangle(cornerRadius: 6).stroke(DieterTheme.border) }

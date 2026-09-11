@@ -140,3 +140,113 @@ import Testing
         safeAreaTop: 32, auxiliaryLeftWidth: 650, auxiliaryRightWidth: 650)
     #expect(notched.windowFrame(expanded: true, edge: .left) == notched.windowFrame(expanded: true, edge: .right))
 }
+
+@Test func islandDisplayPreferenceSurvivesDisconnectAndResetsToAutomatic() {
+    let suite = "DieterIslandDisplayTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let laptop = islandTestDisplay("laptop", frame: CGRect(x: 0, y: 0, width: 1512, height: 982), notched: true)
+    let external = islandTestDisplay("external", frame: CGRect(x: -2560, y: 0, width: 2560, height: 1440))
+    #expect(DieterIslandPreferences.displayID(in: defaults) == nil)
+    DieterIslandPreferences.setDisplayID(external.id, in: defaults)
+    #expect(
+        DieterIslandDisplay.selected(
+            preferredID: DieterIslandPreferences.displayID(in: defaults), displays: [laptop, external],
+            mainDisplayID: laptop.id)?.id == external.id)
+
+    // Unplugging temporarily falls back without forgetting the chosen monitor.
+    #expect(
+        DieterIslandDisplay.selected(
+            preferredID: DieterIslandPreferences.displayID(in: defaults), displays: [laptop],
+            mainDisplayID: laptop.id)?.id == laptop.id)
+    #expect(DieterIslandPreferences.displayID(in: defaults) == external.id)
+    #expect(
+        DieterIslandDisplay.selected(
+            preferredID: DieterIslandPreferences.displayID(in: defaults), displays: [external, laptop],
+            mainDisplayID: laptop.id)?.id == external.id)
+
+    DieterIslandPreferences.setDisplayID(nil, in: defaults)
+    #expect(defaults.object(forKey: DieterIslandPreferences.displayKey) == nil)
+    #expect(
+        DieterIslandDisplay.selected(
+            preferredID: DieterIslandPreferences.displayID(in: defaults), displays: [external, laptop],
+            mainDisplayID: external.id)?.id == laptop.id)
+    DieterIslandPreferences.setDisplayID(external.id, in: defaults)
+    DieterIslandPreferences.setDisplayID("", in: defaults)
+    #expect(DieterIslandPreferences.displayID(in: defaults) == nil)
+}
+
+@Test func islandAutomaticDisplayHandlesClamshellMissingMainAndNoScreens() {
+    let left = islandTestDisplay("left", frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
+    let right = islandTestDisplay("right", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+    #expect(
+        DieterIslandDisplay.selected(preferredID: nil, displays: [left, right], mainDisplayID: right.id)?.id == right.id
+    )
+    #expect(
+        DieterIslandDisplay.selected(preferredID: "disconnected", displays: [left, right], mainDisplayID: nil)?.id
+            == left.id)
+    #expect(DieterIslandDisplay.selected(preferredID: "disconnected", displays: [], mainDisplayID: right.id) == nil)
+}
+
+@Test func islandDisplayChoicesDisambiguateEqualMonitorNamesByIdentity() {
+    let left = islandTestDisplay("left-lg", name: "LG HDR 4K", frame: CGRect(x: -3840, y: 0, width: 3840, height: 2160))
+    let right = islandTestDisplay("right-lg", name: "LG HDR 4K", frame: CGRect(x: 0, y: 0, width: 3840, height: 2160))
+    let laptop = islandTestDisplay(
+        "laptop", name: "Built-in Retina Display", frame: CGRect(x: 0, y: -982, width: 1512, height: 982), notched: true
+    )
+    let titles = DieterIslandDisplay.titles(for: [left, right, laptop])
+    #expect(titles[left.id] == "LG HDR 4K · Display 1")
+    #expect(titles[right.id] == "LG HDR 4K · Display 2")
+    #expect(titles[laptop.id] == "Built-in Retina Display")
+    #expect(Set(titles.values).count == 3)
+    #expect(
+        DieterIslandDisplay.selected(preferredID: right.id, displays: [left, right, laptop], mainDisplayID: left.id)?.id
+            == right.id)
+}
+
+@Test func islandDropFindsNegativeAndVerticallyStackedScreens() {
+    let left = islandTestDisplay("left", frame: CGRect(x: -2560, y: 0, width: 2560, height: 1440))
+    let main = islandTestDisplay("main", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+    let above = islandTestDisplay("above", frame: CGRect(x: 0, y: 1080, width: 1920, height: 1080))
+    let below = islandTestDisplay("below", frame: CGRect(x: 0, y: -1080, width: 1920, height: 1080))
+    let displays = [left, main, above, below]
+    #expect(DieterIslandDisplay.containing(CGPoint(x: -1280, y: 720), in: displays)?.id == left.id)
+    #expect(DieterIslandDisplay.containing(CGPoint(x: 960, y: 540), in: displays)?.id == main.id)
+    #expect(DieterIslandDisplay.containing(CGPoint(x: 960, y: 1620), in: displays)?.id == above.id)
+    #expect(DieterIslandDisplay.containing(CGPoint(x: 960, y: -540), in: displays)?.id == below.id)
+    #expect(DieterIslandDisplay.containing(CGPoint(x: -1280, y: -540), in: displays) == nil)
+    for display in displays {
+        for expanded in [false, true] {
+            let frame = display.geometry.windowFrame(expanded: expanded)
+            #expect(display.geometry.screenFrame.contains(frame))
+        }
+    }
+}
+
+@Test func islandDragUsesItsInitialGlobalAnchorWithoutAccumulatingMovement() {
+    let frame = CGRect(x: -540, y: 880, width: 270, height: 38)
+    let drag = DieterIslandDrag(displayID: "left", frame: frame, pointer: CGPoint(x: -400, y: 900))
+    let firstPoint = CGPoint(x: -100, y: 1050)
+    let stackedDisplayPoint = CGPoint(x: 500, y: 1500)
+    #expect(drag.frame(at: firstPoint) == CGRect(x: -240, y: 1030, width: 270, height: 38))
+    #expect(drag.translation(to: firstPoint) == CGSize(width: 300, height: -150))
+    for _ in 0..<10 {
+        #expect(drag.frame(at: stackedDisplayPoint) == CGRect(x: 360, y: 1480, width: 270, height: 38))
+        #expect(drag.frame(at: firstPoint) == CGRect(x: -240, y: 1030, width: 270, height: 38))
+    }
+    #expect(drag.translation(to: stackedDisplayPoint) == CGSize(width: 900, height: -600))
+    #expect(drag.frame(at: drag.pointer) == frame)
+    #expect(drag.displayID == "left")
+}
+
+private func islandTestDisplay(
+    _ id: String, name: String = "External display", frame: CGRect, notched: Bool = false
+) -> DieterIslandDisplay {
+    DieterIslandDisplay(
+        id: id, name: name,
+        geometry: .resolve(
+            screenFrame: frame,
+            visibleFrame: CGRect(x: frame.minX, y: frame.minY, width: frame.width, height: frame.height - 32),
+            safeAreaTop: notched ? 32 : 0, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil),
+        isBuiltin: notched)
+}

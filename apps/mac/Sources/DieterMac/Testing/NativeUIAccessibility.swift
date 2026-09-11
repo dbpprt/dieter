@@ -1,6 +1,109 @@
 #if DIETER_UI_SMOKE
     import AppKit
 
+    /// Observes the isolated smoke window without changing its presentation.
+    /// In particular, distinguish missing geometry from a workspace that was
+    /// closed, minimized, hidden, or ordered out while its SwiftUI task survived.
+    @MainActor final class NativeUIWindowLifecycleTrace {
+        private weak var window: NSWindow?
+        private let output: URL
+        private var observers: [NSObjectProtocol] = []
+        private var eventMonitor: Any?
+        private var timer: Timer?
+        private var lastEvent = "none"
+        private var lastState = ""
+        private var lines: [String] = []
+
+        init(window: NSWindow, output: URL) {
+            self.window = window
+            self.output = output
+            let notifications: [Notification.Name] = [
+                NSWindow.willCloseNotification, NSWindow.willMiniaturizeNotification,
+                NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification,
+                NSWindow.didChangeOcclusionStateNotification, NSWindow.didBecomeKeyNotification,
+                NSWindow.didResignKeyNotification,
+            ]
+            for name in notifications {
+                observers.append(
+                    NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
+                        [weak self] notification in
+                        let rawName = notification.name.rawValue
+                        let includeStack =
+                            notification.name == NSWindow.willCloseNotification
+                            || notification.name == NSWindow.willMiniaturizeNotification
+                        MainActor.assumeIsolated {
+                            self?.record(rawName, stack: includeStack)
+                        }
+                    })
+            }
+            for name in [
+                NSApplication.didHideNotification, NSApplication.didUnhideNotification,
+                NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+            ] {
+                observers.append(
+                    NotificationCenter.default.addObserver(forName: name, object: NSApp, queue: .main) {
+                        [weak self] notification in
+                        let rawName = notification.name.rawValue
+                        let includeStack = notification.name == NSApplication.didHideNotification
+                        MainActor.assumeIsolated {
+                            self?.record(rawName, stack: includeStack)
+                        }
+                    })
+            }
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) {
+                [weak self] event in
+                MainActor.assumeIsolated {
+                    self?.lastEvent = Self.describe(event)
+                    self?.record("local event")
+                }
+                return event
+            }
+            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let state = self.state
+                    if state != self.lastState { self.record("presentation state changed") }
+                }
+            }
+            self.timer = timer
+            RunLoop.main.add(timer, forMode: .common)
+            record("trace started")
+        }
+
+        func stop() {
+            record("trace stopped")
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+            observers.removeAll()
+            if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+            eventMonitor = nil
+            timer?.invalidate()
+            timer = nil
+        }
+
+        private var state: String {
+            guard let window else { return "workspace deallocated" }
+            return
+                "window=\(window.windowNumber) visible=\(window.isVisible) miniaturized=\(window.isMiniaturized) key=\(window.isKeyWindow) occlusion=\(window.occlusionState.rawValue) appHidden=\(NSApp.isHidden) active=\(NSApp.isActive) sheet=\(window.attachedSheet?.windowNumber ?? -1)"
+        }
+
+        private static func describe(_ event: NSEvent?) -> String {
+            guard let event else { return "none" }
+            let characters =
+                event.type == .keyDown || event.type == .keyUp ? event.charactersIgnoringModifiers ?? "" : ""
+            return
+                "type=\(event.type.rawValue) characters=\(String(reflecting: characters)) modifiers=\(event.modifierFlags.rawValue) window=\(event.windowNumber) point=\(event.locationInWindow) clickCount=\(event.type == .leftMouseDown || event.type == .rightMouseDown ? event.clickCount : 0)"
+        }
+
+        private func record(_ event: String, stack: Bool = false) {
+            lastState = state
+            lines.append(
+                "\(ProcessInfo.processInfo.systemUptime) \(event): \(lastState) current={\(Self.describe(NSApp.currentEvent))} last={\(lastEvent)}"
+            )
+            if stack { lines.append(contentsOf: Thread.callStackSymbols) }
+            try? lines.joined(separator: "\n").write(to: output, atomically: true, encoding: .utf8)
+        }
+    }
+
     /// Resolve current native accessibility geometry, then deliver real mouse/key
     /// events. Tests must still assert the resulting model and rendered state.
     @MainActor enum NativeUIAccessibility {
@@ -66,7 +169,8 @@
             var views = [root]
             while let view = views.popLast() {
                 if let split = view as? NSSplitView, let controller = split.delegate as? NSSplitViewController,
-                    controller.splitViewItems.contains(where: { $0.behavior == .inspector && !$0.isCollapsed })
+                    (controller as? BoardConversationSplitController)?.presented == true
+                        || controller.splitViewItems.contains(where: { $0.behavior == .inspector && !$0.isCollapsed })
                 {
                     return true
                 }
@@ -81,6 +185,7 @@
             while let view = views.popLast() {
                 if let split = view as? NSSplitView, split.isVertical,
                     let controller = split.delegate as? NSSplitViewController,
+                    !(controller is BoardConversationSplitController),
                     controller.splitViewItems.first?.behavior == .sidebar
                 {
                     return controller
@@ -132,7 +237,10 @@
                 lastWindow = host
                 return stableSamples >= 4
             }
-            guard settled, let host = lastWindow else { return false }
+            guard settled, let host = lastWindow else {
+                recordMissingTarget(identifier, in: window, reason: "native geometry did not settle")
+                return false
+            }
             return press(identifier, in: host)
         }
 
@@ -155,16 +263,14 @@
             _ identifier: String, in window: NSWindow, horizontalFraction: CGFloat = 0.5, fallbackLabel: String? = nil
         ) -> Bool {
             guard let element = find(identifier, in: window, fallbackLabel: fallbackLabel) else {
-                let inventory = elements(in: window).map { "\($0.identifier ?? "-") \($0.text.prefix(100))" }.joined(
-                    separator: "\n")
-                try? inventory.write(
-                    to: WorkspaceUISmokeRunner.outputDirectory().appending(
-                        path: "missing-" + identifier.replacingOccurrences(of: "/", with: "_") + ".txt"),
-                    atomically: true, encoding: .utf8)
+                recordMissingTarget(identifier, in: window, reason: "no native click target")
                 return false
             }
             let frame = element.recordedFrame ?? element.frame
-            guard frame.width > 0, frame.height > 0 else { return false }
+            guard frame.width > 0, frame.height > 0 else {
+                recordMissingTarget(identifier, in: window, reason: "empty native click frame \(frame)")
+                return false
+            }
             let window = element.recordedWindow ?? window
             let point = window.convertPoint(
                 fromScreen: NSPoint(x: frame.minX + frame.width * horizontalFraction, y: frame.midY))
@@ -182,6 +288,37 @@
                 }
             }
             return true
+        }
+
+        private static func recordMissingTarget(_ identifier: String, in window: NSWindow, reason: String) {
+            var lines = [
+                "target=\(identifier) reason=\(reason)",
+                "captured window=\(window.windowNumber) visible=\(window.isVisible) key=\(window.isKeyWindow) frame=\(window.frame) sheet=\(window.attachedSheet?.windowNumber ?? -1) taskCancelled=\(Task.isCancelled)",
+                "application active=\(NSApp.isActive)",
+            ]
+            for candidate in NSApp.windows {
+                lines.append(
+                    "app window=\(candidate.windowNumber) title=\(candidate.title) visible=\(candidate.isVisible) key=\(candidate.isKeyWindow) frame=\(candidate.frame)"
+                )
+            }
+            let entries = NativeUISmokeTargets.frames[identifier] ?? []
+            lines.append("registered anchors=\(entries.count)")
+            for entry in entries {
+                guard let anchor = entry.view else { lines.append("deallocated anchor"); continue }
+                var ancestor: NSView? = anchor
+                while let view = ancestor {
+                    lines.append(
+                        "\(Swift.type(of: view)) frame=\(view.frame) bounds=\(view.bounds) hidden=\(view.isHidden) window=\(view.window?.windowNumber ?? -1)"
+                    )
+                    ancestor = view.superview
+                }
+            }
+            lines.append("accessibility inventory:")
+            lines.append(contentsOf: elements(in: window).map { "\($0.identifier ?? "-") \($0.text.prefix(100))" })
+            try? lines.joined(separator: "\n").write(
+                to: WorkspaceUISmokeRunner.outputDirectory().appending(
+                    path: "missing-" + identifier.replacingOccurrences(of: "/", with: "_") + ".txt"),
+                atomically: true, encoding: .utf8)
         }
 
         static func type(_ text: String, in window: NSWindow) async {

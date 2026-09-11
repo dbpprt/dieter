@@ -201,11 +201,11 @@ struct BoardView: View {
                 )
                 .environment(store)
                 .environment(store.conversationContext)
-                .background(.regularMaterial)
                 .dieterThemeRoot(
                     palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
             presented: store.selectedCardID != nil,
-            maximized: conversationMaximized
+            maximized: conversationMaximized,
+            onRequestMaximize: { conversationMaximized = true }
         )
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: store.selectedCardID) { _, cardID in
@@ -269,18 +269,11 @@ struct BoardHeader: View {
         return parts.joined(separator: " · ")
     }
 
-    private var retentionTitle: String {
-        let value = store.selectedBoard?.doneArchivePolicy ?? "never"
-        if value == "never" { return "Done: Never" }
-        return "Done: "
-            + value
-            .replacingOccurrences(of: "after_", with: "")
-            .replacingOccurrences(of: "_", with: " ")
-            .capitalized
+    private var stateFilterTitle: String {
+        store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized
     }
 
     var body: some View {
-        @Bindable var store = store
         FluidPaneChrome(background: DieterTheme.background, spacing: 7) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -292,176 +285,151 @@ struct BoardHeader: View {
                 }
                 .layoutPriority(1)
                 Spacer(minLength: 8)
-
             }
         } secondary: {
-            GlassEffectContainer(spacing: 7) {
-                HStack(spacing: 7) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 7) {
-                            Button {
-                                store.labelFilter = ""
-                            } label: {
-                                HStack(spacing: 6) {
-                                    if store.labelFilter.isEmpty {
-                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
-                                    }
-                                    Text("All cards · \(store.boardCards.count)").lineLimit(1)
-                                }
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
-                                .padding(.horizontal, 10).frame(height: 28)
-                                .background(
-                                    Color.clear, in: Capsule()
-                                )
-                                .glassEffect(
-                                    store.labelFilter.isEmpty
-                                        ? .regular.tint(DieterTheme.shell.opacity(0.12)).interactive()
-                                        : .regular.interactive(), in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-
-                            if let board = store.selectedBoard, !board.labels.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 7) {
-                                        ForEach(board.labels, id: \.id) { label in
-                                            BoardLabelShelfChip(
-                                                label: label,
-                                                boardID: board.id,
-                                                count: store.boardProjection.labelCounts[label.id, default: 0],
-                                                selected: store.labelFilter == label.id
-                                            ) {
-                                                store.labelFilter = store.labelFilter == label.id ? "" : label.id
-                                            }
-                                        }
-                                    }
-                                }
-                                .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            Menu {
-                                Button("All states") { store.runtimeFilter = "" }
-                                ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
-                                    runtime in
-                                    Button(runtime.capitalized) { store.runtimeFilter = runtime }
-                                }
-                            } label: {
-                                Text(store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized)
-                            }
-                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
-
-                            Button {
-                                store.archivePolicyPresented = true
-                            } label: {
-                                Label("Board settings", systemImage: "gearshape")
-                            }
-                            .buttonStyle(.glass)
-                            .accessibilityIdentifier("board.settings")
-                            .smokeTarget("board.settings")
-
-                            Button {
-                                store.labelsPresented = true
-                            } label: {
-                                Label("Labels", systemImage: "tag")
-                            }
-                            .buttonStyle(.glass)
-                            .help("Manage board labels")
-
-                            Button {
-                                store.createConversationPresented = true
-                            } label: {
-                                Label("New card", systemImage: "rectangle.badge.plus")
-                            }
-                            .buttonStyle(.glass)
-                            .accessibilityIdentifier("board.new-card")
-
+            HStack(spacing: 8) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        if store.selectedBoard?.labels.isEmpty == false {
+                            allCardsButton(compact: false)
                         }
-
-                        HStack(spacing: 7) {
-                            Button {
-                                store.labelFilter = ""
-                            } label: {
-                                HStack(spacing: 6) {
-                                    if store.labelFilter.isEmpty {
-                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
-                                    }
-                                    Text("All · \(store.boardCards.count)").lineLimit(1)
-                                }
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(store.labelFilter.isEmpty ? DieterTheme.text : DieterTheme.subtle)
-                                .padding(.horizontal, 10).frame(height: 28)
-                                .background(
-                                    Color.clear, in: Capsule()
-                                )
-                                .glassEffect(
-                                    store.labelFilter.isEmpty
-                                        ? .regular.tint(DieterTheme.shell.opacity(0.12)).interactive()
-                                        : .regular.interactive(), in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-
-                            if let board = store.selectedBoard, !board.labels.isEmpty {
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: 7) {
-                                        ForEach(board.labels, id: \.id) { label in
-                                            BoardLabelShelfChip(
-                                                label: label,
-                                                boardID: board.id,
-                                                count: store.boardProjection.labelCounts[label.id, default: 0],
-                                                selected: store.labelFilter == label.id
-                                            ) {
-                                                store.labelFilter = store.labelFilter == label.id ? "" : label.id
-                                            }
-                                        }
-                                    }
-                                }
-                                .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
-                            }
-
-                            Menu {
-                                Button("All states") { store.runtimeFilter = "" }
-                                ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) {
-                                    runtime in
-                                    Button(runtime.capitalized) { store.runtimeFilter = runtime }
-                                }
-                                Divider()
-                                Button("Board settings…") { store.archivePolicyPresented = true }
-                                Button("Manage labels…") { store.labelsPresented = true }
-                            } label: {
-                                Label(
-                                    store.runtimeFilter.isEmpty ? "Filters" : store.runtimeFilter.capitalized,
-                                    systemImage: "line.3.horizontal.decrease")
-                            }
-                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
-
-                            Menu {
-                                Button("New card…") { store.createConversationPresented = true }
-                            } label: {
-                                Image(systemName: "ellipsis")
-                                    .frame(width: 28, height: 28)
-                            }
-                            .menuStyle(.button).buttonStyle(.glass).menuIndicator(.hidden).fixedSize()
-                            .help("New card")
-                            .accessibilityIdentifier("board.new-card")
-
+                        labelShelf
+                        Menu {
+                            stateFilterOptions
+                        } label: {
+                            Text(stateFilterTitle)
                         }
-                    }
-                    quickTaskButton
+                        .menuStyle(.button)
+                        .tint(store.runtimeFilter.isEmpty ? nil : Color.accentColor)
                         .fixedSize()
+                        .accessibilityIdentifier("board.filter.state")
+
+                        Button {
+                            store.archivePolicyPresented = true
+                        } label: {
+                            Label("Board settings", systemImage: "gearshape")
+                        }
+                        .accessibilityIdentifier("board.settings")
+                        .smokeTarget("board.settings")
+
+                        Button {
+                            store.labelsPresented = true
+                        } label: {
+                            Label("Labels", systemImage: "tag")
+                        }
+                        .help("Manage board labels")
+
+                        Button {
+                            store.createConversationPresented = true
+                        } label: {
+                            Label("New card", systemImage: "rectangle.badge.plus")
+                        }
+                        .accessibilityIdentifier("board.new-card")
+                    }
+
+                    HStack(spacing: 8) {
+                        if store.selectedBoard?.labels.isEmpty == false {
+                            allCardsButton(compact: true)
+                        }
+                        labelShelf
+                        Menu {
+                            stateFilterOptions
+                            Divider()
+                            Button("Board settings…") { store.archivePolicyPresented = true }
+                            Button("Manage labels…") { store.labelsPresented = true }
+                        } label: {
+                            Label(
+                                store.runtimeFilter.isEmpty ? "Filters" : stateFilterTitle,
+                                systemImage: "line.3.horizontal.decrease")
+                        }
+                        .menuStyle(.button)
+                        .tint(store.runtimeFilter.isEmpty ? nil : Color.accentColor)
+                        .fixedSize()
+                        .accessibilityIdentifier("board.filter.state")
+
+                        Menu {
+                            Button("New card…") { store.createConversationPresented = true }
+                        } label: {
+                            Label("New card", systemImage: "rectangle.badge.plus")
+                                .labelStyle(.iconOnly)
+                        }
+                        .menuStyle(.button)
+                        .fixedSize()
+                        .help("New card")
+                        .accessibilityIdentifier("board.new-card")
+                    }
                 }
-                .controlSize(.regular)
-                .buttonBorderShape(.capsule)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                quickTaskButton.fixedSize()
+            }
+            .font(.callout)
+            .controlSize(.regular)
+            .buttonStyle(.bordered)
+        }
+        .onChange(of: store.selectedBoard?.labels.map(\.id) ?? [], initial: true) { _, labels in
+            if !store.labelFilter.isEmpty && !labels.contains(store.labelFilter) {
+                store.labelFilter = ""
             }
         }
     }
 
+    private func allCardsButton(compact: Bool) -> some View {
+        Button {
+            store.labelFilter = ""
+        } label: {
+            HStack(spacing: 5) {
+                if store.labelFilter.isEmpty {
+                    Image(systemName: "checkmark")
+                }
+                Text("\(compact ? "All" : "All cards") · \(store.boardCards.count)")
+                    .lineLimit(1)
+            }
+        }
+        .tint(store.labelFilter.isEmpty ? Color.accentColor : nil)
+        .fixedSize()
+        .accessibilityIdentifier("board.filter.all")
+        .accessibilityValue(store.labelFilter.isEmpty ? "Selected" : "Not selected")
+    }
+
+    @ViewBuilder private var labelShelf: some View {
+        if let board = store.selectedBoard, !board.labels.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(board.labels, id: \.id) { label in
+                        BoardLabelShelfChip(
+                            label: label, boardID: board.id,
+                            count: store.boardProjection.labelCounts[label.id, default: 0],
+                            selected: store.labelFilter == label.id
+                        ) {
+                            store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                        }
+                    }
+                }
+            }
+            .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var stateFilterOptions: some View {
+        Picker(
+            "State", selection: Binding(get: { store.runtimeFilter }, set: { store.runtimeFilter = $0 })
+        ) {
+            Text("All states").tag("")
+            ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
+                Text(runtime.capitalized).tag(runtime)
+            }
+        }
+        .pickerStyle(.inline)
+    }
+
     private var quickTaskButton: some View {
         Button {
+            store.quickTaskForm.selectBoardContext(projectID: store.selectedProjectID, boardID: store.selectedBoardID)
             quickTaskPresented = true
         } label: {
             Label("Quick task", systemImage: "sparkles")
         }
-        .buttonStyle(.glassProminent)
+        .buttonStyle(.borderedProminent)
         .help("Create a task from its story")
         .accessibilityIdentifier("board.quick-task")
         .smokeTarget("board.quick-task")
@@ -512,6 +480,10 @@ final class QuickTaskFormState {
     var providerOptions: [String: String] = [:] { didSet { saveChoices() } }
     var attachments: [Dieter_V1_MessagePart] = []
     var initialized = false
+    private(set) var attachmentImportID: UUID?
+    private(set) var attachmentError: String?
+    private(set) var intakeGeneration = UUID()
+    private let filePicker = QuickTaskFilePicker()
     var rememberHostname = false
     var sourceURL = ""
     var draftProjectID = "" { didSet { saveChoices() } }
@@ -543,6 +515,46 @@ final class QuickTaskFormState {
         draftBoardID = boardIDs.contains(remembered) ? remembered : (boardIDs.first ?? "")
     }
 
+    func selectBoardContext(projectID: String, boardID: String) {
+        draftProjectID = projectID
+        draftBoardID = boardID
+    }
+
+    func appendAttachments(_ parts: [Dieter_V1_MessagePart], generation: UUID) throws {
+        guard intakeGeneration == generation else { return }
+        attachments = try AttachmentLoader.validate(parts, appendingTo: attachments)
+    }
+
+    func importFiles(
+        pick: (@MainActor () async -> [URL]?)? = nil,
+        load: @MainActor ([URL]) async throws -> [Dieter_V1_MessagePart],
+        restorePresentation: @MainActor () -> Void
+    ) async {
+        guard attachmentImportID == nil else { return }
+        let request = UUID()
+        let generation = intakeGeneration
+        attachmentImportID = request
+        attachmentError = nil
+        defer {
+            if attachmentImportID == request {
+                attachmentImportID = nil
+                restorePresentation()
+            }
+        }
+        let urls: [URL]?
+        if let pick { urls = await pick() } else { urls = await filePicker.selectFiles() }
+        guard attachmentImportID == request, intakeGeneration == generation, let urls, !urls.isEmpty else { return }
+        do {
+            let parts = try await load(urls)
+            guard attachmentImportID == request, intakeGeneration == generation else { return }
+            try appendAttachments(parts, generation: generation)
+        } catch {
+            if attachmentImportID == request, intakeGeneration == generation {
+                attachmentError = error.localizedDescription
+            }
+        }
+    }
+
     private func saveChoices() {
         let choices = Choices(
             project: draftProjectID, boards: boards, provider: provider, model: model, effort: effort,
@@ -551,6 +563,10 @@ final class QuickTaskFormState {
     }
 
     func reset() {
+        intakeGeneration = UUID()
+        attachmentImportID = nil
+        attachmentError = nil
+        filePicker.cancel()
         story = ""
         attachments = []
         rememberHostname = false
@@ -574,7 +590,6 @@ struct QuickTaskPopover: View {
     @Binding private var draftBoardID: String
     @State private var submitting = false
     @State private var settingsPresented = false
-    @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
     @State private var submissionError: String?
     private let formDraft: QuickTaskFormState
@@ -681,7 +696,9 @@ struct QuickTaskPopover: View {
                 Text("Save to").font(.subheadline.weight(.medium))
             }
             .disabled(submitting)
-            if let submissionError { Text(submissionError).font(.caption).foregroundStyle(.orange) }
+            if let error = submissionError ?? formDraft.attachmentError {
+                Text(error).font(.caption).foregroundStyle(.orange)
+            }
 
             TextField("What should the agent accomplish?", text: $story, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -697,20 +714,27 @@ struct QuickTaskPopover: View {
                 .accessibilityIdentifier("quick-task.story")
                 .smokeTarget("quick-task.story")
                 .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                    let generation = formDraft.intakeGeneration
                     Task {
                         do {
-                            attachments = try await store.attachmentParts(providers, appendingTo: attachments)
+                            let parts = try await store.attachmentParts(providers)
+                            try formDraft.appendAttachments(parts, generation: generation)
                         } catch { store.show(error) }
                     }
                 }
 
             HStack(spacing: 8) {
                 Button {
-                    fileImporterPresented = true
+                    Task {
+                        await formDraft.importFiles(
+                            load: { try await store.attachmentParts($0) },
+                            restorePresentation: { isPresented = true })
+                    }
                 } label: {
                     Label("Attach", systemImage: "paperclip")
                 }
                 .buttonStyle(.glass)
+                .disabled(submitting || formDraft.attachmentImportID != nil)
                 .accessibilityIdentifier("quick-task.attach")
                 Text("Paste or drop screenshots · 4 files, 6 MB total")
                     .font(.caption2).foregroundStyle(DieterTheme.tertiary)
@@ -805,7 +829,8 @@ struct QuickTaskPopover: View {
                 }
                 .buttonStyle(.glassProminent)
                 .disabled(
-                    cleanStory.isEmpty || submitting || draftProjectID.isEmpty || draftBoardID.isEmpty
+                    cleanStory.isEmpty || submitting || formDraft.attachmentImportID != nil
+                        || draftProjectID.isEmpty || draftBoardID.isEmpty
                 )
                 .keyboardShortcut(.return, modifiers: [.command])
                 .accessibilityIdentifier("quick-task.create")
@@ -816,9 +841,17 @@ struct QuickTaskPopover: View {
         .frame(width: 430)
         .fixedSize(horizontal: false, vertical: true)
         .smokeTarget("quick-task.content")
-        .attachmentIntake(
-            store: store, importerPresented: $fileImporterPresented, attachments: $attachments
-        )
+        .attachmentPasteCatcher { pasteboard in
+            guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
+            let generation = formDraft.intakeGeneration
+            Task {
+                do {
+                    let parts = try await store.attachmentParts(input)
+                    try formDraft.appendAttachments(parts, generation: generation)
+                } catch { store.show(error) }
+            }
+            return true
+        }
         .task {
             if !initialized {
                 if !chooseDestination && (draftProjectID.isEmpty || capturedBrowser) {
@@ -910,24 +943,25 @@ private struct BoardLabelShelfChip: View {
 
     var body: some View {
         Button(action: select) {
-            HStack(spacing: 6) {
-                Circle().fill(color).frame(width: 6, height: 6)
+            HStack(spacing: 5) {
+                if selected {
+                    Image(systemName: "checkmark").foregroundStyle(color)
+                } else {
+                    Circle().fill(color).frame(width: 6, height: 6)
+                }
                 Text(label.name).lineLimit(1)
-                Text("· \(count)").foregroundStyle(DieterTheme.tertiary)
+                Text("· \(count)").foregroundStyle(.secondary)
             }
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(selected ? color : DieterTheme.subtle)
-            .padding(.horizontal, 10).frame(height: 28)
-            .background(color.opacity(selected ? 0.17 : 0.075), in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(color.opacity(selected ? 0.5 : 0.2)))
-            .contentShape(RoundedRectangle(cornerRadius: 7))
             .draggable(BoardLabelDragPayload(labelID: label.id, boardID: boardID).encoded) {
                 BoardLabelDragPreview(label: label)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
+        .tint(selected ? color : nil)
+        .fixedSize()
         .help("Click to filter · Drag onto a card to assign")
         .accessibilityLabel("\(label.name), \(count) cards")
+        .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityHint("Click to filter. Drag onto a card to assign this label.")
     }
 }
@@ -984,12 +1018,14 @@ struct KanbanView: View {
                             sortDirection: direction,
                             onToggleSort: { laneSortDirections[lane.id] = direction.toggled }
                         )
-                        .frame(width: laneWidth)
+                        .frame(width: laneWidth, height: max(0, geometry.size.height - 24))
                     }
                 }
                 .padding(.horizontal, KanbanLaneSizing.horizontalPadding).padding(.vertical, 12)
                 .frame(
-                    minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
+                    minWidth: geometry.size.width, alignment: .topLeading
+                )
+                .frame(height: geometry.size.height, alignment: .top)
             }
             .background(DieterTheme.background)
         }
@@ -1025,19 +1061,27 @@ struct LaneColumn: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(DieterTheme.tertiary)
                         .frame(width: 20, height: 20)
-                        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 5))
+                        .smokeTarget("lane-sort.\(lane.id).\(sortDirection.systemImage)")
+                        .id(sortDirection.systemImage)
                 }
-                .buttonStyle(.plain)
-                .help("\(sortDirection.title). Click to sort \(sortDirection.toggled.title.lowercased()).")
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .quickHelp("Sort \(sortDirection.toggled.title.lowercased())")
                 .accessibilityLabel("\(lane.name) lane sorted \(sortDirection.title.lowercased())")
                 .accessibilityHint("Sort \(sortDirection.toggled.title.lowercased())")
                 .accessibilityIdentifier("lane-sort.\(lane.id)")
+                .smokeTarget("lane-sort.\(lane.id)")
                 Button {
                     store.createConversationPresented = true
                 } label: {
-                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold)).foregroundStyle(
-                        DieterTheme.tertiary)
-                }.buttonStyle(.plain)
+                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .quickHelp("New card")
+                .accessibilityLabel("New card")
             }.padding(.horizontal, 6).padding(.top, 2)
             if cards.isEmpty {
                 VStack(spacing: 7) {
@@ -1271,6 +1315,42 @@ struct BoardCardView: View {
         return starting ? "Starting \(title)" : "Run \(title)"
     }
 
+    private var metadataHelp: String {
+        let harness = store.cachedHarnessCatalog(forProjectID: card.projectID)?.harnesses.first {
+            $0.id == card.provider
+        }
+        var details = [BoardAgentStatus.resolve(card).label]
+        if !card.provider.isEmpty { details.append("Provider: \(harness?.name ?? card.provider)") }
+        if !card.model.isEmpty {
+            let name = harness?.models.first { $0.id == card.model }?.name ?? card.model
+            details.append("Model: \(name)")
+        }
+        let workspace = card.workspace
+        let mode = workspace.mode.isEmpty ? card.workspaceMode : workspace.mode
+        if !mode.isEmpty {
+            details.append("Workspace: \(ConversationWorkspaceMode.projectMode(mode).title)")
+        }
+        let branch = workspace.branch.isEmpty ? card.workspaceBranch : workspace.branch
+        if !branch.isEmpty { details.append("Branch: \(branch)") }
+        if workspace.changedFiles > 0 { details.append("\(workspace.changedFiles) changed files") }
+        if workspace.state == "conflicted" { details.append("Workspace has conflicts") }
+        if card.pullRequest.number > 0 { details.append("PR #\(card.pullRequest.number)") }
+        if card.hasTokenUsage { details.append(TaskTokenUsagePresentation.label(card.tokenUsage)) }
+        return details.joined(separator: "\n")
+    }
+
+    private var accessibilityDetails: String {
+        var details = [metadataHelp]
+        if !card.summary.isEmpty { details.append(card.summary) }
+        if !labels.isEmpty { details.append("Labels: \(labels.map(\.name).joined(separator: ", "))") }
+        let age = BoardCardActivityText.compact(
+            updatedAt: card.updatedAt, lastActivityAt: card.lastActivityAt, relativeTo: .now)
+        if !age.isEmpty { details.append("Last activity \(age)") }
+        if card.commentCount > 0 { details.append("\(card.commentCount) comments") }
+        if !card.activeSubagents.isEmpty { details.append("\(card.activeSubagents.count) active subagents") }
+        return details.joined(separator: ". ")
+    }
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             Button {
@@ -1285,10 +1365,8 @@ struct BoardCardView: View {
                         Circle().fill(BoardAgentStatus.resolve(card).color).frame(width: 6, height: 6).padding(
                             .top, 5
                         )
-                        .help(BoardAgentStatus.resolve(card).label)
                         .accessibilityLabel(BoardAgentStatus.resolve(card).label)
                     }
-                    if card.hasTokenUsage { TaskTokenUsageBadge(usage: card.tokenUsage) }
                     if !card.summary.isEmpty {
                         Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle)
                             .lineLimit(3).multilineTextAlignment(.leading)
@@ -1298,11 +1376,6 @@ struct BoardCardView: View {
                     }
                     HStack(spacing: 7) {
                         StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
-                        if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
-                        if !card.model.isEmpty {
-                            Text(card.model).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
-                                .lineLimit(1)
-                        }
                         Spacer()
                         let age = BoardCardActivityText.compact(
                             updatedAt: card.updatedAt,
@@ -1406,6 +1479,11 @@ struct BoardCardView: View {
                 .animation(.easeOut(duration: 0.14), value: labelDropTargeted)
             }
             .buttonStyle(BoardCardClickStyle(edit: openEditor))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(card.title.isEmpty ? "Untitled card" : card.title)
+            .accessibilityValue(accessibilityDetails)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("card.open.\(card.id)")
             if !card.mergedIntoCardID.isEmpty {
                 Button {
                     Task { await store.openConversation(cardID: card.mergedIntoCardID) }
@@ -1413,9 +1491,9 @@ struct BoardCardView: View {
                     Label("Merged into task", systemImage: "arrow.triangle.merge").font(.caption2)
                 }
                 .buttonStyle(.plain)
-                .padding(8)
-                .background(DieterTheme.background, in: Capsule())
-                .help("Open the task that received this request")
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6).padding(.vertical, 4)
+                .quickHelp("Open merged task")
                 .accessibilityIdentifier("card-merge-link.\(card.id)")
                 .padding(6)
             }
@@ -1437,9 +1515,7 @@ struct BoardCardView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(starting)
-                .help(
-                    starting ? "Starting the saved task" : "Run the saved task and move this card to Running"
-                )
+                .quickHelp(starting ? "Starting task" : "Run task")
                 .accessibilityLabel(runActionAccessibilityLabel)
                 .accessibilityIdentifier("card-run.\(card.id)")
                 .padding(.trailing, 12).padding(.bottom, 12)
@@ -1447,6 +1523,7 @@ struct BoardCardView: View {
             }
         }
         .onHover { hovering = $0 }
+        .quickHelp(metadataHelp, maximumWidth: 320)
         .animation(.easeOut(duration: 0.12), value: hovering)
         .contextMenu {
             if store.isFailedOutboxItem(card.id) {
@@ -1501,6 +1578,7 @@ struct BoardCardView: View {
                 Button("Archive", role: .destructive) { Task { await store.archive(card, archived: true) } }
             }.disabled(!store.projectIsAvailable(card.projectID))
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("card.\(card.id)")
         .accessibilityHint("Click to open chat. Double-click to edit.")
         .smokeTarget("card.\(card.id)")

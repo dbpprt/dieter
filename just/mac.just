@@ -68,6 +68,12 @@ format:
 format-check:
     bash apps/mac/scripts/format-swift.sh --check
 
+# Test the bundled Markdown libraries and reject stale generated assets.
+markdown-check:
+    npm --prefix {{ app_root }}/MarkdownPreview ci
+    npm --prefix {{ app_root }}/MarkdownPreview test
+    npm --prefix {{ app_root }}/MarkdownPreview run check
+
 # Verify generated clients, formatting, tests, and the debug bundle.
 check:
     just mac format-check

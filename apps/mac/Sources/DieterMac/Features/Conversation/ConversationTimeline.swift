@@ -22,23 +22,49 @@ private enum ConversationWindowAnchor: Equatable {
 }
 
 struct ConversationTimelineRow: View {
+    @Environment(ConversationContext.self) private var context
     let item: ConversationTimelineItem
     let details: [ConversationTimelineMessageDetails]
+    var isLatest = false
+    var expandedActivity = false
+    @State private var isHovered = false
+
+    private var footer: MessageFooterContent { MessageFooterContent(messages: item.messages) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            if item.isToolCallGroup {
-                ToolCallGroupView(items: item.toolCalls)
-            } else if let message = item.messages.first {
-                MessageView(message: message)
+        VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 15) {
+                if item.isToolCallGroup {
+                    ConversationActivityPartsView(
+                        steps: ConversationActivityStep.steps(
+                            messages: item.messages, showReasoning: context.showReasoning),
+                        expandedActivity: expandedActivity)
+                } else if let message = item.messages.first {
+                    MessageView(message: message, expandedActivity: expandedActivity)
+                }
+                ForEach(details) { detail in
+                    ForEach(detail.plans, id: \.id) {
+                        TaskPlanView(plan: $0)
+                    }
+                    if !detail.subagents.isEmpty {
+                        SubagentTimelineGroup(agents: detail.subagents)
+                    }
+                }
             }
-            ForEach(details) { detail in
-                ForEach(detail.plans, id: \.id) {
-                    TaskPlanView(plan: $0)
-                }
-                if !detail.subagents.isEmpty {
-                    SubagentTimelineGroup(agents: detail.subagents)
-                }
+            MessageFooter(
+                content: footer, messageID: item.messages.last?.id ?? item.id,
+                isLatest: isLatest, isHovered: isHovered
+            )
+            .frame(
+                maxWidth: .infinity,
+                alignment: item.messages.first?.role == "user" ? .trailing : .leading)
+        }
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityActions {
+            if !footer.markdown.isEmpty {
+                Button("Copy message") { footer.copy() }
             }
         }
         // A row can gain structured details (for example, a task plan) after
@@ -47,13 +73,16 @@ struct ConversationTimelineRow: View {
         // so neither the message nor its details can paint into the next row.
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .smokeTarget("conversation.message.row.\(item.messages.last?.id ?? item.id)")
     }
 }
 
 struct ConversationTimeline: View {
     @Environment(ConversationContext.self) private var context
+    // The native sidebar supplies its own adaptive glass behind the transcript.
+    var background: Color = DieterTheme.background
     @State private var historyLoadInFlight = false
-    @State private var isAtLatest = true
+    @State private var isAtRenderedEnd = true
     @State private var userScrollInProgress = false
     @State private var viewportMode = ConversationViewportMode.awaitingInitial(conversationID: "")
     @State private var presentedFailureLog: String?
@@ -66,15 +95,19 @@ struct ConversationTimeline: View {
     @State private var jumpToLatestHovered = false
 
     private var messages: [Dieter_V1_UiMessage] { context.conversationMessages }
+    private var liveMessages: [Dieter_V1_UiMessage] { context.liveActivityMessages }
     private var timelineItems: [ConversationTimelineItem] { projection.items }
     private var plans: [Dieter_V1_TaskPlan] { context.conversation?.conversation.taskPlans ?? [] }
     private var subagents: [Dieter_V1_Subagent] { context.conversation?.conversation.subagents ?? [] }
     private var queuedMessages: [Dieter_V1_QueuedMessage] {
         context.model.browsingEarlierHistory ? [] : context.conversation?.conversation.queue ?? []
     }
-    private var timelineRows: [ConversationTimelineRowContent] { projection.rows }
+    private var timelineGroups: [ConversationTimelineDisplayGroup] { projection.displayGroups }
     private var renderRange: Range<Int> {
         ConversationRenderWindow.range(messages: messages, position: renderWindowPosition)
+    }
+    private var isAtLatest: Bool {
+        isAtRenderedEnd && renderRange.upperBound == messages.count && !context.model.browsingEarlierHistory
     }
     private var projectionKey: ConversationPresentationKey {
         ConversationPresentationKey(
@@ -188,9 +221,13 @@ struct ConversationTimeline: View {
                         )
                     }
 
-                    ForEach(timelineRows) { row in
-                        ConversationTimelineRow(item: row.item, details: row.details)
-                            .id(row.id)
+                    ForEach(timelineGroups) { group in
+                        ConversationTimelineDisplayGroupView(
+                            group: group, showReasoning: context.showReasoning,
+                            isLatest: !context.model.browsingEarlierHistory && renderRange.upperBound == messages.count
+                                && group.id == timelineGroups.last?.id
+                        )
+                        .id(group.id)
                     }
 
                     ForEach(projection.unattachedPlans, id: \.id) {
@@ -202,9 +239,13 @@ struct ConversationTimeline: View {
                     }
                     if agentIsWorking {
                         ConversationAgentWorkingIndicator(
-                            label: ConversationActivityPresentation.liveLabel(pendingTools: pendingTools, plans: plans),
+                            label: ConversationActivityPresentation.liveLabel(
+                                messages: liveMessages, pendingTools: pendingTools, plans: plans,
+                                showReasoning: context.showReasoning,
+                                conversationStatus: context.conversation?.conversation.status ?? "",
+                                cardRuntime: (context.selectedCard ?? context.selectedDetail?.card)?.runtime ?? ""),
                             startedAt: ConversationActivityPresentation.turnStart(
-                                messages: messages,
+                                messages: liveMessages,
                                 runtimeUpdatedAt: (context.selectedCard ?? context.selectedDetail?.card)?
                                     .runtimeUpdatedAt ?? "")
                         )
@@ -240,6 +281,8 @@ struct ConversationTimeline: View {
                         }
                         .buttonStyle(.borderless)
                         .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("conversation.show-later")
+                        .smokeTarget("conversation.show-later")
                         .onScrollVisibilityChange(threshold: 0.8) { visible in
                             if visible, userScrollInProgress, viewportMode == .detached { showLaterMessages() }
                         }
@@ -248,21 +291,21 @@ struct ConversationTimeline: View {
                 }
                 .padding(.horizontal, 18).padding(.top, 17)
             }
+            // Growing messages must not move the reading position after a user
+            // scrolls away. Live following is driven explicitly by tail requests.
+            .defaultScrollAnchor(.top, for: .sizeChanges)
             .textSelection(.enabled)
-            .background(DieterTheme.background)
+            .background(background)
             .smokeTarget("conversation.viewport")
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 ConversationScrollBehavior.isAtLatest(
                     visibleMaxY: geometry.visibleRect.maxY,
-                    contentHeight: geometry.contentSize.height,
-                    renderedThroughLatest: renderRange.upperBound == messages.count
-                        && !context.model.browsingEarlierHistory
+                    contentHeight: geometry.contentSize.height
                 )
             } action: { _, atLatest in
-                isAtLatest = atLatest
+                isAtRenderedEnd = atLatest
                 if userScrollInProgress {
-                    viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: atLatest)
-                    if atLatest { renderWindowPosition = .latest }
+                    updateViewportAfterUserScroll()
                 } else if !atLatest, ConversationScrollBehavior.followsLatest(viewportMode) {
                     requestTailScroll()
                 }
@@ -272,9 +315,9 @@ struct ConversationTimeline: View {
                 let isUserDriven = ConversationScrollBehavior.isUserDriven(newPhase)
                 userScrollInProgress = isUserDriven
                 if isUserDriven, !isAtLatest {
-                    viewportMode = .detached
+                    updateViewportAfterUserScroll()
                 } else if wasUserDriven, !isUserDriven {
-                    viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: isAtLatest)
+                    updateViewportAfterUserScroll()
                 }
             }
             .overlay(alignment: .bottom) {
@@ -325,7 +368,7 @@ struct ConversationTimeline: View {
                 projection = .empty
                 projectionConversationID = ""
                 viewportMode = .awaitingInitial(conversationID: selectedID)
-                isAtLatest = false
+                isAtRenderedEnd = false
                 userScrollInProgress = false
             }
             .task(id: projectionKey) {
@@ -362,6 +405,8 @@ struct ConversationTimeline: View {
                 projection = next
                 projectionConversationID = key.conversationID
                 if let request = pendingWindowAnchor {
+                    renderWindowPosition = renderWindowPosition.afterUserScroll(
+                        isAtLatest: false, renderedRange: range)
                     pendingWindowAnchor = nil
                     guard
                         let anchor = ConversationScrollBehavior.anchorItem(
@@ -412,6 +457,12 @@ struct ConversationTimeline: View {
         renderWindowPosition = .latest
         pendingWindowAnchor = nil
         proxy.scrollTo(ConversationScrollBehavior.bottomID, anchor: .bottom)
+    }
+
+    private func updateViewportAfterUserScroll() {
+        viewportMode = ConversationScrollBehavior.afterUserScroll(isAtLatest: isAtLatest)
+        renderWindowPosition = renderWindowPosition.afterUserScroll(
+            isAtLatest: isAtLatest, renderedRange: renderRange)
     }
 
     private func requestTailScroll() {

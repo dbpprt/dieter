@@ -32,7 +32,7 @@ harnesses:
     defaultModel: gpt-5.6-sol
     effort:
       label: Reasoning
-      # Keep this list aligned with @ai-sdk/harness-codex's accepted values.
+      # Union of the model-specific levels advertised by the bundled Codex CLI.
       options:
         - id: low
           name: Low
@@ -42,31 +42,44 @@ harnesses:
           name: High
         - id: xhigh
           name: Extra high
+        - id: max
+          name: Max
+        - id: ultra
+          name: Ultra
     models:
       - id: gpt-6-astra
         name: GPT-6 Astra
         defaultEffort: medium
+        # Verified against the bundled Codex 0.154.0 model/list response.
+        efforts: [low, medium, high, xhigh, max, ultra]
       - id: gpt-5.6-sol
         name: GPT-5.6 Sol
         defaultEffort: xhigh
+        efforts: [low, medium, high, xhigh, max, ultra]
       - id: gpt-5.6-terra
         name: GPT-5.6 Terra
         defaultEffort: medium
+        efforts: [low, medium, high, xhigh, max, ultra]
       - id: gpt-5.6-luna
         name: GPT-5.6 Luna
         defaultEffort: medium
+        efforts: [low, medium, high, xhigh, max]
       - id: gpt-5.5
         name: GPT-5.5
         defaultEffort: medium
+        efforts: [low, medium, high, xhigh]
       - id: gpt-5.4
         name: GPT-5.4
         defaultEffort: medium
+        efforts: [low, medium, high, xhigh]
       - id: gpt-5.3-codex
         name: GPT-5.3 Codex
         defaultEffort: medium
+        efforts: [low, medium, high, xhigh]
       - id: gpt-5.3-codex-spark
         name: GPT-5.3 Codex Spark
         defaultEffort: high
+        efforts: [low, medium, high, xhigh]
 
   - id: claude-code
     name: Claude Code

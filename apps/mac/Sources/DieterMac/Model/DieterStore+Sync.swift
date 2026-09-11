@@ -375,8 +375,34 @@ extension DieterStore {
                     let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request),
                     projectDirectory[request.projectID] != nil
                 else { continue }
+                // Sync can publish the created conversation before the unary
+                // reply or journal acknowledgement. Compose that authoritative
+                // row immediately; awaiting durable reconciliation must not
+                // briefly reinsert its optimistic counterpart beside it.
+                let visibleCards =
+                    entry.kind == .createChat
+                    ? projectedChats : state.cards + (navigationCards[request.projectID] ?? [])
+                let serverID =
+                    entry.serverID
+                    ?? DieterOutboxPolicy.synchronizedConversationID(
+                        for: entry,
+                        visibleConversationIDs: Set(visibleCards.filter { $0.projectID == request.projectID }.map(\.id))
+                    )
+                if let serverID {
+                    let authoritative = visibleCards.first { $0.id == serverID }
+                    if entry.kind == .createChat {
+                        projectedChats = DieterOutboxPolicy.retargetedCards(
+                            projectedChats, from: entry.optimisticID, to: serverID, authoritative: authoritative)
+                    } else {
+                        state.cards = DieterOutboxPolicy.retargetedCards(
+                            state.cards, from: entry.optimisticID, to: serverID, authoritative: authoritative)
+                        navigationCards[request.projectID] = DieterOutboxPolicy.retargetedCards(
+                            navigationCards[request.projectID] ?? [], from: entry.optimisticID, to: serverID,
+                            authoritative: authoritative)
+                    }
+                }
                 var card = Dieter_V1_Card()
-                card.id = entry.serverID ?? entry.optimisticID
+                card.id = serverID ?? entry.optimisticID
                 card.scope = entry.kind == .createChat ? "chat" : "board"
                 card.projectID = request.projectID
                 card.boardID = entry.kind == .createChat ? "" : request.boardID

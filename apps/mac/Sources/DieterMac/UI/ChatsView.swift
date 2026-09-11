@@ -829,188 +829,9 @@ private struct StandaloneChatStartView: View {
             }
             Spacer(minLength: 24)
 
-            VStack(spacing: 9) {
-                HStack(spacing: 8) {
-                    Menu {
-                        ProjectDestinationMenuContent(
-                            groups: destinationGroups,
-                            selectedProjectID: projectID,
-                            allowsOffline: true
-                        ) { projectID = $0.project.id }
-                    } label: {
-                        DieterChipLabel(
-                            title: destination?.title ?? "Project and machine",
-                            symbol: "folder",
-                            maximumTitleWidth: 210
-                        )
-                    }
-                    .menuStyle(.borderlessButton).fixedSize()
-                    .help(
-                        destination?.detail ?? "Choose the machine and registered Git project for this chat"
-                    )
-                    .accessibilityIdentifier("chats.new.project")
-                    .accessibilityValue(destination?.title ?? "No project selected")
-
-                    Menu {
-                        ForEach(destinationHarnesses, id: \.id) { item in
-                            Button(item.name) {
-                                guard let selection = HarnessSelection(provider: item.id).resolved(in: [item])
-                                else {
-                                    return
-                                }
-                                provider = selection.provider
-                                model = selection.model
-                                effort = selection.effort
-                                providerOptions = selection.providerOptions
-                            }
-                        }
-                    } label: {
-                        DieterChipLabel(title: harness?.name ?? "Agent", symbol: "cpu")
-                    }.menuStyle(.borderlessButton).fixedSize()
-                        .disabled(destinationHarnesses.isEmpty)
-
-                    Menu {
-                        ForEach(ConversationWorkspaceMode.allCases) { mode in
-                            Button(mode.title) { workspaceDraft.mode = mode }
-                        }
-                    } label: {
-                        DieterChipLabel(title: workspaceDraft.mode.shortTitle, symbol: "square.stack.3d.up")
-                    }
-                    .menuStyle(.borderlessButton).fixedSize()
-                    .help(workspaceDraft.mode.detail)
-
-                    Menu {
-                        ForEach(harness?.models ?? [], id: \.id) { item in
-                            Button(item.name) {
-                                model = item.id
-                                effort = item.defaultEffort
-                                providerOptions = ProviderOptionValues.normalized(
-                                    for: harness, model: model, saved: providerOptions)
-                            }
-                        }
-                    } label: {
-                        DieterChipLabel(
-                            title: selectedModel?.name ?? "Model", symbol: "terminal", maximumTitleWidth: 190)
-                    }.menuStyle(.borderlessButton).fixedSize()
-
-                    if let options = selectedModel?.efforts, !options.isEmpty {
-                        Menu {
-                            ForEach(options, id: \.self) { value in Button(value.capitalized) { effort = value } }
-                        } label: {
-                            DieterChipLabel(
-                                title: effort.isEmpty ? "Default" : effort.capitalized, symbol: "sparkles")
-                        }.menuStyle(.borderlessButton).fixedSize()
-                    }
-                    ProviderOptionChips(
-                        options: ProviderOptionValues.options(for: harness, model: model),
-                        values: $providerOptions)
-                    Spacer()
-                }
-                if let destination {
-                    HStack(spacing: 7) {
-                        Image(
-                            systemName: destination.machineOnline
-                                ? "desktopcomputer" : "desktopcomputer.trianglebadge.exclamationmark"
-                        )
-                        .foregroundStyle(destination.machineOnline ? DieterTheme.eyes : DieterTheme.coral)
-                        Text("Runs on \(destination.machineName)")
-                            .font(.caption.weight(.semibold)).foregroundStyle(DieterTheme.subtle)
-                        Text("· \(destination.detail)")
-                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                            .lineLimit(1).truncationMode(.middle)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 4)
-                    .accessibilityIdentifier("chats.new.destination")
-                }
-                if harnessCatalogLoading {
-                    HStack(spacing: 7) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading models from this project's machine…")
-                    }
-                    .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                    .accessibilityIdentifier("chats.new.harness-loading")
-                } else if let harnessCatalogError {
-                    Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
-                        .font(.caption2).foregroundStyle(DieterTheme.coral)
-                        .accessibilityIdentifier("chats.new.harness-error")
-                }
-                if !attachments.isEmpty {
-                    AttachmentPreviewStrip(attachments: $attachments)
-                        .padding(.horizontal, 4)
-                }
-                HStack(alignment: .bottom, spacing: 10) {
-                    Button {
-                        fileImporterPresented = true
-                    } label: {
-                        Image(systemName: "paperclip").frame(width: 34, height: 34)
-                    }
-                    .buttonStyle(DieterIconButtonStyle())
-                    .help("Attach images or files")
-                    TextField(
-                        "Ask anything, describe a task, or explore an idea…", text: $prompt, axis: .vertical
-                    )
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .lineLimit(1...4)
-                    .padding(.horizontal, 13).padding(.vertical, 11)
-                    .accessibilityIdentifier("chats.new.prompt")
-                    .onKeyPress(.return, phases: .down) { press in
-                        if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
-                            return .ignored
-                        }
-                        if !submitting, !harnessCatalogLoading, harnessCatalogError == nil, harness != nil,
-                            !projectID.isEmpty,
-                            !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                || !attachments.isEmpty
-                        {
-                            Task { await submit() }
-                        }
-                        return .handled
-                    }
-                    .frame(minHeight: 42, alignment: .topLeading)
-                    .focused($promptFocused)
-                    .background {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(
-                                attachmentDropTargeted ? DieterTheme.shellDeep.opacity(0.12) : DieterTheme.input
-                            )
-                            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .onTapGesture { promptFocused = true }
-                    }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(
-                            attachmentDropTargeted ? DieterTheme.shell : DieterTheme.shellDeep.opacity(0.45),
-                            lineWidth: attachmentDropTargeted ? 1.5 : 1)
-                    )
-                    .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
-                        Task {
-                            do {
-                                attachments = try await store.attachmentParts(providers, appendingTo: attachments)
-                            } catch { store.show(error) }
-                        }
-                    }
-                    Button {
-                        Task { await submit() }
-                    } label: {
-                        Image(systemName: submitting ? "hourglass" : "arrow.up").font(
-                            .system(size: 12, weight: .bold)
-                        )
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36).background(DieterTheme.shellDeep, in: Circle())
-                        .shadow(color: DieterTheme.shellDeep.opacity(0.28), radius: 8, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(
-                        submitting || harnessCatalogLoading || harnessCatalogError != nil || harness == nil
-                            || projectID.isEmpty
-                            || (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                && attachments.isEmpty)
-                    )
-                    .accessibilityIdentifier("chats.new.send")
-                }
-            }
-            .padding(16).background(DieterTheme.sidebar)
+            newChatComposer
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .background(DieterTheme.sidebar)
         }
         .background(DieterTheme.background)
         .attachmentIntake(
@@ -1021,6 +842,191 @@ private struct StandaloneChatStartView: View {
         .onAppear { chooseProject() }
         .onChange(of: store.newChatProjectID) { _, value in if !value.isEmpty { projectID = value } }
         .task(id: projectID) { await loadDestinationHarnesses(for: projectID) }
+    }
+
+    private var canSubmit: Bool {
+        !submitting && !harnessCatalogLoading && harnessCatalogError == nil && harness != nil
+            && !projectID.isEmpty
+            && (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
+    }
+
+    private var newChatComposer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if harnessCatalogLoading {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading models from this project's machine…")
+                }
+                .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                .accessibilityIdentifier("chats.new.harness-loading")
+            } else if let harnessCatalogError {
+                Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
+                    .font(.caption2).foregroundStyle(DieterTheme.coral)
+                    .accessibilityIdentifier("chats.new.harness-error")
+            }
+
+            ComposerSurface(focused: promptFocused, dropTargeted: attachmentDropTargeted) {
+                destinationControls
+                ComposerTextInput(
+                    placeholder: "Ask anything, describe a task, or explore an idea…",
+                    text: $prompt, focus: $promptFocused
+                )
+                .accessibilityIdentifier("chats.new.prompt")
+                .smokeTarget("chats.new.prompt")
+                .onKeyPress(.return, phases: .down) { press in
+                    if !ComposerReturnPolicy.sendsMessage(shiftPressed: press.modifiers.contains(.shift)) {
+                        return .ignored
+                    }
+                    if canSubmit { Task { await submit() } }
+                    return .handled
+                }
+
+                if !attachments.isEmpty {
+                    AttachmentPreviewStrip(attachments: $attachments)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 6)
+                }
+
+                ComposerToolbar { metrics in
+                    ComposerAttachmentButton(
+                        identifierPrefix: "chats.new", identity: projectID,
+                        onUpload: { fileImporterPresented = true }
+                    )
+                    newChatProviderMenu(compact: metrics.compact)
+                    newChatModelMenu(compact: metrics.compact)
+                        .layoutPriority(1)
+                    if let efforts = selectedModel?.efforts, !efforts.isEmpty {
+                        newChatReasoningMenu(efforts: efforts, compact: metrics.compact)
+                    }
+                    ComposerProviderOptions(
+                        options: ProviderOptionValues.options(for: harness, model: model),
+                        values: $providerOptions, identity: projectID, identifierPrefix: "chats.new"
+                    )
+                    .smokeTarget("chats.new.provider-options")
+                    .fixedSize()
+                    Spacer(minLength: 0)
+                    ComposerSendButton(isEnabled: canSubmit, submitting: submitting) {
+                        Task { await submit() }
+                    }
+                    .accessibilityIdentifier("chats.new.send")
+                    .smokeTarget("chats.new.send")
+                }
+            }
+            .smokeTarget("chats.new.composer-shell")
+            .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
+                Task {
+                    do {
+                        attachments = try await store.attachmentParts(providers, appendingTo: attachments)
+                    } catch { store.show(error) }
+                }
+            }
+        }
+    }
+
+    private var destinationControls: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 12) {
+                ComposerSelectionMenu(
+                    title: destination?.title ?? "Project and machine", symbol: "folder", help: "Project",
+                    maximumWidth: 240
+                ) {
+                    ProjectDestinationMenuContent(
+                        groups: destinationGroups, selectedProjectID: projectID, allowsOffline: true
+                    ) { projectID = $0.project.id }
+                }
+                .accessibilityIdentifier("chats.new.project")
+                .accessibilityValue(destination?.title ?? "No project selected")
+                .smokeTarget("chats.new.project")
+
+                ComposerSelectionMenu(
+                    title: workspaceDraft.mode.shortTitle, symbol: "square.stack.3d.up", help: "Workspace",
+                    maximumWidth: 92
+                ) {
+                    ForEach(ConversationWorkspaceMode.allCases) { mode in
+                        Button(mode.title) { workspaceDraft.mode = mode }
+                    }
+                }
+                .accessibilityIdentifier("chats.new.workspace")
+                .smokeTarget("chats.new.workspace")
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(DieterTheme.subtle)
+            .controlSize(.small)
+
+            if let destination {
+                HStack(spacing: 6) {
+                    Image(
+                        systemName: destination.machineOnline
+                            ? "desktopcomputer" : "desktopcomputer.trianglebadge.exclamationmark"
+                    )
+                    .foregroundStyle(destination.machineOnline ? DieterTheme.eyes : DieterTheme.coral)
+                    Text("Runs on \(destination.machineName)")
+                        .font(.caption2.weight(.medium)).foregroundStyle(DieterTheme.subtle)
+                    Text("· \(destination.detail)")
+                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .lineLimit(1)
+                .accessibilityIdentifier("chats.new.destination")
+                .smokeTarget("chats.new.destination")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    private func newChatProviderMenu(compact: Bool) -> some View {
+        ComposerSelectionMenu(
+            title: harness?.name ?? "Agent", symbol: "cpu", help: "Provider", compact: compact, maximumWidth: 100
+        ) {
+            ForEach(destinationHarnesses, id: \.id) { item in
+                Button(item.name) {
+                    guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else { return }
+                    provider = selection.provider
+                    model = selection.model
+                    effort = selection.effort
+                    providerOptions = selection.providerOptions
+                }
+            }
+        }
+        .disabled(destinationHarnesses.isEmpty)
+        .accessibilityIdentifier("chats.new.provider")
+        .smokeTarget("chats.new.provider")
+    }
+
+    private func newChatModelMenu(compact: Bool) -> some View {
+        let name = selectedModel?.name ?? "Model"
+        return ComposerSelectionMenu(
+            title: compact ? name.replacingOccurrences(of: "GPT-", with: "") : name,
+            symbol: "sparkles", help: "Model"
+        ) {
+            ForEach(harness?.models ?? [], id: \.id) { item in
+                Button(item.name) {
+                    model = item.id
+                    effort = item.defaultEffort
+                    providerOptions = ProviderOptionValues.normalized(
+                        for: harness, model: model, saved: providerOptions)
+                }
+            }
+        }
+        .accessibilityLabel("Model: \(name)")
+        .accessibilityIdentifier("chats.new.model")
+        .smokeTarget("chats.new.model")
+    }
+
+    private func newChatReasoningMenu(efforts: [String], compact: Bool) -> some View {
+        ComposerSelectionMenu(
+            title: effort.isEmpty ? "Default" : effort.capitalized,
+            symbol: "sparkles", help: "Reasoning", compact: compact, maximumWidth: 80
+        ) {
+            ForEach(efforts, id: \.self) { value in
+                Button(value.capitalized) { effort = value }
+            }
+        }
+        .accessibilityIdentifier("chats.new.reasoning")
+        .smokeTarget("chats.new.reasoning")
     }
 
     private func chooseProject() {

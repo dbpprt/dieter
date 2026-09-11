@@ -43,6 +43,8 @@ jobs:
         run: just harness install
       - name: Run portable checks
         run: just check
+      - name: Check bundled Markdown renderer
+        run: just mac markdown-check
 
   macos:
     name: macOS client

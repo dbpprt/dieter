@@ -73,7 +73,7 @@ struct ConversationAgentWorkingIndicator: View {
         .frame(height: 34)
         .background(DieterTheme.surface.opacity(0.85), in: Capsule())
         .overlay(Capsule().stroke(DieterTheme.primary.opacity(0.18)))
-        .frame(maxWidth: 360, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("conversation.agent-working")

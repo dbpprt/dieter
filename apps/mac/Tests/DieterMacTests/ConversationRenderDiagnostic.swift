@@ -67,8 +67,7 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     #expect(ConversationActivityPresentation.isActive(conversationStatus: "running", cardRuntime: "idle"))
     #expect(ConversationActivityPresentation.isActive(conversationStatus: "idle", cardRuntime: "streaming"))
     #expect(!ConversationActivityPresentation.isActive(conversationStatus: "idle", cardRuntime: "running-lane"))
-    #expect(ConversationActivityPresentation.label(hasPendingTool: false) == "Thinking…")
-    #expect(ConversationActivityPresentation.label(hasPendingTool: true) == "Working…")
+    #expect(ConversationActivityPresentation.liveLabel(messages: [], pendingTools: [], plans: []) == "Thinking…")
 }
 
 @Test @MainActor func conversationViewSettlesAfterUnrelatedMachineDirectoryInvalidation() {
@@ -190,17 +189,29 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
 @Test func activityUsesLiveToolAndPlanWithThinkingFallback() {
     var tool = Dieter_V1_PendingTool()
     tool.toolName = "read_file"
-    #expect(ConversationActivityPresentation.liveLabel(pendingTools: [tool], plans: []) == "Running read_file…")
+    tool.inputPreview = "Sources/app.swift"
+    #expect(
+        ConversationActivityPresentation.liveLabel(messages: [], pendingTools: [tool], plans: []) == "Reading app.swift"
+    )
     var task = Dieter_V1_TaskPlanItem()
     task.status = "in_progress"
     task.activeForm = "Inspecting the tests"
     var phase = Dieter_V1_TaskPlanPhase()
     phase.tasks = [task]
     var plan = Dieter_V1_TaskPlan()
+    plan.messageID = "assistant"
+    plan.state = "active"
     plan.phases = [phase]
-    #expect(ConversationActivityPresentation.liveLabel(pendingTools: [], plans: [plan]) == "Inspecting the tests")
+    var assistant = Dieter_V1_UiMessage()
+    assistant.id = "assistant"
+    assistant.role = "assistant"
+    #expect(
+        ConversationActivityPresentation.liveLabel(messages: [assistant], pendingTools: [], plans: [plan])
+            == "Inspecting the tests")
     task.status = "completed"
     phase.tasks = [task]
     plan.phases = [phase]
-    #expect(ConversationActivityPresentation.liveLabel(pendingTools: [], plans: [plan]) == "Thinking…")
+    #expect(
+        ConversationActivityPresentation.liveLabel(messages: [assistant], pendingTools: [], plans: [plan])
+            == "Thinking…")
 }

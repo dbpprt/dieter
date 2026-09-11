@@ -69,9 +69,10 @@ struct ConversationTimelineRowContent: Identifiable, Sendable {
 struct ConversationTimelineProjection: Sendable {
     let items: [ConversationTimelineItem]
     let rows: [ConversationTimelineRowContent]
+    let displayGroups: [ConversationTimelineDisplayGroup]
     let unattachedPlans: [Dieter_V1_TaskPlan]
 
-    static let empty = ConversationTimelineProjection(items: [], rows: [], unattachedPlans: [])
+    static let empty = ConversationTimelineProjection(items: [], rows: [], displayGroups: [], unattachedPlans: [])
 
     static func build(
         messages: [Dieter_V1_UiMessage],
@@ -89,7 +90,7 @@ struct ConversationTimelineProjection: Sendable {
             ).filter { message in
                 ["user", "human"].contains(message.role.lowercased()) || structuredMessageIDs.contains(message.id)
                     || message.parts.contains {
-                        !ConversationMessagePartGroup.isHidden($0, showReasoning: showReasoning)
+                        ConversationActivityGrouping.isVisible($0, showReasoning: showReasoning)
                     }
             }
             let items = ConversationTimelineItem.group(visibleMessages, showReasoning: showReasoning)
@@ -110,6 +111,7 @@ struct ConversationTimelineProjection: Sendable {
             return ConversationTimelineProjection(
                 items: items,
                 rows: rows,
+                displayGroups: ConversationTimelineDisplayGroup.group(rows, showReasoning: showReasoning),
                 unattachedPlans: plans.filter {
                     !$0.messageID.isEmpty && !allMessageIDs.contains($0.messageID)
                 }
@@ -133,9 +135,23 @@ enum ConversationRenderWindow {
 
     enum Position: Equatable {
         case latest
-        case startingAt(Int)
+        case startingAt(Int, minimumMessages: Int = 1)
         case pagingEarlier(from: Int)
         case pagingLater(from: Int)
+
+        func afterUserScroll(isAtLatest: Bool, renderedRange: Range<Int>) -> Self {
+            if isAtLatest { return .latest }
+            // Freeze the chosen start so appends cannot evict the text being
+            // read. Paging retains its two-message overlap even for large rows.
+            switch self {
+            case .latest:
+                return .startingAt(renderedRange.lowerBound)
+            case .pagingEarlier, .pagingLater:
+                return .startingAt(renderedRange.lowerBound, minimumMessages: 2)
+            case .startingAt:
+                return self
+            }
+        }
     }
 
     static func range(messages: [Dieter_V1_UiMessage], position: Position) -> Range<Int> {
@@ -155,18 +171,16 @@ enum ConversationRenderWindow {
             break
         }
         let anchor: Int
-        let forward: Bool
         switch position {
         case .latest:
             anchor = messages.count - 1
-            forward = false
-        case .startingAt(let index):
-            anchor = min(max(0, index), messages.count - 1)
-            forward = true
+        case .startingAt(let index, let minimumMessages):
+            return forwardRange(
+                messages: messages, start: min(max(0, index), messages.count - 1),
+                minimumMessages: minimumMessages)
         case .pagingEarlier, .pagingLater:
             preconditionFailure("paging windows return before directional layout")
         }
-        if forward { return forwardRange(messages: messages, start: anchor) }
         var lower = anchor, upper = anchor, bytes = 0, parts = 0
         let candidates = Array(max(0, anchor - maximumMessages + 1)...anchor).reversed().map { $0 }
         for index in candidates {
@@ -223,7 +237,7 @@ enum ConversationRenderWindow {
     }
 
     static func range(messages: [Dieter_V1_UiMessage], requestedStart: Int?) -> Range<Int> {
-        range(messages: messages, position: requestedStart.map(Position.startingAt) ?? .latest)
+        range(messages: messages, position: requestedStart.map { Position.startingAt($0) } ?? .latest)
     }
 
     static func range(messageCount: Int, position: Position) -> Range<Int> {
@@ -231,7 +245,7 @@ enum ConversationRenderWindow {
         switch position {
         case .latest:
             return max(0, messageCount - maximumMessages)..<messageCount
-        case .startingAt(let requestedStart):
+        case .startingAt(let requestedStart, _):
             let start = min(max(0, requestedStart), max(0, messageCount - maximumMessages))
             return start..<min(messageCount, start + maximumMessages)
         case .pagingEarlier(let requestedAnchor), .pagingLater(let requestedAnchor):
@@ -242,6 +256,6 @@ enum ConversationRenderWindow {
     }
 
     static func range(messageCount: Int, requestedStart: Int?) -> Range<Int> {
-        range(messageCount: messageCount, position: requestedStart.map(Position.startingAt) ?? .latest)
+        range(messageCount: messageCount, position: requestedStart.map { Position.startingAt($0) } ?? .latest)
     }
 }

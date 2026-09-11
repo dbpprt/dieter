@@ -170,6 +170,9 @@ struct DieterIslandActivity: Equatable {
 final class DieterIslandPresentation {
     var expanded = false
     var hasPhysicalNotch = false
+    var displays: [DieterIslandDisplay] = []
+    var preferredDisplayID: String?
+    var currentDisplayID: String?
 }
 
 struct DieterIslandShape: Shape {
@@ -213,14 +216,17 @@ struct DieterIslandView: View {
     @Environment(DieterStore.self) private var store
     @Bindable var presentation: DieterIslandPresentation
     let onRequestExpansion: (Bool) -> Void
-    var onDragChanged: () -> Void = {}
-    var onDragEnded: (CGSize) -> Void = { _ in }
+    var onDragChanged: (CGSize) -> Void = { _ in }
+    var onDragEnded: () -> Void = {}
+    var onSelectDisplay: (String?) -> Void = { _ in }
+    var onDisplayPickerChanged: (Bool) -> Void = { _ in }
     var onCaptureTask: () -> Void = {}
+    @State private var displayPickerPresented = false
 
     private var pushGesture: some Gesture {
         DragGesture(minimumDistance: 8)
-            .onChanged { _ in if !presentation.hasPhysicalNotch { onDragChanged() } }
-            .onEnded { value in if !presentation.hasPhysicalNotch { onDragEnded(value.translation) } }
+            .onChanged { value in onDragChanged(value.translation) }
+            .onEnded { _ in onDragEnded() }
     }
 
     private var activity: DieterIslandActivity { store.islandActivity }
@@ -241,6 +247,14 @@ struct DieterIslandView: View {
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dieter.island")
+        .onChange(of: displayPickerPresented) { _, presented in onDisplayPickerChanged(presented) }
+        .onChange(of: presentation.expanded) { _, expanded in
+            if !expanded { displayPickerPresented = false }
+        }
+        .onDisappear {
+            displayPickerPresented = false
+            onDisplayPickerChanged(false)
+        }
     }
 
     private var islandShape: DieterIslandShape {
@@ -348,9 +362,7 @@ struct DieterIslandView: View {
             .frame(height: DieterIslandLayout.headerHeight)
             .contentShape(Rectangle())
             .simultaneousGesture(pushGesture)
-            .help(
-                presentation.hasPhysicalNotch
-                    ? "Dieter activity" : "Drag toward the other side and release to move the island")
+            .help("Drag to another display, or push toward the other side of this display and release")
 
             IslandSeparator()
 
@@ -432,6 +444,8 @@ struct DieterIslandView: View {
                 }
                 .buttonStyle(.glass)
 
+                displayPicker
+
                 Spacer()
                 Button(action: onCaptureTask) {
                     Label("Capture task", systemImage: "viewfinder")
@@ -456,6 +470,77 @@ struct DieterIslandView: View {
             .padding(.horizontal, DieterIslandLayout.horizontalInset)
             .frame(height: DieterIslandLayout.footerHeight)
         }
+    }
+
+    private var displayPicker: some View {
+        let titles = DieterIslandDisplay.titles(for: presentation.displays)
+        return Button {
+            displayPickerPresented = true
+        } label: {
+            Image(systemName: "display")
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.glass)
+        .quickHelp("Move to display")
+        .accessibilityLabel("Move island to display")
+        .accessibilityValue(presentation.currentDisplayID.flatMap { titles[$0] } ?? "Automatic")
+        .accessibilityIdentifier("island.display-picker")
+        .smokeTarget("island.display-picker")
+        .popover(isPresented: $displayPickerPresented) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Move to display")
+                    .font(.headline)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 5)
+                displayChoice(
+                    title: "Automatic", id: nil,
+                    selected: presentation.preferredDisplayID == nil,
+                    identifier: "island.display.automatic"
+                )
+                Divider().padding(.vertical, 3)
+                ForEach(presentation.displays) { display in
+                    displayChoice(
+                        title: titles[display.id] ?? display.name, id: display.id,
+                        selected: presentation.preferredDisplayID == display.id,
+                        current: presentation.currentDisplayID == display.id,
+                        identifier: "island.display.\(display.id)"
+                    )
+                }
+            }
+            .padding(12)
+            .frame(minWidth: 230, maxWidth: 340)
+            .fixedSize(horizontal: true, vertical: true)
+            .accessibilityIdentifier("island.display-options")
+            .smokeTarget("island.display-options")
+        }
+    }
+
+    private func displayChoice(
+        title: String, id: String?, selected: Bool, current: Bool = false, identifier: String
+    ) -> some View {
+        Button {
+            displayPickerPresented = false
+            onSelectDisplay(id)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: id == nil ? "sparkles" : "display").frame(width: 16)
+                Text(title).lineLimit(1)
+                Spacer(minLength: 12)
+                if current && !selected {
+                    Text("Current").font(.caption).foregroundStyle(.secondary).fixedSize()
+                }
+                Image(systemName: "checkmark")
+                    .opacity(selected ? 1 : 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityValue(selected ? "Selected" : (current ? "Current display" : ""))
+        .accessibilityIdentifier(identifier)
+        .smokeTarget(identifier)
     }
 
     private var headerTitle: String {

@@ -257,6 +257,47 @@ All domain data lives under `DIETER_HOME` on the daemon host (by default
 preserve provider continuation state so work can resume without replaying the
 user prompt.
 
+### Markdown files on macOS
+
+Markdown files in **Files** open in **Edit**, using SwiftMarkdownEngine for native
+rich editing with headings, formatting, lists, links, and tables. Mermaid and
+Vega/Vega-Lite fences appear as rendered diagrams and charts. Click a diagram to
+edit its code; moving the caret outside the block renders it again. The original
+fenced Markdown remains the saved source.
+
+Use **Edit · Split · Source · Preview** to switch views. Split shows the source
+beside its rendered preview; drag the native divider to resize either pane.
+Scrolling either pane keeps the other at the same relative position. Editors
+retain their draft and undo history when switching views, and the preview follows
+unsaved edits. All editing uses the same separate **Save** action.
+
+Right-click the preview or rich editor to **Copy as Rich Text** or **Copy as
+Markdown**. A selection copies only that content; without a selection, the whole
+document is copied. Rich text uses formatted HTML with a plain-text fallback.
+
+Vega-Lite charts adapt to the preview pane even when their Markdown specifies a
+fixed width. Titles and subtitles wrap; axes, labels, and chart annotations stay
+within the pane. Authored heights and colors are preserved. Composed, stepped,
+and Vega charts fit proportionally when their layout cannot reflow. Resizing the
+pane does not modify the saved chart specification.
+
+Fenced `mermaid` blocks render diagrams. Use `vega-lite` (or `vegalite`) fences
+for Vega-Lite charts, or `vega` for Vega specifications, with inline chart data
+such as `data.values`. Tables, ordinary code blocks, and links also render. The
+renderer and its libraries are bundled for offline use; it does not fetch
+external images, datasets, or scripts. A diagram error stays beside that block
+while the rest of the document remains visible. Mermaid source is limited to
+100 KB; Vega/Vega-Lite JSON has a separate 1 MB limit for embedded datasets.
+
+The file header's name and path are selectable, with **Copy File Name** and
+**Copy Path** actions. **Open in** lists installed applications for verified
+local files, alongside **Reveal in Finder** and **Save As…**. Files on remote
+machines can be saved as a local copy; remote paths are never opened on this Mac.
+
+Markdown files also offer **Export PDF…** and **Export HTML…** in **Open in**.
+Exports include the current unsaved draft and rendered diagrams and charts. PDF
+uses a light appearance and paginated A4 pages; HTML is a standalone document.
+
 ## Self-hosting
 
 ### Requirements
@@ -398,6 +439,13 @@ scheduled task templates, while the CLI accepts
 `--provider-option fast_mode=true`. GPT-5.3 Codex and Spark do not expose Fast
 mode. Turning it off explicitly selects the standard service tier for that
 conversation.
+
+Dieter pins Codex SDK/CLI 0.154.0 and links its harness bridge to that same
+runtime; updating a separate global `codex` command does not update Dieter's
+bundled CLI. Astra, Sol, and Terra support Max and Ultra; Luna supports Max.
+Ultra is Codex's native mode with automatic task delegation, rather than an
+API reasoning-effort value. Model-specific choices also apply when resuming
+an existing conversation.
 
 ## Development
 
@@ -556,25 +604,34 @@ request with `dieter card create --project PROJECT --board BOARD --auto-title --
 
 ### Browser capture project routing
 
-Agents can maintain exact browser hostnames on a project through the daemon:
+Agents can maintain browser host mappings, with optional ports, on a project
+through the daemon:
 
 ```sh
-dieter project update --hostname app.example.com --hostname localhost PROJECT_ID
+dieter project update --hostname app.example.com --hostname localhost:4018 PROJECT_ID
 dieter project show PROJECT_ID
 dieter project update --clear-hostnames PROJECT_ID
 ```
 
 `--hostname` is repeatable and replaces the complete list; omitting both hostname
 flags preserves it. Use `--machine ID|NAME` for projects on another daemon.
-Hostnames are lowercase, deduplicated, and stored centrally with project metadata.
-Use bare DNS names (punycode for international names) or IP addresses, without
-URLs, ports, paths, or wildcards. Up to 64 names are allowed. URL ports and schemes
-do not affect matching; subdomains require their own entries.
+Mappings are stored centrally with project metadata. CLI inputs accept DNS names
+(punycode for international names) or IPv4 addresses, optionally followed by
+`:port`. Use bare IPv6 addresses for host-only mappings and brackets for an IPv6
+address with a port, such as `'[::1]:4018'`. Ports must be numeric and between 1
+and 65535. Hostnames are lowercased and trailing dots removed; IP addresses and
+ports are canonicalized. The list is deduplicated, sorted, and limited to 64
+entries. CLI inputs cannot contain URLs, paths, or wildcards; subdomains require
+their own entries.
 
-Capture task first tries board mappings, then uses the browser URL to select a
-project when exactly one active project matches. Multiple matches require a manual destination choice; no match
-asks for a destination. The user still reviews and submits the
-Quick Task. Mappings do not grant access to a website or start any task.
+Capture task checks board mappings before mappings on active projects. Within each scope,
+an exact host-and-port match wins; if none exists, a bare-host mapping matches
+that host on any port. Matching uses the URL's explicit port, or port 80 for HTTP
+and 443 for HTTPS when omitted. For example, `localhost:4018` takes priority over
+`localhost` within board mappings. Multiple equally specific destinations require
+a manual choice; no match also asks for a destination. The user still reviews
+and submits the Quick Task. Mappings do not grant access to a website or start
+any task.
 
 Local Mac builds automatically use the sole available Apple Development signing
 identity, so macOS privacy grants can survive rebuilds. Set
@@ -584,8 +641,8 @@ single development identity retain ad-hoc signing. Switching from an old ad-hoc
 build may require granting Screen Recording to the newly signed Dieter app once.
 
 Board hostname mappings take priority over project mappings for Capture task.
-Users can edit URLs/hostnames in Board settings or remember a captured URL's
-hostname for the selected board when saving a Quick Task. Global Quick Task is
+Users can edit URLs/host mappings in Board settings or remember a captured URL's
+host mapping for the selected board when saving a Quick Task. Global Quick Task is
 available in the sidebar and always shows project and board selectors. Unmatched
 or ambiguous captures stage a draft with no destination until the user chooses.
 Tasks are saved as drafts; capture does not start an agent. The sidebar and board
@@ -595,12 +652,13 @@ while the last project, board per project, and agent settings are remembered.
 Projects without a previous board selection default to their first board.
 
 ```sh
-dieter board hostnames --hostname app.example.com BOARD_ID
+dieter board hostnames --hostname localhost:4018 --hostname '[::1]:4018' BOARD_ID
 dieter board hostnames --append --hostname preview.example.com BOARD_ID
 dieter board hostnames --clear BOARD_ID
 dieter board show BOARD_ID
 ```
 
 The default replaces the full list; `--append` adds atomically and deduplicates.
-CLI inputs are bare hostnames; Board settings also accepts HTTP(S) URLs and stores
-only their hostname. The same exact-host matching and 64-host limit apply.
+CLI inputs use the host or host-and-port format above. Board settings also accepts
+HTTP(S) URLs and stores their hostname plus an explicit port when present. The
+same normalization, matching rules, and 64-entry limit apply.

@@ -5,23 +5,36 @@ enum BoardConversationSizing {
     static let minimumWidth: CGFloat = 320
     static let maximumWidth: CGFloat = 720
     static let defaultWidth: CGFloat = 460
+    static let maximizeFraction: CGFloat = 0.75
     static let widthPreference = "DieterBoardConversationWidth"
 
     static func regularWidth(_ saved: CGFloat) -> CGFloat {
         guard saved.isFinite, saved > 0 else { return defaultWidth }
         return min(max(saved, minimumWidth), maximumWidth)
     }
+
+    static func dragMaximumWidth(availableWidth: CGFloat) -> CGFloat {
+        guard availableWidth.isFinite, availableWidth > 0 else { return maximumWidth }
+        // Leave enough native divider travel to cross the maximize threshold on wide displays.
+        // The regular-width preference remains bounded independently.
+        return max(maximumWidth, availableWidth * maximizeFraction + 64)
+    }
+
+    static func shouldMaximize(conversationWidth: CGFloat, availableWidth: CGFloat) -> Bool {
+        availableWidth.isFinite && availableWidth > 0 && conversationWidth.isFinite
+            && conversationWidth > availableWidth * maximizeFraction
+    }
 }
 
-/// The board keeps its full width underneath a native, resizable conversation.
-/// Both hosting views survive resize/maximize/restore, retaining the draft,
-/// first responder, and transcript viewport.
+/// A native trailing sidebar sits beside the board. Both hosting views
+/// survive resize/maximize/restore, retaining the draft and transcript viewport.
 struct BoardConversationOverlay: NSViewControllerRepresentable {
     let board: AnyView
     let conversation: AnyView
     let presented: Bool
     let maximized: Bool
     var defaults: UserDefaults = DieterAppearance.applicationDefaults()
+    var onRequestMaximize: () -> Void = {}
 
     func makeNSViewController(context: Context) -> BoardConversationContainerController {
         BoardConversationContainerController(defaults: defaults)
@@ -41,15 +54,15 @@ struct BoardConversationOverlay: NSViewControllerRepresentable {
     func updateNSViewController(_ controller: BoardConversationContainerController, context: Context) {
         controller.boardHost.rootView = board
         controller.inspector.conversationHost.rootView = conversation
+        controller.inspector.onRequestMaximize = onRequestMaximize
         controller.setPresentation(presented: presented, maximized: maximized)
     }
 }
 
 @MainActor
 final class BoardConversationContainerController: NSViewController {
-    let boardHost = NSHostingView(rootView: AnyView(EmptyView()))
     let inspector: BoardConversationSplitController
-    private var presented = false
+    var boardHost: NSHostingView<AnyView> { inspector.boardHost }
 
     init(defaults: UserDefaults) {
         inspector = BoardConversationSplitController(defaults: defaults)
@@ -59,57 +72,51 @@ final class BoardConversationContainerController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     override func loadView() {
-        let container = BoardConversationContainerView()
-        container.boardHost = boardHost
-        container.overlaySplit = inspector.splitView as? BoardConversationSplitView
-        view = container
-        boardHost.sizingOptions = []
-        boardHost.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(boardHost)
-        pinToContainer(boardHost)
+        view = NSView()
         addChild(inspector)
-    }
-
-    private func pinToContainer(_ child: NSView) {
+        inspector.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(inspector.view)
         NSLayoutConstraint.activate([
-            child.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            child.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            child.topAnchor.constraint(equalTo: view.topAnchor),
-            child.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            inspector.view.leftAnchor.constraint(equalTo: view.leftAnchor),
+            inspector.view.rightAnchor.constraint(equalTo: view.rightAnchor),
+            inspector.view.topAnchor.constraint(equalTo: view.topAnchor),
+            inspector.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
 
     func setPresentation(presented: Bool, maximized: Bool) {
         loadViewIfNeeded()
-        if self.presented != presented {
-            self.presented = presented
-            if presented {
-                inspector.view.translatesAutoresizingMaskIntoConstraints = false
-                view.addSubview(inspector.view, positioned: .above, relativeTo: boardHost)
-                pinToContainer(inspector.view)
-                inspector.prepareForPresentation()
-            } else {
-                inspector.rememberRegularWidth()
-                // Detach without recreating the host. Hidden content must not
-                // retain mouse tracking, accessibility, or popover anchors.
-                inspector.view.removeFromSuperview()
-            }
-        }
-        inspector.setMaximized(maximized)
+        inspector.setPresentation(presented: presented, maximized: maximized)
     }
 }
 
 @MainActor
 final class BoardConversationSplitController: NSSplitViewController {
+    let boardHost = NSHostingView(rootView: AnyView(EmptyView()))
+    let boardBackground = NSBackgroundExtensionView()
     let conversationHost = NSHostingView(rootView: AnyView(EmptyView()))
-    private let leadingController = NSViewController()
+    private let boardController = NSViewController()
     private let conversationController = NSViewController()
     private let defaults: UserDefaults
     private var regularWidth: CGFloat
     private var restoreWidthOnLayout = true
+    private var widthBeforeDividerDrag: CGFloat?
+    private var requestedMaximizeFromDrag = false
+    var onRequestMaximize: () -> Void = {}
+    private(set) var presented = false
     private(set) var maximized = false
 
-    var conversationFrame: CGRect { conversationController.view.frame }
+    // A logical leading sidebar gets AppKit's background extension behavior.
+    // Only the split's direction is mirrored, placing that sidebar on the right.
+    var conversationItem: NSSplitViewItem { splitViewItems[0] }
+    var boardItem: NSSplitViewItem { splitViewItems[1] }
+
+    // Native sidebars inset their content inside the split item. Persist and
+    // compare the entire pane, so repeated restore does not subtract its chrome.
+    var conversationFrame: CGRect {
+        guard splitView.arrangedSubviews.count == 2 else { return .zero }
+        return splitView.arrangedSubviews[0].frame
+    }
 
     init(defaults: UserDefaults) {
         self.defaults = defaults
@@ -118,127 +125,181 @@ final class BoardConversationSplitController: NSSplitViewController {
         super.init(nibName: nil, bundle: nil)
         let split = BoardConversationSplitView()
         split.isVertical = true
+        split.userInterfaceLayoutDirection = .rightToLeft
         split.dividerStyle = .thin
         split.setAccessibilityIdentifier("board.conversation-split")
-        split.onDividerDragEnded = { [weak self] in self?.rememberRegularWidth() }
+        split.onDividerDragBegan = { [weak self] in self?.dividerDragBegan() }
+        split.onDividerDragEnded = { [weak self] in self?.dividerDragEnded() }
         splitView = split
 
-        leadingController.view = NSView()
+        boardHost.sizingOptions = []
         conversationHost.sizingOptions = []
+        let contentDirection = NSApplication.shared.userInterfaceLayoutDirection
+        boardHost.userInterfaceLayoutDirection = contentDirection
+        boardBackground.userInterfaceLayoutDirection = contentDirection
+        conversationHost.userInterfaceLayoutDirection = contentDirection
+        // AppKit mirrors and blurs the board's edges underneath the floating
+        // sidebar. Its real, interactive content stays inside the safe area.
+        boardBackground.automaticallyPlacesContentView = false
+        boardBackground.contentView = boardHost
+        boardHost.translatesAutoresizingMaskIntoConstraints = false
+        // Explicit native safe-area constraints also track divider changes;
+        // automatic placement can retain the initial inset while resizing.
+        let safeArea = boardBackground.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            boardHost.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor),
+            boardHost.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor),
+            boardHost.topAnchor.constraint(equalTo: safeArea.topAnchor),
+            boardHost.bottomAnchor.constraint(equalTo: safeArea.bottomAnchor),
+        ])
+        boardController.view = boardBackground
         conversationController.view = conversationHost
 
-        let leading = NSSplitViewItem(viewController: leadingController)
-        leading.minimumThickness = 0
-        leading.canCollapse = false
-        leading.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
-        leading.holdingPriority = NSLayoutConstraint.Priority(200)
-        let conversation = NSSplitViewItem(inspectorWithViewController: conversationController)
+        let board = NSSplitViewItem(viewController: boardController)
+        board.automaticallyAdjustsSafeAreaInsets = true
+        board.minimumThickness = 0
+        // Close/maximize own presentation state; native divider drags resize
+        // panes without independently changing the selected conversation.
+        board.canCollapse = false
+        board.canCollapseFromWindowResize = false
+        board.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
+        board.holdingPriority = NSLayoutConstraint.Priority(200)
+        let conversation = NSSplitViewItem(sidebarWithViewController: conversationController)
         conversation.minimumThickness = BoardConversationSizing.minimumWidth
         conversation.maximumThickness = BoardConversationSizing.maximumWidth
         conversation.canCollapse = false
         conversation.canCollapseFromWindowResize = false
+        conversation.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
         conversation.holdingPriority = NSLayoutConstraint.Priority(480)
-        addSplitViewItem(leading)
+        conversation.isCollapsed = true
         addSplitViewItem(conversation)
+        addSplitViewItem(board)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        guard restoreWidthOnLayout, !maximized, splitView.bounds.width >= BoardConversationSizing.minimumWidth else {
-            return
+        // Keep the real content above the reflection surface so normal AppKit
+        // hit testing reaches the Kanban controls, not the decorative replica.
+        if boardBackground.subviews.last !== boardHost {
+            boardBackground.addSubview(boardHost, positioned: .above, relativeTo: nil)
         }
+        updateMaximumThickness()
+        guard presented, restoreWidthOnLayout, !maximized,
+            splitView.bounds.width >= BoardConversationSizing.minimumWidth
+        else { return }
         restoreWidthOnLayout = false
         let width = min(regularWidth, splitView.bounds.width)
-        splitView.setPosition(splitView.bounds.maxX - width, ofDividerAt: 0)
+        splitView.setPosition(width, ofDividerAt: 0)
     }
 
-    func prepareForPresentation() {
-        restoreWidthOnLayout = true
-        view.needsLayout = true
-    }
-
-    func setMaximized(_ value: Bool) {
-        guard maximized != value else { return }
-        if value { rememberRegularWidth() }
-        maximized = value
-        (splitView as? BoardConversationSplitView)?.maximized = value
-        if value {
-            splitViewItems[1].maximumThickness = 1_000_000
-            splitViewItems[0].isCollapsed = true
-            restoreWidthOnLayout = false
-        } else {
-            splitViewItems[0].isCollapsed = false
-            splitViewItems[1].maximumThickness = BoardConversationSizing.maximumWidth
-            restoreWidthOnLayout = true
+    func setPresentation(presented: Bool, maximized: Bool) {
+        let maximized = presented && maximized
+        guard self.presented != presented || self.maximized != maximized else { return }
+        if self.presented, !self.maximized, !requestedMaximizeFromDrag { rememberRegularWidth() }
+        requestedMaximizeFromDrag = false
+        widthBeforeDividerDrag = nil
+        if !presented, let responder = conversationHost.window?.firstResponder as? NSView,
+            responder === conversationHost || responder.isDescendant(of: conversationHost)
+        {
+            conversationHost.window?.makeFirstResponder(nil)
         }
+        self.presented = presented
+        self.maximized = maximized
+        (splitView as? BoardConversationSplitView)?.maximized = maximized
+        // A collapsed content item must stop extending behind its sibling so
+        // AppKit can give the maximized conversation the entire split width.
+        boardItem.automaticallyAdjustsSafeAreaInsets = !maximized
+        if maximized {
+            conversationItem.maximumThickness = 1_000_000
+            boardItem.isCollapsed = true
+        } else {
+            boardItem.isCollapsed = false
+            updateMaximumThickness()
+        }
+        if presented, !maximized {
+            // AppKit can retain a zero-width overlay constraint after revealing
+            // a mirrored sidebar or restoring the extended content item. Reset
+            // that native constraint by reinserting the same item and host.
+            let conversation = conversationItem
+            removeSplitViewItem(conversation)
+            conversation.isCollapsed = false
+            insertSplitViewItem(conversation, at: 0)
+        } else {
+            conversationItem.isCollapsed = !presented
+        }
+        restoreWidthOnLayout = presented && !maximized
         view.needsLayout = true
+    }
+
+    private func updateMaximumThickness() {
+        let maximum =
+            maximized
+            ? 1_000_000
+            : BoardConversationSizing.dragMaximumWidth(
+                availableWidth: splitView.bounds.width)
+        if conversationItem.maximumThickness != maximum {
+            conversationItem.maximumThickness = maximum
+        }
+    }
+
+    func dividerDragBegan() {
+        guard presented, !maximized, !restoreWidthOnLayout, conversationHost.window != nil else { return }
+        requestedMaximizeFromDrag = false
+        widthBeforeDividerDrag = conversationFrame.width
+        rememberRegularWidth()
+    }
+
+    func dividerDragEnded() {
+        defer { widthBeforeDividerDrag = nil }
+        splitView.layoutSubtreeIfNeeded()
+        guard let initialWidth = widthBeforeDividerDrag, presented, !maximized,
+            abs(conversationFrame.width - initialWidth) > 0.5
+        else { return }
+        if BoardConversationSizing.shouldMaximize(
+            conversationWidth: conversationFrame.width, availableWidth: splitView.bounds.width)
+        {
+            // Preserve the width from before the gesture. The SwiftUI callback
+            // owns presentation state, and its update must not save the overshoot.
+            requestedMaximizeFromDrag = true
+            onRequestMaximize()
+        } else {
+            rememberRegularWidth()
+        }
     }
 
     func rememberRegularWidth() {
-        guard !maximized, !restoreWidthOnLayout, conversationHost.window != nil else { return }
+        guard presented, !maximized, !restoreWidthOnLayout, conversationHost.window != nil else { return }
         regularWidth = BoardConversationSizing.regularWidth(conversationFrame.width)
         defaults.set(Double(regularWidth), forKey: BoardConversationSizing.widthPreference)
     }
-
-    override func splitView(
-        _ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect,
-        forDrawnRect drawnRect: NSRect, ofDividerAt dividerIndex: Int
-    ) -> NSRect {
-        let native = super.splitView(
-            splitView, effectiveRect: proposedEffectiveRect, forDrawnRect: drawnRect, ofDividerAt: dividerIndex)
-        return maximized ? native : native.union(drawnRect.insetBy(dx: -4, dy: 0))
-    }
 }
 
-/// NSSplitViewController may wrap its split view. Bypass that wrapper for the
-/// uncovered board, while keeping divider and conversation input native.
-final class BoardConversationContainerView: NSView {
-    weak var boardHost: NSView?
-    weak var overlaySplit: BoardConversationSplitView?
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        if let split = overlaySplit, split.window != nil, !split.maximized,
-            let leading = split.arrangedSubviews.first
-        {
-            let local = split.convert(point, from: superview)
-            if leading.frame.contains(local), !split.dividerTrackingRect.contains(local) {
-                return boardHost?.hitTest(convert(point, from: superview))
-            }
-        }
-        return super.hitTest(point)
-    }
-}
-
-/// The empty leading pane exposes the Kanban underneath. Only the native divider
-/// and the conversation consume input; AppKit owns divider tracking and cursors.
+/// Divider tracking stays native. Only the completed gesture can request
+/// maximization; ordinary window/layout changes never change presentation mode.
 final class BoardConversationSplitView: NSSplitView {
+    var onDividerDragBegan: (() -> Void)?
     var onDividerDragEnded: (() -> Void)?
     var maximized = false
 
     var dividerTrackingRect: CGRect {
-        guard !maximized, arrangedSubviews.count == 2 else { return .zero }
+        guard !maximized, arrangedSubviews.count == 2,
+            !isSubviewCollapsed(arrangedSubviews[0])
+        else { return .zero }
+        // The board's background extends beneath the sidebar. Track the
+        // physically right sidebar edge, not the background's full width.
         return CGRect(
-            x: arrangedSubviews[0].frame.maxX - 4, y: bounds.minY,
-            width: dividerThickness + 8, height: bounds.height)
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = convert(point, from: superview)
-        if dividerTrackingRect.contains(local) { return self }
-        if !maximized, let leading = arrangedSubviews.first, leading.frame.contains(local) { return nil }
-        return super.hitTest(point)
+            x: arrangedSubviews[0].frame.minX, y: bounds.minY,
+            width: dividerThickness, height: bounds.height)
     }
 
     override func mouseDown(with event: NSEvent) {
-        let trackingDivider = dividerTrackingRect.contains(convert(event.locationInWindow, from: nil))
+        let beganOnDivider =
+            dividerTrackingRect.insetBy(dx: -3, dy: 0).contains(
+                convert(event.locationInWindow, from: nil)) && !maximized
+        if beganOnDivider { onDividerDragBegan?() }
         super.mouseDown(with: event)
-        if trackingDivider { onDividerDragEnded?() }
-    }
-
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        if !maximized { addCursorRect(dividerTrackingRect, cursor: .resizeLeftRight) }
+        if beganOnDivider { onDividerDragEnded?() }
     }
 }

@@ -92,6 +92,57 @@ private func command(_ id: String) -> DieterOutboxEntry {
     #expect(model.draft.text == "D")
 }
 
+@Test(arguments: [false, true]) @MainActor
+func synchronizedCreateRemovesOptimisticRowBeforeOutboxJournalAcknowledgement(chat: Bool) async throws {
+    let root = outboxTestRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let outbox = DurableOutbox(journal: journal(at: root))
+    let store = DieterStore(outboxOverride: outbox, restoreSync: false)
+    var project = Dieter_V1_Project()
+    project.id = "project"
+    store.projectDirectory = [project.id: project]
+    store.projectEndpointIDs = [project.id: store.endpoint.id]
+    store.selectedProjectID = project.id
+    var request = Dieter_V1_CreateConversationRequest()
+    request.projectID = project.id
+    request.boardID = chat ? "" : "board"
+    request.title = "Identical titles are valid"
+    let entry = DieterOutboxEntry(
+        commandID: "create-before-reply", clientID: "test", endpointID: store.endpoint.id,
+        kind: chat ? .createChat : .createCard, request: try request.serializedData(),
+        optimisticID: "local_create", attempts: 0, createdAt: Date())
+    try await outbox.enqueue(entry)
+    store.rebuildOutboxOverlays()
+    #expect((chat ? store.chats : store.state.cards).map(\.id) == [entry.optimisticID])
+
+    var accepted = Dieter_V1_Card()
+    accepted.id = try #require(
+        DieterOutboxPolicy.expectedConversationID(clientID: entry.clientID, commandID: entry.commandID))
+    accepted.projectID = project.id
+    accepted.boardID = request.boardID
+    accepted.scope = chat ? "chat" : "board"
+    accepted.title = request.title
+    accepted.runtime = "running"
+    var unrelated = accepted
+    unrelated.id = "c_another_same_title"
+    var snapshot = Dieter_V1_GlobalSnapshot()
+    snapshot.state.projects = [project]
+    if chat { snapshot.state.chats = [accepted, unrelated] } else { snapshot.state.cards = [accepted, unrelated] }
+
+    // This is the synchronous portion of the sync callback, before the
+    // following await can acknowledge the command in the outbox journal.
+    store.applyGlobalSnapshot(snapshot, endpointID: store.endpoint.id)
+    for _ in 0..<3 {
+        let rows = chat ? store.chats : store.state.cards
+        #expect(rows.count == 2)
+        #expect(!rows.contains { $0.id == entry.optimisticID })
+        #expect(rows.first { $0.id == accepted.id } == accepted)
+        #expect(rows.first { $0.id == unrelated.id } == unrelated)
+        #expect(outbox.entries == [entry])
+        store.rebuildOutboxOverlays()
+    }
+}
+
 private actor DelayedOutboxDelivery: OutboxRPC {
     private var pending: CheckedContinuation<Dieter_V1_SendMessageResponse, Never>?
     var requests: [Dieter_V1_SendMessageRequest] = []
