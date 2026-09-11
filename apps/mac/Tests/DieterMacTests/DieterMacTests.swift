@@ -1079,6 +1079,13 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(ConversationScrollBehavior.isAtLatest(visibleMaxY: 1_000, contentHeight: 1_000))
     #expect(ConversationScrollBehavior.isAtLatest(visibleMaxY: 999, contentHeight: 1_000))
     #expect(!ConversationScrollBehavior.isAtLatest(visibleMaxY: 950, contentHeight: 1_000))
+    #expect(
+        !ConversationScrollBehavior.isAtLatest(
+            visibleMaxY: 1_000,
+            contentHeight: 1_000,
+            renderedThroughLatest: false
+        )
+    )
 }
 
 @Test func conversationProjectionIdentityIncludesTheSelectedConversation() {

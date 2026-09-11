@@ -17,9 +17,14 @@ struct ConversationMarkdownView: View {
                     .accessibilityIdentifier("conversation.full-text").smokeTarget("conversation.full-text")
             }
         }
-        .sheet(isPresented: $showingFullText) { FullConversationText(source: source) }
+        // Always report the full wrapped height back to the conversation
+        // stack as the split-view width changes.
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $showingFullText) {
+            FullConversationText(source: source)
+        }
     }
-
 }
 
 /// AppKit lays out long plain text incrementally. Opening the full source is an

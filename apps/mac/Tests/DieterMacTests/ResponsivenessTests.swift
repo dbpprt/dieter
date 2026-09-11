@@ -161,6 +161,10 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     #expect(tail.count == 1)
     let earlier = ConversationRenderWindow.range(messages: messages, requestedStart: 0)
     #expect(earlier == 0..<1)
+    let pagedEarlier = ConversationRenderWindow.range(messages: messages, position: .pagingEarlier(from: 100))
+    #expect(pagedEarlier == 99..<101)
+    let pagedLater = ConversationRenderWindow.range(messages: messages, position: .pagingLater(from: 100))
+    #expect(pagedLater == 100..<102)
 }
 
 @Test @MainActor func orphanedOutboxChatsStayInRecoveryWithoutChangingDirectoryCount() async throws {
