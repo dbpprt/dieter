@@ -209,12 +209,14 @@
             let systemDivider = browserFrame.minX - mainFrame.maxX
             let chatDivider = detailFrame.minX - browserFrame.maxX
             let dividerTopGap = window.frame.maxY - dividerFrame.maxY
+            let dividerBottomGap = dividerFrame.minY - window.frame.minY
             results["navigation-boundaries"] =
                 systemDivider >= 0 && systemDivider <= 1.5
                     && abs(chatDivider) < 1
                     && dividerTopGap >= 0 && dividerTopGap <= 1.5
+                    && dividerBottomGap >= 0 && dividerBottomGap <= 1.5
                 ? "passed"
-                : "failed: system=\(systemDivider) chat=\(chatDivider) top=\(dividerTopGap)"
+                : "failed: system=\(systemDivider) chat=\(chatDivider) top=\(dividerTopGap) bottom=\(dividerBottomGap)"
         }
 
         private static func seed(_ store: DieterStore) {

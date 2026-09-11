@@ -317,8 +317,12 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
                         }
                     }
                 )
-                .frame(height: geometry.size.height)
-                .ignoresSafeArea(.container, edges: .top)
+                .frame(
+                    height: geometry.size.height
+                        + geometry.safeAreaInsets.top
+                        + geometry.safeAreaInsets.bottom
+                )
+                .ignoresSafeArea(.container, edges: .vertical)
                 .offset(x: width - ChatPaneSizing.dividerHitWidth / 2)
                 .zIndex(1)
             }
