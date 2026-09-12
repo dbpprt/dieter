@@ -90,11 +90,14 @@ internal fun ProjectChangesScreen(
                 Icons.Outlined.Description,
                 Modifier.fillMaxSize(),
             )
-            expanded -> Row(Modifier.fillMaxSize()) {
-                ProjectChangeList(state, model, { discardPath = it }, { commitOpen = true }, Modifier.weight(0.43f))
-                HorizontalPaneDivider()
-                ProjectChangeDiff(state, model, showBack = false, modifier = Modifier.weight(0.57f))
-            }
+            expanded -> ResizableHorizontalSplitPane(
+                dividerTag = "project-changes-pane-divider",
+                modifier = Modifier.fillMaxSize(),
+                leading = { paneModifier ->
+                    ProjectChangeList(state, model, { discardPath = it }, { commitOpen = true }, paneModifier)
+                },
+                trailing = { paneModifier -> ProjectChangeDiff(state, model, showBack = false, modifier = paneModifier) },
+            )
             review.selectedPath.isNotEmpty() -> ProjectChangeDiff(state, model, showBack = true, modifier = Modifier.fillMaxSize())
             else -> ProjectChangeList(state, model, { discardPath = it }, { commitOpen = true }, Modifier.fillMaxSize())
         }

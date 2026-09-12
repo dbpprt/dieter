@@ -3,8 +3,10 @@
 package com.dbpprt.dieter.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,15 +36,27 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -140,9 +154,106 @@ internal fun EmptyDetail(title: String, body: String, icon: ImageVector, modifie
     EmptyList(title, body, icon, modifier)
 }
 
+internal fun clampedPaneLeadingWidth(
+    requestedWidth: Float,
+    totalWidth: Float,
+    dividerWidth: Float,
+    minimumLeadingWidth: Float,
+    minimumTrailingWidth: Float,
+): Float {
+    val availableWidth = (totalWidth - dividerWidth).coerceAtLeast(0f)
+    if (availableWidth == 0f) return 0f
+    val minimumCombinedWidth = minimumLeadingWidth + minimumTrailingWidth
+    if (minimumCombinedWidth > availableWidth && minimumCombinedWidth > 0f) {
+        return availableWidth * (minimumLeadingWidth / minimumCombinedWidth)
+    }
+    return requestedWidth.coerceIn(
+        minimumLeadingWidth.coerceAtMost(availableWidth),
+        (availableWidth - minimumTrailingWidth).coerceAtLeast(0f),
+    )
+}
+
 @Composable
-internal fun HorizontalPaneDivider() {
-    Box(Modifier.fillMaxHeight().width(1.dp).background(DieterOutline))
+internal fun ResizableHorizontalSplitPane(
+    dividerTag: String,
+    modifier: Modifier = Modifier,
+    initialLeadingFraction: Float = 0.43f,
+    minimumLeadingWidth: androidx.compose.ui.unit.Dp = 220.dp,
+    minimumTrailingWidth: androidx.compose.ui.unit.Dp = 320.dp,
+    leading: @Composable (Modifier) -> Unit,
+    trailing: @Composable (Modifier) -> Unit,
+) {
+    val dividerWidth = 16.dp
+    var requestedFraction by rememberSaveable(dividerTag) { mutableFloatStateOf(initialLeadingFraction) }
+    var dragging by remember { mutableStateOf(false) }
+    val density = LocalDensity.current
+
+    BoxWithConstraints(modifier) {
+        val totalWidthPx = with(density) { maxWidth.toPx() }
+        val dividerWidthPx = with(density) { dividerWidth.toPx() }
+        val availableWidthPx = (totalWidthPx - dividerWidthPx).coerceAtLeast(0f)
+        val minimumLeadingWidthPx = with(density) { minimumLeadingWidth.toPx() }
+        val minimumTrailingWidthPx = with(density) { minimumTrailingWidth.toPx() }
+        val leadingWidthPx = clampedPaneLeadingWidth(
+            requestedWidth = availableWidthPx * requestedFraction,
+            totalWidth = totalWidthPx,
+            dividerWidth = dividerWidthPx,
+            minimumLeadingWidth = minimumLeadingWidthPx,
+            minimumTrailingWidth = minimumTrailingWidthPx,
+        )
+        val leadingWidth = with(density) { leadingWidthPx.toDp() }
+        val actualFraction = if (availableWidthPx > 0f) leadingWidthPx / availableWidthPx else 0.5f
+        val currentLeadingWidthPx by rememberUpdatedState(leadingWidthPx)
+
+        Row(Modifier.fillMaxSize()) {
+            leading(Modifier.width(leadingWidth).fillMaxHeight())
+            Box(
+                Modifier.width(dividerWidth).fillMaxHeight()
+                    .testTag(dividerTag)
+                    .semantics {
+                        contentDescription = "Resize list and detail panes"
+                        stateDescription = "List pane ${(actualFraction * 100).toInt()} percent"
+                        progressBarRangeInfo = ProgressBarRangeInfo(actualFraction, 0f..1f)
+                        setProgress { targetFraction ->
+                            requestedFraction = targetFraction.coerceIn(0f, 1f)
+                            true
+                        }
+                    }
+                    .pointerInput(availableWidthPx, minimumLeadingWidthPx, minimumTrailingWidthPx) {
+                        var draggedWidthPx = leadingWidthPx
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                draggedWidthPx = currentLeadingWidthPx
+                                dragging = true
+                            },
+                            onDragCancel = { dragging = false },
+                            onDragEnd = { dragging = false },
+                        ) { change, dragAmount ->
+                            change.consume()
+                            draggedWidthPx = clampedPaneLeadingWidth(
+                                requestedWidth = draggedWidthPx + dragAmount,
+                                totalWidth = totalWidthPx,
+                                dividerWidth = dividerWidthPx,
+                                minimumLeadingWidth = minimumLeadingWidthPx,
+                                minimumTrailingWidth = minimumTrailingWidthPx,
+                            )
+                            if (availableWidthPx > 0f) requestedFraction = draggedWidthPx / availableWidthPx
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(Modifier.fillMaxHeight().width(1.dp).background(DieterOutline))
+                Box(
+                    Modifier.width(if (dragging) 5.dp else 3.dp).height(if (dragging) 58.dp else 42.dp)
+                        .background(
+                            if (dragging) DieterShell else DieterMuted.copy(alpha = 0.58f),
+                            RoundedCornerShape(50),
+                        ),
+                )
+            }
+            trailing(Modifier.weight(1f).fillMaxHeight())
+        }
+    }
 }
 
 internal fun shortTimestamp(

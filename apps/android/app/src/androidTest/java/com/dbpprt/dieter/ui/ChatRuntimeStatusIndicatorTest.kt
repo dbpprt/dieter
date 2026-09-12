@@ -37,6 +37,7 @@ class ChatRuntimeStatusIndicatorTest {
 
     @Test
     fun activeChatPulsesWhileInactiveChatStaysStill() {
+        val runningTitle = "Security review for foldable Android layouts"
         composeRule.mainClock.autoAdvance = false
         composeRule.setContent {
             DieterTheme {
@@ -47,7 +48,7 @@ class ChatRuntimeStatusIndicatorTest {
                     ) {
                         Text("Chat activity", style = MaterialTheme.typography.titleLarge)
                         StatusFixture(
-                            card = card("running", "Security review", running = true, pinned = true),
+                            card = card("running", runningTitle, running = true, pinned = true),
                         )
                         StatusFixture(
                             card = card("inactive", "Release notes", running = false),
@@ -63,6 +64,9 @@ class ChatRuntimeStatusIndicatorTest {
         composeRule.onNodeWithTag("chat-runtime-inactive").assertIsDisplayed()
             .assertContentDescriptionEquals("Chat is not running")
             .assertTextEquals("Not running")
+        composeRule.onNodeWithTag("chat-title-running").assertIsDisplayed().assertTextEquals(runningTitle)
+        composeRule.onNodeWithTag("chat-project-running").assertIsDisplayed().assertTextEquals("Dieter")
+        composeRule.onNodeWithTag("chat-project-inactive").assertIsDisplayed().assertTextEquals("Dieter")
 
         val activeBefore = composeRule.onNodeWithTag("chat-runtime-running").captureToImage().asAndroidBitmap()
         val inactiveBefore = composeRule.onNodeWithTag("chat-runtime-inactive").captureToImage().asAndroidBitmap()
@@ -91,7 +95,7 @@ class ChatRuntimeStatusIndicatorTest {
                 Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ChatRowContent(chat = card, running = running)
+                ChatRowContent(chat = card, running = running, projectLabel = "Dieter")
             }
         }
     }

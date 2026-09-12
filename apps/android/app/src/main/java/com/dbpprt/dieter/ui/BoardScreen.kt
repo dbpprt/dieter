@@ -183,13 +183,15 @@ fun BoardScreen(
         return
     }
     if (expanded) {
-        Row(Modifier.fillMaxSize().padding(contentPadding)) {
-            BoardList(state, model, Modifier.weight(0.43f))
-            HorizontalPaneDivider()
+        ResizableHorizontalSplitPane(
+            dividerTag = "board-pane-divider",
+            modifier = Modifier.fillMaxSize().padding(contentPadding),
+            leading = { paneModifier -> BoardList(state, model, paneModifier) },
+        ) { paneModifier ->
             if (state.selectedCardId == null) {
-                EmptyDetail("Select a card", "Its conversation and comments will stay beside the board.", Icons.Outlined.ViewKanban, Modifier.weight(0.57f))
+                EmptyDetail("Select a card", "Its conversation and comments will stay beside the board.", Icons.Outlined.ViewKanban, paneModifier)
             } else {
-                CardDetailScreen(state, model, Modifier.weight(0.57f), showBack = false)
+                CardDetailScreen(state, model, paneModifier, showBack = false)
             }
         }
     } else {

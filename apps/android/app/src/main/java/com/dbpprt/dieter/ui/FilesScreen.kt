@@ -93,14 +93,16 @@ fun FilesScreen(
         } else if (!expanded && state.fileDocument != null) {
             FilePreview(state, model, Modifier.weight(1f))
         } else if (expanded) {
-            Row(Modifier.weight(1f).fillMaxWidth()) {
-                FileList(state, model, Modifier.weight(0.43f))
-                HorizontalPaneDivider()
+            ResizableHorizontalSplitPane(
+                dividerTag = "files-pane-divider",
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                leading = { paneModifier -> FileList(state, model, paneModifier) },
+            ) { paneModifier ->
                 val document = state.fileDocument
                 if (document == null) {
-                    EmptyDetail("Select a file", "Text files open in a revision-safe editor.", Icons.Outlined.Description, Modifier.weight(0.57f))
+                    EmptyDetail("Select a file", "Text files open in a revision-safe editor.", Icons.Outlined.Description, paneModifier)
                 } else {
-                    FilePreview(state, model, Modifier.weight(0.57f), showBack = false)
+                    FilePreview(state, model, paneModifier, showBack = false)
                 }
             }
         } else {
