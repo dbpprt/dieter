@@ -17,12 +17,22 @@
                 let cardID = try await installFixture(store)
                 let draft = "Keep my linked-content draft"
                 window.makeFirstResponder(nil)
-                store.composerText = draft
+                var previousText: ObjectIdentifier?
+                var previousFrame: NSRect?
+                var stableSamples = 0
                 let ready = await NativeUIAccessibility.wait(timeout: 8) {
-                    NSApp.activate(ignoringOtherApps: true)
-                    window.makeKeyAndOrderFront(nil)
-                    return NSApp.isActive && window.isKeyWindow
-                        && messageView(in: window)?.string.contains("Smoke code") == true
+                    if !NSApp.isActive || !window.isKeyWindow {
+                        NSApp.activate(ignoringOtherApps: true)
+                        window.makeKeyAndOrderFront(nil)
+                    }
+                    guard NSApp.isActive, window.isKeyWindow, let text = messageView(in: window),
+                        text.string.contains("Smoke code"), text.frame.width > 0
+                    else { stableSamples = 0; return false }
+                    let identity = ObjectIdentifier(text)
+                    stableSamples = previousText == identity && previousFrame == text.frame ? stableSamples + 1 : 0
+                    previousText = identity
+                    previousFrame = text.frame
+                    return stableSamples >= 4
                 }
                 guard ready, let text = messageView(in: window),
                     let board = boardController(in: window.contentView),
@@ -40,6 +50,22 @@
                     return
                 }
                 _ = await NativeUIAccessibility.wait(timeout: 5) { atTail(scroll) }
+                store.composerText = ""
+                _ = await NativeUIAccessibility.wait(timeout: 5) {
+                    NativeUIAccessibility.find("conversation.composer", in: window)?.recordedFrame?.width ?? 0 > 0
+                }
+                let focused = NativeUIAccessibility.click("conversation.composer", in: window)
+                let editorReady = await NativeUIAccessibility.wait(timeout: 5) {
+                    guard let editor = window.firstResponder as? NSTextView else { return false }
+                    return editor.isEditable && editor.string.isEmpty
+                }
+                if focused && editorReady { await NativeUIAccessibility.type(draft, in: window) }
+                let entered = await NativeUIAccessibility.wait(timeout: 5) { store.composerText == draft }
+                results["content-draft-input"] =
+                    focused && editorReady && entered
+                    ? "passed" : "failed: focus=\(focused), editor=\(editorReady), entered=\(entered)"
+                guard focused && editorReady && entered else { return }
+                window.makeFirstResponder(nil)
                 let originalWidth = board.conversationFrame.width
                 let host = board.conversationHost
                 let clicked = clickLink("Smoke Markdown", in: text, window: window)
@@ -52,6 +78,10 @@
                     ? "passed"
                     : "failed: native click=\(clicked), rich editor/maximize=\(opened), error=\(model.error ?? model.files.fileError ?? "none")"
                 capture(window, output.appending(path: "07g-content-markdown.png"))
+                recordIdentity(
+                    "markdown", hostMatches: board.conversationHost === host,
+                    textMatches: messageView(in: window) === text, draftMatches: store.composerText == draft,
+                    output: output)
                 guard opened else { _ = await model.close(); return }
 
                 if let pane = NativeUIAccessibility.find("conversation.content-pane", in: window)?.object as? NSView,
@@ -59,10 +89,13 @@
                 {
                     let chat = split.arrangedSubviews[0]
                     let content = split.arrangedSubviews[1]
+                    _ = await NativeUIAccessibility.wait(timeout: 5) {
+                        abs(chat.frame.width - (split.bounds.width - split.dividerThickness) * 0.45) < 3
+                    }
                     let fraction = chat.frame.width / max(1, split.bounds.width)
                     results["content-initial-layout"] =
                         chat.frame.width >= 280 && content.frame.width >= 300
-                            && fraction > 0.3 && fraction < 0.65
+                            && abs(fraction - 0.45) < 0.01
                         ? "passed" : "failed: chat=\(chat.frame), content=\(content.frame), split=\(split.bounds)"
                     let target = min(split.bounds.width - 320, chat.frame.width + 65)
                     dragDivider(split, to: target, window: window)
@@ -101,6 +134,10 @@
                     codeClicked && codeOpened
                     ? "passed" : "failed: native click=\(codeClicked), readonly selected/revealed line=\(codeOpened)"
                 capture(window, output.appending(path: "07h-content-code-line.png"))
+                recordIdentity(
+                    "code", hostMatches: board.conversationHost === host,
+                    textMatches: messageView(in: window) === text, draftMatches: store.composerText == draft,
+                    output: output)
 
                 let closeClicked = NativeUIAccessibility.click("conversation.content.close", in: window)
                 let restored = await NativeUIAccessibility.wait(timeout: 8) {
@@ -112,9 +149,15 @@
                 results["content-close-restores-chat"] =
                     closeClicked && restored
                     ? "passed"
-                    : "failed: close=\(closeClicked), layout/draft/viewport restored=\(restored), width=\(board.conversationFrame.width)/\(originalWidth), tail=\(atTail(scroll))"
+                    : "failed: close=\(closeClicked), restored=\(restored), open=\(model.isOpen), maximized=\(board.maximized), selected=\(store.selectedCardID == cardID), draft=\(store.composerText == draft), host=\(board.conversationHost === host), text=\(messageView(in: window) === text), width=\(board.conversationFrame.width)/\(originalWidth), tail=\(atTail(scroll))"
+                recordIdentity(
+                    "closed", hostMatches: board.conversationHost === host,
+                    textMatches: messageView(in: window) === text, draftMatches: store.composerText == draft,
+                    output: output)
                 capture(window, output.appending(path: "07i-content-closed.png"))
                 if model.isOpen { _ = await model.close() }
+                await ConversationPaneFeatureSmoke.run(
+                    store: store, window: window, cardID: cardID, results: &results, output: output)
                 window.makeFirstResponder(nil)
                 store.composerText = ""
             } catch {
@@ -125,6 +168,15 @@
 
         private static let codeSource = (1...80).map { "let smokeLine\($0) = \($0)" }.joined(separator: "\n") + "\n"
 
+        private static func recordIdentity(
+            _ phase: String, hostMatches: Bool, textMatches: Bool, draftMatches: Bool, output: URL
+        ) {
+            let file = output.appending(path: "content-identity.log")
+            let previous = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+            let line = "\(phase): host=\(hostMatches), text=\(textMatches), draft=\(draftMatches)\n"
+            try? (previous + line).write(to: file, atomically: true, encoding: .utf8)
+        }
+
         private static func installFixture(_ store: DieterStore) async throws -> String {
             guard let rpc = store.rpc, let project = store.projects.first,
                 let board = store.state.boards.first(where: { $0.projectID == project.id })
@@ -132,8 +184,8 @@
             var request = Dieter_V1_CreateConversationRequest()
             request.projectID = project.id
             request.boardID = board.id
-            request.title = "Linked content smoke fixture"
-            request.prompt = "Inspect linked documents. This deferred fixture never starts an agent."
+            request.title = "Workspace improvements"
+            request.prompt = "Review the linked workspace plan and implementation."
             request.lane = "todo"
             request.workspaceMode = "project"
             request.deferStart = true
@@ -141,7 +193,7 @@
             for (path, content) in [
                 (
                     "side-by-side-smoke.md",
-                    "# Linked Markdown\n\nAn **editable** document in the conversation workspace.\n"
+                    "# Linked workspace\n\nReview project files alongside the conversation.\n\n## Delivery checklist\n\n- [ ] Review the implementation\n- [ ] Confirm the smoke checks\n\nKeep related files, browser pages, terminals, and changes together.\n"
                 ),
                 ("side-by-side-smoke.swift", codeSource),
             ] {
@@ -167,25 +219,36 @@
             message.id = "message_linked_content_smoke"
             message.role = "assistant"
             message.parts = [part]
-            var snapshot = Dieter_V1_ConversationSnapshot()
-            snapshot.detail.card = card
-            snapshot.detail.project = project
-            snapshot.detail.board = board
-            snapshot.conversation.cardID = card.id
-            snapshot.conversation.status = "idle"
-            snapshot.conversation.messages = [message]
             store.state.cards.removeAll { $0.id == card.id }
             store.state.cards.append(card)
             store.selectedProjectID = project.id
             store.selectedBoardID = board.id
             store.selectedChatID = nil
             store.selectedCardID = card.id
-            store.selectedDetail = snapshot.detail
-            store.conversation = snapshot
-            // The card is real so its workspace/file RPCs use the production
-            // route. Global sync can replace its live messages with the daemon's
-            // empty deferred transcript, so own this synthetic history in the
-            // history projection, which metadata sync intentionally preserves.
+            // Establish the production read/watch lifecycle as well as the
+            // workspace RPC scope. Assigning a local snapshot alone leaves
+            // agent-originated content presentations without a live consumer.
+            await store.fetchConversation(cardID: card.id, chat: false, rpc: rpc)
+            guard store.conversation?.conversation.cardID == card.id,
+                store.conversationTask != nil
+            else { throw CocoaError(.fileReadUnknown) }
+            if store.conversation?.conversation.lastSeq == 0 {
+                // A zero-sequence watch starts with a replacement snapshot.
+                // Wait for it before installing synthetic renderer history,
+                // which the authoritative replacement correctly clears.
+                let previous = store.conversationModel.onSnapshot
+                var receivedInitialWatch = false
+                store.conversationModel.onSnapshot = { snapshot, endpointID, refreshedAt in
+                    await previous(snapshot, endpointID, refreshedAt)
+                    if snapshot.conversation.cardID == card.id { receivedInitialWatch = true }
+                }
+                let watching = await NativeUIAccessibility.wait(timeout: 8) { receivedInitialWatch }
+                store.conversationModel.onSnapshot = previous
+                guard watching else { throw CocoaError(.fileReadUnknown) }
+            }
+            // Keep the daemon's live transcript authoritative. The local
+            // renderer fixture lives in earlier history, which metadata and
+            // content-presentation deltas intentionally preserve.
             store.conversationModel.olderConversationMessages = [message]
             store.section = .board
             return card.id

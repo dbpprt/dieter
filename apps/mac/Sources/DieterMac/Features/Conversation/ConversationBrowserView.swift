@@ -4,56 +4,80 @@ import Observation
 import SwiftUI
 import WebKit
 
-/// An ordinary page renderer with its own WebKit session. It has no access to
-/// the Markdown preview's resources or any native script-message handlers.
+/// Ordinary pages retain a WebKit session per tab, independently of Markdown
+/// previews and their native rendering bridge.
 struct ConversationBrowserView: View {
-    let url: URL
+    var initialURL: URL?
     var allowsLoopback = true
-    @State private var browser = ConversationBrowserModel()
+    private var retainedBrowser: ConversationBrowserModel?
+    private var scopeID: UUID?
+    @State private var ownedBrowser = ConversationBrowserModel()
+    @State private var address = ""
+    @FocusState private var addressFocused: Bool
+    private var browser: ConversationBrowserModel { retainedBrowser ?? ownedBrowser }
+
+    init(url: URL, allowsLoopback: Bool = true) {
+        initialURL = url
+        self.allowsLoopback = allowsLoopback
+    }
+
+    init(browser: ConversationBrowserModel, initialURL: URL? = nil, scopeID: UUID? = nil) {
+        self.scopeID = scopeID
+        retainedBrowser = browser
+        self.initialURL = initialURL
+        allowsLoopback = browser.allowsLoopback
+    }
+
+    private func scopedTarget(_ name: String) -> String {
+        guard let scopeID else { return "conversation.browser.\(name)" }
+        return "conversation.browser.\(scopeID.uuidString).\(name)"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Button("Back", systemImage: "chevron.left") { browser.webView.goBack() }
                     .disabled(!browser.canGoBack)
-                    .accessibilityIdentifier("conversation.browser.back")
+                    .accessibilityIdentifier("conversation.browser.back").smokeTarget("conversation.browser.back")
+                    .smokeTarget(scopedTarget("back"))
                 Button("Forward", systemImage: "chevron.right") { browser.webView.goForward() }
                     .disabled(!browser.canGoForward)
-                    .accessibilityIdentifier("conversation.browser.forward")
+                    .accessibilityIdentifier("conversation.browser.forward").smokeTarget("conversation.browser.forward")
+                    .smokeTarget(scopedTarget("forward"))
                 Button(
                     browser.loading ? "Stop loading" : "Reload",
                     systemImage: browser.loading ? "xmark" : "arrow.clockwise"
                 ) {
                     if browser.loading { browser.webView.stopLoading() } else { browser.reload() }
-                }
-                Text((browser.currentURL ?? url).absoluteString)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .help((browser.currentURL ?? url).absoluteString)
+                }.disabled(browser.currentURL == nil)
+                TextField("Enter a URL", text: $address)
+                    .textFieldStyle(.plain).font(.system(size: 12))
+                    .focused($addressFocused)
+                    .onSubmit {
+                        browser.openAddress(address); addressFocused = false
+                    }
+                    .padding(.horizontal, 9).frame(height: 27)
+                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                    .accessibilityLabel("Browser address")
+                    .accessibilityIdentifier("conversation.browser.address").smokeTarget("conversation.browser.address")
+                    .smokeTarget(scopedTarget("address"))
                 Button("Open in default browser", systemImage: "arrow.up.forward.app") {
-                    let destination = browser.currentURL ?? url
-                    if ConversationBrowserModel.permits(destination) { NSWorkspace.shared.open(destination) }
+                    if let destination = browser.currentURL, browser.accepts(destination) {
+                        NSWorkspace.shared.open(destination)
+                    }
                 }
-                .accessibilityIdentifier("conversation.browser.external")
+                .disabled(browser.currentURL == nil)
+                .accessibilityIdentifier("conversation.browser.external").smokeTarget("conversation.browser.external")
+                .smokeTarget(scopedTarget("external"))
             }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-            .padding(.horizontal, 12)
-            .frame(height: 36)
+            .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.small)
+            .padding(.horizontal, 10).frame(height: 38)
             ZStack(alignment: .leading) {
                 Divider()
                 if browser.loading {
-                    ProgressView(value: browser.progress)
-                        .progressViewStyle(.linear)
-                        .accessibilityLabel("Loading page")
+                    ProgressView(value: browser.progress).progressViewStyle(.linear).accessibilityLabel("Loading page")
                 }
-            }
-            .frame(height: 2)
+            }.frame(height: 2)
             if let failure = browser.failure {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -61,19 +85,25 @@ struct ConversationBrowserView: View {
                     Spacer(minLength: 4)
                     Button("Retry") { browser.reload() }
                 }
-                .font(.caption)
-                .padding(12)
-                .background(.quaternary)
+                .font(.caption).padding(12).background(.quaternary)
                 .accessibilityIdentifier("conversation.browser.failure")
             }
-            ConversationWebSurface(browser: browser)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if browser.currentURL != nil {
+                ConversationWebSurface(browser: browser).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ContentUnavailableView(
+                    "Browser", systemImage: "globe",
+                    description: Text("Enter a web address above to browse alongside this conversation."))
+            }
         }
-        .onChange(of: url, initial: true) { _, destination in
+        .onChange(of: initialURL, initial: true) { _, destination in
             browser.allowsLoopback = allowsLoopback
-            browser.open(destination)
+            if let destination { browser.open(destination) }
+            address = browser.currentURL?.absoluteString ?? ""
         }
-        .onDisappear { browser.webView.stopLoading() }
+        .onChange(of: browser.currentURL) { _, url in
+            if !addressFocused { address = url?.absoluteString ?? "" }
+        }
         .accessibilityIdentifier("conversation.content.browser")
     }
 }
@@ -130,6 +160,30 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
     }
 
     func accepts(_ url: URL) -> Bool { Self.permits(url) && (allowsLoopback || !Self.isLoopback(url)) }
+
+    func openAddress(_ value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text: String
+        if trimmed.contains("://") {
+            text = trimmed
+        } else if trimmed.hasPrefix("localhost") || trimmed.hasPrefix("127.") || trimmed.hasPrefix("[::1]") {
+            text = "http://" + trimmed
+        } else {
+            text = "https://" + trimmed
+        }
+        guard !trimmed.isEmpty, let url = URL(string: text), Self.permits(url) else {
+            failure = "Enter a valid HTTP or HTTPS web address."
+            return
+        }
+        reveal(url)
+    }
+
+    /// Explicit navigation must win even after the page navigated internally.
+    /// Ordinary view remounts still use open(), preserving the tab's history.
+    func reveal(_ url: URL) {
+        if currentURL != url || failure != nil { requestedURL = nil }
+        open(url)
+    }
 
     func open(_ url: URL) {
         guard requestedURL != url else { return }
@@ -191,7 +245,7 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
 
     func webView(
         _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
         guard let destination = navigationAction.request.url, accepts(destination) else {
             if navigationAction.targetFrame?.isMainFrame != false {

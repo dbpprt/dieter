@@ -80,6 +80,9 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
     /// resolved opaque identifier (or the display name when no resolver
     /// was supplied).
     public var onLinkClick: ((String) -> Void)?
+    /// Optional URL navigation override. Return true when the embedder handled
+    /// the link; false preserves AppKit's default behavior.
+    public var onURLClick: (@MainActor (URL) -> Bool)?
     /// Fires whenever the caret rect inside an active wiki-link changes,
     /// so embedders can position a follow-the-caret UI.
     public var onCaretRectChange: ((CGRect) -> Void)?
@@ -148,6 +151,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         isEditable: Bool = true,
         onPasteImage: ((NSPasteboard) -> String?)? = nil,
         onLinkClick: ((String) -> Void)? = nil,
+        onURLClick: (@MainActor (URL) -> Bool)? = nil,
         onCaretRectChange: ((CGRect) -> Void)? = nil,
         onBuildContextMenu: ((NSMenu, NSRange) -> NSMenu)? = nil,
         onInlineSelectionChange: ((InlineSelectionState?) -> Void)? = nil,
@@ -173,6 +177,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         self.isEditable = isEditable
         self.onPasteImage = onPasteImage
         self.onLinkClick = onLinkClick
+        self.onURLClick = onURLClick
         self.onCaretRectChange = onCaretRectChange
         self.onBuildContextMenu = onBuildContextMenu
         self.onInlineSelectionChange = onInlineSelectionChange
@@ -388,6 +393,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
     }
 
     public func updateNSView(_ nsView: NSScrollView, context: Context) {
+        context.coordinator.onURLClick = onURLClick
         guard let textView = nsView.nativeTextView else {
             return
         }
@@ -693,6 +699,7 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
             onInlineSelectionChange: onInlineSelectionChange
         )
         coordinator.documentId = documentId
+        coordinator.onURLClick = onURLClick
         coordinator.onPersistScrollOffset = onPersistScrollOffset
         coordinator.restoreScrollOffset = restoreScrollOffset
         // Seeding documentId above means the first update pass is not a switch, so

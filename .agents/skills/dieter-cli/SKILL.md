@@ -94,6 +94,28 @@ Use `card poll` for one bounded update and `card watch` for JSON Lines streaming
 Fetch a large tool payload separately with `card tool-output` when the transcript
 contains only its bounded preview.
 
+To show a deliverable in the conversation's native workspace pane, call the
+`present_content` harness tool or the explicit daemon command:
+
+```sh
+dieter card present <card-id> --path docs/plan.md --title "Implementation plan"
+dieter card present <card-id> --path src/main.go --line 42
+dieter chat present <chat-id> --url https://example.com
+```
+
+The tool is bound to its current conversation. CLI commands require an exact
+conversation ID; global `--machine` selects its owning daemon. File paths resolve
+in that conversation's worktree, not the CLI machine or another project checkout.
+Absolute paths within that worktree are accepted and normalized. Files must be
+regular, at most 5 MiB, and cannot escape through symlinks or access `.git`.
+URLs must use HTTP(S) without embedded credentials. `--line` is one-based and
+applies only to files; `--title` is optional, at most 256 characters.
+
+Presentation persists the latest typed request and returns its ID. Native
+clients open or focus the appropriate content tab when they consume it. This
+does not send a message, resume an agent, or guarantee the user viewed it.
+Ordinary links in transcript text never trigger presentation automatically.
+
 Standalone chats share conversation, workspace, transcript, attachment, and
 archive operations:
 

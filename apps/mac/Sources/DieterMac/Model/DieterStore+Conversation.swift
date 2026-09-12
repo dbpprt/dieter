@@ -166,6 +166,11 @@ extension DieterStore {
             guard let rpc = client as? DieterRPC else { return }
             self?.connectionStopped(error, client: rpc)
         }
+        conversationModel.onContentPresentation = { [weak self] presentation, cardID in
+            guard let self, let url = ConversationPresentedContent.url(for: presentation) else { return }
+            self.conversationContext.content.requestOpen(
+                url, conversationID: cardID, presentationTitle: presentation.title)
+        }
     }
 
     func fetchConversation(cardID: String, chat: Bool, rpc: DieterRPC, cancellationRetries: Int = 0)

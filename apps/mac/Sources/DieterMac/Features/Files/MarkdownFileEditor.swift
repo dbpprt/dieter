@@ -23,6 +23,8 @@ struct MarkdownFileEditor: View {
     let documentKey: String
     let text: String
     let filename: String
+    var active = true
+    var revealID: UUID?
     @State private var previewSource: String
     @State private var sourceActivated = false
     @State private var mode = MarkdownFileEditorMode.edit
@@ -34,11 +36,16 @@ struct MarkdownFileEditor: View {
     private var showingPreview: Bool { mode == .preview || mode == .split }
     private var layout: MarkdownEditorLayout { mode.layout }
 
-    init(session: FileEditorSession, documentKey: String, text: String, filename: String) {
+    init(
+        session: FileEditorSession, documentKey: String, text: String, filename: String, active: Bool = true,
+        revealID: UUID? = nil
+    ) {
         self.session = session
         self.documentKey = documentKey
         self.text = text
         self.filename = filename
+        self.active = active
+        self.revealID = revealID
         _previewSource = State(initialValue: session.documentKey == documentKey ? session.currentText() : text)
     }
 
@@ -70,17 +77,18 @@ struct MarkdownFileEditor: View {
             .accessibilityIdentifier("files.markdown.split")
             .smokeTarget("files.markdown.split")
         }
+        .onChange(of: revealID) { _, _ in mode = .edit }
         .onChange(of: mode) { _, _ in
             if showingSource { sourceActivated = true }
             if showingPreview {
                 if session.documentKey == documentKey { previewSource = session.currentText() }
             }
         }
-        .task(id: session.revision) {
-            guard showingPreview else { return }
+        .task(id: "\(session.revision):\(active)") {
+            guard active, showingPreview else { return }
             do {
                 try await DieterTaskSleep.milliseconds(180)
-                guard !Task.isCancelled, showingPreview, session.documentKey == documentKey else { return }
+                guard !Task.isCancelled, active, showingPreview, session.documentKey == documentKey else { return }
                 previewSource = session.currentText()
             } catch { /* A newer edit owns the next preview. */  }
         }
@@ -92,7 +100,7 @@ struct MarkdownFileEditor: View {
             if sourceActivated {
                 SyntaxHighlightedEditor(
                     session: session, documentKey: documentKey, text: text, filename: filename,
-                    active: showingSource
+                    active: showingSource && active
                 )
                 .accessibilityIdentifier("files.editor")
                 .smokeTarget("files.markdown.source")
@@ -107,13 +115,13 @@ struct MarkdownFileEditor: View {
             ZStack {
                 // A hidden WebKit document still lays out and resizes charts.
                 // Only mount the read-only renderer while it is visible.
-                if showingPreview {
+                if active && showingPreview {
                     MarkdownFilePreview(source: previewSource, scrollCoordinator: scrollCoordinator)
                         .accessibilityIdentifier("files.markdown.preview")
                         .smokeTarget("files.markdown.preview")
                 }
                 NativeMarkdownEditor(
-                    session: session, documentKey: documentKey, active: editing,
+                    session: session, documentKey: documentKey, active: editing && active,
                     scrollCoordinator: scrollCoordinator
                 )
                 .opacity(editing ? 1 : 0)

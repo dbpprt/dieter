@@ -419,12 +419,16 @@
                     let reopenClicked =
                         reopenToolbarUncovered && reopenReady
                         && NativeUIAccessibility.click("sidebar.quick-task", in: window)
-                    _ = await waitUntil(timeout: 5) {
-                        NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
+                    let reopenedVisible = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                        mountedQuickTaskWindow(from: window, expectedStory: "Keep this draft after clicking outside")
+                            != nil
                     }
-                    let reopened = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
+                    let reopened = mountedQuickTaskWindow(
+                        from: window, expectedStory: "Keep this draft after clicking outside")
                     var restoredEditorText: String?
-                    if let reopened, await focusQuickTaskStory(in: reopened) {
+                    if let reopened,
+                        await focusQuickTaskStory(in: reopened, expectedText: "Keep this draft after clicking outside")
+                    {
                         restoredEditorText = (reopened.firstResponder as? NSTextView)?.string
                     }
                     let retained =
@@ -432,11 +436,22 @@
                         && store.quickTaskForm.story == "Keep this draft after clicking outside"
                     if let reopened {
                         capture(reopened, to: output.appending(path: "global-quick-task-restored.png"))
+                    } else {
+                        capture(window, to: output.appending(path: "global-quick-task-reopen-failed.png"))
+                        let diagnostic = NSApp.windows.map { candidate in
+                            "window=\(candidate.windowNumber) visible=\(candidate.isVisible) key=\(candidate.isKeyWindow) parent=\(candidate.parent?.windowNumber ?? -1) frame=\(candidate.frame)\n"
+                                + NativeUIAccessibility.elements(in: candidate).map {
+                                    "\($0.identifier ?? "-"): \($0.text) \($0.frame)"
+                                }.joined(separator: "\n")
+                        }.joined(separator: "\n\n")
+                        try? diagnostic.write(
+                            to: output.appending(path: "global-quick-task-reopen-failed.txt"), atomically: true,
+                            encoding: .utf8)
                     }
                     results["global-quick-task-retains-draft"] =
-                        storyFocused && storyEntered && dismissed && reopenClicked && retained
+                        storyFocused && storyEntered && dismissed && reopenClicked && reopenedVisible && retained
                         ? "passed"
-                        : "failed: focus=\(storyFocused), typed=\(storyEntered), outside dismissal=\(dismissed), toolbar uncovered=\(reopenToolbarUncovered), reopen=\(reopenClicked), restored content=\(retained), editor=\(String(describing: restoredEditorText)), story=\(store.quickTaskForm.story)"
+                        : "failed: focus=\(storyFocused), typed=\(storyEntered), outside dismissal=\(dismissed), toolbar uncovered=\(reopenToolbarUncovered), reopen=\(reopenClicked), mounted=\(reopenedVisible), restored content=\(retained), editor=\(String(describing: restoredEditorText)), story=\(store.quickTaskForm.story)"
                     if let reopened {
                         if await waitForBoardControl("quick-task.cancel", in: reopened) {
                             _ = NativeUIAccessibility.click("quick-task.cancel", in: reopened)
@@ -1355,17 +1370,59 @@
             }
         }
 
-        private static func focusQuickTaskStory(in window: NSWindow) async -> Bool {
-            guard await waitForBoardControl("quick-task.story", in: window) else { return false }
+        private static func mountedQuickTaskWindow(from main: NSWindow, expectedStory: String) -> NSWindow? {
+            if let target = NativeUIAccessibility.find("quick-task.story", in: main),
+                let window = target.recordedWindow, window.isVisible,
+                let frame = target.recordedFrame, frame.width > 0, frame.height > 0,
+                window.frame.contains(frame)
+            {
+                return window
+            }
+            // SwiftUI can recycle its popover host before registering the new
+            // geometry anchor. Inspect the mounted native editor as well.
+            return NSApp.windows.first { candidate in
+                candidate !== main && candidate.isVisible
+                    && nativeQuickTaskField(in: candidate.contentView, expectedText: expectedStory) != nil
+            }
+        }
+
+        private static func nativeQuickTaskField(in view: NSView?, expectedText: String) -> NSView? {
+            guard let view, !view.isHiddenOrHasHiddenAncestor else { return nil }
+            if let field = view as? NSTextField, field.isEditable, field.stringValue == expectedText,
+                field.bounds.width > 100, field.visibleRect.height > 0
+            {
+                return field
+            }
+            if let text = view as? NSTextView, text.isEditable, text.string == expectedText,
+                text.bounds.width > 100, text.visibleRect.height > 0
+            {
+                return text
+            }
+            return view.subviews.lazy.compactMap { nativeQuickTaskField(in: $0, expectedText: expectedText) }.first
+        }
+
+        private static func focusQuickTaskStory(in window: NSWindow, expectedText: String? = nil) async -> Bool {
+            let anchored = await waitForBoardControl("quick-task.story", in: window)
+            let native = expectedText.flatMap { nativeQuickTaskField(in: window.contentView, expectedText: $0) }
+            guard anchored || native != nil else { return false }
             window.makeFirstResponder(nil)
-            guard NativeUIAccessibility.click("quick-task.story", in: window) else { return false }
+            if anchored {
+                guard NativeUIAccessibility.click("quick-task.story", in: window) else { return false }
+            } else if let native {
+                let point = native.convert(NSPoint(x: native.bounds.midX, y: native.bounds.midY), to: nil)
+                NativeUIEventDispatcher.click(
+                    window: window, x: point.x, distanceFromTop: window.frame.height - point.y, throughApplication: true
+                )
+            }
             return await waitUntil(timeout: 5, intervalMilliseconds: 50) {
                 guard NSApp.isActive, window.isKeyWindow,
-                    let editor = window.firstResponder as? NSTextView, editor.isEditable, editor.window === window,
-                    let storyFrame = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedFrame
+                    let editor = window.firstResponder as? NSTextView, editor.isEditable, editor.window === window
                 else { return false }
                 let editorFrame = window.convertToScreen(editor.convert(editor.bounds, to: nil))
-                return storyFrame.intersects(editorFrame)
+                if let storyFrame = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedFrame {
+                    return storyFrame.intersects(editorFrame)
+                }
+                return expectedText != nil && editor.string == expectedText && window.frame.intersects(editorFrame)
             }
         }
 

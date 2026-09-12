@@ -26,16 +26,25 @@ import Testing
     let opened = await waitForContentSplit {
         guard let split = nativeSplit(host), split.arrangedSubviews.count == 2 else { return false }
         return split.arrangedSubviews[0].frame.width >= 280 && split.arrangedSubviews[1].frame.width >= 300
-            && transcript.frame.width < originalWidth - 100
+            && abs(split.arrangedSubviews[0].frame.width - (split.bounds.width - split.dividerThickness) * 0.45) < 2
     }
     #expect(opened)
     #expect(nativeTranscript(host) === transcript)
     #expect(transcript.selectedRange() == selection)
+
     let split = try #require(nativeSplit(host))
     let targetWidth: CGFloat = 400
     split.setPosition(targetWidth, ofDividerAt: 0)
     let resized = await waitForContentSplit { abs(split.arrangedSubviews[0].frame.width - targetWidth) < 2 }
     #expect(resized)
+    #expect(nativeTranscript(host) === transcript)
+    #expect(transcript.selectedRange() == selection)
+
+    state.content = "Another content renderer"
+    try? await Task.sleep(for: .milliseconds(150))
+    #expect(
+        abs(split.arrangedSubviews[0].frame.width - targetWidth) < 2,
+        "Changing the presented content must preserve the user's divider position")
     #expect(nativeTranscript(host) === transcript)
     #expect(transcript.selectedRange() == selection)
 
@@ -50,6 +59,7 @@ import Testing
 
 @MainActor @Observable private final class ContentSplitFixtureState {
     var presented = false
+    var content = "Content pane"
 }
 
 private struct ContentSplitFixture: View {
@@ -65,7 +75,7 @@ private struct ContentSplitFixture: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } content: {
-            Text("Content pane").frame(maxWidth: .infinity, maxHeight: .infinity)
+            Text(state.content).frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

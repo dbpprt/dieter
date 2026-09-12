@@ -71,7 +71,12 @@ struct ConversationView: View {
                 return true
             }
         )
-        .onChange(of: conversationID) { _, _ in context.content.suspend() }
+        .onChange(of: conversationID) { _, id in
+            if context.content.conversationID != id { context.content.suspend() } else { context.content.resume() }
+        }
+        .onAppear {
+            if context.content.isPresented(for: conversationID) { context.content.resume() }
+        }
         .onDisappear { context.content.suspend() }
     }
 

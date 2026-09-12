@@ -549,6 +549,24 @@ tests in `internal/server/rpc_parity_test.go` and
 the CLI implementation, offline help, end-to-end route coverage, README, and
 the Dieter CLI agent skill in the same change.
 
+Agents can present deliverables in the current conversation's native workspace
+pane with the `present_content` harness tool. It is available across providers
+and bound to the owning conversation. The equivalent daemon commands are:
+
+```sh
+dieter card present CARD --path docs/plan.md --title "Implementation plan"
+dieter card present CARD --path src/main.go --line 42
+dieter --machine MACHINE chat present CHAT --url https://example.com
+```
+
+The daemon validates file paths against that conversation's own worktree and
+stores the latest explicit presentation request with a stable ID. Paths may be
+relative or absolute within that worktree; regular files up to 5 MiB are allowed,
+while `.git` and symlink escapes are rejected. URLs use HTTP(S) without embedded
+credentials. Native clients choose the matching file renderer or browser tab.
+Presentation neither wakes an agent nor confirms the user viewed the content.
+Transcript links remain links; arbitrary message text never opens a pane.
+
 Before opening a pull request, keep changes focused, add tests for changed
 behavior, run the relevant checks above, and confirm `git diff --check` passes.
 Repository hooks for `gofmt` and secret scanning are available with:

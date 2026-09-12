@@ -5,6 +5,15 @@ import Testing
 
 @MainActor
 struct ConversationContentRendererTests {
+    @Test func browserExposesItsNavigationPolicyToWebKit() {
+        let model = ConversationBrowserModel()
+        // WKNavigationDelegate is an optional Objective-C protocol. A Swift
+        // method with a nearly matching actor signature can compile while
+        // WebKit silently skips its policy callback.
+        let selector = NSSelectorFromString("webView:decidePolicyForNavigationAction:decisionHandler:")
+        #expect(model.responds(to: selector))
+    }
+
     @Test func remoteBrowserRejectsLoopbackNavigationAndRedirectTargets() throws {
         let model = ConversationBrowserModel()
         model.allowsLoopback = false

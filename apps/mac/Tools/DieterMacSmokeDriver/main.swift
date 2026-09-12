@@ -26,7 +26,8 @@ private enum SmokeSuite: String, CaseIterable {
         switch self {
         case .core: 240
         case .board: 150
-        case .workspace, .conversation: 180
+        case .workspace: 180
+        case .conversation: ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" ? 400 : 300
         case .terminal: 75
         case .machine: 60
         case .sidebar, .island: 30

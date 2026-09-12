@@ -303,6 +303,7 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 		ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, ResponseMessageID: responseMessageID,
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
 		ProjectPath: workspaceValue.Path, RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID), Continue: true,
+		ContentPresentationEnabled: true,
 	}
 	// The card is the active/last-admitted selection shown by clients. Restore
 	// every field from the same snapshot used by the recovered request.
@@ -788,8 +789,9 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 		Harness: provider, Adapter: adapter.Runtime, Model: configuredModel.RuntimeID(), ConfiguredModel: modelName, ContextWindow: configuredModel.ContextWindow, Effort: effort, Options: providerOptions, Prompt: content, ResponseMessageID: responseMessageID,
 		Attachments:  messagePartsAttachments(parts),
 		Instructions: resolution.Instructions, SessionID: detail.Card.ID, Session: conversation.Session,
-		ProjectPath: workspaceValue.Path,
-		RuntimeRoot: filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID),
+		ProjectPath:                workspaceValue.Path,
+		RuntimeRoot:                filepath.Join(s.Store.RuntimeDir(), "sessions", detail.Project.ID),
+		ContentPresentationEnabled: true,
 	}
 	request.Prompt = harnessPrompt
 	go s.runTurn(ctx, detail, turnID, request, updates, done)
@@ -1072,6 +1074,13 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 				return nil
 			}
 			_, _, err := s.Store.AppendCapability(detail.Card.ID, turnID, output.Capability)
+			return err
+		case "present-content":
+			var presentation model.ContentPresentation
+			if err := json.Unmarshal(output.Presentation, &presentation); err != nil {
+				return err
+			}
+			_, err := s.PresentConversationContent(ctx, detail.Card.ID, turnID, presentation)
 			return err
 		case "error":
 			// Keep consuming the worker protocol after its structured error frame.

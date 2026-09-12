@@ -8,12 +8,13 @@ struct MarkdownFilePreview: View {
     var onEdit: ((String, String) -> Bool)?
     var scrollCoordinator: MarkdownScrollCoordinator?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.conversationLinkHandler) private var linkHandler
     @State private var failure: String?
 
     var body: some View {
         MarkdownPreviewWebView(
             source: source, theme: colorScheme == .dark ? "dark" : "light", editing: editing,
-            onEdit: onEdit, scrollCoordinator: scrollCoordinator, failure: $failure
+            onEdit: onEdit, scrollCoordinator: scrollCoordinator, linkHandler: linkHandler, failure: $failure
         )
         .overlay(alignment: .topLeading) {
             if let failure {
@@ -84,6 +85,13 @@ enum MarkdownPreviewNavigation: Equatable {
         }
         return .cancel
     }
+
+    static func contentURL(href: String) -> URL? {
+        guard !href.isEmpty, href.utf8.count <= 8192,
+            !href.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+        else { return nil }
+        return URL(string: href)
+    }
 }
 
 /// Only the latest source/theme may report completion, including edits made while WebKit loads.
@@ -137,6 +145,7 @@ private struct MarkdownPreviewWebView: NSViewRepresentable {
     let editing: Bool
     let onEdit: ((String, String) -> Bool)?
     let scrollCoordinator: MarkdownScrollCoordinator?
+    let linkHandler: ConversationLinkHandler?
     @Binding var failure: String?
 
     func makeCoordinator() -> Coordinator { Coordinator(failure: $failure) }
@@ -145,6 +154,23 @@ private struct MarkdownPreviewWebView: NSViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "markdown")
+        if linkHandler != nil {
+            // Preserve the literal href, including ../ and fragment-only links.
+            // WebKit's resolved navigation URL loses the document-relative base.
+            configuration.userContentController.addUserScript(
+                WKUserScript(
+                    source: """
+                        document.addEventListener('click', event => {
+                            if (!event.isTrusted || event.metaKey || event.button !== 0) return;
+                            const anchor = event.target.closest?.('a[href]');
+                            const href = anchor?.getAttribute('href');
+                            if (!href) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            window.webkit.messageHandlers.markdown.postMessage({type: 'openLink', href});
+                        }, true);
+                        """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        }
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.setURLSchemeHandler(MarkdownPreviewSchemeHandler(), forURLScheme: MarkdownPreviewResources.scheme)
         let view = WKWebView(frame: .zero, configuration: configuration)
@@ -161,6 +187,7 @@ private struct MarkdownPreviewWebView: NSViewRepresentable {
     func updateNSView(_ view: WKWebView, context: Context) {
         context.coordinator.failure = $failure
         context.coordinator.onEdit = onEdit
+        context.coordinator.linkHandler = linkHandler
         context.coordinator.scrollCoordinator = scrollCoordinator
         scrollCoordinator?.attachPreview(view) { [weak coordinator = context.coordinator] progress, token in
             guard let coordinator, coordinator.state.ready, !coordinator.state.disposed else { return }
@@ -177,6 +204,7 @@ private struct MarkdownPreviewWebView: NSViewRepresentable {
     static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
         view.configuration.userContentController.removeScriptMessageHandler(forName: "markdown")
         coordinator.onEdit = nil
+        coordinator.linkHandler = nil
         coordinator.scrollCoordinator?.detachPreview(view)
         coordinator.scrollCoordinator = nil
         coordinator.state.dispose()
@@ -192,6 +220,7 @@ private struct MarkdownPreviewWebView: NSViewRepresentable {
         var failure: Binding<String?>
         var state = MarkdownPreviewRenderState()
         var onEdit: ((String, String) -> Bool)?
+        var linkHandler: ConversationLinkHandler?
         weak var scrollCoordinator: MarkdownScrollCoordinator?
         private var copyPayload: MarkdownClipboardPayload?
 
@@ -224,6 +253,11 @@ private struct MarkdownPreviewWebView: NSViewRepresentable {
                 let body = message.body as? [String: Any], let type = body["type"] as? String
             else { return }
             switch type {
+            case "openLink":
+                guard state.ready, let href = body["href"] as? String,
+                    let destination = MarkdownPreviewNavigation.contentURL(href: href)
+                else { return }
+                _ = linkHandler?(destination)
             case "scroll":
                 guard state.ready, let progress = body["progress"] as? Double, progress.isFinite, let view else {
                     return
@@ -264,6 +298,15 @@ private struct MarkdownPreviewWebView: NSViewRepresentable {
             _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
+            if navigationAction.navigationType == .linkActivated,
+                !navigationAction.modifierFlags.contains(.command),
+                let destination = navigationAction.request.url,
+                destination.scheme != MarkdownPreviewResources.scheme,
+                linkHandler?(destination) == true
+            {
+                decisionHandler(.cancel)
+                return
+            }
             let decision = MarkdownPreviewNavigation.decide(
                 url: navigationAction.request.url,
                 userActivated: navigationAction.navigationType == .linkActivated,

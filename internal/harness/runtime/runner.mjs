@@ -14,6 +14,7 @@ import { createLocalCodex } from './codex-runtime.mjs';
 import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCapabilities } from './capabilities.mjs';
 import { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
+import { createContentPresentationTool, contentPresentationInstructions } from './content-presentation.mjs';
 import { createMessageMetadataTracker } from './usage-metadata.mjs';
 import {
   createClaudeDiagnosticTracker,
@@ -282,13 +283,15 @@ try {
   const taskPlanInstructions = adapter === 'pi'
     ? 'For any task with two or more meaningful steps, use board_task_plan before starting and after every status change. Keep exactly one task in_progress at a time and mark all finished tasks completed before answering.'
     : '';
-  const instructions = [request.instructions, taskPlanInstructions].filter(Boolean).join('\n\n');
+  const contentTools = request.contentPresentationEnabled
+    ? { present_content: createContentPresentationTool(request, send) } : {};
+  const instructions = [request.instructions, taskPlanInstructions, request.contentPresentationEnabled ? contentPresentationInstructions : ''].filter(Boolean).join('\n\n');
   const agent = new HarnessAgent({
     harness,
     sandbox,
     model: ['omp-acp', 'dsh-acp'].includes(adapter) ? request.model || undefined : undefined,
     instructions: instructions || undefined,
-    ...(adapter === 'pi' ? { tools: { board_task_plan: piTaskPlanTool } } : {}),
+    tools: { ...contentTools, ...(adapter === 'pi' ? { board_task_plan: piTaskPlanTool } : {}) },
     permissionMode: 'allow-all',
     sandboxConfig: { workDir: sandboxWorkDir },
   });

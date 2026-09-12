@@ -536,7 +536,7 @@ private struct NewTerminalSheet: View {
     }
 }
 
-private struct RemoteTerminalSurface: NSViewRepresentable {
+struct RemoteTerminalSurface: NSViewRepresentable {
     let terminalID: String
     let initialColumns: Int
     let initialRows: Int
@@ -544,6 +544,7 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
     let acceptsInput: Bool
     let send: (Data) -> Void
     let resize: (Int, Int) -> Void
+    var active = true
 
     func makeCoordinator() -> Coordinator {
         Coordinator(terminalID: terminalID, send: send, resize: resize)
@@ -557,10 +558,19 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         // SwiftTerm's two-column minimum so reconnect output cannot be
         // permanently reflowed from a zero-sized bootstrap frame.
         view.prepareForReplay(columns: initialColumns, rows: initialRows)
+        context.coordinator.active = active
+        context.coordinator.acceptsInput = acceptsInput
         view.terminalDelegate = context.coordinator
         applyPalette(to: view)
         context.coordinator.apply(screen, to: view)
-        DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
+        context.coordinator.active = active
+        context.coordinator.acceptsInput = acceptsInput
+        DispatchQueue.main.async { [weak view, weak coordinator = context.coordinator] in
+            guard let view, coordinator?.active == true, view.window?.isKeyWindow == true,
+                !view.isHiddenOrHasHiddenAncestor, view.bounds.width > 0, view.bounds.height > 0
+            else { return }
+            view.window?.makeFirstResponder(view)
+        }
         return view
     }
 
@@ -569,6 +579,7 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         context.coordinator.send = send
         context.coordinator.resize = resize
         context.coordinator.acceptsInput = acceptsInput
+        context.coordinator.active = active
         applyPalette(to: view)
         context.coordinator.apply(screen, to: view)
     }
@@ -586,6 +597,7 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         var send: (Data) -> Void
         var resize: (Int, Int) -> Void
         var acceptsInput = true
+        var active = true
         private var resizeWorkItem: DispatchWorkItem?
         private let screenRenderer = RemoteTerminalScreenRenderer()
 
@@ -601,13 +613,17 @@ private struct RemoteTerminalSurface: NSViewRepresentable {
         }
 
         func send(source: SwiftTerm.TerminalView, data: ArraySlice<UInt8>) {
-            guard acceptsInput else { return }
+            guard active, acceptsInput else { return }
             send(Data(data))
         }
 
         func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {
             resizeWorkItem?.cancel()
-            let work = DispatchWorkItem { [weak self] in self?.resize(newCols, newRows) }
+            guard active else { return }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, self.active else { return }
+                self.resize(newCols, newRows)
+            }
             resizeWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
         }

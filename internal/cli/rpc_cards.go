@@ -27,6 +27,7 @@ Actions:
   poll         Fetch one bounded conversation update
   watch        Stream conversation updates as JSON Lines
   tool-output  Fetch a full tool input/output payload
+  present      Present a file or URL in this conversation’s native workspace pane
   fork         Fork a completed conversation into a standalone chat
   send         Submit a human message to the daemon-owned turn lifecycle
   queue        Manage messages waiting behind the active turn
@@ -46,7 +47,7 @@ Actions:
 const chatHelp = `Usage: dieter chat <action>
 
 Actions:
-  create, list, show, context, transcript, watch, tool-output, fork, send,
+  create, list, show, context, transcript, watch, tool-output, present, fork, send,
   queue, comment, cancel, rename, update, archive, unarchive, workspace, pin, unpin
 
 Standalone chats use the same durable conversation and workspace operations as
@@ -79,6 +80,8 @@ func (c *CLI) rpcCard(args []string, chat bool) error {
 		return c.rpcCardWatch(args[1:])
 	case "tool-output":
 		return c.rpcCardToolOutput(args[1:])
+	case "present":
+		return c.rpcCardPresent(args[1:])
 	case "fork":
 		return c.rpcCardFork(args[1:])
 	case "send":
@@ -531,6 +534,44 @@ func (c *CLI) rpcCardToolOutput(args []string) error {
 		return err
 	}
 	value, err := client.GetToolOutput(rpcCtx, &dieterv1.GetToolOutputRequest{CardId: set.Arg(0), MessageId: *messageID, ToolCallId: *toolCallID, Revision: *revision})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
+}
+
+func (c *CLI) rpcCardPresent(args []string) error {
+	const usage = `Usage: dieter card present (--path PATH [--line N] | --url URL) [--title TITLE] CARD
+
+Request presentation in the exact conversation's native workspace pane.
+Paths belong to its owning daemon/worktree (relative paths are recommended).
+URLs must be HTTP(S). File size is limited to 5 MiB. This does not resume the
+agent or guarantee that a connected client has displayed the request.
+Returns the durable presentation ID and normalized target as JSON.
+Global --machine selects the owning daemon through authenticated direct/relay routes.
+`
+	set := flags("card present")
+	path := set.String("path", "", "file in the conversation's owning workspace")
+	url := set.String("url", "", "absolute HTTP(S) URL")
+	line := set.Int("line", 0, "one-based file line")
+	title := set.String("title", "", "optional pane title (256 characters maximum)")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 1 || (*path == "") == (*url == "") {
+		return errors.New("exact CARD and exactly one --path or --url are required")
+	}
+	if *line < 0 || *line > 10_000_000 || (*url != "" && *line != 0) {
+		return errors.New("--line must be 1–10000000 for a file, or omitted")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	value, err := client.PresentConversationContent(rpcCtx, &dieterv1.PresentConversationContentRequest{CardId: set.Arg(0), Path: *path, Url: *url, Line: int32(*line), Title: *title})
 	if err != nil {
 		return err
 	}

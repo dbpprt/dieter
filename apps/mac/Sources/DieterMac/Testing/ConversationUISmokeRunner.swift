@@ -1577,6 +1577,14 @@
                 snapshot.conversation.queue = []
                 snapshot.conversation.status = "idle"
                 snapshot.detail.card.runtime = "idle"
+                // This is an idle footer fixture. Keep the board/chat projection
+                // consistent so metadata refresh cannot restore a running cue.
+                if let index = store.state.cards.firstIndex(where: { $0.id == snapshot.detail.card.id }) {
+                    store.state.cards[index] = snapshot.detail.card
+                }
+                if let index = store.chats.firstIndex(where: { $0.id == snapshot.detail.card.id }) {
+                    store.chats[index] = snapshot.detail.card
+                }
                 store.conversation = snapshot
                 store.selectedDetail = snapshot.detail
                 let ready = await prepareComposerWindow(window)
@@ -1600,12 +1608,39 @@
                 for message in [assistant, user] {
                     let role = message.role
                     let rowID = "conversation.message.row.\(message.id)"
-                    let rowSettled = await waitForStableControl(rowID, in: window)
-                    guard rowSettled,
-                        let row = NativeUIAccessibility.find(rowID, in: window)?.recordedFrame,
-                        window.frame.contains(NSPoint(x: row.midX, y: row.midY))
-                    else {
-                        results["\(prefix)-\(role)-message-footer-copy"] = "failed: visible message row unavailable"
+                    var row: NSRect?
+                    var previousRow: NSRect?
+                    var stableSamples = 0
+                    let rowSettled = await NativeUIAccessibility.wait(timeout: 5) {
+                        // Use the mounted row in this window. A measurement host
+                        // or retired SwiftUI row may still have a registered anchor.
+                        row =
+                            NativeUISmokeTargets.frames[rowID]?.compactMap(\.view).compactMap { view -> NSRect? in
+                                guard view.window === window, !view.isHiddenOrHasHiddenAncestor,
+                                    view.bounds.width > 0, view.bounds.height > 0
+                                else { return nil }
+                                let frame = window.convertToScreen(view.convert(view.bounds, to: nil))
+                                return window.frame.contains(NSPoint(x: frame.midX, y: frame.midY)) ? frame : nil
+                            }.first
+                        guard let row else { stableSamples = 0; return false }
+                        if let previousRow,
+                            abs(row.minX - previousRow.minX) < 0.5,
+                            abs(row.minY - previousRow.minY) < 0.5,
+                            abs(row.width - previousRow.width) < 0.5,
+                            abs(row.height - previousRow.height) < 0.5
+                        {
+                            stableSamples += 1
+                        } else {
+                            stableSamples = 0
+                        }
+                        previousRow = row
+                        return stableSamples >= 4
+                    }
+                    guard rowSettled, let row else {
+                        logFooterGeometry(message.id, in: window, stage: "row unavailable", output: output)
+                        capture(window, to: output.appending(path: "06d-footer-\(prefix)-\(role)-unavailable.png"))
+                        results["\(prefix)-\(role)-message-footer-copy"] =
+                            "failed: visible message row unavailable; settled=\(rowSettled), frame=\(String(describing: row)), window=\(window.frame), selected=\(store.selectedCardID ?? store.selectedChatID ?? "none")"
                         continue
                     }
                     logFooterGeometry(message.id, in: window, stage: "before hover", output: output)

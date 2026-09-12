@@ -497,23 +497,24 @@ func ValidAdapter(id string, includeMock bool) bool {
 }
 
 type Request struct {
-	Harness           string            `json:"harness"`
-	Adapter           string            `json:"adapter"`
-	Model             string            `json:"model,omitempty"`
-	ConfiguredModel   string            `json:"-"`
-	ContextWindow     int               `json:"contextWindow,omitempty"`
-	Effort            string            `json:"effort,omitempty"`
-	Options           map[string]string `json:"options,omitempty"`
-	Prompt            string            `json:"prompt"`
-	Attachments       []Attachment      `json:"attachments,omitempty"`
-	Instructions      string            `json:"instructions,omitempty"`
-	SessionID         string            `json:"sessionId"`
-	ResponseMessageID string            `json:"responseMessageId"`
-	Session           json.RawMessage   `json:"session,omitempty"`
-	ProjectPath       string            `json:"projectPath"`
-	RuntimeRoot       string            `json:"runtimeRoot"`
-	WebSearch         bool              `json:"webSearch,omitempty"`
-	Continue          bool              `json:"continue,omitempty"`
+	Harness                    string            `json:"harness"`
+	Adapter                    string            `json:"adapter"`
+	Model                      string            `json:"model,omitempty"`
+	ConfiguredModel            string            `json:"-"`
+	ContextWindow              int               `json:"contextWindow,omitempty"`
+	Effort                     string            `json:"effort,omitempty"`
+	Options                    map[string]string `json:"options,omitempty"`
+	Prompt                     string            `json:"prompt"`
+	Attachments                []Attachment      `json:"attachments,omitempty"`
+	Instructions               string            `json:"instructions,omitempty"`
+	SessionID                  string            `json:"sessionId"`
+	ResponseMessageID          string            `json:"responseMessageId"`
+	Session                    json.RawMessage   `json:"session,omitempty"`
+	ProjectPath                string            `json:"projectPath"`
+	RuntimeRoot                string            `json:"runtimeRoot"`
+	WebSearch                  bool              `json:"webSearch,omitempty"`
+	Continue                   bool              `json:"continue,omitempty"`
+	ContentPresentationEnabled bool              `json:"contentPresentationEnabled,omitempty"`
 }
 
 type Attachment struct {
@@ -523,11 +524,12 @@ type Attachment struct {
 }
 
 type Output struct {
-	Type       string          `json:"type"`
-	Chunk      json.RawMessage `json:"chunk,omitempty"`
-	State      json.RawMessage `json:"state,omitempty"`
-	Capability json.RawMessage `json:"capability,omitempty"`
-	Message    string          `json:"error,omitempty"`
+	Type         string          `json:"type"`
+	Chunk        json.RawMessage `json:"chunk,omitempty"`
+	State        json.RawMessage `json:"state,omitempty"`
+	Capability   json.RawMessage `json:"capability,omitempty"`
+	Presentation json.RawMessage `json:"presentation,omitempty"`
+	Message      string          `json:"error,omitempty"`
 }
 
 type Runner interface {
@@ -545,7 +547,7 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs
+//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {

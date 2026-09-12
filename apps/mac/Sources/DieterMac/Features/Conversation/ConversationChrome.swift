@@ -117,6 +117,7 @@ struct ConversationChrome: View {
                     }
                     StatusPill(text: status, color: runtimeColor(status))
                     conversationMenu
+                    contentPaneToggle
                 }
             }
         } secondary: {
@@ -152,6 +153,7 @@ struct ConversationChrome: View {
                     .frame(width: 24, height: 24)
             }
             conversationMenu
+            contentPaneToggle
             if let onToggleMaximize {
                 Button(action: onToggleMaximize) {
                     Image(
@@ -215,10 +217,10 @@ struct ConversationChrome: View {
                     }
                 }
                 Button("Open workspace in Files", systemImage: "folder") {
-                    Task { await context.openWorkspaceFiles(card: card) }
+                    context.content.requestPanel(.files, conversationID: card.id)
                 }
                 Button("New terminal in workspace", systemImage: "terminal") {
-                    Task { await context.openWorkspaceTerminal(card: card) }
+                    context.content.requestPanel(.terminal, conversationID: card.id)
                 }
                 if ["running", "starting", "waiting_for_user"].contains(status) {
                     Button("Interrupt agent", role: .destructive) { Task { await context.cancel(card) } }
@@ -235,6 +237,26 @@ struct ConversationChrome: View {
             .accessibilityLabel("Conversation actions")
             .quickHelp("More")
         }
+    }
+
+    private var contentPaneToggle: some View {
+        let id = context.selectedCardID ?? context.selectedChatID ?? ""
+        let presented = context.content.isPresented(for: id)
+        return Button {
+            if presented { context.content.hide() } else { context.content.showEmpty(conversationID: id) }
+        } label: {
+            Image(systemName: "sidebar.right")
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(presented ? DieterTheme.text : DieterTheme.subtle)
+        .accessibilityLabel(presented ? "Hide workspace panel" : "Show workspace panel")
+        .accessibilityValue(presented ? "Expanded" : "Collapsed")
+        .help(presented ? "Hide workspace panel" : "Show workspace panel")
+        .accessibilityIdentifier("conversation.content.toggle")
+        .smokeTarget("conversation.content.toggle")
+        .disabled(id.isEmpty)
     }
 
 }

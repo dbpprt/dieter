@@ -75,6 +75,7 @@ struct NativeMarkdownTextSurface: NSViewRepresentable {
     let active: Bool
     let controls: NativeMarkdownControls
     var scrollCoordinator: MarkdownScrollCoordinator?
+    @Environment(\.conversationLinkHandler) private var linkHandler
 
     func makeNSView(context: Context) -> NativeMarkdownTextContainer { NativeMarkdownTextContainer() }
 
@@ -101,6 +102,7 @@ struct NativeMarkdownTextSurface: NSViewRepresentable {
             configuration: controls.configuration,
             fontName: NSFont.systemFont(ofSize: 14).fontName,
             fontSize: 14, documentId: documentKey, isEditable: active,
+            onURLClick: { url in linkHandler?(url) ?? false },
             onBuildContextMenu: { menu, range in
                 controls.contextMenu(menu, source: session.currentText(), selection: range)
             })
@@ -243,6 +245,7 @@ final class NativeMarkdownControls {
 
     var configuration: MarkdownEditorConfiguration {
         var configuration = MarkdownEditorConfiguration.default
+        configuration.textInsets = TextInsets(horizontal: 18, vertical: 16)
         configuration.extensions = [StrikethroughExtension()]
         configuration.services = MarkdownEditorServices(
             syntaxHighlighter: highlighter,

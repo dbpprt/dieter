@@ -184,8 +184,8 @@ Commands:
   harness      List target daemon harnesses, models, and options
   project      Create, browse, map hostnames, relocate, archive, and restore projects
   board        Manage boards, hostnames, retention, workflows, and labels
-  card         Create, edit, merge, and manage durable board conversations
-  chat         Fully manage standalone durable conversations
+  card         Create, edit, present files, merge, and manage board conversations
+  chat         Manage standalone conversations and present files or URLs
   workspace    Inspect changes and run durable Git/SCM operations
   file         Browse and edit project/workspace files with revision checks
   terminal     Create, attach, control, and close daemon-host PTYs

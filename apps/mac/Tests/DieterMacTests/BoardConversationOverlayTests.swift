@@ -142,6 +142,9 @@ func boardConversationSwiftUIStateMaximizesWithinItsParentProposal(preferredWidt
     }
     let inspector = try #require(found)
     let host = inspector.conversationHost
+    let transcript = try #require(boardConversationTranscript(in: host))
+    let selection = NSRange(location: 6, length: 19)
+    transcript.setSelectedRange(selection)
     #expect(abs(inspector.conversationFrame.width - 540) < 2)
     expectBoardBackgroundExtendsBehindSidebarWithoutOverlappingContent(inspector)
 
@@ -157,6 +160,8 @@ func boardConversationSwiftUIStateMaximizesWithinItsParentProposal(preferredWidt
     #expect(inspector.boardItem.isCollapsed)
     #expect(window.contentView?.bounds.width == contentSize.width)
     #expect(inspector.conversationHost === host)
+    #expect(boardConversationTranscript(in: host) === transcript)
+    #expect(transcript.selectedRange() == selection)
 
     toggle()
     try? await Task.sleep(for: .milliseconds(200))
@@ -164,6 +169,9 @@ func boardConversationSwiftUIStateMaximizesWithinItsParentProposal(preferredWidt
     #expect(abs(inspector.conversationFrame.width - 540) < 2)
     expectBoardBackgroundExtendsBehindSidebarWithoutOverlappingContent(inspector)
     #expect(inspector.conversationHost === host)
+    #expect(boardConversationTranscript(in: host) === transcript)
+    #expect(transcript.selectedRange() == selection)
+    #expect(transcript.window === window)
 
     inspector.dividerDragBegan()
     inspector.splitView.setPosition(contentSize.width * 0.79, ofDividerAt: 0)
@@ -175,6 +183,8 @@ func boardConversationSwiftUIStateMaximizesWithinItsParentProposal(preferredWidt
     #expect(inspector.boardItem.isCollapsed)
     #expect(abs(inspector.conversationFrame.width - contentSize.width) < 2)
     #expect(inspector.conversationHost === host)
+    #expect(boardConversationTranscript(in: host) === transcript)
+    #expect(transcript.selectedRange() == selection)
     #expect(abs(defaults.double(forKey: BoardConversationSizing.widthPreference) - 540) < 2)
 }
 
@@ -301,7 +311,25 @@ private struct BoardConversationBridgeTestView: View {
         let toggle = { maximized.toggle() }
         BoardConversationOverlay(
             board: AnyView(Color.blue.frame(maxWidth: .infinity, maxHeight: .infinity)),
-            conversation: AnyView(Button("Toggle conversation", action: toggle)),
+            conversation: AnyView(
+                ConversationContentSplit(presented: maximized) {
+                    VStack {
+                        Button("Toggle conversation", action: toggle)
+                        ScrollView {
+                            SelectableMessageText(
+                                source: "First paragraph with a selected phrase.\n\n"
+                                    + String(
+                                        repeating: "Keep the transcript mounted through native split changes. ",
+                                        count: 100),
+                                color: .primary
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                } content: {
+                    Text("Workspace content").frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            ),
             presented: true,
             maximized: maximized,
             defaults: defaults,
@@ -311,6 +339,10 @@ private struct BoardConversationBridgeTestView: View {
         .background(
             BoardConversationBridgeTestActionCapture(actions: actions, toggle: toggle).frame(width: 0, height: 0))
     }
+}
+
+@MainActor private func boardConversationTranscript(in view: NSView) -> MessageTextView? {
+    (view as? MessageTextView) ?? view.subviews.lazy.compactMap { boardConversationTranscript(in: $0) }.first
 }
 
 private struct BoardConversationBridgeTestActionCapture: NSViewRepresentable {

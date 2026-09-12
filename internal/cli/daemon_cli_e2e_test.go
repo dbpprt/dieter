@@ -625,6 +625,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertContentPresentationCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	first.Close()
 
 	directRoute.server.Stop()
@@ -680,6 +681,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertContentPresentationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 }
 
 func assertMachineOperationAccepted(t *testing.T, raw []byte) {

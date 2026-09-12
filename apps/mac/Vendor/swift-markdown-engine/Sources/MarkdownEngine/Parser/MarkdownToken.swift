@@ -13,6 +13,9 @@ import Foundation
 extension NSAttributedString.Key {
     public static let wikiLinkID = NSAttributedString.Key("NodeLinkID")
     public static let taskCheckbox = NSAttributedString.Key("TaskCheckbox")
+    // Preserve document-relative destinations for an embedding app's link
+    // handler, independently of the engine's external-browser URL fallback.
+    static let markdownLinkDestination = NSAttributedString.Key("MarkdownLinkDestination")
 }
 
 enum MarkdownTokenKind: Equatable {

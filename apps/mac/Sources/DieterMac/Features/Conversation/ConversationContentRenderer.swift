@@ -11,6 +11,7 @@ struct ConversationContentRenderer: View {
     let files: FilesModel
     var line: Int?
     var navigationID: UUID?
+    var active = true
 
     var body: some View {
         Group {
@@ -30,13 +31,13 @@ struct ConversationContentRenderer: View {
         case .markdown:
             MarkdownFileEditor(
                 session: files.fileEditorSession, documentKey: files.documentKey,
-                text: document.content, filename: document.name
+                text: document.content, filename: document.name, active: active, revealID: navigationID
             )
         case .text:
             SyntaxHighlightedEditor(
                 session: files.fileEditorSession, documentKey: files.documentKey,
                 text: document.content, filename: document.name,
-                editable: false, requestedLine: line
+                active: active, editable: false, requestedLine: line
             )
             .id(navigationID)
             .accessibilityIdentifier("conversation.content.code")
@@ -65,6 +66,7 @@ struct ConversationContentRenderer: View {
         } actions: {
             Button("Save a Copy…", systemImage: "square.and.arrow.down") { saveCopy(document) }
                 .accessibilityIdentifier("conversation.content.download")
+                .smokeTarget("conversation.content.download")
         }
     }
 
@@ -138,6 +140,7 @@ private struct ConversationPDFDocumentRenderer<Unavailable: View>: View {
             if let document {
                 ConversationPDFRenderer(document: document)
                     .accessibilityIdentifier("conversation.content.pdf")
+                    .smokeTarget("conversation.content.pdf")
             } else if loaded {
                 unavailable()
             } else {
@@ -209,6 +212,7 @@ private struct ConversationImageRenderer: View {
             }
         }
         .accessibilityIdentifier("conversation.content.image")
+        .smokeTarget("conversation.content.image")
     }
 }
 

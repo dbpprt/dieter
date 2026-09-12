@@ -398,6 +398,15 @@ func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
 	if request.ProjectPath != value.Path || request.ProjectPath == repository {
 		t.Fatalf("turn path=%q workspace=%q repository=%q", request.ProjectPath, value.Path, repository)
 	}
+	if !request.ContentPresentationEnabled {
+		t.Fatal("conversation harness lacks presentation tool")
+	}
+	if _, err := service.PresentConversationContent(context.Background(), card.ID, "", model.ContentPresentation{Path: filepath.Join(repository, "README.md")}); err == nil {
+		t.Fatal("worktree conversation accepted a file in the project checkout")
+	}
+	if presented, err := service.PresentConversationContent(context.Background(), card.ID, "", model.ContentPresentation{Path: filepath.Join(value.Path, "README.md")}); err != nil || presented.Path != "README.md" {
+		t.Fatalf("owning worktree presentation=%#v err=%v", presented, err)
+	}
 	if !strings.Contains(request.Instructions, "Working tree: "+value.Path) ||
 		!strings.Contains(request.Instructions, "Authoritative working tree: "+value.Path) ||
 		strings.Contains(request.Instructions, "Working tree: "+repository+"\n") {

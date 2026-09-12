@@ -79,6 +79,7 @@ final class AppSession {
     }
 
     let conversationModel = ConversationModel()
+    @ObservationIgnored var onConversationContentConnectionChanged: @MainActor () -> Void = {}
     @ObservationIgnored lazy var conversationContext = makeConversationContext()
     @ObservationIgnored let snapshotDecoder = DieterSnapshotDecoder()
     var conversationRead: OwnedRead<Dieter_V1_ConversationSnapshot> { conversationModel.conversationRead }
@@ -173,6 +174,7 @@ final class AppSession {
             if rpc !== oldValue {
                 terminalInputForwarder.suspend(); resetFileSurface(); bindSchedules(); bindConversation();
                 bindWorktree(); bindTerminals()
+                onConversationContentConnectionChanged()
             }
         }
     }

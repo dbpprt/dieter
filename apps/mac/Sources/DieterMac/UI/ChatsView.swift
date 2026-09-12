@@ -419,6 +419,7 @@ private struct ChatProjectGroup: View {
                                 )
                         }
                     }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats")
