@@ -309,23 +309,30 @@ internal fun MessageComposer(
     card: BoardCard? = null,
     contextUsage: ComposerContextUsage? = null,
     attachments: List<MessagePart> = emptyList(),
+    selection: ConversationComposerSelection? = null,
     error: String? = null,
     onValueChange: (String) -> Unit,
+    onSelectionChange: ((ConversationComposerSelection) -> Unit)? = null,
     onAttach: (() -> Unit)? = null,
     onRemoveAttachment: (Int) -> Unit = {},
     onSend: (String, String, String, Map<String, String>) -> Unit,
 ) {
     val locked = conversationSelectionLocked(card)
-    var selection by remember(card?.id) {
+    var localSelection by remember(card?.id) {
         mutableStateOf(ConversationComposerSelection.initial(card, harnesses))
     }
-    LaunchedEffect(card?.id, harnesses) {
-        selection = selection.fillingMissingSelection(card, harnesses)
+    val currentSelection = selection ?: localSelection
+    fun setSelection(next: ConversationComposerSelection) {
+        if (onSelectionChange == null) localSelection = next else onSelectionChange(next)
     }
-    val provider = selection.provider
-    val selectedModel = selection.model
-    val effort = selection.effort
-    val providerOptions = selection.providerOptions
+    LaunchedEffect(card?.id, harnesses, currentSelection) {
+        val filled = currentSelection.fillingMissingSelection(card, harnesses)
+        if (filled != currentSelection) setSelection(filled)
+    }
+    val provider = currentSelection.provider
+    val selectedModel = currentSelection.model
+    val effort = currentSelection.effort
+    val providerOptions = currentSelection.providerOptions
     val selectedHarness = harnesses.firstOrNull { it.id == provider }
     val selectedHarnessModel = selectedHarness?.modelsList?.firstOrNull { it.id == selectedModel }
     val effortOptions = selectedHarness?.effortOptionsFor(selectedModel).orEmpty()
@@ -373,7 +380,7 @@ internal fun MessageComposer(
                             harnesses.forEach { harness ->
                                 DropdownMenuItem(text = { Text(harness.name) }, enabled = enabled && !locked, onClick = {
                                     providerMenu = false
-                                    selection = ConversationComposerSelection.forProvider(harness)
+                                    setSelection(ConversationComposerSelection.forProvider(harness))
                                 })
                             }
                         }
@@ -384,7 +391,7 @@ internal fun MessageComposer(
                             selectedHarness?.modelsList.orEmpty().forEach { harnessModel ->
                                 DropdownMenuItem(text = { Text(harnessModel.name) }, enabled = modelEnabled, onClick = {
                                     modelMenu = false
-                                    selection = selection.selectingModel(harnessModel.id, selectedHarness)
+                                    setSelection(currentSelection.selectingModel(harnessModel.id, selectedHarness))
                                 })
                             }
                         }
@@ -395,12 +402,12 @@ internal fun MessageComposer(
                             DropdownMenu(effortMenu, { effortMenu = false }) {
                                 DropdownMenuItem(text = { Text("Default") }, enabled = effortEnabled, onClick = {
                                     effortMenu = false
-                                    selection = selection.copy(effort = "default")
+                                    setSelection(currentSelection.copy(effort = "default"))
                                 })
                                 effortOptions.forEach { option ->
                                     DropdownMenuItem(text = { Text(option.name) }, enabled = effortEnabled, onClick = {
                                         effortMenu = false
-                                        selection = selection.copy(effort = option.id)
+                                        setSelection(currentSelection.copy(effort = option.id))
                                     })
                                 }
                             }
@@ -411,7 +418,9 @@ internal fun MessageComposer(
                             option = option,
                             values = providerOptions,
                             enabled = enabled && providerOptionEnabled(option, locked),
-                            onValueChange = { id, next -> selection = selection.copy(providerOptions = providerOptions + (id to next)) },
+                            onValueChange = { id, next ->
+                                setSelection(currentSelection.copy(providerOptions = providerOptions + (id to next)))
+                            },
                         )
                     }
                 }

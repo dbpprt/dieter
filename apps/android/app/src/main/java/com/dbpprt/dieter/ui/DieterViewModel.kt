@@ -39,6 +39,7 @@ import com.dbpprt.dieter.v1.GetStateRequest
 import com.dbpprt.dieter.v1.Harness
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.v1.QueuedMessage
 import com.dbpprt.dieter.v1.RuntimeStatus
 import com.dbpprt.dieter.v1.SaveScheduleRequest
 import com.dbpprt.dieter.v1.Schedule
@@ -54,6 +55,9 @@ import com.dbpprt.dieter.v1.UpdateProjectRequest
 import com.dbpprt.dieter.v1.ToolOutput
 import com.dbpprt.dieter.v1.Terminal
 import com.dbpprt.dieter.v1.TerminalFrame
+import com.dbpprt.dieter.v1.UpdateProjectWorkspaceSettingsRequest
+import com.dbpprt.dieter.v1.ValidationCommand
+import com.dbpprt.dieter.v1.Workspace
 import io.grpc.Status
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -224,6 +228,13 @@ data class DieterUiState(
     val archivedProjects: List<Project> = emptyList(),
     val archivedCards: List<Card> = emptyList(),
     val directoryListing: DirectoryListing? = null,
+    val directoryListingEndpointId: String = "",
+    val directoryListingLoading: Boolean = false,
+    val composerDraft: ConversationComposerDraft = ConversationComposerDraft(),
+    val projectWorkspaces: List<Workspace> = emptyList(),
+    val projectWorkspacesLoading: Boolean = false,
+    val projectWorkspaceOperations: Set<String> = emptySet(),
+    val projectWorkspaceErrors: Map<String, String> = emptyMap(),
     val pendingCardIds: Set<String> = emptySet(),
     val pendingMessageIds: Set<String> = emptySet(),
     val acceptedOutboxIds: Set<String> = emptySet(),
@@ -372,6 +383,9 @@ class DieterViewModel(
     private var connectionDialogDismissedInterruptionKey: Long? = null
     private var lastRemoteState: State? = null
     private val conversationCache = ConversationUiCache()
+    private val conversationDrafts = ConversationDraftStore()
+    private val projectWorkspaceJobs = mutableMapOf<String, Job>()
+    private var directoryListingGeneration = 0L
 
     init {
         viewModelScope.launch {
@@ -629,6 +643,7 @@ class DieterViewModel(
         val remote = connection.selectedState
         _state.update { current ->
             val selectedCardId = resolveConversationId(current.selectedCardId, connection.resolvedConversationIds)
+            conversationDrafts.retarget(current.selectedCardId, selectedCardId)
             current.copy(
                 endpoint = connection.endpoint?.address
                     ?: connection.configuredConnections.firstOrNull { it.id == connection.activeGatewayId }?.address
@@ -665,6 +680,7 @@ class DieterViewModel(
                     operations = current.cardOperations,
                 ),
                 selectedCardId = selectedCardId,
+                composerDraft = conversationDrafts.draft(selectedCardId),
                 conversation = selectedCardId?.let(connection.activeConversations::get) ?: current.conversation,
                 conversationLastRefreshedAtMillis = selectedCardId
                     ?.let(connection.conversationRefreshedAtMillis::get)
@@ -808,6 +824,7 @@ class DieterViewModel(
                 appSurface = null,
                 editingScheduleId = null,
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 fileDocument = null,
@@ -897,12 +914,17 @@ class DieterViewModel(
                 selectedBoardId = "",
                 selectedLane = "",
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 filePath = "",
                 fileDocument = null,
                 projectFilesMode = "browse",
                 projectChanges = ProjectChangesState(projectId = id),
+                projectWorkspaces = emptyList(),
+                projectWorkspacesLoading = false,
+                projectWorkspaceOperations = emptySet(),
+                projectWorkspaceErrors = emptyMap(),
                 schedules = emptyList(),
                 schedulesTotalCount = 0,
                 schedulesNextPageToken = "",
@@ -927,6 +949,7 @@ class DieterViewModel(
                 selectedBoardId = id,
                 selectedLane = board?.lanesList?.firstOrNull()?.id.orEmpty(),
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 historyStart = 0,
@@ -952,6 +975,7 @@ class DieterViewModel(
                 selectedBoardId = boardId,
                 selectedLane = board?.lanesList?.firstOrNull()?.id.orEmpty(),
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 historyStart = 0,
@@ -981,6 +1005,7 @@ class DieterViewModel(
                 destination = Destination.BOARD,
                 boardOverviewVisible = true,
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
             )
@@ -1080,6 +1105,7 @@ class DieterViewModel(
                 destination = destination,
                 boardOverviewVisible = if (destination == Destination.BOARD) false else it.boardOverviewVisible,
                 selectedCardId = cardId,
+                composerDraft = conversationDrafts.draft(cardId),
                 selectedProjectId = projectId,
                 conversation = cached?.snapshot,
                 olderMessages = cached?.olderMessages.orEmpty(),
@@ -1290,6 +1316,7 @@ class DieterViewModel(
         _state.update {
             it.copy(
                 selectedCardId = null,
+                composerDraft = ConversationComposerDraft(),
                 conversation = null,
                 olderMessages = emptyList(),
                 conversationLastRefreshedAtMillis = null,
@@ -1468,6 +1495,69 @@ class DieterViewModel(
         connectionManager.enqueueMessage(id, parts, provider, model, effort, providerOptions)
         onSent()
         ensureConversationRecovery(id)
+    }
+
+    fun updateComposerText(value: String) = updateSelectedComposerDraft { it.copy(text = value) }
+
+    fun updateComposerSelection(value: ConversationComposerSelection) =
+        updateSelectedComposerDraft { it.copy(selection = value) }
+
+    fun addComposerAttachments(values: List<MessagePart>) {
+        if (values.isEmpty()) return
+        updateSelectedComposerDraft { it.copy(attachments = it.attachments + values) }
+    }
+
+    fun removeComposerAttachment(index: Int) = updateSelectedComposerDraft { draft ->
+        if (index !in draft.attachments.indices) draft
+        else draft.copy(attachments = draft.attachments.filterIndexed { itemIndex, _ -> itemIndex != index })
+    }
+
+    fun acceptComposerSend(expectedText: String, expectedAttachments: List<MessagePart>) {
+        val cardId = _state.value.selectedCardId ?: return
+        publishComposerDraft(cardId, conversationDrafts.acceptSend(cardId, expectedText, expectedAttachments))
+    }
+
+    fun removeQueuedMessage(message: QueuedMessage, edit: Boolean) {
+        val cardId = _state.value.selectedCardId ?: return
+        val pending = conversationDrafts.beginQueueMutation(cardId, message.id) ?: return
+        publishComposerDraft(cardId, pending)
+        viewModelScope.launch {
+            try {
+                connectionManager.ensureProjectRoute(conversationProjectId(cardId))
+                val removed = repository.removeQueuedMessage(cardId, message.id)
+                publishComposerDraft(
+                    cardId,
+                    conversationDrafts.finishQueueMutation(cardId, message.id, removed, edit),
+                )
+                val refreshed = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
+                applyLiveConversation(cardId, refreshed)
+            } catch (cancelled: CancellationException) {
+                publishComposerDraft(
+                    cardId,
+                    conversationDrafts.finishQueueMutation(cardId, message.id, null, false),
+                )
+                throw cancelled
+            } catch (error: Throwable) {
+                publishComposerDraft(
+                    cardId,
+                    conversationDrafts.finishQueueMutation(cardId, message.id, null, false),
+                )
+                _state.update { it.copy(error = readableError(error)) }
+            }
+        }
+    }
+
+    private fun updateSelectedComposerDraft(
+        transform: (ConversationComposerDraft) -> ConversationComposerDraft,
+    ) {
+        val cardId = _state.value.selectedCardId ?: return
+        publishComposerDraft(cardId, conversationDrafts.update(cardId, transform))
+    }
+
+    private fun publishComposerDraft(cardId: String, draft: ConversationComposerDraft) {
+        _state.update { current ->
+            if (current.selectedCardId == cardId) current.copy(composerDraft = draft) else current
+        }
     }
 
     fun retryFailedTurn(parts: List<MessagePart>) = action(ensureProjectRoute = false) {
@@ -2822,48 +2912,187 @@ class DieterViewModel(
         }
     }
 
-    fun listDirectories(path: String = "") {
+    fun clearDirectoryListing() {
+        directoryListingGeneration += 1
+        _state.update {
+            it.copy(directoryListing = null, directoryListingEndpointId = "", directoryListingLoading = false)
+        }
+    }
+
+    fun listDirectories(endpointId: String, path: String = "") {
+        val generation = ++directoryListingGeneration
+        if (endpointId.isBlank()) {
+            _state.update { it.copy(error = "Choose an online project host first.") }
+            return
+        }
+        _state.update {
+            it.copy(directoryListingEndpointId = endpointId, directoryListingLoading = true, error = null)
+        }
         viewModelScope.launch {
             try {
-                connectionManager.ensureProjectRoute(_state.value.selectedProjectId)
-                _state.update { it.copy(directoryListing = repository.listDirectories(path)) }
+                val listing = repository.listDirectoriesOn(endpointId, path)
+                if (directoryListingGeneration == generation) {
+                    _state.update {
+                        it.copy(
+                            directoryListing = listing,
+                            directoryListingEndpointId = endpointId,
+                            directoryListingLoading = false,
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (error: Throwable) {
-                _state.update { it.copy(error = readableError(error)) }
+                if (directoryListingGeneration == generation) {
+                    _state.update { it.copy(directoryListingLoading = false, error = readableError(error)) }
+                }
             }
         }
     }
 
-    fun createProject(mode: String, path: String, name: String, summary: String, prompt: String, boardName: String, workflow: String) = action {
-        val created = repository.createProject(
+    fun createProject(
+        endpointId: String,
+        mode: String,
+        path: String,
+        name: String,
+        summary: String,
+        prompt: String,
+        boardName: String,
+        workflow: String,
+        baseRemote: String,
+        baseBranch: String,
+        validationCommands: List<ValidationCommand>,
+        remotePublishMode: String,
+    ) = action(ensureProjectRoute = false) {
+        check(endpointId.isNotBlank()) { "Choose an online project host first." }
+        check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
+        val created = repository.createProjectOn(
+            endpointId,
             CreateProjectRequest.newBuilder()
                 .setMode(mode)
-                .setPath(path)
-                .setName(name)
-                .setSummary(summary)
-                .setPrompt(prompt)
-                .setBoardName(boardName)
+                .setPath(path.trim())
+                .setName(name.trim())
+                .setSummary(summary.trim())
+                .setPrompt(prompt.trim())
+                .setBoardName(boardName.trim())
                 .setWorkflow(workflow)
+                .setBaseRemote(baseRemote.trim())
+                .setBaseBranch(baseBranch.trim())
+                .addAllValidationCommands(validationCommands)
+                .setRemotePublishMode(remotePublishMode)
                 .build(),
         )
+        connectionManager.registerProjectHost(created.project, endpointId, created.board)
         _state.update {
             it.copy(
+                projects = (it.projects.filterNot { project -> project.id == created.project.id } + created.project)
+                    .sortedBy { project -> project.name.lowercase() },
+                boards = listOf(created.board),
+                spaceBoards = (it.spaceBoards.filterNot { board -> board.id == created.board.id } + created.board),
                 selectedProjectId = created.project.id,
                 selectedBoardId = created.board.id,
                 boardOverviewVisible = false,
                 appSurface = null,
                 editingScheduleId = null,
+                directoryListing = null,
+                directoryListingEndpointId = "",
             )
         }
+        connectionManager.selectProject(created.project.id)
         startStateStream()
     }
 
-    fun updateProject(name: String?, summary: String?, prompt: String?) = action {
-        val builder = UpdateProjectRequest.newBuilder().setProjectId(_state.value.selectedProjectId)
-        if (name != null) builder.name = name
-        if (summary != null) builder.summary = summary
-        if (prompt != null) builder.prompt = prompt
-        repository.updateProject(builder.build())
+    fun updateProject(
+        name: String,
+        summary: String,
+        prompt: String,
+        baseRemote: String,
+        baseBranch: String,
+        validationCommands: List<ValidationCommand>,
+    ) = action {
+        val projectId = _state.value.selectedProjectId
+        check(projectId.isNotBlank()) { "Select a project first." }
+        check(name.isNotBlank()) { "Enter a project name." }
+        check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
+        repository.updateProjectWorkspaceSettings(
+            UpdateProjectWorkspaceSettingsRequest.newBuilder()
+                .setProjectId(projectId)
+                .setBaseRemote(baseRemote.trim())
+                .setBaseBranch(baseBranch.trim())
+                .addAllValidationCommands(validationCommands)
+                .build(),
+        )
+        repository.updateProject(
+            UpdateProjectRequest.newBuilder()
+                .setProjectId(projectId)
+                .setName(name.trim())
+                .setSummary(summary.trim())
+                .setPrompt(prompt.trim())
+                .build(),
+        )
         refreshStateOnce()
+    }
+
+    fun loadProjectWorkspaces() {
+        val projectId = _state.value.selectedProjectId
+        if (projectId.isBlank()) return
+        _state.update { it.copy(projectWorkspacesLoading = true) }
+        viewModelScope.launch {
+            try {
+                connectionManager.ensureProjectRoute(projectId)
+                val workspaces = repository.projectWorkspaces(projectId).workspacesList
+                _state.update { current ->
+                    if (current.selectedProjectId != projectId) current
+                    else current.copy(projectWorkspaces = workspaces, projectWorkspacesLoading = false)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update { current ->
+                    if (current.selectedProjectId != projectId) current
+                    else current.copy(projectWorkspacesLoading = false, error = readableError(error))
+                }
+            }
+        }
+    }
+
+    fun runProjectWorkspaceOperation(workspace: Workspace, kind: String) {
+        if (kind !in setOf(GitOperationKinds.CLEANUP, GitOperationKinds.DISCARD)) return
+        if (workspace.cardId in _state.value.projectWorkspaceOperations) return
+        projectWorkspaceJobs[workspace.cardId]?.cancel()
+        _state.update {
+            it.copy(
+                projectWorkspaceOperations = it.projectWorkspaceOperations + workspace.cardId,
+                projectWorkspaceErrors = it.projectWorkspaceErrors - workspace.cardId,
+            )
+        }
+        projectWorkspaceJobs[workspace.cardId] = viewModelScope.launch {
+            try {
+                connectionManager.ensureProjectRoute(workspace.projectId)
+                var operation = repository.startGitOperation(workspace.cardId, kind, workspace.revision)
+                while (GitOperationStatuses.active(operation.status)) {
+                    delay(500)
+                    operation = repository.gitOperation(operation.id)
+                }
+                if (operation.status != "succeeded") error(operation.error.ifBlank { "Workspace operation ${operation.status}." })
+                val refreshed = repository.projectWorkspaces(workspace.projectId).workspacesList
+                _state.update { current ->
+                    if (current.selectedProjectId != workspace.projectId) current
+                    else current.copy(projectWorkspaces = refreshed)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.update {
+                    it.copy(projectWorkspaceErrors = it.projectWorkspaceErrors + (workspace.cardId to readableError(error)))
+                }
+            } finally {
+                projectWorkspaceJobs.remove(workspace.cardId)
+                _state.update {
+                    it.copy(projectWorkspaceOperations = it.projectWorkspaceOperations - workspace.cardId)
+                }
+            }
+        }
     }
 
     fun archiveCurrentProject() = action {

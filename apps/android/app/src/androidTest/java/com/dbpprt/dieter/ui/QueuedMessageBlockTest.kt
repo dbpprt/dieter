@@ -19,6 +19,8 @@ class QueuedMessageBlockTest {
     @Test
     fun queuedMessageLooksLikePendingUserContentAndCanInterrupt() {
         var interrupts = 0
+        var edits = 0
+        var removals = 0
         val queued = QueuedMessage.newBuilder()
             .setId("queued-test")
             .addParts(MessagePart.newBuilder().setType("text").setText("Queued emulator follow-up"))
@@ -30,6 +32,9 @@ class QueuedMessageBlockTest {
                     queued = queued,
                     showInterrupt = true,
                     interrupting = false,
+                    pending = false,
+                    onEdit = { edits += 1 },
+                    onRemove = { removals += 1 },
                     onInterrupt = { interrupts += 1 },
                 )
             }
@@ -37,7 +42,11 @@ class QueuedMessageBlockTest {
 
         composeRule.onNodeWithTag("queued-message-queued-test").assertIsDisplayed()
         composeRule.onNodeWithText("Queued emulator follow-up").assertIsDisplayed()
+        composeRule.onNodeWithTag("edit-queued-message-queued-test").assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag("remove-queued-message-queued-test").assertIsDisplayed().performClick()
         composeRule.onNodeWithTag("interrupt-queued-message").assertIsDisplayed().performClick()
+        assertEquals(1, edits)
+        assertEquals(1, removals)
         assertEquals(1, interrupts)
     }
 }

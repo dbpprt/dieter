@@ -301,6 +301,18 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 type isolatedRunner struct{ *harness.SubprocessRunner }
 
 func (runner isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	// Queue editing needs a deterministic active turn. The normal mock harness
+	// intentionally finishes immediately, so this opt-in marker holds only the
+	// disposable fixture turn until the test cancels it.
+	if strings.Contains(request.Prompt, "mock-queue-hold") {
+		timer := time.NewTimer(time.Minute)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
 	if request.ConfiguredModel == "gpt-5.3-codex-spark" && strings.HasPrefix(request.SessionID, "title_") {
 		timer := time.NewTimer(5 * time.Second)
 		defer timer.Stop()

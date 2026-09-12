@@ -13,7 +13,7 @@ internal fun conversationSettingEnabled(harness: Harness?, locked: Boolean, capa
     }
 
 /** The next message owns its selection; live card updates describe an already running turn. */
-internal data class ConversationComposerSelection(
+data class ConversationComposerSelection(
     val provider: String,
     val model: String,
     val effort: String,
