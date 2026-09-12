@@ -1467,6 +1467,94 @@ func TestReconcileOrphanedTurnAndRepeatedCancelAreIdempotent(t *testing.T) {
 	}
 }
 
+func TestCancelOrphanedTurnReleasesLiveDaemonLeaseAndCanResume(t *testing.T) {
+	service, fake, project, _ := appSetup(t)
+	chat, err := service.Store.CreateChat(store.CreateCardInput{
+		Project: project.ID, ID: "chat_stranded_cancel", Title: "Stranded", Prompt: "Work", Provider: "codex", Model: "gpt-5.5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Store.StartConversationTurn(chat.ID, "turn_stranded", "user_stranded", "Work"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Store.UpdateCardCache(chat.ID, store.CardCacheInput{Runtime: "running"}); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := service.Store.AcquireRuntimeLeaseFor(project.ID, "", chat.ID, "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease.PID != os.Getpid() {
+		t.Fatalf("lease PID=%d want %d", lease.PID, os.Getpid())
+	}
+	if err := service.CancelCard(chat.ID); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := service.Store.CardHasRuntimeLease(chat.ID); err != nil || active {
+		t.Fatalf("cancel left runtime lease: active=%v err=%v", active, err)
+	}
+	conversation, err := service.Store.Conversation(chat.ID)
+	if err != nil || conversation.Status != "interrupted" {
+		t.Fatalf("conversation=%#v err=%v", conversation, err)
+	}
+	updates, err := service.StartCard(chat.ID, "Continue", "codex", "gpt-5.5", "")
+	if err != nil {
+		t.Fatalf("resume after cancel: %v", err)
+	}
+	for range updates {
+	}
+	waitFor(t, func() bool { return fake.count() == 1 && !hasActiveTurn(service, project.ID) })
+}
+
+func TestFailedLeaseReleaseIsRetriedBeforeNextTurn(t *testing.T) {
+	service, fake, project, _ := appSetup(t)
+	chat, err := service.Store.CreateChat(store.CreateCardInput{
+		Project: project.ID, ID: "chat_release_retry", Title: "Retry release", Prompt: "First", Provider: "codex", Model: "gpt-5.5",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	realRelease := service.releaseLease
+	var releaseMu sync.Mutex
+	releaseCalls := 0
+	service.releaseLease = func(lease store.RuntimeLease) error {
+		releaseMu.Lock()
+		releaseCalls++
+		call := releaseCalls
+		releaseMu.Unlock()
+		if call == 1 {
+			return errors.New("no space left on device")
+		}
+		return realRelease(lease)
+	}
+	updates, err := service.StartCard(chat.ID, "First", "codex", "gpt-5.5", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range updates {
+	}
+	if active, err := service.Store.CardHasRuntimeLease(chat.ID); err != nil || !active {
+		t.Fatalf("failed release was not retained: active=%v err=%v", active, err)
+	}
+	service.mu.Lock()
+	_, tracked := service.strandedLeases[chat.ID]
+	service.mu.Unlock()
+	if !tracked {
+		t.Fatal("failed release was not tracked for retry")
+	}
+	updates, err = service.StartCard(chat.ID, "Second", "codex", "gpt-5.5", "")
+	if err != nil {
+		t.Fatalf("second turn remained blocked: %v", err)
+	}
+	for range updates {
+	}
+	waitFor(t, func() bool { return fake.count() == 2 && !hasActiveTurn(service, project.ID) })
+	if active, err := service.Store.CardHasRuntimeLease(chat.ID); err != nil || active {
+		t.Fatalf("retried release left runtime lease: active=%v err=%v", active, err)
+	}
+}
+
 func TestRestartRunnerReportsContinuationEmitErrors(t *testing.T) {
 	for failureIndex := range 4 {
 		t.Run(strconv.Itoa(failureIndex), func(t *testing.T) {

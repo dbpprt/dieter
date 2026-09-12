@@ -1006,7 +1006,7 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *dieterv1.SendMessage
 			request.GetCardId(), parts, request.GetProvider(), request.GetModel(), request.GetEffort(), cloneProtoStringMap(request.GetProviderOptions()),
 		)
 		if submitErr != nil {
-			return nil, grpcFailure(submitErr)
+			return nil, sendMessageFailure(submitErr)
 		}
 		return &dieterv1.SendMessageResponse{Sent: !queued, Queued: queued}, nil
 	}
@@ -1055,13 +1055,23 @@ func (api *grpcAPI) SendMessage(_ context.Context, request *dieterv1.SendMessage
 		messageID,
 	)
 	if err != nil {
-		return nil, grpcFailure(err)
+		return nil, sendMessageFailure(err)
 	}
 	result := store.CommandResult{Kind: "send_message", MessageID: messageID, Sent: !queued, Queued: queued}
 	if err := api.server.store.SaveCommandResult(clientID, commandID, result); err != nil {
 		return nil, grpcFailure(err)
 	}
 	return &dieterv1.SendMessageResponse{Sent: !queued, Queued: queued, MessageId: messageID}, nil
+}
+
+// SendMessage is an idempotent outbox operation. Admission contention means
+// the same command should be retried after teardown, not marked permanently
+// failed by clients.
+func sendMessageFailure(err error) error {
+	if errors.Is(err, store.ErrCardActive) {
+		return status.Error(codes.Aborted, err.Error())
+	}
+	return grpcFailure(err)
 }
 
 func (api *grpcAPI) RemoveQueuedMessage(_ context.Context, request *dieterv1.RemoveQueuedMessageRequest) (*dieterv1.QueuedMessage, error) {

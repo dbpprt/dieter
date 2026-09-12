@@ -83,6 +83,34 @@ func (s *Store) ProjectCheckoutHasRuntimeLease(projectID, exceptCardID string) (
 	return false, nil
 }
 
+// RuntimeLeaseForCard returns the exact durable lease for a conversation. The
+// token lets callers release a lease without racing a newer turn that may have
+// acquired the same card after the lookup.
+func (s *Store) RuntimeLeaseForCard(cardID string) (RuntimeLease, bool, error) {
+	release, err := s.beginWriteLock()
+	if err != nil {
+		return RuntimeLease{}, false, err
+	}
+	defer release()
+	path, err := runtimeLeasePath(filepath.Join(s.runtimeDir(), "leases"), cardID)
+	if err != nil {
+		return RuntimeLease{}, false, err
+	}
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return RuntimeLease{}, false, nil
+	}
+	if err != nil {
+		return RuntimeLease{}, false, err
+	}
+	var lease RuntimeLease
+	if json.Unmarshal(raw, &lease) != nil || lease.CardID != strings.TrimSpace(cardID) {
+		_ = os.Remove(path)
+		return RuntimeLease{}, false, nil
+	}
+	return lease, true, nil
+}
+
 func (s *Store) AcquireRuntimeLeaseFor(projectID, boardID, cardID, agent string) (RuntimeLease, error) {
 	release, err := s.beginWrite()
 	if err != nil {

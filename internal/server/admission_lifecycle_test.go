@@ -63,3 +63,34 @@ func TestSendMessageRequestContextDoesNotOwnAdmittedTurn(t *testing.T) {
 	}
 	t.Fatalf("admitted turn did not finish: runtime=%q err=%v", stored.Runtime, err)
 }
+
+func TestSendMessageReportsAdmissionContentionAsRetryable(t *testing.T) {
+	t.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1")
+	data := store.New(t.TempDir())
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Contention", Path: testRepository(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, err := data.CreateChat(store.CreateCardInput{
+		Project: project.ID, Title: "Queued continue", Prompt: "Wait", Provider: "mock", Model: "mock",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := data.AcquireRuntimeLease(project.ID, chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = data.ReleaseRuntimeLease(lease) }()
+	client, _ := newConnectTestClient(t, data, &fakeRunner{})
+	_, err = client.SendMessage(t.Context(), connect.NewRequest(&dieterv1.SendMessageRequest{
+		CardId: chat.ID, ClientId: "mac", CommandId: "continue-once", MessageId: "msg_continue_once",
+		Provider: "mock", Model: "mock", Parts: []*dieterv1.MessagePart{{Type: "text", Text: "continue"}},
+	}))
+	if connect.CodeOf(err) != connect.CodeAborted {
+		t.Fatalf("admission contention code=%v err=%v, want aborted", connect.CodeOf(err), err)
+	}
+	if _, saved, err := data.LoadCommandResult("mac", "continue-once"); err != nil || saved {
+		t.Fatalf("contended command was acknowledged: saved=%v err=%v", saved, err)
+	}
+}

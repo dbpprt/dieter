@@ -1,6 +1,7 @@
 import DieterAPI
 import DieterCore
 import Foundation
+import GRPCCore
 import Testing
 @testable import DieterMac
 
@@ -161,6 +162,48 @@ private actor DelayedOutboxDelivery: OutboxRPC {
         var response = Dieter_V1_SendMessageResponse(); response.messageID = "server-message"
         pending?.resume(returning: response); pending = nil
     }
+}
+
+private actor ContendedOutboxDelivery: OutboxRPC {
+    func createCard(_ request: Dieter_V1_CreateConversationRequest) async throws -> Dieter_V1_Card {
+        throw CancellationError()
+    }
+    func createChat(_ request: Dieter_V1_CreateConversationRequest) async throws -> Dieter_V1_Card {
+        throw CancellationError()
+    }
+    func sendMessage(_ request: Dieter_V1_SendMessageRequest) async throws -> Dieter_V1_SendMessageResponse {
+        throw RPCError(code: .aborted, message: "conversation teardown is still in progress")
+    }
+}
+
+@Test @MainActor func admissionContentionKeepsSendMessageQueuedForRetry() async throws {
+    let root = outboxTestRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let outbox = DurableOutbox(journal: journal(at: root))
+    var request = Dieter_V1_SendMessageRequest()
+    request.cardID = "card"
+    request.clientID = "test"
+    request.commandID = "continue-once"
+    request.messageID = "msg_continue_once"
+    request.parts = [
+        .with {
+            $0.type = "text"; $0.text = "continue"
+        }
+    ]
+    var entry = command(request.commandID)
+    entry.request = try request.serializedData()
+    try await outbox.enqueue(entry)
+    outbox.start(
+        reachable: { ["machine"] },
+        acquire: { _ in OutboxTransport(rpc: ContendedOutboxDelivery(), release: {}) },
+        committed: { _ in Issue.record("Contended message was committed") },
+        failed: { _, _ in outbox.workerTask?.cancel() }, storageFailed: { Issue.record($0) })
+    await outbox.workerTask?.value
+    let saved = try #require(try await journal(at: root).load().entries.first)
+    #expect(saved.commandID == request.commandID)
+    #expect(saved.state == .retrying)
+    #expect(saved.attempts == 1)
+    #expect(saved.nextAttemptAt != nil)
 }
 
 @Test(arguments: ["chat", "running", "deferred", "todo"]) @MainActor

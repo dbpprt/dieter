@@ -2497,6 +2497,8 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(DieterRPCFailure.isPermanent(error))
     #expect(DieterRPCFailure.message(for: error) == "gRPC notFound: card c_missing was not found")
     #expect(!DieterRPCFailure.message(for: error).contains("RPCError error 1"))
+    #expect(!DieterRPCFailure.isPermanent(RPCError(code: .aborted, message: "turn teardown in progress")))
+    #expect(DieterRPCFailure.isPermanent(RPCError(code: .failedPrecondition, message: "invalid state")))
 }
 
 @Test func cancelledConversationOpenRetriesOnceWithoutReportingStaleFailures() {

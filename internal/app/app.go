@@ -30,9 +30,11 @@ type Service struct {
 
 	mu               sync.Mutex
 	active           map[string]*activeTurn
+	strandedLeases   map[string]store.RuntimeLease
 	shuttingDown     bool
 	minimumFreeBytes uint64
 	diskAvailable    func(string) (uint64, error)
+	releaseLease     func(store.RuntimeLease) error
 }
 
 type activeTurn struct {
@@ -67,8 +69,8 @@ func New(data *store.Store, runner harness.Runner) *Service {
 		}
 	}
 	return &Service{
-		Store: data, Runner: runner, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{},
-		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes,
+		Store: data, Runner: runner, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, strandedLeases: map[string]store.RuntimeLease{},
+		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes, releaseLease: data.ReleaseRuntimeLease,
 	}
 }
 
@@ -110,12 +112,15 @@ func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
 	if mergeErr != nil {
 		return nil, mergeErr
 	}
+	recovered, strandedErr := s.retryStrandedRuntimeLeases("")
 	cards, err := s.Store.OrphanedTurnCards()
 	if err != nil {
-		return nil, err
+		return recovered, errors.Join(strandedErr, err)
 	}
-	recovered := make([]string, 0, len(cards))
 	var recoveryErrors []error
+	if strandedErr != nil {
+		recoveryErrors = append(recoveryErrors, strandedErr)
+	}
 	for _, card := range cards {
 		s.mu.Lock()
 		ownedHere := s.active[card.ID] != nil
@@ -148,7 +153,49 @@ func (s *Service) ReconcileOrphanedTurns() ([]string, error) {
 	for _, target := range targets {
 		s.startNextQueued(target)
 	}
-	return recovered, errors.Join(recoveryErrors...)
+	return uniqueStrings(recovered), errors.Join(recoveryErrors...)
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		unique = append(unique, value)
+	}
+	return unique
+}
+
+// retryStrandedRuntimeLeases repairs leases whose owning turn already finished
+// in this process but whose durable release failed, typically because the disk
+// was full. Token-matched release cannot remove a newer turn's lease.
+func (s *Service) retryStrandedRuntimeLeases(cardID string) ([]string, error) {
+	s.mu.Lock()
+	leases := make([]store.RuntimeLease, 0, len(s.strandedLeases))
+	for id, lease := range s.strandedLeases {
+		if cardID == "" || id == cardID {
+			leases = append(leases, lease)
+		}
+	}
+	s.mu.Unlock()
+	released := make([]string, 0, len(leases))
+	var releaseErrors []error
+	for _, lease := range leases {
+		if err := s.releaseLease(lease); err != nil {
+			releaseErrors = append(releaseErrors, fmt.Errorf("release stranded turn %s: %w", lease.CardID, err))
+			continue
+		}
+		s.mu.Lock()
+		if current, ok := s.strandedLeases[lease.CardID]; ok && current.Token == lease.Token {
+			delete(s.strandedLeases, lease.CardID)
+			released = append(released, lease.CardID)
+		}
+		s.mu.Unlock()
+	}
+	return released, errors.Join(releaseErrors...)
 }
 
 var errNoTurnContinuation = errors.New("conversation has no suspended turn continuation")
@@ -233,7 +280,6 @@ func (s *Service) resumeOrphanedTurn(ref string) error {
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
 	if err != nil {
 		cancel()
-		_ = s.Store.ReleaseRuntimeLease(lease)
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)
 		return err
@@ -647,25 +693,30 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	if err := s.ensureStartStorage(s.Store.Root, detail.Project.Path); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	if s.shuttingDown {
-		s.mu.Unlock()
-		return nil, errors.New("Dieter is shutting down")
-	}
-	if active := s.active[detail.Card.ID]; active != nil {
-		s.mu.Unlock()
-		return nil, store.ErrCardActive
-	}
-	s.mu.Unlock()
-	lease, err := s.Store.AcquireRuntimeLeaseFor(detail.Project.ID, detail.Board.ID, detail.Card.ID, provider)
-	if err != nil {
+	if _, err := s.retryStrandedRuntimeLeases(detail.Card.ID); err != nil {
 		return nil, err
 	}
 	turnID, responseMessageID := newRuntimeID("turn_"), newRuntimeID("msg_")
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	s.mu.Lock()
 	now := time.Now()
+	s.mu.Lock()
+	if s.shuttingDown {
+		s.mu.Unlock()
+		cancel()
+		return nil, errors.New("Dieter is shutting down")
+	}
+	if active := s.active[detail.Card.ID]; active != nil {
+		s.mu.Unlock()
+		cancel()
+		return nil, store.ErrCardActive
+	}
+	lease, err := s.Store.AcquireRuntimeLeaseFor(detail.Project.ID, detail.Board.ID, detail.Card.ID, provider)
+	if err != nil {
+		s.mu.Unlock()
+		cancel()
+		return nil, err
+	}
 	s.active[detail.Card.ID] = &activeTurn{selection: selection, cancel: cancel, cardID: detail.Card.ID, turnID: turnID, lease: lease, done: done, startedAt: now, lastProgress: now}
 	s.mu.Unlock()
 	workspaceValue, err := s.Workspaces.Ensure(context.Background(), detail.Card.ID)
@@ -679,7 +730,6 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	resolution, err := s.resolveInstructions(detail, workspaceValue)
 	if err != nil {
 		cancel()
-		_ = s.Store.ReleaseRuntimeLease(lease)
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)
 		return nil, err
@@ -696,7 +746,6 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	}
 	if startErr != nil {
 		cancel()
-		_ = s.Store.ReleaseRuntimeLease(lease)
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)
 		return nil, startErr
@@ -707,7 +756,6 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	}
 	if _, startErr = s.Store.SetConversationActiveTurn(detail.Card.ID, model.ConversationTurn{ID: turnID, UserMessageID: messageID, ResponseMessageID: responseMessageID, Instructions: resolution.Instructions, InstructionSource: resolution.Source, InstructionLabels: labelIDs, Selection: &selection}); startErr != nil {
 		cancel()
-		_ = s.Store.ReleaseRuntimeLease(lease)
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)
 		return nil, startErr
@@ -725,7 +773,6 @@ func (s *Service) startCard(ref, content string, parts []model.UIMessagePart, pr
 	}
 	if err != nil {
 		cancel()
-		_ = s.Store.ReleaseRuntimeLease(lease)
 		s.clearActive(detail.Card.ID, turnID)
 		close(done)
 		return nil, err
@@ -1292,6 +1339,10 @@ func (s *Service) CancelCard(ref string) error {
 	active := s.active[card.ID]
 	s.mu.Unlock()
 	if active == nil || active.cardID != card.ID {
+		lease, hasLease, leaseErr := s.Store.RuntimeLeaseForCard(card.ID)
+		if leaseErr != nil {
+			return leaseErr
+		}
 		if canceller, ok := s.Runner.(harness.Canceller); ok {
 			err = canceller.Cancel(card.ID, filepath.Join(s.Store.RuntimeDir(), "sessions", card.ProjectID))
 			if err != nil && !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, harness.ErrNoActiveTurn) {
@@ -1301,6 +1352,16 @@ func (s *Service) CancelCard(ref string) error {
 		interrupted, err := s.Store.InterruptConversation(card.ID)
 		if err != nil {
 			return err
+		}
+		if hasLease {
+			if err := s.releaseLease(lease); err != nil {
+				return err
+			}
+			s.mu.Lock()
+			if current, ok := s.strandedLeases[card.ID]; ok && current.Token == lease.Token {
+				delete(s.strandedLeases, card.ID)
+			}
+			s.mu.Unlock()
 		}
 		if interrupted {
 			s.startNextQueued(card.ID)
@@ -1339,13 +1400,16 @@ func (s *Service) finishActive(cardID, turnID string, finalize func() error) err
 	}
 	var releaseErr error
 	if lease.Token != "" {
-		releaseErr = s.Store.ReleaseRuntimeLease(lease)
+		releaseErr = s.releaseLease(lease)
 	}
 	var finalizeErr error
 	if finalize != nil {
 		finalizeErr = finalize()
 	}
 	s.mu.Lock()
+	if releaseErr != nil {
+		s.strandedLeases[cardID] = lease
+	}
 	if s.active[cardID] == current {
 		delete(s.active, cardID)
 	}

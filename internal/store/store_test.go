@@ -985,6 +985,32 @@ func TestRuntimeLeaseAllowsParallelProjectTurnsButSerializesCards(t *testing.T) 
 	}
 }
 
+func TestRuntimeLeaseLookupPreservesTokenMatchedRelease(t *testing.T) {
+	s, project, _ := setup(t, model.WorkflowReview)
+	first, err := s.AcquireRuntimeLease(project.ID, "card_lookup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookedUp, ok, err := New(s.Root).RuntimeLeaseForCard("card_lookup")
+	if err != nil || !ok || lookedUp.Token != first.Token {
+		t.Fatalf("lookup=%#v ok=%v err=%v", lookedUp, ok, err)
+	}
+	if err := s.ReleaseRuntimeLease(first); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := s.AcquireRuntimeLease(project.ID, "card_lookup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.ReleaseRuntimeLease(replacement) }()
+	if err := s.ReleaseRuntimeLease(first); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := s.CardHasRuntimeLease("card_lookup"); err != nil || !active {
+		t.Fatalf("stale token removed replacement: active=%v err=%v", active, err)
+	}
+}
+
 func TestProjectCheckoutRuntimeLeaseIgnoresWorktreeConversations(t *testing.T) {
 	s, project, _ := setup(t, model.WorkflowReview)
 	worktreeCard, err := s.CreateChat(CreateCardInput{
