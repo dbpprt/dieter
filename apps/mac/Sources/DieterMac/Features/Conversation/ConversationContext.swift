@@ -10,6 +10,7 @@ final class ConversationContext {
     let model: ConversationModel
     let composer: ComposerModel
     let worktreeChanges: WorktreeChangesModel
+    let content = ConversationContentModel()
     @ObservationIgnored var card: () -> Dieter_V1_Card?
     @ObservationIgnored var catalog: () -> Dieter_V1_HarnessCatalog
     @ObservationIgnored var projectID: () -> String

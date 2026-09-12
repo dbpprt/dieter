@@ -541,6 +541,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "PresentConversationContent" metadata.
+        public enum PresentConversationContent: Sendable {
+            /// Request type for "PresentConversationContent".
+            public typealias Input = Dieter_V1_PresentConversationContentRequest
+            /// Response type for "PresentConversationContent".
+            public typealias Output = Dieter_V1_ContentPresentation
+            /// Descriptor for "PresentConversationContent".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "PresentConversationContent",
+                type: .unary
+            )
+        }
         /// Namespace for "SendMessage" metadata.
         public enum SendMessage: Sendable {
             /// Request type for "SendMessage".
@@ -1376,6 +1389,7 @@ public enum Dieter_V1_DieterService: Sendable {
             PollConversation.descriptor,
             WatchConversation.descriptor,
             GetToolOutput.descriptor,
+            PresentConversationContent.descriptor,
             SendMessage.descriptor,
             RemoveQueuedMessage.descriptor,
             AddComment.descriptor,
@@ -2225,6 +2239,30 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ToolOutput>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ToolOutput>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "PresentConversationContent" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Requests presentation in this conversation's native workspace pane.
+        /// > The daemon validates and persists the request; clients choose when to display it.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PresentConversationContentRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_PresentConversationContentRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ContentPresentation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func presentConversationContent<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PresentConversationContentRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PresentConversationContentRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ContentPresentation>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ContentPresentation>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "SendMessage" method.
@@ -4629,6 +4667,41 @@ extension Dieter_V1_DieterService {
             try await self.client.unary(
                 request: request,
                 descriptor: Dieter_V1_DieterService.Method.GetToolOutput.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "PresentConversationContent" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Requests presentation in this conversation's native workspace pane.
+        /// > The daemon validates and persists the request; clients choose when to display it.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_PresentConversationContentRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_PresentConversationContentRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ContentPresentation` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func presentConversationContent<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_PresentConversationContentRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_PresentConversationContentRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ContentPresentation>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ContentPresentation>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.PresentConversationContent.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -7496,6 +7569,36 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "PresentConversationContent" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Requests presentation in this conversation's native workspace pane.
+    /// > The daemon validates and persists the request; clients choose when to display it.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_PresentConversationContentRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func presentConversationContent<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_PresentConversationContentRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ContentPresentation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.presentConversationContent(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_PresentConversationContentRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ContentPresentation>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "SendMessage" method.
     ///
     /// - Parameters:
@@ -10204,6 +10307,40 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getToolOutput(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "PresentConversationContent" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Requests presentation in this conversation's native workspace pane.
+    /// > The daemon validates and persists the request; clients choose when to display it.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func presentConversationContent<Result>(
+        _ message: Dieter_V1_PresentConversationContentRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_ContentPresentation>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_PresentConversationContentRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.presentConversationContent(
             request: request,
             options: options,
             onResponse: handleResponse

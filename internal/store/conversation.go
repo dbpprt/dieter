@@ -244,7 +244,7 @@ func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID st
 		return model.ConversationEvent{}, model.Conversation{}, err
 	}
 	writeKind := "store_changed"
-	if eventType == "ui-chunk" || eventType == "capability" {
+	if eventType == "ui-chunk" || eventType == "capability" || eventType == "present-content" {
 		writeKind = "conversation_changed"
 		if eventType == "ui-chunk" {
 			var chunk struct {
@@ -465,6 +465,12 @@ func (s *Store) AppendCapability(cardRef, turnID string, capability json.RawMess
 	return s.AppendConversationEvent(cardRef, "capability", turnID, "", capability)
 }
 
+func (s *Store) PresentConversationContent(cardRef, turnID string, presentation model.ContentPresentation) (model.ContentPresentation, error) {
+	presentation.ID = newID("presentation_")
+	_, _, err := s.AppendConversationEvent(cardRef, "present-content", turnID, "", presentation)
+	return presentation, err
+}
+
 // InterruptConversation durably closes a turn whose worker is no longer
 // owned by this process. It is deliberately idempotent so cancellation and
 // startup recovery can race safely.
@@ -504,6 +510,11 @@ func reduceConversation(conversation *model.Conversation, event model.Conversati
 	conversation.LastSeq = event.Seq
 	conversation.UpdatedAt = event.CreatedAt
 	switch event.Type {
+	case "present-content":
+		var presentation model.ContentPresentation
+		if json.Unmarshal(event.Data, &presentation) == nil && presentation.ID != "" {
+			conversation.PresentedContent = &presentation
+		}
 	case "draft-attachments":
 		var parts []model.UIMessagePart
 		if json.Unmarshal(event.Data, &parts) == nil {

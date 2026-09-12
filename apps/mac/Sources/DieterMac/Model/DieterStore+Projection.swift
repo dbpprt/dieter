@@ -115,6 +115,15 @@ extension DieterStore {
     }
 
     func isPendingCard(_ id: String) -> Bool { pendingCardIDs.contains(id) }
+    func isConversationServerBacked(_ id: String) -> Bool {
+        guard DieterConversationID.isServerBacked(id) else { return false }
+        guard
+            let pending = outbox.entries.first(where: {
+                $0.kind != .sendMessage && DieterOutboxPolicy.conversationIDs(for: $0).contains(id)
+            })
+        else { return true }
+        return pending.serverID == id || publishedConversationIDs[pending.endpointID]?.contains(id) == true
+    }
     func isPendingMessage(_ id: String) -> Bool { pendingMessageIDs.contains(id) }
     func isAcceptedOutboxItem(_ id: String) -> Bool { acceptedOutboxIDs.contains(id) }
     func isFailedOutboxItem(_ id: String) -> Bool { failedOutboxIDs.contains(id) }

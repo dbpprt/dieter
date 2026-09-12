@@ -57,6 +57,40 @@ struct ConversationView: View {
     }
 
     var body: some View {
+        let id = conversationID
+        let endpointID = context.content.currentEndpointID(id)
+        ConversationContentSplit(presented: context.content.isPresented(for: conversationID)) {
+            conversationBody
+        } content: {
+            ConversationContentPane(model: context.content)
+        }
+        .environment(
+            \.conversationLinkExternalResolver,
+            { url in
+                guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else {
+                    return .unavailable("This conversation's machine is no longer selected.")
+                }
+                return await context.content.resolveExternalLink(url, id)
+            }
+        )
+        .environment(
+            \.conversationLinkHandler,
+            { url in
+                guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else { return false }
+                context.content.requestOpen(url, conversationID: id)
+                return true
+            }
+        )
+        .onChange(of: conversationID) { _, id in
+            if context.content.conversationID != id { context.content.suspend() } else { context.content.resume() }
+        }
+        .onAppear {
+            if context.content.isPresented(for: conversationID) { context.content.resume() }
+        }
+        .onDisappear { context.content.suspend() }
+    }
+
+    private var conversationBody: some View {
         VStack(spacing: 0) {
             ConversationChrome(
                 compact: compact, standalone: standalone, tab: $tab,

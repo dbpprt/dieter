@@ -7,6 +7,8 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
     let text: String
     let filename: String
     var active = true
+    var editable = true
+    var requestedLine: Int?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -15,10 +17,10 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         let textView = container.textView
         textView.delegate = context.coordinator
         textView.isRichText = false
-        textView.isEditable = true
+        textView.isEditable = editable
         textView.isSelectable = true
         textView.importsGraphics = false
-        textView.allowsUndo = true
+        textView.allowsUndo = editable
         textView.drawsBackground = false
         textView.insertionPointColor = .textColor
         textView.textContainerInset = NSSize(width: 14, height: 12)
@@ -35,6 +37,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         context.coordinator.setActive(active)
         session.attach(textView, documentKey: documentKey, initialText: text)
         context.coordinator.highlight(force: true)
+        context.coordinator.revealRequestedLine()
         return container
     }
 
@@ -42,6 +45,8 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard context.coordinator.textView != nil else { return }
         context.coordinator.setActive(active)
+        container.textView.isEditable = editable
+        container.textView.allowsUndo = editable
         if session.documentKey != documentKey {
             context.coordinator.isApplyingUpdate = true
             session.prepare(documentKey: documentKey, text: text)
@@ -50,7 +55,29 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         } else {
             context.coordinator.highlight(force: false)
         }
+        context.coordinator.revealRequestedLine()
         if active { container.needsLayout = true }
+    }
+
+    /// Link line numbers are one-based; out-of-range links reveal the nearest
+    /// available line. NSString keeps the selection in NSTextView's UTF-16 units.
+    static func range(ofLine line: Int, in text: String) -> NSRange {
+        let source = text as NSString
+        var location = 0
+        var currentLine = 1
+        while currentLine < max(1, line), location < source.length {
+            let next = NSMaxRange(source.lineRange(for: NSRange(location: location, length: 0)))
+            guard next > location else { break }
+            if next == source.length {
+                let finalCharacter = source.character(at: source.length - 1)
+                if finalCharacter != 0x0A && finalCharacter != 0x0D { break }
+            }
+            location = next
+            currentLine += 1
+        }
+        var start = 0, end = 0, contentsEnd = 0
+        source.getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+        return NSRange(location: start, length: contentsEnd - start)
     }
 
     static func dismantleNSView(_ container: SyntaxEditorContainer, coordinator: Coordinator) {
@@ -74,8 +101,18 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         private var fullHighlightTask: Task<Void, Never>?
         private var needsFullHighlight = true
         private var isActive = true
+        private var revealedLine: String?
 
         init(parent: SyntaxHighlightedEditor) { self.parent = parent }
+
+        func revealRequestedLine() {
+            guard isActive, let line = parent.requestedLine, let textView else { return }
+            let key = "\(parent.documentKey):\(line)"
+            guard revealedLine != key else { return }
+            revealedLine = key
+            let range = SyntaxHighlightedEditor.range(ofLine: line, in: textView.string)
+            container?.reveal(range: range)
+        }
 
         func setActive(_ active: Bool) {
             let becameActive = active && !isActive
@@ -98,6 +135,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
+            guard parent.editable else { return false }
             let current = textView.string as NSString
             let removed = current.substring(with: affectedCharRange)
             let replacement = replacementString ?? ""
@@ -183,6 +221,7 @@ final class SyntaxEditorContainer: NSView {
     let scrollView = NSScrollView()
     let textView = SyntaxEditorTextView()
     private(set) var isActive = true
+    private var pendingReveal: NSRange?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -203,7 +242,14 @@ final class SyntaxEditorContainer: NSView {
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
+        // This container owns the wrapping width. NSTextView's automatic
+        // tracking subtracts its inset, so also assigning the viewport width
+        // during layout makes the two writers repeatedly invalidate TextKit.
+        // Retained editors are particularly sensitive when becoming visible.
+        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.containerSize = NSSize(
+            width: frameRect.width > 0 ? frameRect.width : 600,
+            height: CGFloat.greatestFiniteMagnitude)
         textView.layoutManager?.allowsNonContiguousLayout = true
         textView.minSize = scrollView.contentSize
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -212,13 +258,17 @@ final class SyntaxEditorContainer: NSView {
 
     required init?(coder: NSCoder) { nil }
 
+    func reveal(range: NSRange) {
+        pendingReveal = range
+        needsLayout = true
+    }
+
     func setActive(_ active: Bool) {
         guard isActive != active else { return }
         isActive = active
         textView.isPresentationActive = active
         textView.isVerticallyResizable = active
         textView.autoresizingMask = active ? [.width] : []
-        textView.textContainer?.widthTracksTextView = active
         textView.layoutManager?.backgroundLayoutEnabled = active
         if active { needsLayout = true }
     }
@@ -239,11 +289,18 @@ final class SyntaxEditorContainer: NSView {
         super.layout()
         guard isActive else { return }
         let viewport = scrollView.contentSize
-        guard viewport.width > 0, let textContainer = textView.textContainer else { return }
-        textContainer.containerSize = NSSize(width: viewport.width, height: CGFloat.greatestFiniteMagnitude)
-        textView.minSize = viewport
+        let wrappingWidth = viewport.width - 2 * textView.textContainerInset.width
+        guard wrappingWidth.isFinite, wrappingWidth > 0, let textContainer = textView.textContainer else { return }
+        let containerSize = NSSize(width: wrappingWidth, height: CGFloat.greatestFiniteMagnitude)
+        if textContainer.containerSize != containerSize { textContainer.containerSize = containerSize }
+        if textView.minSize != viewport { textView.minSize = viewport }
         if textView.frame.width != viewport.width {
             textView.frame.size.width = viewport.width
+        }
+        if let range = pendingReveal, viewport.height > 0 {
+            pendingReveal = nil
+            textView.setSelectedRange(range)
+            textView.scrollRangeToVisible(range)
         }
     }
 }

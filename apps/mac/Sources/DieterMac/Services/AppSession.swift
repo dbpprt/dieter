@@ -79,6 +79,7 @@ final class AppSession {
     }
 
     let conversationModel = ConversationModel()
+    @ObservationIgnored var onConversationContentConnectionChanged: @MainActor () -> Void = {}
     @ObservationIgnored lazy var conversationContext = makeConversationContext()
     @ObservationIgnored let snapshotDecoder = DieterSnapshotDecoder()
     var conversationRead: OwnedRead<Dieter_V1_ConversationSnapshot> { conversationModel.conversationRead }
@@ -117,6 +118,8 @@ final class AppSession {
     var movingCardIDs: Set<String> = []
     var labelUpdatingCardIDs: Set<String> = []
     var pendingCardIDs: Set<String> = []
+    // Kept separate from rows that include local outbox overlays.
+    var publishedConversationIDs: [String: Set<String>] = [:]
     var pendingMessageIDs: Set<String> = []
     var acceptedOutboxIDs: Set<String> = []
     var failedOutboxIDs: Set<String> = []
@@ -173,6 +176,7 @@ final class AppSession {
             if rpc !== oldValue {
                 terminalInputForwarder.suspend(); resetFileSurface(); bindSchedules(); bindConversation();
                 bindWorktree(); bindTerminals()
+                onConversationContentConnectionChanged()
             }
         }
     }

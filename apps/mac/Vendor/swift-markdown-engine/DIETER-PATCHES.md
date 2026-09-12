@@ -22,3 +22,11 @@ Code-block overlay tokens are cleared and reseeded when rebuilding a document.
 Resize callbacks defer selection work during that rebuild, and stale token
 ranges are rejected before text-storage access. Switching from diagrams to a
 shorter document therefore cannot index the new text with the old fence ranges.
+
+An optional URL-click callback lets Dieter open linked workspace files and web
+pages in the conversation panel. Native edit zones, wiki-link resolution and
+Command-click retain their existing behavior; other embedders keep AppKit's
+default URL handling.
+The styled link also retains its original Markdown destination, so the optional
+callback receives relative paths and fragments before external-browser URL
+normalization. Native workspace resolution therefore uses the document's path.

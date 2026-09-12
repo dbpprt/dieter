@@ -18,6 +18,66 @@ private func command(_ id: String) -> DieterOutboxEntry {
         request: Data(), optimisticID: "msg_\(id)", attempts: 0, createdAt: Date(timeIntervalSince1970: 1))
 }
 
+@Test @MainActor func quickTaskIdentityIsFinalBeforeDeliveryAndTitleGeneration() async throws {
+    let root = outboxTestRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let outbox = DurableOutbox(journal: journal(at: root))
+    let store = DieterStore(outboxOverride: outbox, restoreSync: false)
+    var project = Dieter_V1_Project()
+    project.id = "project"
+    store.projectDirectory = [project.id: project]
+    store.selectedProjectID = project.id
+    let enqueued = await store.createConversation(
+        title: "Draft task", prompt: "Make this durable", chat: false,
+        provider: "codex", model: "gpt-5.6-sol", effort: "high", deferred: false,
+        lane: "running", autoGenerateTitle: true)
+    #expect(enqueued)
+    let entry = try #require(outbox.entries.first)
+    let id = try #require(
+        DieterOutboxPolicy.expectedConversationID(clientID: entry.clientID, commandID: entry.commandID))
+    #expect(entry.optimisticID == id)
+    #expect(store.selectedCardID == id)
+    #expect(!store.isConversationServerBacked(id))
+    await store.openConversation(cardID: id, chat: false)
+    #expect(store.conversation?.conversation.cardID == id)
+    #expect(store.conversation?.conversation.status == "pending")
+    #expect(!store.conversationLoading)
+
+    let target = DieterCore.WorkspaceTarget(endpointID: store.endpoint.id, projectID: "", conversationID: id)
+    store.composer.select(target)
+    store.composer.draft.text = "Follow-up while the title is generating"
+    _ = store.retargetOptimisticConversation(from: id, to: id)
+    #expect(store.composer.draft.text == "Follow-up while the title is generating")
+    #expect(store.selectedCardID == id)
+
+    var card = try #require(store.state.cards.first { $0.id == id })
+    card.title = "Generated short title"
+    card.runtime = "running"
+    card.initialPromptSentAt = "2026-09-12T12:00:00Z"
+    var snapshot = Dieter_V1_GlobalSnapshot()
+    snapshot.state.projects = [project]
+    snapshot.state.cards = [card]
+    store.applyGlobalSnapshot(snapshot, endpointID: store.endpoint.id)
+    store.rebuildOutboxOverlays()
+    #expect(store.isConversationServerBacked(id))
+    #expect(store.state.cards.map(\.id) == [id])
+    #expect(store.state.cards.first?.title == "Generated short title")
+    #expect(store.selectedCardID == id)
+    #expect(store.composer.draft.text == "Follow-up while the title is generating")
+}
+
+@Test @MainActor func creationReportsJournalFailureWithoutAcceptingTheTask() async {
+    let root = outboxTestRoot()
+    let outbox = DurableOutbox(journal: journal(at: root, writer: { _, _ in throw CocoaError(.fileWriteOutOfSpace) }))
+    let store = DieterStore(outboxOverride: outbox, restoreSync: false)
+    let accepted = await store.createConversation(
+        title: "Keep my draft", prompt: "A task", chat: false,
+        provider: "codex", model: "gpt-5.6-sol", effort: "high", deferred: true)
+    #expect(!accepted)
+    #expect(outbox.entries.isEmpty)
+    #expect(store.errorMessage != nil)
+}
+
 @Test @MainActor func outboxDiskFailurePreservesDraftAndPreventsAcceptance() async throws {
     let root = outboxTestRoot()
     let outbox = DurableOutbox(journal: journal(at: root, writer: { _, _ in throw CocoaError(.fileWriteOutOfSpace) }))
@@ -93,8 +153,8 @@ private func command(_ id: String) -> DieterOutboxEntry {
     #expect(model.draft.text == "D")
 }
 
-@Test(arguments: [false, true]) @MainActor
-func synchronizedCreateRemovesOptimisticRowBeforeOutboxJournalAcknowledgement(chat: Bool) async throws {
+@Test(arguments: [false, true], [false, true]) @MainActor
+func synchronizedCreateRemovesOptimisticRowBeforeOutboxJournalAcknowledgement(chat: Bool, stableID: Bool) async throws {
     let root = outboxTestRoot()
     defer { try? FileManager.default.removeItem(at: root) }
     let outbox = DurableOutbox(journal: journal(at: root))
@@ -111,10 +171,15 @@ func synchronizedCreateRemovesOptimisticRowBeforeOutboxJournalAcknowledgement(ch
     let entry = DieterOutboxEntry(
         commandID: "create-before-reply", clientID: "test", endpointID: store.endpoint.id,
         kind: chat ? .createChat : .createCard, request: try request.serializedData(),
-        optimisticID: "local_create", attempts: 0, createdAt: Date())
+        optimisticID: stableID
+            ? try #require(
+                DieterOutboxPolicy.expectedConversationID(clientID: "test", commandID: "create-before-reply"))
+            : "local_create", attempts: 0, createdAt: Date())
     try await outbox.enqueue(entry)
     store.rebuildOutboxOverlays()
     #expect((chat ? store.chats : store.state.cards).map(\.id) == [entry.optimisticID])
+    store.rebuildOutboxOverlays()
+    #expect(!store.isConversationServerBacked(entry.optimisticID))
 
     var accepted = Dieter_V1_Card()
     accepted.id = try #require(
@@ -136,7 +201,8 @@ func synchronizedCreateRemovesOptimisticRowBeforeOutboxJournalAcknowledgement(ch
     for _ in 0..<3 {
         let rows = chat ? store.chats : store.state.cards
         #expect(rows.count == 2)
-        #expect(!rows.contains { $0.id == entry.optimisticID })
+        #expect(rows.filter { $0.id == entry.optimisticID }.count == (stableID ? 1 : 0))
+        #expect(store.isConversationServerBacked(accepted.id))
         #expect(rows.first { $0.id == accepted.id } == accepted)
         #expect(rows.first { $0.id == unrelated.id } == unrelated)
         #expect(outbox.entries == [entry])

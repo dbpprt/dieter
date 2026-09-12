@@ -926,6 +926,20 @@ extension NativeTextViewCoordinator {
                 }
             }
         }
+        var callbackURL = link as? URL
+        if callbackURL != nil, let storage = textView.textStorage,
+           charIndex >= 0, charIndex < storage.length,
+           let destination = storage.attribute(.markdownLinkDestination, at: charIndex, effectiveRange: nil) as? String {
+            // The styled .link may use an https fallback. The owning workspace
+            // needs the original relative path or fragment to resolve it.
+            callbackURL = URL(string: destination) ?? callbackURL
+        }
+        if !((NSApp.currentEvent?.modifierFlags.contains(.command)) ?? false),
+           let url = callbackURL,
+           MainActor.assumeIsolated({ onURLClick?(url) == true }) {
+            (textView as? NativeTextView)?.linkClickDidNavigate = true
+            return true
+        }
         guard let target = WikiLinkService.resolveIdentifier(link: link, textView: textView, at: charIndex) else {
             // Web link (URL-valued): returning false lets AppKit open the URL
             // (the mouseDown fallback mirrors that). Opening a link is navigation

@@ -32,6 +32,7 @@ struct ConversationMarkdownView: View {
 private struct FullConversationText: View {
     let source: String
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.conversationLinkHandler) private var linkHandler
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -42,21 +43,62 @@ private struct FullConversationText: View {
                         "conversation.full-text.done")
             }.padding(14)
             FullConversationTextEditor(source: source)
+                .environment(
+                    \.conversationLinkHandler,
+                    { url in
+                        guard linkHandler?(url) == true else { return false }
+                        dismiss()
+                        return true
+                    })
         }.frame(minWidth: 650, minHeight: 500)
     }
 }
 
-private struct FullConversationTextEditor: NSViewRepresentable {
+struct FullConversationTextEditor: NSViewRepresentable {
     let source: String
+    @Environment(\.conversationLinkHandler) private var linkHandler
+    @Environment(\.conversationLinkExternalResolver) private var externalResolver
+
+    func makeCoordinator() -> ConversationTextLinkDelegate {
+        ConversationTextLinkDelegate()
+    }
+
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()
         if let text = scroll.documentView as? NSTextView {
             text.isEditable = false
             text.isSelectable = true
-            text.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-            text.string = source
+            text.delegate = context.coordinator
         }
         return scroll
     }
-    func updateNSView(_ scroll: NSScrollView, context: Context) {}
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        context.coordinator.handler = linkHandler
+        context.coordinator.externalResolver = externalResolver
+        guard let text = scroll.documentView as? NSTextView, text.string != source else { return }
+        text.textStorage?.setAttributedString(Self.attributedSource(source))
+    }
+
+    /// Keep the full source copyable verbatim while making its link labels
+    /// actionable. Foundation maps Markdown source positions to UTF-16 ranges,
+    /// including relative destinations, multiline labels, and Unicode text.
+    static func attributedSource(_ source: String) -> NSAttributedString {
+        let result = NSMutableAttributedString(
+            string: source,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                .foregroundColor: NSColor.labelColor,
+            ])
+        guard
+            let markdown = try? AttributedString(
+                markdown: source, options: .init(appliesSourcePositionAttributes: true))
+        else { return result }
+        for run in markdown.runs {
+            guard let link = run.link, let position = run.markdownSourcePosition,
+                let range = NSRange(position, in: source), range.length > 0
+            else { continue }
+            result.addAttribute(.link, value: link, range: range)
+        }
+        return result
+    }
 }

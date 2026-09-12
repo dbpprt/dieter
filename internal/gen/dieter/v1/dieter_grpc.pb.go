@@ -60,6 +60,7 @@ const (
 	DieterService_PollConversation_FullMethodName               = "/dieter.v1.DieterService/PollConversation"
 	DieterService_WatchConversation_FullMethodName              = "/dieter.v1.DieterService/WatchConversation"
 	DieterService_GetToolOutput_FullMethodName                  = "/dieter.v1.DieterService/GetToolOutput"
+	DieterService_PresentConversationContent_FullMethodName     = "/dieter.v1.DieterService/PresentConversationContent"
 	DieterService_SendMessage_FullMethodName                    = "/dieter.v1.DieterService/SendMessage"
 	DieterService_RemoveQueuedMessage_FullMethodName            = "/dieter.v1.DieterService/RemoveQueuedMessage"
 	DieterService_AddComment_FullMethodName                     = "/dieter.v1.DieterService/AddComment"
@@ -172,6 +173,9 @@ type DieterServiceClient interface {
 	PollConversation(ctx context.Context, in *PollConversationRequest, opts ...grpc.CallOption) (*ConversationUpdate, error)
 	WatchConversation(ctx context.Context, in *WatchConversationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ConversationUpdate], error)
 	GetToolOutput(ctx context.Context, in *GetToolOutputRequest, opts ...grpc.CallOption) (*ToolOutput, error)
+	// Requests presentation in this conversation's native workspace pane.
+	// The daemon validates and persists the request; clients choose when to display it.
+	PresentConversationContent(ctx context.Context, in *PresentConversationContentRequest, opts ...grpc.CallOption) (*ContentPresentation, error)
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
 	// RemoveQueuedMessage dequeues content that has not started yet and returns
 	// the full message so clients can either discard it or restore it to an
@@ -677,6 +681,16 @@ func (c *dieterServiceClient) GetToolOutput(ctx context.Context, in *GetToolOutp
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ToolOutput)
 	err := c.cc.Invoke(ctx, DieterService_GetToolOutput_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) PresentConversationContent(ctx context.Context, in *PresentConversationContentRequest, opts ...grpc.CallOption) (*ContentPresentation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContentPresentation)
+	err := c.cc.Invoke(ctx, DieterService_PresentConversationContent_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1378,6 +1392,9 @@ type DieterServiceServer interface {
 	PollConversation(context.Context, *PollConversationRequest) (*ConversationUpdate, error)
 	WatchConversation(*WatchConversationRequest, grpc.ServerStreamingServer[ConversationUpdate]) error
 	GetToolOutput(context.Context, *GetToolOutputRequest) (*ToolOutput, error)
+	// Requests presentation in this conversation's native workspace pane.
+	// The daemon validates and persists the request; clients choose when to display it.
+	PresentConversationContent(context.Context, *PresentConversationContentRequest) (*ContentPresentation, error)
 	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
 	// RemoveQueuedMessage dequeues content that has not started yet and returns
 	// the full message so clients can either discard it or restore it to an
@@ -1581,6 +1598,9 @@ func (UnimplementedDieterServiceServer) WatchConversation(*WatchConversationRequ
 }
 func (UnimplementedDieterServiceServer) GetToolOutput(context.Context, *GetToolOutputRequest) (*ToolOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetToolOutput not implemented")
+}
+func (UnimplementedDieterServiceServer) PresentConversationContent(context.Context, *PresentConversationContentRequest) (*ContentPresentation, error) {
+	return nil, status.Error(codes.Unimplemented, "method PresentConversationContent not implemented")
 }
 func (UnimplementedDieterServiceServer) SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendMessage not implemented")
@@ -2481,6 +2501,24 @@ func _DieterService_GetToolOutput_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).GetToolOutput(ctx, req.(*GetToolOutputRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_PresentConversationContent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PresentConversationContentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).PresentConversationContent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_PresentConversationContent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).PresentConversationContent(ctx, req.(*PresentConversationContentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3709,6 +3747,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetToolOutput",
 			Handler:    _DieterService_GetToolOutput_Handler,
+		},
+		{
+			MethodName: "PresentConversationContent",
+			Handler:    _DieterService_PresentConversationContent_Handler,
 		},
 		{
 			MethodName: "SendMessage",

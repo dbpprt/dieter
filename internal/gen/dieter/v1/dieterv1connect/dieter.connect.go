@@ -148,6 +148,9 @@ const (
 	// DieterServiceGetToolOutputProcedure is the fully-qualified name of the DieterService's
 	// GetToolOutput RPC.
 	DieterServiceGetToolOutputProcedure = "/dieter.v1.DieterService/GetToolOutput"
+	// DieterServicePresentConversationContentProcedure is the fully-qualified name of the
+	// DieterService's PresentConversationContent RPC.
+	DieterServicePresentConversationContentProcedure = "/dieter.v1.DieterService/PresentConversationContent"
 	// DieterServiceSendMessageProcedure is the fully-qualified name of the DieterService's SendMessage
 	// RPC.
 	DieterServiceSendMessageProcedure = "/dieter.v1.DieterService/SendMessage"
@@ -372,6 +375,9 @@ type DieterServiceClient interface {
 	PollConversation(context.Context, *connect.Request[v1.PollConversationRequest]) (*connect.Response[v1.ConversationUpdate], error)
 	WatchConversation(context.Context, *connect.Request[v1.WatchConversationRequest]) (*connect.ServerStreamForClient[v1.ConversationUpdate], error)
 	GetToolOutput(context.Context, *connect.Request[v1.GetToolOutputRequest]) (*connect.Response[v1.ToolOutput], error)
+	// Requests presentation in this conversation's native workspace pane.
+	// The daemon validates and persists the request; clients choose when to display it.
+	PresentConversationContent(context.Context, *connect.Request[v1.PresentConversationContentRequest]) (*connect.Response[v1.ContentPresentation], error)
 	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error)
 	// RemoveQueuedMessage dequeues content that has not started yet and returns
 	// the full message so clients can either discard it or restore it to an
@@ -697,6 +703,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			httpClient,
 			baseURL+DieterServiceGetToolOutputProcedure,
 			connect.WithSchema(dieterServiceMethods.ByName("GetToolOutput")),
+			connect.WithClientOptions(opts...),
+		),
+		presentConversationContent: connect.NewClient[v1.PresentConversationContentRequest, v1.ContentPresentation](
+			httpClient,
+			baseURL+DieterServicePresentConversationContentProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("PresentConversationContent")),
 			connect.WithClientOptions(opts...),
 		),
 		sendMessage: connect.NewClient[v1.SendMessageRequest, v1.SendMessageResponse](
@@ -1110,6 +1122,7 @@ type dieterServiceClient struct {
 	pollConversation               *connect.Client[v1.PollConversationRequest, v1.ConversationUpdate]
 	watchConversation              *connect.Client[v1.WatchConversationRequest, v1.ConversationUpdate]
 	getToolOutput                  *connect.Client[v1.GetToolOutputRequest, v1.ToolOutput]
+	presentConversationContent     *connect.Client[v1.PresentConversationContentRequest, v1.ContentPresentation]
 	sendMessage                    *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
 	removeQueuedMessage            *connect.Client[v1.RemoveQueuedMessageRequest, v1.QueuedMessage]
 	addComment                     *connect.Client[v1.AddCommentRequest, v1.Comment]
@@ -1371,6 +1384,11 @@ func (c *dieterServiceClient) WatchConversation(ctx context.Context, req *connec
 // GetToolOutput calls dieter.v1.DieterService.GetToolOutput.
 func (c *dieterServiceClient) GetToolOutput(ctx context.Context, req *connect.Request[v1.GetToolOutputRequest]) (*connect.Response[v1.ToolOutput], error) {
 	return c.getToolOutput.CallUnary(ctx, req)
+}
+
+// PresentConversationContent calls dieter.v1.DieterService.PresentConversationContent.
+func (c *dieterServiceClient) PresentConversationContent(ctx context.Context, req *connect.Request[v1.PresentConversationContentRequest]) (*connect.Response[v1.ContentPresentation], error) {
+	return c.presentConversationContent.CallUnary(ctx, req)
 }
 
 // SendMessage calls dieter.v1.DieterService.SendMessage.
@@ -1725,6 +1743,9 @@ type DieterServiceHandler interface {
 	PollConversation(context.Context, *connect.Request[v1.PollConversationRequest]) (*connect.Response[v1.ConversationUpdate], error)
 	WatchConversation(context.Context, *connect.Request[v1.WatchConversationRequest], *connect.ServerStream[v1.ConversationUpdate]) error
 	GetToolOutput(context.Context, *connect.Request[v1.GetToolOutputRequest]) (*connect.Response[v1.ToolOutput], error)
+	// Requests presentation in this conversation's native workspace pane.
+	// The daemon validates and persists the request; clients choose when to display it.
+	PresentConversationContent(context.Context, *connect.Request[v1.PresentConversationContentRequest]) (*connect.Response[v1.ContentPresentation], error)
 	SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error)
 	// RemoveQueuedMessage dequeues content that has not started yet and returns
 	// the full message so clients can either discard it or restore it to an
@@ -2046,6 +2067,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		DieterServiceGetToolOutputProcedure,
 		svc.GetToolOutput,
 		connect.WithSchema(dieterServiceMethods.ByName("GetToolOutput")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServicePresentConversationContentHandler := connect.NewUnaryHandler(
+		DieterServicePresentConversationContentProcedure,
+		svc.PresentConversationContent,
+		connect.WithSchema(dieterServiceMethods.ByName("PresentConversationContent")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceSendMessageHandler := connect.NewUnaryHandler(
@@ -2496,6 +2523,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceWatchConversationHandler.ServeHTTP(w, r)
 		case DieterServiceGetToolOutputProcedure:
 			dieterServiceGetToolOutputHandler.ServeHTTP(w, r)
+		case DieterServicePresentConversationContentProcedure:
+			dieterServicePresentConversationContentHandler.ServeHTTP(w, r)
 		case DieterServiceSendMessageProcedure:
 			dieterServiceSendMessageHandler.ServeHTTP(w, r)
 		case DieterServiceRemoveQueuedMessageProcedure:
@@ -2785,6 +2814,10 @@ func (UnimplementedDieterServiceHandler) WatchConversation(context.Context, *con
 
 func (UnimplementedDieterServiceHandler) GetToolOutput(context.Context, *connect.Request[v1.GetToolOutputRequest]) (*connect.Response[v1.ToolOutput], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetToolOutput is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) PresentConversationContent(context.Context, *connect.Request[v1.PresentConversationContentRequest]) (*connect.Response[v1.ContentPresentation], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.PresentConversationContent is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) SendMessage(context.Context, *connect.Request[v1.SendMessageRequest]) (*connect.Response[v1.SendMessageResponse], error) {

@@ -69,11 +69,7 @@
             try? FileManager.default.createDirectory(
                 at: captureDirectory, withIntermediateDirectories: true)
             let captureFile = captureDirectory.appending(path: "capture.png")
-            let image = NSImage(size: NSSize(width: 180, height: 90))
-            image.lockFocus()
-            NSColor.systemTeal.setFill()
-            NSRect(x: 0, y: 0, width: 180, height: 90).fill()
-            image.unlockFocus()
+            let image = captureImageFixture()
             if let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
                 let png = bitmap.representation(using: .png, properties: [:])
             {
@@ -97,16 +93,22 @@
                 && store.selectedBoardID == captureDestination.boardID
             var captureAttachment = false
             var captureURL = false
+            var captureActions = false
+            var markupChecks = ["capture-markup": "failed: capture window did not open"]
             if let draftWindow = NSApp.windows.first(where: { $0.title == "Capture task" && $0.isVisible }
             ) {
                 captureAttachment =
                     NativeUIAccessibility.find("quick-task.attachments", in: draftWindow) != nil
                 captureURL = NativeUIAccessibility.find("quick-task.source-url", in: draftWindow) != nil
+                captureActions = ["quick-task.create", "quick-task.run"].allSatisfy {
+                    NativeUIAccessibility.find($0, in: draftWindow)?.recordedFrame?.height ?? 0 > 0
+                }
                 try? NativeUIAccessibility.elements(in: draftWindow).map(\.text).joined(separator: "\n")
                     .write(
                         to: output.appending(path: "capture-draft-accessibility.txt"), atomically: true,
                         encoding: .utf8)
                 capture(draftWindow, to: output.appending(path: "capture-task-draft.png"))
+                markupChecks = await AttachmentMarkupUISmoke.captureInspector(window: draftWindow, output: output)
                 draftWindow.close()
             }
 
@@ -148,6 +150,8 @@
                         ? "passed" : "failed: capture button did not dispatch",
                     "capture-task-draft": captureOpened && captureAttachment && captureURL
                         ? "passed" : "failed: screenshot or URL draft absent",
+                    "capture-task-actions": captureActions
+                        ? "passed" : "failed: Add task or Run task absent from the island capture editor",
                     "capture-temp-cleanup": !FileManager.default.fileExists(atPath: captureFile.path)
                         ? "passed" : "failed: capture file retained",
                     "collapsed-window": appeared ? "passed" : "failed: island window did not appear",
@@ -169,8 +173,56 @@
                     "open-chat": chatOpened ? "passed" : "failed: activity did not route to Chats",
                     "settings-page": settingsVisible
                         ? "passed" : "failed: Island was not the active Settings destination",
-                ].merging(displayChecks) { _, checked in checked }, to: output)
+                ].merging(displayChecks) { _, checked in checked }.merging(markupChecks) { _, checked in checked },
+                to: output)
             NSApp.terminate(nil)
+        }
+
+        /// A synthetic interface makes the screenshot annotation journey
+        /// readable in evidence without capturing any operator data.
+        private static func captureImageFixture() -> NSImage {
+            NSImage(size: NSSize(width: 720, height: 440), flipped: true) { rectangle in
+                let background = NSColor(deviceRed: 0.08, green: 0.10, blue: 0.13, alpha: 1)
+                let panel = NSColor(deviceRed: 0.13, green: 0.16, blue: 0.20, alpha: 1)
+                let foreground = NSColor(deviceWhite: 0.94, alpha: 1)
+                let secondary = NSColor(deviceRed: 0.59, green: 0.65, blue: 0.72, alpha: 1)
+                let accent = NSColor(deviceRed: 0.34, green: 0.79, blue: 0.69, alpha: 1)
+                background.setFill()
+                rectangle.fill()
+                let drawText: (String, NSRect, CGFloat, NSFont.Weight, NSColor) -> Void = {
+                    text, rect, size, weight, color in
+                    (text as NSString).draw(
+                        in: rect,
+                        withAttributes: [
+                            .font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color,
+                        ])
+                }
+                drawText("Workspace overview", NSRect(x: 28, y: 24, width: 560, height: 32), 24, .semibold, foreground)
+                drawText(
+                    "A small release, ready for a final look.", NSRect(x: 28, y: 64, width: 620, height: 24), 15,
+                    .regular, secondary)
+                panel.setFill()
+                NSBezierPath(roundedRect: NSRect(x: 28, y: 112, width: 664, height: 276), xRadius: 16, yRadius: 16)
+                    .fill()
+                drawText("Release checklist", NSRect(x: 50, y: 132, width: 380, height: 28), 20, .semibold, foreground)
+                let rows = ["Keyboard shortcuts", "Restore drafts on reopen", "Review screenshot annotations"]
+                for (index, title) in rows.enumerated() {
+                    let top = CGFloat(184 + index * 58)
+                    accent.withAlphaComponent(index == 2 ? 0.18 : 0.10).setFill()
+                    NSBezierPath(roundedRect: NSRect(x: 48, y: top, width: 624, height: 44), xRadius: 9, yRadius: 9)
+                        .fill()
+                    accent.setFill()
+                    NSBezierPath(ovalIn: NSRect(x: 64, y: top + 16, width: 12, height: 12)).fill()
+                    drawText(title, NSRect(x: 92, y: top + 10, width: 410, height: 24), 16, .medium, foreground)
+                    drawText(
+                        index == 2 ? "Review" : "Done", NSRect(x: 584, y: top + 12, width: 72, height: 22), 13, .medium,
+                        secondary)
+                }
+                drawText(
+                    "Example workspace · Screenshot fixture", NSRect(x: 28, y: 404, width: 620, height: 22), 12,
+                    .regular, secondary)
+                return true
+            }
         }
 
         private static func checkDisplayMovement(

@@ -935,7 +935,7 @@ extension DieterStore {
         }
         startGlobalSync()
         guard let cardID = selectedCardID ?? selectedChatID,
-            DieterConversationID.isServerBacked(cardID)
+            isConversationServerBacked(cardID)
         else { return }
         conversationSyncing = true
         conversationTask?.cancel()

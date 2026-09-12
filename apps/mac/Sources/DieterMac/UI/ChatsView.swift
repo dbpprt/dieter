@@ -47,7 +47,7 @@ struct ChatsView: View {
             search.isEmpty || !(projection.byProject[$0.id] ?? []).isEmpty
         }
         let displayedProjectIDs = displayedProjects.map(\.id)
-        ChatPaneSplit {
+        ChatPaneSplit(browserHidden: store.conversationContext.content.isPresented(for: store.selectedChatID)) {
             VStack(spacing: 0) {
                 FluidPaneChrome(background: .clear, spacing: 9) {
                     HStack(spacing: 8) {
@@ -271,25 +271,32 @@ private struct ChatPaneResizeDivider: View {
 /// browser width from the selected conversation's intrinsic content size.
 /// That keeps navigation stationary while chat Markdown is prepared or wraps.
 private struct ChatPaneSplit<Browser: View, Detail: View>: View {
+    let browserHidden: Bool
     let browser: Browser
     let detail: Detail
     @AppStorage("dieter.chatBrowserPaneWidth") private var storedWidth = Double(ChatPaneSizing.defaultWidth)
     @State private var dragStartWidth: CGFloat?
 
     init(
+        browserHidden: Bool = false,
         @ViewBuilder browser: () -> Browser,
         @ViewBuilder detail: () -> Detail
     ) {
+        self.browserHidden = browserHidden
         self.browser = browser()
         self.detail = detail()
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let width = ChatPaneSizing.resolvedWidth(CGFloat(storedWidth), workspaceWidth: geometry.size.width)
+            let width =
+                browserHidden
+                ? 0 : ChatPaneSizing.resolvedWidth(CGFloat(storedWidth), workspaceWidth: geometry.size.width)
             HStack(spacing: 0) {
                 browser
                     .frame(width: width, height: geometry.size.height)
+                    .allowsHitTesting(!browserHidden)
+                    .accessibilityHidden(browserHidden)
                     .clipped()
                     .background {
                         DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true)
@@ -307,43 +314,45 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .overlay(alignment: .topLeading) {
-                // The titlebar-spanning divider must not enlarge the panes.
-                // Keep the generous drag target without inserting layout space.
-                // The one-point separator is painted directly over the touching
-                // pane edges, eliminating the exposed window-background seam.
-                ChatPaneResizeDivider(
-                    width: width,
-                    onChanged: { translation in
-                        let startWidth = dragStartWidth ?? width
-                        if dragStartWidth == nil { dragStartWidth = startWidth }
-                        storedWidth = Double(
-                            ChatPaneSizing.resolvedWidth(
-                                startWidth + translation,
-                                workspaceWidth: geometry.size.width
-                            ))
-                    },
-                    onEnded: { dragStartWidth = nil },
-                    onAdjust: { direction in
-                        switch direction {
-                        case .increment:
+                if !browserHidden {
+                    // The titlebar-spanning divider must not enlarge the panes.
+                    // Keep the generous drag target without inserting layout space.
+                    // The one-point separator is painted directly over the touching
+                    // pane edges, eliminating the exposed window-background seam.
+                    ChatPaneResizeDivider(
+                        width: width,
+                        onChanged: { translation in
+                            let startWidth = dragStartWidth ?? width
+                            if dragStartWidth == nil { dragStartWidth = startWidth }
                             storedWidth = Double(
-                                ChatPaneSizing.resolvedWidth(width + 20, workspaceWidth: geometry.size.width))
-                        case .decrement:
-                            storedWidth = Double(
-                                ChatPaneSizing.resolvedWidth(width - 20, workspaceWidth: geometry.size.width))
-                        @unknown default:
-                            break
+                                ChatPaneSizing.resolvedWidth(
+                                    startWidth + translation,
+                                    workspaceWidth: geometry.size.width
+                                ))
+                        },
+                        onEnded: { dragStartWidth = nil },
+                        onAdjust: { direction in
+                            switch direction {
+                            case .increment:
+                                storedWidth = Double(
+                                    ChatPaneSizing.resolvedWidth(width + 20, workspaceWidth: geometry.size.width))
+                            case .decrement:
+                                storedWidth = Double(
+                                    ChatPaneSizing.resolvedWidth(width - 20, workspaceWidth: geometry.size.width))
+                            @unknown default:
+                                break
+                            }
                         }
-                    }
-                )
-                .frame(
-                    height: geometry.size.height
-                        + geometry.safeAreaInsets.top
-                        + geometry.safeAreaInsets.bottom
-                )
-                .ignoresSafeArea(.container, edges: .vertical)
-                .offset(x: width - ChatPaneSizing.dividerHitWidth / 2)
-                .zIndex(1)
+                    )
+                    .frame(
+                        height: geometry.size.height
+                            + geometry.safeAreaInsets.top
+                            + geometry.safeAreaInsets.bottom
+                    )
+                    .ignoresSafeArea(.container, edges: .vertical)
+                    .offset(x: width - ChatPaneSizing.dividerHitWidth / 2)
+                    .zIndex(1)
+                }
             }
         }
     }
@@ -410,6 +419,7 @@ private struct ChatProjectGroup: View {
                                 )
                         }
                     }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats")

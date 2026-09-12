@@ -490,6 +490,10 @@ func testViewer(t *testing.T, request *dieterv1.StartRemoteDesktopRequest) *webr
 	t.Helper()
 	settings := webrtc.SettingEngine{}
 	settings.SetIncludeLoopbackCandidate(true)
+	// In-process peers must not depend on the operator host's physical/VPN
+	// interfaces or IPv6 routes. Keep fixture ICE on local IPv4 loopback.
+	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	settings.SetInterfaceFilter(func(name string) bool { return name == "lo0" || name == "lo" })
 	client, err := webrtc.NewAPI(webrtc.WithSettingEngine(settings)).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)
@@ -527,6 +531,9 @@ func testControlViewer(t *testing.T, request *dieterv1.StartRemoteDesktopRequest
 	t.Helper()
 	settings := webrtc.SettingEngine{}
 	settings.SetIncludeLoopbackCandidate(true)
+	// Isolate in-process ICE from physical/VPN interfaces and external routes.
+	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	settings.SetInterfaceFilter(func(name string) bool { return name == "lo0" || name == "lo" })
 	client, err := webrtc.NewAPI(webrtc.WithSettingEngine(settings)).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)

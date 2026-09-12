@@ -16,12 +16,34 @@ struct ProjectChangesView: View {
     @State private var showCompactDiff = false
     @State private var discardPath: String?
     @FocusState private var fileListFocused: Bool
-    private var model: ProjectChangesModel { store.projectChanges }
-    private var targetKey: String {
-        "\(store.selectedProjectID)|\(store.endpoint.id)|\(store.connectionGeneration)|\(store.phase.isConnected)|\(scenePhase)"
+    private var injectedModel: ProjectChangesModel?
+    private var injectedProjectName: String?
+    private var active = true
+    private var isLive = true
+    private var bindingRevision = 0
+    private var model: ProjectChangesModel { injectedModel ?? store.projectChanges }
+    private var projectName: String { injectedProjectName ?? store.selectedProject?.name ?? "Project" }
+    private var connected: Bool { injectedModel == nil ? store.phase.isConnected : isLive }
+
+    init() {}
+    init(model: ProjectChangesModel, projectName: String, active: Bool, isLive: Bool, bindingRevision: Int) {
+        injectedModel = model
+        injectedProjectName = projectName
+        self.active = active
+        self.isLive = isLive
+        self.bindingRevision = bindingRevision
     }
-    private var ready: Bool { model.projectID == store.selectedProjectID }
-    private var canMutate: Bool { ready && store.phase.isConnected && !model.mutationsDisabled }
+    private var targetKey: String {
+        if injectedModel != nil {
+            return "\(ObjectIdentifier(model))|\(bindingRevision)|\(active)|\(isLive)|\(scenePhase)"
+        }
+        return
+            "\(store.selectedProjectID)|\(store.endpoint.id)|\(store.connectionGeneration)|\(store.phase.isConnected)|\(scenePhase)"
+    }
+    private var ready: Bool {
+        injectedModel != nil ? !model.projectID.isEmpty : model.projectID == store.selectedProjectID
+    }
+    private var canMutate: Bool { ready && connected && active && !model.mutationsDisabled }
     private var selectedFile: Dieter_V1_ChangedFile? { model.changes?.files.first { $0.path == model.selection?.path } }
 
     var body: some View {
@@ -45,13 +67,17 @@ struct ProjectChangesView: View {
         .foregroundStyle(DieterTheme.text)
         .background(DieterTheme.background)
         .task(id: targetKey) {
-            guard scenePhase == .active else { return }
-            guard store.phase.isConnected, let rpc = store.rpc else { model.suspend(); return }
-            guard
-                store.projectEndpointIDs[store.selectedProjectID] == nil
-                    || store.projectEndpointIDs[store.selectedProjectID] == store.endpoint.id
-            else { return }
-            model.bind(projectID: store.selectedProjectID, client: rpc)
+            guard active, scenePhase == .active else { model.suspend(); return }
+            if injectedModel == nil {
+                guard store.phase.isConnected, let rpc = store.rpc else { model.suspend(); return }
+                guard
+                    store.projectEndpointIDs[store.selectedProjectID] == nil
+                        || store.projectEndpointIDs[store.selectedProjectID] == store.endpoint.id
+                else { return }
+                model.bind(projectID: store.selectedProjectID, client: rpc)
+            } else if !isLive {
+                model.suspend(); return
+            }
             await model.refresh()
             while !Task.isCancelled {
                 try? await DieterTaskSleep.seconds(2)
@@ -83,7 +109,7 @@ struct ProjectChangesView: View {
     private var navigatorHeader: some View {
         HStack(spacing: 9) {
             Text("Changes").font(.system(size: 17, weight: .semibold))
-            Text(store.selectedProject?.name ?? "Project").font(.system(size: 12))
+            Text(projectName).font(.system(size: 12))
                 .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
             Spacer(minLength: 0)
             Button {
@@ -392,7 +418,7 @@ struct ProjectChangesView: View {
             } else {
                 ContentUnavailableView(
                     "Working tree is clean", systemImage: "checkmark.circle",
-                    description: Text("No local changes in \(store.selectedProject?.name ?? "this project").")
+                    description: Text("No local changes in \(projectName).")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("project-changes.clean").smokeTarget("project-changes.clean")

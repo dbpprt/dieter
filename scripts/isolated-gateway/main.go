@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
+	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/server"
@@ -169,6 +171,7 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 		return err
 	}
 	boardServer := server.NewWithOptions(data, logger, server.Options{
+		Runner: isolatedRunner{SubprocessRunner: harness.NewSubprocessRunner(data.Root)},
 		MachineAction: func(_ context.Context, operation machine.Operation) error {
 			logger.Info("isolated machine operation accepted", "operation", operation)
 			return nil
@@ -290,6 +293,25 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 
 	<-ctx.Done()
 	return nil
+}
+
+// Auto-title always selects Spark independently of the conversation provider.
+// Intercept that metadata request here so native Quick Task tests never need
+// provider credentials, and can observe the running card before its rename.
+type isolatedRunner struct{ *harness.SubprocessRunner }
+
+func (runner isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	if request.ConfiguredModel == "gpt-5.3-codex-spark" && strings.HasPrefix(request.SessionID, "title_") {
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
+		return emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"text-delta","delta":"Quick Task Starts Immediately"}`)})
+	}
+	return runner.SubprocessRunner.Run(ctx, request, emit)
 }
 
 func isolatedMachineCapabilities(context.Context) []machine.OperationCapability {

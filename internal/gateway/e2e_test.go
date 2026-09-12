@@ -1149,6 +1149,10 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 	t.Helper()
 	settings := webrtc.SettingEngine{}
 	settings.SetIncludeLoopbackCandidate(true)
+	// Both peers are local test fixtures. Do not let physical/VPN interfaces
+	// or external IPv6 routes determine whether relayed signaling succeeds.
+	settings.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
+	settings.SetInterfaceFilter(func(name string) bool { return name == "lo0" || name == "lo" })
 	viewer, err := webrtc.NewAPI(webrtc.WithSettingEngine(settings)).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)

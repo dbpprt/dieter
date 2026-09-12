@@ -523,6 +523,13 @@ package final class DieterRPC: Sendable {
         }
     }
 
+    package func presentConversationContent(_ request: Dieter_V1_PresentConversationContentRequest) async throws
+        -> Dieter_V1_ContentPresentation
+    {
+        try await service.presentConversationContent(
+            request: .init(message: request), options: Self.boundedUnaryCallOptions())
+    }
+
     package func toolOutput(_ request: Dieter_V1_GetToolOutputRequest) async throws
         -> Dieter_V1_ToolOutput
     {

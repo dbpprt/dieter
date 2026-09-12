@@ -780,7 +780,8 @@ enum MarkdownASTStyler {
         children: [InlineNode], font: NSFont, ctx: Ctx, into attrs: inout [StyledRange]
     ) {
         attrs.append((range, [.spellingState: 0]))
-        var urlString = ctx.ns.substring(with: urlRange)
+        let destination = ctx.ns.substring(with: urlRange)
+        var urlString = destination
         if !urlString.contains("://") { urlString = "https://\(urlString)" }
         let isActive = ctx.isActive(range)
         if let url = URL(string: urlString) {
@@ -791,6 +792,7 @@ enum MarkdownASTStyler {
             } else {
                 attrs.append((textRange, [
                     .link: url,
+                    .markdownLinkDestination: destination,
                     .underlineStyle: NSUnderlineStyle.single.rawValue,
                     .foregroundColor: ctx.theme.link,
                 ]))

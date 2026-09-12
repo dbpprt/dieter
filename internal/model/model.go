@@ -152,6 +152,7 @@ type Card struct {
 	Lane                string              `json:"lane" yaml:"lane"`
 	Position            int64               `json:"position" yaml:"position"`
 	Title               string              `json:"title" yaml:"title"`
+	TitleRevision       uint64              `json:"-" yaml:"title_revision,omitempty"`
 	InitialPrompt       string              `json:"initialPrompt" yaml:"-"`
 	InitialPromptSentAt string              `json:"initialPromptSentAt,omitempty" yaml:"initial_prompt_sent_at,omitempty"`
 	PhaseChangedAt      string              `json:"phaseChangedAt" yaml:"phase_changed_at"`
@@ -511,16 +512,27 @@ type Conversation struct {
 	// ForkSeed is the immutable source transcript used to seed the first turn
 	// of a forked chat. It is cleared as soon as the new harness session emits
 	// resumable state; copied Messages remain the user-visible history.
-	ForkSeed         []UIMessage       `json:"forkSeed,omitempty"`
-	DraftAttachments []UIMessagePart   `json:"draftAttachments,omitempty"`
-	PendingTools     []PendingTool     `json:"pendingTools,omitempty"`
-	Subagents        []Subagent        `json:"subagents,omitempty"`
-	TaskPlans        []TaskPlan        `json:"taskPlans,omitempty"`
-	Queue            []QueuedMessage   `json:"queue,omitempty"`
-	Session          json.RawMessage   `json:"session,omitempty"`
-	ActiveTurn       *ConversationTurn `json:"activeTurn,omitempty"`
-	LastSeq          int64             `json:"lastSeq"`
-	UpdatedAt        string            `json:"updatedAt"`
+	ForkSeed         []UIMessage          `json:"forkSeed,omitempty"`
+	DraftAttachments []UIMessagePart      `json:"draftAttachments,omitempty"`
+	PendingTools     []PendingTool        `json:"pendingTools,omitempty"`
+	Subagents        []Subagent           `json:"subagents,omitempty"`
+	TaskPlans        []TaskPlan           `json:"taskPlans,omitempty"`
+	PresentedContent *ContentPresentation `json:"presentedContent,omitempty"`
+	Queue            []QueuedMessage      `json:"queue,omitempty"`
+	Session          json.RawMessage      `json:"session,omitempty"`
+	ActiveTurn       *ConversationTurn    `json:"activeTurn,omitempty"`
+	LastSeq          int64                `json:"lastSeq"`
+	UpdatedAt        string               `json:"updatedAt"`
+}
+
+// ContentPresentation is an explicit request to display content in a native
+// conversation pane. It never changes the transcript or resumes an agent.
+type ContentPresentation struct {
+	ID    string `json:"id"`
+	Path  string `json:"path,omitempty"`
+	URL   string `json:"url,omitempty"`
+	Line  int    `json:"line,omitempty"`
+	Title string `json:"title,omitempty"`
 }
 
 // ConversationTurn identifies the one in-flight response. Persisting the

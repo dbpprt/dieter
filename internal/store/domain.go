@@ -1209,6 +1209,9 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	if title == item.Title && provider == item.Provider && modelName == item.Model && effort == item.Effort && stringMapsEqual(providerOptions, item.ProviderOptions) && runtime == item.Runtime && summary == item.Summary {
 		return item, nil
 	}
+	if item.Title != title {
+		item.TitleRevision++
+	}
 	item.Title = title
 	item.Provider, item.Model, item.Effort, item.ProviderOptions, item.Runtime, item.Summary = provider, modelName, effort, providerOptions, runtime, summary
 	item.RuntimeUpdatedAt, item.UpdatedAt = timestamp(), timestamp()
@@ -1252,6 +1255,7 @@ func (s *Store) RenameCard(ref, title string) (model.Card, error) {
 		item.LastActivityAt = item.UpdatedAt
 	}
 	item.Title, item.UpdatedAt = strings.TrimSpace(title), timestamp()
+	item.TitleRevision++
 	return item, s.writeCard(item)
 }
 
@@ -1301,6 +1305,7 @@ func (s *Store) UpdateCard(ref, title, initialPrompt string, settings ...DraftAg
 		item.LastActivityAt = item.UpdatedAt
 	}
 	item.Title, item.InitialPrompt, item.UpdatedAt = title, initialPrompt, timestamp()
+	item.TitleRevision++
 	return item, s.writeCard(item)
 }
 

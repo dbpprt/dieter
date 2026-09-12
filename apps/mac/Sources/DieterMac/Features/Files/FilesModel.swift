@@ -34,6 +34,14 @@ final class FilesModel {
 
     var documentKey: String { target.documentKey(path: selectedFilePath) }
 
+    /// Cancel transport work without discarding a loaded editor buffer.
+    func cancelContentRead() {
+        guard fileLoading else { return }
+        fileReadGeneration &+= 1
+        fileContentRead.cancel()
+        fileLoading = false
+    }
+
     func bind(target: WorkspaceTarget, client: (any FilesRPC)?) {
         guard self.target != target || self.client !== client else { return }
         let sameTarget = self.target == target

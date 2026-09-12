@@ -14,7 +14,6 @@ struct FilesView: View {
     @State private var externalActions: FileExternalActions?
     @State private var externalRootPath: String?
     @State private var externalPreparedKey = ""
-    @State private var exportingMarkdown = false
     private var editorSession: FileEditorSession { model.fileEditorSession }
 
     var body: some View {
@@ -208,10 +207,6 @@ struct FilesView: View {
                                     }
                                     if editorSession.isDirty { StatusPill(text: "Edited", color: DieterTheme.amber) }
                                     openMenu(document)
-                                    if exportingMarkdown {
-                                        ProgressView().controlSize(.small)
-                                            .accessibilityLabel("Exporting Markdown")
-                                    }
                                     Button("Save") { Task { await model.saveCurrentDocument() } }
                                         .buttonStyle(DieterPrimaryButtonStyle())
                                         .keyboardShortcut("s", modifiers: .command)
@@ -220,17 +215,22 @@ struct FilesView: View {
                                             document.binary || !editorSession.isDirty || !model.isLive || model.saving)
                                 }
                             } secondary: {
-                                HStack(spacing: 8) {
-                                    Text(
-                                        ProjectFileLanguage.detect(filename: document.name) == .markdown
-                                            ? "Markdown"
-                                            : (document.mimeType.isEmpty ? "Unknown type" : document.mimeType))
-                                    Text("·")
-                                    Text(ByteCountFormatter.string(fromByteCount: document.size, countStyle: .file))
-                                    Spacer()
-                                    if !document.binary { Text("Editable") }
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) {
+                                        Text(
+                                            ProjectFileLanguage.detect(filename: document.name) == .markdown
+                                                ? "Markdown"
+                                                : (document.mimeType.isEmpty ? "Unknown type" : document.mimeType))
+                                        Text("·")
+                                        Text(ByteCountFormatter.string(fromByteCount: document.size, countStyle: .file))
+                                        Spacer()
+                                        if !document.binary { Text("Editable") }
+                                    }
+                                    .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                                    FileDocumentActions(
+                                        files: model, identifierPrefix: "files",
+                                        resolveExternalActions: currentExternalActions)
                                 }
-                                .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                             }
                             if model.fileLoading || model.fileError != nil {
                                 LoadFeedback(
@@ -377,7 +377,7 @@ struct FilesView: View {
     private var externalActionKey: String {
         let transport = store.rpc.map { String(describing: ObjectIdentifier($0)) } ?? "none"
         return
-            "\(model.documentKey):\(model.fileScopeGeneration):\(model.isLive):\(store.phase.isConnected):\(model.fileDocument?.revision ?? ""):\(transport)"
+            "\(model.documentKey):\(model.fileScopeGeneration):\(model.projectPath):\(model.isLive):\(store.phase.isConnected):\(model.fileDocument?.revision ?? ""):\(transport)"
     }
 
     private var preparedExternalActions: FileExternalActions? {
@@ -414,7 +414,6 @@ struct FilesView: View {
 
     private func openMenu(_ document: Dieter_V1_FileDocument) -> some View {
         let actions = preparedExternalActions
-        let documentKey = model.documentKey
         return Menu {
             if actions?.fileURL != nil {
                 if editorSession.isDirty { Text("Opens the saved version") }
@@ -434,28 +433,12 @@ struct FilesView: View {
                         Button("Default App") { openExternally() }
                     }
                 }
-                Button("Reveal in Finder", systemImage: "folder") {
-                    if let url = currentLocalFileURL() { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                }
                 Divider()
             } else {
                 Text(actions?.unavailableReason ?? "Preparing file actions…")
             }
             Button("Save As…", systemImage: "square.and.arrow.down") { download(document) }
                 .accessibilityIdentifier("files.save-as")
-            if !document.binary, ProjectFileLanguage.detect(filename: document.name) == .markdown {
-                Divider()
-                Button("Export PDF…", systemImage: "doc.richtext") {
-                    exportMarkdown(document, documentKey: documentKey, format: .pdf)
-                }
-                .disabled(exportingMarkdown)
-                .accessibilityIdentifier("files.export.pdf")
-                Button("Export HTML…", systemImage: "chevron.left.forwardslash.chevron.right") {
-                    exportMarkdown(document, documentKey: documentKey, format: .html)
-                }
-                .disabled(exportingMarkdown)
-                .accessibilityIdentifier("files.export.html")
-            }
             Divider()
             Button("Copy File Name", systemImage: "doc.on.doc") { FileExternalActions.copy(document.name) }
             Button("Copy Path") { FileExternalActions.copy(actions?.displayPath ?? document.path) }
@@ -473,36 +456,11 @@ struct FilesView: View {
         .smokeTarget("files.open-menu")
     }
 
-    private func exportMarkdown(
-        _ document: Dieter_V1_FileDocument, documentKey: String, format: MarkdownFileExport.Format
-    ) {
-        guard !exportingMarkdown, model.documentKey == documentKey,
-            let snapshot = FileExternalActions.markdownExportDocument(
-                document: document, session: editorSession, documentKey: documentKey)
-        else { return }
-        let panel = NSSavePanel()
-        panel.title = format.title
-        panel.prompt = "Export"
-        panel.nameFieldStringValue = snapshot.filename(for: format)
-        panel.allowedContentTypes = [format.contentType]
-        panel.canCreateDirectories = true
-        panel.message =
-            format == .pdf
-            ? "Export the current draft on light pages, including diagrams and charts."
-            : "Export the current draft as a standalone HTML document with diagrams and charts."
-        guard panel.runModal() == .OK, let destination = panel.url else { return }
-        exportingMarkdown = true
-        Task { @MainActor in
-            defer { exportingMarkdown = false }
-            do {
-                let data = try await MarkdownFileExport.data(for: snapshot, format: format)
-                try data.write(to: destination, options: .atomic)
-            } catch {
-                if model.documentKey == documentKey {
-                    model.fileError = "Could not export \(document.name): \(error.localizedDescription)"
-                }
-            }
-        }
+    private func currentExternalActions() -> FileExternalActions {
+        FileExternalActions.resolve(
+            verifiedLocal: verifiedLocalTransport && preparedExternalActions != nil,
+            rootPath: preparedExternalActions != nil ? externalRootPath : nil,
+            relativePath: model.fileDocument?.path ?? "")
     }
 
     private func currentLocalFileURL() -> URL? {

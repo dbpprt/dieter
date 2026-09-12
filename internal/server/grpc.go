@@ -966,6 +966,7 @@ func conversationDelta(previous, current *dieterv1.ConversationSnapshot) *dieter
 		Subagents:        current.GetConversation().GetSubagents(),
 		TaskPlans:        current.GetConversation().GetTaskPlans(),
 		DraftAttachments: current.GetConversation().GetDraftAttachments(),
+		PresentedContent: current.GetConversation().GetPresentedContent(),
 	}
 	before := make(map[string]*dieterv1.UiMessage, len(previous.GetConversation().GetMessages()))
 	for _, message := range previous.GetConversation().GetMessages() {
@@ -1620,6 +1621,9 @@ func grpcFailure(err error) error {
 	}
 	if errors.Is(err, store.ErrCapacity) || errors.Is(err, app.ErrInsufficientStorage) {
 		return status.Error(codes.ResourceExhausted, err.Error())
+	}
+	if errors.Is(err, app.ErrInvalidContentPresentation) {
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	if errors.Is(err, harness.ErrCatalogUnavailable) {
 		return status.Error(codes.Unavailable, err.Error())

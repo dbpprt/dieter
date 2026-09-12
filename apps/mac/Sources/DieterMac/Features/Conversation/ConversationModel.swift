@@ -41,6 +41,11 @@ final class ConversationModel {
         _, _, _ in
     }
     @ObservationIgnored var onTransportFailure: @MainActor (Error, any ConversationRPC) -> Void = { _, _ in }
+    @ObservationIgnored var onContentPresentation: @MainActor (Dieter_V1_ContentPresentation, String) -> Void = {
+        _, _ in
+    }
+    @ObservationIgnored private var presentedContentIDs: Set<String> = []
+    @ObservationIgnored private var presentedContentOrder: [String] = []
 
     func bind(client: (any ConversationRPC)?, endpointID: String) {
         guard rpc !== client || self.endpointID != endpointID else { return }
@@ -156,6 +161,9 @@ final class ConversationModel {
         conversationSyncing = false
         conversationLastRefreshedAt = refreshedAt
         onAccepted(snapshot, chat)
+        // Cached snapshots can belong to a connection that is still switching.
+        // Only authoritative reads and watch updates may present workspace UI.
+        if cache { presentContent(from: snapshot.conversation) }
         if cache, let refreshedAt { await onSnapshot(snapshot, endpointID, refreshedAt) }
     }
 
@@ -336,6 +344,7 @@ final class ConversationModel {
                 conversationHistoryHasMore = update.snapshot.page.hasMore_p
             }
             conversationHistoryTotal = max(conversationHistoryTotal, Int(update.snapshot.page.total))
+            presentContent(from: update.snapshot.conversation)
             return
         }
         guard var snapshot = conversation else { return }
@@ -364,6 +373,7 @@ final class ConversationModel {
         value.draftAttachments = update.draftAttachments
         value.lastSeq = update.lastSeq; value.updatedAt = update.updatedAt
         value.subagents = update.subagents; value.taskPlans = update.taskPlans
+        if update.hasPresentedContent { value.presentedContent = update.presentedContent }
         snapshot.conversation = value
         if update.hasDetail { snapshot.detail = update.detail; selectedDetail = update.detail }
         if update.hasPage {
@@ -375,6 +385,21 @@ final class ConversationModel {
             conversationHistoryTotal = max(conversationHistoryTotal, Int(update.page.total))
         }
         conversation = presentSnapshot(snapshot)
+        presentContent(from: value)
+    }
+
+    private func presentContent(from value: Dieter_V1_Conversation) {
+        let presentation = value.presentedContent
+        guard !endpointID.isEmpty, !presentation.id.isEmpty,
+            let selectedID = selectedCardID ?? selectedChatID, value.cardID == selectedID
+        else { return }
+        let key = [endpointID, selectedID, presentation.id].map { "\($0.utf8.count):\($0)" }.joined()
+        guard presentedContentIDs.insert(key).inserted else { return }
+        presentedContentOrder.append(key)
+        if presentedContentOrder.count > 512 {
+            presentedContentIDs.remove(presentedContentOrder.removeFirst())
+        }
+        onContentPresentation(presentation, selectedID)
     }
 
     func returnToLatest() {

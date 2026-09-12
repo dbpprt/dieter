@@ -257,6 +257,35 @@ All domain data lives under `DIETER_HOME` on the daemon host (by default
 preserve provider continuation state so work can resume without replaying the
 user prompt.
 
+### Linked content beside a conversation on macOS
+
+Click a file or web link in a conversation to expand the chat and open a resizable
+content pane on the right. Markdown opens in the native rich editor, code and text
+open in a selectable syntax view (including linked line numbers), images support
+zoom, PDFs use PDFKit, and web URLs open in a browser with Back, Forward, Reload,
+and Open in default browser. Other files offer Save a Copy.
+Bare development addresses such as `127.0.0.1:4018`, `localhost:3000`, and
+`[::1]:8080` are clickable in prose and inline code. Fenced code stays literal.
+
+Files are read from the conversation's machine and workspace through the existing
+file API. Markdown saves check the file revision; conflicts preserve your edits.
+Opening another item or closing an edited document offers Save, Discard Changes,
+or Cancel. Switching conversations retains the current unsaved document until
+you return or choose another item. Closing the content pane restores the previous
+board or chat-list layout. Right-click a file link for **Open in** (supported
+installed apps) or **Show in Finder** on its owning local workspace. Remote files
+stay in Dieter; their paths are never opened as local files. Command-click keeps
+the system's external link action.
+
+Agents can register exact-argv background commands with `start_background_process`;
+`list_background_processes`, `read_background_process`, and
+`stop_background_process` stay bound to the owning conversation. CLI automation
+uses `dieter remote exec --card ID --detach --format json -- COMMAND ARG…`.
+The **Processes** workspace tab shows running and exit state, separate bounded
+stdout/stderr, and an explicit **Stop** action. Closing a tab or finishing a turn
+detaches observers; processes end on exit, timeout, explicit stop, or daemon
+shutdown.
+
 ### Markdown files on macOS
 
 Markdown files in **Files** open in **Edit**, using SwiftMarkdownEngine for native
@@ -265,17 +294,15 @@ Vega/Vega-Lite fences appear as rendered diagrams and charts. Click a diagram to
 edit its code; moving the caret outside the block renders it again. The original
 fenced Markdown remains the saved source.
 
-Use **Edit · Split · Source · Preview** to switch views. Split shows the source
-beside its rendered preview; drag the native divider to resize either pane.
-Scrolling either pane keeps the other at the same relative position. Editors
-retain their draft and undo history when switching views, and the preview follows
-unsaved edits. All editing uses the same separate **Save** action.
+Use **Edit · Source** to switch between rich editing and Markdown source. Both
+views share the current draft, retain their native editors when switching modes,
+and use the same separate **Save** action. Files always open in Edit mode.
 
-Right-click the preview or rich editor to **Copy as Rich Text** or **Copy as
+Right-click the rich editor to **Copy as Rich Text** or **Copy as
 Markdown**. A selection copies only that content; without a selection, the whole
 document is copied. Rich text uses formatted HTML with a plain-text fallback.
 
-Vega-Lite charts adapt to the preview pane even when their Markdown specifies a
+Vega-Lite charts adapt to the editor pane even when their Markdown specifies a
 fixed width. Titles and subtitles wrap; axes, labels, and chart annotations stay
 within the pane. Authored heights and colors are preserved. Composed, stepped,
 and Vega charts fit proportionally when their layout cannot reflow. Resizing the
@@ -291,10 +318,13 @@ while the rest of the document remains visible. Mermaid source is limited to
 
 The file header's name and path are selectable, with **Copy File Name** and
 **Copy Path** actions. **Open in** lists installed applications for verified
-local files, alongside **Reveal in Finder** and **Save As…**. Files on remote
-machines can be saved as a local copy; remote paths are never opened on this Mac.
+local files, with **Save As…** for a local copy. A visible **Show in Finder**
+control is available for every file type in Files and the conversation workspace.
+Files on remote machines can be saved as a local copy; remote paths are never
+opened on this Mac.
 
-Markdown files also offer **Export PDF…** and **Export HTML…** in **Open in**.
+Markdown files offer **Export PDF…** and **Export HTML…** from the file toolbar
+in Files and the conversation workspace.
 Exports include the current unsaved draft and rendered diagrams and charts. PDF
 uses a light appearance and paginated A4 pages; HTML is a standalone document.
 
@@ -353,7 +383,11 @@ dieter daemon start
 ```
 
 Create a story-only quick task with the same daemon-side GPT Spark 4–6 word
-title generation used by the native Kanban popover:
+title generation used by the native Kanban popover. Creation returns immediately
+with a usable task and a brief-derived title; Spark updates that same task in the
+background without changing its ID or overwriting later title edits. If Spark is
+unavailable, the saved title remains. Use `--lane running` to start immediately,
+equivalent to **Run task** beside **Add task** in every Mac Quick Task entry point:
 
 ```sh
 dieter card create --project PROJECT --board BOARD --lane todo \
@@ -534,6 +568,24 @@ tests in `internal/server/rpc_parity_test.go` and
 the CLI implementation, offline help, end-to-end route coverage, README, and
 the Dieter CLI agent skill in the same change.
 
+Agents can present deliverables in the current conversation's native workspace
+pane with the `present_content` harness tool. It is available across providers
+and bound to the owning conversation. The equivalent daemon commands are:
+
+```sh
+dieter card present CARD --path docs/plan.md --title "Implementation plan"
+dieter card present CARD --path src/main.go --line 42
+dieter --machine MACHINE chat present CHAT --url https://example.com
+```
+
+The daemon validates file paths against that conversation's own worktree and
+stores the latest explicit presentation request with a stable ID. Paths may be
+relative or absolute within that worktree; regular files up to 5 MiB are allowed,
+while `.git` and symlink escapes are rejected. URLs use HTTP(S) without embedded
+credentials. Native clients choose the matching file renderer or browser tab.
+Presentation neither wakes an agent nor confirms the user viewed the content.
+Transcript links remain links; arbitrary message text never opens a pane.
+
 Before opening a pull request, keep changes focused, add tests for changed
 behavior, run the relevant checks above, and confirm `git diff --check` passes.
 Repository hooks for `gofmt` and secret scanning are available with:
@@ -593,11 +645,17 @@ support the global `--machine ID|NAME` option for direct TLS or gateway relay.
 Use **Capture task** in the expanded Dieter Island, then drag to select a screen
 area (Escape cancels). The screenshot opens in a Quick Task draft with project
 and board selection, the usual agent controls, and an editable page URL when
-the foreground app is a supported browser. Nothing is submitted until **Add
-task**. Safari and Chromium browsers can request macOS Automation access to read
+the foreground app is a supported browser. **Add task** saves a draft; **Run task**
+creates and starts it immediately. Safari and Chromium browsers can request macOS Automation access to read
 the current tab; Firefox uses existing Accessibility access. If the URL cannot
 be read, paste it into the draft. Screen capture requires macOS Screen Recording
 permission. Temporary capture files are removed after attachment import.
+
+The screenshot editor appears to the right of the inputs, or below them in a
+narrow window. Draw, highlight, add arrows or shapes, choose colors, and undo
+marks before applying them. **Apply** replaces only the staged attachment;
+**Cancel** preserves it. The same markup editor is available on image attachments
+in chat, new conversations, Quick Task, and draft editing.
 
 This uses the existing card-creation API; CLI automation can create the same
 request with `dieter card create --project PROJECT --board BOARD --auto-title --prompt TEXT --attach SCREENSHOT` and include the page URL in the prompt.
@@ -645,7 +703,7 @@ Users can edit URLs/host mappings in Board settings or remember a captured URL's
 host mapping for the selected board when saving a Quick Task. Global Quick Task is
 available in the sidebar and always shows project and board selectors. Unmatched
 or ambiguous captures stage a draft with no destination until the user chooses.
-Tasks are saved as drafts; capture does not start an agent. The sidebar and board
+Capture alone does not start an agent; choose **Add task** or **Run task**. The sidebar and board
 Quick Task popovers keep their draft in memory when dismissed, including attachments
 and agent settings. Submitting or restarting clears task text and attachments,
 while the last project, board per project, and agent settings are remembered.

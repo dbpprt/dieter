@@ -26,10 +26,15 @@ private enum SmokeSuite: String, CaseIterable {
         switch self {
         case .core: 240
         case .board: 150
-        case .workspace, .conversation: 180
+        case .workspace: 180
+        case .conversation: ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" ? 400 : 300
         case .terminal: 75
         case .machine: 60
-        case .sidebar, .island: 30
+        case .sidebar: 30
+        // The optional native screenshot checkpoint can itself wait 30 seconds.
+        // Keep the normal Island deadline unchanged while allowing capture mode
+        // to finish its remaining display and navigation assertions.
+        case .island: ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" ? 75 : 30
         }
     }
 
@@ -241,15 +246,59 @@ private final class SmokeRun {
         }
 
         gateway?.stop()
+        guard gateway?.process.isRunning != true else {
+            throw SmokeError.failed("isolated gateway did not stop before disposable runtime cleanup")
+        }
         gateway = nil
+        try removeDisposableRuntime()
+        try requireNoRunningApp()
+        print(output.path)
+    }
+
+    private func removeDisposableRuntime() throws {
         let disposableRuntime =
             output
             .appendingPathComponent("fixture-home/dieter/runtime", isDirectory: true)
-        if FileManager.default.fileExists(atPath: disposableRuntime.path) {
-            try FileManager.default.removeItem(at: disposableRuntime)
+        guard FileManager.default.fileExists(atPath: disposableRuntime.path) else { return }
+        let expectedRuntime = output.resolvingSymlinksInPath()
+            .appendingPathComponent("fixture-home/dieter/runtime", isDirectory: true)
+        guard disposableRuntime.resolvingSymlinksInPath().path == expectedRuntime.path else {
+            throw SmokeError.failed("refusing runtime cleanup outside the owned smoke directory")
         }
-        try requireNoRunningApp()
-        print(output.path)
+        do {
+            try FileManager.default.removeItem(at: disposableRuntime)
+        } catch {
+            let failure = error as NSError
+            guard failure.domain == NSCocoaErrorDomain, failure.code == NSFileWriteNoPermissionError else {
+                throw error
+            }
+            // Foundation can report EPERM for this ordinary, disposable npm
+            // tree even when native unlink succeeds. Never alter permissions or
+            // file flags, which could affect linked content outside the fixture.
+            print("Foundation permission error removing disposable smoke runtime; retrying with native rm.")
+            let cleanup = try OwnedProcess(
+                executable: URL(fileURLWithPath: "/bin/rm"),
+                arguments: ["-r", "--", disposableRuntime.path],
+                output: output.appendingPathComponent("runtime-cleanup.log"),
+                error: output.appendingPathComponent("runtime-cleanup.stderr.log")
+            )
+            let deadline = Date().addingTimeInterval(30)
+            while cleanup.process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+            if cleanup.process.isRunning {
+                cleanup.stop()
+                throw SmokeError.failed("disposable smoke runtime cleanup timed out; see runtime-cleanup.stderr.log")
+            }
+            guard cleanup.process.terminationStatus == 0 else {
+                throw SmokeError.failed(
+                    "disposable smoke runtime cleanup failed (\(cleanup.process.terminationStatus)); see runtime-cleanup.stderr.log"
+                )
+            }
+        }
+        guard !FileManager.default.fileExists(atPath: disposableRuntime.path) else {
+            throw SmokeError.failed("disposable smoke runtime remains after cleanup")
+        }
     }
 
     private func baseArguments(state: URL) -> [String] {

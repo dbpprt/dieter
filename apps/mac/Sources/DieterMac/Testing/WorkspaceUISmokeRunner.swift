@@ -596,7 +596,7 @@
                 // Match on the fixture project too: the app's persisted sync cache
                 // can still hold a same-titled card from an earlier isolated run.
                 if let card = store.state.cards.first(where: {
-                    $0.title == title && $0.projectID == board.projectID && DieterConversationID.isServerBacked($0.id)
+                    $0.title == title && $0.projectID == board.projectID && store.isConversationServerBacked($0.id)
                 }) {
                     await store.openConversation(cardID: card.id)
                     return card

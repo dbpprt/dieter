@@ -15,7 +15,8 @@ extension DieterStore {
             target: WorkspaceTarget(
                 endpointID: endpoint.id, projectID: card?.projectID ?? selectedProjectID,
                 conversationID: selectedCardID ?? selectedChatID ?? ""),
-            client: rpc, card: card, doneLaneID: card.flatMap { doneLane(for: $0) }
+            client: card.map { isConversationServerBacked($0.id) } == true ? rpc : nil,
+            card: card, doneLaneID: card.flatMap { doneLane(for: $0) }
         )
         worktreeChanges.authorName = NSFullUserName()
         worktreeChanges.onOpenFiles = { [weak self] card, path in

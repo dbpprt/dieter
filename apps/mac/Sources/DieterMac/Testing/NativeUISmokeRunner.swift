@@ -356,7 +356,13 @@
                     boardSettingsClosed && boardSettingsDismissed
                     ? "passed" : "failed: board settings did not dismiss before project settings"
 
-                let projectClicked = NativeUIAccessibility.click("sidebar.project.\(project.id).settings", in: window)
+                let projectHovered = NativeUIAccessibility.hover("sidebar.project.\(project.id).name", in: window)
+                let projectSettingsVisible = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("sidebar.project.\(project.id).settings", in: window) != nil
+                }
+                let projectClicked =
+                    projectHovered && projectSettingsVisible
+                    && NativeUIAccessibility.click("sidebar.project.\(project.id).settings", in: window)
                 let projectContextVisible = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("project.context.instructions", in: window) != nil
                 }
@@ -373,12 +379,21 @@
                     ? "passed" : "failed: project settings did not dismiss before Quick Task"
 
                 let globalReady = await waitForBoardControl("sidebar.quick-task", in: window)
+                recordNavigationTargetFailure(
+                    "sidebar.quick-task", section: store.section, window: window,
+                    to: output.appending(path: "global-quick-task-initial-target.txt"))
                 let globalOpened = globalReady && NativeUIAccessibility.click("sidebar.quick-task", in: window)
                 let globalVisible = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
-                    ["quick-task.content", "quick-task.title", "quick-task.story", "quick-task.create"].allSatisfy {
+                    [
+                        "quick-task.content", "quick-task.title", "quick-task.story", "quick-task.create",
+                        "quick-task.run",
+                    ].allSatisfy {
                         NativeUIAccessibility.find($0, in: window)?.recordedFrame?.height ?? 0 > 0
                     }
                 }
+                results["global-quick-task-actions"] =
+                    globalVisible
+                    ? "passed" : "failed: Add task or Run task was absent from global Quick Task"
                 if let content = NativeUIAccessibility.find("quick-task.content", in: window),
                     let sheet = content.recordedWindow,
                     let contentFrame = content.recordedFrame,
@@ -416,15 +431,23 @@
                     // header; settle the board before resolving its next target.
                     let reopenToolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
                     let reopenReady = await waitForBoardControl("sidebar.quick-task", in: window)
+                    recordNavigationTargetFailure(
+                        "sidebar.quick-task", section: store.section, window: window,
+                        to: output.appending(path: "global-quick-task-reopen-target.txt"))
                     let reopenClicked =
                         reopenToolbarUncovered && reopenReady
+                        && store.selectedCardID == nil && !NativeUIAccessibility.hasOpenInspector(in: window)
                         && NativeUIAccessibility.click("sidebar.quick-task", in: window)
-                    _ = await waitUntil(timeout: 5) {
-                        NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
+                    let reopenedVisible = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                        mountedQuickTaskWindow(from: window, expectedStory: "Keep this draft after clicking outside")
+                            != nil
                     }
-                    let reopened = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
+                    let reopened = mountedQuickTaskWindow(
+                        from: window, expectedStory: "Keep this draft after clicking outside")
                     var restoredEditorText: String?
-                    if let reopened, await focusQuickTaskStory(in: reopened) {
+                    if let reopened,
+                        await focusQuickTaskStory(in: reopened, expectedText: "Keep this draft after clicking outside")
+                    {
                         restoredEditorText = (reopened.firstResponder as? NSTextView)?.string
                     }
                     let retained =
@@ -432,11 +455,25 @@
                         && store.quickTaskForm.story == "Keep this draft after clicking outside"
                     if let reopened {
                         capture(reopened, to: output.appending(path: "global-quick-task-restored.png"))
+                    } else {
+                        recordNavigationTargetFailure(
+                            "sidebar.quick-task", section: store.section, window: window,
+                            to: output.appending(path: "global-quick-task-after-reopen-target.txt"))
+                        capture(window, to: output.appending(path: "global-quick-task-reopen-failed.png"))
+                        let diagnostic = NSApp.windows.map { candidate in
+                            "window=\(candidate.windowNumber) visible=\(candidate.isVisible) key=\(candidate.isKeyWindow) parent=\(candidate.parent?.windowNumber ?? -1) frame=\(candidate.frame)\n"
+                                + NativeUIAccessibility.elements(in: candidate).map {
+                                    "\($0.identifier ?? "-"): \($0.text) \($0.frame)"
+                                }.joined(separator: "\n")
+                        }.joined(separator: "\n\n")
+                        try? diagnostic.write(
+                            to: output.appending(path: "global-quick-task-reopen-failed.txt"), atomically: true,
+                            encoding: .utf8)
                     }
                     results["global-quick-task-retains-draft"] =
-                        storyFocused && storyEntered && dismissed && reopenClicked && retained
+                        storyFocused && storyEntered && dismissed && reopenClicked && reopenedVisible && retained
                         ? "passed"
-                        : "failed: focus=\(storyFocused), typed=\(storyEntered), outside dismissal=\(dismissed), toolbar uncovered=\(reopenToolbarUncovered), reopen=\(reopenClicked), restored content=\(retained), editor=\(String(describing: restoredEditorText)), story=\(store.quickTaskForm.story)"
+                        : "failed: focus=\(storyFocused), typed=\(storyEntered), outside dismissal=\(dismissed), toolbar uncovered=\(reopenToolbarUncovered), reopen=\(reopenClicked), mounted=\(reopenedVisible), restored content=\(retained), editor=\(String(describing: restoredEditorText)), story=\(store.quickTaskForm.story), selected card=\(store.selectedCardID ?? "none"), inspector=\(NativeUIAccessibility.hasOpenInspector(in: window))"
                     if let reopened {
                         if await waitForBoardControl("quick-task.cancel", in: reopened) {
                             _ = NativeUIAccessibility.click("quick-task.cancel", in: reopened)
@@ -469,6 +506,10 @@
                 if let target = NativeUIAccessibility.find("quick-task.story", in: window),
                     let popover = target.recordedWindow
                 {
+                    results["board-quick-task-actions"] =
+                        ["quick-task.create", "quick-task.run"].allSatisfy {
+                            NativeUIAccessibility.find($0, in: popover)?.recordedFrame?.height ?? 0 > 0
+                        } ? "passed" : "failed: Add task or Run task was absent from board Quick Task"
                     let storyFocused = await focusQuickTaskStory(in: popover)
                     let pasteboard = NSPasteboard.general
                     let saved = (pasteboard.pasteboardItems ?? []).map { item in
@@ -516,6 +557,54 @@
                         return item
                     }
                     if !items.isEmpty { pasteboard.writeObjects(items) }
+                    // The isolated daemon intercepts Spark metadata requests; the
+                    // actual task must explicitly use its credential-free mock.
+                    if store.harnessCatalog.harnesses.contains(where: { $0.id == "mock" }) {
+                        store.quickTaskForm.provider = "mock"
+                        store.quickTaskForm.model = "mock"
+                        store.quickTaskForm.effort = "low"
+                        store.quickTaskForm.providerOptions = [:]
+                        let runStory = "Run this native Quick Task before its title is generated"
+                        let focused = await focusQuickTaskStory(in: popover)
+                        if focused { await NativeUIAccessibility.type(runStory, in: popover) }
+                        let entered = await waitUntil(timeout: 5) { store.quickTaskForm.story == runStory }
+                        let clicked = focused && entered && NativeUIAccessibility.click("quick-task.run", in: popover)
+                        var createdID: String?
+                        var initialTitle: String?
+                        let saved = await waitUntil(timeout: 20, intervalMilliseconds: 25) {
+                            guard let card = store.state.cards.first(where: { $0.initialPrompt == runStory }) else {
+                                return false
+                            }
+                            createdID = card.id
+                            initialTitle = card.title
+                            return !card.id.isEmpty && card.lane == "running"
+                        }
+                        let startedBeforeTitle = await waitUntil(timeout: 15, intervalMilliseconds: 25) {
+                            guard let card = store.state.cards.first(where: { $0.id == createdID }) else {
+                                return false
+                            }
+                            return !card.initialPromptSentAt.isEmpty && card.provider == "mock"
+                                && card.title == runStory && card.lane == "running"
+                        }
+                        let titled = await waitUntil(timeout: 20, intervalMilliseconds: 100) {
+                            guard let card = store.state.cards.first(where: { $0.id == createdID }) else {
+                                return false
+                            }
+                            return card.title == "Quick Task Starts Immediately" && !card.initialPromptSentAt.isEmpty
+                                && store.selectedCardID == createdID
+                        }
+                        results["quick-task-run-before-title"] =
+                            clicked && saved && startedBeforeTitle
+                            ? "passed"
+                            : "failed: click=\(clicked) saved=\(saved) startedBeforeTitle=\(startedBeforeTitle) id=\(createdID ?? "nil") initialTitle=\(initialTitle ?? "nil")"
+                        results["quick-task-run-keeps-task-id"] =
+                            saved && titled && createdID?.hasPrefix("c_") == true
+                            ? "passed"
+                            : "failed: generated title did not update the same selected task \(createdID ?? "nil")"
+                        capture(window, to: output.appending(path: "quick-task-running-generated-title.png"))
+                    } else {
+                        results["quick-task-run-before-title"] = "failed: isolated mock provider unavailable"
+                    }
                 } else {
                     results["quick-task-paste-screenshot"] =
                         "failed: Quick Task popover was absent (section=\(store.section.rawValue), click=\(boardQuickTaskClicked))"
@@ -860,7 +949,7 @@
                 let created = await waitUntil(timeout: 10) {
                     store.state.cards.contains {
                         $0.title == title && $0.lane.caseInsensitiveCompare("todo") == .orderedSame
-                            && $0.workspaceMode == "worktree" && DieterConversationID.isServerBacked($0.id)
+                            && $0.workspaceMode == "worktree" && store.isConversationServerBacked($0.id)
                     }
                 }
                 results["13b-todo-card-stays-on-board"] =
@@ -917,7 +1006,7 @@
                 chatRowStayedSingle =
                     chatRowStayedSingle && Set(ids).count == ids.count
                     && store.chats.count { $0.title == chatTitle } <= 1
-                guard let chatID = store.selectedChatID, DieterConversationID.isServerBacked(chatID) else {
+                guard let chatID = store.selectedChatID, store.isConversationServerBacked(chatID) else {
                     return false
                 }
                 return store.conversation?.detail.card.id == chatID && !store.conversationLoading
@@ -1355,17 +1444,59 @@
             }
         }
 
-        private static func focusQuickTaskStory(in window: NSWindow) async -> Bool {
-            guard await waitForBoardControl("quick-task.story", in: window) else { return false }
+        private static func mountedQuickTaskWindow(from main: NSWindow, expectedStory: String) -> NSWindow? {
+            if let target = NativeUIAccessibility.find("quick-task.story", in: main),
+                let window = target.recordedWindow, window.isVisible,
+                let frame = target.recordedFrame, frame.width > 0, frame.height > 0,
+                window.frame.contains(frame)
+            {
+                return window
+            }
+            // SwiftUI can recycle its popover host before registering the new
+            // geometry anchor. Inspect the mounted native editor as well.
+            return NSApp.windows.first { candidate in
+                candidate !== main && candidate.isVisible
+                    && nativeQuickTaskField(in: candidate.contentView, expectedText: expectedStory) != nil
+            }
+        }
+
+        private static func nativeQuickTaskField(in view: NSView?, expectedText: String) -> NSView? {
+            guard let view, !view.isHiddenOrHasHiddenAncestor else { return nil }
+            if let field = view as? NSTextField, field.isEditable, field.stringValue == expectedText,
+                field.bounds.width > 100, field.visibleRect.height > 0
+            {
+                return field
+            }
+            if let text = view as? NSTextView, text.isEditable, text.string == expectedText,
+                text.bounds.width > 100, text.visibleRect.height > 0
+            {
+                return text
+            }
+            return view.subviews.lazy.compactMap { nativeQuickTaskField(in: $0, expectedText: expectedText) }.first
+        }
+
+        private static func focusQuickTaskStory(in window: NSWindow, expectedText: String? = nil) async -> Bool {
+            let anchored = await waitForBoardControl("quick-task.story", in: window)
+            let native = expectedText.flatMap { nativeQuickTaskField(in: window.contentView, expectedText: $0) }
+            guard anchored || native != nil else { return false }
             window.makeFirstResponder(nil)
-            guard NativeUIAccessibility.click("quick-task.story", in: window) else { return false }
+            if anchored {
+                guard NativeUIAccessibility.click("quick-task.story", in: window) else { return false }
+            } else if let native {
+                let point = native.convert(NSPoint(x: native.bounds.midX, y: native.bounds.midY), to: nil)
+                NativeUIEventDispatcher.click(
+                    window: window, x: point.x, distanceFromTop: window.frame.height - point.y, throughApplication: true
+                )
+            }
             return await waitUntil(timeout: 5, intervalMilliseconds: 50) {
                 guard NSApp.isActive, window.isKeyWindow,
-                    let editor = window.firstResponder as? NSTextView, editor.isEditable, editor.window === window,
-                    let storyFrame = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedFrame
+                    let editor = window.firstResponder as? NSTextView, editor.isEditable, editor.window === window
                 else { return false }
                 let editorFrame = window.convertToScreen(editor.convert(editor.bounds, to: nil))
-                return storyFrame.intersects(editorFrame)
+                if let storyFrame = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedFrame {
+                    return storyFrame.intersects(editorFrame)
+                }
+                return expectedText != nil && editor.string == expectedText && window.frame.intersects(editorFrame)
             }
         }
 
@@ -1454,102 +1585,88 @@
                 results["files-markdown-default-edit"] =
                     defaultRich?.isEditable == true
                         && markdownSplitController(in: window.contentView)?.layout == .preview
-                    ? "passed" : "failed: Markdown did not open in rich edit mode"
-                _ = NativeUIAccessibility.selectSegment(1, identifier: "files.markdown.layout", in: window)
-                _ = await waitUntil(timeout: 5) {
-                    markdownSplitController(in: window.contentView)?.layout == .split
+                        && MarkdownFileEditorMode.allCases == [.edit, .source]
+                    ? "passed" : "failed: Markdown did not open in the two-mode rich editor"
+                let rendered = await waitUntil(timeout: 15) {
+                    nativeDiagramImages(in: defaultRich).count == 2
                 }
-                let preview = markdownWebView(in: window.contentView)
-                let rendered = await waitForMarkdown(
-                    preview,
-                    predicate: """
-                        document.querySelector('#preview[data-render-state="ready"] h1')?.textContent === 'File A'
-                        && document.querySelector('[data-kind="mermaid"][data-state="rendered"] svg') !== null
-                        && document.querySelector('[data-kind="vega-lite"][data-state="rendered"] svg') !== null
-                        """)
                 results["files-markdown-diagrams"] =
-                    rendered ? "passed" : "failed: Markdown, Mermaid or Vega-Lite did not render"
-                if let preview, rendered {
-                    let chartFitsPane = """
-                        (() => {
-                          const chart = document.querySelector('[data-kind="vega-lite"][data-state="rendered"]');
-                          const svg = chart?.querySelector('svg');
-                          if (!chart || !svg) return false;
-                          const width = svg.getBoundingClientRect().width;
-                          return width > 200 && width <= chart.clientWidth + 1 && chart.scrollWidth <= chart.clientWidth + 1;
-                        })()
-                        """
-                    let sized = await waitForMarkdown(preview, predicate: chartFitsPane)
-                    results["files-markdown-chart-sizing"] =
-                        sized ? "passed" : "failed: fixed-width chart overflowed the preview pane"
-                    await captureMarkdown(preview, to: output.appending(path: "04a-markdown-rendered.png"))
-                    var ancestor = preview.superview
-                    while let view = ancestor, !(view is NSSplitView) { ancestor = view.superview }
-                    if let split = ancestor as? NSSplitView, split.isVertical, split.arrangedSubviews.count == 2 {
-                        let original = split.arrangedSubviews[0].frame.width
-                        split.setPosition(split.bounds.width * 0.62, ofDividerAt: 0)
-                        let resized = await waitUntil(timeout: 5) {
-                            abs(split.arrangedSubviews[0].frame.width - original) > 10
-                                && split.arrangedSubviews[1].frame.width >= 140
+                    rendered
+                    ? "passed" : "failed: native Mermaid/Vega-Lite images did not replace their loading placeholders"
+                let diagramFits = {
+                    guard let editor = defaultRich else { return false }
+                    let images = nativeDiagramImages(in: editor)
+                    return images.count == 2
+                        && images.allSatisfy {
+                            $0.width > 0 && $0.width <= editor.bounds.width + 1
                         }
-                        results["files-markdown-native-split"] =
-                            resized ? "passed" : "failed: divider did not resize both panes"
-                        let chartResized = await waitForMarkdown(preview, predicate: chartFitsPane)
-                        results["files-markdown-chart-resize"] =
-                            resized && chartResized
-                            ? "passed" : "failed: chart did not fit after moving the native divider"
-                        split.setPosition(original, ofDividerAt: 0)
-                    } else {
-                        results["files-markdown-native-split"] = "failed: native Markdown split missing"
-                    }
                 }
-                guard
-                    let editor = nativeTextViews(in: window.contentView).first(where: {
-                        $0.string == documents[0].1 && $0.isEditable && $0.window === window
-                    })
+                results["files-markdown-chart-sizing"] =
+                    diagramFits() ? "passed" : "failed: native diagram overflowed the rich editor"
+                capture(window, to: output.appending(path: "04a-markdown-rendered.png"))
+                let originalSize = window.contentView?.bounds.size ?? NSSize(width: 1380, height: 870)
+                let originalEditorWidth = defaultRich?.bounds.width ?? 0
+                window.setContentSize(NSSize(width: originalSize.width - 180, height: originalSize.height))
+                let diagramsResized = await waitUntil(timeout: 10) {
+                    (defaultRich?.bounds.width ?? originalEditorWidth) < originalEditorWidth - 40 && diagramFits()
+                }
+                results["files-markdown-chart-resize"] =
+                    diagramsResized ? "passed" : "failed: native diagrams did not fit the narrower editor"
+                window.setContentSize(originalSize)
+                _ = await waitUntil(timeout: 5) { abs((defaultRich?.bounds.width ?? 0) - originalEditorWidth) < 2 }
+
+                let selectedSource = NativeUIAccessibility.selectSegment(
+                    1, identifier: "files.markdown.layout", in: window)
+                let sourceReady = await waitUntil(timeout: 5) {
+                    guard let controller = markdownSplitController(in: window.contentView) else { return false }
+                    return controller.layout == .source && controller.splitViewItems[1].isCollapsed
+                        && nativeTextViews(in: controller.sourceHost).contains {
+                            $0.string == documents[0].1 && $0.isEditable
+                        }
+                }
+                guard selectedSource && sourceReady,
+                    let controller = markdownSplitController(in: window.contentView),
+                    let editor = nativeTextViews(in: controller.sourceHost).first(where: { $0.isEditable })
                 else {
-                    results["files-edit-save"] = "failed: native editor missing"
-                    return
+                    results["files-edit-save"] = "failed: native Source editor missing"; return
                 }
                 window.makeKeyAndOrderFront(nil)
                 window.makeFirstResponder(editor)
                 editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
-                // Exercise NSTextInputClient and its normal delegate/undo path.
-                // This file-edit check must not depend on the global pasteboard,
-                // which the operator can change while the isolated suite runs.
                 editor.insertText("Saved through the native editor.\n", replacementRange: editor.selectedRange())
                 var expected = documents[0].1 + "Saved through the native editor.\n"
                 let edited = await waitUntil(timeout: 5) {
                     store.fileEditorSession.isDirty && editor.string == expected
                 }
-                let previewUpdated = await waitForMarkdown(
-                    preview,
-                    predicate: """
-                        document.querySelector('#preview[data-render-state="ready"]')?.textContent.includes('Saved through the native editor.') === true
-                        """)
-                results["files-markdown-unsaved-preview"] =
-                    edited && previewUpdated && store.fileDocument?.content == documents[0].1
-                    ? "passed" : "failed: unsaved editor changes did not reach the preview"
-                let previewOnly = NativeUIAccessibility.selectSegment(
-                    3, identifier: "files.markdown.layout", in: window)
-                let fullPreview = await waitUntil(timeout: 5) {
-                    guard let split = self.markdownSplitController(in: window.contentView) else { return false }
-                    return split.layout == .preview && split.splitViewItems[0].isCollapsed
+                try? await DieterTaskSleep.milliseconds(100)
+                editor.undoManager?.undo()
+                let undone = await waitUntil(timeout: 5) { store.fileEditorSession.currentText() == documents[0].1 }
+                editor.undoManager?.redo()
+                let redone = await waitUntil(timeout: 5) { store.fileEditorSession.currentText() == expected }
+                results["files-markdown-source-undo"] =
+                    edited && undone && redone ? "passed" : "failed: native Source undo/redo lost the shared draft"
+                window.makeFirstResponder(nil)
+                let selectedEdit = NativeUIAccessibility.selectSegment(
+                    0, identifier: "files.markdown.layout", in: window)
+                let richRestored = await waitUntil(timeout: 5) {
+                    controller.layout == .preview && controller.splitViewItems[0].isCollapsed
+                        && nativeRichTextView(in: window.contentView) === defaultRich
+                        && defaultRich?.string == expected && store.fileEditorSession.isDirty
                 }
-                let sourceOnly = NativeUIAccessibility.selectSegment(2, identifier: "files.markdown.layout", in: window)
-                let fullSource = await waitUntil(timeout: 5) {
-                    guard let split = self.markdownSplitController(in: window.contentView) else { return false }
-                    return split.layout == .source && split.splitViewItems[1].isCollapsed
+                let sourceAgain = NativeUIAccessibility.selectSegment(
+                    1, identifier: "files.markdown.layout", in: window)
+                let sourceRetained = await waitUntil(timeout: 5) {
+                    controller.layout == .source
+                        && nativeTextViews(in: controller.sourceHost).contains { $0 === editor }
+                        && editor.string == expected && editor.undoManager?.canUndo == true
                 }
-                let splitAgain = NativeUIAccessibility.selectSegment(1, identifier: "files.markdown.layout", in: window)
-                let restoredSplit = await waitUntil(timeout: 5) {
-                    guard let split = self.markdownSplitController(in: window.contentView) else { return false }
-                    return split.layout == .split && !split.splitViewItems.contains(where: \.isCollapsed)
+                let editAgain = NativeUIAccessibility.selectSegment(0, identifier: "files.markdown.layout", in: window)
+                let editRetained = await waitUntil(timeout: 5) {
+                    defaultRich?.isEditable == true && defaultRich?.string == expected && controller.layout == .preview
                 }
                 results["files-markdown-layout-modes"] =
-                    previewOnly && fullPreview && sourceOnly && fullSource && splitAgain && restoredSplit
-                        && editor.string == expected && store.fileEditorSession.isDirty
-                    ? "passed" : "failed: switching layout lost the editor or its unsaved draft"
+                    selectedEdit && richRestored && sourceAgain && sourceRetained && editAgain && editRetained
+                    ? "passed" : "failed: Edit/Source switching lost a native host, undo history or unsaved draft"
                 let saved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
                 let persisted = await waitUntil(timeout: 5) {
                     store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
@@ -1558,56 +1675,30 @@
                     edited && saved && persisted
                     ? "passed"
                     : "failed: native edit/save did not persist (edited=\(edited), save action=\(saved), persisted=\(persisted))"
-                if preview != nil {
-                    let selected = NativeUIAccessibility.selectSegment(
-                        0, identifier: "files.markdown.layout", in: window)
-                    let richReady = await waitUntil(timeout: 8) {
-                        self.nativeRichTextView(in: window.contentView)?.isEditable == true
+                if let richText = defaultRich, editRetained {
+                    window.makeFirstResponder(richText)
+                    richText.setSelectedRange((richText.string as NSString).range(of: "File A"))
+                    let formatted = await NativeUIAccessibility.pressWhenSettled(
+                        "files.markdown.format.bold", in: window)
+                    let richEdited = await waitUntil(timeout: 5) {
+                        store.fileEditorSession.isDirty && store.fileEditorSession.currentText().contains("**File A**")
                     }
-                    if selected && richReady, let richText = nativeRichTextView(in: window.contentView) {
-                        window.makeFirstResponder(richText)
-                        richText.setSelectedRange((richText.string as NSString).range(of: "File A"))
-                        let formatted = await NativeUIAccessibility.pressWhenSettled(
-                            "files.markdown.format.bold", in: window)
-                        let richEdited = await waitUntil(timeout: 5) {
-                            store.fileEditorSession.isDirty
-                                && store.fileEditorSession.currentText().contains("**File A**")
-                        }
-                        // Hidden source editors are suspended. Verify the shared
-                        // document buffer, which owns edits in every mode.
-                        expected = store.fileEditorSession.currentText()
-                        capture(window, to: output.appending(path: "04c-markdown-rich-editor.png"))
-                        let richSaved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
-                        let richPersisted = await waitUntil(timeout: 5) {
-                            store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
-                        }
-                        results["files-markdown-rich-edit-save"] =
-                            formatted && richEdited && richSaved && richPersisted
-                            ? "passed"
-                            : "failed: rich formatting/save (action=\(formatted), edited=\(richEdited), saved=\(richSaved), persisted=\(richPersisted))"
-                        _ = NativeUIAccessibility.selectSegment(3, identifier: "files.markdown.layout", in: window)
-                        // Preview is unmounted while hidden and recreated on
-                        // entry; never inspect the previous detached WebView.
-                        _ = await waitUntil(timeout: 5) {
-                            markdownWebView(in: window.contentView) != nil
-                        }
-                        let richPreviewView = markdownWebView(in: window.contentView)
-                        let richPreview = await waitForMarkdown(
-                            richPreviewView,
-                            predicate: """
-                                document.querySelector('#preview h1 strong')?.textContent === 'File A'
-                                && document.querySelector('[data-kind="mermaid"][data-state="rendered"] svg') !== null
-                                && document.querySelector('[data-kind="vega-lite"][data-state="rendered"] svg') !== null
-                                """)
-                        results["files-markdown-rich-preview"] =
-                            richPreview ? "passed" : "failed: rich editing lost formatting or diagram fences"
-                        if let richPreviewView {
-                            await captureMarkdown(
-                                richPreviewView, to: output.appending(path: "04c-markdown-rich-edit.png"))
-                        }
-                    } else {
-                        results["files-markdown-rich-edit-save"] = "failed: rich editor did not open"
+                    expected = store.fileEditorSession.currentText()
+                    capture(window, to: output.appending(path: "04c-markdown-rich-editor.png"))
+                    let richSaved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
+                    let richPersisted = await waitUntil(timeout: 5) {
+                        store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
                     }
+                    results["files-markdown-rich-edit-save"] =
+                        formatted && richEdited && richSaved && richPersisted
+                        ? "passed"
+                        : "failed: rich formatting/save (action=\(formatted), edited=\(richEdited), saved=\(richSaved), persisted=\(richPersisted))"
+                    results["files-markdown-rich-source-preserved"] =
+                        expected.contains("**File A**") && expected.contains("```mermaid")
+                            && expected.contains("```vega-lite")
+                        ? "passed" : "failed: rich formatting changed diagram source fences"
+                } else {
+                    results["files-markdown-rich-edit-save"] = "failed: rich editor did not return"
                 }
                 await store.openBoard(boardID, projectID: projectID)
                 await store.openProject(projectID, section: .files)
@@ -1646,6 +1737,21 @@
                 return text
             }
             return view.subviews.lazy.compactMap { nativeRichTextView(in: $0) }.first
+        }
+
+        private static func nativeDiagramImages(in editor: NSTextView?) -> [NSRect] {
+            guard let storage = editor?.textStorage else { return [] }
+            var rectangles: [NSRect] = []
+            storage.enumerateAttributes(in: NSRange(location: 0, length: storage.length)) { attributes, _, _ in
+                guard let image = attributes[NSAttributedString.Key("LatexRenderedImage")] as? NSImage,
+                    let label = image.accessibilityDescription,
+                    label == "mermaid diagram. Click to edit source."
+                        || label == "vega-lite diagram. Click to edit source.",
+                    let bounds = attributes[NSAttributedString.Key("LatexImageBounds")] as? NSValue
+                else { return }
+                rectangles.append(bounds.rectValue)
+            }
+            return rectangles
         }
 
         private static func markdownSplitController(in view: NSView?) -> MarkdownEditorSplitController? {
@@ -1688,20 +1794,38 @@
         }
 
         private static func closeBoardConversationForToolbar(store: DieterStore, window: NSWindow) async -> Bool {
-            if store.selectedCardID == nil, !NativeUIAccessibility.hasOpenInspector(in: window) { return true }
-            let visibleClose = await waitUntil(timeout: 5) {
+            // Dismissing a popover consumes mouse-down before the queued
+            // mouse-up can open the underlying card. A single empty selection
+            // sample is therefore not evidence that the toolbar is settled.
+            // Let the complete gesture and the inspector animation finish;
+            // close an opened card once through its actual native control.
+            var unobstructedSince: Date?
+            var previousCloseFrame: CGRect?
+            var stableCloseSamples = 0
+            var closeClicked = false
+            return await waitUntil(timeout: 8, intervalMilliseconds: 50) {
+                window.contentView?.layoutSubtreeIfNeeded()
+                if store.selectedCardID == nil, !NativeUIAccessibility.hasOpenInspector(in: window) {
+                    let now = Date()
+                    if unobstructedSince == nil { unobstructedSince = now }
+                    return now.timeIntervalSince(unobstructedSince ?? now) >= 0.75
+                }
+                unobstructedSince = nil
+                guard !closeClicked else { return false }
                 guard let close = NativeUIAccessibility.find("board.conversation-close", in: window),
-                    close.recordedWindow === window, let frame = close.recordedFrame
-                else { return false }
-                return frame.width > 0 && frame.height > 0 && window.frame.contains(frame)
+                    close.recordedWindow === window, let frame = close.recordedFrame,
+                    frame.width > 0, frame.height > 0, window.frame.contains(frame)
+                else {
+                    stableCloseSamples = 0
+                    return false
+                }
+                stableCloseSamples = frame == previousCloseFrame ? stableCloseSamples + 1 : 0
+                previousCloseFrame = frame
+                if stableCloseSamples >= 4 {
+                    closeClicked = NativeUIAccessibility.click("board.conversation-close", in: window)
+                }
+                return false
             }
-            guard visibleClose else { return false }
-            try? await DieterTaskSleep.milliseconds(350)
-            let clicked = NativeUIAccessibility.click("board.conversation-close", in: window)
-            let detached = await waitUntil(timeout: 5) {
-                store.selectedCardID == nil && !NativeUIAccessibility.hasOpenInspector(in: window)
-            }
-            return clicked && detached
         }
 
         private static func runBoardLaneSortChecks(
@@ -1965,6 +2089,20 @@
             lines.append("registered anchors=\(entries.count)")
             for entry in entries {
                 guard let view = entry.view else { lines.append("deallocated anchor"); continue }
+                if let host = view.window {
+                    let center = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+                    var root = view
+                    while let parent = root.superview { root = parent }
+                    let hit = root.hitTest(root.convert(center, from: nil))
+                    lines.append(
+                        "anchor screen=\(host.convertToScreen(view.convert(view.bounds, to: nil))) visibleRect=\(view.visibleRect) hiddenAncestor=\(view.isHiddenOrHasHiddenAncestor) hit=\(String(describing: hit.map { String(describing: type(of: $0)) }))"
+                    )
+                    if let button = hit as? NSButton {
+                        lines.append(
+                            "hit button title=\(button.title) enabled=\(button.isEnabled) action=\(String(describing: button.action))"
+                        )
+                    }
+                }
                 var ancestor: NSView? = view
                 while let current = ancestor {
                     lines.append(

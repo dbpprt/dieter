@@ -8,6 +8,23 @@ struct FileOpeningApplication: Identifiable, Equatable {
     let isDefault: Bool
     var id: String { url.path }
 
+    @MainActor
+    static func available(for url: URL, workspace: NSWorkspace = .shared) -> [Self] {
+        let preferred = workspace.urlForApplication(toOpen: url)?.standardizedFileURL.resolvingSymlinksInPath()
+        let urls = workspace.urlsForApplications(toOpen: url) + (preferred.map { [$0] } ?? [])
+        return ordered(
+            urls.map { url in
+                let bundle = Bundle(url: url)
+                let name =
+                    bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+                    ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+                    ?? url.deletingPathExtension().lastPathComponent
+                return Self(
+                    url: url, name: name,
+                    isDefault: url.standardizedFileURL.resolvingSymlinksInPath() == preferred)
+            })
+    }
+
     static func ordered(_ applications: [Self]) -> [Self] {
         var unique: [String: Self] = [:]
         for application in applications {
@@ -60,19 +77,7 @@ struct FileExternalActions {
     @MainActor
     mutating func loadApplications(workspace: NSWorkspace = .shared) {
         guard let fileURL else { return }
-        let preferred = workspace.urlForApplication(toOpen: fileURL)?.standardizedFileURL.resolvingSymlinksInPath()
-        let urls = workspace.urlsForApplications(toOpen: fileURL) + (preferred.map { [$0] } ?? [])
-        applications = FileOpeningApplication.ordered(
-            urls.map { url in
-                let bundle = Bundle(url: url)
-                let name =
-                    bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                    ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
-                    ?? url.deletingPathExtension().lastPathComponent
-                return FileOpeningApplication(
-                    url: url, name: name,
-                    isDefault: url.standardizedFileURL.resolvingSymlinksInPath() == preferred)
-            })
+        applications = FileOpeningApplication.available(for: fileURL, workspace: workspace)
     }
 
     @MainActor

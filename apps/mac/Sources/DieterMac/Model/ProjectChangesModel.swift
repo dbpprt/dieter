@@ -60,6 +60,11 @@ final class ProjectChangesModel {
         needsReconciliation = true
     }
 
+    func disconnect() {
+        suspend()
+        client = nil
+    }
+
     func suspend() {
         generation &+= 1; diffGeneration &+= 1
         refreshTask?.cancel(); refreshTask = nil

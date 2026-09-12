@@ -58,6 +58,9 @@ service DieterService {
   rpc PollConversation(PollConversationRequest) returns (ConversationUpdate);
   rpc WatchConversation(WatchConversationRequest) returns (stream ConversationUpdate);
   rpc GetToolOutput(GetToolOutputRequest) returns (ToolOutput);
+  // Requests presentation in this conversation's native workspace pane.
+  // The daemon validates and persists the request; clients choose when to display it.
+  rpc PresentConversationContent(PresentConversationContentRequest) returns (ContentPresentation);
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
   // RemoveQueuedMessage dequeues content that has not started yet and returns
   // the full message so clients can either discard it or restore it to an
@@ -546,6 +549,25 @@ message Conversation {
   repeated Subagent subagents = 9;
   repeated TaskPlan task_plans = 10;
   repeated MessagePart draft_attachments = 11;
+  ContentPresentation presented_content = 12;
+}
+
+// Latest explicit presentation request, separate from transcript text. Paths
+// are relative to the conversation's owning workspace; URLs are HTTP(S).
+message ContentPresentation {
+  string id = 1;
+  string path = 2;
+  string url = 3;
+  int32 line = 4;
+  string title = 5;
+}
+
+message PresentConversationContentRequest {
+  string card_id = 1;
+  string path = 2;
+  string url = 3;
+  int32 line = 4;
+  string title = 5;
 }
 
 message Subagent {
@@ -999,6 +1021,7 @@ message ConversationUpdate {
   repeated Subagent subagents = 11;
   repeated TaskPlan task_plans = 12;
   repeated MessagePart draft_attachments = 13;
+  ContentPresentation presented_content = 14;
 }
 
 message GetToolOutputRequest {

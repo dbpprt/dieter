@@ -216,16 +216,11 @@ final class BoardConversationSplitController: NSSplitViewController {
             boardItem.isCollapsed = false
             updateMaximumThickness()
         }
-        if presented, !maximized {
-            // Reset collapsed layout constraints while retaining the same host
-            // and its draft and transcript state.
-            let conversation = conversationItem
-            removeSplitViewItem(conversation)
-            conversation.isCollapsed = false
-            insertSplitViewItem(conversation, at: 0)
-        } else {
-            conversationItem.isCollapsed = !presented
-        }
+        // Keep the conversation attached while restoring the board. Removing
+        // and reinserting its split item preserves the hosting view pointer,
+        // but AppKit detaches it from the window and SwiftUI can rebuild its
+        // native text views, losing selection and transcript identity.
+        conversationItem.isCollapsed = !presented
         restoreWidthOnLayout = presented && !maximized
         view.needsLayout = true
     }

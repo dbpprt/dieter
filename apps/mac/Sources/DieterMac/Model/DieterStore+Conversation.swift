@@ -84,7 +84,7 @@ extension DieterStore {
         conversation = nil
         selectedDetail = nil
         conversationLastRefreshedAt = nil
-        guard DieterConversationID.isServerBacked(cardID) else {
+        guard isConversationServerBacked(cardID) else {
             conversationLoading = false
             conversationSyncing = false
             if let entry = outbox.entries.first(where: { $0.optimisticID == cardID }),
@@ -165,6 +165,11 @@ extension DieterStore {
         conversationModel.onTransportFailure = { [weak self] error, client in
             guard let rpc = client as? DieterRPC else { return }
             self?.connectionStopped(error, client: rpc)
+        }
+        conversationModel.onContentPresentation = { [weak self] presentation, cardID in
+            guard let self, let url = ConversationPresentedContent.url(for: presentation) else { return }
+            self.conversationContext.content.requestOpen(
+                url, conversationID: cardID, presentationTitle: presentation.title)
         }
     }
 
@@ -541,6 +546,7 @@ extension DieterStore {
         }
     }
 
+    @discardableResult
     func createConversation(
         title: String,
         prompt: String,
@@ -556,7 +562,7 @@ extension DieterStore {
         labelIDs: [String] = [],
         workspace: ConversationWorkspaceDraft = ConversationWorkspaceDraft(),
         autoGenerateTitle: Bool = false
-    ) async {
+    ) async -> Bool {
         let destinationProjectID = projectID ?? selectedProjectID
         var request = Dieter_V1_CreateConversationRequest()
         request.projectID = destinationProjectID
@@ -578,8 +584,10 @@ extension DieterStore {
         do {
             let shouldOpenConversation = Self.shouldOpenCreatedConversation(
                 chat: chat, lane: request.lane)
-            let optimisticID =
-                "local_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+            guard
+                let optimisticID = DieterOutboxPolicy.expectedConversationID(
+                    clientID: request.clientID, commandID: request.commandID)
+            else { throw CocoaError(.validationMissingMandatoryProperty) }
             let target = projectEndpointIDs[destinationProjectID].flatMap { id in
                 endpoints.first { $0.id == id }
             }
@@ -611,7 +619,11 @@ extension DieterStore {
                 selectedChatID = chat ? optimisticID : nil
             }
             section = chat ? .chats : .board
-        } catch { show(error) }
+            return true
+        } catch {
+            show(error)
+            return false
+        }
     }
 
     nonisolated static func shouldOpenCreatedConversation(chat: Bool, lane: String) -> Bool {
@@ -672,6 +684,7 @@ extension DieterStore {
     }
 
     func start(_ card: Dieter_V1_Card) async {
+        guard isConversationServerBacked(card.id) else { return }
         guard await ensureProjectConnection(card.projectID) else { return }
         guard let client = cardStartRPCOverride ?? rpc else { return }
         let current = state.cards.first(where: { $0.id == card.id }) ?? card

@@ -93,6 +93,66 @@ struct SyntaxHighlightedEditorActivityTests {
         #expect(container.textView.layoutManager?.backgroundLayoutEnabled == true)
     }
 
+    @Test func retainedCodeEditorResumesAtOneInsetAdjustedWidthAndKeepsItsSelection() async throws {
+        let source = (1...80).map { "let smokeLine\($0) = \($0)" }.joined(separator: "\n") + "\n"
+        let session = FileEditorSession()
+        let container = SyntaxEditorContainer(frame: .init(x: 0, y: 0, width: 431.5, height: 742))
+        let editor = container.textView
+        editor.textContainerInset = .init(width: 14, height: 12)
+        editor.font = .monospacedSystemFont(ofSize: 12.5, weight: .regular)
+        editor.isRichText = false
+        let coordinator = SyntaxHighlightedEditor(
+            session: session, documentKey: "retained-code", text: source, filename: "fixture.swift"
+        ).makeCoordinator()
+        coordinator.container = container
+        coordinator.textView = editor
+        editor.delegate = coordinator
+        session.attach(editor, documentKey: "retained-code", initialText: source)
+        let window = NSWindow(
+            contentRect: container.frame, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = container
+        defer {
+            coordinator.setActive(false)
+            session.detach(editor)
+            window.close()
+        }
+        container.layoutSubtreeIfNeeded()
+        let textContainer = try #require(editor.textContainer)
+        let layoutManager = try #require(editor.layoutManager)
+        let selection = SyntaxHighlightedEditor.range(ofLine: 42, in: source)
+        editor.setSelectedRange(selection)
+        coordinator.highlight(force: true)
+
+        for width in [CGFloat(431.5), 620, 390, 431.5] {
+            coordinator.setActive(false)
+            let suspendedWidth = textContainer.containerSize.width
+            window.setContentSize(.init(width: width, height: 742))
+            container.layoutSubtreeIfNeeded()
+            #expect(textContainer.containerSize.width == suspendedWidth)
+            coordinator.setActive(true)
+            container.layoutSubtreeIfNeeded()
+            // Repeated native layout/display must not alternate between the
+            // viewport and its inset-adjusted width when a tab is revealed.
+            for _ in 0..<3 {
+                container.needsLayout = true
+                container.layoutSubtreeIfNeeded()
+                #expect(!textContainer.widthTracksTextView)
+                #expect(textContainer.containerSize.width == container.scrollView.contentSize.width - 28)
+                layoutManager.ensureLayout(for: textContainer)
+                editor.scrollRangeToVisible(selection)
+                editor.needsDisplay = true
+                editor.displayIfNeeded()
+                await Task.yield()
+            }
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: selection, actualCharacterRange: nil)
+            let selectedBounds = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            #expect(selectedBounds.width > 0 && selectedBounds.height > 0)
+            #expect(editor.selectedRange() == selection)
+            #expect(session.currentText() == source && !session.isDirty)
+        }
+    }
+
     private func headingColor(in editor: NSTextView) -> NSColor? {
         editor.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
     }
