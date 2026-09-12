@@ -117,6 +117,7 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 		machineDelay: 750 * time.Millisecond, machineOperations: map[string]acceptedMachineOperation{},
 	}
 	s.changesets = changeset.New(s.workspaces)
+	service.BackgroundProcesses = s.backgroundProcess
 	if err := data.InterruptRunningGitOperations(); err != nil {
 		logger.Warn("could not reconcile interrupted Git operations", "error", err)
 	}

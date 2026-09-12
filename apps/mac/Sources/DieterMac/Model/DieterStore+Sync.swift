@@ -222,6 +222,7 @@ extension DieterStore {
     }
 
     func applyGlobalSnapshot(_ snapshot: Dieter_V1_GlobalSnapshot, endpointID: String) {
+        publishedConversationIDs[endpointID] = Set((snapshot.state.cards + snapshot.state.chats).map(\.id))
         os_signpost(.begin, log: syncPerformanceLog, name: "Apply global snapshot")
         defer { os_signpost(.end, log: syncPerformanceLog, name: "Apply global snapshot") }
         suppressIslandActivityRefresh = true
@@ -386,7 +387,7 @@ extension DieterStore {
                     entry.serverID
                     ?? DieterOutboxPolicy.synchronizedConversationID(
                         for: entry,
-                        visibleConversationIDs: Set(visibleCards.filter { $0.projectID == request.projectID }.map(\.id))
+                        visibleConversationIDs: publishedConversationIDs[entry.endpointID] ?? []
                     )
                 if let serverID {
                     let authoritative = visibleCards.first { $0.id == serverID }
@@ -663,6 +664,7 @@ extension DieterStore {
         -> Bool
     {
         let selected = (selectedCardID ?? selectedChatID) == optimisticID
+        guard optimisticID != serverID else { return selected }
         composer.retarget(
             from: WorkspaceTarget(
                 endpointID: endpointID ?? endpoint.id, projectID: "", conversationID: optimisticID),

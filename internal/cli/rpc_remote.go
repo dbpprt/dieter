@@ -37,6 +37,10 @@ Actions:
 
 SCOPE is exactly one of --project PROJECT or --card CARD. Use IDs rather than
 names in automation. A disconnected watch never cancels the remote process.
+Use exec --card CARD --detach to register a background process in that
+conversation's native Processes workspace tab. Its output remains available
+after the agent turn or tab closes; only explicit stop/timeout/daemon shutdown
+ends it. The harness start_background_process tool uses the same execution API.
 `
 
 type remoteExitError struct {

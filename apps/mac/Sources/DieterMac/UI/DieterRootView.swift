@@ -657,23 +657,29 @@ private struct SidebarProjectRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Button {
                     popoverPresented = true
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         ProjectAvatar(name: project.name, online: projectMachineOnline)
                         Text(project.name)
                             .font(.system(size: 12, weight: selected ? .semibold : .medium))
                             .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
                             .lineLimit(1)
-                        Spacer(minLength: 6)
+                            .truncationMode(.tail)
+                            .layoutPriority(1)
+                            .smokeTarget("sidebar.project.\(project.id).name")
+                        Spacer(minLength: 0)
                         if let projectMachine {
-                            ProjectMachineBadge(machine: projectMachine, online: projectMachineOnline == true)
-                                .accessibilityIdentifier("sidebar.project.\(project.id).machine")
-                                .smokeTarget(
-                                    "sidebar.project.\(project.id).machine.\(projectMachineOnline == true ? "online" : "offline")"
-                                )
+                            ProjectMachineBadge(
+                                machine: projectMachine, online: projectMachineOnline == true, compact: true
+                            )
+                            .layoutPriority(-1)
+                            .accessibilityIdentifier("sidebar.project.\(project.id).machine")
+                            .smokeTarget(
+                                "sidebar.project.\(project.id).machine.\(projectMachineOnline == true ? "online" : "offline")"
+                            )
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -683,29 +689,42 @@ private struct SidebarProjectRow: View {
                 .help("\(project.name) — boards, files, changes, schedules")
                 .accessibilityLabel(accessibilityLabel)
                 .accessibilityIdentifier("sidebar.project.\(project.id)")
-
-                Button {
+                .accessibilityAction(named: "Edit project") {
+                    guard store.projectIsAvailable(project.id) else { return }
                     store.presentProjectEditor(projectID: project.id)
-                } label: {
-                    Image(systemName: "gearshape").frame(width: 20, height: 20)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Project context for \(project.name)")
-                .accessibilityLabel("Project context for \(project.name)")
-                .accessibilityIdentifier("sidebar.project.\(project.id).settings")
-                .smokeTarget("sidebar.project.\(project.id).settings")
-                .disabled(!store.projectIsAvailable(project.id))
+                .accessibilityAction(named: "New board") {
+                    guard store.projectIsAvailable(project.id) else { return }
+                    store.presentNewBoard(projectID: project.id)
+                }
 
                 if hovering {
+                    Button {
+                        store.presentProjectEditor(projectID: project.id)
+                    } label: {
+                        Image(systemName: "gearshape").frame(width: 18, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Project context for \(project.name)")
+                    .accessibilityLabel("Project context for \(project.name)")
+                    .accessibilityIdentifier("sidebar.project.\(project.id).settings")
+                    .smokeTarget("sidebar.project.\(project.id).settings")
+                    .disabled(!store.projectIsAvailable(project.id))
+                    .transition(.opacity)
+
                     Button {
                         store.presentNewBoard(projectID: project.id)
                     } label: {
                         Image(systemName: "plus").font(.system(size: 10, weight: .bold))
+                            .frame(width: 16, height: 20)
                     }
                     .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
                     .disabled(!store.projectIsAvailable(project.id))
                     .help("New board in \(project.name)")
+                    .accessibilityLabel("New board in \(project.name)")
+                    .accessibilityIdentifier("sidebar.project.\(project.id).new-board")
+                    .smokeTarget("sidebar.project.\(project.id).new-board")
                     .transition(.opacity)
                 }
 
@@ -775,25 +794,42 @@ private struct SidebarProjectRow: View {
 struct ProjectMachineBadge: View {
     let machine: DieterEndpoint
     let online: Bool
+    var compact = false
 
     var body: some View {
+        Group {
+            if compact {
+                ViewThatFits(in: .horizontal) {
+                    badge(showName: true).frame(maxWidth: 72)
+                    badge(showName: true).frame(width: 40)
+                    badge(showName: false)
+                }
+            } else {
+                badge(showName: true)
+            }
+        }
+        .help("Hosted on \(machine.name) · \(online ? "Online" : "Offline")")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Hosted on \(machine.name), \(online ? "online" : "offline")")
+    }
+
+    private func badge(showName: Bool) -> some View {
         HStack(spacing: 4) {
             Circle()
                 .fill(online ? DieterTheme.machineOnline : DieterTheme.machineOffline)
                 .frame(width: 5, height: 5)
-            Text(machine.name)
-                .font(.system(size: 8.5, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if showName {
+                Text(machine.name)
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
         .foregroundStyle(online ? DieterTheme.subtle : DieterTheme.tertiary)
         .padding(.horizontal, 6)
         .frame(height: 16)
         .background(DieterTheme.surface.opacity(0.9), in: Capsule())
         .overlay(Capsule().stroke(DieterTheme.border))
-        .help("Hosted on \(machine.name) · \(online ? "Online" : "Offline")")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Hosted on \(machine.name), \(online ? "online" : "offline")")
     }
 }
 
@@ -811,6 +847,11 @@ private struct ProjectContextMenuModifier: ViewModifier {
                 Button("Edit project…", systemImage: "slider.horizontal.3") {
                     store.presentProjectEditor(projectID: project.id)
                 }
+                .disabled(!store.projectIsAvailable(project.id))
+                Button("New board…", systemImage: "plus") {
+                    store.presentNewBoard(projectID: project.id)
+                }
+                .disabled(!store.projectIsAvailable(project.id))
                 Divider()
                 Button("Delete project…", systemImage: "trash", role: .destructive) {
                     deleteConfirmationPresented = true

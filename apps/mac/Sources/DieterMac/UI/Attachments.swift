@@ -133,7 +133,16 @@ struct AttachmentPreviewStrip: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(Array(attachments.enumerated()), id: \.offset) { index, part in
-                    AttachmentPreviewTile(part: part) { attachments.remove(at: index) }
+                    AttachmentPreviewTile(
+                        part: part,
+                        remove: {
+                            guard attachments.indices.contains(index), attachments[index] == part else { return }
+                            attachments.remove(at: index)
+                        },
+                        update: { edited in
+                            attachments = try AttachmentMarkupReplacement.replacing(
+                                part, at: index, with: edited, in: attachments)
+                        })
                 }
             }
             .padding(3)
@@ -145,6 +154,7 @@ struct AttachmentPreviewStrip: View {
 struct AttachmentPreviewTile: View {
     let part: Dieter_V1_MessagePart
     var remove: (() -> Void)?
+    var update: ((Dieter_V1_MessagePart) throws -> Void)?
     @State private var hovering = false
     @State private var previewPresented = false
 
@@ -157,6 +167,21 @@ struct AttachmentPreviewTile: View {
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .onTapGesture {
             if thumbnail != nil { previewPresented = true }
+        }
+        .overlay(alignment: .topLeading) {
+            if update != nil, thumbnail != nil {
+                Button {
+                    previewPresented = true
+                } label: {
+                    Image(systemName: "pencil.tip.crop.circle")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(.white)
+                        .padding(4).background(.black.opacity(0.55), in: Circle())
+                }
+                .buttonStyle(.plain).padding(4).help("Annotate image")
+                .accessibilityLabel("Annotate \(part.filename)")
+                .accessibilityIdentifier("attachment.annotate.\(part.filename)")
+                .smokeTarget("attachment.annotate.\(part.filename)")
+            }
         }
         .overlay(alignment: .topTrailing) {
             if let remove {
@@ -177,7 +202,10 @@ struct AttachmentPreviewTile: View {
         .scaleEffect(hovering ? 1.02 : 1)
         .animation(.easeOut(duration: 0.14), value: hovering)
         .onHover { hovering = $0 }
-        .help(thumbnail == nil ? "" : "Preview \(part.filename.isEmpty ? "image" : part.filename)")
+        .help(
+            thumbnail == nil
+                ? "" : "\(update == nil ? "Preview" : "Annotate") \(part.filename.isEmpty ? "image" : part.filename)"
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(part.filename), \(AttachmentSizeText.format(part.data.count))")
         .accessibilityAddTraits(thumbnail == nil ? [] : .isButton)
@@ -195,7 +223,22 @@ struct AttachmentPreviewTile: View {
         #endif
         .sheet(isPresented: $previewPresented) {
             if let thumbnail {
-                AttachmentImagePreview(part: part, image: thumbnail)
+                if let update {
+                    VStack(spacing: 0) {
+                        Text(part.filename.isEmpty ? "Annotate image" : part.filename)
+                            .font(.headline).lineLimit(1).padding(14)
+                        Divider()
+                        AttachmentMarkupEditor(
+                            part: part,
+                            apply: { edited in
+                                try update(edited)
+                                previewPresented = false
+                            }, cancel: { previewPresented = false })
+                    }
+                    .frame(minWidth: 620, idealWidth: 820, minHeight: 480, idealHeight: 660)
+                } else {
+                    AttachmentImagePreview(part: part, image: thumbnail)
+                }
             }
         }
     }
@@ -295,22 +338,37 @@ enum AttachmentImagePayload {
     static func image(from part: Dieter_V1_MessagePart) -> NSImage? {
         let key = cacheKey(for: part)
         if let cached = cache.values.object(forKey: key) { return cached }
-        let image: NSImage?
-        if !part.data.isEmpty {
-            image = NSImage(data: part.data)
-        } else if let marker = part.url.range(of: ";base64,") {
-            image = Data(base64Encoded: String(part.url[marker.upperBound...])).flatMap(NSImage.init(data:))
-        } else {
-            image = nil
-        }
+        let image = data(from: part).flatMap(NSImage.init(data:))
         if let image { cache.values.setObject(image, forKey: key, cost: max(1, part.data.count)) }
         return image
+    }
+
+    static func data(from part: Dieter_V1_MessagePart) -> Data? {
+        if !part.data.isEmpty { return part.data }
+        guard part.url.hasPrefix("data:image/"), let marker = part.url.range(of: ";base64,") else { return nil }
+        return Data(base64Encoded: String(part.url[marker.upperBound...]))
     }
 
     private static func cacheKey(for part: Dieter_V1_MessagePart) -> NSString {
         let prefix = part.data.prefix(16).base64EncodedString()
         let suffix = part.data.suffix(16).base64EncodedString()
         return "\(part.filename)|\(part.payloadRevision)|\(part.data.count)|\(prefix)|\(suffix)|\(part.url)" as NSString
+    }
+}
+
+enum AttachmentMarkupReplacement {
+    static func replacing(
+        _ original: Dieter_V1_MessagePart, at index: Int, with edited: Dieter_V1_MessagePart,
+        in attachments: [Dieter_V1_MessagePart]
+    ) throws -> [Dieter_V1_MessagePart] {
+        guard attachments.indices.contains(index), attachments[index] == original else {
+            throw AttachmentMarkupError.attachmentChanged
+        }
+        let others = attachments.enumerated().filter { $0.offset != index }.map(\.element)
+        _ = try AttachmentLoader.validate([edited], appendingTo: others)
+        var result = attachments
+        result[index] = edited
+        return result
     }
 }
 

@@ -619,11 +619,14 @@ struct QuickTaskPopover: View {
     private let formDraft: QuickTaskFormState
     private let capturedBrowser: Bool
     private let chooseDestination: Bool
+    private let screenshotInspector: Bool
+    private let screenshotInspectorWide: Bool
 
     init(
         isPresented: Binding<Bool>, draft: QuickTaskFormState? = nil,
         initialAttachments: [Dieter_V1_MessagePart] = [], sourceURL: String = "",
-        capturedBrowser: Bool = false, chooseDestination: Bool = false
+        capturedBrowser: Bool = false, chooseDestination: Bool = false, screenshotInspector: Bool = false,
+        screenshotInspectorWide: Bool = true
     ) {
         _isPresented = isPresented
         let state = draft ?? QuickTaskFormState()
@@ -646,10 +649,16 @@ struct QuickTaskPopover: View {
         _draftBoardID = bindings.draftBoardID
         self.capturedBrowser = capturedBrowser
         self.chooseDestination = chooseDestination
+        self.screenshotInspector = screenshotInspector
+        self.screenshotInspectorWide = screenshotInspectorWide
     }
     @FocusState private var storyFocused: Bool
 
     private var cleanStory: String { story.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var cannotSubmit: Bool {
+        cleanStory.isEmpty || submitting || formDraft.attachmentImportID != nil
+            || draftProjectID.isEmpty || draftBoardID.isEmpty
+    }
     private var lane: Dieter_V1_Lane? {
         store.boards(for: draftProjectID).first { $0.id == draftBoardID }?.lanes.first
     }
@@ -678,6 +687,28 @@ struct QuickTaskPopover: View {
     }
 
     var body: some View {
+        if screenshotInspector {
+            let layout =
+                screenshotInspectorWide
+                ? AnyLayout(HStackLayout(alignment: .top, spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+            layout {
+                taskForm
+                ScreenshotMarkupInspector(attachments: $attachments)
+                    .frame(
+                        minWidth: screenshotInspectorWide ? 360 : 390,
+                        idealWidth: screenshotInspectorWide ? 510 : 390,
+                        maxWidth: screenshotInspectorWide ? .infinity : 390,
+                        minHeight: screenshotInspectorWide ? 560 : 440
+                    )
+                    .padding(.top, screenshotInspectorWide ? 20 : 0)
+                    .padding(.bottom, 20).padding(.trailing, screenshotInspectorWide ? 20 : 0)
+            }
+        } else {
+            taskForm
+        }
+    }
+
+    private var taskForm: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: "sparkles")
@@ -840,7 +871,7 @@ struct QuickTaskPopover: View {
                     .buttonStyle(.glass)
                 Spacer()
                 Button {
-                    Task { await submit() }
+                    Task { await submit(runImmediately: false) }
                 } label: {
                     HStack(spacing: 7) {
                         if submitting {
@@ -851,14 +882,22 @@ struct QuickTaskPopover: View {
                         Text("Add task")
                     }
                 }
-                .buttonStyle(.glassProminent)
-                .disabled(
-                    cleanStory.isEmpty || submitting || formDraft.attachmentImportID != nil
-                        || draftProjectID.isEmpty || draftBoardID.isEmpty
-                )
+                .buttonStyle(.glass)
+                .disabled(cannotSubmit)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .accessibilityIdentifier("quick-task.create")
                 .smokeTarget("quick-task.create")
+                Button {
+                    Task { await submit(runImmediately: true) }
+                } label: {
+                    Label("Run task", systemImage: "play.fill")
+                }
+                .buttonStyle(.glassProminent)
+                .disabled(cannotSubmit)
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .help("Create this task and start the agent immediately")
+                .accessibilityIdentifier("quick-task.run")
+                .smokeTarget("quick-task.run")
             }
         }
         .padding(20)
@@ -902,9 +941,9 @@ struct QuickTaskPopover: View {
         .onExitCommand { isPresented = false }
     }
 
-    private func submit() async {
+    private func submit(runImmediately: Bool) async {
         let story = cleanStory
-        guard !story.isEmpty else { return }
+        guard !cannotSubmit else { return }
         submitting = true
         submissionError = nil
         await store.selectProject(draftProjectID)
@@ -933,7 +972,7 @@ struct QuickTaskPopover: View {
         var workspace = ConversationWorkspaceDraft()
         workspace.mode = preferences.workspaceMode
         workspace.baseBranch = store.selectedProject?.baseBranch ?? ""
-        await store.createConversation(
+        let accepted = await store.createConversation(
             title: QuickTaskDraft.optimisticTitle(from: story),
             prompt: story
                 + (sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -945,12 +984,16 @@ struct QuickTaskPopover: View {
             effort: resolved?.effort ?? "",
             providerOptions: ProviderOptionValues.normalized(
                 for: harness, model: resolved?.model ?? "", saved: providerOptions),
-            deferred: true,
-            lane: lane?.id ?? "todo",
+            deferred: !runImmediately,
+            lane: runImmediately ? "running" : (lane?.id ?? "todo"),
             workspace: workspace,
             autoGenerateTitle: true
         )
         submitting = false
+        guard accepted else {
+            submissionError = "The task could not be saved. Your draft is still here; try again."
+            return
+        }
         formDraft.reset()
         isPresented = false
     }
@@ -1333,7 +1376,9 @@ struct BoardCardView: View {
     }
 
     private var starting: Bool { store.pendingCardStarts[card.id] != nil }
-    private var canStart: Bool { BoardCardStartPolicy.canStart(card, board: store.selectedBoard) }
+    private var canStart: Bool {
+        store.isConversationServerBacked(card.id) && BoardCardStartPolicy.canStart(card, board: store.selectedBoard)
+    }
     private var showsRunAction: Bool { canStart || starting }
     private var runActionAccessibilityLabel: String {
         let title = card.title.isEmpty ? "card" : card.title

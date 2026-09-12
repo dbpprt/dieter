@@ -139,8 +139,26 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 		ID    string `json:"id"`
 		Title string `json:"title"`
 	}
-	if err := json.Unmarshal([]byte(quickJSON), &quick); err != nil || quick.ID == "" || quick.Title != "Add Keyboard Board Navigation" {
+	if err := json.Unmarshal([]byte(quickJSON), &quick); err != nil || quick.ID == "" || quick.Title != "Add keyboard navigation" {
 		t.Fatalf("quick task JSON=%q parsed=%#v err=%v", quickJSON, quick, err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var detail dieterv1.CardDetail
+		raw := runDaemonCLI(t, client, output, "card", "show", quick.ID)
+		if err := protojson.Unmarshal([]byte(raw), &detail); err != nil {
+			t.Fatal(err)
+		}
+		if detail.GetCard().GetTitle() == "Add Keyboard Board Navigation" {
+			if detail.GetCard().GetId() != quick.ID {
+				t.Fatal("generated title changed the task ID")
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("background title was not saved: %s", raw)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	runDaemonCLI(t, client, output, "card", "comment", "--message", "CLI annotation", card.ID)
 	runDaemonCLI(t, client, output, "workspace", "show", card.ID)
@@ -626,6 +644,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertContentPresentationCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
+	assertBackgroundProcessCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	first.Close()
 
 	directRoute.server.Stop()
@@ -682,6 +701,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertContentPresentationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+	assertBackgroundProcessCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 }
 
 func assertMachineOperationAccepted(t *testing.T, raw []byte) {

@@ -24,14 +24,17 @@ import (
 )
 
 type Service struct {
-	Store      *store.Store
-	Runner     harness.Runner
-	Workspaces *workspace.Manager
+	Store               *store.Store
+	Runner              harness.Runner
+	Workspaces          *workspace.Manager
+	BackgroundProcesses func(context.Context, string, harness.ProcessCall) (json.RawMessage, error)
 
 	mu               sync.Mutex
 	active           map[string]*activeTurn
 	strandedLeases   map[string]store.RuntimeLease
 	shuttingDown     bool
+	quickTitleJobs   map[string]*quickTitleJob
+	quickTitleSlots  chan struct{}
 	minimumFreeBytes uint64
 	diskAvailable    func(string) (uint64, error)
 	releaseLease     func(store.RuntimeLease) error
@@ -71,6 +74,7 @@ func New(data *store.Store, runner harness.Runner) *Service {
 	return &Service{
 		Store: data, Runner: runner, Workspaces: workspace.New(data, nil), active: map[string]*activeTurn{}, strandedLeases: map[string]store.RuntimeLease{},
 		minimumFreeBytes: minimumFreeBytes, diskAvailable: availableDiskBytes, releaseLease: data.ReleaseRuntimeLease,
+		quickTitleJobs: map[string]*quickTitleJob{}, quickTitleSlots: make(chan struct{}, quickTaskTitleConcurrency),
 	}
 }
 
@@ -345,6 +349,11 @@ func resolvePersistedSelection(providerID, modelID string, includeMock bool) (ha
 func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 	s.mu.Lock()
 	s.shuttingDown = true
+	titleJobs := make([]*quickTitleJob, 0, len(s.quickTitleJobs))
+	for _, job := range s.quickTitleJobs {
+		job.cancel()
+		titleJobs = append(titleJobs, job)
+	}
 	turns := make([]*activeTurn, 0, len(s.active))
 	for _, turn := range s.active {
 		turn.suspend = true
@@ -394,6 +403,13 @@ func (s *Service) SuspendActiveTurns(ctx context.Context) error {
 			} else if !hasTurnContinuation(conversation.Session) {
 				suspensionErrors = append(suspensionErrors, fmt.Errorf("suspend %s: %w", result.turn.cardID, errNoTurnContinuation))
 			}
+		case <-ctx.Done():
+			return errors.Join(append(suspensionErrors, ctx.Err())...)
+		}
+	}
+	for _, job := range titleJobs {
+		select {
+		case <-job.done:
 		case <-ctx.Done():
 			return errors.Join(append(suspensionErrors, ctx.Err())...)
 		}
@@ -478,9 +494,11 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	input.Title = strings.TrimSpace(input.Title)
 	input.Prompt = strings.TrimSpace(input.Prompt)
 	if input.AutoGenerateTitle {
-		input.Title, err = s.generateQuickTaskTitle(ctx, input.Prompt)
-		if err != nil {
-			return model.Card{}, err
+		if input.Prompt == "" {
+			return model.Card{}, errors.New("story is required to generate a title")
+		}
+		if input.Title == "" {
+			input.Title = quickTaskFallbackTitle(input.Prompt)
 		}
 	}
 	if input.Prompt == "" {
@@ -524,6 +542,11 @@ func (s *Service) createConversation(ctx context.Context, input CardInput, scope
 	}
 	if err != nil {
 		return model.Card{}, err
+	}
+	if input.AutoGenerateTitle {
+		// Persistence and initial turn admission precede this best-effort rename.
+		// The request context may end as soon as the client receives the card.
+		defer s.scheduleQuickTaskTitle(card, input.Prompt)
 	}
 	if len(input.Attachments) > 0 {
 		if _, err = s.Store.SetConversationDraftAttachments(card.ID, input.Attachments); err != nil {
@@ -585,6 +608,10 @@ func (s *Service) generateQuickTaskTitle(ctx context.Context, story string) (str
 			return nil
 		}
 		if chunk.Type == "text-delta" && generated.Len() < 4_096 {
+			remaining := 4_096 - generated.Len()
+			if len(chunk.Delta) > remaining {
+				chunk.Delta = chunk.Delta[:remaining]
+			}
 			generated.WriteString(chunk.Delta)
 		}
 		return nil
@@ -1007,6 +1034,12 @@ func (s *Service) ReconcileStalledTurns(now time.Time) []string {
 }
 
 func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID string, request harness.Request, updates chan TurnUpdate, done chan struct{}) {
+	if s.BackgroundProcesses != nil {
+		request.BackgroundProcessesEnabled = true
+		request.BackgroundProcess = func(ctx context.Context, call harness.ProcessCall) (json.RawMessage, error) {
+			return s.BackgroundProcesses(ctx, detail.Card.ID, call)
+		}
+	}
 	finished := false
 	finish := func(startQueued bool, finalCache store.CardCacheInput) error {
 		if finished {

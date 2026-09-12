@@ -152,6 +152,7 @@ type Card struct {
 	Lane                string              `json:"lane" yaml:"lane"`
 	Position            int64               `json:"position" yaml:"position"`
 	Title               string              `json:"title" yaml:"title"`
+	TitleRevision       uint64              `json:"-" yaml:"title_revision,omitempty"`
 	InitialPrompt       string              `json:"initialPrompt" yaml:"-"`
 	InitialPromptSentAt string              `json:"initialPromptSentAt,omitempty" yaml:"initial_prompt_sent_at,omitempty"`
 	PhaseChangedAt      string              `json:"phaseChangedAt" yaml:"phase_changed_at"`

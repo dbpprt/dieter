@@ -150,8 +150,9 @@ dieter card create --project <project-id> --board <board-id> \
   --lane todo --title "Implement recovery" --prompt-file task.md \
   --workspace worktree --format id
 
-# Story-only quick task: GPT Spark generates a 4–6 word persisted title while
-# the normal card defaults remain unchanged.
+# Story-only quick task: save immediately, then GPT Spark improves the same
+# task's title in the background. ID and later title edits are preserved.
+# Use --lane running for immediate execution, without waiting for Spark.
 dieter card create --project <project-id> --board <board-id> \
   --lane todo --auto-title --prompt "Add keyboard navigation" \
   --workspace worktree --format id
@@ -298,6 +299,27 @@ argv, environment, directory, input, timeout, PTY, or output limits is rejected.
 Use `remote input`, `remote signal`, `remote resize`, `remote cancel`, and
 `remote close` with an exact execution ID. Canceling a watch never cancels the
 process; `remote cancel` is explicit.
+
+For background work inside the active harness, use `start_background_process`
+with an exact `argv` array, optional `name`, `workingDirectory`, `environment`,
+`timeoutMs`, and `idempotencyKey`. The tool registers the execution to its owning
+conversation and returns the admitted execution ID. `list_background_processes`,
+`read_background_process` (with the returned `afterSequence`), and
+`stop_background_process` stay bound to that conversation. Reads return bounded
+stdout/stderr pages; a tool timeout is not evidence the command stopped.
+
+The equivalent CLI command is:
+
+```sh
+dieter remote exec --card <card-id> --name "Preview server" \
+  --detach --format json -- npm run dev
+```
+
+The native Processes workspace tab shows this conversation's registered commands,
+their live output and exit state, and an explicit Stop button. Closing the tab,
+disconnecting, or finishing an agent turn only detaches observers. Processes
+remain owned by the daemon until exit, timeout, explicit cancellation, or daemon
+shutdown; completed output is retained within the execution manager's limits.
 
 Use `remote shell` only when a program genuinely needs a PTY. It opens and
 attaches a native shell on the daemon host; disconnecting leaves it available

@@ -93,6 +93,14 @@
             window.center()
             window.makeKeyAndOrderFront(nil)
 
+            // Focused iteration still uses the driver's isolated daemon and
+            // real native workspace. The default suite retains every journey.
+            if ProcessInfo.processInfo.environment["DIETER_CONTENT_ONLY"] == "1" {
+                await ConversationContentUISmoke.run(store: store, window: window, results: &results, output: output)
+                writeReport(results, to: output)
+                return
+            }
+
             guard let cardID = await openConversationWithReasoningAndTools(store) else {
                 results["conversation"] = "failed: no conversation with reasoning and tool parts found"
                 writeReport(results, to: output)
@@ -1903,6 +1911,8 @@
                     results["attachment-image-preview"] = "failed: preview action opened sheets \(sizes)"
                 }
             }
+
+            await AttachmentMarkupUISmoke.composer(store: store, window: window, results: &results, output: output)
 
             let pastedText = Array(
                 repeating: "A pasted paragraph should wrap naturally in the composer.", count: 8

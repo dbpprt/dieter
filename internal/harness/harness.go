@@ -515,6 +515,8 @@ type Request struct {
 	WebSearch                  bool              `json:"webSearch,omitempty"`
 	Continue                   bool              `json:"continue,omitempty"`
 	ContentPresentationEnabled bool              `json:"contentPresentationEnabled,omitempty"`
+	BackgroundProcessesEnabled bool              `json:"backgroundProcessesEnabled,omitempty"`
+	BackgroundProcess          ProcessHandler    `json:"-"`
 }
 
 type Attachment struct {
@@ -530,6 +532,7 @@ type Output struct {
 	Capability   json.RawMessage `json:"capability,omitempty"`
 	Presentation json.RawMessage `json:"presentation,omitempty"`
 	Message      string          `json:"error,omitempty"`
+	ProcessCall  *ProcessCall    `json:"processCall,omitempty"`
 }
 
 type Runner interface {
@@ -547,7 +550,7 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs
+//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/claude-resilience.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/provider-options.mjs runtime/usage-metadata.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {
@@ -650,6 +653,7 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 	if err != nil {
 		return err
 	}
+	defer stdin.Close()
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return err
@@ -706,7 +710,9 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 		}
 		return fmt.Errorf("start harness worker: %s", message)
 	}
-	_ = stdin.Close()
+	if !request.BackgroundProcessesEnabled {
+		_ = stdin.Close()
+	}
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 8<<20)
 	var workerError string
@@ -732,6 +738,12 @@ func (r *SubprocessRunner) Run(ctx context.Context, request Request, emit func(O
 		}
 		if output.Type == "error" {
 			workerError = output.Message
+		}
+		if output.Type == "background-process" {
+			if err := replyProcessCall(ctx, stdin, request.BackgroundProcess, output.ProcessCall); err != nil {
+				return err
+			}
+			continue
 		}
 		if output.Type == "chunk" {
 			var chunk struct {

@@ -13,7 +13,8 @@
     enum SidebarNavigationUISmokeRunner {
         private static let projectIDs = ["p_sidebar_one", "p_sidebar_two", "p_sidebar_three"]
         private static let chatIDs = ["c_sidebar_one", "c_sidebar_two", "c_sidebar_three"]
-        private static let expectedMachineNames = ["alpha", "Beta", "Zulu"]
+        private static let longMachineName = "Zulu-workstation-with-a-long-hostname"
+        private static let expectedMachineNames = ["alpha", "Beta", longMachineName]
 
         static func run(store: DieterStore) async {
             let output = outputDirectory()
@@ -43,7 +44,7 @@
             var results: [String: String] = [:]
             let sourceMachineNames = store.machines.map(\.name)
             results["machine-source-order"] =
-                sourceMachineNames == ["Beta", "Zulu", "alpha"]
+                sourceMachineNames == ["Beta", longMachineName, "alpha"]
                 ? "passed"
                 : "failed: \(sourceMachineNames.joined(separator: ","))"
             let sidebarMachineNames = SidebarMachineOrdering.sorted(store.machines).map(\.name)
@@ -61,6 +62,7 @@
                 : "failed: \(projectMachinePresence)"
             switch phase {
             case "prepare":
+                await recordProjectRowLayout(store: store, window: window, results: &results)
                 await prepare(store: store, window: window, results: &results)
             case "verify":
                 await verify(store: store, window: window, results: &results)
@@ -69,6 +71,53 @@
             }
             capture(window, to: output.appending(path: "sidebar-\(phase).png"))
             writeReport(results, to: output)
+        }
+
+        private static func recordProjectRowLayout(
+            store: DieterStore, window: NSWindow, results: inout [String: String]
+        ) async {
+            guard let split = navigationSplit(in: window) else {
+                results["project-row-layout"] = "failed: no native sidebar split"
+                return
+            }
+            let originalWidth = split.arrangedSubviews[0].frame.width
+            let originalPointer = NSEvent.mouseLocation
+            defer {
+                split.setPosition(originalWidth, ofDividerAt: 0)
+                NativeUIAccessibility.movePointer(to: originalPointer)
+            }
+            split.setPosition(250, ofDividerAt: 0)
+            let away = NSPoint(x: window.frame.midX, y: window.frame.midY)
+            NativeUIAccessibility.movePointer(to: away)
+            let prefix = "sidebar.project.\(projectIDs[0])"
+            let hidden = await NativeUIAccessibility.wait {
+                NativeUIAccessibility.find(prefix + ".settings", in: window) == nil
+                    && NativeUIAccessibility.find(prefix + ".new-board", in: window) == nil
+                    && abs(split.arrangedSubviews[0].frame.width - 250) < 2
+            }
+            let name = store.projectDirectory[projectIDs[0]]?.name ?? ""
+            let nameFrame = NativeUIAccessibility.find(prefix + ".name", in: window)?.recordedFrame ?? .zero
+            let expectedNameWidth = (name as NSString).size(withAttributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium)
+            ]).width
+            results["project-name-before-host"] =
+                hidden && !name.isEmpty && nameFrame.width + 1 >= expectedNameWidth
+                ? "passed"
+                : "failed: name=\(name) width=\(nameFrame.width)/\(expectedNameWidth), hidden=\(hidden)"
+            let hovered = NativeUIAccessibility.hover(prefix + ".name", in: window)
+            let controlsVisible = await NativeUIAccessibility.wait {
+                NativeUIAccessibility.find(prefix + ".settings", in: window) != nil
+                    && NativeUIAccessibility.find(prefix + ".new-board", in: window) != nil
+            }
+            NativeUIAccessibility.movePointer(to: away)
+            let hiddenAgain = await NativeUIAccessibility.wait {
+                NativeUIAccessibility.find(prefix + ".settings", in: window) == nil
+                    && NativeUIAccessibility.find(prefix + ".new-board", in: window) == nil
+            }
+            results["project-actions-on-hover"] =
+                hidden && hovered && controlsVisible && hiddenAgain
+                ? "passed"
+                : "failed: hidden=\(hidden) hovered=\(hovered) visible=\(controlsVisible) hiddenAgain=\(hiddenAgain)"
         }
 
         private static func prepare(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
@@ -220,10 +269,10 @@
         }
 
         private static func seed(_ store: DieterStore) {
-            let names = ["Alpha", "Beta", "Gamma"]
+            let names = ["adops-monorepo", "Beta", "Gamma"]
             let machines = [
                 DieterEndpoint(
-                    name: "Zulu",
+                    name: longMachineName,
                     host: "127.0.0.1",
                     port: 4242,
                     daemonID: "sidebar-smoke-zulu",

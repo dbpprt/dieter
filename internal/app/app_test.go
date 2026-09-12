@@ -656,9 +656,13 @@ func TestCreateQuickTaskGeneratesTitleWithSparkAndKeepsConversationDefaults(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if card.Title != "Add Keyboard Board Navigation" || card.InitialPrompt != "Add keyboard navigation to every Kanban lane." {
+	if card.Title != "Optimistic placeholder" || card.InitialPrompt != "Add keyboard navigation to every Kanban lane." {
 		t.Fatalf("card=%#v", card)
 	}
+	waitFor(t, func() bool {
+		updated, resolveErr := service.Store.ResolveCard(card.ID)
+		return resolveErr == nil && updated.Title == "Add Keyboard Board Navigation" && quickTitleJobsFinished(service)
+	})
 	if card.Provider != "codex" || card.Model != "gpt-5.6-sol" || card.Lane != model.LaneTodo || card.WorkspaceMode != model.WorkspaceModeWorktree {
 		t.Fatalf("quick task did not retain defaults: %#v", card)
 	}

@@ -57,16 +57,26 @@ struct ConversationView: View {
     }
 
     var body: some View {
+        let id = conversationID
+        let endpointID = context.content.currentEndpointID(id)
         ConversationContentSplit(presented: context.content.isPresented(for: conversationID)) {
             conversationBody
         } content: {
             ConversationContentPane(model: context.content)
         }
         .environment(
+            \.conversationLinkExternalResolver,
+            { url in
+                guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else {
+                    return .unavailable("This conversation's machine is no longer selected.")
+                }
+                return await context.content.resolveExternalLink(url, id)
+            }
+        )
+        .environment(
             \.conversationLinkHandler,
             { url in
-                let id = conversationID
-                guard !id.isEmpty else { return false }
+                guard !id.isEmpty, context.content.currentEndpointID(id) == endpointID else { return false }
                 context.content.requestOpen(url, conversationID: id)
                 return true
             }

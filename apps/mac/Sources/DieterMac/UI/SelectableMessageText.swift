@@ -4,9 +4,14 @@ import SwiftUI
 /// Return true when a conversation presents the destination itself. Returning
 /// false lets AppKit retain its normal link-opening behavior.
 typealias ConversationLinkHandler = @MainActor (URL) -> Bool
+typealias ConversationLinkExternalResolver = @MainActor (URL) async -> ConversationLinkExternalTarget
 
 private struct ConversationLinkHandlerKey: EnvironmentKey {
     static let defaultValue: ConversationLinkHandler? = nil
+}
+
+private struct ConversationLinkExternalResolverKey: EnvironmentKey {
+    static let defaultValue: ConversationLinkExternalResolver? = nil
 }
 
 extension EnvironmentValues {
@@ -14,12 +19,40 @@ extension EnvironmentValues {
         get { self[ConversationLinkHandlerKey.self] }
         set { self[ConversationLinkHandlerKey.self] = newValue }
     }
+    var conversationLinkExternalResolver: ConversationLinkExternalResolver? {
+        get { self[ConversationLinkExternalResolverKey.self] }
+        set { self[ConversationLinkExternalResolverKey.self] = newValue }
+    }
 }
 
 /// Native link delegation leaves mouse dragging, selection, copy, and context
 /// menus in NSTextView. Command-click keeps the usual external opening path.
 @MainActor final class ConversationTextLinkDelegate: NSObject, NSTextViewDelegate {
     var handler: ConversationLinkHandler?
+    var externalResolver: ConversationLinkExternalResolver?
+    var openExternal: @MainActor (URL, URL?) -> Void = ConversationLinkExternalTarget.open
+    var revealExternal: @MainActor (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) }
+    private var linkMenu: ConversationLinkMenuSession?
+
+    func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
+        contextMenu(menu, textView: view, at: charIndex)
+    }
+
+    func contextMenu(_ original: NSMenu, textView: NSTextView, at charIndex: Int) -> NSMenu {
+        guard let resolver = externalResolver, let storage = textView.textStorage,
+            charIndex >= 0, charIndex < storage.length,
+            let link = storage.attribute(.link, at: charIndex, effectiveRange: nil),
+            let url = Self.url(link)
+        else { return original }
+        linkMenu?.cancel()
+        let session = ConversationLinkMenuSession(
+            url: url, textView: textView, openInDieter: handler, resolver: resolver,
+            openExternal: openExternal, reveal: revealExternal)
+        linkMenu = session
+        return session.menu
+    }
+
+    func waitForExternalMenu() async { await linkMenu?.loadingTask?.value }
 
     func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
         activate(link, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
@@ -27,18 +60,19 @@ extension EnvironmentValues {
 
     func activate(_ link: Any, modifiers: NSEvent.ModifierFlags = []) -> Bool {
         guard !modifiers.contains(.command), let handler else { return false }
-        let url: URL?
-        if let value = link as? URL {
-            url = value
-        } else if let value = link as? String {
-            url = URL(string: value)
-        } else {
-            url = nil
-        }
-        guard let url else { return false }
+        guard let url = Self.url(link) else { return false }
         // In particular, do not resolve relative file links against this Mac's
         // process directory; the conversation knows its machine and worktree.
         return handler(url)
+    }
+
+    private static func url(_ link: Any) -> URL? {
+        if let value = link as? URL {
+            return value
+        } else if let value = link as? String {
+            return URL(string: value)
+        }
+        return nil
     }
 }
 
@@ -48,6 +82,7 @@ struct SelectableMessageText: NSViewRepresentable {
     let source: String
     let color: Color
     @Environment(\.conversationLinkHandler) private var linkHandler
+    @Environment(\.conversationLinkExternalResolver) private var externalResolver
 
     func makeNSView(context: Context) -> MessageTextView {
         MessageTextView()
@@ -55,6 +90,7 @@ struct SelectableMessageText: NSViewRepresentable {
 
     func updateNSView(_ view: MessageTextView, context: Context) {
         view.linkDelegate.handler = linkHandler
+        view.linkDelegate.externalResolver = externalResolver
         view.update(source: source, color: NSColor(color))
     }
 
@@ -230,6 +266,7 @@ final class MessageTextView: NSTextView {
             if let link = run.link { attributes[.link] = link }
             result.append(NSAttributedString(string: String(markdown[run.range].characters), attributes: attributes))
         }
+        ConversationDetectedLinks.apply(to: result)
         return result
     }
 }

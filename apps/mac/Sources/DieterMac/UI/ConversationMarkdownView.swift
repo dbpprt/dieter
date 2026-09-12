@@ -57,6 +57,7 @@ private struct FullConversationText: View {
 struct FullConversationTextEditor: NSViewRepresentable {
     let source: String
     @Environment(\.conversationLinkHandler) private var linkHandler
+    @Environment(\.conversationLinkExternalResolver) private var externalResolver
 
     func makeCoordinator() -> ConversationTextLinkDelegate {
         ConversationTextLinkDelegate()
@@ -73,6 +74,7 @@ struct FullConversationTextEditor: NSViewRepresentable {
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.handler = linkHandler
+        context.coordinator.externalResolver = externalResolver
         guard let text = scroll.documentView as? NSTextView, text.string != source else { return }
         text.textStorage?.setAttributedString(Self.attributedSource(source))
     }

@@ -242,7 +242,14 @@ final class SyntaxEditorContainer: NSView {
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
+        // This container owns the wrapping width. NSTextView's automatic
+        // tracking subtracts its inset, so also assigning the viewport width
+        // during layout makes the two writers repeatedly invalidate TextKit.
+        // Retained editors are particularly sensitive when becoming visible.
+        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.containerSize = NSSize(
+            width: frameRect.width > 0 ? frameRect.width : 600,
+            height: CGFloat.greatestFiniteMagnitude)
         textView.layoutManager?.allowsNonContiguousLayout = true
         textView.minSize = scrollView.contentSize
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -262,7 +269,6 @@ final class SyntaxEditorContainer: NSView {
         textView.isPresentationActive = active
         textView.isVerticallyResizable = active
         textView.autoresizingMask = active ? [.width] : []
-        textView.textContainer?.widthTracksTextView = active
         textView.layoutManager?.backgroundLayoutEnabled = active
         if active { needsLayout = true }
     }
@@ -283,9 +289,11 @@ final class SyntaxEditorContainer: NSView {
         super.layout()
         guard isActive else { return }
         let viewport = scrollView.contentSize
-        guard viewport.width > 0, let textContainer = textView.textContainer else { return }
-        textContainer.containerSize = NSSize(width: viewport.width, height: CGFloat.greatestFiniteMagnitude)
-        textView.minSize = viewport
+        let wrappingWidth = viewport.width - 2 * textView.textContainerInset.width
+        guard wrappingWidth.isFinite, wrappingWidth > 0, let textContainer = textView.textContainer else { return }
+        let containerSize = NSSize(width: wrappingWidth, height: CGFloat.greatestFiniteMagnitude)
+        if textContainer.containerSize != containerSize { textContainer.containerSize = containerSize }
+        if textView.minSize != viewport { textView.minSize = viewport }
         if textView.frame.width != viewport.width {
             textView.frame.size.width = viewport.width
         }

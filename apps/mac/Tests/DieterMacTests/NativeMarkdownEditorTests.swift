@@ -41,13 +41,17 @@ struct NativeMarkdownEditorTests {
         #expect(rich.string == original)
         #expect(!containsWebView(in: host))
         window.setContentSize(.init(width: 800, height: 650))
-        try selectMode(.split, in: host)
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(!rich.isEditable)
-        #expect(containsWebView(in: host))
-        try selectMode(.preview, in: host)
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(!rich.isEditable)
+        #expect(MarkdownFileEditorMode.allCases == [.edit, .source])
+        #expect(modePicker(in: host)?.segmentCount == 2)
+        try selectMode(.edit, in: host)
+        try await settle { rich.isEditable && rich.string == original + " Updated." }
+        try selectMode(.source, in: host)
+        try await settle("Source mode should retain the original native editor and dirty text") {
+            source.isEditable && source.string == original + " Updated." && !rich.isEditable
+        }
+        #expect(allTextViews(in: host).contains { $0 === source })
+        #expect(source.undoManager?.canUndo == true)
+        #expect(!containsWebView(in: host))
         try selectMode(.edit, in: host)
         try await settle("Edit mode should resume the same rich buffer with source changes") {
             rich.isEditable && rich.string == original + " Updated."

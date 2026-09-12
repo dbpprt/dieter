@@ -293,7 +293,7 @@ final class CaptureTaskController {
 
     func present(parts: [Dieter_V1_MessagePart], browser: CaptureBrowserContext) {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 454, height: 640), styleMask: [.titled, .closable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 980, height: 720), styleMask: [.titled, .closable, .resizable],
             backing: .buffered, defer: false)
         window.title = "Capture task"
         window.isReleasedWhenClosed = false
@@ -330,8 +330,12 @@ struct CapturedTaskDraftView: View {
     }
 
     var body: some View {
-        ScrollView {
-            QuickTaskPopover(isPresented: $presented, draft: draft, capturedBrowser: browser.browser)
+        GeometryReader { geometry in
+            ScrollView {
+                QuickTaskPopover(
+                    isPresented: $presented, draft: draft, capturedBrowser: browser.browser,
+                    screenshotInspector: true, screenshotInspectorWide: geometry.size.width >= 800)
+            }
         }
         .glassEffect(.regular, in: Rectangle())
         .onChange(of: presented) { _, value in if !value { dismiss() } }

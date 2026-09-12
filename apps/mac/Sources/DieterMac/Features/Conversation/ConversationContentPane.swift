@@ -161,6 +161,7 @@ private struct ConversationWorkspaceTabLabel: View {
 }
 
 private struct ConversationWorkspaceTabView: View {
+    @Environment(DieterStore.self) private var store
     @Bindable var model: ConversationContentModel
     @Bindable var tab: ConversationContentTab
     let active: Bool
@@ -174,6 +175,8 @@ private struct ConversationWorkspaceTabView: View {
                 ConversationBrowserView(browser: tab.browser, initialURL: tab.sourceURL, scopeID: tab.id)
             case .terminal:
                 ConversationTerminalPane(tab: tab)
+            case .processes:
+                ConversationProcessesPane(model: tab.processes, active: active)
             case .review:
                 Group {
                     if tab.usesProjectReview {
@@ -243,8 +246,15 @@ private struct ConversationWorkspaceTabView: View {
                     ? (tab.rootPath as NSString).lastPathComponent : path.replacingOccurrences(of: "/", with: "  ›  ")
             )
             .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading).layoutPriority(-1)
             .help(path.isEmpty ? tab.rootPath : path)
-            Spacer(minLength: 6)
+            if tab.files.fileDocument != nil {
+                FileDocumentActions(
+                    files: tab.files, identifierPrefix: "conversation.content.file.\(tab.id.uuidString)",
+                    active: active, compact: true, resolveExternalActions: currentExternalActions
+                )
+                .fixedSize()
+            }
             if tab.dirty {
                 Button("Save") { Task { await tab.files.saveCurrentDocument() } }
                     .keyboardShortcut("s", modifiers: .command)
@@ -266,6 +276,19 @@ private struct ConversationWorkspaceTabView: View {
     private var path: String {
         if case .file(let path, _) = tab.selection { return path }
         return ""
+    }
+
+    private func currentExternalActions() -> FileExternalActions {
+        let scope = tab.scope
+        let rpc = store.rpc
+        let verifiedLocal =
+            active && tab.transportsLive && tab.files.isLive && store.phase.isConnected
+            && scope?.target == tab.files.target && scope?.rootPath == tab.rootPath
+            && rpc != nil && rpc === scope?.client
+            && rpc?.endpoint.id == tab.files.target.endpointID && rpc?.isLoopbackDataPlane == true
+        return FileExternalActions.resolve(
+            verifiedLocal: verifiedLocal, rootPath: tab.rootPath,
+            relativePath: tab.files.fileDocument?.path ?? "")
     }
 
     @ViewBuilder private var fileDocument: some View {

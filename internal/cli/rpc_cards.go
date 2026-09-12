@@ -153,7 +153,7 @@ func (c *CLI) rpcCardCreate(args []string, chat bool) error {
 
 Options:
   --lane todo|running       Todo creates a draft; Running starts immediately
-  --auto-title              Generate the title from the task brief with GPT Spark
+  --auto-title              Save immediately; GPT Spark improves the title in the background
   --prompt TEXT             Initial task brief
   --prompt-file FILE        Read the task brief from FILE or -
   --attach FILE             Attach a file; repeat up to four times
@@ -177,7 +177,7 @@ Options:
 	projectRef := set.String("project", "", "project ID or name")
 	boardRef := set.String("board", "", "board ID or name")
 	title := set.String("title", "", "conversation title")
-	autoTitle := set.Bool("auto-title", false, "generate title from task brief with GPT Spark")
+	autoTitle := set.Bool("auto-title", false, "save immediately; generate a title with GPT Spark in the background")
 	lane := set.String("lane", "todo", "todo or running")
 	prompt := set.String("prompt", "", "initial task brief")
 	promptFile := set.String("prompt-file", "", "initial task brief file")

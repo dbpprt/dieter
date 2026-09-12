@@ -4,10 +4,9 @@
     /// Observes the isolated smoke window without changing its presentation.
     /// In particular, distinguish missing geometry from a workspace that was
     /// closed, minimized, hidden, or ordered out while its SwiftUI task survived.
-    @MainActor final class NativeUIWindowLifecycleTrace {
+    @MainActor final class NativeUIWindowLifecycleTrace: NSObject {
         private weak var window: NSWindow?
         private let output: URL
-        private var observers: [NSObjectProtocol] = []
         private var eventMonitor: Any?
         private var timer: Timer?
         private var lastEvent = "none"
@@ -17,6 +16,7 @@
         init(window: NSWindow, output: URL) {
             self.window = window
             self.output = output
+            super.init()
             let notifications: [Notification.Name] = [
                 NSWindow.willCloseNotification, NSWindow.willMiniaturizeNotification,
                 NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification,
@@ -24,47 +24,27 @@
                 NSWindow.didResignKeyNotification,
             ]
             for name in notifications {
-                observers.append(
-                    NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
-                        [weak self] notification in
-                        let rawName = notification.name.rawValue
-                        let includeStack =
-                            notification.name == NSWindow.willCloseNotification
-                            || notification.name == NSWindow.willMiniaturizeNotification
-                        MainActor.assumeIsolated {
-                            self?.record(rawName, stack: includeStack)
-                        }
-                    })
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(windowChanged(_:)), name: name, object: window)
             }
             for name in [
                 NSApplication.didHideNotification, NSApplication.didUnhideNotification,
                 NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
             ] {
-                observers.append(
-                    NotificationCenter.default.addObserver(forName: name, object: NSApp, queue: .main) {
-                        [weak self] notification in
-                        let rawName = notification.name.rawValue
-                        let includeStack = notification.name == NSApplication.didHideNotification
-                        MainActor.assumeIsolated {
-                            self?.record(rawName, stack: includeStack)
-                        }
-                    })
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(applicationChanged(_:)), name: name, object: NSApp)
             }
             eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) {
                 [weak self] event in
-                MainActor.assumeIsolated {
-                    self?.lastEvent = Self.describe(event)
-                    self?.record("local event")
-                }
+                // AppKit invokes local event monitors on its UI thread. Dispatch
+                // through the native selector just like the notification/timer
+                // callbacks so modal Save panels do not consult Swift's executor
+                // identity through assumeIsolated. Keep event evidence synchronous.
+                _ = self?.perform(#selector(NativeUIWindowLifecycleTrace.recordLocalEvent(_:)), with: event)
                 return event
             }
-            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    let state = self.state
-                    if state != self.lastState { self.record("presentation state changed") }
-                }
-            }
+            let timer = Timer(
+                timeInterval: 0.1, target: self, selector: #selector(presentationChanged), userInfo: nil, repeats: true)
             self.timer = timer
             RunLoop.main.add(timer, forMode: .common)
             record("trace started")
@@ -72,12 +52,31 @@
 
         func stop() {
             record("trace stopped")
-            for observer in observers { NotificationCenter.default.removeObserver(observer) }
-            observers.removeAll()
+            NotificationCenter.default.removeObserver(self)
             if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
             eventMonitor = nil
             timer?.invalidate()
             timer = nil
+        }
+
+        @objc private func windowChanged(_ notification: Notification) {
+            record(
+                notification.name.rawValue,
+                stack: notification.name == NSWindow.willCloseNotification
+                    || notification.name == NSWindow.willMiniaturizeNotification)
+        }
+
+        @objc private func applicationChanged(_ notification: Notification) {
+            record(notification.name.rawValue, stack: notification.name == NSApplication.didHideNotification)
+        }
+
+        @objc private func recordLocalEvent(_ event: NSEvent) {
+            lastEvent = Self.describe(event)
+            record("local event")
+        }
+
+        @objc private func presentationChanged() {
+            if state != lastState { record("presentation state changed") }
         }
 
         private var state: String {
@@ -139,10 +138,12 @@
         }
 
         static func find(_ identifier: String, in window: NSWindow, fallbackLabel: String? = nil) -> Element? {
-            // Transcript measurement hosts can contain an offscreen copy of the
-            // same control. Only interact with a view mounted in a visible window.
+            // Retained split panes and transcript measurement hosts can contain
+            // another copy of the same control. A hidden pane still has a visible
+            // window and nonzero bounds, so reject its entire hidden ancestry.
             if let view = NativeUISmokeTargets.frames[identifier]?.compactMap(\.view).first(where: {
                 $0.window?.isVisible == true
+                    && !$0.isHiddenOrHasHiddenAncestor
                     && $0.bounds.width > 0 && $0.bounds.height > 0
             }), let targetWindow = view.window {
                 return Element(
@@ -256,6 +257,26 @@
                 return true
             }
             return click(identifier, in: window, fallbackLabel: fallbackLabel)
+        }
+
+        @discardableResult
+        static func hover(_ identifier: String, in window: NSWindow) -> Bool {
+            guard let element = find(identifier, in: window) else { return false }
+            let frame = element.recordedFrame ?? element.frame
+            guard frame.width > 0, frame.height > 0 else { return false }
+            return movePointer(to: NSPoint(x: frame.midX, y: frame.midY))
+        }
+
+        @discardableResult
+        static func movePointer(to point: NSPoint) -> Bool {
+            let location = CGPoint(x: point.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - point.y)
+            guard
+                let event = CGEvent(
+                    mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: location, mouseButton: .left)
+            else { return false }
+            guard CGWarpMouseCursorPosition(location) == .success else { return false }
+            event.postToPid(ProcessInfo.processInfo.processIdentifier)
+            return true
         }
 
         @discardableResult

@@ -14,12 +14,13 @@ struct ConversationContentScope {
     var terminalsClient: (any TerminalsRPC)? = nil
     var worktreeClient: (any WorktreeRPC)? = nil
     var projectChangesClient: (any ProjectChangesRPC)? = nil
+    var processesClient: (any ProcessesRPC)? = nil
     var workspaceMode = "worktree"
     var projectName = "Project"
 }
 
 enum ConversationPanelKind: String, CaseIterable, Identifiable {
-    case review, terminal, browser, files
+    case review, terminal, browser, files, processes
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
     var symbol: String {
@@ -28,6 +29,7 @@ enum ConversationPanelKind: String, CaseIterable, Identifiable {
         case .terminal: "terminal"
         case .browser: "globe"
         case .files: "folder"
+        case .processes: "gearshape.2"
         }
     }
 }
@@ -45,6 +47,7 @@ final class ConversationContentTab: Identifiable {
     let terminals = TerminalsModel()
     let review = WorktreeChangesModel()
     let projectReview = ProjectChangesModel()
+    let processes = ConversationProcessesModel()
     var usesProjectReview = false
     var transportRevision = 0
     var transportsLive = false
@@ -109,6 +112,10 @@ final class ConversationContentModel {
     @ObservationIgnored var onReviewTransportFailure: @MainActor (Error, any WorktreeRPC) -> Void = { _, _ in }
     @ObservationIgnored var prepareScope: @MainActor (String) async throws -> ConversationContentScope = { _ in
         throw CocoaError(.fileReadNoPermission)
+    }
+    @ObservationIgnored var resolveExternalLink: @MainActor (URL, String) async -> ConversationLinkExternalTarget = {
+        _, _ in
+        .unavailable("This conversation's workspace is unavailable.")
     }
     @ObservationIgnored var confirmUnsaved: @MainActor (String) async -> UnsavedChoice = { name in
         let alert = NSAlert()
@@ -247,7 +254,7 @@ final class ConversationContentModel {
     @discardableResult
     func openPanel(_ kind: ConversationPanelKind, conversationID id: String) async -> Bool {
         guard !confirming, await enterConversation(id), !Task.isCancelled else { return false }
-        if kind == .review || kind == .files,
+        if kind == .review || kind == .files || kind == .processes,
             let existing = tabs.first(where: { $0.kind == kind && (kind != .files || $0.selection == nil) })
         {
             await refreshBindings()
@@ -267,6 +274,7 @@ final class ConversationContentModel {
                 guard owns(request, id) else { return false }
                 bind(tab, scope: scope)
                 if kind == .terminal, scope.terminalsClient == nil { throw ConversationPanelUnavailable(kind: kind) }
+                if kind == .processes, scope.processesClient == nil { throw ConversationPanelUnavailable(kind: kind) }
                 if kind == .review,
                     (tab.usesProjectReview ? scope.projectChangesClient == nil : scope.worktreeClient == nil)
                 {
@@ -304,6 +312,7 @@ final class ConversationContentModel {
         let request = generation
         guard await allowClosing([tab]), request == generation else { return false }
         tab.terminals.active = false
+        tab.processes.active = false
         tab.files.cancelContentRead()
         tab.review.resetWorkspaceSurface()
         tab.projectReview.suspend()
@@ -336,7 +345,7 @@ final class ConversationContentModel {
         cancelPending()
         loading = false
         if openingEmpty { isOpen = false }
-        for tab in tabs { tab.terminals.active = false }
+        for tab in tabs { tab.terminals.active = false; tab.processes.active = false }
     }
 
     /// Connection replacement invalidates old clients immediately; rebinding a
@@ -351,6 +360,8 @@ final class ConversationContentModel {
             tab.terminals.active = false
             tab.terminals.bind(target: scope.target, client: nil)
             tab.terminals.isLive = false
+            tab.processes.active = false
+            tab.processes.bind(target: scope.target, client: nil)
             tab.review.bind(target: scope.target, client: nil, card: scope.card, doneLaneID: scope.doneLaneID)
             tab.projectReview.disconnect()
             tab.transportsLive = false
@@ -394,6 +405,8 @@ final class ConversationContentModel {
                 tab.files.isLive = false; tab.terminals.active = false; tab.transportsLive = false
                 tab.terminals.bind(target: tab.terminals.target, client: nil)
                 tab.terminals.isLive = false
+                tab.processes.active = false
+                tab.processes.bind(target: scope.target, client: nil)
                 tab.projectReview.disconnect()
                 tab.review.bind(target: scope.target, client: nil, card: scope.card, doneLaneID: scope.doneLaneID)
                 tab.error =
@@ -442,6 +455,7 @@ final class ConversationContentModel {
         tab.files.projectPath = scope.rootPath
         tab.tree.bind(target: scope.target, client: scope.client)
         tab.terminals.bind(target: scope.target, client: scope.terminalsClient)
+        tab.processes.bind(target: scope.target, client: scope.processesClient)
         tab.terminals.terminalScopeCardID = scope.target.conversationID
         tab.terminals.machineName = scope.machineName
         tab.terminals.isLive = scope.terminalsClient != nil
@@ -481,6 +495,8 @@ final class ConversationContentModel {
 
     private func updateActivity() {
         for tab in tabs {
+            tab.processes.active =
+                !suspended && isOpen && tab.transportsLive && tab.id == selectedTabID && tab.kind == .processes
             let active = !suspended && isOpen && tab.transportsLive && tab.id == selectedTabID && tab.kind == .terminal
             let wasActive = tab.terminals.active
             tab.terminals.active = active
@@ -502,6 +518,7 @@ final class ConversationContentModel {
     private func removeTabs() {
         for tab in tabs {
             tab.terminals.active = false
+            tab.processes.active = false
             tab.files.cancelContentRead()
             tab.review.resetWorkspaceSurface()
             tab.projectReview.suspend()

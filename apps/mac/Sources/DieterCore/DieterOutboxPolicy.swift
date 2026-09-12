@@ -171,6 +171,7 @@ package enum DieterOutboxPolicy {
         entries.firstIndex {
             $0.endpointID == endpointID && $0.serverID == nil && $0.state != .failed
                 && ($0.nextAttemptAt == nil || $0.nextAttemptAt! <= now)
+                && !hasPendingCreation(for: $0, in: entries)
         }
     }
 
@@ -190,7 +191,10 @@ package enum DieterOutboxPolicy {
         now: Date = Date()
     ) -> TimeInterval? {
         entries.lazy
-            .filter { $0.endpointID == endpointID && $0.serverID == nil && $0.state != .failed }
+            .filter {
+                $0.endpointID == endpointID && $0.serverID == nil && $0.state != .failed
+                    && !hasPendingCreation(for: $0, in: entries)
+            }
             .compactMap(\.nextAttemptAt)
             .map { max(0, $0.timeIntervalSince(now)) }
             .min()
@@ -204,6 +208,7 @@ package enum DieterOutboxPolicy {
         entries.lazy
             .filter {
                 endpointIDs.contains($0.endpointID) && $0.serverID == nil && $0.state != .failed
+                    && !hasPendingCreation(for: $0, in: entries)
             }
             .compactMap(\.nextAttemptAt)
             .map { max(0, $0.timeIntervalSince(now)) }
@@ -212,6 +217,22 @@ package enum DieterOutboxPolicy {
 
     package static func backoff(after attempts: Int) -> TimeInterval {
         min(30, Double(1 << min(attempts, 4)))
+    }
+
+    /// A stable optimistic ID may already exist on the daemon before Create
+    /// has admitted the initial turn. Follow-ups must wait for that command's
+    /// acknowledgement, including while Create is retrying or needs attention.
+    /// Use the same dependency check for delivery and retry scheduling so a
+    /// blocked message cannot leave a worker spinning on an expired retry date.
+    private static func hasPendingCreation(for entry: DieterOutboxEntry, in entries: [DieterOutboxEntry]) -> Bool {
+        guard entry.kind == .sendMessage,
+            let message = try? Dieter_V1_SendMessageRequest(serializedBytes: entry.request)
+        else { return false }
+        return entries.contains {
+            $0.endpointID == entry.endpointID && $0.serverID == nil
+                && ($0.kind == .createCard || $0.kind == .createChat)
+                && conversationIDs(for: $0).contains(message.cardID)
+        }
     }
 
     package static func retargetDependencies(

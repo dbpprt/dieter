@@ -15,6 +15,7 @@ import { createNDJSONTailer, createSubagentCapabilityCollector, observeHarnessCa
 import { codexConfig, dshACPArgs, dshPackageVersion, ompACPArgs, ompACPModelMapping } from './provider-options.mjs';
 import { promptWithLocalAttachments } from './local-attachments.mjs';
 import { createContentPresentationTool, contentPresentationInstructions } from './content-presentation.mjs';
+import { createProcessHostBridge, createBackgroundProcessTools, backgroundProcessInstructions } from './background-processes.mjs';
 import { createMessageMetadataTracker } from './usage-metadata.mjs';
 import {
   createClaudeDiagnosticTracker,
@@ -50,8 +51,9 @@ function harnessErrorMessage(error) {
 }
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 const line = await new Promise(resolve => input.once('line', resolve));
-input.close();
 const request = JSON.parse(line);
+const processBridge = request.backgroundProcessesEnabled ? createProcessHostBridge(input, send) : undefined;
+if (!processBridge) input.close();
 const adapter = request.adapter || request.harness;
 if (typeof request.sessionId !== 'string' || !/^[A-Za-z0-9._-]+$/.test(request.sessionId)) {
   throw new Error('invalid harness session ID');
@@ -285,13 +287,14 @@ try {
     : '';
   const contentTools = request.contentPresentationEnabled
     ? { present_content: createContentPresentationTool(request, send) } : {};
-  const instructions = [request.instructions, taskPlanInstructions, request.contentPresentationEnabled ? contentPresentationInstructions : ''].filter(Boolean).join('\n\n');
+  const processTools = processBridge ? createBackgroundProcessTools(request, processBridge.call) : {};
+  const instructions = [request.instructions, taskPlanInstructions, request.contentPresentationEnabled ? contentPresentationInstructions : '', processBridge ? backgroundProcessInstructions : ''].filter(Boolean).join('\n\n');
   const agent = new HarnessAgent({
     harness,
     sandbox,
     model: ['omp-acp', 'dsh-acp'].includes(adapter) ? request.model || undefined : undefined,
     instructions: instructions || undefined,
-    tools: { ...contentTools, ...(adapter === 'pi' ? { board_task_plan: piTaskPlanTool } : {}) },
+    tools: { ...contentTools, ...processTools, ...(adapter === 'pi' ? { board_task_plan: piTaskPlanTool } : {}) },
     permissionMode: 'allow-all',
     sandboxConfig: { workDir: sandboxWorkDir },
   });
@@ -402,6 +405,11 @@ try {
   capabilityCollector.finishTaskPlan(controller.signal.aborted ? 'aborted' : 'failed');
   process.exitCode = controller.signal.aborted ? interruptExitCode ?? 130 : 1;
 } finally {
+  processBridge?.dispose();
+  input.close();
+  // The host keeps this pipe open for correlated tool replies. Releasing the
+  // readline interface alone can leave its underlying pipe referenced.
+  process.stdin.destroy();
   if (forcedExitTimer != null) clearTimeout(forcedExitTimer);
   clearInterval(heartbeatTimer);
   if (!suspending) {

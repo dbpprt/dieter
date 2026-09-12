@@ -55,6 +55,13 @@ package protocol TerminalInputRPC: AnyObject, Sendable {
     func writeTerminal(id: String, data: Data) async throws -> Dieter_V1_Terminal
 }
 
+package protocol ProcessesRPC: AnyObject, Sendable {
+    func executions(projectID: String, cardID: String) async throws -> Dieter_V1_ExecutionsResponse
+    func watchExecution(
+        id: String, after: UInt64, receive: @escaping @Sendable (Dieter_V1_ExecutionEvent) async -> Void) async throws
+    func cancelExecution(id: String) async throws -> Dieter_V1_Execution
+}
+
 package protocol TerminalsRPC: TerminalInputRPC {
     func terminals(projectID: String, cardID: String) async throws -> Dieter_V1_TerminalsResponse
     func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws -> Dieter_V1_Terminal

@@ -27,13 +27,164 @@
                     """
                 store.conversationModel.olderConversationMessages[index] = message
             }
+            await nativeLinkContextMenu(store, window, cardID, &results)
             await markdownAndTabs(store, window, cardID, &results, output)
             await browser(store, window, cardID, &results, output)
             await terminal(store, window, cardID, &results, output)
+            await processes(store, window, cardID, &results, output)
             await review(store, window, cardID, &results, output)
             await presentation(store, window, cardID, &results, output)
             await attachments(store, window, cardID, &results, output)
             store.conversationContext.content.hide()
+        }
+
+        private static func processes(
+            _ store: DieterStore, _ window: NSWindow, _ cardID: String,
+            _ results: inout [String: String], _ output: URL
+        ) async {
+            guard let rpc = store.rpc else { results["content-processes"] = "failed: machine unavailable"; return }
+            let content = store.conversationContext.content
+            var executionID: String?
+            do {
+                var request = Dieter_V1_StartExecutionRequest()
+                request.cardID = cardID; request.name = "Native process smoke"
+                request.argv = [
+                    "/bin/sh", "-c", "printf 'process pane ready\\n'; printf 'process warning\\n' >&2; exec sleep 180",
+                ]
+                request.stdinEof = true; request.timeoutMs = 180_000
+                request.idempotencyKey = "native-processes-\(UUID().uuidString)"
+                let execution = try await rpc.startExecution(request)
+                executionID = execution.id
+                _ = await content.openPanel(.processes, conversationID: cardID)
+                guard let tab = content.selectedTab, tab.kind == .processes else { throw CocoaError(.fileReadUnknown) }
+                let loaded = await wait {
+                    tab.processes.selectedID == execution.id
+                        && String(decoding: tab.processes.stdout, as: UTF8.self).contains("process pane ready")
+                        && String(decoding: tab.processes.stderr, as: UTF8.self).contains("process warning")
+                        && NativeUIAccessibility.find("conversation.content.processes", in: window) != nil
+                }
+                results["content-processes-output"] =
+                    loaded ? "passed" : "failed: scoped process list/output unavailable"
+                let aligned = await wait {
+                    guard
+                        let viewport = NativeUIAccessibility.find(
+                            "conversation.content.processes.output-viewport", in: window)?.recordedFrame,
+                        let heading = NativeUIAccessibility.find(
+                            "conversation.content.processes.stdout-heading", in: window)?.recordedFrame
+                    else { return false }
+                    let leftInset = heading.minX - viewport.minX
+                    let topInset = viewport.maxY - heading.maxY
+                    return leftInset >= 0 && leftInset <= 24 && topInset >= 0 && topInset <= 24
+                }
+                results["content-processes-output-alignment"] =
+                    aligned ? "passed" : "failed: short output was not aligned to the viewport's top-left"
+                await captureStage(window, output, "processes", "08g-content-processes.png")
+                let closeClicked = NativeUIAccessibility.click(
+                    "conversation.content.tab.\(tab.id.uuidString).close", in: window)
+                let closed = await wait { !content.tabs.contains(where: { $0.id == tab.id }) }
+                let retained = try await rpc.executions(projectID: execution.projectID, cardID: cardID)
+                results["content-processes-close-detaches"] =
+                    closeClicked && closed
+                        && retained.executions.contains(where: { $0.id == execution.id && $0.status == "running" })
+                    ? "passed" : "failed: closing Processes stopped or lost the registered command"
+                _ = await content.openPanel(.processes, conversationID: cardID)
+                guard let reopened = content.selectedTab, reopened.kind == .processes else {
+                    throw CocoaError(.fileReadUnknown)
+                }
+                let ready = await wait {
+                    reopened.processes.selectedID == execution.id
+                        && NativeUIAccessibility.find("conversation.content.processes.stop", in: window) != nil
+                }
+                let clicked = ready && NativeUIAccessibility.click("conversation.content.processes.stop", in: window)
+                let stopped = await wait { reopened.processes.selected?.status == "canceled" }
+                results["content-processes-explicit-stop"] =
+                    clicked && stopped ? "passed" : "failed: native Stop did not cancel the selected process"
+                _ = await content.closeTab(reopened.id)
+            } catch { results["content-processes"] = "failed: \(error)" }
+            // Only this fixture-owned process is cleaned up; no tab close or
+            // watch teardown sends a cancellation in production.
+            if let executionID { _ = try? await rpc.cancelExecution(id: executionID) }
+        }
+
+        private static func nativeLinkContextMenu(
+            _ store: DieterStore, _ window: NSWindow, _ cardID: String, _ results: inout [String: String]
+        ) async {
+            let label = "Open the implementation plan"
+            let ready = await wait {
+                descendants(window.contentView, as: MessageTextView.self).contains { $0.string.contains(label) }
+            }
+            guard ready,
+                let text = descendants(window.contentView, as: MessageTextView.self).first(where: {
+                    $0.string.contains(label) && $0.window === window
+                })
+            else { results["content-link-context-menu"] = "failed: visible transcript link unavailable"; return }
+            let pasteboard = NSPasteboard.general
+            let savedPasteboard = (pasteboard.pasteboardItems ?? []).map { item in
+                item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { values, type in
+                    values[type] = item.data(forType: type)
+                }
+            }
+            defer {
+                pasteboard.clearContents()
+                let items = savedPasteboard.map { values in
+                    let item = NSPasteboardItem()
+                    for (type, data) in values { item.setData(data, forType: type) }
+                    return item
+                }
+                if !items.isEmpty { pasteboard.writeObjects(items) }
+            }
+            for action in ["Copy Link", "Open in Dieter"] {
+                let tracker = NativeContentMenuTracker()
+                defer { tracker.stop() }
+                let range = (text.string as NSString).range(of: label)
+                let interior = NSRange(location: range.location + range.length / 2, length: 1)
+                let rectangle = text.firstRect(forCharacterRange: interior, actualRange: nil)
+                let point = window.convertPoint(fromScreen: NSPoint(x: rectangle.midX, y: rectangle.midY))
+                for type in [NSEvent.EventType.rightMouseDown, .rightMouseUp] {
+                    if let event = NSEvent.mouseEvent(
+                        with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                        pressure: type == .rightMouseDown ? 1 : 0)
+                    {
+                        NSApp.postEvent(event, atStart: false)
+                    }
+                }
+                let menuReady = await wait {
+                    tracker.menu?.items.contains(where: { $0.title == action && $0.isEnabled }) == true
+                }
+                guard menuReady, let menu = tracker.menu else {
+                    tracker.menu?.cancelTrackingWithoutAnimation()
+                    results["content-link-context-\(action)"] = "failed: real right-click menu action absent"
+                    continue
+                }
+                let external = menu.items.first { $0.title == "Open in…" }
+                let finder = menu.items.first { $0.title == "Show in Finder" }
+                let resolved = await wait {
+                    external?.submenu?.items.contains(where: { $0.title == "Loading…" }) == false
+                }
+                let remoteCorrect = store.rpc?.isLoopbackDataPlane == true || finder?.isEnabled == false
+                results["content-link-context-menu"] =
+                    external?.submenu != nil && finder != nil && resolved && remoteCorrect
+                    ? "passed" : "failed: external submenu/Finder missing or remote file enabled"
+                if action == "Copy Link" {
+                    pasteboard.clearContents(); pasteboard.setString("Unchanged link clipboard", forType: .string)
+                }
+                guard let index = menu.items.firstIndex(where: { $0.title == action }) else {
+                    menu.cancelTrackingWithoutAnimation()
+                    results["content-link-context-\(action)"] = "failed: context action vanished during resolution"
+                    continue
+                }
+                menu.cancelTrackingWithoutAnimation()
+                menu.performActionForItem(at: index)
+                let acted = await wait {
+                    if action == "Copy Link" { return pasteboard.string(forType: .string) == "side-by-side-smoke.md" }
+                    let model = store.conversationContext.content
+                    return model.isOpen && model.selection == .file(path: "side-by-side-smoke.md", line: nil)
+                        && model.files.fileDocument?.name == "side-by-side-smoke.md"
+                }
+                results["content-link-context-\(action)"] =
+                    acted ? "passed" : "failed: native menu action did not copy/open the scoped link"
+            }
         }
 
         private static func markdownAndTabs(
@@ -77,7 +228,16 @@
                 results["content-markdown-checkbox"] = "failed: checkbox fixture absent"
             }
 
+            await markdownModes(tab: tab, editor: editor, window: window, results: &results)
+            await ConversationFileActionsUISmoke.finderAvailability(
+                store: store, tab: tab, window: window, results: &results)
+            await ConversationFileActionsUISmoke.exportUnsavedDraft(
+                store: store, tab: tab, window: window, results: &results, output: output)
             _ = await model.open(URL(string: "side-by-side-smoke.swift#L42")!, conversationID: cardID)
+            if let sourceTab = model.selectedTab {
+                await ConversationFileActionsUISmoke.finderAvailability(
+                    store: store, tab: sourceTab, window: window, results: &results)
+            }
             let second = model.selectedTabID
             let focused = NativeUIAccessibility.click("conversation.content.tab.\(tab.id.uuidString)", in: window)
             let retained = await wait {
@@ -145,6 +305,32 @@
             await markdownRelativeLink(store, window, cardID, &results)
         }
 
+        private static func markdownModes(
+            tab: ConversationContentTab, editor: NSTextView, window: NSWindow, results: inout [String: String]
+        ) async {
+            let draft = tab.files.fileEditorSession.currentText()
+            let identifier = "files.markdown.layout.\(tab.files.documentKey)"
+            let sourceClicked = NativeUIAccessibility.click(identifier, in: window, horizontalFraction: 0.75)
+            let sourceReady = await wait {
+                descendants(window.contentView, as: SyntaxEditorTextView.self).contains {
+                    $0.isEditable && $0.string == draft && $0.window === window
+                }
+            }
+            let source = descendants(window.contentView, as: SyntaxEditorTextView.self).first {
+                $0.isEditable && $0.string == draft
+            }
+            let editClicked = NativeUIAccessibility.click(identifier, in: window, horizontalFraction: 0.25)
+            let richRetained = await wait { editor.isEditable && editor.string == draft && tab.dirty }
+            let sourceAgain = NativeUIAccessibility.click(identifier, in: window, horizontalFraction: 0.75)
+            let sourceRetained = await wait { source?.isEditable == true && source?.string == draft }
+            let editAgain = NativeUIAccessibility.click(identifier, in: window, horizontalFraction: 0.25)
+            let restored = await wait { editor.isEditable && editor.string == draft && tab.dirty }
+            results["content-markdown-edit-source-modes"] =
+                MarkdownFileEditorMode.allCases == [.edit, .source] && sourceClicked && sourceReady && editClicked
+                    && richRetained && sourceAgain && sourceRetained && editAgain && restored
+                ? "passed" : "failed: native Edit/Source switching lost a retained editor or unsaved draft"
+        }
+
         private static func markdownRelativeLink(
             _ store: DieterStore, _ window: NSWindow, _ cardID: String, _ results: inout [String: String]
         ) async {
@@ -203,6 +389,42 @@
                 defer { server.stop() }
                 guard await wait({ server.baseURL != nil }), let base = server.baseURL else {
                     throw CocoaError(.fileReadUnknown)
+                }
+                if let index = store.conversationModel.olderConversationMessages.firstIndex(where: {
+                    $0.id == "message_linked_content_smoke"
+                }) {
+                    let address = "127.0.0.1:\(base.port!)"
+                    store.conversationModel.olderConversationMessages[index].parts[0].text +=
+                        "\n\nThe local preview is running at `\(address)`."
+                    let visible = await wait {
+                        descendants(window.contentView, as: MessageTextView.self).contains {
+                            $0.string.contains(address) && !$0.isHiddenOrHasHiddenAncestor
+                        }
+                    }
+                    if visible,
+                        let text = descendants(window.contentView, as: MessageTextView.self).first(where: {
+                            $0.string.contains(address) && !$0.isHiddenOrHasHiddenAncestor
+                        })
+                    {
+                        let range = (text.string as NSString).range(of: address)
+                        text.scrollRangeToVisible(range)
+                        try? await DieterTaskSleep.milliseconds(200)
+                        let rect = text.firstRect(forCharacterRange: range, actualRange: nil)
+                        click(window.convertPoint(fromScreen: NSPoint(x: rect.midX, y: rect.midY)), window: window)
+                        let opened = await wait {
+                            model.selectedTab?.kind == .browser
+                                && model.selectedTab?.browser.webView.url?.port == base.port
+                                && model.selectedTab?.browser.loading == false
+                        }
+                        results["content-inline-address-click"] =
+                            opened
+                            ? "passed" : "failed: native click on bare host:port did not open the browser tab"
+                        if let selected = model.selectedTabID { _ = await model.closeTab(selected) }
+                    } else {
+                        results["content-inline-address-click"] = "failed: inline address not visible"
+                    }
+                } else {
+                    results["content-inline-address-click"] = "failed: transcript fixture missing"
                 }
                 _ = await model.openPanel(.browser, conversationID: cardID)
                 guard let tab = model.selectedTab else { throw CocoaError(.fileReadUnknown) }
@@ -438,6 +660,10 @@
                     _ = await store.conversationContext.content.open(URL(string: name)!, conversationID: cardID)
                     let rendered = await wait { NativeUIAccessibility.find(identifier, in: window) != nil }
                     results["content-renderer-\(name)"] = rendered ? "passed" : "failed: \(identifier) not mounted"
+                    if let tab = store.conversationContext.content.selectedTab {
+                        await ConversationFileActionsUISmoke.finderAvailability(
+                            store: store, tab: tab, window: window, results: &results)
+                    }
                     capture(window, output.appending(path: "08f-\(name).png"))
                 }
             } catch { results["content-additional-renderers"] = "failed: \(error)" }

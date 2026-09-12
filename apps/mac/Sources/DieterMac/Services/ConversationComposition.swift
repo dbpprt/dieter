@@ -53,8 +53,13 @@ extension DieterStore {
             guard let self, (self.selectedCardID ?? self.selectedChatID) == id else { return nil }
             return self.endpoint.id
         }
+        context.content.resolveExternalLink = { [weak self] url, id in
+            guard let self else { return .unavailable("This conversation is no longer available.") }
+            return await self.externalConversationLink(url, cardID: id)
+        }
         context.content.prepareScope = { [weak self] id in
             guard let self, (self.selectedCardID ?? self.selectedChatID) == id,
+                self.isConversationServerBacked(id),
                 let card = self.selectedCard ?? self.selectedDetail?.card,
                 card.id == id, let rpc = self.rpc,
                 (self.projectEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id
@@ -71,6 +76,7 @@ extension DieterStore {
                 target: target, rootPath: workspace.path, client: rpc,
                 card: card, doneLaneID: self.doneLane(for: card), machineName: self.endpoint.name,
                 terminalsClient: rpc, worktreeClient: rpc, projectChangesClient: rpc,
+                processesClient: rpc,
                 workspaceMode: workspace.mode,
                 projectName: self.projects.first(where: { $0.id == card.projectID })?.name ?? "Project")
         }
