@@ -2,6 +2,7 @@
 
 package com.dbpprt.dieter.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -56,13 +57,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -83,6 +87,7 @@ import com.dbpprt.dieter.v1.TaskPlan
 import com.dbpprt.dieter.v1.UiMessage
 import com.dbpprt.dieter.v1.ToolOutput
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.charset.StandardCharsets
@@ -539,41 +544,63 @@ internal fun AgentAvatar() {
 }
 
 @Composable
-internal fun AgentWorkingIndicator(toolName: String) {
+internal fun AgentWorkingIndicator(label: String, startedAtMillis: Long?) {
     val transition = rememberInfiniteTransition(label = "agent-working")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 3f,
-        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
-        label = "typing-phase",
+    val shimmerOffset by transition.animateFloat(
+        initialValue = -220f,
+        targetValue = 720f,
+        animationSpec = infiniteRepeatable(tween(2_000, easing = LinearEasing)),
+        label = "activity-shimmer",
     )
-    Row(
-        Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val nowMillis by produceState(System.currentTimeMillis(), startedAtMillis) {
+        if (startedAtMillis == null) return@produceState
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(1_000L - ((value - startedAtMillis).coerceAtLeast(0L) % 1_000L))
+        }
+    }
+    val textBrush = Brush.linearGradient(
+        colors = listOf(DieterMuted, MaterialTheme.colorScheme.onSurface, DieterMuted),
+        start = Offset(shimmerOffset - 150f, 0f),
+        end = Offset(shimmerOffset + 150f, 0f),
+    )
+    Surface(
+        color = DieterSurfaceHigh.copy(alpha = 0.85f),
+        shape = CircleShape,
+        border = androidx.compose.foundation.BorderStroke(1.dp, DieterShell.copy(alpha = 0.18f)),
+        modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
+            .animateContentSize()
+            .testTag("agent-working")
+            .semantics { contentDescription = label },
     ) {
-        AgentAvatar()
-        Spacer(Modifier.width(10.dp))
-        Surface(color = DieterSurfaceHigh, shape = RoundedCornerShape(17.dp)) {
-            Row(
-                Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
+        Row(
+            Modifier.heightIn(min = 34.dp).padding(horizontal = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(12.dp),
+                color = DieterShell,
+                trackColor = DieterShell.copy(alpha = 0.16f),
+                strokeWidth = 1.7.dp,
+            )
+            Text(
+                label,
+                style = TextStyle(brush = textBrush),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            startedAtMillis?.let { startedAt ->
                 Text(
-                    agentWorkingLabel(toolName),
+                    elapsedActivityLabel(startedAt, nowMillis),
                     color = DieterMuted,
                     fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.semantics { contentDescription = "Elapsed time" },
                 )
-                repeat(3) { index ->
-                    val active = phase.toInt().coerceIn(0, 2) == index
-                    Box(
-                        Modifier.size(if (active) 5.dp else 4.dp)
-                            .clip(CircleShape)
-                            .background(DieterShell.copy(alpha = if (active) 1f else 0.35f)),
-                    )
-                }
             }
         }
     }

@@ -4,8 +4,7 @@ internal fun shouldFollowConversationUpdate(
     explicitOpenScroll: Boolean,
     initialScrollComplete: Boolean,
     followingLatest: Boolean,
-    isAtLatestAfterUpdate: Boolean,
-): Boolean = explicitOpenScroll || !initialScrollComplete || (followingLatest && isAtLatestAfterUpdate)
+): Boolean = explicitOpenScroll || !initialScrollComplete || followingLatest
 
 internal data class ConversationHistoryViewport(
     val firstVisibleItemIndex: Int,

@@ -101,6 +101,14 @@ internal fun connectionDialogDelayMs(
     return (CONNECTION_DIALOG_GRACE_MS - elapsed).coerceAtLeast(0L)
 }
 
+internal fun connectionDialogShouldOpenFromNotification(
+    desiredConnected: Boolean,
+    phase: ConnectionPhase,
+    hasCachedWorkspace: Boolean,
+): Boolean = !desiredConnected || phase == ConnectionPhase.AUTH_REQUIRED ||
+    phase == ConnectionPhase.INCOMPATIBLE ||
+    (phase == ConnectionPhase.UNAVAILABLE && !hasCachedWorkspace)
+
 internal fun connectionDialogDismissalApplies(
     dismissedInterruptionKey: Long?,
     desiredConnected: Boolean,
@@ -554,11 +562,15 @@ class DieterViewModel(
 
     fun showConnectionDialogIfNeeded() {
         val connection = connectionManager.state.value
-        if (!connection.desiredConnected || connection.phase != ConnectionPhase.CONNECTED) {
-            // This path comes from the connection notification's content or
-            // Open action, so it is an explicit request rather than an
-            // automatic interruption.
-            connectionDialogManuallyRequested = true
+        if (connectionDialogShouldOpenFromNotification(
+                desiredConnected = connection.desiredConnected,
+                phase = connection.phase,
+                hasCachedWorkspace = connection.selectedState != null,
+            )
+        ) {
+            // Opening a status notification is navigation, not a request to
+            // pin the connection sheet through a successful recovery.
+            connectionDialogManuallyRequested = false
             _state.update { it.copy(connectionDialogVisible = true) }
         }
     }

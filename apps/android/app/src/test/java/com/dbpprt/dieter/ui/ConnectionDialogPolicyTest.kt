@@ -29,6 +29,18 @@ class ConnectionDialogPolicyTest {
     }
 
     @Test
+    fun statusNotificationDoesNotTurnRoutineSynchronizationIntoAModalDialog() {
+        assertFalse(connectionDialogShouldOpenFromNotification(true, ConnectionPhase.CONNECTING, false))
+        assertFalse(connectionDialogShouldOpenFromNotification(true, ConnectionPhase.SYNCING, true))
+        assertFalse(connectionDialogShouldOpenFromNotification(true, ConnectionPhase.RECONNECTING, true))
+        assertFalse(connectionDialogShouldOpenFromNotification(true, ConnectionPhase.UNAVAILABLE, true))
+        assertEquals(true, connectionDialogShouldOpenFromNotification(true, ConnectionPhase.AUTH_REQUIRED, true))
+        assertEquals(true, connectionDialogShouldOpenFromNotification(true, ConnectionPhase.INCOMPATIBLE, true))
+        assertEquals(true, connectionDialogShouldOpenFromNotification(true, ConnectionPhase.UNAVAILABLE, false))
+        assertEquals(true, connectionDialogShouldOpenFromNotification(false, ConnectionPhase.STOPPED, true))
+    }
+
+    @Test
     fun userActionableFailureGetsGraceBeforeOpeningTheDialog() {
         assertEquals(
             CONNECTION_DIALOG_GRACE_MS,

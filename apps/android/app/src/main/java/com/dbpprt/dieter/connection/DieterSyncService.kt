@@ -437,9 +437,9 @@ class DieterSyncService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setContentIntent(openIntent(showConnection = true))
+            .setContentIntent(openIntent(showConnection = !connected))
             .addAction(Notification.Action.Builder(null, "Disconnect", serviceIntent(ACTION_DISCONNECT, 11)).build())
-            .addAction(Notification.Action.Builder(null, "Open", openIntent(showConnection = true)).build())
+            .addAction(Notification.Action.Builder(null, "Open", openIntent(showConnection = !connected)).build())
         if (Build.VERSION.SDK_INT >= 36 && connected) {
             // Surface live agent work as an Android 16 promoted Live Update chip.
             if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
@@ -474,7 +474,7 @@ class DieterSyncService : Service() {
         .setOngoing(true)
         .setOnlyAlertOnce(true)
         .setShowWhen(false)
-        .setContentIntent(openIntent(showConnection = true))
+        .setContentIntent(openIntent())
         .build()
 
     /** Expanded shade body matching the design reference: stat pills plus live activity rows. */

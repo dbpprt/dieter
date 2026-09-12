@@ -81,8 +81,15 @@ internal fun syncStreamIsStale(
     staleAfterMs: Long = SYNC_STALE_AFTER_MS,
 ): Boolean = lastFrameAtMs > 0 && nowMs >= lastFrameAtMs && nowMs - lastFrameAtMs >= staleAfterMs
 
-internal fun foregroundConnectionPhase(current: ConnectionPhase, becameForeground: Boolean): ConnectionPhase =
-    if (becameForeground && current == ConnectionPhase.CONNECTED) ConnectionPhase.SYNCING else current
+internal fun foregroundConnectionPhase(
+    current: ConnectionPhase,
+    becameForeground: Boolean,
+    syncStreamStale: Boolean,
+): ConnectionPhase = if (becameForeground && current == ConnectionPhase.CONNECTED && syncStreamStale) {
+    ConnectionPhase.SYNCING
+} else {
+    current
+}
 
 @Suppress("DEPRECATION")
 private fun GlobalSnapshot.withoutScheduleProjection(): GlobalSnapshot =
@@ -294,8 +301,13 @@ class DieterConnectionManager(
         }
         if (becameForeground) {
             val foregroundedAt = System.currentTimeMillis()
+            val streamStale = syncStreamIsStale(lastSyncFrameAtMs, foregroundedAt)
             _state.update { current ->
-                val phase = foregroundConnectionPhase(current.phase, becameForeground = true)
+                val phase = foregroundConnectionPhase(
+                    current = current.phase,
+                    becameForeground = true,
+                    syncStreamStale = streamStale,
+                )
                 if (phase == current.phase) current else current.copy(
                     phase = phase,
                     connectionInterruptedAtMs = foregroundedAt,

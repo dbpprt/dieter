@@ -28,6 +28,12 @@ struct ChatsView: View {
         activePinnedChats.map(\.id).sorted()
     }
 
+    private var orderedProjects: [Dieter_V1_Project] {
+        let projects = store.projects.filter { !$0.archived }
+        let byID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+        return store.sidebarProjectNavigation.orderedIDs(from: projects.map(\.id)).compactMap { byID[$0] }
+    }
+
     var body: some View {
         let projection = store.replica.chatProjection(
             showArchived: showArchived,
@@ -37,6 +43,10 @@ struct ChatsView: View {
         let pinnedPage = LaneCardPage.resolve(
             total: projection.pinned.count, requestedPage: pinnedPageIndex)
         let displayedPinned = Array(projection.pinned[pinnedPage.lowerBound..<pinnedPage.upperBound])
+        let displayedProjects = orderedProjects.filter {
+            search.isEmpty || !(projection.byProject[$0.id] ?? []).isEmpty
+        }
+        let displayedProjectIDs = displayedProjects.map(\.id)
         ChatPaneSplit {
             VStack(spacing: 0) {
                 FluidPaneChrome(background: .clear, spacing: 9) {
@@ -109,19 +119,19 @@ struct ChatsView: View {
                                 .horizontal, 8
                             ).padding(.top, 3)
 
-                        ForEach(store.projects.filter { !$0.archived }, id: \.id) { project in
+                        ForEach(displayedProjects, id: \.id) { project in
                             let projectChats = projection.byProject[project.id] ?? []
-                            if search.isEmpty || !projectChats.isEmpty {
-                                ChatProjectGroup(
-                                    project: project,
-                                    chats: projectChats,
-                                    showArchived: showArchived,
-                                    expanded: projectDisclosure.isExpanded(project.id),
-                                    collapsed: projectDisclosure.isCollapsed(project.id),
-                                    toggleExpanded: { toggleExpanded(project.id) },
-                                    toggleCollapsed: { toggleCollapsed(project.id) }
-                                )
-                            }
+                            ChatProjectGroup(
+                                project: project,
+                                projectIDs: displayedProjectIDs,
+                                chats: projectChats,
+                                showArchived: showArchived,
+                                expanded: projectDisclosure.isExpanded(project.id),
+                                collapsed: projectDisclosure.isCollapsed(project.id),
+                                toggleExpanded: { toggleExpanded(project.id) },
+                                toggleCollapsed: { toggleCollapsed(project.id) },
+                                moveProject: moveProject
+                            )
                         }
 
                         if projection.visible.isEmpty && !store.chatsLoading && store.chatsError == nil {
@@ -188,6 +198,14 @@ struct ChatsView: View {
             return
         }
         pinnedChatNavigation.save(to: DieterAppearance.applicationDefaults())
+    }
+
+    private func moveProject(_ projectID: String, before targetProjectID: String?) {
+        var navigation = store.sidebarProjectNavigation
+        guard navigation.move(projectID, before: targetProjectID, availableIDs: orderedProjects.map(\.id)) else {
+            return
+        }
+        store.sidebarProjectNavigation = navigation
     }
 }
 
@@ -334,13 +352,31 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
 private struct ChatProjectGroup: View {
     @Environment(DieterStore.self) private var store
     let project: Dieter_V1_Project
+    let projectIDs: [String]
     let chats: [Dieter_V1_Card]
     let showArchived: Bool
     let expanded: Bool
     let collapsed: Bool
     let toggleExpanded: () -> Void
     let toggleCollapsed: () -> Void
+    let moveProject: (String, String?) -> Void
     @State private var pageIndex = 0
+    @State private var dropTargeted = false
+
+    private var projectMachine: DieterEndpoint? {
+        store.machine(forProjectID: project.id)
+    }
+
+    private var projectMachineOnline: Bool? {
+        projectMachine.map(store.machineIsAvailable)
+    }
+
+    private var headerAccessibilityLabel: String {
+        let action = collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats"
+        guard let projectMachine else { return action }
+        let presence = projectMachineOnline == true ? "online" : "offline"
+        return "\(action). Hosted on \(projectMachine.name), \(presence)"
+    }
 
     private var displayed: [Dieter_V1_Card] {
         guard expanded else { return Array(chats.prefix(5)) }
@@ -365,16 +401,21 @@ private struct ChatProjectGroup: View {
                         Text(project.name.uppercased()).font(DieterFont.sectionLabel).tracking(0.8).lineLimit(1)
                             .foregroundStyle(DieterTheme.subtle)
                         Text("· \(chats.count)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                        Spacer(minLength: 4)
+                        if let projectMachine {
+                            ProjectMachineBadge(machine: projectMachine, online: projectMachineOnline == true)
+                                .accessibilityIdentifier("chats.project.\(project.id).machine")
+                                .smokeTarget(
+                                    "chats.project.\(project.id).machine.\(projectMachineOnline == true ? "online" : "offline")"
+                                )
+                        }
                     }
                 }
                 .buttonStyle(.plain)
                 .help(collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats")
-                .accessibilityLabel(
-                    collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats"
-                )
+                .accessibilityLabel(headerAccessibilityLabel)
                 .accessibilityIdentifier("chats.project.\(project.id).toggle")
                 .smokeTarget("chats.project.\(project.id).toggle")
-                Spacer()
                 if !showArchived {
                     Button {
                         store.beginStandaloneChat(projectID: project.id)
@@ -383,7 +424,36 @@ private struct ChatProjectGroup: View {
                     }
                     .buttonStyle(.plain).help("New chat in \(project.name)")
                 }
-            }.padding(.horizontal, 8).frame(height: 24)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(
+                dropTargeted ? DieterTheme.shellDeep.opacity(0.16) : .clear,
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .contentShape(Rectangle())
+            .draggable(SidebarProjectDragPayload(projectID: project.id).encoded) {
+                SidebarProjectDragPreview(project: project)
+            }
+            .dropDestination(for: String.self) { values, location in
+                guard let value = values.first, let payload = SidebarProjectDragPayload(value),
+                    payload.projectID != project.id
+                else { return false }
+                let targetIndex = projectIDs.firstIndex(of: project.id) ?? 0
+                let beforeProjectID: String?
+                if location.y < 12 {
+                    beforeProjectID = project.id
+                } else if projectIDs.indices.contains(targetIndex + 1) {
+                    beforeProjectID = projectIDs[targetIndex + 1]
+                } else {
+                    beforeProjectID = nil
+                }
+                moveProject(payload.projectID, beforeProjectID)
+                return true
+            } isTargeted: {
+                dropTargeted = $0
+            }
+            .animation(.easeOut(duration: 0.12), value: dropTargeted)
 
             if !collapsed {
                 if chats.isEmpty {
@@ -522,6 +592,7 @@ struct ChatRow: View {
     @State private var renameText = ""
 
     private var unread: Bool { store.isChatUnread(card) }
+    private var running: Bool { ChatRuntimePresentation.isActive(card.runtime) }
 
     init(card: Dieter_V1_Card, showsPinnedDragHandle: Bool = false) {
         self.card = card
@@ -537,8 +608,8 @@ struct ChatRow: View {
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 Group {
-                    if ["running", "starting"].contains(card.runtime) {
-                        DieterActivityIndicator(color: runtimeColor(card.runtime))
+                    if running {
+                        ChatRunningIndicator(color: runtimeColor(card.runtime))
                             .accessibilityLabel("Running")
                     } else {
                         ZStack {
@@ -548,6 +619,7 @@ struct ChatRow: View {
                         }
                     }
                 }
+                .frame(width: 15, height: 15)
                 .padding(.top, 3)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
@@ -585,8 +657,10 @@ struct ChatRow: View {
                         .foregroundStyle(unread ? DieterTheme.primary : DieterTheme.tertiary)
                     }
                     HStack(spacing: 6) {
-                        if ["running", "starting"].contains(card.runtime) {
-                            Text("Running").foregroundStyle(DieterTheme.primary)
+                        if running {
+                            Text("Running")
+                                .fontWeight(.semibold)
+                                .foregroundStyle(DieterTheme.primary)
                         } else if !card.summary.isEmpty {
                             Text(card.summary).lineLimit(1)
                         }
@@ -675,6 +749,131 @@ struct ChatRow: View {
         guard !title.isEmpty else { return }
         Task { await store.rename(card, title: title) }
         renamePresented = false
+    }
+}
+
+enum ChatRuntimePresentation {
+    private static let activeRuntimes = Set(["running", "starting", "working", "streaming"])
+
+    static func isActive(_ runtime: String) -> Bool {
+        activeRuntimes.contains(runtime.lowercased())
+    }
+}
+
+/// The All Chats list can show several active conversations at once. Keep its
+/// motion on Core Animation's compositor instead of installing one SwiftUI
+/// animation driver per row.
+struct ChatRunningIndicator: NSViewRepresentable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let color: Color
+
+    func makeNSView(context: Context) -> ChatRunningIndicatorView {
+        ChatRunningIndicatorView(frame: .zero)
+    }
+
+    func updateNSView(_ view: ChatRunningIndicatorView, context: Context) {
+        view.configure(color: NSColor(color), animates: !reduceMotion)
+    }
+
+    static func dismantleNSView(_ view: ChatRunningIndicatorView, coordinator: Void) {
+        view.stopAnimating()
+    }
+}
+
+final class ChatRunningIndicatorView: NSView {
+    private enum AnimationKey {
+        static let pulse = "dieter.chat-running.pulse"
+        static let orbit = "dieter.chat-running.orbit"
+    }
+
+    private let pulseLayer = CAShapeLayer()
+    private let orbitLayer = CAShapeLayer()
+    private let coreLayer = CAShapeLayer()
+    private var animates = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        [pulseLayer, orbitLayer, coreLayer].forEach { layer?.addSublayer($0) }
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 15, height: 15) }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let layerBounds = CGRect(origin: .zero, size: bounds.size)
+        let center = CGPoint(x: layerBounds.midX, y: layerBounds.midY)
+        let coreRect = CGRect(x: center.x - 2.5, y: center.y - 2.5, width: 5, height: 5)
+        pulseLayer.frame = layerBounds
+        pulseLayer.path = CGPath(ellipseIn: coreRect, transform: nil)
+        orbitLayer.frame = layerBounds
+        orbitLayer.path = CGPath(ellipseIn: layerBounds.insetBy(dx: 1.5, dy: 1.5), transform: nil)
+        coreLayer.frame = layerBounds
+        coreLayer.path = CGPath(ellipseIn: coreRect, transform: nil)
+        CATransaction.commit()
+    }
+
+    func configure(color: NSColor, animates: Bool) {
+        let resolved = color.usingColorSpace(.deviceRGB) ?? color
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        pulseLayer.fillColor = resolved.withAlphaComponent(animates ? 0.45 : 0.18).cgColor
+        orbitLayer.fillColor = nil
+        orbitLayer.strokeColor = resolved.withAlphaComponent(animates ? 0.82 : 0.38).cgColor
+        orbitLayer.lineWidth = 1.25
+        orbitLayer.lineCap = .round
+        orbitLayer.strokeStart = animates ? 0.08 : 0
+        orbitLayer.strokeEnd = animates ? 0.67 : 1
+        coreLayer.fillColor = resolved.cgColor
+        coreLayer.shadowColor = resolved.cgColor
+        coreLayer.shadowOpacity = animates ? 0.55 : 0
+        coreLayer.shadowRadius = animates ? 3 : 0
+        coreLayer.shadowOffset = .zero
+        CATransaction.commit()
+
+        guard self.animates != animates else { return }
+        if animates {
+            self.animates = true
+            startAnimating()
+        } else {
+            stopAnimating()
+        }
+    }
+
+    func stopAnimating() {
+        animates = false
+        pulseLayer.removeAnimation(forKey: AnimationKey.pulse)
+        orbitLayer.removeAnimation(forKey: AnimationKey.orbit)
+    }
+
+    private func startAnimating() {
+        let scale = CABasicAnimation(keyPath: "transform.scale")
+        scale.fromValue = 0.8
+        scale.toValue = 2.7
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0.72
+        fade.toValue = 0
+        let pulse = CAAnimationGroup()
+        pulse.animations = [scale, fade]
+        pulse.duration = 1.35
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        pulseLayer.add(pulse, forKey: AnimationKey.pulse)
+
+        let orbit = CABasicAnimation(keyPath: "transform.rotation.z")
+        orbit.fromValue = 0
+        orbit.toValue = CGFloat.pi * 2
+        orbit.duration = 1.8
+        orbit.repeatCount = .infinity
+        orbit.timingFunction = CAMediaTimingFunction(name: .linear)
+        orbitLayer.add(orbit, forKey: AnimationKey.orbit)
     }
 }
 

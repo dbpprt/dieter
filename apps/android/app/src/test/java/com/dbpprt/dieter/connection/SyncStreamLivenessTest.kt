@@ -22,9 +22,18 @@ class SyncStreamLivenessTest {
     }
 
     @Test
-    fun foregroundWaitsForANewSyncFrameBeforeReportingConnected() {
-        assertEquals(ConnectionPhase.SYNCING, foregroundConnectionPhase(ConnectionPhase.CONNECTED, becameForeground = true))
-        assertEquals(ConnectionPhase.CONNECTED, foregroundConnectionPhase(ConnectionPhase.CONNECTED, becameForeground = false))
-        assertEquals(ConnectionPhase.RECONNECTING, foregroundConnectionPhase(ConnectionPhase.RECONNECTING, becameForeground = true))
+    fun foregroundKeepsAFreshBackgroundStreamConnected() {
+        assertEquals(
+            ConnectionPhase.CONNECTED,
+            foregroundConnectionPhase(ConnectionPhase.CONNECTED, becameForeground = true, syncStreamStale = false),
+        )
+        assertEquals(
+            ConnectionPhase.SYNCING,
+            foregroundConnectionPhase(ConnectionPhase.CONNECTED, becameForeground = true, syncStreamStale = true),
+        )
+        assertEquals(
+            ConnectionPhase.RECONNECTING,
+            foregroundConnectionPhase(ConnectionPhase.RECONNECTING, becameForeground = true, syncStreamStale = true),
+        )
     }
 }

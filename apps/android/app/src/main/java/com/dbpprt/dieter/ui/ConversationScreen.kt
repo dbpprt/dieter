@@ -69,6 +69,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -171,6 +175,42 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     // assistant text must not make the agent appear idle while it is still
     // generating more text or running tools.
     val showAgentWorking = shouldShowAgentWorking(activeTurn, awaitingAgent)
+    val liveActivityMessages = remember(
+        conversation,
+        queuedMessages,
+        state.pendingMessageIds,
+        state.failedOutboxIds,
+    ) {
+        val excludedIds = buildSet {
+            addAll(queuedMessages.map(QueuedMessage::getId))
+            addAll(state.pendingMessageIds)
+            addAll(state.failedOutboxIds)
+        }
+        conversation?.messagesList.orEmpty().filterNot { it.id in excludedIds }
+    }
+    val workingLabel = remember(
+        liveActivityMessages,
+        conversation?.pendingToolsList,
+        conversation?.taskPlansList,
+        state.showReasoningTraces,
+        conversation?.status,
+        card?.runtime,
+    ) {
+        ConversationActivityPresentation.liveLabel(
+            messages = liveActivityMessages,
+            pendingTools = conversation?.pendingToolsList.orEmpty(),
+            plans = conversation?.taskPlansList.orEmpty(),
+            showReasoning = state.showReasoningTraces,
+            conversationStatus = conversation?.status.orEmpty(),
+            cardRuntime = card?.runtime.orEmpty(),
+        )
+    }
+    val turnStartedAtMillis = remember(liveActivityMessages, card?.runtimeUpdatedAt) {
+        ConversationActivityPresentation.turnStartMillis(
+            messages = liveActivityMessages,
+            runtimeUpdatedAt = card?.runtimeUpdatedAt.orEmpty(),
+        )
+    }
     fun addPickedAttachments(uris: List<android.net.Uri>, imagesOnly: Boolean) {
         if (uris.isEmpty()) return
         scope.launch {
@@ -204,12 +244,20 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
             .collect { scrolling ->
-                if (scrolling) {
-                    followingLatest = false
-                } else if (initialScrollComplete) {
+                if (!scrolling && initialScrollComplete && !followingLatest) {
                     followingLatest = listState.isAtConversationEnd()
                 }
             }
+    }
+    val userScrollConnection = remember(state.selectedCardId) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f && initialScrollComplete) {
+                    followingLatest = false
+                }
+                return Offset.Zero
+            }
+        }
     }
     fun requestEarlierHistory(viewport: ConversationHistoryViewport) {
         if (!shouldLoadEarlierConversationHistory(
@@ -318,21 +366,17 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         val endIndex = historyItems + unsentTaskItems + messages.size +
             (if (showAgentWorking) 1 else 0) + queuedMessages.size
         val explicitOpenScroll = consumedScrollRequest != state.conversationScrollRequest
-        val isAtLatestAfterUpdate = listState.isAtConversationEnd()
         if ((hasUnsentDraft || messages.isNotEmpty() || showAgentWorking || queuedMessages.isNotEmpty()) &&
             shouldFollowConversationUpdate(
                 explicitOpenScroll = explicitOpenScroll,
                 initialScrollComplete = initialScrollComplete,
                 followingLatest = followingLatest,
-                isAtLatestAfterUpdate = isAtLatestAfterUpdate,
             )
         ) {
             listState.scrollToItem(endIndex)
             consumedScrollRequest = state.conversationScrollRequest
             initialScrollComplete = true
             followingLatest = true
-        } else if (initialScrollComplete && followingLatest && !isAtLatestAfterUpdate) {
-            followingLatest = false
         }
     }
     Column(modifier) {
@@ -352,6 +396,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                     state = listState,
                     modifier = Modifier.fillMaxSize()
                         .alpha(if (initialScrollComplete) 1f else 0f)
+                        .nestedScroll(userScrollConnection)
                         .testTag("conversation-list"),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -396,7 +441,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                     }
                     if (showAgentWorking) {
                         item(key = "agent-working") {
-                            AgentWorkingIndicator(conversation?.pendingToolsList?.lastOrNull()?.toolName.orEmpty())
+                            AgentWorkingIndicator(workingLabel, turnStartedAtMillis)
                         }
                     }
                     if (turnFailure != null) {
@@ -429,7 +474,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                         onClick = {
                             scope.launch {
                                 val endIndex = listState.layoutInfo.totalItemsCount - 1
-                                if (endIndex >= 0) listState.scrollToItem(endIndex)
+                                if (endIndex >= 0) listState.animateScrollToItem(endIndex)
                                 followingLatest = true
                             }
                         },

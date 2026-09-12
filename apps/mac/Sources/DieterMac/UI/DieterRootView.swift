@@ -340,13 +340,11 @@ enum SidebarMachineOrdering {
 
 struct AppSidebar: View {
     @Environment(DieterStore.self) private var store
-    @State private var projectNavigation = SidebarProjectNavigationPreferences.load(
-        from: SidebarProjectNavigationPreferences.applicationDefaults())
 
     private var visibleProjects: [Dieter_V1_Project] {
         let projects = store.projects.filter { !$0.archived }
         let byID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
-        return projectNavigation.orderedIDs(from: projects.map(\.id)).compactMap { byID[$0] }
+        return store.sidebarProjectNavigation.orderedIDs(from: projects.map(\.id)).compactMap { byID[$0] }
     }
 
     private var visibleMachines: [DieterEndpoint] {
@@ -459,7 +457,7 @@ struct AppSidebar: View {
                 SidebarProjectRow(
                     project: project,
                     projectIDs: projectIDs,
-                    expanded: projectNavigation.isExpanded(project.id),
+                    expanded: store.sidebarProjectNavigation.isExpanded(project.id),
                     toggleExpanded: { toggleProject(project.id) },
                     moveProject: moveProject
                 )
@@ -533,15 +531,17 @@ struct AppSidebar: View {
     }
 
     private func toggleProject(_ projectID: String) {
-        projectNavigation.toggleExpanded(projectID)
-        projectNavigation.save(to: SidebarProjectNavigationPreferences.applicationDefaults())
+        var navigation = store.sidebarProjectNavigation
+        navigation.toggleExpanded(projectID)
+        store.sidebarProjectNavigation = navigation
     }
 
     private func moveProject(_ projectID: String, before targetProjectID: String?) {
-        guard projectNavigation.move(projectID, before: targetProjectID, availableIDs: visibleProjects.map(\.id)) else {
+        var navigation = store.sidebarProjectNavigation
+        guard navigation.move(projectID, before: targetProjectID, availableIDs: visibleProjects.map(\.id)) else {
             return
         }
-        projectNavigation.save(to: SidebarProjectNavigationPreferences.applicationDefaults())
+        store.sidebarProjectNavigation = navigation
     }
 
     private func machineDetail(_ machine: DieterEndpoint) -> String {
@@ -772,7 +772,7 @@ private struct SidebarProjectRow: View {
 }
 
 /// Compact host marker shown beside each project name.
-private struct ProjectMachineBadge: View {
+struct ProjectMachineBadge: View {
     let machine: DieterEndpoint
     let online: Bool
 
@@ -1018,7 +1018,7 @@ private struct SidebarProjectInsertionTarget: View {
     }
 }
 
-private struct SidebarProjectDragPreview: View {
+struct SidebarProjectDragPreview: View {
     let project: Dieter_V1_Project
 
     var body: some View {

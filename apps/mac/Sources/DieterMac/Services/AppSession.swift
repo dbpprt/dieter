@@ -71,6 +71,12 @@ final class AppSession {
     var machineOperationInFlight = false
     var archivedProjects: [Dieter_V1_Project] = []
     var archivedCards: [Dieter_V1_Card] = []
+    var sidebarProjectNavigation: SidebarProjectNavigationPreferences {
+        didSet {
+            guard sidebarProjectNavigation != oldValue else { return }
+            sidebarProjectNavigation.save(to: environment.defaults)
+        }
+    }
 
     let conversationModel = ConversationModel()
     @ObservationIgnored lazy var conversationContext = makeConversationContext()
@@ -247,6 +253,7 @@ final class AppSession {
         self.cardStartRPCOverride = cardStartRPCOverride
         let environment = environment ?? (restoreSync ? .live() : .testing(defaults: themeDefaultsOverride))
         self.environment = environment
+        sidebarProjectNavigation = SidebarProjectNavigationPreferences.load(from: environment.defaults)
         connections = ConnectionManager(factory: environment.clients, clock: environment.clock)
         authentication = DieterAuthentication(
             defaults: environment.defaults, credentials: environment.credentials, clock: environment.clock)
