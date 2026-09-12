@@ -57,6 +57,25 @@ struct ConversationView: View {
     }
 
     var body: some View {
+        ConversationContentSplit(presented: context.content.isPresented(for: conversationID)) {
+            conversationBody
+        } content: {
+            ConversationContentPane(model: context.content)
+        }
+        .environment(
+            \.conversationLinkHandler,
+            { url in
+                let id = conversationID
+                guard !id.isEmpty else { return false }
+                context.content.requestOpen(url, conversationID: id)
+                return true
+            }
+        )
+        .onChange(of: conversationID) { _, _ in context.content.suspend() }
+        .onDisappear { context.content.suspend() }
+    }
+
+    private var conversationBody: some View {
         VStack(spacing: 0) {
             ConversationChrome(
                 compact: compact, standalone: standalone, tab: $tab,

@@ -151,6 +151,8 @@
             checkpoint(results, after: "message footers", output: output)
             await runViewportChecks(store: store, window: window, results: &results, output: output)
             checkpoint(results, after: "viewport and card composer", output: output)
+            await ConversationContentUISmoke.run(store: store, window: window, results: &results, output: output)
+            checkpoint(results, after: "linked content", output: output)
             await runTurnFailureCheck(store: store, window: window, results: &results, output: output)
             checkpoint(results, after: "turn failure", output: output)
             await runNewChatComposerChecks(store: store, window: window, results: &results, output: output)

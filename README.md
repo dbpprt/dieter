@@ -257,6 +257,21 @@ All domain data lives under `DIETER_HOME` on the daemon host (by default
 preserve provider continuation state so work can resume without replaying the
 user prompt.
 
+### Linked content beside a conversation on macOS
+
+Click a file or web link in a conversation to expand the chat and open a resizable
+content pane on the right. Markdown opens in the native rich editor, code and text
+open in a selectable syntax view (including linked line numbers), images support
+zoom, PDFs use PDFKit, and web URLs open in a browser with Back, Forward, Reload,
+and Open in default browser. Other files offer Save a Copy.
+
+Files are read from the conversation's machine and workspace through the existing
+file API. Markdown saves check the file revision; conflicts preserve your edits.
+Opening another item or closing an edited document offers Save, Discard Changes,
+or Cancel. Switching conversations retains the current unsaved document until
+you return or choose another item. Closing the content pane restores the previous
+board or chat-list layout. Command-click keeps the system's external link action.
+
 ### Markdown files on macOS
 
 Markdown files in **Files** open in **Edit**, using SwiftMarkdownEngine for native

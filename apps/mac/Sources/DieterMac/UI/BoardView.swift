@@ -186,6 +186,10 @@ struct BoardView: View {
     var usesTitlebarSpace = false
     @State private var conversationMaximized = false
 
+    private var contentPresented: Bool {
+        store.conversationContext.content.isPresented(for: store.selectedCardID)
+    }
+
     var body: some View {
         BoardConversationOverlay(
             board: AnyView(
@@ -198,8 +202,16 @@ struct BoardView: View {
             conversation: AnyView(
                 ConversationView(
                     compact: true,
-                    maximized: conversationMaximized,
-                    onToggleMaximize: { conversationMaximized.toggle() },
+                    maximized: conversationMaximized || contentPresented,
+                    onToggleMaximize: {
+                        if contentPresented {
+                            Task {
+                                if await store.conversationContext.content.close() { conversationMaximized = false }
+                            }
+                        } else {
+                            conversationMaximized.toggle()
+                        }
+                    },
                     surfaceStyle: .inherited
                 )
                 .ignoresSafeArea(.container, edges: usesTitlebarSpace ? .top : [])
@@ -209,7 +221,7 @@ struct BoardView: View {
                 .dieterThemeRoot(
                     palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
             presented: store.selectedCardID != nil,
-            maximized: conversationMaximized,
+            maximized: conversationMaximized || contentPresented,
             onRequestMaximize: { conversationMaximized = true }
         )
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)

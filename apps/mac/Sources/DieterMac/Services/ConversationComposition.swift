@@ -1,4 +1,6 @@
 import DieterAPI
+import DieterCore
+import Foundation
 
 extension DieterStore {
     func makeConversationContext() -> ConversationContext {
@@ -42,6 +44,41 @@ extension DieterStore {
         context.onToolOutput = { [weak self] messageID, toolCallID, revision in
             try await self?.toolOutput(messageID: messageID, toolCallID: toolCallID, revision: revision) ?? nil
         }
+        context.content.prepareScope = { [weak self] id in
+            guard let self, (self.selectedCardID ?? self.selectedChatID) == id,
+                let card = self.selectedCard ?? self.selectedDetail?.card,
+                card.id == id, let rpc = self.rpc,
+                (self.projectEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id
+            else { throw ConversationContentUnavailable() }
+            let target = WorkspaceTarget(
+                endpointID: self.endpoint.id, projectID: card.projectID, conversationID: id)
+            // Ask the owning daemon for the actual root, including managed worktrees.
+            // No paths are resolved against the Mac client's checkout.
+            let workspace = try await rpc.workspace(cardID: id)
+            guard self.rpc === rpc, self.endpoint.id == target.endpointID,
+                (self.selectedCardID ?? self.selectedChatID) == id
+            else { throw CancellationError() }
+            return ConversationContentScope(target: target, rootPath: workspace.path, client: rpc)
+        }
+        context.content.onSaveFailure = { [weak self] message in self?.errorMessage = message }
+        context.content.validateWebURL = { [weak self] url, id in
+            guard ConversationBrowserModel.isLoopback(url) else { return }
+            guard let self, (self.selectedCardID ?? self.selectedChatID) == id,
+                let card = self.selectedCard ?? self.selectedDetail?.card,
+                (self.projectEndpointIDs[card.projectID] ?? self.endpoint.id) == self.endpoint.id,
+                self.rpc?.isLoopbackDataPlane == true
+            else { throw ConversationLoopbackUnavailable() }
+        }
         return context
+    }
+}
+
+private struct ConversationContentUnavailable: LocalizedError {
+    var errorDescription: String? { "This conversation’s machine is unavailable. Reconnect and try again." }
+}
+
+private struct ConversationLoopbackUnavailable: LocalizedError {
+    var errorDescription: String? {
+        "This address belongs to the conversation’s machine. Remote localhost forwarding is not available yet. Use a reachable web address."
     }
 }

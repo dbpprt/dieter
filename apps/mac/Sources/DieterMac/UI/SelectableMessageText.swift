@@ -1,17 +1,60 @@
 import AppKit
 import SwiftUI
 
+/// Return true when a conversation presents the destination itself. Returning
+/// false lets AppKit retain its normal link-opening behavior.
+typealias ConversationLinkHandler = @MainActor (URL) -> Bool
+
+private struct ConversationLinkHandlerKey: EnvironmentKey {
+    static let defaultValue: ConversationLinkHandler? = nil
+}
+
+extension EnvironmentValues {
+    var conversationLinkHandler: ConversationLinkHandler? {
+        get { self[ConversationLinkHandlerKey.self] }
+        set { self[ConversationLinkHandlerKey.self] = newValue }
+    }
+}
+
+/// Native link delegation leaves mouse dragging, selection, copy, and context
+/// menus in NSTextView. Command-click keeps the usual external opening path.
+@MainActor final class ConversationTextLinkDelegate: NSObject, NSTextViewDelegate {
+    var handler: ConversationLinkHandler?
+
+    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        activate(link, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
+    }
+
+    func activate(_ link: Any, modifiers: NSEvent.ModifierFlags = []) -> Bool {
+        guard !modifiers.contains(.command), let handler else { return false }
+        let url: URL?
+        if let value = link as? URL {
+            url = value
+        } else if let value = link as? String {
+            url = URL(string: value)
+        } else {
+            url = nil
+        }
+        guard let url else { return false }
+        // In particular, do not resolve relative file links against this Mac's
+        // process directory; the conversation knows its machine and worktree.
+        return handler(url)
+    }
+}
+
 /// One native selection surface for the complete message, including paragraph
 /// breaks. SwiftUI's Text selection on macOS stops at each paragraph.
 struct SelectableMessageText: NSViewRepresentable {
     let source: String
     let color: Color
+    @Environment(\.conversationLinkHandler) private var linkHandler
 
     func makeNSView(context: Context) -> MessageTextView {
         MessageTextView()
     }
 
     func updateNSView(_ view: MessageTextView, context: Context) {
+        view.linkDelegate.handler = linkHandler
         view.update(source: source, color: NSColor(color))
     }
 
@@ -21,6 +64,7 @@ struct SelectableMessageText: NSViewRepresentable {
 }
 
 final class MessageTextView: NSTextView {
+    let linkDelegate = ConversationTextLinkDelegate()
     private var renderedSource: String?
     private var renderedColor: NSColor?
     private let measurementStorage = NSTextStorage()
@@ -34,6 +78,7 @@ final class MessageTextView: NSTextView {
         storage.addLayoutManager(layout)
         layout.addTextContainer(container)
         super.init(frame: .zero, textContainer: container)
+        delegate = linkDelegate
         measurementStorage.addLayoutManager(measurementLayout)
         measurementLayout.addTextContainer(measurementContainer)
         measurementContainer.lineFragmentPadding = 0
