@@ -926,15 +926,19 @@
 
         private static func conversationColumn(containing anchor: NSView) -> (NSSplitView, NSView)? {
             var ancestor = anchor.superview
+            var fallback: (NSSplitView, NSView)?
             while let view = ancestor {
                 if let split = view as? NSSplitView, split.isVertical,
                     let column = split.arrangedSubviews.first(where: { anchor.isDescendant(of: $0) })
                 {
-                    return (split, column)
+                    // The content renderer adds an inner split. Width/maximize
+                    // checks belong to the outer board inspector, not that split.
+                    if split is BoardConversationSplitView { return (split, column) }
+                    if split.arrangedSubviews.count > 1, fallback == nil { fallback = (split, column) }
                 }
                 ancestor = view.superview
             }
-            return nil
+            return fallback
         }
 
         private static func runBoardConversationOverlayChecks(

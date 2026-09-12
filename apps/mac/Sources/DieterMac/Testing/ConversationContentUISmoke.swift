@@ -10,6 +10,9 @@
             store: DieterStore, window: NSWindow, results: inout [String: String], output: URL
         ) async {
             let model = store.conversationContext.content
+            defer {
+                store.conversationModel.olderConversationMessages.removeAll { $0.id == "message_linked_content_smoke" }
+            }
             do {
                 let cardID = try await installFixture(store)
                 let draft = "Keep my linked-content draft"
@@ -25,7 +28,15 @@
                     let board = boardController(in: window.contentView),
                     let scroll = text.enclosingScrollView
                 else {
-                    results["content-fixture"] = "failed: board transcript did not mount"
+                    let text = messageView(in: window)
+                    results["content-fixture"] =
+                        "failed: ready=\(ready), text=\(text != nil), board=\(boardController(in: window.contentView) != nil), scroll=\(text?.enclosingScrollView != nil), selected=\(store.selectedCardID ?? "none"), expected=\(cardID), messages=\(store.conversationMessages.map(\.id)), history=\(store.conversationModel.olderConversationMessages.map(\.id)), active=\(NSApp.isActive), key=\(window.isKeyWindow)"
+                    let native = textViews(in: window.contentView).map {
+                        "\(String(reflecting: type(of: $0))) frame=\($0.frame) text=\($0.string.prefix(160))"
+                    }.joined(separator: "\n")
+                    try? native.write(
+                        to: output.appending(path: "content-fixture-native.txt"), atomically: true, encoding: .utf8)
+                    capture(window, output.appending(path: "07g-content-fixture-failed.png"))
                     return
                 }
                 _ = await NativeUIAccessibility.wait(timeout: 5) { atTail(scroll) }
@@ -143,6 +154,9 @@
                 _ = try await rpc.createFile(create)
             }
             store.closeConversation()
+            // Let the previous conversation's canceled transport and view
+            // lifecycle settle before taking ownership of the renderer fixture.
+            try? await DieterTaskSleep.milliseconds(500)
             var part = Dieter_V1_MessagePart()
             part.type = "text"
             part.text =
@@ -168,6 +182,11 @@
             store.selectedCardID = card.id
             store.selectedDetail = snapshot.detail
             store.conversation = snapshot
+            // The card is real so its workspace/file RPCs use the production
+            // route. Global sync can replace its live messages with the daemon's
+            // empty deferred transcript, so own this synthetic history in the
+            // history projection, which metadata sync intentionally preserves.
+            store.conversationModel.olderConversationMessages = [message]
             store.section = .board
             return card.id
         }
