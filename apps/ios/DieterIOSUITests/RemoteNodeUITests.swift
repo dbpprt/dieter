@@ -56,10 +56,34 @@ final class RemoteNodeUITests: XCTestCase {
         }
         XCTAssertLessThan(
             provider.frame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
+        let previousProvider = provider.value as? String
         tap(app, "ios.create.provider")
-        let mock = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
-        XCTAssertTrue(mock.waitForExistence(timeout: 5), app.debugDescription)
-        mock.tap()
+        var mockSelected = false
+        for attempt in 0..<2 {
+            let mock = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
+            let optionReady = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true AND hittable == true"), object: mock)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [optionReady], timeout: 5), .completed,
+                "The Mock provider option must be hittable.\n\(app.debugDescription)")
+            mock.tap()
+            let menuClosed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"), object: mock)
+            let providerChanged = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == 'Mock'"), object: provider)
+            if XCTWaiter.wait(for: [menuClosed, providerChanged], timeout: 5) == .completed {
+                mockSelected = true
+                break
+            }
+            // CI recorded an unconsumed native menu tap. Retry once only while
+            // that option remains hittable and the provider is still unchanged.
+            let remainingMock = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
+            guard attempt == 0, remainingMock.isHittable,
+                let previousProvider, provider.value as? String == previousProvider
+            else { break }
+        }
+        XCTAssertTrue(
+            mockSelected, "Selecting Mock must close the menu and update the provider.\n\(app.debugDescription)")
         // Native Picker labels vary by OS; the value describes the selection.
         // Verify the dependent model reset as well before submitting anything.
         for identifier in ["ios.create.provider", "ios.create.model"] {
