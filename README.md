@@ -720,3 +720,7 @@ The default replaces the full list; `--append` adds atomically and deduplicates.
 CLI inputs use the host or host-and-port format above. Board settings also accepts
 HTTP(S) URLs and stores their hostname plus an explicit port when present. The
 same normalization, matching rules, and 64-entry limit apply.
+
+## iPhone and iPad client
+
+The native iOS 18+ SwiftUI client connects to enrolled remote nodes through the authenticated gateway and verified direct TLS routes. Open `apps/ios/DieterIOS.xcodeproj`, or use `just ios build` and `just ios smoke`. See [iOS setup and remote workflows](apps/ios/README.md).

@@ -1,0 +1,414 @@
+// !$*UTF8*$!
+{
+	"classes" = {
+	};
+	"objectVersion" = "56";
+	"archiveVersion" = "1";
+	"objects" = {
+		"98F54143AB4E86B28C3AFEE0" = {
+			"buildConfigurationList" = "862894B703A6DEDF96A9DD6C";
+			"packageReferences" = ( "582681C2EAE02B3F3D399C0C" );
+			"targets" = ( "4F6027D858B72CC70E5CC8E9", "0A06C5E2DA34E686D888A695", "93033FD69B68457832F31912" );
+			"developmentRegion" = "en";
+			"knownRegions" = ( "en", "Base" );
+			"isa" = "PBXProject";
+			"compatibilityVersion" = "Xcode 14.0";
+			"productRefGroup" = "C13F1B9EC53C6678FD8360CC";
+			"projectDirPath" = "";
+			"attributes" = {
+				"LastUpgradeCheck" = "2660";
+				"BuildIndependentTargetsInParallel" = "YES";
+				"TargetAttributes" = {
+					"4F6027D858B72CC70E5CC8E9" = {
+						"CreatedOnToolsVersion" = "26.6";
+					};
+					"0A06C5E2DA34E686D888A695" = {
+						"TestTargetID" = "4F6027D858B72CC70E5CC8E9";
+						"CreatedOnToolsVersion" = "26.6";
+					};
+					"93033FD69B68457832F31912" = {
+						"TestTargetID" = "4F6027D858B72CC70E5CC8E9";
+						"CreatedOnToolsVersion" = "26.6";
+					};
+				};
+			};
+			"hasScannedForEncodings" = "0";
+			"projectRoot" = "";
+			"mainGroup" = "E50290A24C49A459B43487C5";
+		};
+		"F96CD8F09C0E896AF7B85995" = {
+			"path" = "DieterIOSNativeTests.xctest";
+			"isa" = "PBXFileReference";
+			"includeInIndex" = "0";
+			"explicitFileType" = "wrapper.cfbundle";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"8BCD5BC4CDFDF0918087C782" = {
+			"path" = "Dieter.app";
+			"isa" = "PBXFileReference";
+			"includeInIndex" = "0";
+			"explicitFileType" = "wrapper.application";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"FAF4F9EAC0737503B9F081F8" = {
+			"path" = "DieterIOSNativeTests";
+			"isa" = "PBXGroup";
+			"children" = ( "6BFE1E49C13D11CEF84086EE", "7D83A439AB6ED86EE285B1CD" );
+			"sourceTree" = "<group>";
+		};
+		"BFC937463906E5DB7A02A37C" = {
+			"path" = "DieterIOSUITests";
+			"isa" = "PBXGroup";
+			"children" = ( "E05FCB614AB36FDEE72EE1F2" );
+			"sourceTree" = "<group>";
+		};
+		"D799BAE6088A90139B415FCC" = {
+			"isa" = "PBXContainerItemProxy";
+			"containerPortal" = "98F54143AB4E86B28C3AFEE0";
+			"remoteGlobalIDString" = "4F6027D858B72CC70E5CC8E9";
+			"remoteInfo" = "DieterIOSApp";
+			"proxyType" = "1";
+		};
+		"ED5515BE9EC5C2E8DC76B514" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "00299A408DC3498A3CD7BAE6";
+		};
+		"5A8C91857F674E16E2724F47" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited)";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
+				"INFOPLIST_FILE" = "DieterIOSApp/Info.plist";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "DieterAppIcon";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"PRODUCT_NAME" = "Dieter";
+			};
+		};
+		"6E4AB3FEB4830C1A7EBE142D" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "54CA24E3703DABB01636C7E2";
+		};
+		"7561BFB015D8F536760CB671" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ( "ED5515BE9EC5C2E8DC76B514" );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"E05FCB614AB36FDEE72EE1F2" = {
+			"path" = "RemoteNodeUITests.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"00299A408DC3498A3CD7BAE6" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "582681C2EAE02B3F3D399C0C";
+			"productName" = "DieterIOS";
+		};
+		"F37922C48DA5978D02C9E50E" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = ( "E9B2E96ABC5F6856F2BE79CF", "5A8C91857F674E16E2724F47" );
+		};
+		"BE7E1D0445B8638E9F94D853" = {
+			"path" = "DieterIOSApp.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"90C2823F1C181149021D150C" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"OTHER_SWIFT_FLAGS" = "$(inherited) -package-name mac";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited)";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Dieter.app/Dieter";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios.native-tests";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+			};
+		};
+		"E6ADF81620DFA10AD40016AF" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = ( "1A4E01D1F52126606CE2DFB2", "90C2823F1C181149021D150C" );
+		};
+		"E6DE6C99132752C914FEF632" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited)";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "18.0";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SWIFT_VERSION" = "6.0";
+				"SDKROOT" = "iphoneos";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"SWIFT_STRICT_CONCURRENCY" = "complete";
+			};
+		};
+		"FCB48D8F88BCDB0ED9FADFD7" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios.uitests";
+				"TEST_TARGET_NAME" = "DieterIOSApp";
+				"ENABLE_TESTABILITY" = "YES";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+			};
+		};
+		"CAF2C4DA9C57BC302D08A013" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "6BFE1E49C13D11CEF84086EE";
+		};
+		"862894B703A6DEDF96A9DD6C" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = ( "89E1FD6268CC0F221A2BE178", "E6DE6C99132752C914FEF632" );
+		};
+		"07B07F921A72F1202A34C9C4" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "7D83A439AB6ED86EE285B1CD";
+		};
+		"3685E330EC5277A9DD5661C6" = {
+			"path" = "Assets.xcassets";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "folder.assetcatalog";
+			"sourceTree" = "<group>";
+		};
+		"DE58E2B17C19600779694943" = {
+			"isa" = "PBXTargetDependency";
+			"target" = "4F6027D858B72CC70E5CC8E9";
+			"targetProxy" = "D799BAE6088A90139B415FCC";
+		};
+		"0189424A5A60FED329FA868E" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ( "04200CFFD12D083534B07BB1" );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"7D83A439AB6ED86EE285B1CD" = {
+			"path" = "../mac/Tests/DieterClientTests/CrossPlatformClientTests.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "SOURCE_ROOT";
+		};
+		"501ECD4A6B537A966B6A8D67" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BE7E1D0445B8638E9F94D853";
+		};
+		"AB32206A10FFFF5A0A8F6481" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ( "6E4AB3FEB4830C1A7EBE142D" );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"E50290A24C49A459B43487C5" = {
+			"isa" = "PBXGroup";
+			"sourceTree" = "<group>";
+			"children" = ( "69F8D45498D7E20DA99BB780", "BFC937463906E5DB7A02A37C", "C13F1B9EC53C6678FD8360CC", "FAF4F9EAC0737503B9F081F8" );
+		};
+		"971ED9D05B25DB6C4D7680D4" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ( "501ECD4A6B537A966B6A8D67" );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"1ABF84E55BD30AC2CEF8FC42" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = (  );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"93033FD69B68457832F31912" = {
+			"buildConfigurationList" = "E6ADF81620DFA10AD40016AF";
+			"productReference" = "F96CD8F09C0E896AF7B85995";
+			"productType" = "com.apple.product-type.bundle.unit-test";
+			"packageProductDependencies" = ( "54CA24E3703DABB01636C7E2" );
+			"productName" = "DieterIOSNativeTests";
+			"isa" = "PBXNativeTarget";
+			"buildPhases" = ( "1D0DD999A910E16ECDFD41D5", "AB32206A10FFFF5A0A8F6481" );
+			"dependencies" = ( "DE58E2B17C19600779694943" );
+			"name" = "DieterIOSNativeTests";
+			"buildRules" = (  );
+		};
+		"0A06C5E2DA34E686D888A695" = {
+			"productType" = "com.apple.product-type.bundle.ui-testing";
+			"productReference" = "F219C0274590DA45E4BEF1EA";
+			"buildConfigurationList" = "BECB265224D91761C05FDA33";
+			"productName" = "DieterIOSUITests";
+			"isa" = "PBXNativeTarget";
+			"buildPhases" = ( "6E431EB0650617AA1756B320", "1ABF84E55BD30AC2CEF8FC42" );
+			"dependencies" = ( "DE58E2B17C19600779694943" );
+			"name" = "DieterIOSUITests";
+			"buildRules" = (  );
+		};
+		"942EEBBACD6C88CAE7F29B29" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited)";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios.uitests";
+				"TEST_TARGET_NAME" = "DieterIOSApp";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+			};
+		};
+		"1A4E01D1F52126606CE2DFB2" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"GENERATE_INFOPLIST_FILE" = "YES";
+				"OTHER_SWIFT_FLAGS" = "$(inherited) -package-name mac";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
+				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Dieter.app/Dieter";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios.native-tests";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"ENABLE_TESTABILITY" = "YES";
+				"BUNDLE_LOADER" = "$(TEST_HOST)";
+				"PRODUCT_NAME" = "$(TARGET_NAME)";
+			};
+		};
+		"80FAC02A0BD5812E2A00F339" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E05FCB614AB36FDEE72EE1F2";
+		};
+		"F219C0274590DA45E4BEF1EA" = {
+			"path" = "DieterIOSUITests.xctest";
+			"isa" = "PBXFileReference";
+			"includeInIndex" = "0";
+			"explicitFileType" = "wrapper.cfbundle";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"04200CFFD12D083534B07BB1" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "3685E330EC5277A9DD5661C6";
+		};
+		"54CA24E3703DABB01636C7E2" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "582681C2EAE02B3F3D399C0C";
+			"productName" = "DieterIOS";
+		};
+		"6BFE1E49C13D11CEF84086EE" = {
+			"path" = "IOSCredentialNativeTests.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"4F6027D858B72CC70E5CC8E9" = {
+			"productType" = "com.apple.product-type.application";
+			"productReference" = "8BCD5BC4CDFDF0918087C782";
+			"buildConfigurationList" = "F37922C48DA5978D02C9E50E";
+			"packageProductDependencies" = ( "00299A408DC3498A3CD7BAE6" );
+			"productName" = "Dieter";
+			"isa" = "PBXNativeTarget";
+			"buildPhases" = ( "971ED9D05B25DB6C4D7680D4", "7561BFB015D8F536760CB671", "0189424A5A60FED329FA868E", "ED4532435BE271CD30EB3CD9" );
+			"dependencies" = (  );
+			"name" = "DieterIOSApp";
+			"buildRules" = (  );
+		};
+		"69F8D45498D7E20DA99BB780" = {
+			"path" = "DieterIOSApp";
+			"isa" = "PBXGroup";
+			"children" = ( "BE7E1D0445B8638E9F94D853", "3685E330EC5277A9DD5661C6" );
+			"sourceTree" = "<group>";
+		};
+		"1D0DD999A910E16ECDFD41D5" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ( "CAF2C4DA9C57BC302D08A013", "07B07F921A72F1202A34C9C4" );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"582681C2EAE02B3F3D399C0C" = {
+			"isa" = "XCLocalSwiftPackageReference";
+			"relativePath" = "../mac";
+		};
+		"BECB265224D91761C05FDA33" = {
+			"isa" = "XCConfigurationList";
+			"defaultConfigurationIsVisible" = "0";
+			"defaultConfigurationName" = "Release";
+			"buildConfigurations" = ( "FCB48D8F88BCDB0ED9FADFD7", "942EEBBACD6C88CAE7F29B29" );
+		};
+		"89E1FD6268CC0F221A2BE178" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
+				"CLANG_ENABLE_MODULES" = "YES";
+				"IPHONEOS_DEPLOYMENT_TARGET" = "18.0";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"CODE_SIGN_STYLE" = "Automatic";
+				"SWIFT_VERSION" = "6.0";
+				"SDKROOT" = "iphoneos";
+				"TARGETED_DEVICE_FAMILY" = "1,2";
+				"ENABLE_TESTABILITY" = "YES";
+				"SWIFT_STRICT_CONCURRENCY" = "complete";
+			};
+		};
+		"E9B2E96ABC5F6856F2BE79CF" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
+				"SUPPORTED_PLATFORMS" = "iphoneos iphonesimulator";
+				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
+				"INFOPLIST_FILE" = "DieterIOSApp/Info.plist";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios";
+				"ASSETCATALOG_COMPILER_APPICON_NAME" = "DieterAppIcon";
+				"SUPPORTS_MACCATALYST" = "NO";
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"PRODUCT_NAME" = "Dieter";
+				"ENABLE_TESTABILITY" = "YES";
+			};
+		};
+		"6E431EB0650617AA1756B320" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"files" = ( "80FAC02A0BD5812E2A00F339" );
+			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"C13F1B9EC53C6678FD8360CC" = {
+			"isa" = "PBXGroup";
+			"name" = "Products";
+			"children" = ( "8BCD5BC4CDFDF0918087C782", "F219C0274590DA45E4BEF1EA", "F96CD8F09C0E896AF7B85995" );
+			"sourceTree" = "<group>";
+		};
+		"9526E0C3944E13E825B10723" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "00299A408DC3498A3CD7BAE6";
+			"settings" = {
+				"ATTRIBUTES" = ( "CodeSignOnCopy", "RemoveHeadersOnCopy" );
+			};
+		};
+		"ED4532435BE271CD30EB3CD9" = {
+			"isa" = "PBXCopyFilesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"dstPath" = "";
+			"dstSubfolderSpec" = 10;
+			"files" = ( "9526E0C3944E13E825B10723" );
+			"name" = "Embed Frameworks";
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+	};
+	"rootObject" = "98F54143AB4E86B28C3AFEE0";
+}

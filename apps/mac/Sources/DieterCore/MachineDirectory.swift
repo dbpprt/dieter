@@ -117,10 +117,19 @@ package struct MachineConnectionStatus: Equatable, Sendable {
 package enum DirectCandidateScope: Equatable {
     case all
     case loopbackOnly
+    case nonLoopback
 
     package func ordered(_ candidates: [Dieter_Gateway_V1_DirectCandidate]) -> [Dieter_Gateway_V1_DirectCandidate] {
         candidates
-            .filter { self == .all || $0.network.caseInsensitiveCompare("loopback") == .orderedSame }
+            .filter { candidate in
+                switch self {
+                case .all: true
+                case .loopbackOnly: candidate.network.caseInsensitiveCompare("loopback") == .orderedSame
+                case .nonLoopback:
+                    candidate.network.caseInsensitiveCompare("loopback") != .orderedSame
+                        && !DieterEndpoint.isLoopbackHost(candidate.host)
+                }
+            }
             .sorted { $0.priority > $1.priority }
     }
 }

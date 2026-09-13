@@ -2,6 +2,7 @@ set default-list
 set shell := ["bash", "-euo", "pipefail", "-c"]
 
 mod mac 'just/mac.just'
+mod ios 'just/ios.just'
 mod android 'just/android.just'
 mod daemon 'just/daemon.just'
 mod gateway 'just/gateway.just'
@@ -69,6 +70,7 @@ check-changed *args:
 justfile-check:
     just --fmt --check
     just --justfile just/mac.just --fmt --check
+    just --justfile just/ios.just --fmt --check
     just --justfile just/android.just --fmt --check
     just --justfile just/daemon.just --fmt --check
     just --justfile just/gateway.just --fmt --check

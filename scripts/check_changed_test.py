@@ -28,6 +28,16 @@ class CheckChangedTests(unittest.TestCase):
             self.assertEqual(plan[0], ["just", "mac", "markdown-check"])
             self.assertIn(["just", "mac", "test"], plan)
 
+    def test_ios_changes_run_phone_and_tablet_without_mac_ui(self):
+        for path in ["apps/ios/DieterIOSApp/DieterIOSApp.swift", "apps/mac/Sources/DieterIOS/UI/Root.swift"]:
+            self.assertEqual(self.plan(path), [["just", "ios", "build"], ["just", "ios", "smoke"], ["just", "ios", "smoke-ipad"]])
+
+    def test_shared_swift_client_also_validates_ios(self):
+        plan = self.plan("apps/mac/Sources/DieterClient/DieterRPC.swift")
+        self.assertIn(["just", "mac", "test"], plan)
+        self.assertIn(["just", "ios", "smoke"], plan)
+        self.assertIn(["just", "ios", "smoke-ipad"], plan)
+
     def test_mac_change_runs_only_mac_unit_and_integration_tests(self):
         self.assertEqual(self.plan("apps/mac/Sources/DieterMac/Features/Conversation/ConversationView.swift"),
                          [["just", "mac", "test"],
@@ -161,7 +171,7 @@ class CheckChangedTests(unittest.TestCase):
             root = Path(directory)
 
             def git(*args):
-                return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.DEVNULL)
+                return subprocess.check_output(["git", "-c", "commit.gpgsign=false", *args], cwd=root, stderr=subprocess.DEVNULL)
 
             git("init")
             git("config", "user.email", "test@example.invalid")
@@ -189,7 +199,7 @@ class CheckChangedTests(unittest.TestCase):
             root = Path(directory)
 
             def git(*args):
-                return subprocess.check_output(["git", *args], cwd=root, stderr=subprocess.DEVNULL)
+                return subprocess.check_output(["git", "-c", "commit.gpgsign=false", *args], cwd=root, stderr=subprocess.DEVNULL)
 
             git("init")
             git("config", "user.email", "test@example.invalid")

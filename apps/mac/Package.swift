@@ -4,12 +4,17 @@ import PackageDescription
 
 let package = Package(
     name: "DieterMac",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v26), .iOS(.v18)],
     products: [
+        // The application and its hosted native tests share this one framework.
+        // Explicit linkage keeps Xcode from separately promoting transitive
+        // automatic products (including Crypto/X509) into incomplete frameworks.
+        .library(name: "DieterIOS", type: .dynamic, targets: ["DieterIOS"]),
         .executable(name: "DieterMac", targets: ["DieterMac"]),
         .executable(name: "DieterMacSmokeDriver", targets: ["DieterMacSmokeDriver"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.14.0"),
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
         // Vendored from 2.9.0 with duration-based Task.sleep calls replaced by
         // nanosecond sleeps to avoid Swift #81771 on current macOS runtimes.
@@ -21,6 +26,23 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "DieterIOS",
+            dependencies: [
+                "DieterCore", "DieterClient", "DieterAPI",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+            ]
+        ),
+        .testTarget(
+            name: "DieterIOSTests",
+            dependencies: ["DieterIOS", "DieterCore", "DieterAPI", .product(name: "GRPCCore", package: "grpc-swift-2")]),
+        .testTarget(
+            name: "DieterClientTests",
+            dependencies: [
+                "DieterClient", "DieterCore", "DieterAPI",
+                .product(name: "X509", package: "swift-certificates"),
+            ]
+        ),
+        .target(
             name: "DieterCore",
             dependencies: [
                 "DieterAPI", .product(name: "GRPCCore", package: "grpc-swift-2"),
@@ -29,6 +51,7 @@ let package = Package(
             name: "DieterClient",
             dependencies: [
                 "DieterCore", "DieterAPI",
+                .product(name: "X509", package: "swift-certificates"),
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
