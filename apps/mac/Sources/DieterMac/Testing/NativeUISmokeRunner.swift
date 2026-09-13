@@ -1153,7 +1153,18 @@
             store.endpoints.removeAll { $0.id == duplicateMachine.id }
             store.newChatProjectID = project.id
             store.selectedProjectID = project.id
-            if resumeMachineDirectoryRefresh { store.startMachineDirectoryRefresh() }
+            if resumeMachineDirectoryRefresh {
+                // Screenshot rendering can outlast a presence lease on CI.
+                // Restore authoritative presence after pausing its poll; do
+                // not start live operations with the renderer fixture's stale
+                // directory while waiting another 15 seconds for the poll.
+                await store.refreshDaemonPresence()
+                store.startMachineDirectoryRefresh()
+                results["13h-machine-presence-restored"] =
+                    store.machine(forProjectID: project.id)?.online == true
+                    ? "passed"
+                    : "failed: live fixture machine presence was not restored"
+            }
             try? await DieterTaskSleep.milliseconds(350)
 
             store.createProjectPresented = true

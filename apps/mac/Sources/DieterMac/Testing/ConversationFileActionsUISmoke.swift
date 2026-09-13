@@ -36,19 +36,28 @@
                     trace.record("configured destination", panel: panel, owner: owner)
                 }
                 defer { configureSavePanel = nil }
+                let identifier = "conversation.content.file.\(tab.id.uuidString).export-menu"
+                let ready = await NativeUIAccessibility.waitForInteractiveTarget(
+                    identifier, in: window, requiresEnabled: true)
+                trace.record(
+                    "menu ready: \(ready); " + NativeUIAccessibility.targetDiagnostics(identifier, in: window))
                 let tracker = NativeContentMenuTracker()
                 defer { tracker.stop() }
-                let clicked = NativeUIAccessibility.click(
-                    "conversation.content.file.\(tab.id.uuidString).export-menu", in: window)
+                let clicked = ready && NativeUIAccessibility.click(identifier, in: window)
                 trace.record("clicked menu: \(clicked)")
                 let opened = await NativeUIAccessibility.wait(timeout: 5) {
-                    tracker.menu?.items.contains(where: { $0.title == "\(format.title)…" }) == true
+                    tracker.menu?.items.contains(where: { $0.title == "\(format.title)…" && $0.isEnabled }) == true
                 }
                 guard clicked, opened, let menu = tracker.menu,
-                    let index = menu.items.firstIndex(where: { $0.title == "\(format.title)…" })
+                    let index = menu.items.firstIndex(where: { $0.title == "\(format.title)…" && $0.isEnabled })
                 else {
+                    let items = tracker.menu?.items.map { "\($0.title) enabled=\($0.isEnabled)" } ?? []
+                    trace.record(
+                        "menu unavailable: items=\(items); "
+                            + NativeUIAccessibility.targetDiagnostics(identifier, in: window))
                     tracker.menu?.cancelTrackingWithoutAnimation()
-                    results["content-export-\(format.rawValue)"] = "failed: native Export menu item unavailable"
+                    results["content-export-\(format.rawValue)"] =
+                        "failed: native Export menu item unavailable (ready=\(ready), clicked=\(clicked), items=\(items))"
                     continue
                 }
                 // Invoke the actual native menu item's action, as accessibility
@@ -100,7 +109,15 @@
                     results["content-export-\(format.rawValue)"] =
                         "skipped: native Save sheet and destination verified; export acceptance requires the external UI driver in a capture run"
                     panel.cancel(nil)
-                    _ = await NativeUIAccessibility.wait(timeout: 5) { !panel.isVisible && window.attachedSheet == nil }
+                    let cancelled = await NativeUIAccessibility.wait(timeout: 5) {
+                        !panel.isVisible && window.attachedSheet == nil
+                    }
+                    trace.record("cancel cleanup: \(cancelled)", panel: panel, owner: window)
+                    guard cancelled else {
+                        results["content-export-\(format.rawValue)"] =
+                            "failed: native Save panel cancellation did not finish"
+                        break
+                    }
                     continue
                 }
                 var written = false

@@ -31,6 +31,10 @@ smoke-built device="iPhone 17 Pro": smoke-runner-test
 smoke-runner-test:
     python3 -m unittest discover -s apps/ios/Scripts -p '*_test.py'
 
+# Keep the stable iOS CI gate green only when every device matrix job passed.
+ci-smoke-result:
+    test "${IOS_DEVICE_RESULT:-missing}" = success
+
 # Validate the dedicated iOS signing inputs without importing or uploading them.
 signing-config:
     python3 scripts/ios_release.py signing-config

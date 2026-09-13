@@ -8,6 +8,13 @@
         static func run(store: DieterStore, controller: DieterIslandController) async {
             let output = outputDirectory()
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            // This fixture bypasses connect(), which normally waits for disk
+            // restoration before publishing state. Do not let restoration
+            // replace the synthetic cards after the first layout begins.
+            if let syncRestoreTask = store.syncRestoreTask {
+                await syncRestoreTask.value
+                store.syncRestoreTask = nil
+            }
             installFixture(in: store)
 
             let defaults = DieterAppearance.applicationDefaults()
@@ -21,9 +28,11 @@
             controller.setExpanded(true, animated: false)
             let expandedSettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let expandedSize = controller.islandWindow?.frame.size ?? .zero
+            let expandedCount = store.islandActivity.items.count
+            let expectedExpandedSize = DieterIslandLayout.expandedSize(itemCount: 3)
             let expanded =
-                expandedSettled && controller.isExpanded
-                && expandedSize == DieterIslandLayout.expandedSize(itemCount: store.islandActivity.items.count)
+                expandedSettled && controller.isExpanded && expandedCount == 3
+                && expandedSize == expectedExpandedSize
             let expandedInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
                 capture(window, to: output.appending(path: "island-expanded.png"))
@@ -32,9 +41,11 @@
             store.state.cards = Array(store.state.cards.prefix(1))
             let singleItemSettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let singleItemSize = controller.islandWindow?.frame.size ?? .zero
+            let singleItemCount = store.islandActivity.items.count
+            let expectedSingleItemSize = DieterIslandLayout.expandedSize(itemCount: 1)
             let singleItemExpanded =
-                singleItemSettled && controller.isExpanded
-                && singleItemSize == DieterIslandLayout.expandedSize(itemCount: 1)
+                singleItemSettled && controller.isExpanded && singleItemCount == 1
+                && singleItemSize == expectedSingleItemSize
             let singleItemInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
                 capture(window, to: output.appending(path: "island-expanded-single.png"))
@@ -43,8 +54,10 @@
             store.state.cards = []
             let emptySettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let emptySize = controller.islandWindow?.frame.size ?? .zero
+            let emptyCount = store.islandActivity.items.count
+            let expectedEmptySize = DieterIslandLayout.expandedSize(itemCount: 0)
             let emptyExpanded =
-                emptySettled && controller.isExpanded && emptySize == DieterIslandLayout.expandedSize(itemCount: 0)
+                emptySettled && controller.isExpanded && emptyCount == 0 && emptySize == expectedEmptySize
             let emptyInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
                 capture(window, to: output.appending(path: "island-expanded-empty.png"))
@@ -156,13 +169,16 @@
                         ? "passed" : "failed: capture file retained",
                     "collapsed-window": appeared ? "passed" : "failed: island window did not appear",
                     "expanded-window": expanded
-                        ? "passed" : "failed: island did not expand to its activity panel",
+                        ? "passed"
+                        : "failed: activity panel settled=\(expandedSettled), items=\(expandedCount)/3, size=\(expandedSize)/\(expectedExpandedSize)",
                     "expanded-section-insets": expandedInsets,
                     "single-activity-layout": singleItemExpanded
-                        ? "passed" : "failed: single activity did not fit its compact content height",
+                        ? "passed"
+                        : "failed: single activity settled=\(singleItemSettled), items=\(singleItemCount)/1, size=\(singleItemSize)/\(expectedSingleItemSize)",
                     "single-activity-section-insets": singleItemInsets,
                     "empty-activity-layout": emptyExpanded
-                        ? "passed" : "failed: empty activity did not fit its compact content height",
+                        ? "passed"
+                        : "failed: empty activity settled=\(emptySettled), items=\(emptyCount)/0, size=\(emptySize)/\(expectedEmptySize)",
                     "empty-activity-section-insets": emptyInsets,
                     "settings-toggle-off": hidden
                         ? "passed" : "failed: disabling the preference left the island visible",

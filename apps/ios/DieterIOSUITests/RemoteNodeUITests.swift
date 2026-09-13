@@ -56,8 +56,22 @@ final class RemoteNodeUITests: XCTestCase {
         }
         XCTAssertLessThan(
             provider.frame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
+        let providerReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"), object: provider)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [providerReady], timeout: 5), .completed,
+            "The provider picker must be hittable before opening its menu.\n\(app.debugDescription)")
         let previousProvider = provider.value as? String
-        tap(app, "ios.create.provider")
+        provider.tap()
+        let openingOption = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
+        if !openingOption.waitForExistence(timeout: 5), !openingOption.exists,
+            provider.isHittable, let previousProvider,
+            provider.value as? String == previousProvider
+        {
+            // A native picker can leave an opening tap unconsumed after relaunch.
+            // Retry once only while no option appeared and the selection is unchanged.
+            provider.tap()
+        }
         var mockSelected = false
         for attempt in 0..<2 {
             let mock = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch

@@ -10,18 +10,104 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[3]
 BUILD = ROOT / 'apps/ios/.build'
+CONSOLE_RAW_LIMIT = 4 * 1024 * 1024
+CONSOLE_TEXT_LIMIT = 64 * 1024
+CONSOLE_LINE_LIMIT = 400
+CONSOLE_EXPORT_TIMEOUT = 15
 
 
 def run(*args, **kwargs):
     return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
+
+
+def console_text(payload, kind):
+    if kind == 'console':
+        return '\n'.join(item['content'] for item in payload.get('items', [])
+                         if isinstance(item, dict) and isinstance(item.get('content'), str)
+                         and item.get('kind') != 'input' and item.get('adaptorType') != 'debugger')
+    # XCTest bundles often have no standalone console log. Retain only test
+    # output from the action log, never command invocations or launch settings.
+    sections = [payload]
+    output = []
+    while sections:
+        section = sections.pop()
+        if not isinstance(section, dict):
+            continue
+        details = section.get('testDetails', {})
+        if isinstance(details, dict) and isinstance(details.get('emittedOutput'), str):
+            output.append(details['emittedOutput'])
+        sections.extend(reversed(section.get('subsections', [])))
+    return '\n'.join(output)
+
+
+def retain_failure_console(result, evidence, token):
+    status = 'unavailable: result bundle missing'
+    retained = ''
+    if result.exists():
+        for kind in ('console', 'action'):
+            try:
+                # Anonymous private storage is closed on every exit. Raw JSON,
+                # stderr, command details and environment never become artifacts.
+                with tempfile.TemporaryFile() as raw:
+                    exported = subprocess.run(
+                        ['xcrun', 'xcresulttool', 'get', 'log', '--type', kind,
+                         '--compact', '--path', str(result)], cwd=ROOT,
+                        stdout=raw, stderr=subprocess.DEVNULL, timeout=CONSOLE_EXPORT_TIMEOUT)
+                    if exported.returncode != 0:
+                        status = f'unavailable: {kind} export exited {exported.returncode}'
+                        continue
+                    if raw.tell() > CONSOLE_RAW_LIMIT:
+                        status = f'unavailable: {kind} export exceeded size limit'
+                        continue
+                    raw.seek(0)
+                    text = console_text(json.load(raw), kind)
+                if not text.strip():
+                    status = f'unavailable: {kind} export contained no test console text'
+                    continue
+                if token:
+                    text = text.replace(token, '<redacted>')
+                text = re.sub(r'isolated_[0-9a-fA-F]{48}', '<redacted>', text)
+                # Redact before truncating so a boundary cannot expose part of a token.
+                status = f'retained: {kind} console tail (up to {CONSOLE_LINE_LIMIT} lines)'
+                header = status + '\n'
+                tail = '\n'.join(text.splitlines()[-CONSOLE_LINE_LIMIT:]).encode('utf-8')
+                retained = tail[-(CONSOLE_TEXT_LIMIT - len(header.encode('utf-8'))):].decode('utf-8', errors='ignore')
+                break
+            except Exception as error:
+                status = f'unavailable: {kind} export {type(error).__name__}'
+    try:
+        destination = evidence / 'failure-console.log'
+        destination.write_text(status + '\n' + retained)
+        os.chmod(destination, 0o600)
+    except OSError:
+        status = 'unavailable: diagnostic file could not be written'
+    return status
+
+
+def run_native_tests(test_run, simulator, evidence, token):
+    try:
+        with (evidence / 'tests.log').open('w') as log:
+            run('xcodebuild', 'test-without-building', '-xctestrun', str(test_run),
+                '-destination', 'platform=iOS Simulator,id=' + simulator,
+                '-parallel-testing-enabled', 'NO', '-resultBundlePath', str(evidence / 'result.xcresult'),
+                stdout=log, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError:
+        try:
+            status = retain_failure_console(evidence / 'result.xcresult', evidence, token)
+        except Exception:
+            status = 'unavailable: diagnostic collection failed'
+        print('Failure console: ' + status)
+        raise
 
 
 def retain_gateway_log(private_log, output_log):
@@ -184,9 +270,7 @@ def main():
         os.chmod(test_run, 0o600)
         try:
             stage('Running native tests')
-            with (evidence / 'tests.log').open('w') as log:
-                run('xcodebuild', 'test-without-building', '-xctestrun', str(test_run), '-destination', 'platform=iOS Simulator,id=' + simulator,
-                    '-parallel-testing-enabled', 'NO', '-resultBundlePath', str(evidence / 'result.xcresult'), stdout=log, stderr=subprocess.STDOUT)
+            run_native_tests(test_run, simulator, evidence, values['DIETER_ISOLATED_TOKEN'])
         finally:
             test_run.unlink(missing_ok=True)
             result = evidence / 'result.xcresult'
