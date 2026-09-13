@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"strings"
+	"time"
 )
 
 const (
@@ -27,18 +28,20 @@ func SignUnenrollment(private ed25519.PrivateKey, gatewayURL, daemonID string, n
 }
 
 func VerifyCertificate(certificatePEM []byte, gatewayURL, daemonID string, challenge, signature []byte) error {
-	return verifyCertificate(certificatePEM, Message(gatewayURL, daemonID, challenge), signature)
+	return verifyCertificate(certificatePEM, Message(gatewayURL, daemonID, challenge), signature, true)
 }
 
 func VerifyUnenrollment(certificatePEM []byte, gatewayURL, daemonID string, nonce, signature []byte) error {
-	return verifyCertificate(certificatePEM, actionMessage(unenrollDomain, gatewayURL, daemonID, nonce), signature)
+	// Expiry prevents a new tunnel, but must not prevent the key's owner from
+	// revoking an old enrollment.
+	return verifyCertificate(certificatePEM, actionMessage(unenrollDomain, gatewayURL, daemonID, nonce), signature, false)
 }
 
 func actionMessage(domain, gatewayURL, daemonID string, nonce []byte) []byte {
 	return []byte(domain + "\n" + strings.TrimRight(gatewayURL, "/") + "\n" + daemonID + "\n" + base64.RawURLEncoding.EncodeToString(nonce))
 }
 
-func verifyCertificate(certificatePEM, message, signature []byte) error {
+func verifyCertificate(certificatePEM, message, signature []byte, requireCurrent bool) error {
 	block, _ := pem.Decode(certificatePEM)
 	if block == nil || block.Type != "CERTIFICATE" {
 		return errors.New("daemon certificate is invalid")
@@ -46,6 +49,10 @@ func verifyCertificate(certificatePEM, message, signature []byte) error {
 	certificate, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		return errors.New("daemon certificate is invalid")
+	}
+	now := time.Now()
+	if requireCurrent && (now.Before(certificate.NotBefore) || !now.Before(certificate.NotAfter)) {
+		return errors.New("daemon certificate is expired or not yet valid")
 	}
 	public, ok := certificate.PublicKey.(ed25519.PublicKey)
 	if !ok || !ed25519.Verify(public, message, signature) {

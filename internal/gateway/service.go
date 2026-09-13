@@ -39,6 +39,8 @@ type Service struct {
 	enrollAttempts map[string][]time.Time
 }
 
+const maxEnrollmentRatePeers = 4096
+
 func NewService(store *Store, auth *Auth, keys *Keys, hub *Hub, config Config) *Service {
 	return &Service{store: store, auth: auth, keys: keys, hub: hub, config: config, enrollAttempts: map[string][]time.Time{}}
 }
@@ -145,6 +147,14 @@ func (s *Service) allowEnrollment(ctx context.Context) bool {
 	cutoff := now.Add(-time.Minute)
 	s.enrollMu.Lock()
 	defer s.enrollMu.Unlock()
+	for peer, attempts := range s.enrollAttempts {
+		if len(attempts) == 0 || !attempts[len(attempts)-1].After(cutoff) {
+			delete(s.enrollAttempts, peer)
+		}
+	}
+	if _, exists := s.enrollAttempts[host]; !exists && len(s.enrollAttempts) >= maxEnrollmentRatePeers {
+		return false
+	}
 	previous := s.enrollAttempts[host]
 	kept := previous[:0]
 	for _, attempt := range previous {

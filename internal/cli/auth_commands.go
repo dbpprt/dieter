@@ -27,6 +27,8 @@ Actions:
   login [--gateway URL] [--no-open]  Sign in with GitHub using PKCE
   status [--gateway URL]             Show the signed-in account and machines
   logout [--gateway URL]             Revoke and remove the CLI session
+
+Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 `
 
 func randomURLToken(size int) (string, error) {
@@ -71,6 +73,7 @@ func (c *CLI) authLogin(args []string) error {
 
 Open GitHub in a browser, receive the PKCE callback on 127.0.0.1, and store
 the resulting Dieter gateway session under DIETER_HOME with mode 0600.
+Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 `
 	set := flags("auth login")
 	gatewayURL := set.String("gateway", c.GatewayURL, "gateway origin")

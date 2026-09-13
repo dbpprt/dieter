@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -74,7 +75,14 @@ func ParseAndVerifyDaemonToken(public ed25519.PublicKey, token, issuer, daemonID
 		return claims, errors.New("daemon token target is invalid")
 	}
 	unix := now.UTC().Unix()
-	if claims.NotBefore > unix+10 || claims.ExpiresAt <= unix-10 || claims.ID == "" || !strings.HasPrefix(claims.Subject, "github:") {
+	// The gateway's existing daemon-token profile has a dt_ identifier and
+	// explicit nbf/iat claims. RTC envelopes share this signing key, audience,
+	// and generation, but are not bearer credentials and must not be accepted
+	// by decoding absent nbf as zero.
+	if claims.NotBefore <= 0 || claims.IssuedAt <= 0 || claims.NotBefore > unix+10 || claims.IssuedAt > unix+10 ||
+		claims.ExpiresAt <= unix-10 || claims.ExpiresAt <= claims.NotBefore || claims.ExpiresAt <= claims.IssuedAt ||
+		claims.ExpiresAt-claims.IssuedAt > int64((5*time.Minute)/time.Second) ||
+		!strings.HasPrefix(claims.ID, "dt_") || len(claims.ID) <= len("dt_") || !validGitHubSubject(claims.Subject) {
 		return claims, errors.New("daemon token is expired or invalid")
 	}
 	return claims, nil
@@ -90,7 +98,8 @@ func ParseAndVerifyDelegation(public ed25519.PublicKey, token, issuer, daemonID,
 		return claims, errors.New("relay assertion does not match the request")
 	}
 	unix := now.UTC().Unix()
-	if claims.IssuedAt > unix+10 || claims.ExpiresAt <= unix-10 || claims.ID == "" {
+	if claims.IssuedAt <= 0 || claims.IssuedAt > unix+10 || claims.ExpiresAt <= unix-10 || claims.ExpiresAt <= claims.IssuedAt ||
+		claims.ExpiresAt-claims.IssuedAt > 30 || claims.ID == "" || !validGitHubSubject(claims.Subject) {
 		return claims, errors.New("relay assertion is expired or invalid")
 	}
 	return claims, nil
@@ -110,10 +119,19 @@ func ParseAndVerifyRTCConfiguration(public ed25519.PublicKey, token, issuer, dae
 		return claims, errors.New("RTC configuration does not match its signed envelope")
 	}
 	unix := now.UTC().Unix()
-	if claims.IssuedAt > unix+10 || claims.ExpiresAt <= unix-10 || claims.ID == "" || !strings.HasPrefix(claims.Subject, "github:") {
+	if claims.IssuedAt > unix+10 || claims.ExpiresAt <= unix-10 || claims.ID == "" || !validGitHubSubject(claims.Subject) {
 		return claims, errors.New("RTC configuration is expired or invalid")
 	}
 	return claims, nil
+}
+
+func validGitHubSubject(subject string) bool {
+	value, found := strings.CutPrefix(subject, "github:")
+	if !found {
+		return false
+	}
+	id, err := strconv.ParseInt(value, 10, 64)
+	return err == nil && id > 0 && strconv.FormatInt(id, 10) == value
 }
 
 func PublicKeyFromPEM(raw []byte) (ed25519.PublicKey, error) {

@@ -47,11 +47,27 @@ func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	if len(authorization) != 1 || len(daemonIDs) != 1 {
 		return status.Error(codes.Unauthenticated, "gateway session and daemon ID are required")
 	}
-	principal, authenticated := r.auth.AuthenticateBearer(authorization[0])
-	if !authenticated {
-		return status.Error(codes.Unauthenticated, "authentication required")
+	ctx, cancel, err := r.auth.AuthenticateSession(ctx, authorization[0])
+	if err != nil {
+		return err
 	}
-	record, err := r.store.Daemon(daemonIDs[0])
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- r.relayAuthenticated(&contextServerStream{ServerStream: stream, ctx: ctx}, method, daemonIDs[0], authorization[0])
+	}()
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
+func (r *relayHandler) relayAuthenticated(stream grpc.ServerStream, method, daemonID, authorization string) error {
+	ctx := stream.Context()
+	principal, _ := PrincipalFromContext(ctx)
+	record, err := r.store.Daemon(daemonID)
 	if err != nil || record.Revoked || record.GitHubID != principal.GitHubID {
 		return status.Error(codes.NotFound, "daemon not found")
 	}
@@ -61,6 +77,15 @@ func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	}
 	if len(request.Data) > maxRelayPayload {
 		return status.Error(codes.ResourceExhausted, "request exceeds 16 MiB")
+	}
+	// Receiving an initial request can stall arbitrarily. Check authorization
+	// again at dispatch, so a request begun before sign-out cannot resume later.
+	if _, authenticated := r.auth.AuthenticateBearer(authorization); !authenticated {
+		return status.Error(codes.Unauthenticated, "gateway session expired or revoked")
+	}
+	record, err = r.store.Daemon(daemonID)
+	if err != nil || record.Revoked || record.GitHubID != principal.GitHubID {
+		return status.Error(codes.NotFound, "daemon not found")
 	}
 	requestID := randomID("rpc_")
 	digest := sha256.Sum256(request.Data)

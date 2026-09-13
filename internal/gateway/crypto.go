@@ -53,6 +53,9 @@ func LoadOrCreateKeys(root string) (*Keys, error) {
 		caRaw, err = createCA(caPrivate)
 		if err == nil {
 			err = writePrivate(caPath, caRaw, 0o644)
+			if errors.Is(err, os.ErrExist) {
+				caRaw, err = os.ReadFile(caPath)
+			}
 		}
 	}
 	if err != nil {
@@ -65,6 +68,14 @@ func LoadOrCreateKeys(root string) (*Keys, error) {
 	certificate, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
 		return nil, err
+	}
+	public, ok := certificate.PublicKey.(ed25519.PublicKey)
+	if !ok || !public.Equal(caPrivate.Public()) || certificate.CheckSignatureFrom(certificate) != nil {
+		return nil, errors.New("daemon CA certificate does not match its signing key or is not a valid self-signed CA")
+	}
+	now := time.Now().UTC()
+	if now.Before(certificate.NotBefore) || !certificate.NotAfter.After(now.Add(time.Hour)) {
+		return nil, errors.New("daemon CA certificate is not currently valid")
 	}
 	return &Keys{
 		SigningPrivate:  signingPrivate,
@@ -87,11 +98,17 @@ func loadOrCreateEd25519(path string) (ed25519.PrivateKey, error) {
 			return nil, marshalErr
 		}
 		if writeErr := writePrivate(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: encoded}), 0o600); writeErr != nil {
+			if errors.Is(writeErr, os.ErrExist) {
+				return loadOrCreateEd25519(path)
+			}
 			return nil, writeErr
 		}
 		return private, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
 		return nil, err
 	}
 	block, _ := pem.Decode(raw)
@@ -240,5 +257,15 @@ func writePrivate(path string, raw []byte, mode os.FileMode) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	return os.Rename(name, path)
+	// Publishing a key must never replace one another process just created.
+	// Linking the fully written temporary file is atomic and fails on EEXIST.
+	if err := os.Link(name, path); err != nil {
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }

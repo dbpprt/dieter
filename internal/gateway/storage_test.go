@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestDefaultRootUsesDieterGatewayHome(t *testing.T) {
@@ -76,5 +77,69 @@ func TestOpenStoreMigratesDaemonPresenceColumns(t *testing.T) {
 	}
 	if !foundAPIVersion {
 		t.Fatal("api_version column was not added")
+	}
+}
+
+func TestAuthUpdatesAcrossStoresCannotResurrectRevokedSession(t *testing.T) {
+	root := t.TempDir()
+	first, err := OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := OpenStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+	if err := first.UpdateAuthState(func(state *AuthState) error {
+		state.Sessions = []Session{{TokenHash: "revoked-token", ExpiresAt: time.Now().Add(time.Hour)}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	read := make(chan struct{})
+	release := make(chan struct{})
+	updated := make(chan error, 1)
+	go func() {
+		updated <- first.UpdateAuthState(func(state *AuthState) error {
+			close(read)
+			<-release
+			state.Pending = append(state.Pending, OAuthPending{StateHash: "new-login"})
+			return nil
+		})
+	}()
+	<-read
+	revoked := make(chan error, 1)
+	go func() {
+		revoked <- second.UpdateAuthState(func(state *AuthState) error {
+			state.Sessions = nil
+			return nil
+		})
+	}()
+	var overlapped bool
+	select {
+	case err := <-revoked:
+		overlapped = true
+		if err != nil {
+			t.Errorf("revocation failed: %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	if err := <-updated; err != nil {
+		t.Fatal(err)
+	}
+	if !overlapped {
+		if err := <-revoked; err != nil {
+			t.Fatal(err)
+		}
+	}
+	state, err := first.AuthState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overlapped || len(state.Sessions) != 0 || len(state.Pending) != 1 {
+		t.Fatalf("concurrent auth updates were not serialized: overlap=%v sessions=%d pending=%d", overlapped, len(state.Sessions), len(state.Pending))
 	}
 }

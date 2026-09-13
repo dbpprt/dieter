@@ -45,6 +45,24 @@ proxy HTTP/2 to it. Proxy mode requires an HTTPS `DIETER_PUBLIC_URL` and refuses
 non-loopback listeners. The external hop is TLS and every daemon link still uses
 its cryptographic challenge, so a forwarded daemon ID is never trusted.
 
+The proxy must enforce Dieter's TLS 1.3 policy on the external connection.
+For Caddy, an example site configuration is:
+
+```caddyfile
+dieter.example.com {
+    tls {
+        protocols tls1.3
+    }
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy h2c://127.0.0.1:4243
+}
+```
+
+Keep the proxy upstream private, configure connection and request limits at
+the edge, and avoid logging authorization headers or OAuth query parameters.
+Gateway rate limits use the transport peer, so requests through one proxy share
+its rate bucket; forwarded identity headers are never trusted for authorization.
+
 ## Terminating TLS directly
 
 If the gateway terminates TLS itself, disable proxy mode and set
@@ -60,6 +78,18 @@ The public origin intentionally serves only:
 - authenticated `dieter.v1.DieterService` relay calls
 
 **All other paths, including `/`, return 404.**
+
+Daemon enrollment includes a browser confirmation after GitHub sign-in. Check
+the machine name and enrollment code before approving; the page also shows the
+public-key fingerprint. The approval form is bound to that browser and expires
+after two minutes.
+
+## Security validation
+
+Run `just gateway test` and `just gateway vulncheck` before deploying a gateway
+build. The vulnerability check uses the Go version pinned in `go.mod` and the
+gateway image. CI requires both checks before publishing an image. Confirm the
+deployed build identity through `/healthz` after deployment.
 
 ## ICE / TURN for Screens
 

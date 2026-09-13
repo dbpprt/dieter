@@ -17,7 +17,6 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 )
 
@@ -60,7 +59,25 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		w.Header().Set("Cache-Control", "no-store")
+		if !config.DevInsecure {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		}
 		if strings.HasPrefix(r.URL.Path, "/dieter.gateway.v1.") {
+			// Unary gRPC interceptors run after request decoding. Reject missing
+			// sessions here as well, before an unauthenticated caller can make
+			// the server read and decode a large or stalled protobuf body.
+			if gatewayMethodRequiresSession(r.URL.Path) {
+				headers := r.Header.Values("Authorization")
+				if len(headers) != 1 {
+					gatewayAuthenticationRequired(w)
+					return
+				}
+				if _, ok := auth.AuthenticateBearer(headers[0]); !ok {
+					gatewayAuthenticationRequired(w)
+					return
+				}
+			}
 			api.ServeHTTP(w, r)
 			return
 		}
@@ -70,10 +87,79 @@ func NewServer(config Config, store *Store, logger *slog.Logger) (*Server, error
 		}
 		httpMux.ServeHTTP(w, r)
 	})
-	if config.DevInsecure || config.ProxyMode {
-		handler = h2c.NewHandler(handler, &http2.Server{})
-	}
+	handler = limitGatewayRequestBodies(handler, 15*time.Second)
 	return &Server{Config: config, Store: store, Keys: keys, Auth: auth, Hub: hub, Service: service, APIGRPC: api, RelayGRPC: relay, HTTPHandler: handler}, nil
+}
+
+func gatewayMethodRequiresSession(path string) bool {
+	switch path {
+	case "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment",
+		"/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment",
+		"/dieter.gateway.v1.GatewayService/UnenrollDaemon",
+		"/dieter.gateway.v1.DaemonLinkService/Connect":
+		return false // These methods verify enrollment secrets or daemon proofs.
+	default:
+		return true
+	}
+}
+
+func gatewayAuthenticationRequired(w http.ResponseWriter) {
+	// A trailers-only gRPC error; native clients receive Unauthenticated.
+	w.Header().Set("Content-Type", "application/grpc")
+	w.Header().Set("Grpc-Status", "16")
+	w.Header().Set("Grpc-Message", "authentication required")
+	w.WriteHeader(http.StatusOK)
+}
+
+func gatewayHTTP2Config() *http2.Server {
+	return &http2.Server{
+		MaxConcurrentStreams: 128, IdleTimeout: 2 * time.Minute,
+		ReadIdleTimeout: 30 * time.Second, PingTimeout: 15 * time.Second,
+		WriteByteTimeout: 15 * time.Second,
+	}
+}
+
+func publicGatewayUnaryMethod(path string) bool {
+	switch path {
+	case "/dieter.gateway.v1.GatewayService/BeginDaemonEnrollment",
+		"/dieter.gateway.v1.GatewayService/CompleteDaemonEnrollment",
+		"/dieter.gateway.v1.GatewayService/UnenrollDaemon":
+		return true
+	default:
+		return false
+	}
+}
+
+func limitGatewayRequestBodies(next http.Handler, timeout time.Duration) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		isRPC := strings.HasPrefix(r.URL.Path, "/dieter.gateway.v1.") || strings.HasPrefix(r.URL.Path, "/dieter.v1.DieterService/")
+		if r.ProtoMajor == 1 || publicGatewayUnaryMethod(r.URL.Path) || !isRPC {
+			controller := http.NewResponseController(w)
+			_ = controller.SetReadDeadline(time.Now().Add(timeout))
+			if r.ProtoMajor >= 2 {
+				defer controller.SetReadDeadline(time.Time{})
+			}
+			// HTTP/1 may drain a request body after ServeHTTP returns. Leave its
+			// deadline in place; net/http resets it before the next request.
+		}
+		limit := int64(0)
+		if r.ProtoMajor == 1 {
+			limit = maxRelayPayload
+		}
+		if publicGatewayUnaryMethod(r.URL.Path) {
+			// Public enrollment RPCs carry short names, Ed25519 keys, secrets,
+			// and signatures, never relay payloads. Bound them before decoding.
+			limit = 8 << 10
+		}
+		if limit > 0 {
+			if r.ContentLength > limit {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) TLSConfig() (*tls.Config, error) {
@@ -95,16 +181,37 @@ func (s *Server) TLSConfig() (*tls.Config, error) {
 }
 
 func (s *Server) Serve(listener net.Listener) error {
-	httpServer := &http.Server{Handler: s.HTTPHandler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 1 << 20}
-	if s.Config.DevInsecure || s.Config.ProxyMode {
-		return httpServer.Serve(listener)
-	}
-	tlsConfig, err := s.TLSConfig()
+	httpServer, err := s.httpServer()
 	if err != nil {
 		return err
 	}
-	httpServer.TLSConfig = tlsConfig
-	return httpServer.Serve(tls.NewListener(listener, tlsConfig))
+	if s.Config.DevInsecure || s.Config.ProxyMode {
+		return httpServer.Serve(listener)
+	}
+	return httpServer.Serve(tls.NewListener(listener, httpServer.TLSConfig))
+}
+
+func (s *Server) httpServer() (*http.Server, error) {
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	plaintext := s.Config.DevInsecure || s.Config.ProxyMode
+	protocols.SetHTTP2(!plaintext)
+	protocols.SetUnencryptedHTTP2(plaintext)
+	// Native unencrypted HTTP/2 parses the complete client preface under the
+	// header deadline. The old h2c handler hijacked before reading its tail,
+	// which cleared deadlines and allowed an incomplete preface to wait forever.
+	httpServer := &http.Server{Handler: s.HTTPHandler, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 1 << 20}
+	if !plaintext {
+		tlsConfig, err := s.TLSConfig()
+		if err != nil {
+			return nil, err
+		}
+		httpServer.TLSConfig = tlsConfig
+	}
+	if err := http2.ConfigureServer(httpServer, gatewayHTTP2Config()); err != nil {
+		return nil, err
+	}
+	return httpServer, nil
 }
 
 func Listen(config Config, store *Store, logger *slog.Logger) error {

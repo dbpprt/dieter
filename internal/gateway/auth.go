@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -25,7 +27,15 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const oauthCookie = "__Host-board_gateway_oauth"
+const (
+	oauthCookie          = "__Host-board_gateway_oauth"
+	enrollmentCookie     = "__Host-dieter_gateway_enrollment"
+	maxAuthRecords       = 1000
+	maxAuthRatePeers     = 4096
+	sessionCheckInterval = 5 * time.Second
+)
+
+var errAuthCapacity = errors.New("authentication capacity reached")
 
 type principalKey struct{}
 
@@ -35,25 +45,27 @@ type Principal struct {
 }
 
 type Auth struct {
-	config Config
-	store  *Store
-	client *http.Client
-	log    *slog.Logger
-	rateMu sync.Mutex
-	rates  map[string][]time.Time
+	config         Config
+	store          *Store
+	client         *http.Client
+	log            *slog.Logger
+	rateMu         sync.Mutex
+	rates          map[string][]time.Time
+	activeSessions chan struct{}
 }
 
 func NewAuth(config Config, store *Store, logger *slog.Logger) *Auth {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Auth{config: config, store: store, client: &http.Client{Timeout: 12 * time.Second}, log: logger, rates: map[string][]time.Time{}}
+	return &Auth{config: config, store: store, client: &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, log: logger, rates: map[string][]time.Time{}, activeSessions: make(chan struct{}, 128)}
 }
 
 func (a *Auth) RegisterHTTP(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", a.health)
 	mux.HandleFunc("GET /auth/github/start", a.start)
 	mux.HandleFunc("GET /auth/github/callback", a.callback)
+	mux.HandleFunc("POST /auth/enrollment/approve", a.approveEnrollment)
 	mux.HandleFunc("POST /auth/native/exchange", a.nativeExchange)
 	mux.HandleFunc("POST /auth/native/revoke", a.nativeRevoke)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
@@ -76,11 +88,55 @@ func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *gr
 	if info.FullMethod == "/dieter.gateway.v1.DaemonLinkService/Connect" {
 		return handler(service, stream)
 	}
-	principal, err := a.grpcPrincipal(stream.Context())
+	headers, _ := metadata.FromIncomingContext(stream.Context())
+	if len(headers.Get("authorization")) != 1 {
+		return status.Error(codes.Unauthenticated, "authentication required")
+	}
+	ctx, cancel, err := a.AuthenticateSession(stream.Context(), headers.Get("authorization")[0])
 	if err != nil {
 		return err
 	}
-	return handler(service, &contextServerStream{ServerStream: stream, ctx: context.WithValue(stream.Context(), principalKey{}, principal)})
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- handler(service, &contextServerStream{ServerStream: stream, ctx: ctx}) }()
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
+
+// AuthenticateSession ties a streaming transport to its current session. Polling
+// also closes idle transports after sign-out; canceling it never stops an agent.
+func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (context.Context, context.CancelFunc, error) {
+	principal, ok := a.AuthenticateBearer(authorization)
+	if !ok {
+		return nil, nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	select {
+	case a.activeSessions <- struct{}{}:
+	default:
+		return nil, nil, status.Error(codes.ResourceExhausted, "too many authenticated streams")
+	}
+	ctx, cancel := context.WithCancelCause(context.WithValue(ctx, principalKey{}, principal))
+	go func() {
+		defer func() { <-a.activeSessions }()
+		ticker := time.NewTicker(sessionCheckInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, ok := a.AuthenticateBearer(authorization); !ok {
+					cancel(status.Error(codes.Unauthenticated, "gateway session expired or revoked"))
+					return
+				}
+			}
+		}
+	}()
+	return ctx, func() { cancel(context.Canceled) }, nil
 }
 
 type contextServerStream struct {
@@ -107,7 +163,7 @@ func (a *Auth) AuthenticateBearer(raw string) (Principal, bool) {
 	}
 	now := time.Now().UTC()
 	for _, session := range state.Sessions {
-		if session.ExpiresAt.After(now) && hmac.Equal([]byte(session.TokenHash), []byte(digest)) {
+		if session.ExpiresAt.After(now) && a.config.AllowsGitHubUser(session.GitHubID) && hmac.Equal([]byte(session.TokenHash), []byte(digest)) {
 			return Principal{GitHubID: session.GitHubID, Login: session.Login}, true
 		}
 	}
@@ -137,12 +193,21 @@ func (a *Auth) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if !a.allow(r) {
 		http.Error(w, "too many authentication attempts", http.StatusTooManyRequests)
 		return
 	}
-	state, _ := randomToken(32)
-	verifier, _ := randomToken(48)
+	state, err := randomToken(32)
+	if err != nil {
+		http.Error(w, "authentication unavailable", http.StatusInternalServerError)
+		return
+	}
+	verifier, err := randomToken(48)
+	if err != nil {
+		http.Error(w, "authentication unavailable", http.StatusInternalServerError)
+		return
+	}
 	pending := OAuthPending{StateHash: a.digest(state), Verifier: verifier, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(10 * time.Minute)}
 	nativeRedirect := strings.TrimSpace(r.URL.Query().Get("native_redirect_uri"))
 	nativeChallenge := strings.TrimSpace(r.URL.Query().Get("native_code_challenge"))
@@ -168,6 +233,9 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := a.store.UpdateAuthState(func(value *AuthState) error {
 		pruneAuthState(value, time.Now().UTC())
+		if len(value.Pending) >= maxAuthRecords {
+			return errAuthCapacity
+		}
 		value.Pending = append(value.Pending, pending)
 		return nil
 	}); err != nil {
@@ -203,6 +271,7 @@ func (a *Auth) nativeRedirectAllowed(raw string) bool {
 }
 
 func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	state := r.URL.Query().Get("state")
 	cookie, err := r.Cookie(oauthCookie)
 	if err != nil || state == "" || !hmac.Equal([]byte(state), []byte(cookie.Value)) {
@@ -227,13 +296,8 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pending.EnrollmentID != "" {
-		record, _ := a.store.Enrollment(pending.EnrollmentID)
-		if err := a.store.ApproveEnrollment(pending.EnrollmentID, pending.EnrollmentCode, user.ID, user.Login); err != nil {
-			a.completion(w, false, err.Error())
-			return
-		}
 		http.SetCookie(w, secureCookie(oauthCookie, "", -time.Hour))
-		a.completion(w, true, fmt.Sprintf("%s is connected through GitHub as @%s. Return to the terminal; this window can be closed.", record.Name, user.Login))
+		a.confirmEnrollment(w, pending, user.ID, user.Login)
 		return
 	}
 	code, err := a.createNativeCode(user.ID, user.Login, pending.NativeChallenge)
@@ -264,6 +328,10 @@ func (a *Auth) completion(w http.ResponseWriter, success bool, message string) {
 func (a *Auth) nativeExchange(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
+	if !a.allow(r) {
+		http.Error(w, "too many authentication attempts", http.StatusTooManyRequests)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var request struct{ Code, Verifier string }
 	if json.NewDecoder(r.Body).Decode(&request) != nil || request.Code == "" || request.Verifier == "" {
@@ -272,7 +340,7 @@ func (a *Auth) nativeExchange(w http.ResponseWriter, r *http.Request) {
 	}
 	digest := sha256.Sum256([]byte(request.Verifier))
 	code, ok, err := a.consumeNativeCode(request.Code, base64.RawURLEncoding.EncodeToString(digest[:]))
-	if err != nil || !ok {
+	if err != nil || !ok || !a.config.AllowsGitHubUser(code.GitHubID) {
 		http.Error(w, "authorization code is invalid or expired", http.StatusBadRequest)
 		return
 	}
@@ -310,10 +378,16 @@ func (a *Auth) nativeRevoke(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Auth) createSession(id int64, login string) (string, time.Time, error) {
-	raw, _ := randomToken(32)
+	raw, err := randomToken(32)
+	if err != nil {
+		return "", time.Time{}, err
+	}
 	now, expires := time.Now().UTC(), time.Now().UTC().Add(a.config.SessionTTL)
-	err := a.store.UpdateAuthState(func(state *AuthState) error {
+	err = a.store.UpdateAuthState(func(state *AuthState) error {
 		pruneAuthState(state, now)
+		if len(state.Sessions) >= maxAuthRecords {
+			return errAuthCapacity
+		}
 		state.Sessions = append(state.Sessions, Session{TokenHash: a.digest(raw), GitHubID: id, Login: login, CreatedAt: now, ExpiresAt: expires})
 		return nil
 	})
@@ -321,9 +395,15 @@ func (a *Auth) createSession(id int64, login string) (string, time.Time, error) 
 }
 
 func (a *Auth) createNativeCode(id int64, login, challenge string) (string, error) {
-	raw, _ := randomToken(32)
-	err := a.store.UpdateAuthState(func(state *AuthState) error {
+	raw, err := randomToken(32)
+	if err != nil {
+		return "", err
+	}
+	err = a.store.UpdateAuthState(func(state *AuthState) error {
 		pruneAuthState(state, time.Now().UTC())
+		if len(state.Codes) >= maxAuthRecords {
+			return errAuthCapacity
+		}
 		state.Codes = append(state.Codes, NativeCode{CodeHash: a.digest(raw), Challenge: challenge, GitHubID: id, Login: login, ExpiresAt: time.Now().UTC().Add(2 * time.Minute)})
 		return nil
 	})
@@ -388,6 +468,13 @@ func pruneAuthState(state *AuthState, now time.Time) {
 		}
 	}
 	state.Codes = codes
+	approvals := state.Approvals[:0]
+	for _, item := range state.Approvals {
+		if item.ExpiresAt.After(now) {
+			approvals = append(approvals, item)
+		}
+	}
+	state.Approvals = approvals
 }
 
 func (a *Auth) digest(value string) string {
@@ -450,12 +537,20 @@ func (a *Auth) githubUser(ctx context.Context, token string) (struct {
 
 func (a *Auth) allow(r *http.Request) bool {
 	host := r.RemoteAddr
-	if index := strings.LastIndex(host, ":"); index >= 0 {
-		host = host[:index]
+	if parsed, _, err := net.SplitHostPort(host); err == nil {
+		host = parsed
 	}
 	now, cutoff := time.Now(), time.Now().Add(-10*time.Minute)
 	a.rateMu.Lock()
 	defer a.rateMu.Unlock()
+	for peer, attempts := range a.rates {
+		if len(attempts) == 0 || !attempts[len(attempts)-1].After(cutoff) {
+			delete(a.rates, peer)
+		}
+	}
+	if _, exists := a.rates[host]; !exists && len(a.rates) >= maxAuthRatePeers {
+		return false
+	}
 	recent := a.rates[host][:0]
 	for _, attempt := range a.rates[host] {
 		if attempt.After(cutoff) {
