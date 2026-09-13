@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a full release; disable to verify signed Mac artifacts only
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -32,6 +37,7 @@ jobs:
 
   go-binaries:
     name: ${{ matrix.asset }}
+    if: github.event_name != 'workflow_dispatch' || inputs.publish
     needs: version
     runs-on: ubuntu-latest
     strategy:
@@ -106,10 +112,12 @@ jobs:
         env:
           CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          INSTALLER_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64 }}
+          INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD }}
           NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
           NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: just release signing-config
+        run: just release signing-config true true
       - name: Sign and notarize daemon package
         if: steps.signing.outputs.enabled == 'true'
         env:
@@ -119,6 +127,20 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
         run: just --yes daemon sign-notarize-macos
+      - name: Build daemon installer
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.number }}
+        run: just daemon installer-macos
+      - name: Sign and notarize daemon installer
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          INSTALLER_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64 }}
+          INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD }}
+          NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: just --yes daemon sign-notarize-installer-macos
       - name: Package daemon
         run: just daemon archive-macos
       - uses: actions/upload-artifact@v4
@@ -127,9 +149,17 @@ jobs:
           path: dist/dieter-darwin-arm64.tar.gz
           if-no-files-found: error
           retention-days: 1
+      - uses: actions/upload-artifact@v4
+        if: steps.signing.outputs.enabled == 'true'
+        with:
+          name: dieter-macos-installer
+          path: dist/dieter-darwin-arm64.pkg
+          if-no-files-found: error
+          retention-days: 1
 
   android:
     name: Android release APK
+    if: github.event_name != 'workflow_dispatch' || inputs.publish
     needs: version
     runs-on: ubuntu-latest
     steps:
@@ -204,7 +234,7 @@ jobs:
           NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
           NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-        run: just release signing-config
+        run: just release signing-config false true
       - name: Sign and notarize app
         if: steps.signing.outputs.enabled == 'true'
         env:
@@ -225,6 +255,7 @@ jobs:
 
   release:
     name: Publish release
+    if: github.event_name != 'workflow_dispatch' || inputs.publish
     needs: [version, go-binaries, macos-daemon, android, macos]
     runs-on: ubuntu-latest
     permissions:

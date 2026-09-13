@@ -109,8 +109,12 @@ sign-notarize-macos:
     certificate_path="$RUNNER_TEMP/developer-id.p12"
     notary_key_path="$RUNNER_TEMP/notary-key.p8"
     submission_path="$RUNNER_TEMP/Dieter-daemon-notarization.zip"
-    cleanup() { security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true; }
+    cleanup() {
+        security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+        rm -f "$certificate_path" "$notary_key_path" "$submission_path"
+    }
     trap cleanup EXIT
+    umask 077
     printf '%s' "$CERTIFICATE_BASE64" | base64 -D >"$certificate_path"
     printf '%s' "$NOTARY_KEY_BASE64" | base64 -D >"$notary_key_path"
     security create-keychain -p "$keychain_password" "$signing_keychain"
@@ -124,14 +128,27 @@ sign-notarize-macos:
         awk '/Developer ID Application/ {print $2; exit}')"
     test -n "$identity"
     codesign --force --options runtime --timestamp --identifier com.dbpprt.dieter.daemon \
-        --sign "$identity" "{{ mac_package }}/dieter"
+        --keychain "$signing_keychain" --sign "$identity" "{{ mac_package }}/dieter"
     codesign --force --options runtime --timestamp --identifier com.dbpprt.dieter.capture \
-        --sign "$identity" "{{ mac_package }}/dieter-capture"
+        --keychain "$signing_keychain" --sign "$identity" "{{ mac_package }}/dieter-capture"
     codesign --verify --strict --verbose=2 "{{ mac_package }}/dieter"
     codesign --verify --strict --verbose=2 "{{ mac_package }}/dieter-capture"
     ditto -c -k --sequesterRsrc --keepParent "{{ mac_package }}" "$submission_path"
-    xcrun notarytool submit "$submission_path" --key "$notary_key_path" \
-        --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+    python3 scripts/macos_notary_submit.py "$submission_path" --key "$notary_key_path" \
+        --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+
+# Build a versioned daemon installer without installing or starting any service.
+installer-macos:
+    python3 scripts/macos_daemon_installer.py build
+
+# Sign, notarize, staple, and verify the staged daemon installer in GitHub Actions.
+[confirm]
+sign-notarize-installer-macos:
+    python3 scripts/macos_daemon_installer.py sign
+
+# Test installer payload/preflight safety and notarization acceptance handling.
+installer-test:
+    python3 -m unittest discover -s scripts -p 'macos_*_test.py'
 
 # Archive the staged Apple Silicon daemon package.
 archive-macos:
@@ -143,4 +160,4 @@ archive-macos:
 # Remove only daemon build and staged release outputs.
 [confirm]
 clean:
-    rm -rf "{{ binary }}" "{{ mac_package }}" dist/dieter-darwin-*.tar.gz dist/dieter-linux-*.tar.gz stage/dieter-linux-*
+    rm -rf "{{ binary }}" "{{ mac_package }}" dist/dieter-darwin-*.tar.gz dist/dieter-darwin-*.pkg dist/dieter-linux-*.tar.gz stage/dieter-linux-*

@@ -182,8 +182,12 @@ sign-notarize-release:
     certificate_path="$RUNNER_TEMP/developer-id.p12"
     notary_key_path="$RUNNER_TEMP/notary-key.p8"
     submission_path="$RUNNER_TEMP/Dieter-notarization.zip"
-    cleanup() { security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true; }
+    cleanup() {
+        security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+        rm -f "$certificate_path" "$notary_key_path" "$submission_path"
+    }
     trap cleanup EXIT
+    umask 077
     printf '%s' "$CERTIFICATE_BASE64" | base64 -D >"$certificate_path"
     printf '%s' "$NOTARY_KEY_BASE64" | base64 -D >"$notary_key_path"
     security create-keychain -p "$keychain_password" "$signing_keychain"
@@ -196,13 +200,13 @@ sign-notarize-release:
     identity="$(security find-identity -v -p codesigning "$signing_keychain" | \
         awk '/Developer ID Application/ {print $2; exit}')"
     test -n "$identity"
-    codesign --force --options runtime --timestamp --sign "$identity" \
+    codesign --force --options runtime --timestamp --keychain "$signing_keychain" --sign "$identity" \
         "{{ app_bundle }}/Contents/Frameworks/WebRTC.framework"
-    codesign --force --options runtime --timestamp --sign "$identity" "{{ app_bundle }}"
+    codesign --force --options runtime --timestamp --keychain "$signing_keychain" --sign "$identity" "{{ app_bundle }}"
     codesign --verify --deep --strict --verbose=2 "{{ app_bundle }}"
     ditto -c -k --sequesterRsrc --keepParent "{{ app_bundle }}" "$submission_path"
-    xcrun notarytool submit "$submission_path" --key "$notary_key_path" \
-        --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+    python3 scripts/macos_notary_submit.py "$submission_path" --key "$notary_key_path" \
+        --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
     xcrun stapler staple "{{ app_bundle }}"
     xcrun stapler validate "{{ app_bundle }}"
     spctl --assess --type execute --verbose=4 "{{ app_bundle }}"

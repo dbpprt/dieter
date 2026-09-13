@@ -43,6 +43,8 @@ jobs:
         run: just harness install
       - name: Run portable checks
         run: just check
+      - name: Test release signing and packaging
+        run: just release test
       - name: Check bundled Markdown renderer
         run: just mac markdown-check
 
@@ -59,6 +61,8 @@ jobs:
           just-version: "1.58.0"
       - name: Select Xcode 26.5
         run: just release select-xcode
+      - name: Verify native installer packaging
+        run: just release test
       - name: Restore Swift build caches
         uses: actions/cache@v4
         with:

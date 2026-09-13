@@ -46,17 +46,37 @@ select-xcode path="/Applications/Xcode_26.5.app/Contents/Developer":
     [[ "${GITHUB_ACTIONS:-}" == true ]] || { echo "Xcode selection is CI-only." >&2; exit 1; }
     sudo xcode-select -s "{{ path }}"
 
-# Validate all-or-none Apple signing configuration and write the enabled output.
-signing-config:
+# Configure Apple signing secrets without putting private values in command arguments.
+[positional-arguments]
+configure-apple-signing *args:
+    python3 scripts/configure_apple_signing.py "$@"
+
+# Test release packaging, signing configuration, and notarization validation.
+test:
+    python3 -m unittest discover -s scripts -p '*signing_test.py'
+    python3 -m unittest discover -s scripts -p 'macos_*_test.py'
+
+# Validate all-or-none Apple signing configuration; optionally require an installer identity.
+signing-config installer="false" required="false":
     #!/usr/bin/env bash
     set -euo pipefail
     : "${GITHUB_OUTPUT:?GITHUB_OUTPUT is required}"
+    [[ "{{ installer }}" == true || "{{ installer }}" == false ]] || { echo "installer must be true or false." >&2; exit 1; }
+    [[ "{{ required }}" == true || "{{ required }}" == false ]] || { echo "required must be true or false." >&2; exit 1; }
+    names=(CERTIFICATE_BASE64 CERTIFICATE_PASSWORD NOTARY_KEY_BASE64 NOTARY_KEY_ID NOTARY_ISSUER_ID)
+    if [[ "{{ installer }}" == true ]]; then
+        names+=(INSTALLER_CERTIFICATE_BASE64 INSTALLER_CERTIFICATE_PASSWORD)
+    fi
     configured=0
     missing=0
-    for name in CERTIFICATE_BASE64 CERTIFICATE_PASSWORD NOTARY_KEY_BASE64 NOTARY_KEY_ID NOTARY_ISSUER_ID; do
+    for name in "${names[@]}"; do
         if [[ -n "${!name:-}" ]]; then configured=$((configured + 1)); else missing=$((missing + 1)); fi
     done
     if (( configured == 0 )); then
+        if [[ "{{ required }}" == true ]]; then
+            echo "Developer ID credentials are required for published macOS releases." >&2
+            exit 1
+        fi
         echo "enabled=false" >>"$GITHUB_OUTPUT"
         echo "Developer ID credentials are not configured; using the ad-hoc-signed artifact."
     elif (( missing != 0 )); then
