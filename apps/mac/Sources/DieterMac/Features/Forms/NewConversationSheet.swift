@@ -188,14 +188,14 @@ struct NewConversationSheet: View {
                 Spacer(minLength: 8)
                 if submitting { ProgressView().controlSize(.small) }
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.glass)
+                    .buttonStyle(DieterGlassButtonStyle())
                     .keyboardShortcut(.cancelAction)
                     .disabled(submitting)
                     .accessibilityIdentifier("new-card.cancel")
                 Button(deferred ? "Save to \(selectedLane?.name ?? "board")" : "Start task") {
                     Task { await submit() }
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(DieterGlassButtonStyle(prominent: true))
                 .keyboardShortcut(.return, modifiers: .command)
                 .help("\(deferred ? "Save card" : "Start task") (⌘Return)")
                 .disabled(!canSubmit)

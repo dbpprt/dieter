@@ -1854,7 +1854,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     var iterator = changes.makeAsyncIterator()
     #expect(await iterator.next() != nil)
     continuation.finish()
-    #expect(store.themeSelection.identity == "dark:coral-signal")
+    #expect(store.themeSelection.identity == "dark:coral-signal:glass")
     #expect(defaults.string(forKey: DieterAppearance.storageKey) == "dark")
     #expect(defaults.string(forKey: DieterPalette.storageKey) == "coral-signal")
     #expect(DieterThemeSelection.load(from: defaults) == store.themeSelection)

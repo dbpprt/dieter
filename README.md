@@ -79,6 +79,11 @@ in one workspace; Dieter selects the correct daemon automatically. See the
 [macOS](apps/mac/README.md) and [Android](apps/android/README.md) guides for
 source builds and platform-specific details.
 
+The Mac workspace uses native blurred glass. For solid surfaces, turn off
+**Window transparency** under **Settings → General → Appearance**. The setting
+works with every design and light/dark mode; macOS **Reduce Transparency** also
+disables translucency while preserving your preference.
+
 Useful daemon commands:
 
 ```sh

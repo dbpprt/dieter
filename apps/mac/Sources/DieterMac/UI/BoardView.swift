@@ -788,7 +788,7 @@ struct QuickTaskPopover: View {
                 } label: {
                     Label("Attach", systemImage: "paperclip")
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(DieterGlassButtonStyle())
                 .disabled(submitting || formDraft.attachmentImportID != nil)
                 .accessibilityIdentifier("quick-task.attach")
                 Text("Paste or drop screenshots · 4 files, 6 MB total")
@@ -855,7 +855,7 @@ struct QuickTaskPopover: View {
                     HStack {
                         Spacer()
                         Button("Done") { settingsPresented = false }
-                            .buttonStyle(.glass)
+                            .buttonStyle(DieterGlassButtonStyle())
                             .keyboardShortcut(.defaultAction)
                     }
                 }
@@ -868,7 +868,7 @@ struct QuickTaskPopover: View {
             HStack(spacing: 9) {
                 Button("Cancel") { isPresented = false }
                     .smokeTarget("quick-task.cancel")
-                    .buttonStyle(.glass)
+                    .buttonStyle(DieterGlassButtonStyle())
                 Spacer()
                 Button {
                     Task { await submit(runImmediately: false) }
@@ -882,7 +882,7 @@ struct QuickTaskPopover: View {
                         Text("Add task")
                     }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(DieterGlassButtonStyle())
                 .disabled(cannotSubmit)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .accessibilityIdentifier("quick-task.create")
@@ -892,7 +892,7 @@ struct QuickTaskPopover: View {
                 } label: {
                     Label("Run task", systemImage: "play.fill")
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(DieterGlassButtonStyle(prominent: true))
                 .disabled(cannotSubmit)
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .help("Create this task and start the agent immediately")

@@ -22,7 +22,10 @@ struct MarkdownFilePreview: View {
                     .font(.callout)
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.regularMaterial)
+                    .background(
+                        DieterTheme.usesTransparency
+                            ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(DieterTheme.opaqueSurface)
+                    )
             }
         }
         .accessibilityIdentifier("files.markdown.preview")

@@ -50,7 +50,7 @@ struct ConversationChrome: View {
                                 .lineLimit(3)
                                 .fixedSize(horizontal: false, vertical: true)
                             if let detail = context.selectedDetail {
-                                Text("\(detail.project.name) · \(detail.board.name)")
+                                Text("\(detail.project.name) · \(standalone ? "Standalone chat" : detail.board.name)")
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                             }
                         }

@@ -832,6 +832,10 @@
                 ? "passed"
                 : "failed: pressed=\(monochromePressed), live=\(store.themeSelection.palette.rawValue)"
 
+            results.merge(await transparencySettingsSmoke(store: store, window: window, output: output)) {
+                _, latest in latest
+            }
+
             click(window: window, x: 320, distanceFromTop: 151)
             try? await DieterTaskSleep.milliseconds(700)
             await captureAppearances(window, named: "10-settings-connection.png", in: output)
@@ -2185,6 +2189,61 @@
                     if let event { NSApp.postEvent(event, atStart: false) }
                 }
             }
+        }
+
+        private static func transparencySettingsSmoke(
+            store: DieterStore, window: NSWindow, output: URL
+        ) async -> [String: String] {
+            let defaults = DieterAppearance.applicationDefaults()
+            let originalStoredValue = defaults.object(forKey: DieterTransparency.storageKey)
+            let originalChoice = store.themeSelection.transparencyEnabled
+            let originalContent = window.contentView
+            var results: [String: String] = [:]
+
+            // Start from glass so both transitions exercise the actual setting.
+            if !store.themeSelection.transparencyEnabled {
+                _ = await NativeUIAccessibility.pressWhenSettled("settings.windowTransparency", in: window)
+                _ = await waitUntil(timeout: 5) { store.themeSelection.transparencyEnabled }
+            }
+            for enabled in [false, true] {
+                let name = enabled ? "09f-settings-glass" : "09e-settings-solid"
+                let pressed = await NativeUIAccessibility.pressWhenSettled("settings.windowTransparency", in: window)
+                let applied = await waitUntil(timeout: 5) {
+                    DieterTransparency.load(from: defaults) == enabled
+                        && store.themeSelection.transparencyEnabled == enabled
+                        && transparencyWindowMatches(window, enabled: enabled)
+                        && window.contentView === originalContent
+                }
+                results[name] =
+                    pressed && applied
+                    ? "passed"
+                    : "failed: pressed=\(pressed), stored=\(DieterTransparency.load(from: defaults)), live=\(store.themeSelection.transparencyEnabled), effective=\(DieterTheme.usesTransparency), opaque=\(window.isOpaque), backgroundAlpha=\(window.backgroundColor.alphaComponent)"
+                await captureAppearances(window, named: "\(name).png", in: output)
+            }
+
+            store.themeSelection.transparencyEnabled = originalChoice
+            if let originalStoredValue {
+                defaults.set(originalStoredValue, forKey: DieterTransparency.storageKey)
+            } else {
+                defaults.removeObject(forKey: DieterTransparency.storageKey)
+            }
+            let restored = await waitUntil(timeout: 5) {
+                DieterTransparency.load(from: defaults) == originalChoice
+                    && store.themeSelection.transparencyEnabled == originalChoice
+                    && transparencyWindowMatches(window, enabled: originalChoice)
+            }
+            results["09g-settings-transparency-restored"] =
+                restored ? "passed" : "failed: the original transparency choice was not restored"
+            return results
+        }
+
+        private static func transparencyWindowMatches(_ window: NSWindow, enabled: Bool) -> Bool {
+            let effective = enabled && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            guard DieterTheme.usesTransparency == effective, window.isOpaque == !effective else { return false }
+            if effective {
+                return window.backgroundColor.alphaComponent == 0 && window.titlebarAppearsTransparent
+            }
+            return window.backgroundColor.alphaComponent == 1
         }
 
         private static func captureAppearances(_ window: NSWindow, named name: String, in output: URL)

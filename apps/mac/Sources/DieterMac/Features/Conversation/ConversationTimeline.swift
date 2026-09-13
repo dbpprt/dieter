@@ -292,7 +292,7 @@ struct ConversationTimeline: View {
                             .font(.caption.weight(.semibold))
                             .padding(.horizontal, 13)
                             .frame(height: 34)
-                            .glassEffect(.regular.interactive(), in: Capsule())
+                            .dieterGlass(.regular.interactive(), in: Capsule())
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 12)

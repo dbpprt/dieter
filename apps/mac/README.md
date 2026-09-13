@@ -10,7 +10,9 @@ through either verified direct TLS or the bounded relay.
   label filtering and assignment, retention,
   project context, and archives
 - A board-independent global Chats workspace, with pinned and archived
-  standalone conversations grouped by project, plus live server streams
+  standalone conversations grouped by project, plus live server streams. The
+  chat list stays available while files, browsers, or terminals are open alongside
+  the conversation.
 - Daemon-owned terminal tabs with a real VT renderer, reconnectable scrollback,
   working-directory and shell selection, resize forwarding, and explicit close
 - A machine-oriented Screens workspace with explicit host enablement, signed
@@ -27,11 +29,15 @@ The 41 view-level design references are indexed in
 extracted from the source design PDF by `design/extract_reference_images.py`;
 the source PDF itself is not checked in.
 
-The navigation sidebar, All Chats actions, board actions, Quick Task popovers,
-and Island use the native macOS 26 Liquid Glass appearance. The nested All Chats
-browser and conversation pane share one continuous solid canvas; cards and
-transcripts also keep solid content surfaces for readability. Native materials
-follow system accessibility settings.
+The workspace uses native macOS 26 glass, with blurred desktop colors showing
+through the sidebar, boards, conversations, and file panes. Cards and controls
+use subtle tinted surfaces to keep content readable. In **Settings → General →
+Appearance**, turn off **Window transparency** for solid surfaces. This choice
+is saved on this Mac and applies immediately in light, dark, and system
+appearance across all designs. macOS **Reduce Transparency** also makes
+surfaces solid without changing the saved preference.
+Terminal canvases and document pages retain their own backgrounds for readable
+content; their surrounding workspace controls follow the transparency setting.
 
 ## Develop
 
