@@ -138,6 +138,22 @@ jobs:
         run: just ios build
       - name: Verify iPhone remote workflows
         run: just ios smoke-built
+      - name: Retain iPhone diagnostics before iPad testing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-iphone-evidence
+          path: |
+            apps/ios/.build/smoke/**/test-summary.json
+            apps/ios/.build/smoke/**/passed.json
+            apps/ios/.build/smoke/**/stage.log
+            apps/ios/.build/smoke/**/cleanup.log
+            apps/ios/.build/smoke/**/boot.log
+            apps/ios/.build/smoke/**/gateway.log
+            apps/ios/.build/smoke/**/tests.log
+            apps/ios/.build/smoke/**/attachments/*
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Verify iPad remote workflows
         if: ${{ !cancelled() && steps.build_ios.conclusion == 'success' }}
         run: just ios smoke-built 'iPad Pro 11-inch (M5)'
@@ -151,6 +167,8 @@ jobs:
           path: |
             apps/ios/.build/smoke/**/test-summary.json
             apps/ios/.build/smoke/**/passed.json
+            apps/ios/.build/smoke/**/stage.log
+            apps/ios/.build/smoke/**/cleanup.log
             apps/ios/.build/smoke/**/boot.log
             apps/ios/.build/smoke/**/gateway.log
             apps/ios/.build/smoke/**/tests.log

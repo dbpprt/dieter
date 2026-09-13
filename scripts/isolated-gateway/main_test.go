@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +16,92 @@ import (
 
 	"github.com/dbpprt/dieter/internal/harness"
 )
+
+func TestEnrollmentRPCBoundsAndReleasesOnlyItsRequestContext(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&output, nil))
+	parent, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var requestContext context.Context
+	value, err := enrollmentRPC(parent, logger, "primary", "begin", func(ctx context.Context) (string, error) {
+		requestContext = ctx
+		deadline, ok := ctx.Deadline()
+		remaining := time.Until(deadline)
+		if !ok || remaining <= 0 || remaining > 30*time.Second {
+			t.Fatalf("enrollment request has no bounded 30-second deadline: %v, %s", ok, remaining)
+		}
+		return "private-enrollment-secret", nil
+	})
+	if err != nil || value != "private-enrollment-secret" {
+		t.Fatalf("enrollment response changed: %q, %v", value, err)
+	}
+	if !errors.Is(requestContext.Err(), context.Canceled) {
+		t.Fatal("completed enrollment did not release its request context")
+	}
+	if parent.Err() != nil {
+		t.Fatal("enrollment canceled the long-lived fixture context")
+	}
+	log := output.String()
+	for _, expected := range []string{"isolated enrollment starting", "isolated enrollment completed", "role=primary", "operation=begin", "elapsed="} {
+		if !strings.Contains(log, expected) {
+			t.Fatalf("missing %q in progress log: %s", expected, log)
+		}
+	}
+	if strings.Contains(log, value) {
+		t.Fatal("enrollment progress exposed the response secret")
+	}
+}
+
+func TestEnrollmentRPCIdentifiesRoleAndOperationOnFailure(t *testing.T) {
+	for _, role := range []string{"primary", "legacy", "second"} {
+		for _, operation := range []string{"begin", "complete"} {
+			t.Run(role+"/"+operation, func(t *testing.T) {
+				var output bytes.Buffer
+				logger := slog.New(slog.NewTextHandler(&output, nil))
+				cause := errors.New("transport unavailable")
+				_, err := enrollmentRPC(context.Background(), logger, role, operation, func(context.Context) (int, error) {
+					return 0, cause
+				})
+				if !errors.Is(err, cause) || !strings.Contains(err.Error(), "isolated "+role+" enrollment "+operation+" failed after ") {
+					t.Fatalf("enrollment failure lost context or cause: %v", err)
+				}
+				if strings.Contains(output.String(), "enrollment completed") {
+					t.Fatal("failed enrollment logged completion")
+				}
+			})
+		}
+	}
+}
+
+func TestEnrollmentRPCPreservesCancellationAndEarlierDeadline(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		name := "deadline"
+		if canceled {
+			name = "canceled"
+		}
+		t.Run(name, func(t *testing.T) {
+			parent, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer cancel()
+			if canceled {
+				cancel()
+			}
+			var output bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&output, nil))
+			_, err := enrollmentRPC(parent, logger, "legacy", "complete", func(ctx context.Context) (int, error) {
+				parentDeadline, _ := parent.Deadline()
+				requestDeadline, _ := ctx.Deadline()
+				if !requestDeadline.Equal(parentDeadline) {
+					t.Fatal("enrollment extended its parent's earlier deadline")
+				}
+				<-ctx.Done()
+				return 0, ctx.Err()
+			})
+			if !errors.Is(err, parent.Err()) {
+				t.Fatalf("enrollment lost parent cancellation/deadline: %v", err)
+			}
+		})
+	}
+}
 
 type fixtureHarness struct {
 	run     func(context.Context) error

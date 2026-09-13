@@ -29,12 +29,29 @@ import (
 
 	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/server"
 	boardstore "github.com/dbpprt/dieter/internal/store"
 )
+
+const enrollmentRPCTimeout = 30 * time.Second
+
+func enrollmentRPC[T any](ctx context.Context, logger *slog.Logger, role, operation string, call func(context.Context) (T, error)) (T, error) {
+	started := time.Now()
+	logger.Info("isolated enrollment starting", "role", role, "operation", operation, "timeout", enrollmentRPCTimeout)
+	requestContext, cancel := context.WithTimeout(ctx, enrollmentRPCTimeout)
+	defer cancel()
+	result, err := call(requestContext)
+	elapsed := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		return result, fmt.Errorf("isolated %s enrollment %s failed after %s: %w", role, operation, elapsed, err)
+	}
+	logger.Info("isolated enrollment completed", "role", role, "operation", operation, "elapsed", elapsed)
+	return result, nil
+}
 
 func main() {
 	address := flag.String("addr", "127.0.0.1:14243", "loopback listen address for the gateway copy")
@@ -112,14 +129,18 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err != nil {
 		return err
 	}
-	enrollment, err := daemon.BeginEnrollment(ctx, identity)
+	enrollment, err := enrollmentRPC(ctx, logger, "primary", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+		return daemon.BeginEnrollment(requestContext, identity)
+	})
 	if err != nil {
 		return err
 	}
 	if err = gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
 		return err
 	}
-	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+	credential, err := enrollmentRPC(ctx, logger, "primary", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+		return daemon.CompleteEnrollment(requestContext, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+	})
 	if err != nil {
 		return err
 	}
@@ -293,14 +314,18 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err != nil {
 		return err
 	}
-	legacyEnrollment, err := daemon.BeginEnrollment(ctx, legacyIdentity)
+	legacyEnrollment, err := enrollmentRPC(ctx, logger, "legacy", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+		return daemon.BeginEnrollment(requestContext, legacyIdentity)
+	})
 	if err != nil {
 		return err
 	}
 	if err = gatewayStore.ApproveEnrollment(legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
 		return err
 	}
-	legacyCredential, err := daemon.CompleteEnrollment(ctx, legacyIdentity, legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetEnrollmentSecret())
+	legacyCredential, err := enrollmentRPC(ctx, logger, "legacy", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+		return daemon.CompleteEnrollment(requestContext, legacyIdentity, legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetEnrollmentSecret())
+	})
 	if err != nil {
 		return err
 	}
@@ -319,7 +344,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		if identityErr != nil {
 			return identityErr
 		}
-		secondEnrollment, enrollmentErr := daemon.BeginEnrollment(ctx, secondIdentity)
+		secondEnrollment, enrollmentErr := enrollmentRPC(ctx, logger, "second", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+			return daemon.BeginEnrollment(requestContext, secondIdentity)
+		})
 		if enrollmentErr != nil {
 			return enrollmentErr
 		}
@@ -328,8 +355,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		); err != nil {
 			return err
 		}
-		secondCredential, credentialErr := daemon.CompleteEnrollment(
-			ctx, secondIdentity, secondEnrollment.GetEnrollmentId(), secondEnrollment.GetEnrollmentSecret())
+		secondCredential, credentialErr := enrollmentRPC(ctx, logger, "second", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+			return daemon.CompleteEnrollment(requestContext, secondIdentity, secondEnrollment.GetEnrollmentId(), secondEnrollment.GetEnrollmentSecret())
+		})
 		if credentialErr != nil {
 			return credentialErr
 		}
