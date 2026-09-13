@@ -113,6 +113,16 @@ remaining assertions required an active/key window while the host desktop was
 locked. The board suite therefore did not run locally; CI must validate those
 native focus journeys. The smoke app and its disposable gateway were cleaned up.
 
+CI run `34761491827` subsequently passed the complete Mac job, including core
+and board smoke, as well as Go/harness and Android. Its iPhone journey stopped
+at the provider selection assertion before task creation. That assertion relied
+on the native picker combining its selected value into its label. Provider and
+Model now expose their selected names explicitly as accessibility values, and
+the journey verifies both selections before entering the task. Failure messages
+include the actual label, value, and accessibility hierarchy. CI retains the
+full XCTest log and all attachments, and still runs iPad validation when the
+iPhone step fails after a successful build.
+
 ## Environment limits
 
 The optional public HTTPS probe did not complete in this Simulator environment.

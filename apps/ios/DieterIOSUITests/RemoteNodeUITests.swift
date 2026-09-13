@@ -60,9 +60,17 @@ final class RemoteNodeUITests: XCTestCase {
         let mock = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
         XCTAssertTrue(mock.waitForExistence(timeout: 5), app.debugDescription)
         mock.tap()
-        let providerChanged = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "label CONTAINS 'Mock'"), object: element(app, "ios.create.provider"))
-        XCTAssertEqual(XCTWaiter.wait(for: [providerChanged], timeout: 5), .completed)
+        // Native Picker labels vary by OS; the value describes the selection.
+        // Verify the dependent model reset as well before submitting anything.
+        for identifier in ["ios.create.provider", "ios.create.model"] {
+            let picker = element(app, identifier)
+            let selectedMock = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == 'Mock'"), object: picker)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [selectedMock], timeout: 5), .completed,
+                "\(identifier) should select Mock; label=\(picker.label), value=\(String(describing: picker.value)).\n\(app.debugDescription)"
+            )
+        }
         // Return to the first form section after selecting the provider.
         for _ in 0..<4 {
             let titleField = element(app, "ios.create.title")

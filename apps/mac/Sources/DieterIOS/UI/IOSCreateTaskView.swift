@@ -77,10 +77,12 @@
                             ForEach(store.harnesses, id: \.id) { Text($0.name).tag($0.id) }
                         }
                         .accessibilityIdentifier("ios.create.provider")
+                        .accessibilityValue(harness?.name ?? provider)
                         Picker("Model", selection: $model) {
                             ForEach(harness?.models ?? [], id: \.id) { Text($0.name).tag($0.id) }
                         }
                         .accessibilityIdentifier("ios.create.model")
+                        .accessibilityValue(selectedModel?.name ?? model)
                         if !efforts.isEmpty {
                             Picker("Reasoning", selection: $effort) {
                                 ForEach(efforts, id: \.self) { value in

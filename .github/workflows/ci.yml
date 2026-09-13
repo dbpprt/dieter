@@ -134,10 +134,12 @@ jobs:
       - name: Install isolated fixture runtime
         run: just harness install
       - name: Build signed Simulator app
+        id: build_ios
         run: just ios build
       - name: Verify iPhone remote workflows
         run: just ios smoke-built
       - name: Verify iPad remote workflows
+        if: ${{ !cancelled() && steps.build_ios.conclusion == 'success' }}
         run: just ios smoke-built 'iPad Pro 11-inch (M5)'
       - name: Verify unsigned device archive
         run: just ios archive-unsigned 0.1.0 1
@@ -149,7 +151,8 @@ jobs:
           path: |
             apps/ios/.build/smoke/**/test-summary.json
             apps/ios/.build/smoke/**/passed.json
-            apps/ios/.build/smoke/**/attachments/*.png
+            apps/ios/.build/smoke/**/tests.log
+            apps/ios/.build/smoke/**/attachments/*
           if-no-files-found: ignore
           retention-days: 14
 
