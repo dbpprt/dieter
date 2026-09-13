@@ -115,6 +115,8 @@ fun ChatsScreen(
         ResizableHorizontalSplitPane(
             dividerTag = "chats-pane-divider",
             modifier = Modifier.fillMaxSize().padding(contentPadding),
+            initialLeadingFraction = state.chatsPaneLeadingFraction,
+            onLeadingFractionCommitted = model::setChatsPaneLeadingFraction,
             leading = { paneModifier -> ChatsList(state, model, paneModifier) },
         ) { paneModifier ->
             if (state.selectedCardId == null) {

@@ -1261,10 +1261,14 @@
                     let queued = await waitUntil(timeout: 5) {
                         store.outboxSummary(for: machine)?.messageCount == 1
                     }
+                    let toastVisible = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find(
+                            "machine.\(machine.daemonID ?? machine.id).queue", in: window) != nil
+                    }
                     results["17a-offline-message-queued"] =
-                        queued && store.composerText.isEmpty
+                        queued && toastVisible && store.composerText.isEmpty
                         ? "passed"
-                        : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), draft=\(store.composerText)"
+                        : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), toast=\(toastVisible), draft=\(store.composerText)"
                     await captureAppearances(window, named: "17a-offline-message-queued.png", in: output)
 
                     let removed = await store.discardOutbox(for: machine)

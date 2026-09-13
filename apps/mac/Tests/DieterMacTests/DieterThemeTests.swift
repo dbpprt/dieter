@@ -329,13 +329,14 @@ struct DieterThemePerformanceTests {
         let start = try #require(source.range(of: "struct AppSidebar: View"))
         let end = try #require(
             source.range(
-                of: "private struct MachineQueueBanner: View",
+                of: "private struct SidebarProjectRow: View",
                 range: start.upperBound..<source.endIndex
             ))
         let implementation = source[start.lowerBound..<end.lowerBound]
 
         #expect(implementation.contains("VStack(alignment: .leading, spacing: 0)"))
         #expect(!implementation.contains("LazyVStack"))
+        #expect(!implementation.contains("MachineQueueBanner"))
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_RUN_LIVE_WINDOW_SMOKE"] == "1"))

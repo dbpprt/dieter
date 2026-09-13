@@ -2312,7 +2312,29 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(summary?.messageCount == 1)
     #expect(summary?.changeCount == 1)
     #expect(summary?.retrying == true)
+    #expect(summary?.queuedLabel == "2 items queued")
     #expect(summary?.deliveryLabel == "2 items queued — delivers when it reconnects.")
+    #expect(summary?.toastPhase(machineOnline: true) == .retrying)
+    #expect(summary?.toastPhase(machineOnline: false) == .retrying)
+}
+
+@Test func machineOutboxToastShowsFailureUntilTheEntryIsHandled() {
+    let endpointID = "gateway#offline"
+    var failed = DieterOutboxEntry(
+        commandID: "failed", clientID: "mac", endpointID: endpointID, kind: .createCard,
+        request: Data(), optimisticID: "local_card", attempts: 3, state: .failed,
+        createdAt: Date(timeIntervalSince1970: 1)
+    )
+    failed.lastError = "The machine rejected the request."
+
+    let summary = MachineOutboxSummary.summaries(for: [failed])[endpointID]
+
+    #expect(summary?.toastPhase(machineOnline: true) == .failed)
+    #expect(summary?.failureMessage == "The machine rejected the request.")
+
+    var accepted = failed
+    accepted.serverID = "c_server"
+    #expect(MachineOutboxSummary.summaries(for: [accepted])[endpointID] == nil)
 }
 
 @Test func reachableMachineOutboxSelectionPrefersEndpointOrder() {

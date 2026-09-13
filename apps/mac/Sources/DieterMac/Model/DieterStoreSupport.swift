@@ -205,10 +205,11 @@ struct MachineOutboxSummary: Equatable, Sendable {
     let changeCount: Int
     let retrying: Bool
     let failed: Bool
+    let failureMessage: String?
 
     var itemCount: Int { messageCount + changeCount }
 
-    var deliveryLabel: String {
+    var queuedLabel: String {
         let noun: String
         if changeCount == 0 {
             noun = messageCount == 1 ? "message" : "messages"
@@ -217,8 +218,18 @@ struct MachineOutboxSummary: Equatable, Sendable {
         } else {
             noun = itemCount == 1 ? "item" : "items"
         }
+        return "\(itemCount) \(noun) queued"
+    }
+
+    var deliveryLabel: String {
         let suffix = failed ? "needs attention." : "delivers when it reconnects."
-        return "\(itemCount) \(noun) queued — \(suffix)"
+        return "\(queuedLabel) — \(suffix)"
+    }
+
+    func toastPhase(machineOnline: Bool) -> MachineDeliveryToastPhase {
+        if failed { return .failed }
+        if retrying { return .retrying }
+        return machineOnline ? .sending : .waiting
     }
 
     static func summaries(for entries: [DieterOutboxEntry]) -> [String: MachineOutboxSummary] {
@@ -228,10 +239,18 @@ struct MachineOutboxSummary: Equatable, Sendable {
                     messageCount: pending.count { $0.kind == .sendMessage },
                     changeCount: pending.count { $0.kind != .sendMessage },
                     retrying: pending.contains { $0.state == .retrying },
-                    failed: pending.contains { $0.state == .failed }
+                    failed: pending.contains { $0.state == .failed },
+                    failureMessage: pending.reversed().first(where: { $0.state == .failed })?.lastError
                 )
             }
     }
+}
+
+enum MachineDeliveryToastPhase: Equatable, Sendable {
+    case sending
+    case waiting
+    case retrying
+    case failed
 }
 
 struct DieterFailedOutboxItem: Identifiable, Sendable {

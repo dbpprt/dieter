@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -61,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
@@ -177,16 +179,24 @@ internal fun clampedPaneLeadingWidth(
 internal fun ResizableHorizontalSplitPane(
     dividerTag: String,
     modifier: Modifier = Modifier,
-    initialLeadingFraction: Float = 0.43f,
+    initialLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
+    onLeadingFractionCommitted: (Float) -> Unit = {},
     minimumLeadingWidth: androidx.compose.ui.unit.Dp = 220.dp,
     minimumTrailingWidth: androidx.compose.ui.unit.Dp = 320.dp,
     leading: @Composable (Modifier) -> Unit,
     trailing: @Composable (Modifier) -> Unit,
 ) {
     val dividerWidth = 16.dp
-    var requestedFraction by rememberSaveable(dividerTag) { mutableFloatStateOf(initialLeadingFraction) }
+    val restoredLeadingFraction = initialLeadingFraction.takeIf(Float::isFinite)?.coerceIn(0f, 1f)
+        ?: DEFAULT_PANE_LEADING_FRACTION
+    var requestedFraction by rememberSaveable(dividerTag) { mutableFloatStateOf(restoredLeadingFraction) }
     var dragging by remember { mutableStateOf(false) }
+    val currentCommitCallback by rememberUpdatedState(onLeadingFractionCommitted)
     val density = LocalDensity.current
+
+    LaunchedEffect(restoredLeadingFraction) {
+        if (!dragging) requestedFraction = restoredLeadingFraction
+    }
 
     BoxWithConstraints(modifier) {
         val totalWidthPx = with(density) { maxWidth.toPx() }
@@ -215,7 +225,20 @@ internal fun ResizableHorizontalSplitPane(
                         stateDescription = "List pane ${(actualFraction * 100).toInt()} percent"
                         progressBarRangeInfo = ProgressBarRangeInfo(actualFraction, 0f..1f)
                         setProgress { targetFraction ->
-                            requestedFraction = targetFraction.coerceIn(0f, 1f)
+                            val targetWidthPx = clampedPaneLeadingWidth(
+                                requestedWidth = availableWidthPx * targetFraction.coerceIn(0f, 1f),
+                                totalWidth = totalWidthPx,
+                                dividerWidth = dividerWidthPx,
+                                minimumLeadingWidth = minimumLeadingWidthPx,
+                                minimumTrailingWidth = minimumTrailingWidthPx,
+                            )
+                            val committedFraction = if (availableWidthPx > 0f) {
+                                targetWidthPx / availableWidthPx
+                            } else {
+                                DEFAULT_PANE_LEADING_FRACTION
+                            }
+                            requestedFraction = committedFraction
+                            currentCommitCallback(committedFraction)
                             true
                         }
                     }
@@ -227,7 +250,12 @@ internal fun ResizableHorizontalSplitPane(
                                 dragging = true
                             },
                             onDragCancel = { dragging = false },
-                            onDragEnd = { dragging = false },
+                            onDragEnd = {
+                                dragging = false
+                                if (availableWidthPx > 0f) {
+                                    currentCommitCallback(draggedWidthPx / availableWidthPx)
+                                }
+                            },
                         ) { change, dragAmount ->
                             change.consume()
                             draggedWidthPx = clampedPaneLeadingWidth(

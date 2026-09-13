@@ -19,6 +19,7 @@ import com.dbpprt.dieter.data.DieterEndpoint
 import com.dbpprt.dieter.data.DieterRepository
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.ConversationCreationPreferences
+import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.settings.DieterNotificationSettings
 import com.dbpprt.dieter.settings.NavigationStyle
@@ -174,6 +175,8 @@ data class DieterUiState(
     val collapsedChatProjectIds: Set<String> = emptySet(),
     val expandedChatProjectIds: Set<String> = emptySet(),
     val pinnedChatOrder: List<String> = emptyList(),
+    val chatsPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
+    val boardPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
     val projectHosts: Map<String, ProjectHost> = emptyMap(),
     val boards: List<Board> = emptyList(),
     val cards: List<Card> = emptyList(),
@@ -436,6 +439,16 @@ class DieterViewModel(
         viewModelScope.launch {
             appPreferences.pinnedChatOrder.collectLatest { pinnedChatOrder ->
                 _state.update { it.copy(pinnedChatOrder = pinnedChatOrder) }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.chatsPaneLeadingFraction.collectLatest { fraction ->
+                _state.update { it.copy(chatsPaneLeadingFraction = fraction) }
+            }
+        }
+        viewModelScope.launch {
+            appPreferences.boardPaneLeadingFraction.collectLatest { fraction ->
+                _state.update { it.copy(boardPaneLeadingFraction = fraction) }
             }
         }
     }
@@ -901,6 +914,14 @@ class DieterViewModel(
             }
         }
         if (persist) appPreferences.setPinnedChatOrder(initialOrder)
+    }
+
+    fun setChatsPaneLeadingFraction(fraction: Float) {
+        appPreferences.setChatsPaneLeadingFraction(fraction)
+    }
+
+    fun setBoardPaneLeadingFraction(fraction: Float) {
+        appPreferences.setBoardPaneLeadingFraction(fraction)
     }
 
     fun selectProject(id: String) {
