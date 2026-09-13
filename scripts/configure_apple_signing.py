@@ -251,8 +251,11 @@ def validate_ios_material(distribution_p12, distribution_password, provisioning_
     certificates = profile.get("DeveloperCertificates")
     if not isinstance(certificates, list) or certificate_der not in certificates:
         raise SetupError("The iOS provisioning profile does not include this Apple Distribution certificate.")
+    profile_uuid = profile.get("UUID")
     try:
-        profile_uuid = str(uuid.UUID(profile.get("UUID", ""))).upper()
+        # Xcode uses this external identifier for profile lookup; retain Apple's spelling.
+        if not isinstance(profile_uuid, str) or str(uuid.UUID(profile_uuid)) != profile_uuid.lower():
+            raise ValueError
     except (ValueError, AttributeError, TypeError):
         raise SetupError("The iOS provisioning profile has no valid UUID.") from None
     profile_name = profile.get("Name")
