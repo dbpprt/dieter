@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Sendable {
@@ -52,6 +53,22 @@ package struct DieterEndpoint: Codable, Equatable, Hashable, Identifiable, Senda
             return DieterEndpoint(name: name, host: host, port: port, secure: secure)
         }
         return DieterEndpoint(name: name, host: trimmed, port: secure ? 443 : 4242, secure: secure)
+    }
+
+    /// Detect literal loopback targets without resolving hostnames. Remote-only
+    /// clients must not probe another machine's advertised loopback on themselves.
+    package static func isLoopbackHost(_ value: String) -> Bool {
+        var host = value.lowercased()
+        if host.hasPrefix("["), host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
+        if host == "localhost" || host == "localhost." { return true }
+        var ipv4 = in_addr()
+        if inet_pton(AF_INET, host, &ipv4) == 1 { return UInt32(bigEndian: ipv4.s_addr) >> 24 == 127 }
+        var ipv6 = in6_addr()
+        guard inet_pton(AF_INET6, host, &ipv6) == 1 else { return false }
+        return withUnsafeBytes(of: ipv6) { bytes in
+            bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1
+                || bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 255 && bytes[11] == 255 && bytes[12] == 127
+        }
     }
 
     private enum CodingKeys: String, CodingKey {

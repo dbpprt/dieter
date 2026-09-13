@@ -79,7 +79,7 @@ def affected_mac_smoke_suites(paths):
         if path.startswith(("api/proto/", "scripts/isolated-gateway/", "assets/brand/")) \
                 or path in {"scripts/generate-proto.sh", "just/mac.just"}:
             return MAC_SMOKE_SUITES
-        if not path.startswith("apps/mac/") or path.startswith("apps/mac/Tests/"):
+        if not path.startswith("apps/mac/") or path.startswith(("apps/mac/Tests/", "apps/mac/Sources/DieterIOS/")):
             continue
         relative = path.removeprefix(MAC_SOURCE_ROOT)
         suites = MAC_SMOKE_FILES.get(relative)
@@ -154,22 +154,23 @@ def plan_checks(root, paths, packages=None):
     schema = any(p.startswith("api/proto/") or p == "scripts/generate-proto.sh" for p in code)
     fixture = any(p.startswith("scripts/isolated-gateway/") for p in code)
     brand = any(p.startswith("assets/brand/") for p in code)
-    mac = schema or fixture or brand or any(p.startswith("apps/mac/") or p == "just/mac.just" for p in code)
+    mac = schema or fixture or brand or any((p.startswith("apps/mac/") and not p.startswith("apps/mac/Sources/DieterIOS/")) or p == "just/mac.just" for p in code)
+    ios = schema or fixture or brand or any(p.startswith(("apps/ios/", "apps/mac/Sources/DieterIOS/", "apps/mac/Sources/DieterCore/", "apps/mac/Sources/DieterClient/", "apps/mac/Sources/DieterAPI/")) or p in {"apps/mac/Package.swift", "just/ios.just"} for p in code)
     android = schema or fixture or brand or any(p.startswith("apps/android/") or p == "just/android.just" for p in code)
     mac_suites = affected_mac_smoke_suites(code)
     android_integration = android and (schema or fixture or brand or any(
         (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
         or p == "just/android.just" for p in code))
 
-    if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just"} for p in code):
+    if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just", "just/ios.just"} for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
     if any(p == "justfile" or p.startswith("just/") for p in code):
         add("just", "justfile-check")
     if any(p.startswith(".github/workflows/") or p == "just/release.just" for p in code):
         add("just", "workflow-check")
     if any(p.startswith(("scripts/macos_daemon_installer", "scripts/macos_notary_submit",
-                         "scripts/configure_apple_signing", "scripts/release_signing"))
-           or p in {"just/release.just", "just/daemon.just"} for p in code):
+                         "scripts/configure_apple_signing", "scripts/release_signing", "scripts/ios_release"))
+           or p in {"just/release.just", "just/daemon.just", "just/ios.just", ".github/workflows/ios-testflight.yml"} for p in code):
         add("just", "release", "test")
     if schema:
         add("just", "proto")
@@ -191,6 +192,10 @@ def plan_checks(root, paths, packages=None):
         add("just", "mac", "test")
     if android:
         add("just", "android", "test")
+    if ios:
+        add("just", "ios", "build")
+        add("just", "ios", "smoke")
+        add("just", "ios", "smoke-ipad")
     if mac_suites == MAC_SMOKE_SUITES:
         add("just", "mac", "smoke-all")
     elif mac_suites:

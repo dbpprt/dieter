@@ -7,6 +7,7 @@ import GRPCNIOTransportHTTP2
 import GRPCProtobuf
 import Security
 import SwiftProtobuf
+import X509
 
 /// One long-lived native HTTP/2 gRPC channel to the loopback Dieter server.
 package final class DieterRPC: Sendable {
@@ -135,7 +136,7 @@ package final class DieterRPC: Sendable {
         daemonID: String
     ) -> Bool {
         guard let leafData = derChain.first,
-            let leaf = SecCertificateCreateWithData(nil, leafData as CFData),
+            SecCertificateCreateWithData(nil, leafData as CFData) != nil,
             let caDER = pemCertificateDER(daemonCAPEM),
             let ca = SecCertificateCreateWithData(nil, caDER as CFData)
         else { return false }
@@ -150,12 +151,22 @@ package final class DieterRPC: Sendable {
             SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
             SecTrustEvaluateWithError(trust, nil)
         else { return false }
-        guard
-            let values = SecCertificateCopyValues(leaf, [kSecOIDSubjectAltName] as CFArray, nil)
-                as? [CFString: Any],
-            let subjectAlternativeName = values[kSecOIDSubjectAltName]
+        return certificateHasDaemonIdentity(leafData, daemonID: daemonID)
+    }
+
+    /// Match only a URI subject-alternative-name, never a common name, DNS SAN,
+    /// substring, or another extension containing the same bytes. X509's DER
+    /// parser is available on both iOS and macOS; SecCertificateCopyValues is not.
+    package static func certificateHasDaemonIdentity(_ der: Data, daemonID: String) -> Bool {
+        guard !daemonID.isEmpty,
+            let certificate = try? Certificate(derEncoded: Array(der)),
+            let names = try? certificate.extensions.subjectAlternativeNames
         else { return false }
-        return containsCertificateValue("spiffe://board/daemon/\(daemonID)", in: subjectAlternativeName)
+        let expected = "spiffe://board/daemon/\(daemonID)"
+        return names.contains { name in
+            guard case .uniformResourceIdentifier(let value) = name else { return false }
+            return value == expected
+        }
     }
 
     private static func pemCertificateDER(_ pem: Data) -> Data? {
@@ -167,22 +178,6 @@ package final class DieterRPC: Sendable {
             .components(separatedBy: .whitespacesAndNewlines)
             .joined()
         return Data(base64Encoded: body)
-    }
-
-    private static func containsCertificateValue(_ expected: String, in value: Any) -> Bool {
-        if let text = value as? String { return text == expected }
-        if let url = value as? URL { return url.absoluteString == expected }
-        if let url = value as? NSURL { return url.absoluteString == expected }
-        if let values = value as? [Any] {
-            return values.contains { containsCertificateValue(expected, in: $0) }
-        }
-        if let values = value as? [CFString: Any] {
-            return values.values.contains { containsCertificateValue(expected, in: $0) }
-        }
-        if let values = value as? [String: Any] {
-            return values.values.contains { containsCertificateValue(expected, in: $0) }
-        }
-        return false
     }
 
     package func run() async throws {

@@ -104,6 +104,58 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  ios:
+    name: iPhone and iPad client
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Select Xcode 26.5
+        run: just release select-xcode
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/harness/runtime/package-lock.json
+      - name: Restore iOS build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/ios/.build/DerivedData
+          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-ci-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
+      - name: Install isolated fixture runtime
+        run: just harness install
+      - name: Build signed Simulator app
+        id: build_ios
+        run: just ios build
+      - name: Verify iPhone remote workflows
+        run: just ios smoke-built
+      - name: Verify iPad remote workflows
+        if: ${{ !cancelled() && steps.build_ios.conclusion == 'success' }}
+        run: just ios smoke-built 'iPad Pro 11-inch (M5)'
+      - name: Verify unsigned device archive
+        run: just ios archive-unsigned 0.1.0 1
+      - name: Retain native results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-evidence
+          path: |
+            apps/ios/.build/smoke/**/test-summary.json
+            apps/ios/.build/smoke/**/passed.json
+            apps/ios/.build/smoke/**/tests.log
+            apps/ios/.build/smoke/**/attachments/*
+          if-no-files-found: ignore
+          retention-days: 14
+
   android:
     name: Android client
     runs-on: ubuntu-latest

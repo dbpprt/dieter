@@ -61,7 +61,12 @@ package actor DieterSyncPersistence {
 
     package nonisolated static func installationID(defaults: UserDefaults = .standard) -> String {
         if let current = defaults.string(forKey: "DieterSyncClientID"), !current.isEmpty { return current }
-        let value = "mac_\(UUID().uuidString.lowercased())"
+        #if os(iOS)
+            let prefix = "ios"
+        #else
+            let prefix = "mac"
+        #endif
+        let value = "\(prefix)_\(UUID().uuidString.lowercased())"
         defaults.set(value, forKey: "DieterSyncClientID")
         return value
     }

@@ -55,6 +55,7 @@ configure-apple-signing *args:
 test:
     python3 -m unittest discover -s scripts -p '*signing_test.py'
     python3 -m unittest discover -s scripts -p 'macos_*_test.py'
+    python3 -m unittest discover -s scripts -p 'ios_release_test.py'
 
 # Validate all-or-none Apple signing configuration; optionally require an installer identity.
 signing-config installer="false" required="false":

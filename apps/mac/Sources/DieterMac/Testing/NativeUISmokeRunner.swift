@@ -1110,6 +1110,12 @@
             // A repository can be registered on several enrolled machines. Render
             // the real new-chat surface with a duplicate project name and require
             // its selected destination to retain the owning machine identity.
+            // The extra machine exists only in this renderer fixture. Pause the
+            // gateway directory poll so its authoritative response cannot remove
+            // the injected endpoint while the view settles or screenshots render.
+            let resumeMachineDirectoryRefresh = store.machineDirectoryTask != nil
+            store.machineDirectoryTask?.cancel()
+            store.machineDirectoryTask = nil
             let duplicateMachine = DieterEndpoint(
                 name: "Smoke remote Mac",
                 host: store.endpoint.host,
@@ -1147,6 +1153,7 @@
             store.endpoints.removeAll { $0.id == duplicateMachine.id }
             store.newChatProjectID = project.id
             store.selectedProjectID = project.id
+            if resumeMachineDirectoryRefresh { store.startMachineDirectoryRefresh() }
             try? await DieterTaskSleep.milliseconds(350)
 
             store.createProjectPresented = true

@@ -6,6 +6,11 @@ daemon installer uses Developer ID Installer. Both deliverables are submitted to
 Apple's notary service; a submission must report `Accepted` before release work
 continues. The app and installer carry stapled notarization tickets.
 
+The separate, manually dispatched iOS workflow uses Apple Distribution signing
+and an App Store Connect provisioning profile to produce an iPhone/iPad archive
+and IPA. Uploading that build for TestFlight is optional. iOS does not use the Mac
+Developer ID certificates or notarization service.
+
 ## Credentials dedicated to Dieter
 
 Create fresh credentials for this repository rather than exporting a personal or
@@ -33,7 +38,7 @@ display their plaintext values in its settings.
 See Apple's [Developer ID certificate instructions](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)
 and [notarization authentication documentation](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool).
 
-## Configure the repository
+## Configure Mac signing
 
 The authenticated GitHub CLI account needs permission to manage Actions secrets
 in `dbpprt/dieter`. Supply the dedicated files explicitly:
@@ -41,6 +46,7 @@ in `dbpprt/dieter`. Supply the dedicated files explicitly:
 ```sh
 just release configure-apple-signing \
   --repo dbpprt/dieter \
+  --platform macos \
   --application-p12 /private/path/dieter-application.p12 \
   --installer-p12 /private/path/dieter-installer.p12 \
   --notary-key /private/path/dieter-notarization.p8 \
@@ -64,7 +70,7 @@ needed. These options concern the password-protected `.p12` container, not the
 code-signing algorithm. The helper never rewrites the supplied credential files
 or imports them into a local Keychain.
 
-It uploads only these seven repository secrets:
+For `--platform macos`, it uploads these seven repository secrets:
 
 | Secret | Contents |
 | --- | --- |
@@ -82,7 +88,115 @@ silently fall back to ad-hoc signing. Local development builds retain their
 existing signing behavior. Existing Android and Homebrew credentials are
 unaffected.
 
-## Release and verify
+## Configure iOS signing and TestFlight
+
+Create dedicated iOS credentials and an app record before configuring GitHub:
+
+1. Register the explicit bundle ID `com.dbpprt.dieter.ios` in your Apple Developer
+   team and create its iOS app record in App Store Connect. Use the same bundle ID
+   throughout; `--ios-bundle-id` can override the default.
+2. Create a fresh Apple Distribution certificate and private key dedicated to
+   Dieter, then export them together as a password-protected `.p12`. The P12
+   compatibility requirements above apply to this export too.
+3. Create an **App Store Connect** provisioning profile for that bundle ID and
+   distribution certificate. Download the `.mobileprovision` file. Development,
+   Ad Hoc, and Enterprise profiles are not substitutes.
+4. Create a dedicated App Store Connect **team API key** for Dieter iOS uploads,
+   with an appropriate upload role. Save its `.p8`, Key ID, and Issuer ID. Keep
+   this separate from the Mac notarization key.
+
+The helper accepts explicit files; it does not search for credentials, export
+Keychain identities, or create Apple account resources. Keep the originals and
+password files outside the repository.
+
+```sh
+just release configure-apple-signing \
+  --repo dbpprt/dieter \
+  --platform ios \
+  --ios-distribution-p12 /private/path/dieter-ios-distribution.p12 \
+  --ios-distribution-password-file /private/path/dieter-ios-password.txt \
+  --ios-provisioning-profile /private/path/dieter-ios.mobileprovision \
+  --ios-api-key /private/path/dieter-ios-upload.p8 \
+  --ios-key-id KEY_ID \
+  --ios-issuer-id ISSUER_UUID \
+  --ios-bundle-id com.dbpprt.dieter.ios
+```
+
+Omit `--ios-distribution-password-file` to enter the P12 password at the prompt.
+Add `--check` to validate the supplied credentials locally without contacting
+GitHub. `--platform` accepts `macos`, `ios`, or `all` and defaults to `macos`, so
+existing Mac setup commands keep working. Use `all` with both sets of explicit
+credential flags to configure both platforms together.
+
+The iOS setup uploads these repository secrets:
+
+| Secret | Contents |
+| --- | --- |
+| `IOS_DISTRIBUTION_CERTIFICATE_BASE64` | Dedicated Apple Distribution `.p12`, base64 encoded |
+| `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD` | Distribution export password |
+| `IOS_PROVISIONING_PROFILE_BASE64` | Matching App Store Connect profile, base64 encoded |
+| `IOS_APP_STORE_CONNECT_KEY_BASE64` | Dedicated upload `.p8`, base64 encoded |
+| `IOS_APP_STORE_CONNECT_KEY_ID` | Upload API Key ID |
+| `IOS_APP_STORE_CONNECT_ISSUER_ID` | Upload API Issuer ID |
+| `IOS_TEAM_ID` | Developer team for the signing identity and profile |
+| `IOS_BUNDLE_ID` | Explicit iOS app bundle ID |
+
+Apple describes [creating an App Store Connect provisioning profile](https://developer.apple.com/help/account/provisioning-profiles/create-an-app-store-provisioning-profile/)
+and [creating team API keys](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/).
+
+## Build and upload iOS
+
+The `ios-testflight.yml` workflow runs only by manual dispatch. It has a
+`version` input (default `0.1.0`) and an `upload` input (default `false`). The
+workflow assigns a distinct build number using `run_number.run_attempt`, including
+when rerunning a workflow. It does not upload on pull requests or pushes to
+`main`, and it is independent of the automatic Mac release workflow.
+
+GitHub enables manual dispatch after the workflow exists on the default branch,
+so this workflow becomes available when the PR is merged. Retry the latest run
+or dispatch a fresh run: an older run's retry can have a lower build number than
+a newer uploaded build, which Apple may reject.
+The release helper uses conservative four/two-digit bounds for the run and
+attempt components and fails before signing if either exceeds them.
+
+First run a build without uploading:
+
+```sh
+gh workflow run ios-testflight.yml --repo dbpprt/dieter --ref BRANCH \
+  -f version=0.1.0 -f upload=false
+```
+
+This produces signed archive and IPA workflow artifacts for inspection. When
+ready to upload a new build to App Store Connect, dispatch with `-f upload=true`.
+The workflow uses `xcodebuild -exportArchive` with the `app-store-connect` method
+and explicit signing credentials. It requires a supported Xcode version for App
+Store Connect uploads; current iOS uploads require builds made with Xcode 26 or
+later.
+
+The underlying recipes are:
+
+```sh
+just ios signing-config
+just ios archive-unsigned 0.1.0 1.1
+just --yes ios testflight 0.1.0 1.1
+just --yes ios testflight 0.1.0 1.1 --upload
+```
+
+`archive-unsigned` is a local device-architecture archive check and needs no Apple
+credentials. It cannot be installed or uploaded as a signed distribution.
+`testflight` is CI-only and uses the configured iOS secrets; without `--upload`,
+it only archives and exports. Temporary decoded signing credentials are removed
+when the recipe exits. Simulator tests and unsigned builds do not verify actual
+App Store Connect acceptance or TestFlight distribution.
+
+After upload, Apple must process the build. Complete any export-compliance and
+beta test information in App Store Connect, then assign the processed build to a
+TestFlight group and invite testers. External testing may require Beta App
+Review. Upload success alone does not make a build available to testers. See
+[Apple's upload requirements](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
+and [TestFlight workflow](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/).
+
+## Release and verify Mac
 
 The `Release` GitHub Actions workflow runs after pushes to `main` and supports
 manual dispatch. By default it builds and publishes the complete release,

@@ -12,4 +12,5 @@ esac
 xcrun swift-format "${command[@]}" "${arguments[@]}" \
     apps/mac/Package.swift \
     apps/mac/Sources/DieterCore apps/mac/Sources/DieterClient apps/mac/Sources/DieterMac \
-    apps/mac/Tests apps/mac/Tools
+    apps/mac/Sources/DieterIOS apps/mac/Tests apps/mac/Tools \
+    apps/ios/DieterIOSApp/DieterIOSApp.swift apps/ios/DieterIOSUITests apps/ios/DieterIOSNativeTests

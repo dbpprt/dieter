@@ -552,6 +552,7 @@ just daemon
 just gateway
 just harness
 just mac
+just ios
 just android
 just site
 just release
@@ -562,10 +563,11 @@ transfer in YAML. Every executable repository step enters through one of these
 Just modules, so the same build and packaging commands can be exercised
 locally without copying workflow shell blocks.
 
-Mac signing and notarization use credentials dedicated to Dieter, configured
-through `just release configure-apple-signing`. See
-[Apple release signing](docs/apple-release-signing.md) for the seven repository
-secrets and certificate setup. `just release test` validates the release tools
+Apple signing uses credentials dedicated to Dieter, configured through
+`just release configure-apple-signing --platform macos|ios|all`. See
+[Apple release signing](docs/apple-release-signing.md) for Mac notarization,
+iOS distribution credentials, and the manual TestFlight workflow. The default
+setup platform remains `macos`. `just release test` validates the release tools
 without using real signing credentials or installing a daemon.
 
 Android builds use Android Studio's bundled JBR. If needed, set:
@@ -737,3 +739,7 @@ The default replaces the full list; `--append` adds atomically and deduplicates.
 CLI inputs use the host or host-and-port format above. Board settings also accepts
 HTTP(S) URLs and stores their hostname plus an explicit port when present. The
 same normalization, matching rules, and 64-entry limit apply.
+
+## iPhone and iPad client
+
+The native iOS 18+ SwiftUI client connects to enrolled remote nodes through the authenticated gateway and verified direct TLS routes. Open `apps/ios/DieterIOS.xcodeproj`, or use `just ios build` and `just ios smoke`. See [iOS setup and remote workflows](apps/ios/README.md).
