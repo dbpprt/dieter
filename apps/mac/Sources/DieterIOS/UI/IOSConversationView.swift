@@ -170,6 +170,8 @@
                         .background(
                             Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18)
                         )
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(TapGesture().onEnded { composerFocused = true })
                         .accessibilityIdentifier("ios.composer.message")
                     Button {
                         let message = draft

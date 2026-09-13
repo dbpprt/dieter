@@ -55,9 +55,10 @@ remote file editing, starting a draft, and foreground reconnection.
 The landscape iPad run also passed **9 tests, 0 failures**, with the same
 optional HTTPS skip. Its full remote journey and accessibility hierarchy
 verified the three-column layout at 1210 × 834 points. Results are in
-`.build/smoke/20260912-232848-2fc2493b/`. Native attachments are retained unchanged;
-the exported iPad screenshots have an orientation/rendering issue, so they are
-not used as presentation images.
+`.build/smoke/20260912-232848-2fc2493b/`. Native attachments are retained unchanged.
+The native PNGs contain landscape pixels at 2420 × 1668 with EXIF orientation 8;
+their exported presentation has an orientation/rendering issue. This does not
+establish an app layout defect. These exports are not used as presentation images.
 
 The tablet test scrolls its provider picker fully above the footer before
 tapping it and selects the mock provider while the form is empty. This fixes
@@ -90,6 +91,28 @@ Browse files left the menu open; captured accessibility evidence showed no file
 sheet had opened. The retry completed file edit/save/reopen and the rest of the
 journey. This intermittent menu interaction remains a smoke-test limitation.
 
+## PR CI follow-up
+
+The failed CI run `34758195699` exposed two separate native issues. The iPad
+composer's narrow text field included a horizontal scroll indicator at its
+center, and the first follow-up tap did not focus text input. The whole padded
+composer now accepts a simultaneous tap to focus without replacing native text
+selection gestures. The UI journey also waits for the keyboard before typing.
+The updated iPad suite passed **9 tests, 0 failures**, with the optional HTTPS
+probe skipped (`.build/smoke/20260913-135120-55132493/`).
+
+The Mac grouping fixture injected a synthetic machine that the real gateway
+directory poll could remove before its assertion. Polling is now paused only
+around that fixture and restored afterward. The failing grouping assertion
+passed locally. All **572 Mac tests in 27 suites** and the isolated gateway
+package tests passed. Disposable fixture commits also explicitly disable Git
+signing so they cannot open the operator's signing agent.
+
+The local core smoke reported **66 passed, 3 failed, 4 diagnostics**: the three
+remaining assertions required an active/key window while the host desktop was
+locked. The board suite therefore did not run locally; CI must validate those
+native focus journeys. The smoke app and its disposable gateway were cleaned up.
+
 ## Environment limits
 
 The optional public HTTPS probe did not complete in this Simulator environment.
@@ -100,8 +123,10 @@ was preserved and temporary transport diagnostics were removed.
 
 Physical-device installation requires a development team selected in Xcode.
 The device build recipe compiles Release without signing. Dedicated iOS GitHub
-secrets are not configured, so Apple Distribution signing, App Store Connect
-upload, processing, and TestFlight tester availability have not been exercised.
+secrets are now configured and validated; see the
+[completed Apple setup](APP_STORE_PREPARATION.md#completed-release-setup).
+Actual Apple Distribution signing, App Store Connect upload, processing, and
+TestFlight tester availability have not been exercised.
 The new release tests use synthetic credentials and mocked Apple operations.
 The running operator
 Mac app and daemon were preserved; native Mac smoke tests were unavailable

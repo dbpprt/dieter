@@ -142,7 +142,8 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	linkedWorktree := filepath.Join(home, "linked-worktree")
 	for _, command := range [][]string{
 		{"git", "-C", repository, "add", "README.md"},
-		{"git", "-C", repository, "commit", "-m", "initial"},
+		// Disposable fixture commits must not invoke the operator's signing agent.
+		{"git", "-C", repository, "-c", "commit.gpgsign=false", "commit", "-m", "initial"},
 		{"git", "-C", repository, "worktree", "add", "-b", "linked-worktree", linkedWorktree},
 	} {
 		process := exec.CommandContext(ctx, command[0], command[1:]...)

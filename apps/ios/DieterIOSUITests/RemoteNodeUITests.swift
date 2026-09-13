@@ -21,6 +21,9 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Missing \(identifier)")
         field.tap()
         dismissKeyboardIntroduction(app)
+        XCTAssertTrue(
+            app.keyboards.firstMatch.waitForExistence(timeout: 10),
+            "Tapping \(identifier) should activate text input.\n\(app.debugDescription)")
         field.typeText(text)
         dismissKeyboardIntroduction(app)
     }
