@@ -428,6 +428,59 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn(PASSWORD.decode(), errors.getvalue())
         self.assertFalse(set(release.SECRET_NAMES) & run.call_args.kwargs["env"].keys())
 
+    def test_xcode_failures_report_actionable_errors_without_raw_output(self):
+        result = subprocess.CompletedProcess([], 65, stdout=b"Command line invocation:\nprivate compiler argv\n",
+                                             stderr=b'project: error: Provisioning profile does not support target DieterIOSApp.\n')
+        with patch.object(release.subprocess, "run", return_value=result):
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.command(["xcodebuild", "archive"], label="Signed iOS archive", diagnostic_secrets=())
+        self.assertIn("Provisioning profile does not support target DieterIOSApp", str(caught.exception))
+        self.assertNotIn("private compiler argv", str(caught.exception))
+        self.assertNotIn("Command line invocation", str(caught.exception))
+
+    def test_xcode_errors_redact_encoded_decoded_and_runtime_signing_values(self):
+        pem = b"-----BEGIN PRIVATE KEY-----\nSYNTHETIC_PRIVATE_KEY_BASE64_LINE\n-----END PRIVATE KEY-----\n"
+        env = dict(self.env, IOS_APP_STORE_CONNECT_KEY_BASE64=base64.b64encode(pem).decode())
+        runtime = "/private/dieter-ios-signing-owned"
+        values = [*env.values(), CERTIFICATE.decode(), PROFILE.decode(), PASSWORD.decode(),
+                  "SYNTHETIC_PRIVATE_KEY_BASE64_LINE", runtime, "generated keychain password"]
+        errors = "\n".join("error: Invalid signing input " + value for value in values).encode()
+        result = subprocess.CompletedProcess([], 65, stdout=b"", stderr=errors)
+        with patch.dict(os.environ, env), patch.object(release.subprocess, "run", return_value=result):
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.command(["xcodebuild", "-exportArchive"], label="App Store IPA export",
+                                diagnostic_secrets=(runtime, "generated keychain password"))
+        message = str(caught.exception)
+        self.assertIn("Invalid signing input", message)
+        self.assertIn("[redacted]", message)
+        for value in values:
+            if value not in ("true", str(self.runner)):
+                self.assertNotIn(value, message)
+
+    def test_xcode_summary_is_bounded_and_ignores_echoed_commands_and_private_key_blocks(self):
+        output = b"error: security import secret.p12 -P secret\nerror: -----BEGIN PRIVATE KEY-----\n"
+        output += b"error: " + b"a" * 9000 + b"\n"
+        output += b"\n".join(f"error: failure {index}: ".encode() + b"x" * 700 for index in range(20))
+        summary = release.xcode_error_summary(output, b"", ())
+        self.assertEqual(len(summary.splitlines()), 8)
+        self.assertLessEqual(len(summary), 8 * 510)
+        self.assertNotIn("security import", summary)
+        self.assertNotIn("PRIVATE KEY", summary)
+
+    def test_xcode_summary_omits_each_echoed_security_command_without_truncation(self):
+        for echoed in ("security import secret.p12 -P private-password", "security -v import secret.p12",
+                       "/usr/bin/security unlock-keychain -p private-password owned.keychain-db"):
+            with self.subTest(command_form=echoed.split()[0]):
+                self.assertEqual(release.xcode_error_summary(("error: " + echoed).encode(), b"", ()), "")
+
+    def test_security_errors_remain_opaque_even_if_diagnostics_requested(self):
+        result = subprocess.CompletedProcess([], 1, stdout=b"error: private keychain details", stderr=PASSWORD)
+        with patch.object(release.subprocess, "run", return_value=result):
+            with self.assertRaises(release.ReleaseError) as caught:
+                release.command(["security", "import", "private.p12"], label="Certificate import", diagnostic_secrets=())
+        self.assertIn("withheld", str(caught.exception))
+        self.assertNotIn("private keychain details", str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
