@@ -21,7 +21,7 @@ let package = Package(
         .package(path: "Vendor/grpc-swift-nio-transport"),
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.4.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.5.1"),
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.19.0"),
         .package(path: "Vendor/swift-markdown-engine"),
     ],
     targets: [

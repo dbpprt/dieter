@@ -665,6 +665,7 @@ struct RemoteTerminalSurface: NSViewRepresentable {
         // SwiftTerm's two-column minimum so reconnect output cannot be
         // permanently reflowed from a zero-sized bootstrap frame.
         view.prepareForReplay(columns: initialColumns, rows: initialRows)
+        view.acceptsRemoteInput = acceptsInput
         context.coordinator.active = active
         context.coordinator.acceptsInput = acceptsInput
         view.terminalDelegate = context.coordinator
@@ -687,6 +688,7 @@ struct RemoteTerminalSurface: NSViewRepresentable {
         context.coordinator.resize = resize
         context.coordinator.acceptsInput = acceptsInput
         context.coordinator.active = active
+        view.acceptsRemoteInput = acceptsInput
         applyPalette(to: view)
         context.coordinator.apply(screen, to: view)
     }
@@ -739,26 +741,152 @@ struct RemoteTerminalSurface: NSViewRepresentable {
         func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}
         func scrolled(source: SwiftTerm.TerminalView, position: Double) {}
         func clipboardCopy(source: SwiftTerm.TerminalView, content: Data) {
+            guard let text = String(data: content, encoding: .utf8) else { return }
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setData(content, forType: .string)
+            NSPasteboard.general.setString(text, forType: .string)
         }
         func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) {}
     }
 }
 
 /// Keeps SwiftTerm's emulator grid aligned with the AppKit view under Auto
-/// Layout. SwiftTerm 1.5.1 only processes geometry in its `frame` setter; AppKit
-/// can resize an NSView through `setFrameSize`, which otherwise stretches the
-/// surface without resizing the terminal buffer.
+/// Layout. AppKit can resize an NSView through `setFrameSize`, which otherwise
+/// stretches the surface without resizing the terminal buffer.
 @MainActor
 final class RemoteTerminalView: SwiftTerm.TerminalView {
+    private final class MonitorBox: @unchecked Sendable {
+        var token: Any?
+
+        func remove() {
+            if let token { NSEvent.removeMonitor(token) }
+            token = nil
+        }
+    }
+
+    var acceptsRemoteInput = true
+    private var selectionAnchorEvent: NSEvent?
+    private let editCommandMonitor = MonitorBox()
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        editCommandMonitor.remove()
+        guard window != nil else { return }
+        editCommandMonitor.token = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.window, self.window?.firstResponder === self else { return event }
+            return self.performStandardEditCommand(for: event) ? nil : event
+        }
+    }
+
+    deinit { editCommandMonitor.remove() }
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         synchronizeGridToBounds()
     }
 
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        selectionAnchorEvent = event.clickCount == 1 && usesTextSelection(for: event) ? event : nil
+        withTextSelectionOverride(for: event) {
+            super.mouseDown(with: event)
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        withTextSelectionOverride(for: event) {
+            // SwiftTerm starts a character selection at the first drag event,
+            // not at mouse-down. A short native drag can contain only one drag
+            // event and would therefore produce an empty selection. Seed that
+            // selection from the original click before extending it.
+            if let anchor = selectionAnchorEvent {
+                super.mouseDragged(with: anchor)
+                selectionAnchorEvent = nil
+            }
+            super.mouseDragged(with: event)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        selectionAnchorEvent = nil
+        withTextSelectionOverride(for: event) {
+            super.mouseUp(with: event)
+        }
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        performStandardEditCommand(for: event) || super.performKeyEquivalent(with: event)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)) {
+            return acceptsRemoteInput && NSPasteboard.general.string(forType: .string) != nil
+        }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    override func paste(_ sender: Any) {
+        guard acceptsRemoteInput else { return }
+        super.paste(sender)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        window?.makeFirstResponder(self)
+        let menu = NSMenu(title: "Terminal")
+        menu.autoenablesItems = false
+        menu.addItem(editMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "c"))
+        menu.addItem(editMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "v"))
+        menu.addItem(.separator())
+        menu.addItem(editMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "a"))
+        return menu
+    }
+
     func prepareForReplay(columns: Int, rows: Int) {
         terminal.resize(cols: max(2, columns), rows: max(1, rows))
+    }
+
+    private func usesTextSelection(for event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.shift) { return true }
+        guard allowMouseReporting else { return true }
+        switch terminal.mouseMode {
+        case .off: return true
+        default: return false
+        }
+    }
+
+    private func withTextSelectionOverride(for event: NSEvent, _ body: () -> Void) {
+        guard event.modifierFlags.contains(.shift), allowMouseReporting else {
+            body()
+            return
+        }
+        allowMouseReporting = false
+        body()
+        allowMouseReporting = true
+    }
+
+    private func standardEditModifiers(_ modifiers: NSEvent.ModifierFlags) -> Bool {
+        modifiers.intersection([.command, .option, .control, .shift]) == .command
+    }
+
+    private func performStandardEditCommand(for event: NSEvent) -> Bool {
+        guard event.type == .keyDown, standardEditModifiers(event.modifierFlags),
+            let key = event.charactersIgnoringModifiers?.lowercased()
+        else { return false }
+
+        switch key {
+        case "c": copy(self)
+        case "v": paste(self)
+        case "a": selectAll(nil)
+        default: return false
+        }
+        return true
+    }
+
+    private func editMenuItem(title: String, action: Selector, keyEquivalent: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.keyEquivalentModifierMask = .command
+        item.target = self
+        item.isEnabled = validateUserInterfaceItem(item)
+        return item
     }
 
     private func synchronizeGridToBounds() {

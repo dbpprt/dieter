@@ -1306,6 +1306,131 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(view.bounds.intersects(view.caretFrame))
 }
 
+@Test @MainActor func remoteTerminalViewSupportsNativeSelectionCopyPasteAndFocus() async throws {
+    let pasteboard = NSPasteboard.general
+    let savedPasteboard =
+        pasteboard.pasteboardItems?.map { source in
+            source.types.compactMap { type in
+                source.data(forType: type).map { (type.rawValue, $0) }
+            }
+        } ?? []
+    defer {
+        pasteboard.clearContents()
+        let restoredItems = savedPasteboard.map { contents in
+            let item = NSPasteboardItem()
+            for (type, data) in contents {
+                item.setData(data, forType: NSPasteboard.PasteboardType(type))
+            }
+            return item
+        }
+        if !restoredItems.isEmpty { pasteboard.writeObjects(restoredItems) }
+    }
+
+    let view = RemoteTerminalView(
+        frame: NSRect(x: 0, y: 0, width: 640, height: 320),
+        font: .monospacedSystemFont(ofSize: 13, weight: .regular)
+    )
+    let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+    window.contentView = view
+    view.prepareForReplay(columns: 80, rows: 24)
+    view.feed(text: "selectable terminal text")
+    try await Task.sleep(for: .milliseconds(50))
+
+    _ = window.makeFirstResponder(nil)
+    let cell = view.caretFrame.size
+    let rowY = view.bounds.height - (cell.height / 2)
+    view.mouseDown(with: terminalMouseEvent(.leftMouseDown, at: NSPoint(x: cell.width / 2, y: rowY), in: view))
+    view.mouseDragged(
+        with: terminalMouseEvent(.leftMouseDragged, at: NSPoint(x: cell.width * 10.5, y: rowY), in: view))
+    view.mouseUp(with: terminalMouseEvent(.leftMouseUp, at: NSPoint(x: cell.width * 10.5, y: rowY), in: view))
+
+    #expect(window.firstResponder === view)
+    #expect(view.selectedRange().location != NSNotFound)
+    #expect(view.selectedRange().length > 0)
+    NSApp.sendEvent(terminalKeyEvent("c", modifiers: .command, in: window))
+    #expect(pasteboard.string(forType: .string)?.contains("selectable") == true)
+
+    var sent = Data()
+    let coordinator = RemoteTerminalSurface.Coordinator(
+        terminalID: "clipboard-shell", send: { sent.append($0) }, resize: { _, _ in })
+    view.terminalDelegate = coordinator
+    pasteboard.clearContents()
+    pasteboard.setString("pasted through terminal", forType: .string)
+    NSApp.sendEvent(terminalKeyEvent("v", modifiers: .command, in: window))
+    #expect(String(decoding: sent, as: UTF8.self) == "pasted through terminal")
+
+    let menu = view.menu(for: terminalMouseEvent(.rightMouseDown, at: .zero, in: view))
+    #expect(menu?.items.map(\.title).filter { !$0.isEmpty } == ["Copy", "Paste", "Select All"])
+}
+
+@Test @MainActor func remoteTerminalViewUsesShiftDragToSelectWhenApplicationTracksTheMouse() async throws {
+    let view = RemoteTerminalView(
+        frame: NSRect(x: 0, y: 0, width: 640, height: 320),
+        font: .monospacedSystemFont(ofSize: 13, weight: .regular)
+    )
+    let window = NSWindow(contentRect: view.frame, styleMask: [.titled], backing: .buffered, defer: false)
+    window.contentView = view
+    view.prepareForReplay(columns: 80, rows: 24)
+    view.feed(text: "mouse-aware output\u{001B}[?1000h")
+    try await Task.sleep(for: .milliseconds(50))
+
+    let cell = view.caretFrame.size
+    let rowY = view.bounds.height - (cell.height / 2)
+    let modifiers: NSEvent.ModifierFlags = .shift
+    view.mouseDown(
+        with: terminalMouseEvent(
+            .leftMouseDown, at: NSPoint(x: cell.width / 2, y: rowY), modifiers: modifiers, in: view))
+    view.mouseDragged(
+        with: terminalMouseEvent(
+            .leftMouseDragged, at: NSPoint(x: cell.width * 8.5, y: rowY), modifiers: modifiers, in: view))
+    view.mouseUp(
+        with: terminalMouseEvent(
+            .leftMouseUp, at: NSPoint(x: cell.width * 8.5, y: rowY), modifiers: modifiers, in: view))
+
+    #expect(view.selectedRange().location != NSNotFound)
+    #expect(view.selectedRange().length > 0)
+}
+
+@MainActor
+private func terminalMouseEvent(
+    _ type: NSEvent.EventType,
+    at point: NSPoint,
+    modifiers: NSEvent.ModifierFlags = [],
+    in view: NSView
+) -> NSEvent {
+    NSEvent.mouseEvent(
+        with: type,
+        location: view.convert(point, to: nil),
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: view.window?.windowNumber ?? 0,
+        context: nil,
+        eventNumber: 1,
+        clickCount: 1,
+        pressure: 1
+    )!
+}
+
+@MainActor
+private func terminalKeyEvent(
+    _ characters: String,
+    modifiers: NSEvent.ModifierFlags,
+    in window: NSWindow
+) -> NSEvent {
+    NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: window.windowNumber,
+        context: nil,
+        characters: characters,
+        charactersIgnoringModifiers: characters,
+        isARepeat: false,
+        keyCode: 0
+    )!
+}
+
 @Test func chatActivityTextUsesCompactUnits() throws {
     let now = try #require(ISO8601DateFormatter().date(from: "2026-08-19T12:00:00Z"))
     #expect(ChatActivityText.compact("2026-08-19T11:59:35Z", relativeTo: now) == "now")
