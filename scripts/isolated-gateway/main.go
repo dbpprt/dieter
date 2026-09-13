@@ -23,6 +23,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -170,8 +171,12 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 	if err != nil {
 		return err
 	}
+	runner := newIsolatedRunner(harness.NewSubprocessRunner(data.Root))
+	// Registered before boardHTTP.Close so HTTP admissions close first. The
+	// driver may remove this fixture's runtime only after all its writers exit.
+	defer runner.Shutdown()
 	boardServer := server.NewWithOptions(data, logger, server.Options{
-		Runner: isolatedRunner{SubprocessRunner: harness.NewSubprocessRunner(data.Root)},
+		Runner: runner,
 		MachineAction: func(_ context.Context, operation machine.Operation) error {
 			logger.Info("isolated machine operation accepted", "operation", operation)
 			return nil
@@ -298,9 +303,68 @@ func run(address, home, offlineTrigger string, boardStressFixture bool) error {
 // Auto-title always selects Spark independently of the conversation provider.
 // Intercept that metadata request here so native Quick Task tests never need
 // provider credentials, and can observe the running card before its rename.
-type isolatedRunner struct{ *harness.SubprocessRunner }
+type isolatedHarness interface {
+	harness.Runner
+	harness.Canceller
+	harness.Suspender
+}
 
-func (runner isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+type isolatedRun struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+type isolatedRunner struct {
+	isolatedHarness
+	mu     sync.Mutex
+	closed bool
+	active map[*isolatedRun]struct{}
+}
+
+func newIsolatedRunner(runner isolatedHarness) *isolatedRunner {
+	return &isolatedRunner{isolatedHarness: runner, active: make(map[*isolatedRun]struct{})}
+}
+
+// Shutdown cancels and drains every fixture-owned turn, including runtime
+// preparation. Durable turn contexts outlive HTTP requests, so closing the HTTP
+// server alone cannot stop npm or other children before the fixture process exits.
+// Do not return on a timeout while a writer remains: the smoke driver bounds its
+// own stop wait and refuses runtime cleanup if this process is still running.
+func (runner *isolatedRunner) Shutdown() {
+	runner.mu.Lock()
+	runner.closed = true
+	active := make([]*isolatedRun, 0, len(runner.active))
+	for run := range runner.active {
+		run.cancel()
+		active = append(active, run)
+	}
+	runner.mu.Unlock()
+	for _, run := range active {
+		<-run.done
+	}
+}
+
+func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	runner.mu.Lock()
+	if runner.closed {
+		runner.mu.Unlock()
+		return context.Canceled
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	run := &isolatedRun{cancel: cancel, done: make(chan struct{})}
+	runner.active[run] = struct{}{}
+	runner.mu.Unlock()
+	defer func() {
+		cancel()
+		runner.mu.Lock()
+		delete(runner.active, run)
+		close(run.done)
+		runner.mu.Unlock()
+	}()
+	return runner.run(ctx, request, emit)
+}
+
+func (runner *isolatedRunner) run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
 	// Queue editing needs a deterministic active turn. The normal mock harness
 	// intentionally finishes immediately, so this opt-in marker holds only the
 	// disposable fixture turn until the test cancels it.
@@ -323,7 +387,7 @@ func (runner isolatedRunner) Run(ctx context.Context, request harness.Request, e
 		}
 		return emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"text-delta","delta":"Quick Task Starts Immediately"}`)})
 	}
-	return runner.SubprocessRunner.Run(ctx, request, emit)
+	return runner.isolatedHarness.Run(ctx, request, emit)
 }
 
 func isolatedMachineCapabilities(context.Context) []machine.OperationCapability {
