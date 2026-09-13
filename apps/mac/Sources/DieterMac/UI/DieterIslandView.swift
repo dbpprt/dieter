@@ -242,7 +242,7 @@ struct DieterIslandView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .glassEffect(.regular, in: islandShape)
+        .dieterGlass(.regular, in: islandShape, solidColor: Color(white: 0.09))
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: presentation.expanded)
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
@@ -351,7 +351,7 @@ struct DieterIslandView: View {
                         .font(.system(size: 9.5, weight: .bold))
                         .frame(width: 30, height: 30)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(DieterGlassButtonStyle())
                 .buttonBorderShape(.circle)
                 .foregroundStyle(.white.opacity(0.62))
                 .accessibilityLabel("Collapse Dieter Island")
@@ -431,7 +431,7 @@ struct DieterIslandView: View {
                 } label: {
                     Label("Open activity", systemImage: "arrow.up.right.square")
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(DieterGlassButtonStyle(prominent: true))
                 .disabled(activity.items.isEmpty)
 
                 Button {
@@ -442,7 +442,7 @@ struct DieterIslandView: View {
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(DieterGlassButtonStyle())
 
                 displayPicker
 
@@ -450,7 +450,7 @@ struct DieterIslandView: View {
                 Button(action: onCaptureTask) {
                     Label("Capture task", systemImage: "viewfinder")
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(DieterGlassButtonStyle(prominent: true))
                 .help("Select a screen area and create a Quick Task")
                 .accessibilityIdentifier("island.capture-task")
                 .smokeTarget("island.capture-task")
@@ -480,7 +480,7 @@ struct DieterIslandView: View {
             Image(systemName: "display")
                 .frame(width: 18, height: 18)
         }
-        .buttonStyle(.glass)
+        .buttonStyle(DieterGlassButtonStyle())
         .quickHelp("Move to display")
         .accessibilityLabel("Move island to display")
         .accessibilityValue(presentation.currentDisplayID.flatMap { titles[$0] } ?? "Automatic")

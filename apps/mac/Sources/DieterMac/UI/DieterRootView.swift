@@ -65,6 +65,9 @@ struct DieterRootView: View {
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
             AppSidebar()
                 .frame(minWidth: SidebarSizing.minimumWidth)
+                .background {
+                    if !DieterTheme.usesTransparency { DieterTheme.opaqueSurface.ignoresSafeArea() }
+                }
                 .background(
                     NativeSplitColumnBounds(
                         minimum: SidebarSizing.minimumWidth, maximum: SidebarSizing.maximumWidth,
@@ -131,10 +134,14 @@ struct DieterRootView: View {
             .navigationSmokeDestination(store.section)
         }
         .navigationSplitViewStyle(.balanced)
-        // The system glass sidebar is intentionally inset and rounded on macOS
-        // 26. A continuous canvas underneath it prevents the window background
-        // from showing through as a gap beside the nested Chats browser.
-        .background(DieterTheme.surface)
+        .background {
+            DieterWindowBackdrop(
+                transparencyEnabled: DieterTheme.usesTransparency,
+                solidColor: NSColor(DieterTheme.opaqueSurface)
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
         .toolbar {
             if store.section != .board || store.selectedCardID == nil {
                 ToolbarItem(placement: .primaryAction) {

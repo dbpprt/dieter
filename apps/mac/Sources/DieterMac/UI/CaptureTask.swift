@@ -337,7 +337,7 @@ struct CapturedTaskDraftView: View {
                     screenshotInspector: true, screenshotInspectorWide: geometry.size.width >= 800)
             }
         }
-        .glassEffect(.regular, in: Rectangle())
+        .dieterGlass(.regular, in: Rectangle())
         .onChange(of: presented) { _, value in if !value { dismiss() } }
     }
 }

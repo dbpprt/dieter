@@ -124,21 +124,24 @@ enum DieterPalette: String, CaseIterable, Identifiable {
 struct DieterThemeSelection: Equatable, Hashable {
     var appearance: DieterAppearance
     var palette: DieterPalette
+    var transparencyEnabled = DieterTransparency.defaultEnabled
 
     static func load(
         from defaults: UserDefaults = DieterAppearance.applicationDefaults()
     ) -> Self {
         Self(
             appearance: DieterAppearance.resolve(defaults.string(forKey: DieterAppearance.storageKey)),
-            palette: DieterPalette.resolve(defaults.string(forKey: DieterPalette.storageKey))
+            palette: DieterPalette.resolve(defaults.string(forKey: DieterPalette.storageKey)),
+            transparencyEnabled: DieterTransparency.load(from: defaults)
         )
     }
 
-    var identity: String { "\(appearance.rawValue):\(palette.rawValue)" }
+    var identity: String { "\(appearance.rawValue):\(palette.rawValue):\(transparencyEnabled ? "glass" : "solid")" }
 
     func save(to defaults: UserDefaults = DieterAppearance.applicationDefaults()) {
         defaults.set(appearance.rawValue, forKey: DieterAppearance.storageKey)
         defaults.set(palette.rawValue, forKey: DieterPalette.storageKey)
+        defaults.set(transparencyEnabled, forKey: DieterTransparency.storageKey)
     }
 }
 
@@ -288,6 +291,7 @@ private struct DieterThemeKey: Hashable {
 @Observable
 private final class DieterThemeState {
     private(set) var colors: DieterThemeTokens
+    private(set) var transparencyEnabled = false
     @ObservationIgnored private(set) var selection: DieterThemeSelection
     private(set) var installedKey: DieterThemeKey
 
@@ -300,11 +304,13 @@ private final class DieterThemeState {
     func install(
         key: DieterThemeKey,
         colors: DieterThemeTokens,
-        selection: DieterThemeSelection
+        selection: DieterThemeSelection,
+        transparencyEnabled: Bool
     ) {
         // System and an explicit appearance can currently resolve to the same
         // colors, but only System should follow the next OS appearance change.
         self.selection = selection
+        if self.transparencyEnabled != transparencyEnabled { self.transparencyEnabled = transparencyEnabled }
         guard key != installedKey else { return }
         installedKey = key
         self.colors = colors
@@ -330,17 +336,16 @@ enum DieterTheme {
     )
 
     static func install(palette: DieterPalette, colorScheme: ColorScheme) {
-        let key = DieterThemeKey(palette: palette, dark: colorScheme == .dark)
-        state.install(
-            key: key,
-            colors: palettes[key] ?? palettes[fallbackKey]!,
-            selection: DieterThemeSelection(appearance: colorScheme == .dark ? .dark : .light, palette: palette)
+        install(
+            selection: DieterThemeSelection(appearance: colorScheme == .dark ? .dark : .light, palette: palette),
+            systemColorScheme: colorScheme
         )
     }
 
     static func install(
         selection: DieterThemeSelection,
-        systemColorScheme: ColorScheme? = nil
+        systemColorScheme: ColorScheme? = nil,
+        reduceTransparency: Bool? = nil
     ) {
         let systemColorScheme = systemColorScheme ?? DieterSystemAppearance.shared.colorScheme
         let effectiveColorScheme = selection.appearance.colorScheme ?? systemColorScheme
@@ -348,7 +353,9 @@ enum DieterTheme {
         state.install(
             key: key,
             colors: palettes[key] ?? palettes[fallbackKey]!,
-            selection: selection
+            selection: selection,
+            transparencyEnabled: selection.transparencyEnabled
+                && !(reduceTransparency ?? DieterTransparencyAccessibility.shared.reduceTransparency)
         )
     }
 
@@ -357,12 +364,18 @@ enum DieterTheme {
         install(selection: state.selection, systemColorScheme: colorScheme)
     }
 
-    static var background: Color { state.colors.background }
-    static var sidebar: Color { state.colors.sidebar }
-    static var surface: Color { state.colors.surface }
-    static var raised: Color { state.colors.raised }
-    static var elevated: Color { state.colors.elevated }
-    static var input: Color { state.colors.input }
+    static func transparencyAccessibilityDidChange() { install(selection: state.selection) }
+
+    static var usesTransparency: Bool { state.transparencyEnabled }
+    static var opaqueSurface: Color { state.colors.surface }
+    // One native backdrop supplies blur. Low-opacity pane tints preserve that
+    // continuous canvas rather than stacking independent material effects.
+    static var background: Color { state.colors.background.opacity(usesTransparency ? 0.06 : 1) }
+    static var sidebar: Color { state.colors.sidebar.opacity(usesTransparency ? 0.08 : 1) }
+    static var surface: Color { state.colors.surface.opacity(usesTransparency ? 0.12 : 1) }
+    static var raised: Color { state.colors.raised.opacity(usesTransparency ? 0.38 : 1) }
+    static var elevated: Color { state.colors.elevated.opacity(usesTransparency ? 0.55 : 1) }
+    static var input: Color { state.colors.input.opacity(usesTransparency ? 0.25 : 1) }
     static var border: Color { state.colors.border }
     static var strongBorder: Color { state.colors.strongBorder }
     /// Crisp 1px seam separating the three primary panes (nav · workspace · conversation).
@@ -371,7 +384,7 @@ enum DieterTheme {
     static var subtle: Color { state.colors.subtle }
     static var tertiary: Color { state.colors.tertiary }
     /// A restrained outgoing-message surface that stays legible in every palette.
-    static var userMessageBackground: Color { state.colors.userMessageBackground }
+    static var userMessageBackground: Color { state.colors.userMessageBackground.opacity(usesTransparency ? 0.55 : 1) }
     static var userMessageForeground: Color { state.colors.userMessageForeground }
     static var shellDeep: Color { state.colors.shellDeep }
     static var shell: Color { state.colors.shell }
@@ -392,6 +405,8 @@ enum DieterTheme {
     /// Background for the selected navigation or list row.
     static var selection: Color { state.colors.selection }
 
+    // SwiftTerm also derives inverse-video colors from this background. Keep
+    // its canvas opaque so terminal applications retain readable reverse text.
     static var terminalBackground: Color { state.colors.terminalBackground }
     static var terminalBackgroundColor: NSColor { state.colors.terminalBackgroundColor }
     static var terminalForegroundColor: NSColor { state.colors.terminalForegroundColor }
@@ -511,10 +526,7 @@ enum DieterPaneRole: Equatable {
     case content
 }
 
-/// Shared full-pane treatments for the All Chats hierarchy. Both nested panes
-/// use the same continuous canvas; the root NavigationSplitView remains the one
-/// full-height glass navigation surface, while individual chat actions use
-/// native glass controls.
+/// Shared pane tints over the window's continuous native backdrop.
 struct DieterPaneBackground: View {
     let role: DieterPaneRole
     var extendsUnderTitlebar = false
@@ -779,7 +791,7 @@ struct DieterSearchField: View {
             }
         }
         .padding(.horizontal, 10).frame(height: 30)
-        .glassEffect(
+        .dieterGlass(
             .regular.interactive(),
             in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
         )

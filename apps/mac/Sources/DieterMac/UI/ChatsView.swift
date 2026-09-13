@@ -47,7 +47,7 @@ struct ChatsView: View {
             search.isEmpty || !(projection.byProject[$0.id] ?? []).isEmpty
         }
         let displayedProjectIDs = displayedProjects.map(\.id)
-        ChatPaneSplit(browserHidden: store.conversationContext.content.isPresented(for: store.selectedChatID)) {
+        ChatPaneSplit {
             VStack(spacing: 0) {
                 FluidPaneChrome(background: .clear, spacing: 9) {
                     HStack(spacing: 8) {
@@ -63,7 +63,7 @@ struct ChatsView: View {
                         } label: {
                             Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
                         }
-                        .buttonStyle(.glass)
+                        .buttonStyle(DieterGlassButtonStyle())
                         .buttonBorderShape(.circle)
                         .controlSize(.small)
                         .tint(showArchived ? DieterTheme.shell : nil)
@@ -74,7 +74,7 @@ struct ChatsView: View {
                         } label: {
                             Label("New chat", systemImage: "plus")
                         }
-                        .buttonStyle(.glassProminent).disabled(showArchived).help(
+                        .buttonStyle(DieterGlassButtonStyle(prominent: true)).disabled(showArchived).help(
                             "New standalone chat"
                         )
                         .accessibilityIdentifier("chats.new")
@@ -155,7 +155,11 @@ struct ChatsView: View {
             .smokeTarget("chats.browser-pane")
         } detail: {
             if store.selectedChatID != nil {
-                ConversationView(surfaceStyle: .inherited).environment(store.conversationContext)
+                ConversationView(
+                    compact: store.conversationContext.content.isPresented(for: store.selectedChatID),
+                    surfaceStyle: .inherited
+                )
+                .environment(store.conversationContext)
             } else if showArchived {
                 VStack(spacing: 0) {
                     FluidPaneChrome(background: .clear) {
@@ -270,40 +274,38 @@ private struct ChatPaneResizeDivider: View {
 /// Unlike AppKit's HSplitView bridge, this split never renegotiates the
 /// browser width from the selected conversation's intrinsic content size.
 /// That keeps navigation stationary while chat Markdown is prepared or wraps.
-private struct ChatPaneSplit<Browser: View, Detail: View>: View {
-    let browserHidden: Bool
+struct ChatPaneSplit<Browser: View, Detail: View>: View {
     let browser: Browser
     let detail: Detail
     @AppStorage("dieter.chatBrowserPaneWidth") private var storedWidth = Double(ChatPaneSizing.defaultWidth)
     @State private var dragStartWidth: CGFloat?
 
     init(
-        browserHidden: Bool = false,
         @ViewBuilder browser: () -> Browser,
         @ViewBuilder detail: () -> Detail
     ) {
-        self.browserHidden = browserHidden
         self.browser = browser()
         self.detail = detail()
     }
 
     var body: some View {
         GeometryReader { geometry in
-            let width =
-                browserHidden
-                ? 0 : ChatPaneSizing.resolvedWidth(CGFloat(storedWidth), workspaceWidth: geometry.size.width)
+            // The browser is the standalone chat switcher, even when the
+            // selected chat has a file, browser, or terminal panel open.
+            let width = ChatPaneSizing.resolvedWidth(CGFloat(storedWidth), workspaceWidth: geometry.size.width)
             HStack(spacing: 0) {
                 browser
                     .frame(width: width, height: geometry.size.height)
-                    .allowsHitTesting(!browserHidden)
-                    .accessibilityHidden(browserHidden)
                     .clipped()
                     .background {
                         DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true)
                     }
 
                 detail
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Bound the nested native split to its actual allocation;
+                    // an editor's intrinsic width must not push navigation out.
+                    .frame(width: max(0, geometry.size.width - width), height: geometry.size.height)
+                    .contentShape(Rectangle())
                     .clipped()
                     .background {
                         DieterPaneBackground(role: .content, extendsUnderTitlebar: true)
@@ -314,7 +316,7 @@ private struct ChatPaneSplit<Browser: View, Detail: View>: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .overlay(alignment: .topLeading) {
-                if !browserHidden {
+                if width > 0 {
                     // The titlebar-spanning divider must not enlarge the panes.
                     // Keep the generous drag target without inserting layout space.
                     // The one-point separator is painted directly over the touching

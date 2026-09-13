@@ -481,6 +481,24 @@ struct GeneralSettings: View {
                             }
                         }
                     }
+                    Divider().overlay(DieterTheme.border)
+                    Toggle(
+                        "Window transparency",
+                        isOn: Binding(
+                            get: { store.themeSelection.transparencyEnabled },
+                            set: { store.themeSelection.transparencyEnabled = $0 }
+                        )
+                    )
+                    .accessibilityIdentifier("settings.windowTransparency")
+                    .smokeTarget("settings.windowTransparency")
+                    Text("Let the desktop show through blurred workspace surfaces.")
+                        .font(.caption)
+                        .foregroundStyle(DieterTheme.tertiary)
+                    if DieterTransparencyAccessibility.shared.reduceTransparency {
+                        Text("macOS Reduce Transparency is on. Dieter uses solid surfaces and keeps your preference.")
+                            .font(.caption)
+                            .foregroundStyle(DieterTheme.subtle)
+                    }
                 }
                 SettingsPanel(
                     title: "Design",
