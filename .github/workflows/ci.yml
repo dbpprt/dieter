@@ -151,6 +151,8 @@ jobs:
           path: |
             apps/ios/.build/smoke/**/test-summary.json
             apps/ios/.build/smoke/**/passed.json
+            apps/ios/.build/smoke/**/boot.log
+            apps/ios/.build/smoke/**/gateway.log
             apps/ios/.build/smoke/**/tests.log
             apps/ios/.build/smoke/**/attachments/*
           if-no-files-found: ignore

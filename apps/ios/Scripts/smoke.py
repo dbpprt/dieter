@@ -23,6 +23,18 @@ def run(*args, **kwargs):
     return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
 
 
+def retain_gateway_log(private_log, output_log):
+    text = private_log.read_text(errors='replace')
+    for line in text.splitlines():
+        if line.startswith('DIETER_ISOLATED_TOKEN='):
+            token = line.split('=', 1)[1]
+            if token:
+                text = text.replace(token, '<redacted>')
+    output_log.write_text(text)
+    os.chmod(output_log, 0o600)
+    private_log.unlink()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device', default='iPhone 17 Pro')
@@ -52,8 +64,14 @@ def main():
     try:
         simulator = subprocess.check_output(['xcrun', 'simctl', 'create', 'Dieter smoke ' + stamp, device_type, runtime], text=True).strip()
         (evidence / 'simulator.txt').write_text(simulator + '\n')
-        fixture_log = (evidence / 'gateway.log').open('w+')
-        os.chmod(evidence / 'gateway.log', 0o600)
+        # Finish the owned simulator's first boot before XCTest installs its
+        # runner or asks accessibility for the first application snapshot.
+        with (evidence / 'boot.log').open('w') as log:
+            run('xcrun', 'simctl', 'bootstatus', simulator, '-b', timeout=600,
+                stdout=log, stderr=subprocess.STDOUT)
+        private_gateway_log = evidence / '.gateway-private.log'
+        fixture_log = private_gateway_log.open('w+')
+        os.chmod(private_gateway_log, 0o600)
         gateway = subprocess.Popen([str(fixture), '--addr', '127.0.0.1:0', '--home', str(evidence / 'fixture'), '--offline-trigger', str(evidence / 'offline')], cwd=ROOT, stdout=fixture_log, stderr=subprocess.STDOUT, start_new_session=True,
                                    env=dict(os.environ, GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='commit.gpgsign', GIT_CONFIG_VALUE_0='false'))
         deadline = time.monotonic() + 60
@@ -61,7 +79,7 @@ def main():
         while time.monotonic() < deadline:
             if gateway.poll() is not None:
                 raise RuntimeError(f'Isolated gateway exited {gateway.returncode}; inspect {evidence}/gateway.log')
-            text = (evidence / 'gateway.log').read_text()
+            text = private_gateway_log.read_text()
             if '\nREADY\n' in text:
                 values = dict(line.split('=', 1) for line in text.splitlines() if line.startswith('DIETER_ISOLATED_'))
                 break
@@ -125,10 +143,13 @@ def main():
             except subprocess.TimeoutExpired:
                 os.killpg(gateway.pid, signal.SIGTERM)
                 gateway.wait(timeout=10)
-        if fixture_log: fixture_log.close()
+        if fixture_log:
+            fixture_log.close()
         if simulator:
             subprocess.run(['xcrun', 'simctl', 'shutdown', simulator], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(['xcrun', 'simctl', 'delete', simulator], check=True)
+        if fixture_log:
+            retain_gateway_log(evidence / '.gateway-private.log', evidence / 'gateway.log')
         print(f'Evidence: {evidence}')
 
 
