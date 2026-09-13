@@ -79,6 +79,11 @@ in one workspace; Dieter selects the correct daemon automatically. See the
 [macOS](apps/mac/README.md) and [Android](apps/android/README.md) guides for
 source builds and platform-specific details.
 
+The Mac workspace uses native blurred glass. For solid surfaces, turn off
+**Window transparency** under **Settings → General → Appearance**. The setting
+works with every design and light/dark mode; macOS **Reduce Transparency** also
+disables translucency while preserving your preference.
+
 Useful daemon commands:
 
 ```sh
@@ -373,6 +378,12 @@ pin a release. Installing the CLI does not start, stop, or replace a running
 daemon; service lifecycle remains explicit through `dieter setup` or
 `dieter daemon start`.
 
+Apple Developer ID releases additionally include a notarized, stapled
+`dieter-darwin-arm64.pkg`. It installs a versioned daemon and capture helper
+without changing a running service or a Homebrew installation. See
+[Apple release signing](docs/apple-release-signing.md) for installation paths,
+dedicated signing credentials, and GitHub release access.
+
 ### Daemon
 
 For a manual installation, register a project and start the local daemon:
@@ -550,6 +561,12 @@ GitHub Actions keeps orchestration, permissions, caches, secrets, and artifact
 transfer in YAML. Every executable repository step enters through one of these
 Just modules, so the same build and packaging commands can be exercised
 locally without copying workflow shell blocks.
+
+Mac signing and notarization use credentials dedicated to Dieter, configured
+through `just release configure-apple-signing`. See
+[Apple release signing](docs/apple-release-signing.md) for the seven repository
+secrets and certificate setup. `just release test` validates the release tools
+without using real signing credentials or installing a daemon.
 
 Android builds use Android Studio's bundled JBR. If needed, set:
 

@@ -106,6 +106,7 @@ data class EndpointConnection(
     val online: Boolean = true,
     val daemonId: String? = null,
     val lastSeenAt: String = "",
+    val apiVersion: String = "",
 )
 
 data class ProjectHost(
@@ -377,6 +378,34 @@ class DieterConnectionManager(
                 connection.phase == ConnectionPhase.CONNECTED && connection.endpoint?.id == target.endpointId
             }
         }
+    }
+
+    /** Makes a newly created remote project routable before its daemon's next
+     * global sync frame arrives. This updates only the combined directory; the
+     * foreground connection is switched by [selectProject] afterwards. */
+    fun registerProjectHost(project: Project, endpointId: String, board: Board? = null) {
+        val endpoint = discoveredEndpoints.firstOrNull { it.id == endpointId }
+            ?: repository.endpoints.firstOrNull { it.id == endpointId }
+            ?: error("The selected Dieter machine is no longer available")
+        val daemonId = endpoint.daemonId ?: error("No routed Dieter machine is available")
+        _state.update { current ->
+            val projects = (current.projects.filterNot { it.id == project.id } + project)
+                .sortedBy { it.name.lowercase() }
+            val updated = current.copy(
+                projects = projects,
+                boards = if (board == null) current.boards else current.boards.filterNot { it.id == board.id } + board,
+                projectHosts = current.projectHosts + (
+                    project.id to ProjectHost(
+                        endpointId = endpoint.id,
+                        daemonId = daemonId,
+                        hostname = endpoint.label,
+                        online = endpoint.online,
+                    )
+                ),
+            )
+            updated.copy(selectedState = selectedState(updated))
+        }
+        persistMachineDirectory()
     }
 
     fun connect() {
@@ -818,6 +847,7 @@ class DieterConnectionManager(
                 online = machinePresenceOnline(daemon.online, daemon.lastSeenAt),
                 lastSeenAt = daemon.lastSeenAt,
                 version = daemon.version,
+                apiVersion = daemon.apiVersion,
             )
         }.sortedWith(
             compareBy<DieterEndpoint> { !it.online }
@@ -1023,6 +1053,7 @@ class DieterConnectionManager(
                     online = machinePresenceOnline(daemon.online, daemon.lastSeenAt),
                     lastSeenAt = daemon.lastSeenAt,
                     version = daemon.version,
+                    apiVersion = daemon.apiVersion,
                 )
             }
             discoveredEndpoints
@@ -1920,6 +1951,7 @@ class DieterConnectionManager(
         online = endpoint.online,
         daemonId = endpoint.daemonId,
         lastSeenAt = endpoint.lastSeenAt,
+        apiVersion = endpoint.apiVersion,
     )
 
     private fun loadEndpoints(): List<DieterEndpoint> {

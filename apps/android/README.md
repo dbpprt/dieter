@@ -20,6 +20,14 @@ chat automatically routes to its owning daemon before starting streams or
 mutations. This project-to-host directory lives only in the Android process;
 the gateway remains a machine and presence directory.
 
+Workspace settings can add a project on any online, API-compatible enrolled
+machine without interrupting the currently open project. The creation form
+browses directories on the selected host and configures the first board,
+workspace base remote and branch, publishing policy, project instructions, and
+exact-argv validation commands. Existing project settings expose the same
+workspace defaults plus a project-wide list of provisioned worktrees, including
+clean-up and recovery-backed discard operations.
+
 Additional gateways can be added with an `https://` address. The resulting
 Dieter session is encrypted with a device-bound Android Keystore key. GitHub
 credentials, GitHub access tokens, daemon certificates, and harness credentials
@@ -64,6 +72,14 @@ cache, and expose an explicit **Force refresh** action in the conversation
 overflow menu. Project chat sections show the five most recent entries until
 expanded. Model reasoning traces are hidden by default and can be enabled
 globally under App Settings > Chat display.
+
+Each conversation also owns a bounded in-memory composer draft, including
+attachments and model/provider selection, so switching conversations or
+recreating the Activity does not move or erase unfinished input. Messages
+admitted while an agent is running appear in the queue with **Edit** and
+**Remove** actions. Edit atomically removes that queued message on the daemon
+and restores its text, attachments, and immutable harness selection into the
+same conversation's composer.
 
 The app checks the latest public `dbpprt/dieter` GitHub release when it
 starts. When a newer semantic version includes `Dieter-Android.apk`, Dieter
@@ -136,9 +152,11 @@ smoke test.
 
 The conversation and terminal replay reducers are covered by Kotlin unit tests.
 Real-process instrumentation verifies health, runtime, state streaming,
-harnesses, project files, schedule preview, and a terminal that stays alive
-across a complete Android gRPC channel teardown and cursor-based reconnect,
-all through the configured gateway and automatically routed real daemon:
+harnesses, machine-scoped project creation, validation settings, queued-message
+recall, project workspace cleanup/discard, project files, schedule preview, and
+a terminal that stays alive across a complete Android gRPC channel teardown and
+cursor-based reconnect, all through the configured gateway and automatically
+routed real daemon:
 
 ```sh
 just android connected-test

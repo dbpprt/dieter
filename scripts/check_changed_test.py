@@ -21,6 +21,17 @@ class CheckChangedTests(unittest.TestCase):
         self.assertEqual(self.plan(), [])
         self.assertEqual(self.plan("README.md", "apps/mac/README.md", "AGENTS.md"), [])
 
+    def test_release_packaging_changes_run_signing_and_installer_regressions(self):
+        for path in ("scripts/macos_daemon_installer.py", "scripts/macos_daemon_installer_test.py",
+                     "scripts/macos_notary_submit.py", "scripts/macos_notary_submit_test.py",
+                     "scripts/configure_apple_signing.py", "scripts/configure_apple_signing_test.py",
+                     "scripts/release_signing_test.py"):
+            with self.subTest(path=path):
+                self.assertEqual(self.plan(path), [["just", "release", "test"]])
+        for path in ("just/release.just", "just/daemon.just"):
+            with self.subTest(path=path):
+                self.assertIn(["just", "release", "test"], self.plan(path))
+
     def test_markdown_renderer_runs_library_regressions_and_asset_check(self):
         for path in ["apps/mac/MarkdownPreview/src/chart-sizing.js",
                      "apps/mac/Sources/DieterMac/Resources/MarkdownPreview/app.js"]:

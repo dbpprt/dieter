@@ -186,6 +186,8 @@ fun BoardScreen(
         ResizableHorizontalSplitPane(
             dividerTag = "board-pane-divider",
             modifier = Modifier.fillMaxSize().padding(contentPadding),
+            initialLeadingFraction = state.boardPaneLeadingFraction,
+            onLeadingFractionCommitted = model::setBoardPaneLeadingFraction,
             leading = { paneModifier -> BoardList(state, model, paneModifier) },
         ) { paneModifier ->
             if (state.selectedCardId == null) {

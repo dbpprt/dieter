@@ -12,6 +12,7 @@ extension DieterStore {
             card: { [weak self] in self?.selectedCard }, catalog: { [weak self] in self?.harnessCatalog ?? .init() },
             projectID: { [weak self] in self?.selectedProjectID ?? "" },
             reasoning: { [weak self] in self?.showReasoning ?? false },
+            workspacePanelEnabled: { [weak self] in self?.conversationWorkspacePanelEnabled ?? false },
             pendingMessage: { [weak self] in self?.isPendingMessage($0) ?? false },
             acceptedItem: { [weak self] in self?.isAcceptedOutboxItem($0) ?? false },
             failedItem: { [weak self] in self?.isFailedOutboxItem($0) ?? false },

@@ -15,6 +15,7 @@ final class ConversationContext {
     @ObservationIgnored var catalog: () -> Dieter_V1_HarnessCatalog
     @ObservationIgnored var projectID: () -> String
     @ObservationIgnored var reasoning: () -> Bool
+    @ObservationIgnored var workspacePanelEnabled: () -> Bool
     @ObservationIgnored var pendingMessage: (String) -> Bool
     @ObservationIgnored var acceptedItem: (String) -> Bool
     @ObservationIgnored var failedItem: (String) -> Bool
@@ -24,11 +25,13 @@ final class ConversationContext {
         model: ConversationModel, composer: ComposerModel, worktreeChanges: WorktreeChangesModel,
         card: @escaping () -> Dieter_V1_Card?, catalog: @escaping () -> Dieter_V1_HarnessCatalog,
         projectID: @escaping () -> String, reasoning: @escaping () -> Bool,
+        workspacePanelEnabled: @escaping () -> Bool,
         pendingMessage: @escaping (String) -> Bool, acceptedItem: @escaping (String) -> Bool,
         failedItem: @escaping (String) -> Bool, creationError: @escaping (String) -> String?
     ) {
         self.model = model; self.composer = composer; self.worktreeChanges = worktreeChanges
         self.card = card; self.catalog = catalog; self.projectID = projectID; self.reasoning = reasoning
+        self.workspacePanelEnabled = workspacePanelEnabled
         self.pendingMessage = pendingMessage; self.acceptedItem = acceptedItem; self.failedItem = failedItem;
         self.creationError = creationError
     }
@@ -36,6 +39,7 @@ final class ConversationContext {
     var selectedProjectID: String { projectID() }
     var harnessCatalog: Dieter_V1_HarnessCatalog { catalog() }
     var showReasoning: Bool { reasoning() }
+    var conversationWorkspacePanelEnabled: Bool { workspacePanelEnabled() }
     var workspaceToast: WorkspaceToast? { worktreeChanges.workspaceToast }
     func isPendingMessage(_ id: String) -> Bool { pendingMessage(id) }
     func isAcceptedOutboxItem(_ id: String) -> Bool { acceptedItem(id) }

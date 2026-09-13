@@ -832,6 +832,37 @@
                 ? "passed"
                 : "failed: pressed=\(monochromePressed), live=\(store.themeSelection.palette.rawValue)"
 
+            results.merge(await transparencySettingsSmoke(store: store, window: window, output: output)) {
+                _, latest in latest
+            }
+
+            let workspacePanelDefaultedOff = !store.conversationWorkspacePanelEnabled
+            let experimentalPressed = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental", in: window)
+            let experimentalVisible = await waitUntil(timeout: 5) {
+                NativeUIAccessibility.find(
+                    "settings.experimental.conversationWorkspacePanel", in: window) != nil
+            }
+            let workspacePanelEnabled = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental.conversationWorkspacePanel", in: window)
+            let workspacePanelStoredOn = await waitUntil(timeout: 5) {
+                store.conversationWorkspacePanelEnabled
+                    && ConversationWorkspacePanelPreferences.isEnabled(in: appearanceDefaults)
+            }
+            await captureAppearances(window, named: "09h-settings-experimental.png", in: output)
+            let workspacePanelDisabled = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental.conversationWorkspacePanel", in: window)
+            let workspacePanelStoredOff = await waitUntil(timeout: 5) {
+                !store.conversationWorkspacePanelEnabled
+                    && !ConversationWorkspacePanelPreferences.isEnabled(in: appearanceDefaults)
+            }
+            results["09h-settings-experimental-workspace-panel"] =
+                workspacePanelDefaultedOff && experimentalPressed && experimentalVisible
+                    && workspacePanelEnabled && workspacePanelStoredOn
+                    && workspacePanelDisabled && workspacePanelStoredOff
+                ? "passed"
+                : "failed: defaultOff=\(workspacePanelDefaultedOff), navigation=\(experimentalPressed), visible=\(experimentalVisible), enable=\(workspacePanelEnabled), storedOn=\(workspacePanelStoredOn), disable=\(workspacePanelDisabled), storedOff=\(workspacePanelStoredOff)"
+
             click(window: window, x: 320, distanceFromTop: 151)
             try? await DieterTaskSleep.milliseconds(700)
             await captureAppearances(window, named: "10-settings-connection.png", in: output)
@@ -1261,10 +1292,14 @@
                     let queued = await waitUntil(timeout: 5) {
                         store.outboxSummary(for: machine)?.messageCount == 1
                     }
+                    let toastVisible = await waitUntil(timeout: 5) {
+                        NativeUIAccessibility.find(
+                            "machine.\(machine.daemonID ?? machine.id).queue", in: window) != nil
+                    }
                     results["17a-offline-message-queued"] =
-                        queued && store.composerText.isEmpty
+                        queued && toastVisible && store.composerText.isEmpty
                         ? "passed"
-                        : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), draft=\(store.composerText)"
+                        : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), toast=\(toastVisible), draft=\(store.composerText)"
                     await captureAppearances(window, named: "17a-offline-message-queued.png", in: output)
 
                     let removed = await store.discardOutbox(for: machine)
@@ -2181,6 +2216,61 @@
                     if let event { NSApp.postEvent(event, atStart: false) }
                 }
             }
+        }
+
+        private static func transparencySettingsSmoke(
+            store: DieterStore, window: NSWindow, output: URL
+        ) async -> [String: String] {
+            let defaults = DieterAppearance.applicationDefaults()
+            let originalStoredValue = defaults.object(forKey: DieterTransparency.storageKey)
+            let originalChoice = store.themeSelection.transparencyEnabled
+            let originalContent = window.contentView
+            var results: [String: String] = [:]
+
+            // Start from glass so both transitions exercise the actual setting.
+            if !store.themeSelection.transparencyEnabled {
+                _ = await NativeUIAccessibility.pressWhenSettled("settings.windowTransparency", in: window)
+                _ = await waitUntil(timeout: 5) { store.themeSelection.transparencyEnabled }
+            }
+            for enabled in [false, true] {
+                let name = enabled ? "09f-settings-glass" : "09e-settings-solid"
+                let pressed = await NativeUIAccessibility.pressWhenSettled("settings.windowTransparency", in: window)
+                let applied = await waitUntil(timeout: 5) {
+                    DieterTransparency.load(from: defaults) == enabled
+                        && store.themeSelection.transparencyEnabled == enabled
+                        && transparencyWindowMatches(window, enabled: enabled)
+                        && window.contentView === originalContent
+                }
+                results[name] =
+                    pressed && applied
+                    ? "passed"
+                    : "failed: pressed=\(pressed), stored=\(DieterTransparency.load(from: defaults)), live=\(store.themeSelection.transparencyEnabled), effective=\(DieterTheme.usesTransparency), opaque=\(window.isOpaque), backgroundAlpha=\(window.backgroundColor.alphaComponent)"
+                await captureAppearances(window, named: "\(name).png", in: output)
+            }
+
+            store.themeSelection.transparencyEnabled = originalChoice
+            if let originalStoredValue {
+                defaults.set(originalStoredValue, forKey: DieterTransparency.storageKey)
+            } else {
+                defaults.removeObject(forKey: DieterTransparency.storageKey)
+            }
+            let restored = await waitUntil(timeout: 5) {
+                DieterTransparency.load(from: defaults) == originalChoice
+                    && store.themeSelection.transparencyEnabled == originalChoice
+                    && transparencyWindowMatches(window, enabled: originalChoice)
+            }
+            results["09g-settings-transparency-restored"] =
+                restored ? "passed" : "failed: the original transparency choice was not restored"
+            return results
+        }
+
+        private static func transparencyWindowMatches(_ window: NSWindow, enabled: Bool) -> Bool {
+            let effective = enabled && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            guard DieterTheme.usesTransparency == effective, window.isOpaque == !effective else { return false }
+            if effective {
+                return window.backgroundColor.alphaComponent == 0 && window.titlebarAppearsTransparent
+            }
+            return window.backgroundColor.alphaComponent == 1
         }
 
         private static func captureAppearances(_ window: NSWindow, named name: String, in output: URL)

@@ -12,7 +12,9 @@
     @MainActor
     enum SidebarNavigationUISmokeRunner {
         private static let projectIDs = ["p_sidebar_one", "p_sidebar_two", "p_sidebar_three"]
-        private static let chatIDs = ["c_sidebar_one", "c_sidebar_two", "c_sidebar_three"]
+        // These chats belong only to the rendered fixture. Keep selection local
+        // so row clicks never try the synthetic machines' placeholder ports.
+        private static let chatIDs = ["local_sidebar_one", "local_sidebar_two", "local_sidebar_three"]
         private static let longMachineName = "Zulu-workstation-with-a-long-hostname"
         private static let expectedMachineNames = ["alpha", "Beta", longMachineName]
 
@@ -170,6 +172,7 @@
 
             await showChats(store: store, window: window)
             recordNavigationBoundaries(in: window, results: &results)
+            await switchChatsWithCompanion(store: store, window: window, results: &results)
             let chatWasVisible = NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) != nil
             let clicked = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
             let saved = await NativeUIAccessibility.wait {
@@ -239,6 +242,66 @@
                 ? "passed" : "failed: saved expanded project was not rendered second"
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
             _ = await NativeUIAccessibility.wait { loadPreferences().isExpanded(projectIDs[0]) }
+        }
+
+        private static func switchChatsWithCompanion(
+            store: DieterStore, window: NSWindow, results: inout [String: String]
+        ) async {
+            let model = store.conversationContext.content
+            let originalWorkspacePanelEnabled = store.conversationWorkspacePanelEnabled
+            store.conversationWorkspacePanelEnabled = true
+            defer {
+                model.hide()
+                store.closeConversation()
+                store.conversationWorkspacePanelEnabled = originalWorkspacePanelEnabled
+            }
+            let first = chatIDs[0]
+            let second = chatIDs[2]
+            let firstClicked = NativeUIAccessibility.click("chat.\(first)", in: window)
+            let firstSelected = await NativeUIAccessibility.wait { store.selectedChatID == first }
+            guard firstClicked && firstSelected else {
+                results["chat-companion-switch"] = "failed: first chat could not be selected"
+                return
+            }
+            model.showEmpty(conversationID: first)
+            let opened = await NativeUIAccessibility.wait {
+                model.isPresented(for: first)
+                    && NativeUIAccessibility.find("conversation.content-pane", in: window) != nil
+            }
+            let originalSize = window.contentView?.bounds.size ?? NSSize(width: 1_380, height: 870)
+            for width in [CGFloat(1_080), CGFloat(1_380)] {
+                window.setContentSize(NSSize(width: width, height: originalSize.height))
+                let visible = await NativeUIAccessibility.wait {
+                    guard let browser = NativeUIAccessibility.find("chats.browser-pane", in: window),
+                        let detail = NativeUIAccessibility.find("chats.detail-pane", in: window),
+                        let row = NativeUIAccessibility.find("chat.\(second)", in: window)
+                    else { return false }
+                    let browserFrame = browser.recordedFrame ?? browser.frame
+                    let detailFrame = detail.recordedFrame ?? detail.frame
+                    let rowFrame = row.recordedFrame ?? row.frame
+                    return browserFrame.width >= ChatPaneSizing.minimumWidth - 1
+                        && abs(browserFrame.maxX - detailFrame.minX) < 2
+                        && browserFrame.intersects(rowFrame)
+                        && detailFrame.maxX <= window.frame.maxX + 1
+                }
+                results["chat-companion-navigation-\(Int(width))"] =
+                    opened && visible ? "passed" : "failed: companion=\(opened), visible browser=\(visible)"
+            }
+            let secondClicked = NativeUIAccessibility.click("chat.\(second)", in: window)
+            let switched = await NativeUIAccessibility.wait {
+                store.selectedChatID == second && !model.isPresented(for: second)
+            }
+            let backClicked = NativeUIAccessibility.click("chat.\(first)", in: window)
+            let returned = await NativeUIAccessibility.wait {
+                store.selectedChatID == first && model.isPresented(for: first)
+                    && NativeUIAccessibility.find("chat.\(second)", in: window) != nil
+            }
+            results["chat-companion-switch"] =
+                secondClicked && switched && backClicked && returned
+                ? "passed"
+                : "failed: second=\(secondClicked)/\(switched), return=\(backClicked)/\(returned)"
+            capture(window, to: outputDirectory().appending(path: "chats-companion-switch.png"))
+            window.setContentSize(originalSize)
         }
 
         private static func recordNavigationBoundaries(in window: NSWindow, results: inout [String: String]) {

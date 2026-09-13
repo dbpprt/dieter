@@ -168,6 +168,10 @@ def plan_checks(root, paths, packages=None):
         add("just", "justfile-check")
     if any(p.startswith(".github/workflows/") or p == "just/release.just" for p in code):
         add("just", "workflow-check")
+    if any(p.startswith(("scripts/macos_daemon_installer", "scripts/macos_notary_submit",
+                         "scripts/configure_apple_signing", "scripts/release_signing"))
+           or p in {"just/release.just", "just/daemon.just"} for p in code):
+        add("just", "release", "test")
     if schema:
         add("just", "proto")
     go_changed = schema or any(

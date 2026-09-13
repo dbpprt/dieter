@@ -10,7 +10,7 @@ struct ComposerSurface<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0, content: content)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .dieterGlass(.regular, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(

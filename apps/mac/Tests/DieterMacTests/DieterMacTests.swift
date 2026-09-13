@@ -1644,8 +1644,22 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(AppSection.allCases.contains(.settings))
     #expect(
         DieterSettingsSection.allCases.map(\.rawValue) == [
-            "General", "Connection", "Prompts", "Notifications", "Island", "Agents",
+            "General", "Connection", "Prompts", "Notifications", "Island", "Agents", "Experimental",
         ])
+}
+
+@Test func conversationWorkspacePanelPreferenceDefaultsOffAndPersistsBothStates() throws {
+    let suite = "dieter-conversation-workspace-panel-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    #expect(!ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
+
+    ConversationWorkspacePanelPreferences.setEnabled(true, in: defaults)
+    #expect(ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
+
+    ConversationWorkspacePanelPreferences.setEnabled(false, in: defaults)
+    #expect(!ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
 }
 
 @Test func machineInformationUsesAPopupInsteadOfANavigationDestination() {
@@ -1854,7 +1868,7 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     var iterator = changes.makeAsyncIterator()
     #expect(await iterator.next() != nil)
     continuation.finish()
-    #expect(store.themeSelection.identity == "dark:coral-signal")
+    #expect(store.themeSelection.identity == "dark:coral-signal:glass")
     #expect(defaults.string(forKey: DieterAppearance.storageKey) == "dark")
     #expect(defaults.string(forKey: DieterPalette.storageKey) == "coral-signal")
     #expect(DieterThemeSelection.load(from: defaults) == store.themeSelection)
@@ -2312,7 +2326,29 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(summary?.messageCount == 1)
     #expect(summary?.changeCount == 1)
     #expect(summary?.retrying == true)
+    #expect(summary?.queuedLabel == "2 items queued")
     #expect(summary?.deliveryLabel == "2 items queued — delivers when it reconnects.")
+    #expect(summary?.toastPhase(machineOnline: true) == .retrying)
+    #expect(summary?.toastPhase(machineOnline: false) == .retrying)
+}
+
+@Test func machineOutboxToastShowsFailureUntilTheEntryIsHandled() {
+    let endpointID = "gateway#offline"
+    var failed = DieterOutboxEntry(
+        commandID: "failed", clientID: "mac", endpointID: endpointID, kind: .createCard,
+        request: Data(), optimisticID: "local_card", attempts: 3, state: .failed,
+        createdAt: Date(timeIntervalSince1970: 1)
+    )
+    failed.lastError = "The machine rejected the request."
+
+    let summary = MachineOutboxSummary.summaries(for: [failed])[endpointID]
+
+    #expect(summary?.toastPhase(machineOnline: true) == .failed)
+    #expect(summary?.failureMessage == "The machine rejected the request.")
+
+    var accepted = failed
+    accepted.serverID = "c_server"
+    #expect(MachineOutboxSummary.summaries(for: [accepted])[endpointID] == nil)
 }
 
 @Test func reachableMachineOutboxSelectionPrefersEndpointOrder() {

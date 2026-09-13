@@ -65,6 +65,9 @@ struct DieterRootView: View {
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
             AppSidebar()
                 .frame(minWidth: SidebarSizing.minimumWidth)
+                .background {
+                    if !DieterTheme.usesTransparency { DieterTheme.opaqueSurface.ignoresSafeArea() }
+                }
                 .background(
                     NativeSplitColumnBounds(
                         minimum: SidebarSizing.minimumWidth, maximum: SidebarSizing.maximumWidth,
@@ -131,10 +134,14 @@ struct DieterRootView: View {
             .navigationSmokeDestination(store.section)
         }
         .navigationSplitViewStyle(.balanced)
-        // The system glass sidebar is intentionally inset and rounded on macOS
-        // 26. A continuous canvas underneath it prevents the window background
-        // from showing through as a gap beside the nested Chats browser.
-        .background(DieterTheme.surface)
+        .background {
+            DieterWindowBackdrop(
+                transparencyEnabled: DieterTheme.usesTransparency,
+                solidColor: NSColor(DieterTheme.opaqueSurface)
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
         .toolbar {
             if store.section != .board || store.selectedCardID == nil {
                 ToolbarItem(placement: .primaryAction) {
@@ -168,6 +175,11 @@ struct DieterRootView: View {
                     }
                 }
             }
+        }
+        .overlay(alignment: .topTrailing) {
+            MachineDeliveryToastStack()
+                .padding(.top, 14)
+                .padding(.trailing, 14)
         }
         .overlay {
             if !store.phase.isConnected && (!store.hasLoadedWorkspace || store.phase.needsConnectionOverlay) {
@@ -509,9 +521,6 @@ struct AppSidebar: View {
                         .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
 
-                        if let summary = store.outboxSummary(for: machine) {
-                            MachineQueueBanner(machine: machine, summary: summary)
-                        }
                     }
                 }
             }
@@ -567,61 +576,6 @@ struct AppSidebar: View {
     }
 
 }
-
-private struct MachineQueueBanner: View {
-    @Environment(DieterStore.self) private var store
-    let machine: DieterEndpoint
-    let summary: MachineOutboxSummary
-    @State private var discardConfirmationPresented = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "exclamationmark.circle")
-                Text(machine.online ? "Delivering to \(machine.name)" : "\(machine.name) is unreachable")
-                    .fontWeight(.semibold).lineLimit(1)
-            }
-            .font(.system(size: 10))
-            Text(summary.deliveryLabel)
-                .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Button("Cancel queue…", role: .destructive) {
-                    discardConfirmationPresented = true
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.mini)
-                .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).cancel-queue")
-                Spacer()
-                Button("Retry now") { Task { await store.retryOutbox(for: machine) } }
-                    .buttonStyle(.bordered)
-                    .controlSize(.mini)
-                    .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).retry")
-            }
-        }
-        .foregroundStyle(DieterTheme.amber)
-        .padding(8)
-        .background(DieterTheme.amber.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(DieterTheme.amber.opacity(0.4)))
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).queue")
-        .confirmationDialog(
-            "Cancel \(summary.itemCount) queued \(summary.itemCount == 1 ? "item" : "items")?",
-            isPresented: $discardConfirmationPresented,
-            titleVisibility: .visible
-        ) {
-            Button("Cancel queued \(summary.itemCount == 1 ? "item" : "items")", role: .destructive) {
-                Task { await store.discardOutbox(for: machine) }
-            }
-            Button("Keep queued", role: .cancel) {}
-        } message: {
-            Text(
-                "This permanently removes the queued work from this Mac. Work already accepted by \(machine.name) is not affected."
-            )
-        }
-    }
-}
-
 /// Compressed project row (default): initials avatar + name. Tapping the row body
 /// opens a quick-nav popover (boards · files · schedules); the trailing chevron
 /// expands the same destinations inline.

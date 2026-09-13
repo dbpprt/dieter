@@ -175,7 +175,7 @@ private struct QuickHelpBubble: View {
             .frame(maxWidth: maximumWidth.map { max(1, $0 - 28) }, alignment: .leading)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 7))
+            .dieterGlass(.regular, in: RoundedRectangle(cornerRadius: 7))
             .fixedSize(horizontal: maximumWidth == nil, vertical: true)
             .padding(5)
             .accessibilityHidden(true)

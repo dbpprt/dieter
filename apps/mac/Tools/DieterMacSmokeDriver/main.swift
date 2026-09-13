@@ -24,7 +24,8 @@ private enum SmokeSuite: String, CaseIterable {
 
     var timeout: TimeInterval {
         switch self {
-        case .core: 240
+        // Settings now exercises solid, glass, and experimental-panel appearance captures.
+        case .core: 300
         case .board: 150
         case .workspace: 180
         case .conversation: ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" ? 400 : 300

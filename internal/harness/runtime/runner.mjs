@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { HarnessAgent, getHarnessErrorMessage } from '@ai-sdk/harness/agent';
 import { createClaudeCode } from '@ai-sdk/harness-claude-code';
 import { createPi } from '@ai-sdk/harness-pi';
-import { createACP } from '@ai-sdk/harness-acp';
+import { VERSION as acpPackageVersion, createACP } from '@ai-sdk/harness-acp';
 import { tool, toUIMessageStream } from 'ai';
 import { z } from 'zod';
 import { createLocalSandboxProvider } from './local-sandbox.mjs';
@@ -23,6 +23,11 @@ import {
   observeClaudeTurnChunk,
   retryEmptyClaudeResume,
 } from './claude-resilience.mjs';
+import {
+  createOMPSessionWithCompatibility,
+  prepareOMPHookPaths,
+  prioritizeOMPHookPaths,
+} from './omp-resilience.mjs';
 
 // Stdout is the worker protocol. Some harness bootstraps log package-manager
 // progress with console.log; keep those diagnostics on stderr so a first-run
@@ -142,6 +147,9 @@ if (request.harness === 'mock') {
 }
 
 let harness;
+let createOMPHarness;
+let ompSettingsForHook;
+let ompHookPaths;
 switch (adapter) {
   case 'codex':
     harness = createLocalCodex({
@@ -169,7 +177,7 @@ switch (adapter) {
     await writeFile(capabilityFile, '', { mode: 0o600 });
     capabilityTailer = createNDJSONTailer(capabilityFile, event => capabilityCollector.consumeOMPEnvelope(event));
     process.env.DIETER_OMP_CAPABILITY_FILE = capabilityFile;
-    harness = createACP({
+    ompSettingsForHook = hookPath => ({
       harnessId: 'omp',
       source: {
         type: 'npm-simple',
@@ -177,10 +185,16 @@ switch (adapter) {
         packageVersion: '18.1.10',
       },
       executable: 'omp',
-      args: ompACPArgs(request, fileURLToPath(new URL('./omp-capabilities-hook.mjs', import.meta.url))),
+      args: ompACPArgs(request, hookPath),
       modelMapping: ompACPModelMapping,
       forwardEnv: ['HOME', 'PI_CODING_AGENT_DIR', 'OMP_PROFILE', 'DIETER_OMP_CAPABILITY_FILE', ...extraHarnessEnv],
     });
+    createOMPHarness = hookPath => createACP(ompSettingsForHook(hookPath));
+    ompHookPaths = await prepareOMPHookPaths({
+      runtimeRoot: request.runtimeRoot,
+      currentHookPath: fileURLToPath(new URL('./omp-capabilities-hook.mjs', import.meta.url)),
+    });
+    harness = createOMPHarness(ompHookPaths[0]);
     break;
   }
   case 'dsh-acp':
@@ -217,7 +231,6 @@ switch (adapter) {
   default:
     throw new Error(`unsupported harness adapter: ${adapter}`);
 }
-harness = observeHarnessCapabilities(harness, capabilityCollector);
 
 const controller = new AbortController();
 let session;
@@ -289,8 +302,8 @@ try {
     ? { present_content: createContentPresentationTool(request, send) } : {};
   const processTools = processBridge ? createBackgroundProcessTools(request, processBridge.call) : {};
   const instructions = [request.instructions, taskPlanInstructions, request.contentPresentationEnabled ? contentPresentationInstructions : '', processBridge ? backgroundProcessInstructions : ''].filter(Boolean).join('\n\n');
-  const agent = new HarnessAgent({
-    harness,
+  const createAgent = candidateHarness => new HarnessAgent({
+    harness: observeHarnessCapabilities(candidateHarness, capabilityCollector),
     sandbox,
     model: ['omp-acp', 'dsh-acp'].includes(adapter) ? request.model || undefined : undefined,
     instructions: instructions || undefined,
@@ -298,6 +311,7 @@ try {
     permissionMode: 'allow-all',
     sandboxConfig: { workDir: sandboxWorkDir },
   });
+  let agent = createAgent(harness);
   const sessionOptions = { sessionId: request.sessionId, abortSignal: controller.signal };
   const incompleteACPSession = (adapter === 'omp-acp' || adapter === 'dsh-acp') && request.session && !request.session.data?.acpSessionId;
   if (request.continue && request.session?.continueFrom) {
@@ -309,7 +323,27 @@ try {
     const { continueFrom: _discardedTurn, ...resumeFrom } = request.session;
     sessionOptions.resumeFrom = resumeFrom;
   }
-  session = await agent.createSession(sessionOptions);
+  if (adapter === 'omp-acp' && (sessionOptions.resumeFrom || sessionOptions.continueFrom)) {
+    const lifecycleState = sessionOptions.continueFrom ?? sessionOptions.resumeFrom?.continueFrom ?? sessionOptions.resumeFrom;
+    const compatibleHookPaths = prioritizeOMPHookPaths({
+      hookPaths: ompHookPaths,
+      lifecycleState,
+      settingsForHook: ompSettingsForHook,
+      acpPackageVersion,
+    });
+    const resumed = await createOMPSessionWithCompatibility({
+      hookPaths: compatibleHookPaths,
+      createAgent: hookPath => createAgent(createOMPHarness(hookPath)),
+      sessionOptions,
+    });
+    if (resumed.hookPath !== ompHookPaths[0]) {
+      console.error(`resumed OMP lifecycle with compatible staged hook ${resumed.hookPath}`);
+    }
+    agent = resumed.agent;
+    session = resumed.session;
+  } else {
+    session = await agent.createSession(sessionOptions);
+  }
   const createdAt = new Date().toISOString();
   const contextWindowTokens = request.contextWindow || (adapter === 'codex' ? await codexContextWindow(request.model) : undefined);
   let claudeDelegationSeen = false;
