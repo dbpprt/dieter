@@ -82,3 +82,27 @@ private actor TerminalRoutingFixture: TerminalsRPC {
     #expect(request.cardID.isEmpty)
     #expect(request.workingDirectory == "~")
 }
+
+@Test func terminalOverviewCombinesMachinesAndKeepsAStableSelection() throws {
+    func entry(machineID: String, machineName: String, terminalID: String, createdAt: String) -> TerminalOverviewEntry {
+        var terminal = Dieter_V1_Terminal()
+        terminal.id = terminalID
+        terminal.name = terminalID
+        terminal.createdAt = createdAt
+        return TerminalOverviewEntry(machineID: machineID, machineName: machineName, terminal: terminal)
+    }
+
+    let office = entry(
+        machineID: "office", machineName: "mb-office", terminalID: "terminal-office",
+        createdAt: "2026-09-13T12:00:00Z")
+    let home = entry(
+        machineID: "home", machineName: "mini-home", terminalID: "terminal-home",
+        createdAt: "2026-09-13T11:00:00Z")
+    let values = TerminalOverviewCatalog.sorted([office, home])
+
+    #expect(values.map(\.id) == [home.id, office.id])
+    #expect(TerminalOverviewCatalog.selection(in: values, currentID: office.id)?.id == office.id)
+    #expect(
+        TerminalOverviewCatalog.selection(in: values, currentID: "missing", preferredMachineID: "home")?.id
+            == home.id)
+}

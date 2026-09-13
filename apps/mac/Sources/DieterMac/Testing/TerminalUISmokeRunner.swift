@@ -49,6 +49,7 @@
 
         private static func create(store: DieterStore, window: NSWindow, output: URL) async {
             await store.openTerminals()
+            let originalEndpointID = store.endpoint.id
             guard
                 await waitUntil(
                     timeout: 15,
@@ -67,9 +68,9 @@
                 return
             }
             await store.openTerminals(on: destination)
-            guard store.endpoint.id == destination.id, store.phase.isConnected else {
+            guard store.endpoint.id == originalEndpointID, store.phase.isConnected else {
                 writeReport(
-                    ["machine-switch": "failed: terminal destination did not change"],
+                    ["overview-routing": "failed: opening a machine changed the app's active workspace connection"],
                     named: "create-report.json", to: output)
                 return
             }
@@ -77,7 +78,10 @@
             store.createTerminalPresented = true
             let sheetPresented = await waitUntil(timeout: 10, condition: { window.attachedSheet != nil })
             let sheetSize = window.attachedSheet?.contentView?.bounds.size
+            var projectPickerWorks = false
             if let sheet = window.attachedSheet {
+                projectPickerWorks =
+                    NativeUIAccessibility.find("new-terminal.project", in: sheet)?.recordedFrame?.isEmpty == false
                 let defaults = DieterAppearance.applicationDefaults()
                 let originalAppearance = defaults.string(forKey: DieterAppearance.storageKey)
                 for appearance in [DieterAppearance.dark, DieterAppearance.light] {
@@ -99,10 +103,10 @@
             store.createTerminalPresented = false
             _ = await waitUntil(timeout: 10, condition: { window.attachedSheet == nil })
 
-            let originalIDs = Set(store.terminals.map(\.id))
+            let originalIDs = Set(store.terminalOverviewEntries.map(\.id))
             await store.createTerminal(
                 projectID: "",
-                machineID: store.endpoint.id,
+                machineID: destination.id,
                 machineHome: true,
                 name: "persistent-e2e",
                 shell: "sh",
@@ -112,14 +116,25 @@
                 await waitUntil(
                     timeout: 15,
                     condition: {
-                        guard let id = store.selectedTerminalID else { return false }
-                        return !originalIDs.contains(id) && store.terminals.contains(where: { $0.id == id })
-                    }), let terminalID = store.selectedTerminalID
+                        guard let id = store.selectedTerminalOverviewID else { return false }
+                        return !originalIDs.contains(id)
+                            && store.terminalOverviewEntries.contains(where: {
+                                $0.id == id && $0.machineID == destination.id
+                            })
+                    }), let selectedOverviewID = store.selectedTerminalOverviewID,
+                let selectedEntry = store.terminalOverviewEntries.first(where: { $0.id == selectedOverviewID })
             else {
                 writeReport(
                     ["terminal-create": "failed: terminal was not created"], named: "create-report.json", to: output)
                 return
             }
+            let terminalID = selectedEntry.terminal.id
+            let nodeBadgeMounted = await waitUntil(
+                timeout: 5,
+                condition: {
+                    NativeUIAccessibility.find("terminal.node.\(destination.id).\(terminalID)", in: window)?
+                        .recordedFrame?.isEmpty == false
+                })
 
             store.sendTerminalInput(id: terminalID, data: command(printing: firstMarker))
             let received = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(firstMarker) })
@@ -174,13 +189,18 @@
                     "connection": "passed",
                     "terminal-id": terminalID,
                     "machine-id": destination.id,
-                    "machine-switch": "passed",
+                    "active-machine-id": originalEndpointID,
+                    "overview-routing": "passed",
                     "terminal-create": "passed",
                     "machine-home-scope": store.selectedTerminal?.projectID.isEmpty == true
                         ? "passed" : "failed: terminal unexpectedly required a project",
                     "new-terminal-sheet": sheetPresented
                         ? (sheetIsCompact ? "passed" : "failed: terminal sheet escaped its compact layout bounds")
                         : "failed: terminal sheet was not presented",
+                    "project-picker": projectPickerWorks
+                        ? "passed" : "failed: native project picker did not occupy visible layout",
+                    "terminal-node-badge": nodeBadgeMounted
+                        ? "passed" : "failed: selected terminal tab did not show its machine badge",
                     "initial-output": received ? "passed" : "failed: first marker was not rendered",
                     "scrollback-output": filledScrollback ? "passed" : "failed: scrollback marker was not rendered",
                     "cursor-tracking": presentation.cursorTracks
@@ -224,15 +244,21 @@
                     named: "report.json", to: output)
                 return
             }
-            await store.openTerminals(on: machine)
-            let machineRestored = store.endpoint.id == machineID && store.phase.isConnected
-            if store.terminals.contains(where: { $0.id == terminalID }) {
-                store.selectTerminal(terminalID)
+            await store.loadTerminalOverview(preferredMachineID: machine.id)
+            let overviewID = TerminalOverviewEntry.id(machineID: machineID, terminalID: terminalID)
+            if store.terminalOverviewEntries.contains(where: { $0.id == overviewID }) {
+                await store.selectTerminalOverviewEntry(overviewID)
             }
+            let machineRestored =
+                store.selectedTerminalOverviewID == overviewID
+                && store.terminalsModel.target.endpointID == machineID
+                && store.endpoint.id == create["active-machine-id"]
             let listed = await waitUntil(
                 timeout: 20,
                 condition: {
-                    store.terminals.contains(where: { $0.id == terminalID && $0.status == "running" })
+                    store.terminalOverviewEntries.contains(where: {
+                        $0.id == overviewID && $0.terminal.status == "running"
+                    })
                 })
             let replayed = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(firstMarker) })
 
@@ -251,11 +277,13 @@
                 (columns: Int($0.columns), rows: Int($0.rows))
             }
             capture(window, to: output.appending(path: "02-after-client-restart.png"))
-            let stayedRunning = store.terminals.first(where: { $0.id == terminalID })?.status == "running"
-            await store.closeTerminal(id: terminalID)
+            let stayedRunning =
+                store.terminalOverviewEntries.first(where: { $0.id == overviewID })?.terminal.status
+                == "running"
+            await store.closeTerminalOverviewEntry(overviewID)
             let cleanedUp = await waitUntil(
                 timeout: 10,
-                condition: { !store.terminals.contains(where: { $0.id == terminalID }) })
+                condition: { !store.terminalOverviewEntries.contains(where: { $0.id == overviewID }) })
 
             writeReport(
                 [
@@ -264,7 +292,7 @@
                     "initial-output": create["initial-output"] ?? "failed: missing output result",
                     "listed-after-restart": listed ? "passed" : "failed: daemon-owned terminal was not listed",
                     "machine-restore": machineRestored
-                        ? "passed" : "failed: terminal machine selection was not restored",
+                        ? "passed" : "failed: aggregate terminal routing was not restored independently",
                     "scrollback-replayed": replayed ? "passed" : "failed: pre-disconnect output was not replayed",
                     "input-after-restart": continued ? "passed" : "failed: resumed terminal did not accept input",
                     "rendered-after-restart": rendered
