@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -73,7 +74,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		return err
 	}
 	// Smoke fixtures exercise client delivery and reconnect behavior with the
-	// bounded in-process mock harness. Do not let the host's production agent
+	// bounded mock harness. Do not let the host's production agent
 	// disk reserve turn that transport assertion into a machine-capacity test.
 	if err := os.Setenv("DIETER_MIN_FREE_BYTES", "0"); err != nil {
 		return err
@@ -204,6 +205,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	var boardRunners []*isolatedRunner
 	newFixtureServer := func(fixtureData *boardstore.Store) *server.Server {
 		runner := newIsolatedRunner(harness.NewSubprocessRunner(fixtureData.Root))
+		runner.logger = logger
 		value := server.NewWithOptions(fixtureData, logger, server.Options{
 			Runner: runner,
 			MachineAction: func(_ context.Context, operation machine.Operation) error {
@@ -522,9 +524,11 @@ type isolatedRun struct {
 
 type isolatedRunner struct {
 	isolatedHarness
-	mu     sync.Mutex
-	closed bool
-	active map[*isolatedRun]struct{}
+	mu       sync.Mutex
+	closed   bool
+	active   map[*isolatedRun]struct{}
+	logger   *slog.Logger // Optional; set before admitting any fixture turns.
+	sequence uint64
 }
 
 func newIsolatedRunner(runner isolatedHarness) *isolatedRunner {
@@ -550,7 +554,7 @@ func (runner *isolatedRunner) Shutdown() {
 	}
 }
 
-func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) (err error) {
 	runner.mu.Lock()
 	if runner.closed {
 		runner.mu.Unlock()
@@ -559,6 +563,8 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 	ctx, cancel := context.WithCancel(ctx)
 	run := &isolatedRun{cancel: cancel, done: make(chan struct{})}
 	runner.active[run] = struct{}{}
+	runner.sequence++
+	sequence := runner.sequence
 	runner.mu.Unlock()
 	defer func() {
 		cancel()
@@ -567,6 +573,37 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 		close(run.done)
 		runner.mu.Unlock()
 	}()
+	if runner.logger != nil {
+		// Never log request/output data or error strings. Fixed labels and a
+		// fixture-local sequence distinguish startup from delivery failures.
+		provider := "other"
+		if request.Harness == "mock" || request.Harness == "codex" {
+			provider = request.Harness
+		}
+		logger := runner.logger.With("sequence", sequence, "harness", provider)
+		started := time.Now()
+		logger.Info("isolated harness", "phase", "start", "elapsed_ms", 0)
+		defer func() {
+			classification := "ok"
+			switch {
+			case errors.Is(err, context.Canceled):
+				classification = "canceled"
+			case errors.Is(err, context.DeadlineExceeded):
+				classification = "deadline_exceeded"
+			case err != nil:
+				classification = "error"
+			}
+			logger.Info("isolated harness", "phase", "finish", "elapsed_ms", time.Since(started).Milliseconds(), "error_class", classification)
+		}()
+		var first sync.Once
+		next := emit
+		emit = func(output harness.Output) error {
+			first.Do(func() {
+				logger.Info("isolated harness", "phase", "first_output", "elapsed_ms", time.Since(started).Milliseconds())
+			})
+			return next(output)
+		}
+	}
 	return runner.run(ctx, request, emit)
 }
 

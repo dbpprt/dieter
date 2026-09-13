@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -107,6 +109,137 @@ type fixtureHarness struct {
 	run     func(context.Context) error
 	cancel  func() error
 	suspend func() error
+}
+
+type diagnosticHarness struct {
+	fixtureHarness
+	runOutput func(context.Context, harness.Request, func(harness.Output) error) error
+}
+
+func (runner diagnosticHarness) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+	return runner.runOutput(ctx, request, emit)
+}
+
+func diagnosticRecords(t *testing.T, output string) []map[string]any {
+	t.Helper()
+	var records []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		var record map[string]any
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		for key := range record {
+			switch key {
+			case "time", "level", "msg", "sequence", "harness", "phase", "elapsed_ms", "error_class":
+			default:
+				t.Fatalf("unexpected diagnostic field %q", key)
+			}
+		}
+		if elapsed, ok := record["elapsed_ms"].(float64); !ok || elapsed < 0 {
+			t.Fatal("missing or invalid elapsed time")
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func TestIsolatedRunnerDiagnosticsBoundAndPreserveOutput(t *testing.T) {
+	secret := strings.Repeat("private-token-prompt-account-path-output-error\n", 100)
+	cause := errors.New(secret)
+	for _, provider := range []string{"mock", "codex", secret} {
+		name := provider
+		if provider == secret {
+			name = "unknown"
+		}
+		t.Run(name, func(t *testing.T) {
+			var output bytes.Buffer
+			var received atomic.Int32
+			runner := newIsolatedRunner(diagnosticHarness{runOutput: func(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+				if request.Prompt != secret || request.ProjectPath != secret || request.SessionID != secret {
+					t.Error("diagnostics changed the request")
+				}
+				var emits sync.WaitGroup
+				for range 2 {
+					emits.Add(1)
+					go func() {
+						defer emits.Done()
+						if err := emit(harness.Output{Type: secret, Chunk: json.RawMessage(secret)}); err != nil {
+							t.Error(err)
+						}
+					}()
+				}
+				emits.Wait()
+				return cause
+			}})
+			runner.logger = slog.New(slog.NewJSONHandler(&output, nil))
+			for range 2 {
+				err := runner.Run(context.Background(), harness.Request{Harness: provider, Prompt: secret, ProjectPath: secret, SessionID: secret}, func(value harness.Output) error {
+					if value.Type != secret || string(value.Chunk) != secret {
+						t.Error("diagnostics changed harness output")
+					}
+					received.Add(1)
+					return nil
+				})
+				if err != cause {
+					t.Fatal("diagnostics replaced the original error")
+				}
+			}
+			if received.Load() != 4 || output.Len() > 2048 || strings.Contains(output.String(), "private-") {
+				t.Fatal("diagnostics lost output, exceeded bounds, or exposed sensitive data")
+			}
+			records := diagnosticRecords(t, output.String())
+			if len(records) != 6 {
+				t.Fatalf("expected three diagnostic records per turn, got %d", len(records))
+			}
+			expectedProvider := provider
+			if provider == secret {
+				expectedProvider = "other"
+			}
+			for index, record := range records {
+				if record["sequence"] != float64(index/3+1) || record["harness"] != expectedProvider || record["phase"] != []string{"start", "first_output", "finish"}[index%3] {
+					t.Fatalf("unexpected lifecycle record: %#v", record)
+				}
+				if index%3 == 2 && record["error_class"] != "error" {
+					t.Fatal("raw failure did not use fixed error category")
+				}
+			}
+		})
+	}
+}
+
+func TestIsolatedRunnerDiagnosticsCompletionAndCancellation(t *testing.T) {
+	for _, classification := range []string{"ok", "canceled", "deadline_exceeded"} {
+		t.Run(classification, func(t *testing.T) {
+			var output bytes.Buffer
+			entered := make(chan struct{})
+			runner := newIsolatedRunner(fixtureHarness{run: func(ctx context.Context) error {
+				close(entered)
+				if classification == "canceled" {
+					<-ctx.Done()
+					return fmt.Errorf("private-error: %w", ctx.Err())
+				}
+				if classification == "deadline_exceeded" {
+					return fmt.Errorf("private-error: %w", context.DeadlineExceeded)
+				}
+				return nil
+			}})
+			runner.logger = slog.New(slog.NewJSONHandler(&output, nil))
+			finished := make(chan error, 1)
+			go func() { finished <- runner.Run(context.Background(), harness.Request{Harness: "mock"}, nil) }()
+			<-entered
+			if classification == "canceled" {
+				runner.Shutdown()
+			}
+			err := <-finished
+			if classification == "canceled" && !errors.Is(err, context.Canceled) || classification == "deadline_exceeded" && !errors.Is(err, context.DeadlineExceeded) || classification == "ok" && err != nil {
+				t.Fatal("diagnostics changed completion behavior")
+			}
+			records := diagnosticRecords(t, output.String())
+			if len(records) != 2 || records[0]["phase"] != "start" || records[1]["phase"] != "finish" || records[1]["error_class"] != classification || strings.Contains(output.String(), "private-") {
+				t.Fatalf("invalid completion diagnostics: %s", output.String())
+			}
+		})
+	}
 }
 
 func (runner fixtureHarness) Run(ctx context.Context, _ harness.Request, _ func(harness.Output) error) error {

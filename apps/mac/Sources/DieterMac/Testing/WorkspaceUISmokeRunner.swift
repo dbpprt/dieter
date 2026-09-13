@@ -108,8 +108,11 @@
             try? folder.write(toFile: path + "/web/ChatFolder.swift", atomically: true, encoding: .utf8)
             try? "// Previous chat list\n".write(
                 toFile: path + "/web/Legacy/OldChatList.swift", atomically: true, encoding: .utf8)
-            git(["add", "-A"], in: path)
-            git(["commit", "-m", "Prepare Changes design fixture"], in: path)
+            guard
+                fixtureCommit(
+                    "Prepare Changes design fixture", in: path, boundary: "design",
+                    results: &results, output: output)
+            else { return }
             let staged = folder.replacingOccurrences(
                 of: "    @State",
                 with:
@@ -247,7 +250,7 @@
             }
             results["workspace"] = "\(workspace.mode) · \(workspace.state) · \(workspace.branch)"
 
-            seedReviewContent(at: workspace.path)
+            guard seedReviewContent(at: workspace.path, results: &results, output: output) else { return }
             await store.loadWorkspaceSurface()
             try? await DieterTaskSleep.seconds(1)
 
@@ -516,16 +519,20 @@
             let readme = workspace.path + "/README.md"
             try? "# Isolated E2E\n\nWorktree rewrite of the introduction.\n".write(
                 toFile: readme, atomically: true, encoding: .utf8)
-            git(["add", "-A"], in: workspace.path)
-            let worktreeCommit = git(["commit", "-m", "rewrite introduction in worktree"], in: workspace.path)
-            progress("worktree commit \(worktreeCommit.status): \(worktreeCommit.output)", in: output)
+            guard
+                fixtureCommit(
+                    "rewrite introduction in worktree", in: workspace.path, boundary: "conflict-worktree",
+                    results: &results, output: output)
+            else { return }
 
             guard let project = store.projects.first else { return }
             try? "# Isolated E2E\n\nMain rewrote the introduction differently.\n".write(
                 toFile: project.path + "/README.md", atomically: true, encoding: .utf8)
-            git(["add", "-A"], in: project.path)
-            let mainCommit = git(["commit", "-m", "rewrite introduction on main"], in: project.path)
-            progress("main commit \(mainCommit.status): \(mainCommit.output)", in: output)
+            guard
+                fixtureCommit(
+                    "rewrite introduction on main", in: project.path, boundary: "conflict-main",
+                    results: &results, output: output)
+            else { return }
             await store.loadWorkspaceSurface()
 
             progress("starting update to provoke conflict", in: output)
@@ -623,7 +630,9 @@
 
         /// Two commits, one uncommitted modification, and one untracked file — the
         /// mix the reference plates show: committed work plus working changes.
-        private static func seedReviewContent(at path: String) {
+        private static func seedReviewContent(
+            at path: String, results: inout [String: String], output: URL
+        ) -> Bool {
             let folder = """
                 import SwiftUI
 
@@ -648,8 +657,11 @@
                 """
             try? FileManager.default.createDirectory(atPath: path + "/web", withIntermediateDirectories: true)
             try? folder.write(toFile: path + "/web/ChatFolder.swift", atomically: true, encoding: .utf8)
-            git(["add", "-A"], in: path)
-            git(["commit", "-m", "scaffold ChatFolder component"], in: path)
+            guard
+                fixtureCommit(
+                    "scaffold ChatFolder component", in: path, boundary: "review-scaffold",
+                    results: &results, output: output)
+            else { return false }
 
             let showMore = """
                 import SwiftUI
@@ -666,20 +678,46 @@
             try? showMore.write(toFile: path + "/web/ShowMoreRow.swift", atomically: true, encoding: .utf8)
             try? (folder + "\n// Folds each project to its five most recent chats.\n")
                 .write(toFile: path + "/web/ChatFolder.swift", atomically: true, encoding: .utf8)
-            git(["add", "-A"], in: path)
-            git(["commit", "-m", "fold sidebar groups to five recent"], in: path)
+            guard
+                fixtureCommit(
+                    "fold sidebar groups to five recent", in: path, boundary: "review-fold",
+                    results: &results, output: output)
+            else { return false }
 
             try? "# Isolated E2E\n\nChats now fold to five per project.\n".write(
                 toFile: path + "/README.md", atomically: true, encoding: .utf8)
             try? "Reviewed the fold behavior by hand.\n".write(
                 toFile: path + "/notes.txt", atomically: true, encoding: .utf8)
+            return true
+        }
+
+        private static func fixtureCommit(
+            _ subject: String, in directory: String, boundary: String,
+            results: inout [String: String], output: URL
+        ) -> Bool {
+            let key = "fixture-commit-\(boundary)"
+            for arguments in [["add", "-A"], ["commit", "-m", subject]] {
+                let operation = arguments[0]
+                progress("\(key): starting git \(operation) (\(subject))", in: output)
+                let result = git(arguments, in: directory)
+                guard result.status == 0 else {
+                    let detail = result.output.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_000)
+                    results[key] = "failed: git \(operation) exited \(result.status) (\(subject)): \(detail)"
+                    progress("\(key): \(results[key] ?? "failed")", in: output)
+                    return false
+                }
+                progress("\(key): git \(operation) completed", in: output)
+            }
+            results[key] = "passed"
+            return true
         }
 
         @discardableResult
         private static func git(_ arguments: [String], in directory: String) -> (status: Int32, output: String) {
             let process = Process()
             process.executableURL = URL(filePath: "/usr/bin/git")
-            process.arguments = arguments
+            // Disposable fixture commits must not invoke the operator's signing agent.
+            process.arguments = ["-c", "commit.gpgsign=false"] + arguments
             process.currentDirectoryURL = URL(filePath: directory, directoryHint: .isDirectory)
             let pipe = Pipe()
             process.standardOutput = pipe
