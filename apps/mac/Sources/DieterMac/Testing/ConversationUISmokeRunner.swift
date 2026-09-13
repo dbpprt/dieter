@@ -53,7 +53,12 @@
             let output = outputDirectory()
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
             let originalShowReasoning = store.showReasoning
-            defer { store.showReasoning = originalShowReasoning }
+            let originalWorkspacePanelEnabled = store.conversationWorkspacePanelEnabled
+            store.conversationWorkspacePanelEnabled = true
+            defer {
+                store.showReasoning = originalShowReasoning
+                store.conversationWorkspacePanelEnabled = originalWorkspacePanelEnabled
+            }
 
             var results: [String: String] = [:]
             var waited = 0

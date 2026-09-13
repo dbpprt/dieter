@@ -156,7 +156,8 @@ struct ChatsView: View {
         } detail: {
             if store.selectedChatID != nil {
                 ConversationView(
-                    compact: store.conversationContext.content.isPresented(for: store.selectedChatID),
+                    compact: store.conversationWorkspacePanelEnabled
+                        && store.conversationContext.content.isPresented(for: store.selectedChatID),
                     surfaceStyle: .inherited
                 )
                 .environment(store.conversationContext)

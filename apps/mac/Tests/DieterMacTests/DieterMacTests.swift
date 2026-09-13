@@ -1644,8 +1644,22 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     #expect(AppSection.allCases.contains(.settings))
     #expect(
         DieterSettingsSection.allCases.map(\.rawValue) == [
-            "General", "Connection", "Prompts", "Notifications", "Island", "Agents",
+            "General", "Connection", "Prompts", "Notifications", "Island", "Agents", "Experimental",
         ])
+}
+
+@Test func conversationWorkspacePanelPreferenceDefaultsOffAndPersistsBothStates() throws {
+    let suite = "dieter-conversation-workspace-panel-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+
+    #expect(!ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
+
+    ConversationWorkspacePanelPreferences.setEnabled(true, in: defaults)
+    #expect(ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
+
+    ConversationWorkspacePanelPreferences.setEnabled(false, in: defaults)
+    #expect(!ConversationWorkspacePanelPreferences.isEnabled(in: defaults))
 }
 
 @Test func machineInformationUsesAPopupInsteadOfANavigationDestination() {

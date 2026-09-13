@@ -836,6 +836,33 @@
                 _, latest in latest
             }
 
+            let workspacePanelDefaultedOff = !store.conversationWorkspacePanelEnabled
+            let experimentalPressed = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental", in: window)
+            let experimentalVisible = await waitUntil(timeout: 5) {
+                NativeUIAccessibility.find(
+                    "settings.experimental.conversationWorkspacePanel", in: window) != nil
+            }
+            let workspacePanelEnabled = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental.conversationWorkspacePanel", in: window)
+            let workspacePanelStoredOn = await waitUntil(timeout: 5) {
+                store.conversationWorkspacePanelEnabled
+                    && ConversationWorkspacePanelPreferences.isEnabled(in: appearanceDefaults)
+            }
+            await captureAppearances(window, named: "09h-settings-experimental.png", in: output)
+            let workspacePanelDisabled = await NativeUIAccessibility.pressWhenSettled(
+                "settings.experimental.conversationWorkspacePanel", in: window)
+            let workspacePanelStoredOff = await waitUntil(timeout: 5) {
+                !store.conversationWorkspacePanelEnabled
+                    && !ConversationWorkspacePanelPreferences.isEnabled(in: appearanceDefaults)
+            }
+            results["09h-settings-experimental-workspace-panel"] =
+                workspacePanelDefaultedOff && experimentalPressed && experimentalVisible
+                    && workspacePanelEnabled && workspacePanelStoredOn
+                    && workspacePanelDisabled && workspacePanelStoredOff
+                ? "passed"
+                : "failed: defaultOff=\(workspacePanelDefaultedOff), navigation=\(experimentalPressed), visible=\(experimentalVisible), enable=\(workspacePanelEnabled), storedOn=\(workspacePanelStoredOn), disable=\(workspacePanelDisabled), storedOff=\(workspacePanelStoredOff)"
+
             click(window: window, x: 320, distanceFromTop: 151)
             try? await DieterTaskSleep.milliseconds(700)
             await captureAppearances(window, named: "10-settings-connection.png", in: output)

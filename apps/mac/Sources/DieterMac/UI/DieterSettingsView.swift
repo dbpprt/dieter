@@ -8,6 +8,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
     case notifications = "Notifications"
     case island = "Island"
     case agents = "Agents"
+    case experimental = "Experimental"
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .notifications: "bell"
         case .island: "capsule.tophalf.filled"
         case .agents: "person.2"
+        case .experimental: "flask"
         }
     }
 
@@ -30,6 +32,7 @@ enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .notifications: "macOS alerts for agent activity"
         case .island: "Live activity around the notch"
         case .agents: "Parallel limits and harness capabilities"
+        case .experimental: "Preview features that are still being refined"
         }
     }
 }
@@ -58,6 +61,7 @@ struct DieterSettingsView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
+                        .smokeTarget("settings.\(section.rawValue.lowercased())")
                     }
                 }
                 .padding(9)
@@ -96,6 +100,7 @@ struct DieterSettingsView: View {
                     case .notifications: NotificationSettings()
                     case .island: IslandSettings()
                     case .agents: AgentSettings()
+                    case .experimental: ExperimentalSettings()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -970,6 +975,45 @@ struct IslandSettings: View {
                 SettingsPanel(title: "Activity source") {
                     Text(
                         "The Island uses the same bounded synchronized card stream as Dieter's board and menu bar. It does not start another connection or duplicate notifications."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+struct ExperimentalSettings: View {
+    @Environment(DieterStore.self) private var store
+
+    var body: some View {
+        SettingsPage {
+            VStack(spacing: 14) {
+                SettingsPanel(
+                    title: "Conversation workspace",
+                    subtitle: "Work with files, web pages, terminals, changes, and processes beside a conversation."
+                ) {
+                    HStack {
+                        Text("Show the workspace side panel")
+                            .font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Toggle(
+                            "Show the workspace side panel",
+                            isOn: Binding(
+                                get: { store.conversationWorkspacePanelEnabled },
+                                set: { store.conversationWorkspacePanelEnabled = $0 }
+                            )
+                        )
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .accessibilityLabel("Show the workspace side panel")
+                        .accessibilityIdentifier("settings.experimental.conversationWorkspacePanel")
+                        .smokeTarget("settings.experimental.conversationWorkspacePanel")
+                    }
+                    Text(
+                        "This experimental panel is off by default. When enabled, workspace links and agent-presented files open alongside chats and card conversations."
                     )
                     .font(.caption)
                     .foregroundStyle(DieterTheme.tertiary)

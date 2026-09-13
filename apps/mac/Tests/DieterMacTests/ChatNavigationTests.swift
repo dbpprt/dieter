@@ -12,6 +12,9 @@ struct ChatNavigationTests {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = DieterStore(themeDefaultsOverride: defaults, restoreSync: false)
+        let originalWorkspacePanelEnabled = store.conversationWorkspacePanelEnabled
+        store.conversationWorkspacePanelEnabled = true
+        defer { store.conversationWorkspacePanelEnabled = originalWorkspacePanelEnabled }
         var project = Dieter_V1_Project()
         project.id = "chat-navigation-\(UUID().uuidString)"
         project.name = "Navigation fixture"
