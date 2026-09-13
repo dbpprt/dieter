@@ -21,21 +21,37 @@ extension DieterStore {
         let deploymentProjections = restored.projections
             .filter { $0.key.hasPrefix(activePrefix) }
             .sorted { $0.key < $1.key }
+        let restoreSelection = selectedProjectID.isEmpty
+        let selectionGeneration = boardSelectionGeneration
         lastSyncedAt =
             restored.projections[endpoint.id]?.refreshedAt
             ?? deploymentProjections.compactMap(\.value.refreshedAt).max()
+        var decodedProjections: [(endpointID: String, snapshot: Dieter_V1_GlobalSnapshot)] = []
         for (endpointID, projection) in deploymentProjections {
             if let snapshot = await snapshotDecoder.snapshot(
                 endpointID: endpointID, data: projection.snapshot)
             {
-                applyGlobalSnapshot(snapshot, endpointID: endpointID)
+                decodedProjections.append((endpointID, snapshot))
             }
         }
         if deploymentProjections.isEmpty,
             let snapshot = await snapshotDecoder.snapshot(
                 endpointID: endpoint.id, data: restored.snapshot)
         {
-            applyGlobalSnapshot(snapshot, endpointID: endpoint.id)
+            decodedProjections.append((endpoint.id, snapshot))
+        }
+        let shouldChooseInitialSelection =
+            restoreSelection && selectedProjectID.isEmpty && boardSelectionGeneration == selectionGeneration
+        for projection in decodedProjections {
+            applyGlobalSnapshot(projection.snapshot, endpointID: projection.endpointID)
+        }
+        // Each cached machine is decoded before publishing so the first one to
+        // restore cannot permanently claim an otherwise empty launch selection.
+        // Respect an explicit navigation that happened while decoding.
+        if shouldChooseInitialSelection {
+            selectedProjectID = preferredInitialProjectID()
+            selectedBoardID = ""
+            updateSelectedState()
         }
         rebuildOutboxOverlays()
     }
@@ -265,7 +281,7 @@ extension DieterStore {
 
     func updateSelectedState(base: Dieter_V1_State? = nil) {
         if selectedProjectID.isEmpty || projectDirectory[selectedProjectID] == nil {
-            selectedProjectID = projects.first?.id ?? ""
+            selectedProjectID = preferredInitialProjectID()
         }
         var selected = base ?? state
         selected.project = projectDirectory[selectedProjectID] ?? Dieter_V1_Project()
@@ -276,6 +292,14 @@ extension DieterStore {
         if selectedBoardID.isEmpty || !selected.boards.contains(where: { $0.id == selectedBoardID }) {
             selectedBoardID = selected.boards.first?.id ?? ""
         }
+    }
+
+    private func preferredInitialProjectID() -> String {
+        let visible = projects.filter { !$0.archived }
+        let visibleIDs = visible.map(\.id)
+        return sidebarProjectNavigation.orderedIDs(from: visibleIDs).first
+            ?? projects.first?.id
+            ?? ""
     }
 
     func projectedConversation(cardID: String, endpointID: String) async

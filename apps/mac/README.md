@@ -106,15 +106,18 @@ file, or create a directory and initialize a new Git repository there. Its
 directory browser reads the daemon's filesystem through `ListDirectories`; it
 never substitutes a local macOS file panel for a remote project path.
 
-Terminals are listed across every enrolled machine and owned by the daemon for
-their project, not by a Mac window or RPC. Closing or disconnecting the app cancels only its output
-observer; the PTY and commands keep running until the shell exits, the user
-explicitly closes the terminal, or the daemon shuts down. Reopening the app
-lists the same session and resumes its sequenced output cursor. Both the daemon
-and client retain a bounded 2 MiB replay buffer. Input and resize use separate
+The Terminals header switches explicitly between enrolled machines and retains
+the selected tab for each destination. A new shell can start inside a registered
+project or directly in the selected daemon user's home, so machines without a
+project remain usable. Sessions are owned by the host, not by a Mac window or
+RPC. Closing or disconnecting the app cancels only its output observer. When
+`tmux` is available on the host, daemon replacement also detaches and reattaches
+the same shell; otherwise persistence remains limited to client reconnects.
+Reopening the app resumes the sequenced output cursor. Both the daemon and
+client retain a bounded 2 MiB replay baseline. Input and resize use separate
 priority unary calls so output backpressure cannot make typing wait behind the
-long-lived stream. A terminal may only start inside its registered project
-tree, after symlink resolution.
+long-lived stream. Project shells stay inside their registered tree and
+machine-home shells stay inside the user's home after symlink resolution.
 
 Screens are intentionally independent of the project RPC connection. The app
 selects a machine, prefers its verified direct route, falls back to the gateway

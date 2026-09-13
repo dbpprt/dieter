@@ -6,6 +6,7 @@ import Observation
 
 @MainActor @Observable
 final class TerminalsModel {
+    private static let selectionDefaultsKey = "DieterSelectedTerminalsByTarget"
     private(set) var target = WorkspaceTarget(endpointID: "", projectID: "")
     var machineName = "Machine"
     var isLive = false
@@ -28,19 +29,29 @@ final class TerminalsModel {
     @ObservationIgnored private var rpc: (any TerminalsRPC)?
     @ObservationIgnored private var bindingGeneration: UInt64 = 0
     @ObservationIgnored private var watchGeneration: UInt64 = 0
+    @ObservationIgnored private let selectionDefaults: UserDefaults?
+    @ObservationIgnored private var selectedTerminalIDs: [String: String]
     @ObservationIgnored var onCreated: @MainActor () -> Void = {}
 
     var selectedTerminal: Dieter_V1_Terminal? { terminals.first { $0.id == selectedTerminalID } }
 
+    init(selectionDefaults: UserDefaults? = nil) {
+        self.selectionDefaults = selectionDefaults
+        selectedTerminalIDs =
+            selectionDefaults?.dictionary(forKey: Self.selectionDefaultsKey) as? [String: String] ?? [:]
+    }
+
     func bind(target: WorkspaceTarget, client: (any TerminalsRPC)?) {
         guard self.target != target || rpc !== client else { return }
         let sameTarget = self.target == target
+        rememberSelection()
         bindingGeneration &+= 1; terminalRequestGeneration &+= 1
         stopTerminalWatch(); terminalsRead.cancel(); terminalInputForwarder.suspend()
         self.target = target; rpc = client
         terminalLoading = false; terminalError = nil; errorMessage = nil
         if !sameTarget {
-            terminals = []; selectedTerminalID = nil; terminalScreens = [:]; terminalSequences = [:]
+            terminals = []; selectedTerminalID = selectedTerminalIDs[selectionKey(target)]; terminalScreens = [:]
+            terminalSequences = [:]
             terminalOutputAccumulator = TerminalOutputAccumulator()
         }
     }
@@ -76,6 +87,7 @@ final class TerminalsModel {
             if selectedTerminalID.flatMap({ id in values.first(where: { $0.id == id }) }) == nil {
                 selectedTerminalID = values.first?.id
             }
+            rememberSelection()
             startTerminalWatch()
         } catch {
             guard self.rpc === rpc, generation == terminalRequestGeneration else { return }
@@ -86,10 +98,13 @@ final class TerminalsModel {
     func selectTerminal(_ id: String) {
         guard terminals.contains(where: { $0.id == id }) else { return }
         selectedTerminalID = id
+        rememberSelection()
         startTerminalWatch()
     }
 
-    func createTerminal(projectID: String, name: String, shell: String, workingDirectory: String) async {
+    func createTerminal(
+        projectID: String, machineHome: Bool = false, name: String, shell: String, workingDirectory: String
+    ) async {
         guard let rpc else { return }
         var request = Dieter_V1_CreateTerminalRequest()
         request.projectID = projectID
@@ -99,12 +114,14 @@ final class TerminalsModel {
         request.columns = 120
         request.rows = 36
         request.cardID = terminalScopeCardID ?? ""
+        request.machineHome = machineHome
         let binding = bindingGeneration
         do {
             let value = try await rpc.createTerminal(request)
             guard binding == bindingGeneration else { return }
             upsertTerminal(value)
             selectedTerminalID = value.id
+            rememberSelection()
             terminalSequences[value.id] = 0
             terminalScreens[value.id] = TerminalScreenState()
             await terminalOutputAccumulator.seed(terminalID: value.id)
@@ -174,6 +191,7 @@ final class TerminalsModel {
             guard binding == bindingGeneration, self.rpc === rpc else { return }
             if selectedTerminalID == id {
                 selectedTerminalID = terminals.first?.id
+                rememberSelection()
                 startTerminalWatch()
             }
         } catch { if binding == bindingGeneration { report(error) } }
@@ -213,6 +231,7 @@ final class TerminalsModel {
                     if let rpcError = error as? RPCError, rpcError.code == .notFound {
                         self.terminals.removeAll { $0.id == id }
                         self.selectedTerminalID = self.terminals.first?.id
+                        self.rememberSelection()
                         return
                     }
                 }
@@ -264,6 +283,21 @@ final class TerminalsModel {
         terminalWatchTask?.cancel()
         terminalWatchTask = nil
         terminalStreamConnected = false
+    }
+
+    private func selectionKey(_ target: WorkspaceTarget) -> String {
+        "\(target.endpointID)|\(target.projectID)|\(target.conversationID)"
+    }
+
+    private func rememberSelection() {
+        let key = selectionKey(target)
+        guard !target.endpointID.isEmpty else { return }
+        if let selectedTerminalID {
+            selectedTerminalIDs[key] = selectedTerminalID
+        } else {
+            selectedTerminalIDs.removeValue(forKey: key)
+        }
+        selectionDefaults?.set(selectedTerminalIDs, forKey: Self.selectionDefaultsKey)
     }
 
 }

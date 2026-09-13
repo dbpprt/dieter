@@ -113,6 +113,7 @@ dieter --machine <machine-id> machine info
 dieter --machine <machine-id> project list --format jsonl
 dieter --machine <machine-id> remote exec --project <project-id> -- uname -a
 dieter --machine <machine-id> terminal list --format jsonl
+dieter --machine <machine-id> terminal create --home --name shell --format id
 ```
 
 `machine list`, `machine show`, and `machine watch` expose both the Dieter

@@ -4,6 +4,7 @@ import DieterAPI
 import SwiftUI
 
 struct TerminalsView: View {
+    @Environment(DieterStore.self) private var store
     @Bindable var model: TerminalsModel
     let showAll: @MainActor () async -> Void
     @State private var closeCandidate: Dieter_V1_Terminal?
@@ -23,6 +24,30 @@ struct TerminalsView: View {
                         prominent: true
                     )
                     Spacer()
+                    if model.terminalScopeCardID == nil {
+                        Menu {
+                            ForEach(terminalMachines, id: \.id) { machine in
+                                Button {
+                                    Task { await store.openTerminals(on: machine) }
+                                } label: {
+                                    Label(
+                                        machine.name,
+                                        systemImage: machine.id == store.endpoint.id ? "checkmark" : "desktopcomputer"
+                                    )
+                                }
+                                .disabled(!store.machineIsAvailable(machine))
+                            }
+                        } label: {
+                            Label(model.machineName, systemImage: "desktopcomputer")
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.horizontal, 10)
+                                .frame(height: 30)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                        .help("Switch terminal machine")
+                        .accessibilityIdentifier("terminals.machine")
+                    }
                     if model.terminalScopeCardID != nil {
                         Button("All terminals") { Task { await showAll() } }.controlSize(.small)
                     }
@@ -104,6 +129,14 @@ struct TerminalsView: View {
             Button("OK") { model.errorMessage = nil }
         } message: {
             Text(model.errorMessage ?? "")
+        }
+    }
+
+    private var terminalMachines: [DieterEndpoint] {
+        let values = store.endpoints.filter { $0.daemonID != nil || $0.id == store.endpoint.id }
+        return values.sorted {
+            if $0.online != $1.online { return $0.online && !$1.online }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
 
@@ -293,6 +326,7 @@ private struct NewTerminalSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var projectID = ""
+    @State private var machineID = ""
     @State private var name = ""
     @State private var shell = "zsh"
     @State private var workingDirectory = ""
@@ -309,9 +343,31 @@ private struct NewTerminalSheet: View {
         ProjectDestinationCatalog.destination(projectID: projectID, in: destinationGroups)
     }
     private var selectedProject: Dieter_V1_Project? { selectedDestination?.project }
+    private var machines: [DieterEndpoint] {
+        let values = store.endpoints.filter { $0.daemonID != nil || $0.id == store.endpoint.id }
+        return values.sorted {
+            if $0.online != $1.online { return $0.online && !$1.online }
+            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+    private var selectedMachine: DieterEndpoint? {
+        if let selectedDestination {
+            return machines.first { $0.id == selectedDestination.machineID }
+        }
+        return machines.first { $0.id == machineID }
+    }
+    private var machineHome: Bool { projectID.isEmpty }
+    private var destinationTitle: String {
+        if machineHome { return selectedMachine.map { "\($0.name) home" } ?? "Choose a machine" }
+        return selectedProject?.name ?? "Choose a destination"
+    }
+    private var destinationDetail: String {
+        if machineHome { return selectedMachine.map { "\($0.online ? "Online" : "Offline") · Home directory" } ?? "" }
+        return selectedDestination.map { "\($0.machineName) · \($0.detail)" } ?? ""
+    }
     private var canCreate: Bool {
-        !creating && selectedDestination?.machineOnline == true
-            && !workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !creating && selectedMachine.map(store.machineIsAvailable) == true
+            && (machineHome || !workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     var body: some View {
@@ -329,7 +385,7 @@ private struct NewTerminalSheet: View {
                     Text("New terminal")
                         .font(.system(size: 19, weight: .semibold))
                     Text(
-                        selectedDestination.map { "Start a persistent shell on \($0.machineName)" }
+                        selectedMachine.map { "Start a persistent shell on \($0.name)" }
                             ?? "Choose where to start a persistent shell"
                     )
                     .font(DieterFont.meta)
@@ -352,17 +408,17 @@ private struct NewTerminalSheet: View {
             Divider().overlay(DieterTheme.border)
 
             VStack(alignment: .leading, spacing: 15) {
-                terminalFieldLabel("Project")
+                terminalFieldLabel("Destination")
                 ZStack {
                     HStack(spacing: 10) {
-                        Image(systemName: "folder")
+                        Image(systemName: machineHome ? "house" : "folder")
                             .foregroundStyle(DieterTheme.shell)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(selectedProject?.name ?? "Choose a project")
+                            Text(destinationTitle)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(DieterTheme.text)
-                            if let selectedDestination {
-                                Text("\(selectedDestination.machineName) · \(selectedDestination.detail)")
+                            if !destinationDetail.isEmpty {
+                                Text(destinationDetail)
                                     .font(.system(size: 10, design: .monospaced))
                                     .foregroundStyle(DieterTheme.tertiary)
                                     .lineLimit(1)
@@ -378,11 +434,23 @@ private struct NewTerminalSheet: View {
                     .allowsHitTesting(false)
 
                     Menu {
+                        Section("Machine home") {
+                            ForEach(machines, id: \.id) { machine in
+                                Button("\(machine.name) · \(machine.online ? "Online" : "Offline")") {
+                                    machineID = machine.id
+                                    projectID = ""
+                                    workingDirectory = "~"
+                                }
+                                .disabled(!store.machineIsAvailable(machine))
+                            }
+                        }
+                        Divider()
                         ProjectDestinationMenuContent(
                             groups: destinationGroups,
                             selectedProjectID: projectID,
                             allowsOffline: false
                         ) {
+                            machineID = $0.machineID
                             projectID = $0.project.id
                             workingDirectory = $0.project.path
                         }
@@ -394,8 +462,8 @@ private struct NewTerminalSheet: View {
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .frame(maxWidth: .infinity)
-                    .accessibilityLabel("Project")
-                    .accessibilityValue(selectedDestination?.title ?? "No project selected")
+                    .accessibilityLabel("Destination")
+                    .accessibilityValue(destinationTitle)
                 }
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -405,7 +473,7 @@ private struct NewTerminalSheet: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 7) {
                         terminalFieldLabel("Name", detail: "Optional")
-                        TextField(selectedProject?.name ?? "Terminal name", text: $name)
+                        TextField(selectedProject?.name ?? selectedMachine?.name ?? "Terminal name", text: $name)
                             .textFieldStyle(.plain)
                             .font(.system(size: 12))
                             .focused($focusedField, equals: .name)
@@ -437,7 +505,7 @@ private struct NewTerminalSheet: View {
                         Image(systemName: "folder.badge.gearshape")
                             .font(.system(size: 11))
                             .foregroundStyle(DieterTheme.tertiary)
-                        TextField("Project directory", text: $workingDirectory)
+                        TextField(machineHome ? "Home directory" : "Project directory", text: $workingDirectory)
                             .textFieldStyle(.plain)
                             .font(.system(size: 11, design: .monospaced))
                             .focused($focusedField, equals: .workingDirectory)
@@ -454,7 +522,9 @@ private struct NewTerminalSheet: View {
                         .font(.system(size: 11))
                         .foregroundStyle(DieterTheme.shell)
                     Text(
-                        "The shell stays inside this project. Dieter keeps bounded scrollback available when the app reconnects."
+                        machineHome
+                            ? "The shell stays inside this machine's home directory. It remains available across app and daemon reconnects."
+                            : "The shell stays inside this project. It remains available across app and daemon reconnects."
                     )
                     .font(.system(size: 10.5))
                     .foregroundStyle(DieterTheme.tertiary)
@@ -483,6 +553,8 @@ private struct NewTerminalSheet: View {
                     Task {
                         await store.createTerminal(
                             projectID: projectID,
+                            machineID: selectedMachine?.id,
+                            machineHome: machineHome,
                             name: name,
                             shell: shell,
                             workingDirectory: workingDirectory
@@ -511,8 +583,9 @@ private struct NewTerminalSheet: View {
         .fixedSize(horizontal: false, vertical: true)
         .background(DieterTheme.background)
         .onAppear {
-            projectID = store.selectedProjectID.isEmpty ? (availableProjects.first?.id ?? "") : store.selectedProjectID
-            workingDirectory = availableProjects.first(where: { $0.id == projectID })?.path ?? ""
+            machineID = store.endpoint.id
+            projectID = ""
+            workingDirectory = "~"
         }
     }
 

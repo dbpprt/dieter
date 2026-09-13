@@ -34,25 +34,33 @@ const (
 )
 
 type unixBackend struct {
-	mu       sync.RWMutex
-	sessions map[string]*unixSession
+	mu          sync.RWMutex
+	sessions    map[string]*unixSession
+	persistence *tmuxPersistence
+	monitorWG   sync.WaitGroup
 }
 
 type unixSession struct {
-	mu      sync.RWMutex
-	writeMu sync.Mutex
-	value   Session
-	pty     *os.File
-	process *os.Process
-	frames  []Frame
-	bytes   int
-	changed chan struct{}
-	closed  bool
+	mu          sync.RWMutex
+	writeMu     sync.Mutex
+	value       Session
+	pty         *os.File
+	process     *os.Process
+	frames      []Frame
+	bytes       int
+	changed     chan struct{}
+	closed      bool
+	durable     string
+	owner       *unixBackend
+	logOffset   int64
+	logIdentity uint64
 }
 
 func newBackend() backend {
 	return &unixBackend{sessions: map[string]*unixSession{}}
 }
+
+func (b *unixBackend) Durable() bool { return b.persistence != nil }
 
 func (b *unixBackend) List(projectID string) []Session {
 	b.mu.RLock()
@@ -104,6 +112,9 @@ func (b *unixBackend) Create(input CreateInput) (Session, error) {
 	if len(name) > 80 {
 		return Session{}, errors.New("terminal name is too long")
 	}
+	if b.persistence != nil {
+		return b.createPersistent(input, shell, workingDirectory, name, columns, rows)
+	}
 
 	command := exec.Command(shell, "-l")
 	command.Dir = workingDirectory
@@ -119,7 +130,7 @@ func (b *unixBackend) Create(input CreateInput) (Session, error) {
 		Status: StatusRunning, PID: int64(command.Process.Pid), Columns: columns, Rows: rows,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	session := &unixSession{value: value, pty: pseudoTerminal, process: command.Process, changed: make(chan struct{})}
+	session := &unixSession{value: value, pty: pseudoTerminal, process: command.Process, changed: make(chan struct{}), owner: b}
 	b.mu.Lock()
 	if len(b.sessions) >= maxSessions {
 		b.mu.Unlock()
@@ -143,7 +154,7 @@ func (b *unixBackend) Frames(id string, after uint64) ([]Frame, <-chan struct{},
 	defer session.mu.RUnlock()
 	changed := session.changed
 	value := cloneSession(session.value)
-	if after == 0 || (len(session.frames) > 0 && after+1 < session.frames[0].Sequence) {
+	if after == 0 || after > value.Sequence || (len(session.frames) > 0 && after+1 < session.frames[0].Sequence) {
 		data := make([]byte, 0, session.bytes)
 		for _, frame := range session.frames {
 			data = append(data, frame.Data...)
@@ -153,6 +164,10 @@ func (b *unixBackend) Frames(id string, after uint64) ([]Frame, <-chan struct{},
 	result := Frame{Session: value}
 	for _, frame := range session.frames {
 		if frame.Sequence > after {
+			if frame.Reset {
+				result.Data = nil
+				result.Reset = true
+			}
 			result.Sequence = frame.Sequence
 			result.Data = append(result.Data, frame.Data...)
 		}
@@ -180,10 +195,16 @@ func (b *unixBackend) Write(id string, data []byte) (Session, error) {
 	session.writeMu.Lock()
 	defer session.writeMu.Unlock()
 	session.mu.RLock()
-	running, pseudoTerminal := session.value.Status == StatusRunning, session.pty
+	running, pseudoTerminal, durable := session.value.Status == StatusRunning, session.pty, session.durable
 	session.mu.RUnlock()
-	if !running || pseudoTerminal == nil {
+	if !running || (pseudoTerminal == nil && durable == "") {
 		return Session{}, ErrNotRunning
+	}
+	if durable != "" {
+		if err := b.persistence.write(durable, id, data); err != nil {
+			return Session{}, err
+		}
+		return b.snapshot(id)
 	}
 	if _, err := pseudoTerminal.Write(data); err != nil {
 		return Session{}, fmt.Errorf("write terminal: %w", err)
@@ -201,7 +222,8 @@ func (b *unixBackend) Resize(id string, columns, rows int) (Session, error) {
 		return Session{}, err
 	}
 	session.mu.Lock()
-	if session.value.Status != StatusRunning || session.pty == nil {
+	durable := session.durable
+	if session.value.Status != StatusRunning || (session.pty == nil && durable == "") {
 		session.mu.Unlock()
 		return Session{}, ErrNotRunning
 	}
@@ -210,15 +232,25 @@ func (b *unixBackend) Resize(id string, columns, rows int) (Session, error) {
 		session.mu.Unlock()
 		return value, nil
 	}
-	if err := pty.Setsize(session.pty, &pty.Winsize{Cols: uint16(columns), Rows: uint16(rows)}); err != nil {
+	if durable == "" {
+		if err := pty.Setsize(session.pty, &pty.Winsize{Cols: uint16(columns), Rows: uint16(rows)}); err != nil {
+			session.mu.Unlock()
+			return Session{}, fmt.Errorf("resize terminal: %w", err)
+		}
+	} else if err := b.persistence.resize(durable, columns, rows); err != nil {
 		session.mu.Unlock()
-		return Session{}, fmt.Errorf("resize terminal: %w", err)
+		return Session{}, err
 	}
 	session.value.Columns = columns
 	session.value.Rows = rows
 	session.advanceLocked(nil)
 	value := cloneSession(session.value)
 	session.mu.Unlock()
+	if durable != "" {
+		if err := b.persistence.save(durable, value); err != nil {
+			return Session{}, fmt.Errorf("persist terminal resize: %w", err)
+		}
+	}
 	return value, nil
 }
 
@@ -238,6 +270,11 @@ func (b *unixBackend) Rename(id, name string) (Session, error) {
 	}
 	value := cloneSession(session.value)
 	session.mu.Unlock()
+	if session.durable != "" {
+		if err := b.persistence.save(session.durable, value); err != nil {
+			return Session{}, fmt.Errorf("persist terminal rename: %w", err)
+		}
+	}
 	return value, nil
 }
 
@@ -250,6 +287,10 @@ func (b *unixBackend) Close(id string) error {
 	}
 	delete(b.sessions, id)
 	b.mu.Unlock()
+	if session.durable != "" {
+		session.detach()
+		return b.persistence.close(session.durable, id)
+	}
 	session.terminate()
 	return nil
 }
@@ -263,11 +304,20 @@ func (b *unixBackend) Shutdown(ctx context.Context) {
 	}
 	b.mu.Unlock()
 	for _, session := range values {
-		session.terminate()
+		if session.durable != "" {
+			session.detach()
+		} else {
+			session.terminate()
+		}
 	}
+	done := make(chan struct{})
+	go func() {
+		b.monitorWG.Wait()
+		close(done)
+	}()
 	select {
+	case <-done:
 	case <-ctx.Done():
-	default:
 	}
 }
 
@@ -292,9 +342,15 @@ func (b *unixBackend) snapshot(id string) (Session, error) {
 }
 
 func (s *unixSession) capture(command *exec.Cmd) {
+	s.mu.RLock()
+	pseudoTerminal := s.pty
+	s.mu.RUnlock()
+	if pseudoTerminal == nil {
+		return
+	}
 	buffer := make([]byte, maxFrameBytes)
 	for {
-		count, err := s.pty.Read(buffer)
+		count, err := pseudoTerminal.Read(buffer)
 		if count > 0 {
 			s.mu.Lock()
 			s.advanceLocked(buffer[:count])
@@ -305,6 +361,12 @@ func (s *unixSession) capture(command *exec.Cmd) {
 		}
 	}
 	waitErr := command.Wait()
+	s.mu.RLock()
+	closed, durable := s.closed, s.durable != ""
+	s.mu.RUnlock()
+	if durable && closed {
+		return
+	}
 	exitCode := 0
 	if waitErr != nil {
 		var exit *exec.ExitError
@@ -322,6 +384,12 @@ func (s *unixSession) capture(command *exec.Cmd) {
 		s.advanceLocked(nil)
 	}
 	s.mu.Unlock()
+	if durable && s.owner != nil && s.owner.persistence != nil {
+		s.mu.RLock()
+		value := cloneSession(s.value)
+		s.mu.RUnlock()
+		_ = s.owner.persistence.save(s.durable, value)
+	}
 }
 
 func (s *unixSession) advanceLocked(data []byte) {
@@ -334,6 +402,16 @@ func (s *unixSession) advanceLocked(data []byte) {
 		s.bytes -= len(s.frames[0].Data)
 		s.frames = s.frames[1:]
 	}
+	close(s.changed)
+	s.changed = make(chan struct{})
+}
+
+func (s *unixSession) resetLocked(data []byte) {
+	s.value.Sequence++
+	s.value.UpdatedAt = time.Now().UTC()
+	frame := Frame{Sequence: s.value.Sequence, Data: append([]byte(nil), data...), Reset: true}
+	s.frames = []Frame{frame}
+	s.bytes = len(frame.Data)
 	close(s.changed)
 	s.changed = make(chan struct{})
 }
@@ -360,6 +438,25 @@ func (s *unixSession) terminate() {
 			<-timer.C
 			_ = process.Kill()
 		}()
+	}
+}
+
+func (s *unixSession) detach() {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.closed = true
+	process, pseudoTerminal := s.process, s.pty
+	s.pty = nil
+	s.process = nil
+	s.mu.Unlock()
+	if process != nil {
+		_ = process.Signal(syscall.SIGHUP)
+	}
+	if pseudoTerminal != nil {
+		_ = pseudoTerminal.Close()
 	}
 }
 
@@ -399,7 +496,7 @@ func resolveShell(requested string) (string, error) {
 func terminalEnvironment(values []string) []string {
 	result := make([]string, 0, len(values)+3)
 	for _, value := range values {
-		if strings.HasPrefix(value, "TERM=") || strings.HasPrefix(value, "COLORTERM=") || strings.HasPrefix(value, "TERM_PROGRAM=") {
+		if strings.HasPrefix(value, "TERM=") || strings.HasPrefix(value, "COLORTERM=") || strings.HasPrefix(value, "TERM_PROGRAM=") || strings.HasPrefix(value, "TMUX=") {
 			continue
 		}
 		result = append(result, value)

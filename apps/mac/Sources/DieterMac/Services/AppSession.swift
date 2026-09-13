@@ -85,7 +85,7 @@ final class AppSession {
     var conversationRead: OwnedRead<Dieter_V1_ConversationSnapshot> { conversationModel.conversationRead }
     var projectWorkspaces: [Dieter_V1_Workspace] = []
     let schedulesModel = SchedulesModel()
-    let terminalsModel = TerminalsModel()
+    let terminalsModel: TerminalsModel
     let filesModel = FilesModel()
     var fileListingGeneration: UInt64 { filesModel.fileListingGeneration }
     let worktreeChanges = WorktreeChangesModel()
@@ -265,6 +265,7 @@ final class AppSession {
         self.cardStartRPCOverride = cardStartRPCOverride
         let environment = environment ?? (restoreSync ? .live() : .testing(defaults: themeDefaultsOverride))
         self.environment = environment
+        terminalsModel = TerminalsModel(selectionDefaults: environment.defaults)
         sidebarProjectNavigation = SidebarProjectNavigationPreferences.load(from: environment.defaults)
         connections = ConnectionManager(factory: environment.clients, clock: environment.clock)
         authentication = DieterAuthentication(

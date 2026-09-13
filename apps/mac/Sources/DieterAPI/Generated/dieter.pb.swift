@@ -4570,6 +4570,10 @@ public nonisolated struct Dieter_V1_CreateTerminalRequest: Sendable {
 
   public var cardID: String = String()
 
+  /// machine_home creates a host-scoped shell rooted in the daemon user's home
+  /// directory. It is mutually exclusive with project_id and card_id.
+  public var machineHome: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -14913,7 +14917,7 @@ nonisolated extension Dieter_V1_TerminalsResponse: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_V1_CreateTerminalRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateTerminalRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}shell\0\u{3}working_directory\0\u{1}columns\0\u{1}rows\0\u{3}card_id\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{1}name\0\u{1}shell\0\u{3}working_directory\0\u{1}columns\0\u{1}rows\0\u{3}card_id\0\u{3}machine_home\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -14928,6 +14932,7 @@ nonisolated extension Dieter_V1_CreateTerminalRequest: SwiftProtobuf.Message, Sw
       case 5: try { try decoder.decodeSingularInt32Field(value: &self.columns) }()
       case 6: try { try decoder.decodeSingularInt32Field(value: &self.rows) }()
       case 7: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.machineHome) }()
       default: break
       }
     }
@@ -14955,6 +14960,9 @@ nonisolated extension Dieter_V1_CreateTerminalRequest: SwiftProtobuf.Message, Sw
     if !self.cardID.isEmpty {
       try visitor.visitSingularStringField(value: self.cardID, fieldNumber: 7)
     }
+    if self.machineHome != false {
+      try visitor.visitSingularBoolField(value: self.machineHome, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -14966,6 +14974,7 @@ nonisolated extension Dieter_V1_CreateTerminalRequest: SwiftProtobuf.Message, Sw
     if lhs.columns != rhs.columns {return false}
     if lhs.rows != rhs.rows {return false}
     if lhs.cardID != rhs.cardID {return false}
+    if lhs.machineHome != rhs.machineHome {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

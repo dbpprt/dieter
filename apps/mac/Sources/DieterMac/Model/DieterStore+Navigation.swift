@@ -326,6 +326,7 @@ extension DieterStore {
             guard phase.isConnected, endpoint.id == machine.id else { return }
         }
         await openTerminals()
+        await loadTerminals()
     }
 
     func bindTerminals() {
@@ -347,13 +348,39 @@ extension DieterStore {
         bindTerminals()
         terminalsModel.selectTerminal(id)
     }
-    func createTerminal(projectID: String, name: String, shell: String, workingDirectory: String)
-        async
-    {
-        guard await ensureProjectConnection(projectID) else { return }
+    func createTerminal(
+        projectID: String, machineID: String? = nil, machineHome: Bool = false,
+        name: String, shell: String, workingDirectory: String
+    ) async {
+        if machineHome {
+            guard
+                let machine = endpoints.first(where: { $0.id == machineID })
+                    ?? (endpoint.id == machineID ? endpoint : nil)
+            else {
+                show(
+                    NSError(
+                        domain: "DieterTerminal", code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "The selected machine is unavailable."]))
+                return
+            }
+            guard machineIsAvailable(machine) else {
+                show(
+                    NSError(
+                        domain: "DieterTerminal", code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
+                return
+            }
+            if machine.id != endpoint.id {
+                await connect(to: machine)
+                guard phase.isConnected, endpoint.id == machine.id else { return }
+            }
+        } else {
+            guard await ensureProjectConnection(projectID) else { return }
+        }
         bindTerminals()
         await terminalsModel.createTerminal(
-            projectID: projectID, name: name, shell: shell, workingDirectory: workingDirectory)
+            projectID: projectID, machineHome: machineHome, name: name, shell: shell,
+            workingDirectory: workingDirectory)
     }
     func sendTerminalInput(id: String, data: Data) {
         terminalsModel.sendTerminalInput(id: id, data: data)

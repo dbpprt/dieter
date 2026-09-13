@@ -1488,6 +1488,9 @@ message CreateTerminalRequest {
   int32 columns = 5;
   int32 rows = 6;
   string card_id = 7;
+  // machine_home creates a host-scoped shell rooted in the daemon user's home
+  // directory. It is mutually exclusive with project_id and card_id.
+  bool machine_home = 8;
 }
 
 message WatchTerminalRequest {

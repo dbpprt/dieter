@@ -12124,8 +12124,11 @@ type CreateTerminalRequest struct {
 	Columns          int32                  `protobuf:"varint,5,opt,name=columns,proto3" json:"columns,omitempty"`
 	Rows             int32                  `protobuf:"varint,6,opt,name=rows,proto3" json:"rows,omitempty"`
 	CardId           string                 `protobuf:"bytes,7,opt,name=card_id,json=cardId,proto3" json:"card_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// machine_home creates a host-scoped shell rooted in the daemon user's home
+	// directory. It is mutually exclusive with project_id and card_id.
+	MachineHome   bool `protobuf:"varint,8,opt,name=machine_home,json=machineHome,proto3" json:"machine_home,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateTerminalRequest) Reset() {
@@ -12205,6 +12208,13 @@ func (x *CreateTerminalRequest) GetCardId() string {
 		return x.CardId
 	}
 	return ""
+}
+
+func (x *CreateTerminalRequest) GetMachineHome() bool {
+	if x != nil {
+		return x.MachineHome
+	}
+	return false
 }
 
 type WatchTerminalRequest struct {
@@ -17696,7 +17706,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x17\n" +
 	"\acard_id\x18\x02 \x01(\tR\x06cardId\"F\n" +
 	"\x11TerminalsResponse\x121\n" +
-	"\tterminals\x18\x01 \x03(\v2\x13.dieter.v1.TerminalR\tterminals\"\xd4\x01\n" +
+	"\tterminals\x18\x01 \x03(\v2\x13.dieter.v1.TerminalR\tterminals\"\xf7\x01\n" +
 	"\x15CreateTerminalRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
@@ -17705,7 +17715,8 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x11working_directory\x18\x04 \x01(\tR\x10workingDirectory\x12\x18\n" +
 	"\acolumns\x18\x05 \x01(\x05R\acolumns\x12\x12\n" +
 	"\x04rows\x18\x06 \x01(\x05R\x04rows\x12\x17\n" +
-	"\acard_id\x18\a \x01(\tR\x06cardId\"\x81\x01\n" +
+	"\acard_id\x18\a \x01(\tR\x06cardId\x12!\n" +
+	"\fmachine_home\x18\b \x01(\bR\vmachineHome\"\x81\x01\n" +
 	"\x14WatchTerminalRequest\x12\x1f\n" +
 	"\vterminal_id\x18\x01 \x01(\tR\n" +
 	"terminalId\x12%\n" +

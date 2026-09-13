@@ -17,8 +17,11 @@ import (
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/store"
+	terminalmanager "github.com/dbpprt/dieter/internal/terminal"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 func TestTerminalWorkingDirectoryStaysInsideProjectAfterSymlinkResolution(t *testing.T) {
@@ -57,6 +60,26 @@ func TestTerminalWorkingDirectoryStaysInsideProjectAfterSymlinkResolution(t *tes
 	}
 	if _, err := terminalWorkingDirectory(project, filepath.Join(repository, "missing")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing path error = %v", err)
+	}
+}
+
+func TestMachineTerminalWorkingDirectoryStaysInsideHome(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := terminalMachineWorkingDirectory("~")
+	if err != nil || got != want {
+		t.Fatalf("machine home = %q, %v; want %q", got, err, want)
+	}
+	if want != string(filepath.Separator) {
+		if _, err := terminalMachineWorkingDirectory(string(filepath.Separator)); err == nil {
+			t.Fatal("directory outside the daemon user's home was accepted")
+		}
 	}
 }
 
@@ -134,6 +157,68 @@ func TestTerminalGRPCPersistsAcrossWatchReconnect(t *testing.T) {
 	if _, err := client.CloseTerminal(ctx, &dieterv1.TerminalRef{TerminalId: created.GetId()}); err != nil {
 		t.Fatal(err)
 	}
+	homeTerminal, err := client.CreateTerminal(ctx, &dieterv1.CreateTerminalRequest{
+		MachineHome: true, Name: "machine-home", Shell: "sh", WorkingDirectory: "~", Columns: 80, Rows: 24,
+	})
+	if err != nil || homeTerminal.GetProjectId() != "" || homeTerminal.GetCardId() != "" || homeTerminal.GetStatus() != "running" {
+		t.Fatalf("machine-home terminal = %#v, %v", homeTerminal, err)
+	}
+	if _, err := client.CreateTerminal(ctx, &dieterv1.CreateTerminalRequest{
+		MachineHome: true, ProjectId: project.ID, Shell: "sh",
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("combined machine/project scope error = %v", err)
+	}
+	if _, err := client.CloseTerminal(ctx, &dieterv1.TerminalRef{TerminalId: homeTerminal.GetId()}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTerminalPersistsAcrossServerReconstruction(t *testing.T) {
+	data := store.New(t.TempDir())
+	first := New(data, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if !first.terminals.Durable() {
+		t.Skip("tmux is unavailable")
+	}
+	created, err := first.terminals.Create(terminalmanager.CreateInput{
+		Name: "server-restart", Shell: "sh", WorkingDirectory: t.TempDir(), Columns: 90, Rows: 28,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replacement *Server
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if replacement != nil {
+			replacement.CloseTerminalSessionsForTesting(ctx)
+		} else {
+			first.CloseTerminalSessionsForTesting(ctx)
+		}
+	})
+	if _, err := first.terminals.Write(created.ID, []byte("printf 'before-server-restart\\n'\n")); err != nil {
+		t.Fatal(err)
+	}
+	before, cursor := receiveManagerMarker(t, first.terminals, created.ID, 0, []byte("before-server-restart"))
+	if !bytes.Contains(before, []byte("before-server-restart")) {
+		t.Fatalf("initial output = %q", before)
+	}
+
+	shutdownContext, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+	first.ShutdownTerminalSessions(shutdownContext)
+	shutdownCancel()
+	replacement = New(data, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	listed := replacement.terminals.List("")
+	if len(listed) != 1 || listed[0].ID != created.ID || listed[0].Status != terminalmanager.StatusRunning {
+		t.Fatalf("restored server terminals = %#v", listed)
+	}
+	if _, err := replacement.terminals.Write(created.ID, []byte("printf 'after-server-restart\\n'\n")); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := receiveManagerMarker(
+		t, replacement.terminals, created.ID, cursor, []byte("after-server-restart"))
+	if !bytes.Contains(after, []byte("after-server-restart")) {
+		t.Fatalf("restored output = %q", after)
+	}
 }
 
 type terminalFrameReceiver interface {
@@ -155,4 +240,33 @@ func receiveTerminalMarker(t *testing.T, stream terminalFrameReceiver, marker []
 		}
 	}
 	return sequence
+}
+
+func receiveManagerMarker(
+	t *testing.T, manager *terminalmanager.Manager, id string, after uint64, marker []byte,
+) ([]byte, uint64) {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	var data []byte
+	for {
+		frames, changed, err := manager.Frames(id, after)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, frame := range frames {
+			data = append(data, frame.Data...)
+			if frame.Sequence > after {
+				after = frame.Sequence
+			}
+		}
+		if bytes.Contains(data, marker) {
+			return data, after
+		}
+		select {
+		case <-changed:
+		case <-deadline.C:
+			t.Fatalf("timed out waiting for %q in %q", marker, data)
+		}
+	}
 }

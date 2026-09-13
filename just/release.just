@@ -172,10 +172,12 @@ homebrew:
         path = "tap/Formula/dieter.rb"
         formula = File.read(path)
         formula.sub!(/^  depends_on "ffmpeg"\n/, "")
+        formula.sub!(/^  def install$/, "  depends_on \"tmux\"\n\n  def install") unless formula.include?(%q{depends_on "tmux"})
         formula.sub!(/^    bin\.install "dieter"$/, "    bin.install \"dieter\", \"dieter-capture\"")
         File.write(path, formula)
     '
     grep -Fq 'bin.install "dieter", "dieter-capture"' tap/Formula/dieter.rb
+    grep -Fq 'depends_on "tmux"' tap/Formula/dieter.rb
     if ! git -C tap diff --quiet -- Formula/dieter.rb Casks/dieter-app.rb; then
         git -C tap config user.name "github-actions[bot]"
         git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
