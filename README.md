@@ -552,6 +552,7 @@ just daemon
 just gateway
 just harness
 just mac
+just ios
 just android
 just site
 just release
@@ -562,10 +563,11 @@ transfer in YAML. Every executable repository step enters through one of these
 Just modules, so the same build and packaging commands can be exercised
 locally without copying workflow shell blocks.
 
-Mac signing and notarization use credentials dedicated to Dieter, configured
-through `just release configure-apple-signing`. See
-[Apple release signing](docs/apple-release-signing.md) for the seven repository
-secrets and certificate setup. `just release test` validates the release tools
+Apple signing uses credentials dedicated to Dieter, configured through
+`just release configure-apple-signing --platform macos|ios|all`. See
+[Apple release signing](docs/apple-release-signing.md) for Mac notarization,
+iOS distribution credentials, and the manual TestFlight workflow. The default
+setup platform remains `macos`. `just release test` validates the release tools
 without using real signing credentials or installing a daemon.
 
 Android builds use Android Studio's bundled JBR. If needed, set:

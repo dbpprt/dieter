@@ -22,3 +22,38 @@ smoke device="iPhone 17 Pro":
 # Run the same remote-node journeys with iPad navigation.
 smoke-ipad:
     just ios smoke 'iPad Pro 11-inch (M5)'
+
+# Exercise an existing build in a disposable simulator; used after the CI build.
+smoke-built device="iPhone 17 Pro":
+    python3 apps/ios/Scripts/smoke.py --skip-build --device '{{ device }}'
+
+# Validate the dedicated iOS signing inputs without importing or uploading them.
+signing-config:
+    python3 scripts/ios_release.py signing-config
+
+# Verify a versioned device archive locally without Apple signing credentials.
+[positional-arguments]
+archive-unsigned version build:
+    python3 scripts/ios_release.py archive-unsigned "$@"
+
+# Sign and export in CI; pass --upload explicitly to submit to App Store Connect.
+[confirm]
+[positional-arguments]
+testflight version build *args:
+    python3 scripts/ios_release.py testflight "$@"
+
+# GitHub workflow entry point; untrusted version input stays in quoted arguments.
+[confirm]
+testflight-ci:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "${GITHUB_ACTIONS:-}" == true ]] || { echo "TestFlight signing runs only in CI." >&2; exit 1; }
+    : "${IOS_VERSION:?IOS_VERSION is required}"
+    : "${IOS_BUILD_NUMBER:?IOS_BUILD_NUMBER is required}"
+    args=(testflight "$IOS_VERSION" "$IOS_BUILD_NUMBER")
+    case "${IOS_UPLOAD:-false}" in
+        true) args+=(--upload) ;;
+        false) ;;
+        *) echo "IOS_UPLOAD must be true or false." >&2; exit 1 ;;
+    esac
+    python3 scripts/ios_release.py "${args[@]}"

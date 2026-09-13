@@ -25,12 +25,17 @@ class CheckChangedTests(unittest.TestCase):
         for path in ("scripts/macos_daemon_installer.py", "scripts/macos_daemon_installer_test.py",
                      "scripts/macos_notary_submit.py", "scripts/macos_notary_submit_test.py",
                      "scripts/configure_apple_signing.py", "scripts/configure_apple_signing_test.py",
-                     "scripts/release_signing_test.py"):
+                     "scripts/release_signing_test.py", "scripts/ios_release.py", "scripts/ios_release_test.py"):
             with self.subTest(path=path):
                 self.assertEqual(self.plan(path), [["just", "release", "test"]])
         for path in ("just/release.just", "just/daemon.just"):
             with self.subTest(path=path):
                 self.assertIn(["just", "release", "test"], self.plan(path))
+
+    def test_ios_release_recipe_and_workflow_run_release_regressions(self):
+        for path in ("just/ios.just", ".github/workflows/ios-testflight.yml"):
+            self.assertIn(["just", "release", "test"], self.plan(path))
+        self.assertIn(["just", "justfile-check"], self.plan("just/ios.just"))
 
     def test_markdown_renderer_runs_library_regressions_and_asset_check(self):
         for path in ["apps/mac/MarkdownPreview/src/chart-sizing.js",

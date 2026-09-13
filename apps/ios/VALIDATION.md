@@ -1,7 +1,8 @@
 # iOS remote client validation
 
-13 September 2026. Based on `main` at `7d3ccce`, developed in the separate
-`codex/ios-remote-client` worktree.
+13 September 2026. Developed in the separate `codex/ios-remote-client` worktree;
+updated with `main` at `28352cd`, including the dedicated Apple release signing
+setup.
 
 ## Delivered scope
 
@@ -62,6 +63,33 @@ The tablet test scrolls its provider picker fully above the footer before
 tapping it and selects the mock provider while the form is empty. This fixes
 the initial test's offscreen tap without changing the app's native picker.
 
+## Signing integration checks
+
+The setup helper supports `macos`, `ios`, and `all`, retaining the Mac default.
+It validates dedicated Apple Distribution credentials, exact App Store profile
+identity, and the separate upload API key before configuring any GitHub secrets.
+The manual TestFlight workflow has an explicit upload switch; pull requests and
+pushes do not upload builds.
+
+- All 66 release-tool tests passed: 32 signing tests, 11 installer tests, and
+  23 iOS archive/export/upload tests. Tests cover invalid credentials, version
+  validation, scoped signing, upload opt-in, and cleanup after failures.
+- All 29 check-planner tests, Just formatting, and workflow lint passed.
+- The updated Simulator app built successfully with app-scoped signing settings.
+- `just ios archive-unsigned 0.1.0 1.1` produced a valid ARM64 iOS archive.
+  Both archive and app metadata match the requested version/build and bundle ID;
+  the app supports iPhone/iPad and embeds `DieterIOS.framework`.
+- Every app-icon entry has the expected size and opaque RGB pixels; the artwork
+  has a square background for the operating system's icon mask.
+
+The updated iPhone suite passed **9 tests, 0 failures**, with the optional public
+HTTPS probe skipped (`.build/smoke/20260913-115651-11b12238/`). The iPad suite
+passed the same **9 tests, 0 failures** on an unchanged focused rerun
+(`.build/smoke/20260913-121000-1f7aab03/`). Its first run stopped when a tap on
+Browse files left the menu open; captured accessibility evidence showed no file
+sheet had opened. The retry completed file edit/save/reopen and the rest of the
+journey. This intermittent menu interaction remains a smoke-test limitation.
+
 ## Environment limits
 
 The optional public HTTPS probe did not complete in this Simulator environment.
@@ -71,7 +99,11 @@ claiming a verified public-gateway OAuth journey on this host. TLS verification
 was preserved and temporary transport diagnostics were removed.
 
 Physical-device installation requires a development team selected in Xcode.
-The device build recipe compiles Release without signing. The running operator
+The device build recipe compiles Release without signing. Dedicated iOS GitHub
+secrets are not configured, so Apple Distribution signing, App Store Connect
+upload, processing, and TestFlight tester availability have not been exercised.
+The new release tests use synthetic credentials and mocked Apple operations.
+The running operator
 Mac app and daemon were preserved; native Mac smoke tests were unavailable
 because that operator app was active. Preparation of a separate Mac smoke build
 was stopped before launching another Mac app.

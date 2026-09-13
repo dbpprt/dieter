@@ -162,15 +162,15 @@ def plan_checks(root, paths, packages=None):
         (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
         or p == "just/android.just" for p in code))
 
-    if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just"} for p in code):
+    if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just", "just/ios.just"} for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
     if any(p == "justfile" or p.startswith("just/") for p in code):
         add("just", "justfile-check")
     if any(p.startswith(".github/workflows/") or p == "just/release.just" for p in code):
         add("just", "workflow-check")
     if any(p.startswith(("scripts/macos_daemon_installer", "scripts/macos_notary_submit",
-                         "scripts/configure_apple_signing", "scripts/release_signing"))
-           or p in {"just/release.just", "just/daemon.just"} for p in code):
+                         "scripts/configure_apple_signing", "scripts/release_signing", "scripts/ios_release"))
+           or p in {"just/release.just", "just/daemon.just", "just/ios.just", ".github/workflows/ios-testflight.yml"} for p in code):
         add("just", "release", "test")
     if schema:
         add("just", "proto")
