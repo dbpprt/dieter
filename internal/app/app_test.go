@@ -23,6 +23,7 @@ type fakeRunner struct {
 	mu       sync.Mutex
 	requests []harness.Request
 	err      error
+	release  chan struct{}
 }
 
 type streamErrorRunner struct{}
@@ -293,10 +294,17 @@ func (runner *parallelRunner) Run(ctx context.Context, request harness.Request, 
 	return nil
 }
 
-func (f *fakeRunner) Run(_ context.Context, request harness.Request, emit func(harness.Output) error) error {
+func (f *fakeRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
 	f.mu.Lock()
 	f.requests = append(f.requests, request)
 	f.mu.Unlock()
+	if f.release != nil {
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	if f.err != nil {
 		return f.err
 	}
@@ -366,7 +374,7 @@ func TestHarnessTurnRunsInsideConversationWorktree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repository, "README.md"), []byte("base\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"add", "README.md"}, {"commit", "-m", "base"}} {
+	for _, args := range [][]string{{"add", "README.md"}, {"-c", "commit.gpgsign=false", "commit", "-m", "base"}} {
 		command = exec.Command("git", args...)
 		command.Dir = repository
 		if output, err := command.CombinedOutput(); err != nil {
@@ -551,6 +559,77 @@ func hasActiveTurn(service *Service, projectID string) bool {
 	return false
 }
 
+func gateFakeTurn(t *testing.T, service *Service, fake *fakeRunner) {
+	t.Helper()
+	fake.release = make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-fake.release:
+			return // completedFakeTurn registered cleanup for the exact worker.
+		default:
+		}
+		// Creation can fail after admitting a worker. While the gate is closed,
+		// capture and cancel it even if the completion helper was never reached.
+		service.mu.Lock()
+		turns := make([]*activeTurn, 0, len(service.active))
+		for _, turn := range service.active {
+			turns = append(turns, turn)
+		}
+		service.mu.Unlock()
+		for _, turn := range turns {
+			turn.cancel()
+		}
+		for _, turn := range turns {
+			select {
+			case <-turn.done:
+			case <-time.After(10 * time.Second):
+				t.Errorf("gated turn %s did not stop before temporary-store cleanup", turn.cardID)
+			}
+		}
+	})
+}
+
+func completedFakeTurn(t *testing.T, service *Service, fake *fakeRunner, cardID string) model.Card {
+	t.Helper()
+	// The fake emits durable chunks and session state. Join the worker rather
+	// than treating its fsynced teardown as a two-second polling benchmark.
+	// Hold it at the runner boundary until its exact completion signal and
+	// cleanup are captured; active-map removal alone precedes final teardown.
+	const timeout = 10 * time.Second
+	service.mu.Lock()
+	turn := service.active[cardID]
+	service.mu.Unlock()
+	if turn == nil || fake.release == nil {
+		t.Fatalf("turn %s must be gated before waiting for completion", cardID)
+	}
+	t.Cleanup(func() {
+		turn.cancel()
+		select {
+		case <-turn.done:
+		case <-time.After(timeout):
+			t.Errorf("turn %s did not stop before temporary-store cleanup", cardID)
+		}
+	})
+	close(fake.release)
+	select {
+	case <-turn.done:
+	case <-time.After(timeout):
+		t.Fatalf("turn %s did not finish; runner requests=%d", cardID, fake.count())
+	}
+	stored, err := service.Store.ResolveCard(cardID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := service.Store.Conversation(cardID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.count() != 1 || stored.Runtime != "idle" || conversation.Status != "idle" || len(conversation.Session) == 0 || hasActiveTurn(service, stored.ProjectID) {
+		t.Fatalf("turn %s did not complete successfully: requests=%d card runtime=%q conversation status=%q session=%t", cardID, fake.count(), stored.Runtime, conversation.Status, len(conversation.Session) > 0)
+	}
+	return stored
+}
+
 func TestRegisterProjectCreatesNewGitWorkingTree(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "new-project")
 	service := New(store.New(t.TempDir()), &fakeRunner{})
@@ -592,6 +671,7 @@ func TestCreateRunningCardStartsHarnessWithBoardInstructions(t *testing.T) {
 
 func TestNewConversationUsesConfiguredModelEffortByDefault(t *testing.T) {
 	service, fake, project, board := appSetup(t)
+	gateFakeTurn(t, service, fake)
 	card, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
 		Title: "Think deeply", Prompt: "Solve it", Provider: "codex", Model: "gpt-5.6-sol",
@@ -599,11 +679,7 @@ func TestNewConversationUsesConfiguredModelEffortByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return fake.count() == 1 && !hasActiveTurn(service, project.ID) })
-	stored, err := service.Store.ResolveCard(card.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	stored := completedFakeTurn(t, service, fake, card.ID)
 	if stored.Effort != "xhigh" || fake.request(0).Effort != "xhigh" {
 		t.Fatalf("stored effort=%q request effort=%q", stored.Effort, fake.request(0).Effort)
 	}
@@ -611,6 +687,7 @@ func TestNewConversationUsesConfiguredModelEffortByDefault(t *testing.T) {
 
 func TestNewConversationCanExplicitlyUseProviderDefaultEffort(t *testing.T) {
 	service, fake, project, board := appSetup(t)
+	gateFakeTurn(t, service, fake)
 	card, err := service.CreateCard(context.Background(), CardInput{
 		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
 		Title: "Use provider default", Prompt: "Solve it", Provider: "codex", Model: "gpt-5.6-sol", Effort: "default",
@@ -618,11 +695,7 @@ func TestNewConversationCanExplicitlyUseProviderDefaultEffort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, func() bool { return fake.count() == 1 && !hasActiveTurn(service, project.ID) })
-	stored, err := service.Store.ResolveCard(card.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
+	stored := completedFakeTurn(t, service, fake, card.ID)
 	if stored.Effort != "" || fake.request(0).Effort != "" {
 		t.Fatalf("stored effort=%q request effort=%q", stored.Effort, fake.request(0).Effort)
 	}

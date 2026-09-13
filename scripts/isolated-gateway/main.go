@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -29,12 +30,29 @@ import (
 
 	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/gateway"
+	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/server"
 	boardstore "github.com/dbpprt/dieter/internal/store"
 )
+
+const enrollmentRPCTimeout = 30 * time.Second
+
+func enrollmentRPC[T any](ctx context.Context, logger *slog.Logger, role, operation string, call func(context.Context) (T, error)) (T, error) {
+	started := time.Now()
+	logger.Info("isolated enrollment starting", "role", role, "operation", operation, "timeout", enrollmentRPCTimeout)
+	requestContext, cancel := context.WithTimeout(ctx, enrollmentRPCTimeout)
+	defer cancel()
+	result, err := call(requestContext)
+	elapsed := time.Since(started).Round(time.Millisecond)
+	if err != nil {
+		return result, fmt.Errorf("isolated %s enrollment %s failed after %s: %w", role, operation, elapsed, err)
+	}
+	logger.Info("isolated enrollment completed", "role", role, "operation", operation, "elapsed", elapsed)
+	return result, nil
+}
 
 func main() {
 	address := flag.String("addr", "127.0.0.1:14243", "loopback listen address for the gateway copy")
@@ -56,7 +74,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		return err
 	}
 	// Smoke fixtures exercise client delivery and reconnect behavior with the
-	// bounded in-process mock harness. Do not let the host's production agent
+	// bounded mock harness. Do not let the host's production agent
 	// disk reserve turn that transport assertion into a machine-capacity test.
 	if err := os.Setenv("DIETER_MIN_FREE_BYTES", "0"); err != nil {
 		return err
@@ -112,14 +130,18 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err != nil {
 		return err
 	}
-	enrollment, err := daemon.BeginEnrollment(ctx, identity)
+	enrollment, err := enrollmentRPC(ctx, logger, "primary", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+		return daemon.BeginEnrollment(requestContext, identity)
+	})
 	if err != nil {
 		return err
 	}
 	if err = gatewayStore.ApproveEnrollment(enrollment.GetEnrollmentId(), enrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
 		return err
 	}
-	credential, err := daemon.CompleteEnrollment(ctx, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+	credential, err := enrollmentRPC(ctx, logger, "primary", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+		return daemon.CompleteEnrollment(requestContext, identity, enrollment.GetEnrollmentId(), enrollment.GetEnrollmentSecret())
+	})
 	if err != nil {
 		return err
 	}
@@ -183,6 +205,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	var boardRunners []*isolatedRunner
 	newFixtureServer := func(fixtureData *boardstore.Store) *server.Server {
 		runner := newIsolatedRunner(harness.NewSubprocessRunner(fixtureData.Root))
+		runner.logger = logger
 		value := server.NewWithOptions(fixtureData, logger, server.Options{
 			Runner: runner,
 			MachineAction: func(_ context.Context, operation machine.Operation) error {
@@ -293,14 +316,18 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 	if err != nil {
 		return err
 	}
-	legacyEnrollment, err := daemon.BeginEnrollment(ctx, legacyIdentity)
+	legacyEnrollment, err := enrollmentRPC(ctx, logger, "legacy", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+		return daemon.BeginEnrollment(requestContext, legacyIdentity)
+	})
 	if err != nil {
 		return err
 	}
 	if err = gatewayStore.ApproveEnrollment(legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetUserCode(), config.AllowedUserID, config.AllowedLogin); err != nil {
 		return err
 	}
-	legacyCredential, err := daemon.CompleteEnrollment(ctx, legacyIdentity, legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetEnrollmentSecret())
+	legacyCredential, err := enrollmentRPC(ctx, logger, "legacy", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+		return daemon.CompleteEnrollment(requestContext, legacyIdentity, legacyEnrollment.GetEnrollmentId(), legacyEnrollment.GetEnrollmentSecret())
+	})
 	if err != nil {
 		return err
 	}
@@ -319,7 +346,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		if identityErr != nil {
 			return identityErr
 		}
-		secondEnrollment, enrollmentErr := daemon.BeginEnrollment(ctx, secondIdentity)
+		secondEnrollment, enrollmentErr := enrollmentRPC(ctx, logger, "second", "begin", func(requestContext context.Context) (*gatewayv1.DaemonEnrollment, error) {
+			return daemon.BeginEnrollment(requestContext, secondIdentity)
+		})
 		if enrollmentErr != nil {
 			return enrollmentErr
 		}
@@ -328,8 +357,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		); err != nil {
 			return err
 		}
-		secondCredential, credentialErr := daemon.CompleteEnrollment(
-			ctx, secondIdentity, secondEnrollment.GetEnrollmentId(), secondEnrollment.GetEnrollmentSecret())
+		secondCredential, credentialErr := enrollmentRPC(ctx, logger, "second", "complete", func(requestContext context.Context) (*gatewayv1.DaemonCredential, error) {
+			return daemon.CompleteEnrollment(requestContext, secondIdentity, secondEnrollment.GetEnrollmentId(), secondEnrollment.GetEnrollmentSecret())
+		})
 		if credentialErr != nil {
 			return credentialErr
 		}
@@ -494,9 +524,11 @@ type isolatedRun struct {
 
 type isolatedRunner struct {
 	isolatedHarness
-	mu     sync.Mutex
-	closed bool
-	active map[*isolatedRun]struct{}
+	mu       sync.Mutex
+	closed   bool
+	active   map[*isolatedRun]struct{}
+	logger   *slog.Logger // Optional; set before admitting any fixture turns.
+	sequence uint64
 }
 
 func newIsolatedRunner(runner isolatedHarness) *isolatedRunner {
@@ -522,7 +554,7 @@ func (runner *isolatedRunner) Shutdown() {
 	}
 }
 
-func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) error {
+func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) (err error) {
 	runner.mu.Lock()
 	if runner.closed {
 		runner.mu.Unlock()
@@ -531,6 +563,8 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 	ctx, cancel := context.WithCancel(ctx)
 	run := &isolatedRun{cancel: cancel, done: make(chan struct{})}
 	runner.active[run] = struct{}{}
+	runner.sequence++
+	sequence := runner.sequence
 	runner.mu.Unlock()
 	defer func() {
 		cancel()
@@ -539,6 +573,37 @@ func (runner *isolatedRunner) Run(ctx context.Context, request harness.Request, 
 		close(run.done)
 		runner.mu.Unlock()
 	}()
+	if runner.logger != nil {
+		// Never log request/output data or error strings. Fixed labels and a
+		// fixture-local sequence distinguish startup from delivery failures.
+		provider := "other"
+		if request.Harness == "mock" || request.Harness == "codex" {
+			provider = request.Harness
+		}
+		logger := runner.logger.With("sequence", sequence, "harness", provider)
+		started := time.Now()
+		logger.Info("isolated harness", "phase", "start", "elapsed_ms", 0)
+		defer func() {
+			classification := "ok"
+			switch {
+			case errors.Is(err, context.Canceled):
+				classification = "canceled"
+			case errors.Is(err, context.DeadlineExceeded):
+				classification = "deadline_exceeded"
+			case err != nil:
+				classification = "error"
+			}
+			logger.Info("isolated harness", "phase", "finish", "elapsed_ms", time.Since(started).Milliseconds(), "error_class", classification)
+		}()
+		var first sync.Once
+		next := emit
+		emit = func(output harness.Output) error {
+			first.Do(func() {
+				logger.Info("isolated harness", "phase", "first_output", "elapsed_ms", time.Since(started).Milliseconds())
+			})
+			return next(output)
+		}
+	}
 	return runner.run(ctx, request, emit)
 }
 

@@ -56,10 +56,48 @@ final class RemoteNodeUITests: XCTestCase {
         }
         XCTAssertLessThan(
             provider.frame.maxY, footer.frame.minY - 8, "Provider must be above the footer before tapping.")
-        tap(app, "ios.create.provider")
-        let mock = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
-        XCTAssertTrue(mock.waitForExistence(timeout: 5), app.debugDescription)
-        mock.tap()
+        let providerReady = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"), object: provider)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [providerReady], timeout: 5), .completed,
+            "The provider picker must be hittable before opening its menu.\n\(app.debugDescription)")
+        let previousProvider = provider.value as? String
+        provider.tap()
+        let openingOption = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
+        if !openingOption.waitForExistence(timeout: 5), !openingOption.exists,
+            provider.isHittable, let previousProvider,
+            provider.value as? String == previousProvider
+        {
+            // A native picker can leave an opening tap unconsumed after relaunch.
+            // Retry once only while no option appeared and the selection is unchanged.
+            provider.tap()
+        }
+        var mockSelected = false
+        for attempt in 0..<2 {
+            let mock = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
+            let optionReady = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true AND hittable == true"), object: mock)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [optionReady], timeout: 5), .completed,
+                "The Mock provider option must be hittable.\n\(app.debugDescription)")
+            mock.tap()
+            let menuClosed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == false"), object: mock)
+            let providerChanged = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == 'Mock'"), object: provider)
+            if XCTWaiter.wait(for: [menuClosed, providerChanged], timeout: 5) == .completed {
+                mockSelected = true
+                break
+            }
+            // CI recorded an unconsumed native menu tap. Retry once only while
+            // that option remains hittable and the provider is still unchanged.
+            let remainingMock = app.buttons.matching(NSPredicate(format: "label == 'Mock'")).firstMatch
+            guard attempt == 0, remainingMock.isHittable,
+                let previousProvider, provider.value as? String == previousProvider
+            else { break }
+        }
+        XCTAssertTrue(
+            mockSelected, "Selecting Mock must close the menu and update the provider.\n\(app.debugDescription)")
         // Native Picker labels vary by OS; the value describes the selection.
         // Verify the dependent model reset as well before submitting anything.
         for identifier in ["ios.create.provider", "ios.create.model"] {
@@ -88,6 +126,18 @@ final class RemoteNodeUITests: XCTestCase {
     private func textExists(_ app: XCUIApplication, _ text: String, timeout: TimeInterval = 30) {
         let label = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
         XCTAssertTrue(label.waitForExistence(timeout: timeout), "Missing text \(text).\n\(app.debugDescription)")
+    }
+
+    private func waitForBoard(_ app: XCUIApplication, project: String, board: String) {
+        // The machine name appears before its workspace loads. Project links
+        // navigate away from the sidebar; board links are their siblings.
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: element(app, "ios.board.\(board)"))
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [ready], timeout: 40), .completed,
+            "The fixture board must be ready in the sidebar.\n\(app.debugDescription)")
+        XCTAssertTrue(element(app, "ios.project.\(project)").exists, "The fixture project must be present.")
     }
 
     private func screenshot(_ app: XCUIApplication, _ name: String) {
@@ -129,11 +179,8 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        textExists(app, "Isolated E2E", timeout: 40)
+        waitForBoard(app, project: project, board: board)
         screenshot(app, "01-connected-remote-projects")
-        if !element(app, "ios.board.\(board)").exists {
-            tap(app, "ios.project.\(project)")
-        }
         tap(app, "ios.board.\(board)")
         if element(app, "ios.list.new-task").exists { tap(app, "ios.list.new-task") } else { tap(app, "ios.new-task") }
         fillTask(app, title: "iOS remote smoke task", prompt: "Verify this request came from iOS")
@@ -181,8 +228,7 @@ final class RemoteNodeUITests: XCTestCase {
         // Relaunch must rediscover the node and retain the daemon-owned task.
         app.terminate()
         app.launch()
-        textExists(app, "Isolated E2E", timeout: 40)
-        if !element(app, "ios.board.\(board)").exists { tap(app, "ios.project.\(project)") }
+        waitForBoard(app, project: project, board: board)
         tap(app, "ios.board.\(board)")
         textExists(app, "iOS remote smoke task")
         screenshot(app, "06-task-survives-relaunch")
@@ -209,7 +255,7 @@ final class RemoteNodeUITests: XCTestCase {
 
         app.terminate()
         app.launch()
-        textExists(app, "Isolated E2E", timeout: 40)
+        waitForBoard(app, project: project, board: board)
         let legacy = try XCTUnwrap(environment["DIETER_IOS_TEST_LEGACY_DAEMON"])
         let daemon = try XCTUnwrap(environment["DIETER_IOS_TEST_DAEMON"])
         tap(app, "ios.machine-picker")
@@ -219,8 +265,7 @@ final class RemoteNodeUITests: XCTestCase {
         app.alerts.buttons["OK"].tap()
         tap(app, "ios.machine-picker")
         tap(app, "ios.machine.\(daemon)")
-        textExists(app, "Isolated E2E", timeout: 40)
-        XCTAssertTrue(element(app, "ios.board.\(board)").waitForExistence(timeout: 20))
+        waitForBoard(app, project: project, board: board)
         screenshot(app, "10-compatible-node-restored")
     }
 }

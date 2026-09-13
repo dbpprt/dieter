@@ -16,7 +16,7 @@ build-device:
     xcodebuild -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Release -destination 'generic/platform=iOS' -derivedDataPath apps/ios/.build/DerivedData build CODE_SIGNING_ALLOWED=NO
 
 # Run remote-node journeys against an isolated gateway in an owned simulator.
-smoke device="iPhone 17 Pro":
+smoke device="iPhone 17 Pro": smoke-runner-test
     python3 apps/ios/Scripts/smoke.py --device '{{ device }}'
 
 # Run the same remote-node journeys with iPad navigation.
@@ -24,8 +24,16 @@ smoke-ipad:
     just ios smoke 'iPad Pro 11-inch (M5)'
 
 # Exercise an existing build in a disposable simulator; used after the CI build.
-smoke-built device="iPhone 17 Pro":
+smoke-built device="iPhone 17 Pro": smoke-runner-test
     python3 apps/ios/Scripts/smoke.py --skip-build --device '{{ device }}'
+
+# Verify isolated smoke startup, cleanup, and credential redaction.
+smoke-runner-test:
+    python3 -m unittest discover -s apps/ios/Scripts -p '*_test.py'
+
+# Keep the stable iOS CI gate green only when every device matrix job passed.
+ci-smoke-result:
+    test "${IOS_DEVICE_RESULT:-missing}" = success
 
 # Validate the dedicated iOS signing inputs without importing or uploading them.
 signing-config:

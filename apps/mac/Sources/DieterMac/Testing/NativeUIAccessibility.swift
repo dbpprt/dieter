@@ -165,6 +165,107 @@
             return nil
         }
 
+        /// Sheet dismissal and SwiftUI's control update complete separately.
+        /// Observe the real control and stable geometry before one native action.
+        static func waitForInteractiveTarget(
+            _ identifier: String, in window: NSWindow, requiresEnabled: Bool = false
+        ) async -> Bool {
+            var previousFrame: CGRect?
+            var stableSamples = 0
+            var nextActivation = Date.distantPast
+            return await wait(timeout: 5) {
+                if window.isVisible, !window.isMiniaturized, !NSApp.isHidden,
+                    window.attachedSheet == nil, (!NSApp.isActive || !window.isKeyWindow),
+                    Date() >= nextActivation
+                {
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    nextActivation = Date().addingTimeInterval(1)
+                }
+                guard NSApp.isActive, !NSApp.isHidden, window.isKeyWindow, window.isVisible,
+                    !window.isMiniaturized, window.attachedSheet == nil,
+                    let target = find(identifier, in: window), target.recordedWindow === window,
+                    let frame = target.recordedFrame, frame.width > 0, frame.height > 0,
+                    window.frame.contains(frame), !requiresEnabled || nativeEnabled(identifier, in: window) == true
+                else {
+                    stableSamples = 0
+                    previousFrame = nil
+                    return false
+                }
+                stableSamples = frame == previousFrame ? stableSamples + 1 : 0
+                previousFrame = frame
+                return stableSamples >= 3
+            }
+        }
+
+        private static func nativeEnabled(_ identifier: String, in window: NSWindow) -> Bool? {
+            // The smoke geometry anchor is not a control; inspect AppKit's
+            // accessibility element rather than treating an anchor as enabled.
+            if let enabled = accessibilityMatches(identifier, in: window)
+                .compactMap({ $0.value("isAccessibilityEnabled") as? Bool }).first
+            {
+                return enabled
+            }
+            // SwiftUI may omit its menu from the in-process accessibility tree.
+            // As with the Finder smoke assertion, read the real native button
+            // at the anchor, including NSPopUpButton for menus.
+            return nativeButton(identifier, in: window)?.isEnabled
+        }
+
+        private static func accessibilityMatches(_ identifier: String, in window: NSWindow) -> [Element] {
+            guard let target = find(identifier, in: window), target.recordedWindow === window,
+                let frame = target.recordedFrame
+            else { return [] }
+            let center = NSPoint(x: frame.midX, y: frame.midY)
+            return elements(in: window).filter {
+                $0.identifier == identifier && $0.frame.contains(center)
+            }
+        }
+
+        private static func nativeButton(_ identifier: String, in window: NSWindow) -> NSButton? {
+            guard let target = find(identifier, in: window), target.recordedWindow === window,
+                let frame = target.recordedFrame, let anchor = target.object as? NSView
+            else { return nil }
+            let center = NSPoint(x: frame.midX, y: frame.midY)
+            var ancestor = anchor.superview
+            while let root = ancestor, root.window === window {
+                var pending = [root]
+                var matches: [NSButton] = []
+                while let view = pending.popLast() {
+                    guard view.window === window, !view.isHiddenOrHasHiddenAncestor else { continue }
+                    if let button = view as? NSButton,
+                        window.convertToScreen(button.convert(button.bounds, to: nil)).contains(center)
+                    {
+                        matches.append(button)
+                    }
+                    pending.append(contentsOf: view.subviews)
+                }
+                if let match = matches.min(by: {
+                    let left = window.convertToScreen($0.convert($0.bounds, to: nil))
+                    let right = window.convertToScreen($1.convert($1.bounds, to: nil))
+                    return abs(left.midX - frame.midX) + abs(left.midY - frame.midY)
+                        < abs(right.midX - frame.midX) + abs(right.midY - frame.midY)
+                }) {
+                    return match
+                }
+                ancestor = root.superview
+            }
+            return nil
+        }
+
+        static func targetDiagnostics(_ identifier: String, in window: NSWindow) -> String {
+            let target = find(identifier, in: window)
+            let accessibility = accessibilityMatches(identifier, in: window).map {
+                "\(Swift.type(of: $0.object)) frame=\($0.frame) enabled=\(String(describing: $0.value("isAccessibilityEnabled")))"
+            }
+            let button = nativeButton(identifier, in: window).map {
+                "\(Swift.type(of: $0)) frame=\(window.convertToScreen($0.convert($0.bounds, to: nil))) enabled=\($0.isEnabled)"
+            }
+            return
+                "active=\(NSApp.isActive), key=\(window.isKeyWindow), visible=\(window.isVisible), sheet=\(window.attachedSheet?.windowNumber ?? -1), host=\(target?.recordedWindow?.windowNumber ?? -1), frame=\(String(describing: target?.recordedFrame)), enabled=\(String(describing: nativeEnabled(identifier, in: window))), pointer=\(NSEvent.mouseLocation)"
+                + "; accessibility=\(accessibility), nativeButton=\(button ?? "missing")"
+        }
+
         static func hasOpenInspector(in window: NSWindow) -> Bool {
             guard let root = window.contentView else { return false }
             var views = [root]

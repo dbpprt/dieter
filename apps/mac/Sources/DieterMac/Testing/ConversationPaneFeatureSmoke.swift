@@ -520,10 +520,11 @@
                 results["content-terminal-input"] = "failed: Terminal tab unavailable (\(model.error ?? "no error"))";
                 return
             }
-            let ready = await wait {
-                NativeUIAccessibility.find("conversation.content.terminal.create", in: window) != nil
-            }
-            let created = ready && NativeUIAccessibility.click("conversation.content.terminal.create", in: window)
+            let identifier = "conversation.content.terminal.create"
+            let ready = await NativeUIAccessibility.waitForInteractiveTarget(
+                identifier, in: window, requiresEnabled: true)
+            let beforeClick = NativeUIAccessibility.targetDiagnostics(identifier, in: window)
+            let clicked = ready && NativeUIAccessibility.click(identifier, in: window)
             let mounted = await wait(timeout: 15) {
                 tab.terminals.selectedTerminalID != nil && tab.terminals.terminalStreamConnected
                     && tab.terminals.selectedTerminal?.status == "running"
@@ -536,8 +537,30 @@
                     $0.visibleRect.width > 0
                 })
             else {
+                let views = descendants(window.contentView, as: RemoteTerminalView.self)
+                let details: [String: Any] = [
+                    "controlReady": ready, "clickPosted": clicked, "beforeClick": beforeClick,
+                    "afterWait": NativeUIAccessibility.targetDiagnostics(identifier, in: window),
+                    "active": tab.terminals.active, "live": tab.terminals.isLive,
+                    "loading": tab.terminals.terminalLoading,
+                    "selectedID": tab.terminals.selectedTerminalID ?? "none",
+                    "selectedStatus": tab.terminals.selectedTerminal?.status ?? "none",
+                    "connected": tab.terminals.terminalStreamConnected,
+                    "terminalIDs": tab.terminals.terminals.map(\.id),
+                    "terminalError": tab.terminals.terminalError ?? "none",
+                    "errorMessage": tab.terminals.errorMessage ?? "none",
+                    "nativeViews": views.map {
+                        "hidden=\($0.isHiddenOrHasHiddenAncestor), visible=\($0.visibleRect), window=\($0.window?.windowNumber ?? -1)"
+                    },
+                ]
+                if let data = try? JSONSerialization.data(
+                    withJSONObject: details, options: [.prettyPrinted, .sortedKeys])
+                {
+                    try? data.write(to: output.appending(path: "content-terminal-diagnostics.json"), options: .atomic)
+                }
                 results["content-terminal-input"] =
-                    "failed: create=\(created), native terminal=\(mounted), error=\(tab.terminals.errorMessage ?? "none")";
+                    "failed: ready=\(ready), click=\(clicked), selected=\(tab.terminals.selectedTerminalID ?? "none"), status=\(tab.terminals.selectedTerminal?.status ?? "none"), connected=\(tab.terminals.terminalStreamConnected), native terminal=\(mounted), terminalError=\(tab.terminals.terminalError ?? "none"), error=\(tab.terminals.errorMessage ?? "none")"
+                await captureStage(window, output, "terminal-failed", "08c-content-terminal-failed.png")
                 return
             }
             click(view, window: window)
@@ -551,7 +574,7 @@
                 .contains { $0.trimmingCharacters(in: .whitespaces) == marker }
             }
             results["content-terminal-input"] =
-                created && received ? "passed" : "failed: create=\(created), native output=\(received)"
+                clicked && received ? "passed" : "failed: create click=\(clicked), native output=\(received)"
             await captureStage(window, output, "terminal", "08c-content-terminal.png")
             let closed = NativeUIAccessibility.click("conversation.content.tab.\(tab.id.uuidString).close", in: window)
             _ = await wait { !model.tabs.contains(where: { $0.id == tab.id }) }

@@ -2,7 +2,8 @@
 """Archive Dieter for iOS, or explicitly export/upload TestFlight builds in CI.
 
 Signing uses only explicitly supplied iOS credentials and a temporary keychain.
-No command output, credential value, or signing command line is printed.
+Only bounded, redacted Xcode error summaries are printed; signing commands and
+their raw output remain private.
 """
 
 import argparse
@@ -49,7 +50,54 @@ class Material:
     metadata: dict
 
 
-def command(argv, *, label, timeout=3600, include_stderr=False):
+def xcode_error_summary(stdout, stderr, secrets_to_redact):
+    """Select error messages only, redact before truncation, and never emit argv."""
+    values = list(secrets_to_redact)
+    for name, value in os.environ.items():
+        if name.startswith("IOS_") and value:
+            values.append(value)
+            if name.endswith("_BASE64"):
+                try:
+                    values.append(base64.b64decode(value, validate=True))
+                except (ValueError, binascii.Error):
+                    pass
+    redactions = set()
+    for value in values:
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", errors="replace")
+        else:
+            value = str(value)
+        if value:
+            redactions.add(value)
+            redactions.add(shlex.quote(value))
+            # A PEM key may be echoed one base64 line at a time.
+            if "-----BEGIN" in value:
+                redactions.update(line for line in value.splitlines() if line and not line.startswith("-----"))
+    messages = []
+    for output in (stdout, stderr):
+        # Only examine complete lines in a bounded tail of each output stream.
+        tail = output[-256 * 1024:]
+        if len(tail) < len(output):
+            tail = tail.partition(b"\n")[2]
+        for line in tail.decode("utf-8", errors="replace").splitlines():
+            if len(line) > 8192 or "PRIVATE KEY" in line:
+                continue
+            match = re.search(r"\b(?:fatal )?error:\s*(.+)", line, re.IGNORECASE)
+            if not match:
+                continue
+            message = match.group(1)
+            if re.search(r"\b(?:xcodebuild|codesign)\s+-|\bsecurity\s+(?:-|[a-z][a-z-]*\b)", message, re.IGNORECASE):
+                continue
+            for value in sorted(redactions, key=len, reverse=True):
+                message = message.replace(value, "[redacted]")
+            # Remove terminal controls and avoid executable workflow directives.
+            message = " ".join("".join(c for c in message if c.isprintable()).split())[:500]
+            if message and message not in messages:
+                messages.append(message)
+    return "\n".join("  Xcode: " + message for message in messages[-8:])
+
+
+def command(argv, *, label, timeout=3600, include_stderr=False, diagnostic_secrets=None):
     # Child tools receive private files only when needed, not every CI secret.
     env = {name: value for name, value in os.environ.items() if not name.startswith("IOS_")}
     try:
@@ -59,6 +107,11 @@ def command(argv, *, label, timeout=3600, include_stderr=False):
     except (OSError, subprocess.TimeoutExpired):
         raise ReleaseError(f"{label} could not run or timed out.") from None
     if result.returncode:
+        if (diagnostic_secrets is not None and Path(str(argv[0])).name == "xcodebuild"
+                and ("archive" in argv or "-exportArchive" in argv)):
+            summary = xcode_error_summary(result.stdout, result.stderr, diagnostic_secrets)
+            if summary:
+                raise ReleaseError(f"{label} failed. Redacted Xcode errors:\n{summary}")
         raise ReleaseError(f"{label} failed. Command output was withheld to protect signing credentials.")
     return result.stdout + result.stderr if include_stderr else result.stdout
 
@@ -194,7 +247,7 @@ def signing_environment(material, runner_temp, *, home=None):
         profile.parent.mkdir(parents=True, exist_ok=True)
         profile_attempted = True
         replace_profile(profile, material.profile)
-        yield {"directory": private, "key": key, "identity": identity}
+        yield {"directory": private, "key": key, "identity": identity, "password": password}
     finally:
         if profile_attempted:
             try:
@@ -295,7 +348,7 @@ def archive_unsigned(root, version, build, env):
     output.mkdir(parents=True)
     archive = output / "Dieter.xcarchive"
     command(archive_command(root, archive, version, build, bundle_id) + ["CODE_SIGNING_ALLOWED=NO"],
-            label="Unsigned iOS archive")
+            label="Unsigned iOS archive", diagnostic_secrets=())
     validate_archive(archive, version, build, bundle_id, signed=False)
     print(f"Unsigned iOS archive: {archive}")
     return archive
@@ -312,19 +365,25 @@ def testflight(root, version, build, env, *, upload=False):
     material = load_material(env)
     metadata = material.metadata
     with signing_environment(material, runner_temp) as context:
+        diagnostic_secrets = (
+            material.certificate, material.password, material.profile, material.key,
+            context["directory"], context["key"], context["identity"], context["password"],
+            *(value for name, value in env.items() if name.startswith("IOS_")),
+        )
         output.mkdir(parents=True)
         archive = output / "Dieter.xcarchive"
         command(archive_command(root, archive, version, build, metadata["bundle_id"]) + [
             f"DIETER_IOS_TEAM_ID={metadata['team_id']}", "DIETER_IOS_SIGN_STYLE=Manual",
             f"DIETER_IOS_SIGN_IDENTITY={context['identity']}",
             f"DIETER_IOS_PROFILE_SPECIFIER={metadata['profile_uuid']}",
-        ], label="Signed iOS archive")
+        ], label="Signed iOS archive", diagnostic_secrets=diagnostic_secrets)
         validate_archive(archive, version, build, metadata["bundle_id"], signed=True)
         options = context["directory"] / "ExportOptions.plist"
         write_private(options, plistlib.dumps(export_options(metadata, context["identity"], "export")))
         export = output / "Export"
         command(["xcodebuild", "-exportArchive", "-archivePath", archive,
-                 "-exportPath", export, "-exportOptionsPlist", options], label="App Store IPA export")
+                 "-exportPath", export, "-exportOptionsPlist", options], label="App Store IPA export",
+                diagnostic_secrets=diagnostic_secrets)
         ipa = validate_ipa(export, version, build, metadata["bundle_id"])
         if upload:
             upload_options = context["directory"] / "UploadOptions.plist"
@@ -333,7 +392,7 @@ def testflight(root, version, build, env, *, upload=False):
                      "-exportPath", context["directory"] / "Upload", "-exportOptionsPlist", upload_options,
                      "-allowProvisioningUpdates", "-authenticationKeyPath", context["key"],
                      "-authenticationKeyID", metadata["key_id"], "-authenticationKeyIssuerID", metadata["issuer_id"]],
-                    label="App Store Connect upload")
+                    label="App Store Connect upload", diagnostic_secrets=diagnostic_secrets)
     print(f"Validated App Store IPA: {ipa}")
     if upload:
         print("Uploaded to App Store Connect for processing. Availability to TestFlight testers is not yet confirmed.")

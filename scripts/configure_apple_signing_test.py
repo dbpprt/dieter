@@ -298,6 +298,18 @@ class IOSCertificateValidationTests(unittest.TestCase):
         self.assertTrue(all(call.args[0][0] == "openssl" for call in command.call_args_list))
         self.assertNotIn(self.password, repr(command.call_args_list).encode())
 
+    def test_lowercase_profile_uuid_is_preserved_for_xcode_lookup(self):
+        self.profile["UUID"] = self.profile["UUID"].lower()
+        self.assertEqual(self.validate()["profile_uuid"], self.profile["UUID"])
+
+    def test_profile_uuid_requires_canonical_hyphenated_spelling(self):
+        original = self.profile["UUID"]
+        for value in (original.replace("-", ""), "{" + original + "}", "urn:uuid:" + original, 123):
+            with self.subTest(value=value):
+                self.profile["UUID"] = value
+                with self.assertRaisesRegex(signing.SetupError, "valid UUID"):
+                    self.validate()
+
     def test_ios_secret_names_and_encoded_material(self):
         profile = self.cms()
         paths = {}

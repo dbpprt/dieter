@@ -97,6 +97,8 @@
                     && NativeUIAccessibility.find(prefix + ".new-board", in: window) == nil
                     && abs(split.arrangedSubviews[0].frame.width - 250) < 2
             }
+            let ready = await NativeUIAccessibility.waitForInteractiveTarget(prefix + ".name", in: window)
+            let beforeHover = NativeUIAccessibility.targetDiagnostics(prefix + ".name", in: window)
             let name = store.projectDirectory[projectIDs[0]]?.name ?? ""
             let nameFrame = NativeUIAccessibility.find(prefix + ".name", in: window)?.recordedFrame ?? .zero
             let expectedNameWidth = (name as NSString).size(withAttributes: [
@@ -106,10 +108,14 @@
                 hidden && !name.isEmpty && nameFrame.width + 1 >= expectedNameWidth
                 ? "passed"
                 : "failed: name=\(name) width=\(nameFrame.width)/\(expectedNameWidth), hidden=\(hidden)"
-            let hovered = NativeUIAccessibility.hover(prefix + ".name", in: window)
+            let hovered = ready && NativeUIAccessibility.hover(prefix + ".name", in: window)
             let controlsVisible = await NativeUIAccessibility.wait {
                 NativeUIAccessibility.find(prefix + ".settings", in: window) != nil
                     && NativeUIAccessibility.find(prefix + ".new-board", in: window) != nil
+            }
+            let afterHover = NativeUIAccessibility.targetDiagnostics(prefix + ".name", in: window)
+            if !controlsVisible {
+                capture(window, to: outputDirectory().appending(path: "project-hover-failure.png"))
             }
             NativeUIAccessibility.movePointer(to: away)
             let hiddenAgain = await NativeUIAccessibility.wait {
@@ -117,9 +123,9 @@
                     && NativeUIAccessibility.find(prefix + ".new-board", in: window) == nil
             }
             results["project-actions-on-hover"] =
-                hidden && hovered && controlsVisible && hiddenAgain
+                ready && hidden && hovered && controlsVisible && hiddenAgain
                 ? "passed"
-                : "failed: hidden=\(hidden) hovered=\(hovered) visible=\(controlsVisible) hiddenAgain=\(hiddenAgain)"
+                : "failed: ready=\(ready) hidden=\(hidden) hovered=\(hovered) visible=\(controlsVisible) hiddenAgain=\(hiddenAgain); before={\(beforeHover)} after={\(afterHover)}"
         }
 
         private static func prepare(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
