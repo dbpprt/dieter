@@ -182,7 +182,9 @@ sign-notarize-release:
     certificate_path="$RUNNER_TEMP/developer-id.p12"
     notary_key_path="$RUNNER_TEMP/notary-key.p8"
     submission_path="$RUNNER_TEMP/Dieter-notarization.zip"
+    original_keychains="$(security list-keychains -d user)"
     cleanup() {
+        python3 -c 'import shlex, subprocess, sys; subprocess.run(["security", "list-keychains", "-d", "user", "-s", *shlex.split(sys.argv[1])], check=True)' "$original_keychains" || true
         security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
         rm -f "$certificate_path" "$notary_key_path" "$submission_path"
     }
@@ -197,6 +199,7 @@ sign-notarize-release:
         -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
     security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
         -k "$keychain_password" "$signing_keychain"
+    python3 -c 'import shlex, subprocess, sys; subprocess.run(["security", "list-keychains", "-d", "user", "-s", sys.argv[2], *shlex.split(sys.argv[1])], check=True)' "$original_keychains" "$signing_keychain"
     identity="$(security find-identity -v -p codesigning "$signing_keychain" | \
         awk '/Developer ID Application/ {print $2; exit}')"
     test -n "$identity"

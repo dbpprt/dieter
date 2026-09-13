@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -118,6 +119,7 @@ def sign(output):
     output = Path(output)
     if output.is_symlink() or not output.is_file():
         raise RuntimeError("The unsigned installer must be a regular file.")
+    original_keychains = shlex.split(run("security", "list-keychains", "-d", "user", capture=True))
     with tempfile.TemporaryDirectory(prefix="dieter-installer-signing-", dir=os.environ["RUNNER_TEMP"]) as work:
         work = Path(work)
         keychain = work / "signing.keychain-db"
@@ -130,6 +132,10 @@ def sign(output):
             secret_file(notary_key, os.environ["NOTARY_KEY_BASE64"])
             run("security", "create-keychain", "-p", keychain_password, str(keychain), capture=True)
             created = True
+            # --keychain selects an identity but its certificates must also be
+            # discoverable through the user search list for the signing chain.
+            run("security", "list-keychains", "-d", "user", "-s",
+                str(keychain), *original_keychains, capture=True)
             run("security", "set-keychain-settings", "-lut", "21600", str(keychain), capture=True)
             run("security", "unlock-keychain", "-p", keychain_password, str(keychain), capture=True)
             run("security", "import", str(certificate), "-k", str(keychain),
@@ -159,6 +165,8 @@ def sign(output):
                 replacement.unlink(missing_ok=True)
         finally:
             if created:
+                subprocess.run(["security", "list-keychains", "-d", "user", "-s", *original_keychains],
+                               capture_output=True)
                 subprocess.run(["security", "delete-keychain", str(keychain)], capture_output=True)
     print(f"Signed, notarized, and stapled {output}")
 

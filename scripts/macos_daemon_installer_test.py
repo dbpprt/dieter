@@ -118,6 +118,8 @@ class InstallerTests(unittest.TestCase):
 
         def fake_run(*args, **kwargs):
             calls.append(args)
+            if args == ("security", "list-keychains", "-d", "user"):
+                return '    "/Users/fixture/Library/Keychains/login.keychain-db"\n    "/Library/Keychains/Fixture Keychain.keychain-db"\n'
             if args[:2] == ("security", "find-identity"):
                 return '1) 1234 "Developer ID Installer: Fixture (TEAM)"'
             if args[0] == "productsign":
@@ -130,8 +132,15 @@ class InstallerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "not Accepted"):
                 sign(self.output)
         self.assertEqual(self.output.read_bytes(), b"unsigned installer")
-        cleanup.assert_called_once()
-        self.assertEqual(cleanup.call_args.args[0][:2], ["security", "delete-keychain"])
+        self.assertEqual(cleanup.call_count, 2)
+        self.assertEqual(cleanup.call_args_list[0].args[0],
+                         ["security", "list-keychains", "-d", "user", "-s",
+                          "/Users/fixture/Library/Keychains/login.keychain-db",
+                          "/Library/Keychains/Fixture Keychain.keychain-db"])
+        self.assertEqual(cleanup.call_args_list[1].args[0][:2], ["security", "delete-keychain"])
+        search_update = next(call for call in calls if call[:5] == ("security", "list-keychains", "-d", "user", "-s"))
+        self.assertTrue(search_update[5].endswith("/signing.keychain-db"))
+        self.assertEqual(list(search_update[6:]), cleanup.call_args_list[0].args[0][5:])
         self.assertEqual(list(self.root.glob("dieter-installer-signing-*")), [])
         self.assertFalse(any("stapler" in call for call in calls))
 
@@ -142,7 +151,7 @@ class InstallerTests(unittest.TestCase):
                        "INSTALLER_CERTIFICATE_PASSWORD": "password fixture",
                        "NOTARY_KEY_BASE64": base64.b64encode(b"p8 fixture").decode(),
                        "NOTARY_KEY_ID": "key", "NOTARY_ISSUER_ID": "issuer"}
-        for failure in ("signature", "staple", "validate", "gatekeeper", None):
+        for failure in ("search-list", "import", "signature", "staple", "validate", "gatekeeper", None):
             with self.subTest(failure=failure):
                 self.output.write_bytes(b"unsigned installer")
                 calls = []
@@ -150,11 +159,15 @@ class InstallerTests(unittest.TestCase):
                 def fake_run(*args, **kwargs):
                     self.assertEqual(self.output.read_bytes(), b"unsigned installer")
                     calls.append(args)
+                    if args == ("security", "list-keychains", "-d", "user"):
+                        return '"/Users/fixture/Library/Keychains/login.keychain-db"'
                     if args[:2] == ("security", "find-identity"):
                         return '1) 1234 "Developer ID Installer: Fixture (TEAM)"'
                     if args[0] == "productsign":
                         Path(args[-1]).write_bytes(b"signed installer")
-                    if ((failure == "signature" and args[0] == "pkgutil")
+                    if ((failure == "search-list" and args[:5] == ("security", "list-keychains", "-d", "user", "-s"))
+                            or (failure == "import" and args[:2] == ("security", "import"))
+                            or (failure == "signature" and args[0] == "pkgutil")
                             or (failure in ("staple", "validate") and args[:3] == ("xcrun", "stapler", failure))
                             or (failure == "gatekeeper" and args[0] == "spctl")):
                         raise RuntimeError("verification failed")
@@ -163,7 +176,7 @@ class InstallerTests(unittest.TestCase):
                     return ""
 
                 with patch.dict(os.environ, credentials), patch("macos_daemon_installer.run", side_effect=fake_run), \
-                        patch("macos_daemon_installer.submit"), patch("macos_daemon_installer.subprocess.run"), \
+                        patch("macos_daemon_installer.submit"), patch("macos_daemon_installer.subprocess.run") as cleanup, \
                         contextlib.redirect_stdout(io.StringIO()):
                     if failure:
                         with self.assertRaisesRegex(RuntimeError, "verification failed"):
@@ -174,6 +187,10 @@ class InstallerTests(unittest.TestCase):
                         self.assertEqual(self.output.read_bytes(), b"signed installer with ticket")
                         self.assertEqual(sum(call[0] == "pkgutil" for call in calls), 2)
                         self.assertEqual(calls[-1][:4], ("spctl", "--assess", "--type", "install"))
+                self.assertEqual(cleanup.call_args_list[0].args[0],
+                                 ["security", "list-keychains", "-d", "user", "-s",
+                                  "/Users/fixture/Library/Keychains/login.keychain-db"])
+                self.assertEqual(cleanup.call_args_list[1].args[0][:2], ["security", "delete-keychain"])
                 self.assertEqual(list(self.root.glob("dieter-installer-signing-*")), [])
 
 

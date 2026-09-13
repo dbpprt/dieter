@@ -29,7 +29,7 @@ class SetupError(Exception):
     """A safe, credential-free message for the user."""
 
 
-def run_command(argv, data=None, *, pass_fds=(), label="Command", timeout=30):
+def run_command(argv, data=None, *, pass_fds=(), label="Command", timeout=30, include_stderr=False):
     env = os.environ.copy()
     env.pop("GH_DEBUG", None)
     env.pop("GH_HOST", None)
@@ -43,7 +43,7 @@ def run_command(argv, data=None, *, pass_fds=(), label="Command", timeout=30):
     if result.returncode:
         # External output can contain credentials. Never print it or the argv.
         raise SetupError(f"{label} failed. Check the credentials or access and retry.")
-    return result.stdout
+    return result.stdout + result.stderr if include_stderr else result.stdout
 
 
 def read_credential(path, label):
@@ -90,7 +90,7 @@ def password_for(path, label):
     return password
 
 
-def decode_p12(data, password, label, *, legacy=False):
+def decode_p12(data, password, label, *, legacy=False, info=False):
     read_fd, write_fd = os.pipe()
     try:
         os.write(write_fd, password + b"\n")
@@ -98,8 +98,9 @@ def decode_p12(data, password, label, *, legacy=False):
         write_fd = None
         return run_command(
             ["openssl", "pkcs12", "-in", "/dev/stdin", "-passin", f"fd:{read_fd}",
-             "-nodes", "-clcerts", *(["-legacy"] if legacy else [])],
-            data, pass_fds=(read_fd,), label=label)
+             *(["-info", "-noout"] if info else ["-nodes", "-clcerts"]),
+             *(["-legacy"] if legacy else [])],
+            data, pass_fds=(read_fd,), label=label, include_stderr=info)
     finally:
         os.close(read_fd)
         if write_fd is not None:
@@ -108,12 +109,26 @@ def decode_p12(data, password, label, *, legacy=False):
 
 def validate_p12(data, password, certificate_kind):
     label = f"Developer ID {certificate_kind} certificate"
+    legacy = False
     try:
         pem = decode_p12(data, password, label)
     except SetupError:
         # Keychain exports may use RC2. OpenSSL 3 needs its legacy provider for
         # these; LibreSSL already supports them in the initial attempt.
+        legacy = True
         pem = decode_p12(data, password, label, legacy=True)
+    algorithms = decode_p12(data, password, label, legacy=legacy, info=True)
+    # OpenSSL successfully reads its own PBES2/AES/SHA-256 defaults, while
+    # Apple's SecPKCS12Import reports a misleading "MAC verification failed".
+    # Inspect metadata without printing it or importing into the user's keychain.
+    mac = re.search(rb"(?im)^MAC:\s*([^,\s]+)", algorithms)
+    if (b"PBES2" in algorithms or b"PBKDF2" in algorithms
+            or (mac is not None and mac.group(1).lower() != b"sha1")):
+        raise SetupError(
+            f"{label} uses PKCS#12 defaults incompatible with macOS import. "
+            "Re-export from Keychain Access, or use OpenSSL export options "
+            "-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1. "
+            "See docs/apple-release-signing.md.")
     certificates = re.findall(rb"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", pem, re.S)
     keys = re.findall(rb"-----BEGIN (?:RSA |EC )?PRIVATE KEY-----.*?-----END (?:RSA |EC )?PRIVATE KEY-----", pem, re.S)
     if len(certificates) != 1 or len(keys) != 1:

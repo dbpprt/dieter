@@ -51,6 +51,19 @@ just release configure-apple-signing \
 The helper prompts for the two export passwords, validates the inputs before
 uploading, and sends secret values to `gh` through standard input rather than
 command arguments. Add `--check` to validate locally without contacting GitHub.
+
+For `.p12` exports created with OpenSSL, explicitly use
+`-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1` with `pkcs12 -export`,
+or export the dedicated identity through Keychain Access. OpenSSL 3's default
+PBES2/AES encryption and SHA-256 MAC can pass OpenSSL validation while macOS
+`security import` fails with `MAC verification failed during PKCS12 import`,
+even when the password is correct. The helper rejects these incompatible
+container algorithms before uploading. Re-export the same dedicated certificate
+and matching private key with the explicit options; no new Apple certificate is
+needed. These options concern the password-protected `.p12` container, not the
+code-signing algorithm. The helper never rewrites the supplied credential files
+or imports them into a local Keychain.
+
 It uploads only these seven repository secrets:
 
 | Secret | Contents |

@@ -113,7 +113,7 @@ class CertificateValidationTests(unittest.TestCase):
     def openssl(self, *args, data=None):
         return subprocess.run(["openssl", *args], input=data, capture_output=True, check=True).stdout
 
-    def certificate(self, kind, team="ABCDE12345"):
+    def certificate(self, kind, team="ABCDE12345", *, compatible=True):
         key_path = self.root / f"{kind}-{team}.key"
         certificate_path = self.root / f"{kind}-{team}.crt"
         p12_path = self.root / f"{kind}-{team}.p12"
@@ -123,7 +123,9 @@ class CertificateValidationTests(unittest.TestCase):
                      "-subj", f"/CN=Developer ID {kind}: Synthetic Fixture/OU={team}",
                      "-addext", oid + "=DER:05:00", "-addext", "basicConstraints=critical,CA:FALSE")
         self.openssl("pkcs12", "-export", "-inkey", str(key_path), "-in", str(certificate_path),
-                     "-out", str(p12_path), "-passout", "stdin", data=self.password + b"\n")
+                     "-out", str(p12_path), "-passout", "stdin",
+                     *(["-keypbe", "PBE-SHA1-3DES", "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha1"]
+                       if compatible else []), data=self.password + b"\n")
         return p12_path
 
     def test_application_and_installer_and_wrong_type(self):
@@ -158,6 +160,43 @@ class CertificateValidationTests(unittest.TestCase):
         if result.returncode:
             self.skipTest("This OpenSSL does not support the -legacy fixture option")
         self.assertEqual(signing.validate_p12(legacy_path.read_bytes(), self.password, "Application"), b"ABCDE12345")
+
+    def test_openssl_three_defaults_fail_with_mac_export_guidance(self):
+        if not self.openssl("version").startswith(b"OpenSSL 3."):
+            self.skipTest("The incompatible default fixture requires OpenSSL 3")
+        p12 = self.certificate("Application", compatible=False).read_bytes()
+        # A successful OpenSSL decode alone is not sufficient for macOS import.
+        self.assertIn(b"BEGIN PRIVATE KEY", signing.decode_p12(p12, self.password, "Fixture"))
+        with self.assertRaisesRegex(signing.SetupError, "-keypbe PBE-SHA1-3DES") as caught:
+            signing.validate_p12(p12, self.password, "Application")
+        self.assertIn("-macalg sha1", str(caught.exception))
+        self.assertNotIn(self.password.decode(), str(caught.exception))
+
+    def test_sha256_mac_is_rejected_even_with_compatible_encryption(self):
+        self.certificate("Application")
+        p12 = self.openssl("pkcs12", "-export", "-inkey", str(self.root / "Application-ABCDE12345.key"),
+                           "-in", str(self.root / "Application-ABCDE12345.crt"), "-passout", "stdin",
+                           "-keypbe", "PBE-SHA1-3DES", "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha256",
+                           data=self.password + b"\n")
+        with self.assertRaisesRegex(signing.SetupError, "incompatible with macOS import"):
+            signing.validate_p12(p12, self.password, "Application")
+
+    def test_incompatible_p12_is_rejected_before_github_access(self):
+        if not self.openssl("version").startswith(b"OpenSSL 3."):
+            self.skipTest("The incompatible default fixture requires OpenSSL 3")
+        application = self.certificate("Application", compatible=False)
+        installer = self.certificate("Installer")
+        notary = self.root / "test.p8"
+        notary.write_bytes(self.openssl("genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256"))
+        args = ["--application-p12", str(application), "--installer-p12", str(installer),
+                "--notary-key", str(notary), "--key-id", "ABCDEFGHIJ", "--issuer-id",
+                "52e72a38-f9bd-43be-bf43-311937e963bd"]
+        with patch.object(signing, "password_for", return_value=self.password), \
+                patch.object(signing, "upload_secrets") as upload, contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(signing.main(args), 1)
+        upload.assert_not_called()
+        self.assertIn("incompatible with macOS import", errors.getvalue())
+        self.assertNotIn(self.password.decode(), errors.getvalue())
 
 
 if __name__ == "__main__":
