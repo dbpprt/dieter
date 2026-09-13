@@ -34,13 +34,17 @@ final class AppSession {
             let previous = window.section
             window.section = newValue
             terminalsModel.active = newValue == .terminals
+            if previous == .terminals, newValue != .terminals { stopTerminalWatch() }
             if previous != newValue, selectedMachineID != nil { dismissMachinePopover() }
         }
     }
     var phase: ConnectionPhase = .disconnected {
         didSet {
             filesModel.isLive = selectedProjectIsLive; schedulesModel.isLive = selectedProjectIsLive;
-            terminalsModel.isLive = workspaceIsLive
+            terminalsModel.isLive =
+                terminalScopeCardID == nil
+                ? terminalOverviewMachines.contains(where: machineIsAvailable)
+                : workspaceIsLive
         }
     }
     var endpoint: DieterEndpoint {
@@ -86,6 +90,13 @@ final class AppSession {
     var projectWorkspaces: [Dieter_V1_Workspace] = []
     let schedulesModel = SchedulesModel()
     let terminalsModel: TerminalsModel
+    var terminalOverviewEntries: [TerminalOverviewEntry] = []
+    var selectedTerminalOverviewID: String?
+    var terminalOverviewLoading = false
+    var terminalOverviewError: String?
+    var terminalOverviewPreferredMachineID: String?
+    @ObservationIgnored var terminalOverviewGeneration: UInt64 = 0
+    @ObservationIgnored var terminalOverviewLease: DataPlaneLease?
     let filesModel = FilesModel()
     var fileListingGeneration: UInt64 { filesModel.fileListingGeneration }
     let worktreeChanges = WorktreeChangesModel()

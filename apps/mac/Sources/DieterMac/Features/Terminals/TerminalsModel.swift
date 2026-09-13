@@ -4,6 +4,43 @@ import Foundation
 import GRPCCore
 import Observation
 
+struct TerminalOverviewEntry: Identifiable, Equatable, Sendable {
+    let machineID: String
+    let machineName: String
+    var terminal: Dieter_V1_Terminal
+
+    var id: String { Self.id(machineID: machineID, terminalID: terminal.id) }
+
+    static func id(machineID: String, terminalID: String) -> String {
+        "\(machineID)|\(terminalID)"
+    }
+}
+
+enum TerminalOverviewCatalog {
+    static func sorted(_ entries: [TerminalOverviewEntry]) -> [TerminalOverviewEntry] {
+        entries.sorted {
+            if $0.terminal.createdAt != $1.terminal.createdAt {
+                return $0.terminal.createdAt < $1.terminal.createdAt
+            }
+            let machineOrder = $0.machineName.localizedCaseInsensitiveCompare($1.machineName)
+            if machineOrder != .orderedSame { return machineOrder == .orderedAscending }
+            return $0.id < $1.id
+        }
+    }
+
+    static func selection(
+        in entries: [TerminalOverviewEntry], currentID: String?, preferredMachineID: String? = nil
+    ) -> TerminalOverviewEntry? {
+        if let currentID, let current = entries.first(where: { $0.id == currentID }) { return current }
+        if let preferredMachineID,
+            let preferred = entries.first(where: { $0.machineID == preferredMachineID })
+        {
+            return preferred
+        }
+        return entries.first
+    }
+}
+
 @MainActor @Observable
 final class TerminalsModel {
     private static let selectionDefaultsKey = "DieterSelectedTerminalsByTarget"
@@ -32,6 +69,7 @@ final class TerminalsModel {
     @ObservationIgnored private let selectionDefaults: UserDefaults?
     @ObservationIgnored private var selectedTerminalIDs: [String: String]
     @ObservationIgnored var onCreated: @MainActor () -> Void = {}
+    @ObservationIgnored var onTerminalChanged: @MainActor (String, String, Dieter_V1_Terminal?) -> Void = { _, _, _ in }
 
     var selectedTerminal: Dieter_V1_Terminal? { terminals.first { $0.id == selectedTerminalID } }
 
@@ -98,6 +136,18 @@ final class TerminalsModel {
     func selectTerminal(_ id: String) {
         guard terminals.contains(where: { $0.id == id }) else { return }
         selectedTerminalID = id
+        rememberSelection()
+        startTerminalWatch()
+    }
+
+    func installTerminals(_ values: [Dieter_V1_Terminal], selectedID: String?) {
+        terminals = values.sorted {
+            if $0.createdAt == $1.createdAt { return $0.id < $1.id }
+            return $0.createdAt < $1.createdAt
+        }
+        selectedTerminalID =
+            selectedID.flatMap { id in values.contains(where: { $0.id == id }) ? id : nil }
+            ?? values.first?.id
         rememberSelection()
         startTerminalWatch()
     }
@@ -188,6 +238,7 @@ final class TerminalsModel {
             terminalScreens.removeValue(forKey: id)
             terminalSequences.removeValue(forKey: id)
             await terminalOutputAccumulator.remove(terminalID: id)
+            onTerminalChanged(target.endpointID, id, nil)
             guard binding == bindingGeneration, self.rpc === rpc else { return }
             if selectedTerminalID == id {
                 selectedTerminalID = terminals.first?.id
@@ -230,6 +281,7 @@ final class TerminalsModel {
                     self.terminalStreamConnected = false
                     if let rpcError = error as? RPCError, rpcError.code == .notFound {
                         self.terminals.removeAll { $0.id == id }
+                        self.onTerminalChanged(self.target.endpointID, id, nil)
                         self.selectedTerminalID = self.terminals.first?.id
                         self.rememberSelection()
                         return
@@ -276,6 +328,7 @@ final class TerminalsModel {
             if $0.createdAt == $1.createdAt { return $0.id < $1.id }
             return $0.createdAt < $1.createdAt
         }
+        onTerminalChanged(target.endpointID, value.id, value)
     }
 
     func stopTerminalWatch() {
