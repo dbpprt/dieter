@@ -29,7 +29,10 @@ private enum SmokeSuite: String, CaseIterable {
         case .board: 150
         case .workspace: 180
         case .conversation: ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" ? 400 : 300
-        case .terminal: 75
+        // This suite performs two app phases around a daemon reconstruction;
+        // each phase also switches machines, exercises the terminal sheet,
+        // fills scrollback, and waits for multiple PTY resize round trips.
+        case .terminal: 180
         case .machine: 60
         case .sidebar: 30
         // The optional native screenshot checkpoint can itself wait 30 seconds.
@@ -187,6 +190,7 @@ private final class SmokeRun {
                 ]
             )
         case .terminal:
+            let restartTrigger = output.appendingPathComponent("daemon-restart")
             let common =
                 try gatewayArguments(endpoint: endpoint, tokenFile: tokenFile)
                 + baseArguments(state: output.appendingPathComponent("state"))
@@ -196,6 +200,7 @@ private final class SmokeRun {
                 report: output.appendingPathComponent("create-report.json"),
                 arguments: common + ["--terminal-ui-smoke", "create"]
             )
+            try requestDaemonRestart(trigger: restartTrigger)
             try runApp(
                 phase: "resume",
                 report: output.appendingPathComponent("report.json"),
@@ -341,6 +346,9 @@ private final class SmokeRun {
         if options.suite == .board {
             arguments.append("--board-stress-fixture")
         }
+        if options.suite == .terminal {
+            arguments += ["--daemon-restart-trigger", output.appendingPathComponent("daemon-restart").path]
+        }
         gateway = try OwnedProcess(
             executable: gatewayExecutable,
             arguments: arguments,
@@ -369,6 +377,21 @@ private final class SmokeRun {
         try Data(token.utf8).write(to: tokenFile, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenFile.path)
         return ("http://\(address)", tokenFile)
+    }
+
+    private func requestDaemonRestart(trigger: URL) throws {
+        try Data().write(to: trigger, options: .atomic)
+        let ready = URL(fileURLWithPath: trigger.path + ".ready")
+        let deadline = Date().addingTimeInterval(10)
+        while !FileManager.default.fileExists(atPath: ready.path), Date() < deadline {
+            guard gateway?.process.isRunning == true else {
+                throw SmokeError.failed("isolated gateway exited during daemon restart")
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        guard FileManager.default.fileExists(atPath: ready.path) else {
+            throw SmokeError.failed("isolated daemon did not finish restarting")
+        }
     }
 
     private func runApp(phase: String, report: URL, arguments: [String]) throws {

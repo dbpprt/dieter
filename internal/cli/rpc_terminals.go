@@ -26,7 +26,8 @@ Actions:
   rename --name NAME TERMINAL
   close TERMINAL               Stop and remove a terminal session
 
-Scope is exactly one of --project PROJECT or --card CARD.
+Create scope is exactly one of --project PROJECT, --card CARD, or --home.
+--home starts in the target daemon user's home and works without a project.
 `
 
 func (c *CLI) rpcTerminal(args []string) error {
@@ -137,12 +138,13 @@ func (c *CLI) rpcTerminalList(args []string) error {
 }
 
 func (c *CLI) rpcTerminalCreate(args []string) error {
-	const usage = "Usage: dieter terminal create (--project PROJECT|--card CARD) [--name NAME] [--shell PATH] [--directory PATH] [--columns N] [--rows N] [--format json|id]\n"
+	const usage = "Usage: dieter terminal create (--project PROJECT|--card CARD|--home) [--name NAME] [--shell PATH] [--directory PATH] [--columns N] [--rows N] [--format json|id]\n"
 	set := flags("terminal create")
 	project, card := addFileScopeFlags(set)
+	home := set.Bool("home", false, "start a machine-scoped shell in the target daemon user's home")
 	name := set.String("name", "", "terminal display name")
 	shell := set.String("shell", "", "shell executable; daemon default when empty")
-	directory := set.String("directory", "", "working directory within project/workspace")
+	directory := set.String("directory", "", "working directory within the selected project, workspace, or machine home")
 	columns := set.Int("columns", 120, "terminal columns")
 	rows := set.Int("rows", 36, "terminal rows")
 	format := set.String("format", "json", "json or id")
@@ -153,17 +155,29 @@ func (c *CLI) rpcTerminalCreate(args []string) error {
 	if set.NArg() != 0 {
 		return errors.New("terminal create does not accept positional arguments")
 	}
+	scopes := 0
+	for _, selected := range []bool{strings.TrimSpace(*project) != "", strings.TrimSpace(*card) != "", *home} {
+		if selected {
+			scopes++
+		}
+	}
+	if scopes != 1 {
+		return errors.New("exactly one of --project, --card, or --home is required")
+	}
 	ctx, cancel := c.commandContext()
 	defer cancel()
 	client, rpcCtx, err := c.rpc(ctx)
 	if err != nil {
 		return err
 	}
-	projectID, cardID, err := c.terminalScope(ctx, client, rpcCtx, *project, *card, false)
-	if err != nil {
-		return err
+	projectID, cardID := "", ""
+	if !*home {
+		projectID, cardID, err = c.terminalScope(ctx, client, rpcCtx, *project, *card, false)
+		if err != nil {
+			return err
+		}
 	}
-	value, err := client.CreateTerminal(rpcCtx, &dieterv1.CreateTerminalRequest{ProjectId: projectID, CardId: cardID, Name: *name, Shell: *shell, WorkingDirectory: *directory, Columns: int32(*columns), Rows: int32(*rows)})
+	value, err := client.CreateTerminal(rpcCtx, &dieterv1.CreateTerminalRequest{ProjectId: projectID, CardId: cardID, MachineHome: *home, Name: *name, Shell: *shell, WorkingDirectory: *directory, Columns: int32(*columns), Rows: int32(*rows)})
 	if err != nil {
 		return err
 	}

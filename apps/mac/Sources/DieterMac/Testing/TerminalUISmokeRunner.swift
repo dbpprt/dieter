@@ -53,14 +53,24 @@
                 await waitUntil(
                     timeout: 15,
                     condition: {
-                        store.projects.contains { store.projectEndpointIDs[$0.id] == store.endpoint.id }
+                        store.endpoints.contains {
+                            $0.id != store.endpoint.id && $0.online && $0.apiCompatibility == .compatible
+                        }
                     }),
-                let project = store.projects.first(where: {
-                    store.projectEndpointIDs[$0.id] == store.endpoint.id
+                let destination = store.endpoints.first(where: {
+                    $0.id != store.endpoint.id && $0.online && $0.apiCompatibility == .compatible
                 })
             else {
                 writeReport(
-                    ["project": "failed: isolated project was not loaded"], named: "create-report.json", to: output)
+                    ["machine-switch": "failed: second compatible machine was not discovered"],
+                    named: "create-report.json", to: output)
+                return
+            }
+            await store.openTerminals(on: destination)
+            guard store.endpoint.id == destination.id, store.phase.isConnected else {
+                writeReport(
+                    ["machine-switch": "failed: terminal destination did not change"],
+                    named: "create-report.json", to: output)
                 return
             }
 
@@ -91,10 +101,12 @@
 
             let originalIDs = Set(store.terminals.map(\.id))
             await store.createTerminal(
-                projectID: project.id,
+                projectID: "",
+                machineID: store.endpoint.id,
+                machineHome: true,
                 name: "persistent-e2e",
                 shell: "sh",
-                workingDirectory: project.path
+                workingDirectory: "~"
             )
             guard
                 await waitUntil(
@@ -161,7 +173,11 @@
                 [
                     "connection": "passed",
                     "terminal-id": terminalID,
+                    "machine-id": destination.id,
+                    "machine-switch": "passed",
                     "terminal-create": "passed",
+                    "machine-home-scope": store.selectedTerminal?.projectID.isEmpty == true
+                        ? "passed" : "failed: terminal unexpectedly required a project",
                     "new-terminal-sheet": sheetPresented
                         ? (sheetIsCompact ? "passed" : "failed: terminal sheet escaped its compact layout bounds")
                         : "failed: terminal sheet was not presented",
@@ -199,6 +215,17 @@
             }
 
             await store.openTerminals()
+            guard let machineID = create["machine-id"],
+                await waitUntil(timeout: 15, condition: { store.endpoints.contains(where: { $0.id == machineID }) }),
+                let machine = store.endpoints.first(where: { $0.id == machineID })
+            else {
+                writeReport(
+                    ["machine-restore": "failed: created terminal machine was not rediscovered"],
+                    named: "report.json", to: output)
+                return
+            }
+            await store.openTerminals(on: machine)
+            let machineRestored = store.endpoint.id == machineID && store.phase.isConnected
             if store.terminals.contains(where: { $0.id == terminalID }) {
                 store.selectTerminal(terminalID)
             }
@@ -224,6 +251,11 @@
                 (columns: Int($0.columns), rows: Int($0.rows))
             }
             capture(window, to: output.appending(path: "02-after-client-restart.png"))
+            let stayedRunning = store.terminals.first(where: { $0.id == terminalID })?.status == "running"
+            await store.closeTerminal(id: terminalID)
+            let cleanedUp = await waitUntil(
+                timeout: 10,
+                condition: { !store.terminals.contains(where: { $0.id == terminalID }) })
 
             writeReport(
                 [
@@ -231,6 +263,8 @@
                     "created-by-first-app": create["terminal-create"] ?? "failed: missing create result",
                     "initial-output": create["initial-output"] ?? "failed: missing output result",
                     "listed-after-restart": listed ? "passed" : "failed: daemon-owned terminal was not listed",
+                    "machine-restore": machineRestored
+                        ? "passed" : "failed: terminal machine selection was not restored",
                     "scrollback-replayed": replayed ? "passed" : "failed: pre-disconnect output was not replayed",
                     "input-after-restart": continued ? "passed" : "failed: resumed terminal did not accept input",
                     "rendered-after-restart": rendered
@@ -243,9 +277,11 @@
                     "restart-cursor-tracking": restartPresentation.cursorTracks
                         ? "passed"
                         : "failed: the resumed caret did not track the emulator cursor",
-                    "terminal-running": store.terminals.first(where: { $0.id == terminalID })?.status == "running"
+                    "terminal-running": stayedRunning
                         ? "passed"
                         : "failed: terminal was not running after restart",
+                    "terminal-cleanup": cleanedUp
+                        ? "passed" : "failed: persistent terminal was not closed after the smoke run",
                     "gateway": store.endpoint.address,
                 ], named: "report.json", to: output)
         }

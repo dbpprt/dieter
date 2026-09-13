@@ -246,6 +246,15 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	runDaemonCLI(t, client, output, "terminal", "resize", "--columns", "100", "--rows", "30", terminal.ID)
 	runDaemonCLI(t, client, output, "terminal", "rename", "--name", "renamed", terminal.ID)
 	runDaemonCLI(t, client, output, "terminal", "close", terminal.ID)
+	homeTerminalJSON := runDaemonCLI(t, client, output, "terminal", "create", "--home", "--name", "Home shell", "--shell", "sh")
+	var homeTerminal struct {
+		ID        string `json:"id"`
+		ProjectID string `json:"projectId"`
+	}
+	if err := json.Unmarshal([]byte(homeTerminalJSON), &homeTerminal); err != nil || homeTerminal.ID == "" || homeTerminal.ProjectID != "" {
+		t.Fatalf("created machine-home terminal JSON=%q parsed=%#v err=%v", homeTerminalJSON, homeTerminal, err)
+	}
+	runDaemonCLI(t, client, output, "terminal", "close", homeTerminal.ID)
 
 	remoteOutput := runDaemonCLI(t, client, output, "remote", "exec", "--project", created.Project.ID, "--input", "agent-input\n", "--", "/bin/sh", "-c", "read value; printf 'stdout:%s' \"$value\"; printf ':stderr' >&2")
 	if !strings.Contains(remoteOutput, "stdout:agent-input") || !strings.Contains(remoteOutput, ":stderr") {
@@ -639,6 +648,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := first.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "direct-exec"}); err != nil || firstOutput.String() != "direct-exec" {
 		t.Fatalf("direct remote exec output=%q err=%v", firstOutput.String(), err)
 	}
+	assertMachineHomeTerminalCLI(t, first, &firstOutput)
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, first, &firstOutput, remoteProject.ID)
@@ -696,12 +706,29 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := second.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "relay-exec"}); err != nil || secondOutput.String() != "relay-exec" {
 		t.Fatalf("relay remote exec output=%q err=%v", secondOutput.String(), err)
 	}
+	assertMachineHomeTerminalCLI(t, second, &secondOutput)
 	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertProjectHostnameCLI(t, second, &secondOutput, remoteProject.ID)
 	assertConversationSelectionCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertContentPresentationCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertBackgroundProcessCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
+}
+
+func assertMachineHomeTerminalCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+	t.Helper()
+	output.Reset()
+	if err := client.Run([]string{"terminal", "create", "--home", "--name", "Remote home", "--shell", "sh", "--format", "json"}); err != nil {
+		t.Fatalf("create machine-home terminal output=%q err=%v", output.String(), err)
+	}
+	var terminal dieterv1.Terminal
+	if err := protojson.Unmarshal(output.Bytes(), &terminal); err != nil || terminal.GetId() == "" || terminal.GetProjectId() != "" || terminal.GetStatus() != "running" {
+		t.Fatalf("machine-home terminal output=%q parsed=%#v err=%v", output.String(), &terminal, err)
+	}
+	output.Reset()
+	if err := client.Run([]string{"terminal", "close", terminal.GetId()}); err != nil {
+		t.Fatalf("close machine-home terminal output=%q err=%v", output.String(), err)
+	}
 }
 
 func assertMachineOperationAccepted(t *testing.T, raw []byte) {

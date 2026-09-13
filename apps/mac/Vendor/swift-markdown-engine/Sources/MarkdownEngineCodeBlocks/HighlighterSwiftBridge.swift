@@ -62,7 +62,7 @@ public final class HighlighterSwiftBridge: SyntaxHighlighter, @unchecked Sendabl
         darkBackground: NSColor? = NSColor(calibratedWhite: 0.13, alpha: 1.0),
         preferredFontNames: [String] = ["SF Mono", "Menlo"]
     ) {
-        self.highlighter = Highlighter()
+        self.highlighter = Self.makeHighlighter()
         self.lightTheme = lightTheme
         self.darkTheme = darkTheme
         self.autoSwitchAppearance = autoSwitchAppearance
@@ -89,6 +89,17 @@ public final class HighlighterSwiftBridge: SyntaxHighlighter, @unchecked Sendabl
                 )
             }
         }
+    }
+
+    private static func makeHighlighter() -> Highlighter? {
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            guard let resourceURL = Bundle.main.resourceURL else { return nil }
+            let resourceBundleURL = resourceURL
+                .appendingPathComponent("Highlighter_Highlighter.bundle", isDirectory: true)
+            guard let resourceBundle = Bundle(url: resourceBundleURL) else { return nil }
+            return Highlighter(bundle: resourceBundle)
+        }
+        return Highlighter()
     }
 
     /// Drops the internal highlight cache. Call after manual theme changes the bridge can't observe.

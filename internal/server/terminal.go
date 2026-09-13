@@ -43,22 +43,71 @@ func (api *grpcAPI) ListTerminals(ctx context.Context, request *dieterv1.ListTer
 }
 
 func (api *grpcAPI) CreateTerminal(ctx context.Context, request *dieterv1.CreateTerminalRequest) (*dieterv1.Terminal, error) {
-	project, err := api.server.scopedProject(ctx, request.GetProjectId(), request.GetCardId())
-	if err != nil {
-		return nil, grpcFailure(err)
-	}
-	workingDirectory, err := terminalWorkingDirectory(project, request.GetWorkingDirectory())
-	if err != nil {
-		return nil, grpcFailure(err)
+	projectID, cardID := strings.TrimSpace(request.GetProjectId()), strings.TrimSpace(request.GetCardId())
+	workingDirectory := ""
+	if request.GetMachineHome() {
+		if projectID != "" || cardID != "" {
+			return nil, status.Error(codes.InvalidArgument, "machine_home cannot be combined with project_id or card_id")
+		}
+		var err error
+		workingDirectory, err = terminalMachineWorkingDirectory(request.GetWorkingDirectory())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	} else {
+		project, err := api.server.scopedProject(ctx, projectID, cardID)
+		if err != nil {
+			return nil, grpcFailure(err)
+		}
+		projectID = project.ID
+		workingDirectory, err = terminalWorkingDirectory(project, request.GetWorkingDirectory())
+		if err != nil {
+			return nil, grpcFailure(err)
+		}
 	}
 	value, err := api.server.terminals.Create(terminal.CreateInput{
-		ProjectID: project.ID, CardID: request.GetCardId(), Name: request.GetName(), Shell: request.GetShell(),
+		ProjectID: projectID, CardID: cardID, Name: request.GetName(), Shell: request.GetShell(),
 		WorkingDirectory: workingDirectory, Columns: int(request.GetColumns()), Rows: int(request.GetRows()),
 	})
 	if err != nil {
 		return nil, terminalFailure(err)
 	}
 	return protoTerminal(value), nil
+}
+
+func terminalMachineWorkingDirectory(requested string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	root, err := filepath.EvalSymlinks(home)
+	if err != nil {
+		return "", err
+	}
+	target := strings.TrimSpace(requested)
+	if target == "" || target == "~" {
+		target = root
+	} else if strings.HasPrefix(target, "~"+string(filepath.Separator)) {
+		target = filepath.Join(root, strings.TrimPrefix(target, "~"+string(filepath.Separator)))
+	} else if !filepath.IsAbs(target) {
+		target = filepath.Join(root, target)
+	}
+	target, err = filepath.EvalSymlinks(filepath.Clean(target))
+	if err != nil {
+		return "", err
+	}
+	relative, err := filepath.Rel(root, target)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", errors.New("machine terminal working directory must stay inside the daemon user's home")
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", errors.New("terminal working directory is not a directory")
+	}
+	return target, nil
 }
 
 func (api *grpcAPI) WatchTerminal(request *dieterv1.WatchTerminalRequest, stream dieterv1.DieterService_WatchTerminalServer) error {

@@ -328,11 +328,13 @@ durable PTY interface and is often better for human interaction.
 
 ## Terminals, schedules, and policy
 
-Daemon-owned PTYs survive client disconnects and can be reattached:
+Daemon-owned PTYs survive client disconnects and, when the host has `tmux`,
+daemon restarts. Machine-home terminals do not require a registered project:
 
 ```sh
 dieter terminal list --card <card-id> --format jsonl
 dieter terminal create --card <card-id> --name validation --format id
+dieter --machine <machine-id> terminal create --home --name shell --format id
 dieter terminal attach <terminal-id>
 dieter terminal close <terminal-id>
 ```

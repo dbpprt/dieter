@@ -7,6 +7,7 @@ import "context"
 type unsupportedBackend struct{}
 
 func newBackend() backend                                      { return unsupportedBackend{} }
+func newPersistentBackend(string) backend                      { return newBackend() }
 func (unsupportedBackend) List(string) []Session               { return nil }
 func (unsupportedBackend) Get(string) (Session, error)         { return Session{}, ErrUnsupported }
 func (unsupportedBackend) Create(CreateInput) (Session, error) { return Session{}, ErrUnsupported }

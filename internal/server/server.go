@@ -105,7 +105,7 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 	service := app.New(data, runner)
 	s := &Server{
 		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
-		mux: http.NewServeMux(), auth: manager, terminals: terminal.New(), executions: remoteexec.New(),
+		mux: http.NewServeMux(), auth: manager, terminals: terminal.NewPersistent(data.Root), executions: remoteexec.New(),
 		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger}),
 		machine:       machine.NewCollector(data.Root),
 		machineAction: func(ctx context.Context, operation machine.Operation) error {
@@ -194,6 +194,23 @@ func newWithAuth(data *store.Store, logger *slog.Logger, runner harness.Runner, 
 
 func (s *Server) Handler() http.Handler {
 	return h2c.NewHandler(securityHeaders(s.auth.config.Enabled, s.requestLog(s.auth.middleware(s.mux))), &http2.Server{})
+}
+
+// CloseTerminalSessionsForTesting explicitly destroys every terminal owned by
+// an isolated fixture. Production shutdown must use Shutdown so durable shells
+// detach and survive daemon replacement.
+func (s *Server) CloseTerminalSessionsForTesting(ctx context.Context) {
+	for _, session := range s.terminals.List("") {
+		_ = s.terminals.Close(session.ID)
+	}
+	s.terminals.Shutdown(ctx)
+}
+
+// ShutdownTerminalSessions detaches durable terminal observers while leaving
+// their host shells alive for a replacement Server to restore. It mirrors the
+// terminal portion of production daemon shutdown for isolated restart tests.
+func (s *Server) ShutdownTerminalSessions(ctx context.Context) {
+	s.terminals.Shutdown(ctx)
 }
 
 const (
