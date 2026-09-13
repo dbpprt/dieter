@@ -14,6 +14,7 @@
         private static let secondMarker = "DIETER_TERMINAL_AFTER_CLIENT_RESTART"
         private static let followMarker = "DIETER_TERMINAL_CURSOR_FOLLOW"
         private static let resizeMarker = "DIETER_TERMINAL_AFTER_WINDOW_RESIZE"
+        private static let pasteMarker = "DIETER_TERMINAL_CLIPBOARD_PASTE"
 
         static func run(store: DieterStore) async {
             let output = outputDirectory()
@@ -139,6 +140,8 @@
             store.sendTerminalInput(id: terminalID, data: command(printing: firstMarker))
             let received = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(firstMarker) })
             try? await DieterTaskSleep.milliseconds(500)
+            let clipboard = await terminalClipboardInteraction(store: store, terminalID: terminalID, in: window)
+            capture(window, to: output.appending(path: "01-selection-copy-paste.png"))
             capture(window, to: output.appending(path: "01-before-client-exit.png"))
 
             store.sendTerminalInput(id: terminalID, data: scrollbackCommand())
@@ -202,6 +205,14 @@
                     "terminal-node-badge": nodeBadgeMounted
                         ? "passed" : "failed: selected terminal tab did not show its machine badge",
                     "initial-output": received ? "passed" : "failed: first marker was not rendered",
+                    "terminal-text-selection": clipboard.selection
+                        ? "passed" : "failed: a single native drag did not select terminal text",
+                    "terminal-copy": clipboard.copy
+                        ? "passed" : "failed: Command-C did not copy the selected terminal text",
+                    "terminal-paste": clipboard.paste
+                        ? "passed" : "failed: Command-V did not reach the remote PTY",
+                    "terminal-context-menu": clipboard.contextMenu
+                        ? "passed" : "failed: native terminal edit actions were missing",
                     "scrollback-output": filledScrollback ? "passed" : "failed: scrollback marker was not rendered",
                     "cursor-tracking": presentation.cursorTracks
                         ? "passed"
@@ -323,6 +334,96 @@
                 "i=1; while [ \"$i\" -le 80 ]; do printf 'DIETER_FOLLOW_%03d\\n' \"$i\"; i=$((i+1)); done; printf '%s\\n' '\(followMarker)'\n"
                     .utf8
             )
+        }
+
+        private static func terminalClipboardInteraction(
+            store: DieterStore,
+            terminalID: String,
+            in window: NSWindow
+        ) async -> (selection: Bool, copy: Bool, paste: Bool, contextMenu: Bool) {
+            guard let view = terminalView(in: window.contentView) as? RemoteTerminalView else {
+                return (false, false, false, false)
+            }
+
+            let pasteboard = NSPasteboard.general
+            let savedItems =
+                pasteboard.pasteboardItems?.map { source in
+                    source.types.compactMap { type in
+                        source.data(forType: type).map { (type.rawValue, $0) }
+                    }
+                } ?? []
+            defer {
+                pasteboard.clearContents()
+                let restoredItems = savedItems.map { contents in
+                    let item = NSPasteboardItem()
+                    for (type, data) in contents {
+                        item.setData(data, forType: NSPasteboard.PasteboardType(type))
+                    }
+                    return item
+                }
+                if !restoredItems.isEmpty { pasteboard.writeObjects(restoredItems) }
+            }
+
+            _ = window.makeFirstResponder(nil)
+            let cell = view.caretFrame.size
+            let cursor = view.terminal.getCursorLocation()
+            let selectedRow = max(0, cursor.y - 1)
+            let y = view.bounds.height - (CGFloat(selectedRow) + 0.5) * cell.height
+            view.mouseDown(
+                with: mouseEvent(.leftMouseDown, point: NSPoint(x: cell.width / 2, y: y), view: view))
+            view.mouseDragged(
+                with: mouseEvent(.leftMouseDragged, point: NSPoint(x: cell.width * 48.5, y: y), view: view))
+            view.mouseUp(
+                with: mouseEvent(.leftMouseUp, point: NSPoint(x: cell.width * 48.5, y: y), view: view))
+            let selected = window.firstResponder === view && view.selectedRange().length > 0
+
+            pasteboard.clearContents()
+            NSApp.sendEvent(keyEvent("c", keyCode: 8, window: window))
+            let copied = pasteboard.string(forType: .string)?.contains(firstMarker) == true
+            let menuTitles =
+                view.menu(
+                    for: mouseEvent(.rightMouseDown, point: NSPoint(x: cell.width, y: y), view: view))?
+                .items.map(\.title).filter { !$0.isEmpty } ?? []
+
+            pasteboard.clearContents()
+            pasteboard.setString(String(decoding: command(printing: pasteMarker), as: UTF8.self), forType: .string)
+            NSApp.sendEvent(keyEvent("v", keyCode: 9, window: window))
+            let pasted = await waitUntil(timeout: 20) { screen(store, terminalID).contains(pasteMarker) }
+            return (selected, copied, pasted, menuTitles == ["Copy", "Paste", "Select All"])
+        }
+
+        private static func mouseEvent(
+            _ type: NSEvent.EventType,
+            point: NSPoint,
+            modifiers: NSEvent.ModifierFlags = [],
+            view: NSView
+        ) -> NSEvent {
+            NSEvent.mouseEvent(
+                with: type,
+                location: view.convert(point, to: nil),
+                modifierFlags: modifiers,
+                timestamp: 0,
+                windowNumber: view.window?.windowNumber ?? 0,
+                context: nil,
+                eventNumber: 1,
+                clickCount: 1,
+                pressure: 1
+            )!
+        }
+
+        private static func keyEvent(_ characters: String, keyCode: UInt16, window: NSWindow) -> NSEvent {
+            NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: .command,
+                timestamp: 0,
+                windowNumber: window.windowNumber,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: keyCode
+            )!
         }
 
         private static func terminalPresentation(in window: NSWindow) -> (cursorTracks: Bool, viewportFollows: Bool) {
