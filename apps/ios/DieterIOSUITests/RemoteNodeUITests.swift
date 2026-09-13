@@ -128,6 +128,18 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(label.waitForExistence(timeout: timeout), "Missing text \(text).\n\(app.debugDescription)")
     }
 
+    private func waitForBoard(_ app: XCUIApplication, project: String, board: String) {
+        // The machine name appears before its workspace loads. Project links
+        // navigate away from the sidebar; board links are their siblings.
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true"),
+            object: element(app, "ios.board.\(board)"))
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [ready], timeout: 40), .completed,
+            "The fixture board must be ready in the sidebar.\n\(app.debugDescription)")
+        XCTAssertTrue(element(app, "ios.project.\(project)").exists, "The fixture project must be present.")
+    }
+
     private func screenshot(_ app: XCUIApplication, _ name: String) {
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = name
@@ -167,11 +179,8 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
-        textExists(app, "Isolated E2E", timeout: 40)
+        waitForBoard(app, project: project, board: board)
         screenshot(app, "01-connected-remote-projects")
-        if !element(app, "ios.board.\(board)").exists {
-            tap(app, "ios.project.\(project)")
-        }
         tap(app, "ios.board.\(board)")
         if element(app, "ios.list.new-task").exists { tap(app, "ios.list.new-task") } else { tap(app, "ios.new-task") }
         fillTask(app, title: "iOS remote smoke task", prompt: "Verify this request came from iOS")
@@ -219,8 +228,7 @@ final class RemoteNodeUITests: XCTestCase {
         // Relaunch must rediscover the node and retain the daemon-owned task.
         app.terminate()
         app.launch()
-        textExists(app, "Isolated E2E", timeout: 40)
-        if !element(app, "ios.board.\(board)").exists { tap(app, "ios.project.\(project)") }
+        waitForBoard(app, project: project, board: board)
         tap(app, "ios.board.\(board)")
         textExists(app, "iOS remote smoke task")
         screenshot(app, "06-task-survives-relaunch")
@@ -247,7 +255,7 @@ final class RemoteNodeUITests: XCTestCase {
 
         app.terminate()
         app.launch()
-        textExists(app, "Isolated E2E", timeout: 40)
+        waitForBoard(app, project: project, board: board)
         let legacy = try XCTUnwrap(environment["DIETER_IOS_TEST_LEGACY_DAEMON"])
         let daemon = try XCTUnwrap(environment["DIETER_IOS_TEST_DAEMON"])
         tap(app, "ios.machine-picker")
@@ -257,8 +265,7 @@ final class RemoteNodeUITests: XCTestCase {
         app.alerts.buttons["OK"].tap()
         tap(app, "ios.machine-picker")
         tap(app, "ios.machine.\(daemon)")
-        textExists(app, "Isolated E2E", timeout: 40)
-        XCTAssertTrue(element(app, "ios.board.\(board)").waitForExistence(timeout: 20))
+        waitForBoard(app, project: project, board: board)
         screenshot(app, "10-compatible-node-restored")
     }
 }
