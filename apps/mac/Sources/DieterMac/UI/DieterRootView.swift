@@ -154,26 +154,10 @@ struct DieterRootView: View {
         .foregroundStyle(DieterTheme.text)
         .overlay {
             if store.selectedMachineID != nil {
-                GeometryReader { geometry in
-                    let workspaceLeadingEdge = sidebarWidth + sidebarDividerWidth
-                    let popupWidth = min(820, max(560, geometry.size.width - workspaceLeadingEdge - 32))
-                    let processCount =
-                        store.selectedMachineID
-                        .flatMap { store.machineInformation[$0]?.processes.count } ?? 1
-                    let desiredPopupHeight = 420 + CGFloat(min(max(processCount, 1), 4) * 54)
-                    let popupHeight = min(max(460, desiredPopupHeight), geometry.size.height - 32)
-                    let popupTop = max(16, geometry.size.height - popupHeight - 28)
-
-                    ZStack(alignment: .topLeading) {
-                        Color.black.opacity(DieterTheme.usesTransparency ? 0.16 : 0.08)
-                            .contentShape(Rectangle())
-                            .onTapGesture { store.dismissMachinePopover() }
-                            .accessibilityHidden(true)
-                        MachinePopover()
-                            .frame(width: popupWidth, height: popupHeight)
-                            .offset(x: workspaceLeadingEdge + 14, y: popupTop)
-                    }
-                }
+                MachinePopoverNativeOverlay(
+                    store: store,
+                    workspaceLeadingEdge: sidebarWidth + sidebarDividerWidth
+                )
             }
         }
         .overlay(alignment: .topTrailing) {
