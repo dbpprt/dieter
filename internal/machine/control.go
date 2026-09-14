@@ -29,6 +29,9 @@ type OperationCapability struct {
 	Supported         bool
 	Authorized        bool
 	UnavailableReason string
+	// A failed probe says nothing about installation state. Retry it on the
+	// next request instead of disabling the operation for the cache lifetime.
+	retryable bool
 }
 
 var operationCapabilityCache struct {
@@ -46,6 +49,10 @@ func OperationCapabilities(ctx context.Context) []OperationCapability {
 }
 
 func OperationCapabilitiesAtRoot(ctx context.Context, root string) []OperationCapability {
+	return cachedOperationCapabilitiesAtRoot(ctx, root, operationCapabilities)
+}
+
+func cachedOperationCapabilitiesAtRoot(ctx context.Context, root string, collect func(context.Context, string) []OperationCapability) []OperationCapability {
 	operationCapabilityCache.Lock()
 	defer operationCapabilityCache.Unlock()
 	if operationCapabilityCache.values == nil {
@@ -54,7 +61,15 @@ func OperationCapabilitiesAtRoot(ctx context.Context, root string) []OperationCa
 	if cached := operationCapabilityCache.values[root]; !cached.at.IsZero() && time.Since(cached.at) < 30*time.Second {
 		return append([]OperationCapability(nil), cached.values...)
 	}
-	values := operationCapabilities(ctx, root)
+	values := collect(ctx, root)
+	if ctx.Err() != nil {
+		return values
+	}
+	for _, value := range values {
+		if value.retryable {
+			return values
+		}
+	}
 	operationCapabilityCache.values[root] = cachedOperationCapabilities{values: append([]OperationCapability(nil), values...), at: time.Now()}
 	return values
 }
