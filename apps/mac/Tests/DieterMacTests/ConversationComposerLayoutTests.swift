@@ -125,7 +125,7 @@ import Testing
             root.layoutSubtreeIfNeeded()
             let composer = try #require(
                 composerLayoutViews(in: root).compactMap { $0 as? NSTextField }.first {
-                    $0.isEditable && $0.placeholderString == "Message the local agent…"
+                    $0.isEditable && $0.placeholderString == "Message the agent…"
                 })
             let frame = composer.convert(composer.bounds, to: root)
             #expect(root.bounds.contains(frame), "Composer \(frame) exceeds window \(root.bounds)")
