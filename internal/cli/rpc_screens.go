@@ -26,6 +26,9 @@ Actions:
   update [options]             Enable/disable viewing and remote control
   start --request FILE         Start WebRTC signaling; stream daemon signals as JSON Lines
   signal --file FILE           Send one trickle ICE/heartbeat signal to a session
+  status SESSION               Show current stream configuration and performance
+  configure SESSION [options]  Change display, quality and stream ceilings live
+  refresh SESSION              Request a fresh keyframe, including an idle screen
   close SESSION                Close a remote-desktop session
 
 "start" accepts protobuf JSON from FILE or stdin (-). It can also consume
@@ -51,6 +54,8 @@ func (c *CLI) rpcScreen(args []string) error {
 		return c.rpcScreenStart(args[1:])
 	case "signal", "send":
 		return c.rpcScreenSignal(args[1:])
+	case "status", "configure", "refresh":
+		return c.rpcScreenSession(args[0], args[1:])
 	case "close", "stop":
 		return c.rpcScreenClose(args[1:])
 	default:
@@ -267,4 +272,105 @@ func (c *CLI) rpcScreenClose(args []string) error {
 	}
 	_, err = client.CloseRemoteDesktop(rpcCtx, &dieterv1.RemoteDesktopRef{SessionId: args[0]})
 	return err
+}
+
+func (c *CLI) rpcScreenSession(action string, args []string) error {
+	usage := "Usage: dieter screen " + action + " SESSION\n"
+	if action == "configure" {
+		usage = "Usage: dieter screen configure SESSION [--display ID] [--quality auto|detail|motion] [--width N] [--height N] [--fps N] [--bitrate N] [--embedded-cursor=true|false]\nCeilings are adaptive; unspecified values retain the current session configuration.\n"
+	}
+	if wantsHelp(args) {
+		fmt.Fprint(c.Out, usage)
+		return nil
+	}
+	if len(args) == 0 {
+		return errors.New("exactly one SESSION is required")
+	}
+	id := args[0]
+	set := flags("screen " + action)
+	display := set.String("display", "", "display ID from screen capabilities")
+	quality := set.String("quality", "auto", "auto, detail or motion")
+	width := set.Int("width", 3840, "maximum pixel width")
+	height := set.Int("height", 2160, "maximum pixel height")
+	fps := set.Int("fps", 60, "maximum frames per second (1–60)")
+	bitrate := set.Int("bitrate", 12000, "maximum video kilobits per second")
+	cursor := set.Bool("embedded-cursor", false, "include cursor in video")
+	if action != "configure" && len(args) != 1 {
+		return errors.New("exactly one SESSION is required")
+	}
+	if _, err := parse(set, args[1:], usage, c.Out); err != nil {
+		return err
+	}
+	if set.NArg() != 0 {
+		return errors.New("unexpected positional argument")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	state, err := client.GetRemoteDesktopSession(rpcCtx, &dieterv1.RemoteDesktopRef{SessionId: id})
+	if err != nil {
+		return err
+	}
+	if action == "status" {
+		return protoJSONOut(c.Out, state)
+	}
+	request := &dieterv1.UpdateRemoteDesktopSessionRequest{SessionId: id, Refresh: true}
+	if action == "configure" {
+		config := state.GetConfiguration()
+		if config == nil {
+			config = &dieterv1.RemoteDesktopStreamConfiguration{}
+		}
+		var invalid error
+		set.Visit(func(f *flag.Flag) {
+			switch f.Name {
+			case "display":
+				config.DisplayId = *display
+			case "width":
+				if *width < 320 || *width > 3840 {
+					invalid = errors.New("width must be between 320 and 3840")
+				}
+				config.MaxWidth = int32(*width)
+			case "height":
+				if *height < 180 || *height > 2160 {
+					invalid = errors.New("height must be between 180 and 2160")
+				}
+				config.MaxHeight = int32(*height)
+			case "fps":
+				if *fps < 1 || *fps > 60 {
+					invalid = errors.New("fps must be between 1 and 60")
+				}
+				config.MaxFps = int32(*fps)
+			case "bitrate":
+				if *bitrate < 100 || *bitrate > 100000 {
+					invalid = errors.New("bitrate must be between 100 and 100000 kbps")
+				}
+				config.MaxBitrateKbps = int32(*bitrate)
+			case "embedded-cursor":
+				config.EmbeddedCursor = *cursor
+			case "quality":
+				switch *quality {
+				case "auto":
+					config.Quality = dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_AUTO
+				case "detail":
+					config.Quality = dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_DETAIL
+				case "motion":
+					config.Quality = dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_MOTION
+				default:
+					invalid = errors.New("quality must be auto, detail or motion")
+				}
+			}
+		})
+		if invalid != nil {
+			return invalid
+		}
+		request.Configuration = config
+	}
+	state, err = client.UpdateRemoteDesktopSession(rpcCtx, request)
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, state)
 }

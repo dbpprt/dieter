@@ -27,6 +27,7 @@ import (
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/machine"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/server"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -545,8 +546,17 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	powerActions := make(chan machine.Operation, 2)
+	screenManager := remotedesktop.New(remotedesktop.Options{
+		Identity: remotedesktop.Identity{DaemonID: identity.ID, GatewayURL: identity.GatewayURL, Generation: identity.Generation, PrivateKey: identity.PrivateKey, GatewaySigningPublicKey: identity.GatewaySigningPublicKey},
+		Source:   remotedesktop.SourceOptions{Kind: "synthetic"},
+		SourceFactory: func(remotedesktop.SourceOptions) (remotedesktop.FrameSource, error) {
+			return &configurableScreenFixture{}, nil
+		},
+	})
+	defer screenManager.Shutdown(context.Background())
 	remoteServer := server.NewWithOptions(remoteStore, logger, server.Options{
-		Runner: &fakeRunner{},
+		RemoteDesktop: screenManager,
+		Runner:        &fakeRunner{},
 		MachineAction: func(_ context.Context, operation machine.Operation) error {
 			powerActions <- operation
 			return nil
@@ -648,6 +658,24 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := first.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "direct-exec"}); err != nil || firstOutput.String() != "direct-exec" {
 		t.Fatalf("direct remote exec output=%q err=%v", firstOutput.String(), err)
 	}
+	assertScreenSessionCLI(t, first, &firstOutput, nil)
+	localConfig := &gatewayv1.RTCConfiguration{}
+	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, first, &firstOutput, "machine", "rtc")), localConfig); err != nil {
+		t.Fatal(err)
+	}
+	localCLIStore := store.New(t.TempDir())
+	if err := localCLIStore.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dieterdaemon.NewStatusWriter(localCLIStore.Root, dieterdaemon.RuntimeStatus{PID: os.Getpid(), Version: "test", State: "running", ListenAddress: localListener.Addr().String(), GatewayState: dieterdaemon.GatewayNotEnrolled}); err != nil {
+		t.Fatal(err)
+	}
+	localCLI := New(localCLIStore)
+	localCLI.DaemonMode = true
+	var localCLIOutput bytes.Buffer
+	localCLI.Out, localCLI.Err = &localCLIOutput, &localCLIOutput
+	assertScreenSessionCLI(t, localCLI, &localCLIOutput, localConfig)
+	localCLI.Close()
 	assertMachineHomeTerminalCLI(t, first, &firstOutput)
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
@@ -706,6 +734,7 @@ func TestDaemonCLIUsesDirectRouteThenRelayFallback(t *testing.T) {
 	if err := second.Run([]string{"remote", "exec", "--project", remoteProject.ID, "--", "/usr/bin/printf", "relay-exec"}); err != nil || secondOutput.String() != "relay-exec" {
 		t.Fatalf("relay remote exec output=%q err=%v", secondOutput.String(), err)
 	}
+	assertScreenSessionCLI(t, second, &secondOutput, nil)
 	assertMachineHomeTerminalCLI(t, second, &secondOutput)
 	assertQueueRemovalCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, second, &secondOutput, remoteStore, remoteProject.ID)

@@ -51,7 +51,14 @@ func (api *grpcAPI) StartRemoteDesktop(ctx context.Context, request *dieterv1.St
 	if err != nil {
 		return nil, grpcFailure(err)
 	}
-	subscription, err := api.server.remoteDesktop.Start(request, settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled, remoteDesktopOperator(ctx))
+	subject := remoteDesktopOperator(ctx)
+	// The raw loopback API has full local access and no gateway transport
+	// subject. The manager still verifies the gateway signature, daemon,
+	// generation and expiry before admitting this configuration's subject.
+	if subject == "" {
+		subject = request.GetRtcConfiguration().GetOperatorSubject()
+	}
+	subscription, err := api.server.remoteDesktop.Start(request, settings.RemoteDesktopEnabled, settings.RemoteDesktopControlEnabled, subject)
 	if err != nil {
 		return nil, remoteDesktopFailure(err)
 	}
@@ -63,6 +70,27 @@ func (api *grpcAPI) SendRemoteDesktopSignal(_ context.Context, request *dieterv1
 		return nil, remoteDesktopFailure(err)
 	}
 	return &emptypb.Empty{}, nil
+}
+
+func (api *grpcAPI) GetRemoteDesktopSession(_ context.Context, request *dieterv1.RemoteDesktopRef) (*dieterv1.RemoteDesktopSessionState, error) {
+	state, err := api.server.remoteDesktop.SessionState(request.GetSessionId())
+	if err != nil {
+		return nil, remoteDesktopFailure(err)
+	}
+	return state, nil
+}
+func (api *grpcAPI) UpdateRemoteDesktopSession(ctx context.Context, request *dieterv1.UpdateRemoteDesktopSessionRequest) (*dieterv1.RemoteDesktopSessionState, error) {
+	state, err := api.server.remoteDesktop.UpdateSession(ctx, request)
+	if err != nil {
+		return nil, remoteDesktopFailure(err)
+	}
+	return state, nil
+}
+func (api *connectAPI) GetRemoteDesktopSession(ctx context.Context, request *connect.Request[dieterv1.RemoteDesktopRef]) (*connect.Response[dieterv1.RemoteDesktopSessionState], error) {
+	return connectUnary(ctx, request, api.core.GetRemoteDesktopSession)
+}
+func (api *connectAPI) UpdateRemoteDesktopSession(ctx context.Context, request *connect.Request[dieterv1.UpdateRemoteDesktopSessionRequest]) (*connect.Response[dieterv1.RemoteDesktopSessionState], error) {
+	return connectUnary(ctx, request, api.core.UpdateRemoteDesktopSession)
 }
 
 func (api *grpcAPI) CloseRemoteDesktop(_ context.Context, request *dieterv1.RemoteDesktopRef) (*emptypb.Empty, error) {

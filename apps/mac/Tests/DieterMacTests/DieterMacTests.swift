@@ -369,7 +369,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2099-08-25T08:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = 1
+    binding.inputProtocolVersion = 2
     binding.inputEpoch = Data(repeating: 1, count: 16)
     binding.daemonSignature = try #require(
         Data(base64Encoded: "ctCMwB2SL9Wk9JqpQzgtM+NQxXqUXGGKSSpQ1X2lNX3G3uS8UR7uKe5J8fjZheT1WxX3U5s37saWnSk7dqIADQ=="))
@@ -409,7 +409,7 @@ private actor CardStartRPCStub: DieterCardStartRPC {
     binding.helperDtlsFingerprint = "sha-256 AA:BB"
     binding.expiresAt = "2026-08-25T07:00:00Z"
     binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = 1
+    binding.inputProtocolVersion = 2
     binding.inputEpoch = Data(repeating: 1, count: 16)
     do {
         try RemoteDesktopSessionTrust.verify(

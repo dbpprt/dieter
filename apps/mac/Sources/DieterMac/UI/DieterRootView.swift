@@ -165,7 +165,7 @@ struct DieterRootView: View {
                     let popupTop = max(16, geometry.size.height - popupHeight - 28)
 
                     ZStack(alignment: .topLeading) {
-                        Color.clear
+                        Color.black.opacity(DieterTheme.usesTransparency ? 0.16 : 0.08)
                             .contentShape(Rectangle())
                             .onTapGesture { store.dismissMachinePopover() }
                             .accessibilityHidden(true)

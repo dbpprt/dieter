@@ -527,8 +527,6 @@ func (c *CLI) runRemoteDesktopPermissionGuide(options remotedesktop.SourceOption
 	}
 	if runtime.GOOS == "darwin" && strings.TrimSpace(options.Kind) != "synthetic" {
 		options.HelperPath = executable
-	} else if strings.TrimSpace(options.Kind) != "synthetic" {
-		options.FFmpegPath = executable
 	}
 	fmt.Fprintf(c.Out, "Checking Screen & System Audio Recording with %s (%s)...\n", label, executable)
 	probe := func() error {

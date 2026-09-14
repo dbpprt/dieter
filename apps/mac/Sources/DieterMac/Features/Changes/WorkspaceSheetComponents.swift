@@ -7,18 +7,25 @@ struct WorkspaceToastView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(
-                DieterTheme.diffAddition)
-            Text(toast.message).font(.system(size: 12, weight: .medium)).foregroundStyle(DieterTheme.text)
+            ZStack {
+                Circle().fill(DieterTheme.diffAddition.opacity(0.14))
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(DieterTheme.diffAddition)
+            }
+            .frame(width: 24, height: 24)
+
+            Text(toast.message)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(DieterTheme.text)
         }
         .lineLimit(1)
         .truncationMode(.middle)
         .frame(maxWidth: 540)
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 16).frame(height: 40)
-        .background(DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DieterTheme.strongBorder))
-        .shadow(color: .black.opacity(0.25), radius: 14, y: 4)
+        .padding(.horizontal, 14)
+        .frame(height: 46)
+        .dieterToastChrome(cornerRadius: 13)
         .accessibilityIdentifier("workspace-toast")
     }
 }

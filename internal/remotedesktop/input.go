@@ -5,7 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 	"sync/atomic"
+	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/pion/webrtc/v4"
@@ -13,9 +18,10 @@ import (
 )
 
 const (
-	inputProtocolVersion    uint32 = 1
-	pointerChannelLabel            = "dieter-pointer-v1"
-	stateChannelLabel              = "dieter-input-state-v1"
+	inputProtocolVersion    uint32 = 2
+	hostChannelLabel               = "dieter-session-v2"
+	pointerChannelLabel            = "dieter-pointer-v2"
+	stateChannelLabel              = "dieter-input-state-v2"
 	maxInputMessageBytes           = 4 << 10
 	maxNormalizedCoordinate        = 1_000_000
 	maxScrollDelta                 = 100_000
@@ -25,7 +31,48 @@ const (
 
 func (s *Session) installInputChannels() {
 	s.pc.OnDataChannel(func(channel *webrtc.DataChannel) {
+		if channel.Label() == hostChannelLabel {
+			s.mu.Lock()
+			duplicate := s.hostChannel != nil
+			if !duplicate {
+				s.hostChannel = channel
+			}
+			s.mu.Unlock()
+			if duplicate {
+				_ = channel.Close()
+				return
+			}
+			channel.OnMessage(func(message webrtc.DataChannelMessage) {
+				if !message.IsString && len(message.Data) <= maxInputMessageBytes {
+					s.receiveFeedback(message.Data)
+				}
+			})
+			channel.OnOpen(func() {
+				if state, err := s.manager.SessionState(s.id); err == nil {
+					s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_State{State: state}})
+				}
+				s.mu.Lock()
+				cursor := s.cursor
+				s.mu.Unlock()
+				if cursor != nil {
+					s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_Cursor{Cursor: cursor}})
+				}
+			})
+			channel.OnClose(func() { s.inputStopped.Store(true); go s.close("remote desktop data channel closed") })
+			return
+		}
 		if !s.control || (channel.Label() != pointerChannelLabel && channel.Label() != stateChannelLabel) {
+			_ = channel.Close()
+			return
+		}
+		s.mu.Lock()
+		if s.inputChannels == nil {
+			s.inputChannels = make(map[string]bool)
+		}
+		duplicate := s.inputChannels[channel.Label()]
+		s.inputChannels[channel.Label()] = true
+		s.mu.Unlock()
+		if duplicate {
 			_ = channel.Close()
 			return
 		}
@@ -34,15 +81,19 @@ func (s *Session) installInputChannels() {
 				s.handleInput(channel.Label(), message.Data)
 			}
 		})
-		channel.OnClose(func() { s.releaseInput() })
+		channel.OnClose(func() { s.inputStopped.Store(true); go s.close("remote desktop data channel closed") })
 		channel.OnError(func(err error) {
 			s.manager.options.Logger.Warn("remote desktop input channel failed", "channel", channel.Label(), "error", err)
-			s.releaseInput()
+			s.inputStopped.Store(true)
+			go s.close("remote desktop input channel failed")
 		})
 	})
 }
 
 func (s *Session) handleInput(label string, raw []byte) {
+	if s.inputStopped.Load() {
+		return
+	}
 	var input dieterv1.RemoteDesktopInput
 	if err := proto.Unmarshal(raw, &input); err != nil || validateInput(&input, s.inputEpoch) != nil {
 		return
@@ -88,7 +139,7 @@ func (s *Session) handleInput(label string, raw []byte) {
 	select {
 	case s.stateInput <- copy:
 	default:
-		s.releaseInput()
+		s.inputStopped.Store(true)
 		go s.close("remote input queue overflow")
 	}
 }
@@ -98,29 +149,65 @@ func (s *Session) runInput() {
 	if !ok {
 		return
 	}
+	var pending *dieterv1.RemoteDesktopInput
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
+		default:
+		}
+		select {
 		case input := <-s.stateInput:
 			s.deliverInput(sink, input)
+			s.lastStateApplied = input.GetSequence()
 		default:
+			if pending != nil && pending.GetStateBarrier() <= s.lastStateApplied {
+				if pending.GetEventOrdinal() == 0 || pending.GetEventOrdinal() > s.lastOrdinal {
+					s.deliverInput(sink, pending)
+				}
+				pending = nil
+			}
 			select {
 			case <-s.ctx.Done():
 				return
 			case input := <-s.stateInput:
 				s.deliverInput(sink, input)
+				s.lastStateApplied = input.GetSequence()
 			case input := <-s.pointerInput:
-				s.deliverInput(sink, input)
+				pending = input
 			}
 		}
 	}
 }
 
 func (s *Session) deliverInput(sink InputSink, input *dieterv1.RemoteDesktopInput) {
-	if err := sink.SendInput(s.ctx, input); err != nil && s.ctx.Err() == nil {
-		s.manager.options.Logger.Debug("remote desktop input was not delivered", "kind", inputKind(input), "error", err)
+	s.inputMu.Lock()
+	defer s.inputMu.Unlock()
+	if s.inputStopped.Load() {
+		return
 	}
+	s.mu.Lock()
+	generation := s.status.GetDisplayGeneration()
+	s.mu.Unlock()
+	if input.GetReleaseAll() == nil && generation != 0 && input.GetDisplayGeneration() != 0 && generation != input.GetDisplayGeneration() {
+		return
+	}
+	if err := sink.SendInput(s.ctx, input); err != nil && s.ctx.Err() == nil {
+		if strings.Contains(err.Error(), "stale input display") {
+			return
+		}
+		s.manager.options.Logger.Warn("remote input delivery failed", "kind", inputKind(input), "error", err)
+		s.inputStopped.Store(true)
+		go s.close("remote input delivery failed")
+		return
+	}
+	s.lastOrdinal = max(s.lastOrdinal, input.GetEventOrdinal())
+	s.mu.Lock()
+	if s.status != nil {
+		s.status.LastInputOrdinal = s.lastOrdinal
+	}
+	s.mu.Unlock()
+	s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_InputAck{InputAck: s.lastOrdinal}})
 }
 
 func validateInput(input *dieterv1.RemoteDesktopInput, epoch []byte) error {
@@ -143,12 +230,19 @@ func validateInput(input *dieterv1.RemoteDesktopInput, epoch []byte) error {
 		}
 		return coordinate(value.PointerButton.GetNormalizedX(), value.PointerButton.GetNormalizedY())
 	case *dieterv1.RemoteDesktopInput_Scroll:
+		if !finiteBound(value.Scroll.GetPreciseDeltaX(), 100000) || !finiteBound(value.Scroll.GetPreciseDeltaY(), 100000) || value.Scroll.GetPhase() > 255 || value.Scroll.GetMomentumPhase() > 255 {
+			return errors.New("invalid precise scroll")
+		}
 		if abs64(int64(value.Scroll.GetDeltaX())) > maxScrollDelta || abs64(int64(value.Scroll.GetDeltaY())) > maxScrollDelta || value.Scroll.GetModifiers() > maxInputModifiers {
 			return errors.New("invalid remote desktop scroll event")
 		}
 	case *dieterv1.RemoteDesktopInput_Key:
-		if value.Key.GetKeyCode() > maxMacVirtualKeyCode || value.Key.GetModifiers() > maxInputModifiers {
+		if value.Key.GetKeyCode() > maxMacVirtualKeyCode || value.Key.GetPhysicalKey() > 255 || value.Key.GetModifiers() > maxInputModifiers {
 			return errors.New("invalid remote desktop key event")
+		}
+	case *dieterv1.RemoteDesktopInput_Text:
+		if !utf8.ValidString(value.Text.GetText()) || len(value.Text.GetText()) == 0 || len(value.Text.GetText()) > 2048 || len(utf16.Encode([]rune(value.Text.GetText()))) > 1024 {
+			return errors.New("invalid committed text")
 		}
 	case *dieterv1.RemoteDesktopInput_ReleaseAll:
 	default:
@@ -162,7 +256,11 @@ func (s *Session) releaseInput() {
 		return
 	}
 	if sink, ok := s.source.(InputSink); ok {
-		sink.ReleaseInput(context.Background())
+		s.inputMu.Lock()
+		ctx, cancel := context.WithTimeout(context.Background(), nativeCommandTimeout)
+		sink.ReleaseInput(ctx)
+		cancel()
+		s.inputMu.Unlock()
 	}
 }
 
@@ -188,4 +286,55 @@ func abs64(value int64) int64 {
 		return -value
 	}
 	return value
+}
+
+func finiteBound(v, max float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0) && math.Abs(v) <= max
+}
+func (s *Session) receiveFeedback(raw []byte) {
+	var value dieterv1.RemoteDesktopReceiverFeedback
+	if proto.Unmarshal(raw, &value) != nil || value.ProtocolVersion != inputProtocolVersion || !bytes.Equal(value.InputEpoch, s.inputEpoch) || value.Sequence == 0 {
+		return
+	}
+	if !finiteBound(value.FramesPerSecond, 240) || !finiteBound(value.DecodeMs, 10000) || !finiteBound(value.JitterMs, 10000) || !finiteBound(value.RttMs, 60000) || !finiteBound(value.LossFraction, 1) {
+		return
+	}
+	previous := s.feedbackSequence.Load()
+	if value.Sequence <= previous || !s.feedbackSequence.CompareAndSwap(previous, value.Sequence) {
+		return
+	}
+	s.mu.Lock()
+	wasActive := s.receiver.GetInputActive()
+	s.receiver = &value
+	s.lastFeedback = time.Now()
+	if s.status != nil {
+		s.status.ReceiverFps = value.FramesPerSecond
+		s.status.RttMs = value.RttMs
+	}
+	s.mu.Unlock()
+	if wasActive && !value.InputActive {
+		s.releaseInput()
+	}
+}
+func (s *Session) sendHost(value *dieterv1.RemoteDesktopHostEvent) {
+	s.hostSendMu.Lock()
+	defer s.hostSendMu.Unlock()
+	s.mu.Lock()
+	channel, closed := s.hostChannel, s.closed
+	s.mu.Unlock()
+	if closed || channel == nil || channel.ReadyState() != webrtc.DataChannelStateOpen || channel.BufferedAmount() > 384<<10 {
+		return
+	}
+	cursor := value.GetCursor()
+	if cursor != nil && cursor.ShapeId == s.lastCursorShapeSent {
+		value = proto.Clone(value).(*dieterv1.RemoteDesktopHostEvent)
+		value.GetCursor().Png = nil
+	}
+	raw, err := proto.Marshal(value)
+	if err != nil || len(raw) > 350000 {
+		return
+	}
+	if channel.Send(raw) == nil && cursor != nil && len(cursor.Png) > 0 {
+		s.lastCursorShapeSent = cursor.ShapeId
+	}
 }

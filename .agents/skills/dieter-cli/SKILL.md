@@ -366,6 +366,16 @@ dieter prompt show
 dieter prompt preview --card <card-id>
 ```
 
+For an authorized screen session, use `dieter screen status SESSION` for active
+quality and timing, `dieter screen configure SESSION --quality auto|detail|motion`
+for live policy, and `dieter screen refresh SESSION` to refresh an idle screen.
+`configure` also accepts `--display ID`, `--width`, `--height`, `--fps`, `--bitrate`
+(kbps) and `--embedded-cursor=true|false`; omitted fields retain their values.
+Limits are adaptive ceilings up to 3840×2160/60 fps. Screen media uses native macOS
+capture and hardware H.264. Input protocol v2 requires matching client and daemon.
+All screen commands support global `--machine ID|NAME` with verified direct TLS
+and authenticated relay fallback.
+
 Screen sharing uses explicit daemon policy plus WebRTC signaling. Check
 `dieter screen capabilities` and `dieter screen settings`; do not enable capture
 or control, start a session, restart/shut down a machine, revoke enrollment, or

@@ -190,7 +190,7 @@ Commands:
   file         Browse and edit project/workspace files with revision checks
   terminal     Create, attach, control, and close daemon-host PTYs
   remote       Run resumable commands and native shells on a daemon host
-  screen       Inspect policy and drive authenticated WebRTC signaling
+  screen       Inspect policy, tune screen sessions, and drive WebRTC signaling
   schedule     Create, preview, dispatch, pause, and inspect schedules
   settings     Inspect and update parallel-session admission limits
   prompt       Inspect, update, scope, and preview prompt templates
@@ -498,7 +498,6 @@ add an optional LAN, Tailscale, or public route.
 func remoteDesktopSourceOptions(logger *slog.Logger) remotedesktop.SourceOptions {
 	return remotedesktop.SourceOptions{
 		Kind:       strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_SOURCE")),
-		FFmpegPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_FFMPEG")),
 		HelperPath: strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_HELPER")),
 		Display:    strings.TrimSpace(os.Getenv("DIETER_REMOTE_DESKTOP_DISPLAY")),
 		Logger:     logger,

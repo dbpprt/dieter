@@ -113,6 +113,8 @@ const (
 	DieterService_UpdateRemoteDesktopSettings_FullMethodName    = "/dieter.v1.DieterService/UpdateRemoteDesktopSettings"
 	DieterService_StartRemoteDesktop_FullMethodName             = "/dieter.v1.DieterService/StartRemoteDesktop"
 	DieterService_SendRemoteDesktopSignal_FullMethodName        = "/dieter.v1.DieterService/SendRemoteDesktopSignal"
+	DieterService_GetRemoteDesktopSession_FullMethodName        = "/dieter.v1.DieterService/GetRemoteDesktopSession"
+	DieterService_UpdateRemoteDesktopSession_FullMethodName     = "/dieter.v1.DieterService/UpdateRemoteDesktopSession"
 	DieterService_CloseRemoteDesktop_FullMethodName             = "/dieter.v1.DieterService/CloseRemoteDesktop"
 	DieterService_ListSchedules_FullMethodName                  = "/dieter.v1.DieterService/ListSchedules"
 	DieterService_PreviewSchedule_FullMethodName                = "/dieter.v1.DieterService/PreviewSchedule"
@@ -241,6 +243,8 @@ type DieterServiceClient interface {
 	UpdateRemoteDesktopSettings(ctx context.Context, in *UpdateRemoteDesktopSettingsRequest, opts ...grpc.CallOption) (*RemoteDesktopSettings, error)
 	StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error)
 	SendRemoteDesktopSignal(ctx context.Context, in *RemoteDesktopSignal, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	GetRemoteDesktopSession(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopSessionState, error)
+	UpdateRemoteDesktopSession(ctx context.Context, in *UpdateRemoteDesktopSessionRequest, opts ...grpc.CallOption) (*RemoteDesktopSessionState, error)
 	CloseRemoteDesktop(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*SchedulesResponse, error)
 	PreviewSchedule(ctx context.Context, in *PreviewScheduleRequest, opts ...grpc.CallOption) (*SchedulePreview, error)
@@ -1253,6 +1257,26 @@ func (c *dieterServiceClient) SendRemoteDesktopSignal(ctx context.Context, in *R
 	return out, nil
 }
 
+func (c *dieterServiceClient) GetRemoteDesktopSession(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopSessionState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoteDesktopSessionState)
+	err := c.cc.Invoke(ctx, DieterService_GetRemoteDesktopSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) UpdateRemoteDesktopSession(ctx context.Context, in *UpdateRemoteDesktopSessionRequest, opts ...grpc.CallOption) (*RemoteDesktopSessionState, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoteDesktopSessionState)
+	err := c.cc.Invoke(ctx, DieterService_UpdateRemoteDesktopSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dieterServiceClient) CloseRemoteDesktop(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
@@ -1460,6 +1484,8 @@ type DieterServiceServer interface {
 	UpdateRemoteDesktopSettings(context.Context, *UpdateRemoteDesktopSettingsRequest) (*RemoteDesktopSettings, error)
 	StartRemoteDesktop(*StartRemoteDesktopRequest, grpc.ServerStreamingServer[RemoteDesktopSignal]) error
 	SendRemoteDesktopSignal(context.Context, *RemoteDesktopSignal) (*emptypb.Empty, error)
+	GetRemoteDesktopSession(context.Context, *RemoteDesktopRef) (*RemoteDesktopSessionState, error)
+	UpdateRemoteDesktopSession(context.Context, *UpdateRemoteDesktopSessionRequest) (*RemoteDesktopSessionState, error)
 	CloseRemoteDesktop(context.Context, *RemoteDesktopRef) (*emptypb.Empty, error)
 	ListSchedules(context.Context, *ListSchedulesRequest) (*SchedulesResponse, error)
 	PreviewSchedule(context.Context, *PreviewScheduleRequest) (*SchedulePreview, error)
@@ -1757,6 +1783,12 @@ func (UnimplementedDieterServiceServer) StartRemoteDesktop(*StartRemoteDesktopRe
 }
 func (UnimplementedDieterServiceServer) SendRemoteDesktopSignal(context.Context, *RemoteDesktopSignal) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method SendRemoteDesktopSignal not implemented")
+}
+func (UnimplementedDieterServiceServer) GetRemoteDesktopSession(context.Context, *RemoteDesktopRef) (*RemoteDesktopSessionState, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRemoteDesktopSession not implemented")
+}
+func (UnimplementedDieterServiceServer) UpdateRemoteDesktopSession(context.Context, *UpdateRemoteDesktopSessionRequest) (*RemoteDesktopSessionState, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRemoteDesktopSession not implemented")
 }
 func (UnimplementedDieterServiceServer) CloseRemoteDesktop(context.Context, *RemoteDesktopRef) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method CloseRemoteDesktop not implemented")
@@ -3431,6 +3463,42 @@ func _DieterService_SendRemoteDesktopSignal_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DieterService_GetRemoteDesktopSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoteDesktopRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetRemoteDesktopSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetRemoteDesktopSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetRemoteDesktopSession(ctx, req.(*RemoteDesktopRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_UpdateRemoteDesktopSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRemoteDesktopSessionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).UpdateRemoteDesktopSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_UpdateRemoteDesktopSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).UpdateRemoteDesktopSession(ctx, req.(*UpdateRemoteDesktopSessionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DieterService_CloseRemoteDesktop_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RemoteDesktopRef)
 	if err := dec(in); err != nil {
@@ -3943,6 +4011,14 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendRemoteDesktopSignal",
 			Handler:    _DieterService_SendRemoteDesktopSignal_Handler,
+		},
+		{
+			MethodName: "GetRemoteDesktopSession",
+			Handler:    _DieterService_GetRemoteDesktopSession_Handler,
+		},
+		{
+			MethodName: "UpdateRemoteDesktopSession",
+			Handler:    _DieterService_UpdateRemoteDesktopSession_Handler,
 		},
 		{
 			MethodName: "CloseRemoteDesktop",

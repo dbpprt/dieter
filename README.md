@@ -744,3 +744,51 @@ same normalization, matching rules, and 64-entry limit apply.
 ## iPhone and iPad client
 
 The native iOS 18+ SwiftUI client connects to enrolled remote nodes through the authenticated gateway and verified direct TLS routes. Open `apps/ios/DieterIOS.xcodeproj`, or use `just ios build` and `just ios smoke`. See [iOS setup and remote workflows](apps/ios/README.md).
+
+### Native screen sharing
+
+Mac screen sharing uses ScreenCaptureKit, NV12 pixel buffers, hardware VideoToolbox
+H.264, and the Mac client's native WebRTC/Metal renderer. No FFmpeg executable or
+library is used. Capture, input injection and display enumeration live in the
+platform backend; the bounded media/session protocol can accommodate a Linux
+backend later. Linux capture is currently reported as unsupported.
+
+The viewer follows its window’s pixel size, up to 3840×2160 at 60 fps and 12 Mbps. The host adapts bitrate,
+frame rate and resolution using transport-wide congestion feedback, encoder cost,
+and receiver decode/jitter/loss measurements. Screen options select a display,
+prefer sharp text or smooth motion, or request an idle-screen refresh. Cursor shape,
+hotspot and position travel separately from video, with embedded-cursor fallback.
+Physical USB HID keys, left/right modifiers, pointer dragging and precise scrolling
+are supported. Enable local text composition in Screen options for IME input.
+Focus loss releases held input; ⌘⇧Esc releases input locally. macOS-reserved shortcuts
+may be intercepted by the viewer OS before the app receives them.
+
+The CLI works on local, verified direct TLS and authenticated relay routes:
+
+```sh
+dieter screen capabilities
+dieter screen status SESSION
+dieter screen configure SESSION --quality detail --fps 30 --bitrate 8000
+dieter screen configure SESSION --display DISPLAY_ID
+dieter screen refresh SESSION
+```
+
+Configuration flags preserve unspecified values. Width, height, FPS and bitrate
+are ceilings, not promises. `status` reports active dimensions, frame rate, bitrate,
+encoder time, frame drops, display generation and input acknowledgments. `start`
+accepts a protobuf JSON WebRTC offer; media and input use the encrypted peer
+connection. Session input protocol v2 requires matching daemon and Mac client builds.
+
+Native screen regression checks:
+
+```sh
+just mac screens-native-test
+just mac screens-test
+DIETER_TEST_SCREEN_CAPTURE_REAL=1 just mac screens-test
+```
+
+The first two use generated pixels and dry-run input. The last requires Screen
+Recording and event-posting permission and sends events only to an owned native
+fixture window. All use random loopback listeners and disposable daemon data;
+the installed daemon is untouched. Viewer integration refuses to start while an
+operator Dieter app is running. Evidence paths are printed by the test.

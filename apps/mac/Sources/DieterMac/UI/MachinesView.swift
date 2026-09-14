@@ -101,13 +101,9 @@ struct MachinePopover: View {
                 )
             }
         }
+        .foregroundStyle(DieterTheme.text)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(DieterTheme.border, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.34), radius: 28, y: 14)
+        .dieterOverlayChrome()
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityIdentifier("machine.popover")
         .onExitCommand { store.dismissMachinePopover() }

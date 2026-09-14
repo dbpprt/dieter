@@ -1162,13 +1162,13 @@ func testRemoteDesktopThroughGateway(t *testing.T, routed context.Context, clien
 		t.Fatal(err)
 	}
 	ordered := true
-	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v1", &webrtc.DataChannelInit{Ordered: &ordered})
+	stateChannel, err := viewer.CreateDataChannel("dieter-input-state-v2", &webrtc.DataChannelInit{Ordered: &ordered})
 	if err != nil {
 		t.Fatal(err)
 	}
 	unordered := false
 	zero := uint16(0)
-	if _, err := viewer.CreateDataChannel("dieter-pointer-v1", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
+	if _, err := viewer.CreateDataChannel("dieter-pointer-v2", &webrtc.DataChannelInit{Ordered: &unordered, MaxRetransmits: &zero}); err != nil {
 		t.Fatal(err)
 	}
 	trackReceived := make(chan struct{}, 1)

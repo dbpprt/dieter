@@ -299,6 +299,12 @@ const (
 	// DieterServiceSendRemoteDesktopSignalProcedure is the fully-qualified name of the DieterService's
 	// SendRemoteDesktopSignal RPC.
 	DieterServiceSendRemoteDesktopSignalProcedure = "/dieter.v1.DieterService/SendRemoteDesktopSignal"
+	// DieterServiceGetRemoteDesktopSessionProcedure is the fully-qualified name of the DieterService's
+	// GetRemoteDesktopSession RPC.
+	DieterServiceGetRemoteDesktopSessionProcedure = "/dieter.v1.DieterService/GetRemoteDesktopSession"
+	// DieterServiceUpdateRemoteDesktopSessionProcedure is the fully-qualified name of the
+	// DieterService's UpdateRemoteDesktopSession RPC.
+	DieterServiceUpdateRemoteDesktopSessionProcedure = "/dieter.v1.DieterService/UpdateRemoteDesktopSession"
 	// DieterServiceCloseRemoteDesktopProcedure is the fully-qualified name of the DieterService's
 	// CloseRemoteDesktop RPC.
 	DieterServiceCloseRemoteDesktopProcedure = "/dieter.v1.DieterService/CloseRemoteDesktop"
@@ -443,6 +449,8 @@ type DieterServiceClient interface {
 	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest]) (*connect.ServerStreamForClient[v1.RemoteDesktopSignal], error)
 	SendRemoteDesktopSignal(context.Context, *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error)
+	GetRemoteDesktopSession(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopSessionState], error)
+	UpdateRemoteDesktopSession(context.Context, *connect.Request[v1.UpdateRemoteDesktopSessionRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error)
 	CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
@@ -1023,6 +1031,18 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("SendRemoteDesktopSignal")),
 			connect.WithClientOptions(opts...),
 		),
+		getRemoteDesktopSession: connect.NewClient[v1.RemoteDesktopRef, v1.RemoteDesktopSessionState](
+			httpClient,
+			baseURL+DieterServiceGetRemoteDesktopSessionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopSession")),
+			connect.WithClientOptions(opts...),
+		),
+		updateRemoteDesktopSession: connect.NewClient[v1.UpdateRemoteDesktopSessionRequest, v1.RemoteDesktopSessionState](
+			httpClient,
+			baseURL+DieterServiceUpdateRemoteDesktopSessionProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("UpdateRemoteDesktopSession")),
+			connect.WithClientOptions(opts...),
+		),
 		closeRemoteDesktop: connect.NewClient[v1.RemoteDesktopRef, emptypb.Empty](
 			httpClient,
 			baseURL+DieterServiceCloseRemoteDesktopProcedure,
@@ -1175,6 +1195,8 @@ type dieterServiceClient struct {
 	updateRemoteDesktopSettings    *connect.Client[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings]
 	startRemoteDesktop             *connect.Client[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal]
 	sendRemoteDesktopSignal        *connect.Client[v1.RemoteDesktopSignal, emptypb.Empty]
+	getRemoteDesktopSession        *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopSessionState]
+	updateRemoteDesktopSession     *connect.Client[v1.UpdateRemoteDesktopSessionRequest, v1.RemoteDesktopSessionState]
 	closeRemoteDesktop             *connect.Client[v1.RemoteDesktopRef, emptypb.Empty]
 	listSchedules                  *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
 	previewSchedule                *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
@@ -1651,6 +1673,16 @@ func (c *dieterServiceClient) SendRemoteDesktopSignal(ctx context.Context, req *
 	return c.sendRemoteDesktopSignal.CallUnary(ctx, req)
 }
 
+// GetRemoteDesktopSession calls dieter.v1.DieterService.GetRemoteDesktopSession.
+func (c *dieterServiceClient) GetRemoteDesktopSession(ctx context.Context, req *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopSessionState], error) {
+	return c.getRemoteDesktopSession.CallUnary(ctx, req)
+}
+
+// UpdateRemoteDesktopSession calls dieter.v1.DieterService.UpdateRemoteDesktopSession.
+func (c *dieterServiceClient) UpdateRemoteDesktopSession(ctx context.Context, req *connect.Request[v1.UpdateRemoteDesktopSessionRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error) {
+	return c.updateRemoteDesktopSession.CallUnary(ctx, req)
+}
+
 // CloseRemoteDesktop calls dieter.v1.DieterService.CloseRemoteDesktop.
 func (c *dieterServiceClient) CloseRemoteDesktop(ctx context.Context, req *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error) {
 	return c.closeRemoteDesktop.CallUnary(ctx, req)
@@ -1811,6 +1843,8 @@ type DieterServiceHandler interface {
 	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest], *connect.ServerStream[v1.RemoteDesktopSignal]) error
 	SendRemoteDesktopSignal(context.Context, *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error)
+	GetRemoteDesktopSession(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopSessionState], error)
+	UpdateRemoteDesktopSession(context.Context, *connect.Request[v1.UpdateRemoteDesktopSessionRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error)
 	CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error)
 	ListSchedules(context.Context, *connect.Request[v1.ListSchedulesRequest]) (*connect.Response[v1.SchedulesResponse], error)
 	PreviewSchedule(context.Context, *connect.Request[v1.PreviewScheduleRequest]) (*connect.Response[v1.SchedulePreview], error)
@@ -2387,6 +2421,18 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("SendRemoteDesktopSignal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceGetRemoteDesktopSessionHandler := connect.NewUnaryHandler(
+		DieterServiceGetRemoteDesktopSessionProcedure,
+		svc.GetRemoteDesktopSession,
+		connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopSession")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceUpdateRemoteDesktopSessionHandler := connect.NewUnaryHandler(
+		DieterServiceUpdateRemoteDesktopSessionProcedure,
+		svc.UpdateRemoteDesktopSession,
+		connect.WithSchema(dieterServiceMethods.ByName("UpdateRemoteDesktopSession")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceCloseRemoteDesktopHandler := connect.NewUnaryHandler(
 		DieterServiceCloseRemoteDesktopProcedure,
 		svc.CloseRemoteDesktop,
@@ -2629,6 +2675,10 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceStartRemoteDesktopHandler.ServeHTTP(w, r)
 		case DieterServiceSendRemoteDesktopSignalProcedure:
 			dieterServiceSendRemoteDesktopSignalHandler.ServeHTTP(w, r)
+		case DieterServiceGetRemoteDesktopSessionProcedure:
+			dieterServiceGetRemoteDesktopSessionHandler.ServeHTTP(w, r)
+		case DieterServiceUpdateRemoteDesktopSessionProcedure:
+			dieterServiceUpdateRemoteDesktopSessionHandler.ServeHTTP(w, r)
 		case DieterServiceCloseRemoteDesktopProcedure:
 			dieterServiceCloseRemoteDesktopHandler.ServeHTTP(w, r)
 		case DieterServiceListSchedulesProcedure:
@@ -3026,6 +3076,14 @@ func (UnimplementedDieterServiceHandler) StartRemoteDesktop(context.Context, *co
 
 func (UnimplementedDieterServiceHandler) SendRemoteDesktopSignal(context.Context, *connect.Request[v1.RemoteDesktopSignal]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SendRemoteDesktopSignal is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetRemoteDesktopSession(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopSessionState], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetRemoteDesktopSession is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) UpdateRemoteDesktopSession(context.Context, *connect.Request[v1.UpdateRemoteDesktopSessionRequest]) (*connect.Response[v1.RemoteDesktopSessionState], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.UpdateRemoteDesktopSession is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) CloseRemoteDesktop(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[emptypb.Empty], error) {

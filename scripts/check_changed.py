@@ -184,6 +184,11 @@ def plan_checks(root, paths, packages=None):
         if affected:
             add("go", "test", "-race", *affected)
             add("go", "vet", *affected)
+    screens = schema or any(p.startswith(("internal/remotedesktop/", "native/macos-capture/", "scripts/screens-fixture/"))
+                            or "RemoteDesktop" in p or "Features/Screens/" in p for p in code)
+    if screens:
+        add("just", "mac", "screens-native-test")
+        add("just", "mac", "screens-test")
     if any(p.startswith("internal/harness/runtime/") or p in {"config/harnesses.yaml", "just/harness.just"} for p in code):
         add("just", "harness", "test")
     if any(p.startswith(("apps/mac/MarkdownPreview/", "apps/mac/Sources/DieterMac/Resources/MarkdownPreview/")) for p in code):
