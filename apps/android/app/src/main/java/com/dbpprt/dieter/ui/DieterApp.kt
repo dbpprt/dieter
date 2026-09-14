@@ -182,7 +182,11 @@ internal fun usesTabletLayout(availableWidthDp: Float): Boolean =
 @Composable
 fun DieterApp(container: DieterContainer) {
     val model: DieterViewModel = viewModel(
-        factory = DieterViewModel.Factory(container.connectionManager, container.appPreferences),
+        factory = DieterViewModel.Factory(
+            container.connectionManager,
+            container.appPreferences,
+            container.conversationDrafts,
+        ),
     )
     val state by model.state.collectAsStateWithLifecycle()
     val openRequest by container.openRequest.collectAsStateWithLifecycle()

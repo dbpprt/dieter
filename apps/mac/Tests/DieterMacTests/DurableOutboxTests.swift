@@ -153,6 +153,34 @@ private func command(_ id: String) -> DieterOutboxEntry {
     #expect(model.draft.text == "D")
 }
 
+@Test @MainActor func composerDraftTextSurvivesModelRelaunchForCardsAndChats() {
+    let suite = "DieterComposerDrafts.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let card = DieterCore.WorkspaceTarget(endpointID: "machine", projectID: "", conversationID: "card")
+    let chat = DieterCore.WorkspaceTarget(endpointID: "machine", projectID: "", conversationID: "chat")
+
+    var model: ComposerModel? = ComposerModel(defaults: defaults)
+    model?.select(card)
+    model?.draft.text = "Unsent card draft"
+    model?.select(chat)
+    model?.draft.text = "Unsent All Chats draft"
+    model = nil
+
+    let relaunched = ComposerModel(defaults: defaults)
+    relaunched.select(card)
+    #expect(relaunched.draft.text == "Unsent card draft")
+    relaunched.select(chat)
+    #expect(relaunched.draft.text == "Unsent All Chats draft")
+
+    relaunched.draft.acceptSend(revision: relaunched.draft.revision)
+    let afterSend = ComposerModel(defaults: defaults)
+    afterSend.select(chat)
+    #expect(afterSend.draft.text.isEmpty)
+    afterSend.select(card)
+    #expect(afterSend.draft.text == "Unsent card draft")
+}
+
 @Test(arguments: [false, true], [false, true]) @MainActor
 func synchronizedCreateRemovesOptimisticRowBeforeOutboxJournalAcknowledgement(chat: Bool, stableID: Bool) async throws {
     let root = outboxTestRoot()

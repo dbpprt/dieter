@@ -342,9 +342,10 @@ internal fun DieterUiState.applyingScheduleRunPage(response: ScheduleRunsRespons
 internal fun conversationStreamNeedsRestart(activeCardId: String?, selectedCardId: String?): Boolean =
     selectedCardId != null && activeCardId != selectedCardId
 
-class DieterViewModel(
+class DieterViewModel internal constructor(
     private val connectionManager: DieterConnectionManager,
     private val appPreferences: AppPreferences,
+    private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
 ) : ViewModel() {
     private val repository: DieterRepository = connectionManager.repository
     private val _state = MutableStateFlow(DieterUiState())
@@ -386,7 +387,6 @@ class DieterViewModel(
     private var connectionDialogDismissedInterruptionKey: Long? = null
     private var lastRemoteState: State? = null
     private val conversationCache = ConversationUiCache()
-    private val conversationDrafts = ConversationDraftStore()
     private val projectWorkspaceJobs = mutableMapOf<String, Job>()
     private var directoryListingGeneration = 0L
 
@@ -3280,12 +3280,14 @@ class DieterViewModel(
             ?: "Dieter could not complete the request"
     }
 
-    class Factory(
+    internal class Factory(
         private val connectionManager: DieterConnectionManager,
         private val appPreferences: AppPreferences,
+        private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = DieterViewModel(connectionManager, appPreferences) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            DieterViewModel(connectionManager, appPreferences, conversationDrafts) as T
     }
 
     companion object {

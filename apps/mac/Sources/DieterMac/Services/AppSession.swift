@@ -124,7 +124,7 @@ final class AppSession {
             DieterTheme.install(selection: themeSelection)
         }
     }
-    let composer = ComposerModel()
+    let composer: ComposerModel
     var query = "" {
         didSet { if query != oldValue { refreshBoardProjection() } }
     }
@@ -276,6 +276,7 @@ final class AppSession {
         self.cardStartRPCOverride = cardStartRPCOverride
         let environment = environment ?? (restoreSync ? .live() : .testing(defaults: themeDefaultsOverride))
         self.environment = environment
+        composer = ComposerModel(defaults: environment.defaults)
         terminalsModel = TerminalsModel(selectionDefaults: environment.defaults)
         sidebarProjectNavigation = SidebarProjectNavigationPreferences.load(from: environment.defaults)
         connections = ConnectionManager(factory: environment.clients, clock: environment.clock)
