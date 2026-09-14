@@ -380,6 +380,9 @@ for live policy, and `dieter screen refresh SESSION` to refresh an idle screen.
 (kbps) and `--embedded-cursor=true|false`; omitted fields retain their values.
 Limits are adaptive ceilings up to 3840×2160/60 fps. Screen media uses native macOS
 capture and hardware H.264. Input protocol v2 requires matching client and daemon.
+Adaptation preserves idle-screen geometry, reduces cadence before resolution,
+and requires sustained pressure or recovery headroom before resizing. The daemon
+log records session IDs and quality changes with the measured cause.
 All screen commands support global `--machine ID|NAME` with verified direct TLS
 and authenticated relay fallback.
 

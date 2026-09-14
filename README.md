@@ -785,7 +785,12 @@ backend later. Linux capture is currently reported as unsupported.
 
 The viewer follows its window’s pixel size, up to 3840×2160 at 60 fps and 12 Mbps. The host adapts bitrate,
 frame rate and resolution using transport-wide congestion feedback, encoder cost,
-and receiver decode/jitter/loss measurements. Screen options select a display,
+and fresh receiver decode/loss measurements. It smooths estimates, lowers cadence
+before pixels, and requires sustained pressure before resizing (at least 12 seconds
+between reductions). Recovery requires sustained headroom. Idle screens preserve
+their established geometry; deliberate packet pacing is not counted as congestion.
+Bitrate and cadence updates keep the native encoder session alive. The daemon log
+records each quality transition and its cause. Screen options select a display,
 prefer sharp text or smooth motion, or request an idle-screen refresh. Cursor shape,
 hotspot and position travel separately from video, with embedded-cursor fallback.
 Physical USB HID keys, left/right modifiers, pointer dragging and precise scrolling

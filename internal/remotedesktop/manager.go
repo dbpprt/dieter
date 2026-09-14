@@ -392,41 +392,44 @@ func (m *Manager) verifyRTCConfiguration(configuration *gatewayv1.RTCConfigurati
 }
 
 type Session struct {
-	manager             *Manager
-	id                  string
-	clientNonce         string
-	operatorSubject     string
-	offerHash           [sha256.Size]byte
-	pc                  *webrtc.PeerConnection
-	track               *webrtc.TrackLocalStaticSample
-	rtpTrack            *webrtc.TrackLocalStaticRTP
-	packetizer          rtp.Packetizer
-	pacer               *packetPacer
-	estimator           cc.BandwidthEstimator
-	status              *dieterv1.RemoteDesktopSessionState
-	cursor              *dieterv1.RemoteDesktopCursor
-	hostChannel         *webrtc.DataChannel
-	hostSendMu          sync.Mutex
-	lastCursorShapeSent string
-	inputChannels       map[string]bool
-	receiver            *dieterv1.RemoteDesktopReceiverFeedback
-	lastFeedback        time.Time
-	applied             StreamConfiguration
-	configurationMu     sync.Mutex
-	inputMu             sync.Mutex
-	inputStopped        atomic.Bool
-	lastStateApplied    uint64
-	lastOrdinal         uint64
-	transportDrops      uint64
-	waitKeyframe        bool
-	remb                atomic.Int64
-	feedbackSequence    atomic.Uint64
-	source              FrameSource
-	codec               VideoCodec
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	startOnce           sync.Once
-	closeOnce           sync.Once
+	manager               *Manager
+	id                    string
+	clientNonce           string
+	operatorSubject       string
+	offerHash             [sha256.Size]byte
+	pc                    *webrtc.PeerConnection
+	track                 *webrtc.TrackLocalStaticSample
+	rtpTrack              *webrtc.TrackLocalStaticRTP
+	packetizer            rtp.Packetizer
+	pacer                 *packetPacer
+	estimator             cc.BandwidthEstimator
+	status                *dieterv1.RemoteDesktopSessionState
+	cursor                *dieterv1.RemoteDesktopCursor
+	hostChannel           *webrtc.DataChannel
+	hostSendMu            sync.Mutex
+	lastCursorShapeSent   string
+	inputChannels         map[string]bool
+	receiver              *dieterv1.RemoteDesktopReceiverFeedback
+	lastFeedback          time.Time
+	applied               StreamConfiguration
+	configurationRevision uint64
+	measurements          frameMeasurements
+	configurationMu       sync.Mutex
+	inputMu               sync.Mutex
+	inputStopped          atomic.Bool
+	lastStateApplied      uint64
+	lastOrdinal           uint64
+	transportDrops        uint64
+	waitKeyframe          bool
+	remb                  atomic.Int64
+	rembAt                atomic.Int64
+	feedbackSequence      atomic.Uint64
+	source                FrameSource
+	codec                 VideoCodec
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	startOnce             sync.Once
+	closeOnce             sync.Once
 
 	mu                   sync.Mutex
 	closed               bool
@@ -566,6 +569,9 @@ func newSession(manager *Manager, request *dieterv1.StartRemoteDesktopRequest, o
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {
 		case webrtc.PeerConnectionStateConnected:
+			if logger := manager.options.Logger; logger != nil {
+				logger.Info("remote desktop connected", "session", session.id)
+			}
 			session.mu.Lock()
 			session.peerDetachedAt = time.Time{}
 			session.lastFeedback = time.Now()
@@ -891,6 +897,7 @@ func (s *Session) handleRTCP(sender *webrtc.RTPSender) {
 				bitrate := int(value.Bitrate / 1_000)
 				if controlled, ok := source.(ControlledFrameSource); ok && bitrate >= 100 {
 					s.remb.Store(int64(bitrate))
+					s.rembAt.Store(time.Now().UnixNano())
 					if _, adaptive := source.(AdaptiveFrameSource); !adaptive {
 						controlled.SetBitrateKbps(bitrate)
 					}

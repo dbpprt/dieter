@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/interceptor"
@@ -14,13 +15,14 @@ import (
 // producer owns at most one encoded access unit and the helper replaces raw
 // pending frames. Whole-frame admission/recovery happens before packetization.
 type packetPacer struct {
-	mu      sync.Mutex
-	sendMu  sync.Mutex
-	writers map[uint32]interceptor.RTPWriter
-	bitrate int
-	next    time.Time
-	ctx     context.Context
-	cancel  context.CancelFunc
+	mu               sync.Mutex
+	sendMu           sync.Mutex
+	writers          map[uint32]interceptor.RTPWriter
+	bitrate          int
+	next             time.Time
+	ctx              context.Context
+	cancel           context.CancelFunc
+	writeNanoseconds atomic.Int64
 }
 
 func newPacketPacer(rate int) *packetPacer {
@@ -44,12 +46,15 @@ func (p *packetPacer) Write(header *rtp.Header, payload []byte, attributes inter
 	p.mu.Lock()
 	writer := p.writers[header.SSRC]
 	next := p.next
-	rate := p.bitrate
+	// Headroom lets a bounded burst (not an unbounded packet queue) carry
+	// keyframes and lets GCC observe capacity above the encoded media rate.
+	rate := p.bitrate * 5 / 2
 	p.mu.Unlock()
 	if writer == nil {
 		return 0, errors.New("pacer stream not registered")
 	}
-	if delay := time.Until(next); delay > 0 {
+	const burst = 5 * time.Millisecond
+	if delay := time.Until(next.Add(-burst)); delay > 0 {
 		timer := time.NewTimer(delay)
 		select {
 		case <-p.ctx.Done():
@@ -65,7 +70,16 @@ func (p *packetPacer) Write(header *rtp.Header, payload []byte, attributes inter
 	}
 	size := len(payload) + header.MarshalSize() + 48
 	p.mu.Lock()
-	p.next = time.Now().Add(time.Duration(float64(size*8) * float64(time.Second) / float64(max(100_000, rate))))
+	// Keep the virtual send schedule across timer wakeups. Starting a fresh
+	// per-packet timer loses throughput to scheduler latency on fast LANs.
+	now := time.Now()
+	if next.Before(now) {
+		next = now
+	}
+	p.next = next.Add(time.Duration(float64(size*8) * float64(time.Second) / float64(max(100_000, rate))))
 	p.mu.Unlock()
-	return writer.Write(header, payload, attributes)
+	started := time.Now()
+	n, err := writer.Write(header, payload, attributes)
+	p.writeNanoseconds.Add(int64(time.Since(started)))
+	return n, err
 }

@@ -848,7 +848,8 @@ final class RemoteDesktopController {
         let token = generation
         viewportTask = Task { [weak self] in
             try? await DieterTaskSleep.seconds(0.35)
-            guard let self, self.owns(token), !self.sessionID.isEmpty, let connection = self.connection else { return }
+            guard !Task.isCancelled, let self, self.owns(token), self.viewport == value,
+                !self.sessionID.isEmpty, let connection = self.connection else { return }
             self.desiredConfiguration.maxWidth = Int32(value.width)
             self.desiredConfiguration.maxHeight = Int32(value.height)
             self.configurationPending = true
@@ -922,13 +923,13 @@ final class RemoteDesktopController {
                 let previous = self.previousStatistics
                 current["framesPresented"] = Double(self.renderer.framesPresented)
                 func delta(_ key: String) -> Double { max(0, (current[key] ?? 0) - (previous[key] ?? 0)) }
-                let frames = delta("framesDecoded"), emitted = delta("jitterBufferEmittedCount")
+                let frames = delta("framesDecoded")
                 var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
                 feedback.protocolVersion = 2; feedback.inputEpoch = self.binding?.inputEpoch ?? Data()
                 self.feedbackSequence &+= 1; feedback.sequence = self.feedbackSequence
                 feedback.framesPerSecond = delta("framesPresented") / elapsed
                 feedback.decodeMs = frames > 0 ? delta("totalDecodeTime") * 1000 / frames : 0
-                feedback.jitterMs = emitted > 0 ? delta("jitterBufferDelay") * 1000 / emitted : 0
+                feedback.jitterMs = ((inbound["jitter"] as? NSNumber)?.doubleValue ?? 0) * 1000
                 feedback.rttMs = ((candidate["currentRoundTripTime"] as? NSNumber)?.doubleValue ?? 0) * 1000
                 feedback.lossFraction = delta("packetsLost") / max(1, delta("packetsLost") + delta("packetsReceived"))
                 feedback.inputActive = self.inputFocused && NSApp.isActive

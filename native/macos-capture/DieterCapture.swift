@@ -293,7 +293,8 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
                         encoder, key: kVTCompressionPropertyKey_DataRateLimits,
                         value: [config.bitrateKbps * 125, 1] as CFArray)
                 }
-                if config.bitrateKbps > old.bitrateKbps { refresh() }
+                // VideoToolbox applies rate changes to subsequent frames. A
+                // bitrate recovery must not inject another large IDR burst.
             }
             emitState()
         }

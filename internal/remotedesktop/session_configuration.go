@@ -3,7 +3,6 @@ package remotedesktop
 import (
 	"context"
 	"errors"
-	"math"
 	"strings"
 	"time"
 
@@ -92,6 +91,7 @@ func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDes
 			s.mu.Lock()
 			s.status.Configuration = config
 			s.applied = nativeConfiguration(config)
+			s.configurationRevision++
 			s.mu.Unlock()
 		}
 		s.configurationMu.Unlock()
@@ -190,88 +190,115 @@ func (s *Session) nativeEvent(event SourceEvent) {
 	}
 }
 
-// This controller uses network budget plus encode/receiver evidence. Spatial
-// changes require sustained evidence and are slower than bitrate updates.
+// Heartbeats/state remain responsive, while adaptation consumes independent
+// one-second windows and never counts the same frame or receiver report twice.
 func (s *Session) adapt() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-	good, bad := 0, 0
-	lastChange := time.Now()
+	var controller *qualityController
+	var revision, previousDrops uint64
+	evaluated := time.Now()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
 		}
+		now := time.Now()
 		s.mu.Lock()
 		if s.closed {
 			s.mu.Unlock()
 			return
 		}
 		state := proto.Clone(s.status).(*dieterv1.RemoteDesktopSessionState)
-		feedback := s.receiver
-		lastFeedback := s.lastFeedback
-		current := s.applied
+		feedback, lastFeedback, current, currentRevision := s.receiver, s.lastFeedback, s.applied, s.configurationRevision
 		s.mu.Unlock()
 		if s.pc.ConnectionState() != webrtc.PeerConnectionStateConnected {
 			continue
 		}
-		if s.control && !lastFeedback.IsZero() && time.Since(lastFeedback) > 3*time.Second {
+		if s.control && !lastFeedback.IsZero() && now.Sub(lastFeedback) > 3*time.Second {
 			s.close("receiver input heartbeat expired")
 			return
 		}
 		source, ok := s.source.(AdaptiveFrameSource)
-		if !ok {
+		if !ok || state.Configuration == nil {
 			continue
 		}
-		maxConfig := state.Configuration
-		if maxConfig == nil {
-			continue
-		}
-		budget := int(maxConfig.MaxBitrateKbps)
-		if s.estimator != nil {
-			budget = min(budget, int(float64(s.estimator.GetTargetBitrate())*.85/1000))
-		}
-		if remb := s.remb.Load(); remb > 0 {
-			budget = min(budget, int(remb))
-		}
-		budget = max(100, budget)
-		overloaded := state.EncodeMs > 1000/float64(max(1, current.FPS))*.85 || state.QueueMs > 80 || feedback.GetLossFraction() > .05 || feedback.GetJitterMs() > 80
-		if overloaded {
-			bad++
-			good = 0
-		} else {
-			good++
-			bad = 0
-		}
-		desired := adaptiveConfiguration(current, maxConfig, feedback, budget, good, bad, time.Since(lastChange) > 3*time.Second)
-
-		if desired != current {
-			s.configurationMu.Lock()
-			// Reject a policy calculation superseded by a user's configuration update.
+		s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_State{State: state}})
+		if controller == nil || currentRevision != revision {
+			controller = newQualityController(now)
+			revision = currentRevision
+			evaluated = now
+			previousDrops = state.FramesDropped
 			s.mu.Lock()
-			unchanged := proto.Equal(s.status.Configuration, maxConfig)
+			s.measurements = frameMeasurements{}
 			s.mu.Unlock()
-			if unchanged {
-				ctx, cancel := context.WithTimeout(s.ctx, 2*time.Second)
-				err := source.Configure(ctx, desired)
-				cancel()
-				if err == nil {
-					if desired.MaxWidth != current.MaxWidth || desired.MaxHeight != current.MaxHeight {
-						lastChange = time.Now()
-					}
-					s.mu.Lock()
-					s.applied = desired
-					s.mu.Unlock()
+			continue
+		}
+		elapsed := now.Sub(evaluated)
+		if elapsed < time.Second {
+			continue
+		}
+		evaluated = now
+		s.mu.Lock()
+		frames := s.measurements
+		s.measurements = frameMeasurements{}
+		s.mu.Unlock()
+		estimate := 0
+		if s.estimator != nil {
+			estimate = s.estimator.GetTargetBitrate()
+		}
+		budget := receiverBudget(now, int(state.Configuration.MaxBitrateKbps), estimate, int(s.remb.Load()), s.rembAt.Load())
+		drops := uint64(0)
+		if state.FramesDropped >= previousDrops {
+			drops = state.FramesDropped - previousDrops
+		}
+		previousDrops = state.FramesDropped
+		desired, reason := controller.next(now, current, state.Configuration, adaptationSample{
+			frames: frames, feedback: feedback, feedbackAt: lastFeedback, budget: budget,
+			width: int(state.Width), height: int(state.Height), drops: drops, elapsed: elapsed,
+		})
+		if desired == current {
+			continue
+		}
+		s.configurationMu.Lock()
+		s.mu.Lock()
+		unchanged := s.configurationRevision == currentRevision && !s.closed
+		s.mu.Unlock()
+		if unchanged {
+			ctx, cancel := context.WithTimeout(s.ctx, 2*time.Second)
+			err := source.Configure(ctx, desired)
+			cancel()
+			if err == nil {
+				controller.applied(now, current, desired)
+				s.mu.Lock()
+				s.applied = desired
+				s.mu.Unlock()
+				if logger := s.manager.options.Logger; logger != nil {
+					logger.Info("remote desktop quality", "session", s.id, "reason", reason,
+						"width", desired.MaxWidth, "height", desired.MaxHeight, "fps", desired.FPS,
+						"bitrate_kbps", desired.BitrateKbps, "estimate_kbps", estimate/1000,
+						"encode_ms", controller.encodeMS, "decode_ms", controller.decodeMS,
+						"write_ms", controller.writeMS, "loss", feedback.GetLossFraction())
 				}
+			} else if logger := s.manager.options.Logger; logger != nil {
+				logger.Warn("remote desktop configuration failed", "session", s.id, "error", err)
 			}
-			s.configurationMu.Unlock()
 		}
-		state, _ = s.manager.SessionState(s.id)
-		if state != nil {
-			s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_State{State: state}})
-		}
+		s.configurationMu.Unlock()
 	}
+}
+
+func receiverBudget(now time.Time, ceiling, estimate, remb int, rembAt int64) int {
+	budget := ceiling
+	if estimate > 0 {
+		budget = min(budget, estimate*85/100/1000)
+	}
+	// A one-off legacy REMB must not permanently pin a recovered TWCC session.
+	if remb > 0 && rembAt > 0 && now.Sub(time.Unix(0, rembAt)) < 5*time.Second {
+		budget = min(budget, remb)
+	}
+	return max(100, budget)
 }
 
 func (s *Session) streamMedia(sample media.Sample) error {
@@ -327,7 +354,7 @@ func (s *Session) streamMedia(sample media.Sample) error {
 	if boundary != nil {
 		s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_State{State: boundary}})
 	}
-	started := time.Now()
+	writeBefore := s.pacer.writeNanoseconds.Load()
 	for _, packet := range packets {
 		packet.Timestamp = timestamp
 		if err := s.rtpTrack.WriteRTP(packet); err != nil {
@@ -336,7 +363,14 @@ func (s *Session) streamMedia(sample media.Sample) error {
 	}
 	s.mu.Lock()
 	s.status.FramesSent++
-	s.status.QueueMs = float64(time.Since(started)) / float64(time.Millisecond)
+	s.status.QueueMs = float64(s.pacer.writeNanoseconds.Load()-writeBefore) / float64(time.Millisecond)
+	s.measurements.frames++
+	s.measurements.bytes += uint64(len(sample.Data))
+	if !metadata.KeyFrame {
+		s.measurements.interFrames++
+		s.measurements.encodeMS += s.status.EncodeMs
+		s.measurements.writeMS += s.status.QueueMs
+	}
 	s.mu.Unlock()
 	return nil
 }
@@ -360,42 +394,4 @@ func (m *Manager) nativeCapabilities(force bool) (*dieterv1.RemoteDesktopCapabil
 	m.cachedCapabilities = proto.Clone(value).(*dieterv1.RemoteDesktopCapabilities)
 	m.capabilitiesAt = time.Now()
 	return value, nil
-}
-
-func adaptiveConfiguration(current StreamConfiguration, maxConfig *dieterv1.RemoteDesktopStreamConfiguration, feedback *dieterv1.RemoteDesktopReceiverFeedback, budget, good, bad int, resize bool) StreamConfiguration {
-	budget = max(100, min(budget, int(maxConfig.MaxBitrateKbps)))
-	desired := current
-	desired.BitrateKbps = budget
-	if bad >= 2 {
-		desired.FPS = max(10, current.FPS*3/4)
-	} else if good >= 4 {
-		desired.FPS = min(int(maxConfig.MaxFps), current.FPS+10)
-	}
-	// Pixel-rate budget provides a baseline; detail mode spends it on resolution.
-	bpp := .075
-	if maxConfig.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_DETAIL {
-		desired.FPS = min(desired.FPS, 30)
-		bpp = .065
-	}
-	if maxConfig.Quality == dieterv1.RemoteDesktopQuality_REMOTE_DESKTOP_QUALITY_MOTION && good >= 4 {
-		desired.FPS = int(maxConfig.MaxFps)
-	}
-	if feedback.GetDecodeMs() > 1000/float64(max(1, desired.FPS))*.8 {
-		desired.FPS = max(10, desired.FPS*3/4)
-	}
-	desired.FPS = min(int(maxConfig.MaxFps), desired.FPS)
-	if resize {
-		scale := math.Min(1, math.Sqrt(float64(budget*1000)/(float64(maxConfig.MaxWidth)*float64(maxConfig.MaxHeight)*float64(max(1, desired.FPS))*bpp)))
-		// Quantized dimensions avoid encoder restarts on every estimate fluctuation.
-		width := max(640, int(float64(maxConfig.MaxWidth)*scale)/160*160)
-		width = min(width, int(maxConfig.MaxWidth))
-		height := max(180, int(float64(maxConfig.MaxHeight)*float64(width)/float64(maxConfig.MaxWidth))) &^ 1
-		if width < current.MaxWidth*4/5 || (good >= 6 && width > current.MaxWidth*5/4) {
-			desired.MaxWidth, desired.MaxHeight = width, min(height, int(maxConfig.MaxHeight))
-		}
-	}
-	if abs64(int64(desired.BitrateKbps-current.BitrateKbps)) < int64(max(100, current.BitrateKbps/10)) {
-		desired.BitrateKbps = current.BitrateKbps
-	}
-	return desired
 }

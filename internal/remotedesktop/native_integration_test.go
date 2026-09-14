@@ -78,6 +78,17 @@ func TestNativeHelperHardwareLifecycle(t *testing.T) {
 		}
 	}
 	adaptive := source.(AdaptiveFrameSource)
+	// Rate recovery must update the live encoder without an IDR burst or a
+	// display-generation reset. Observe well inside the ten-second IDR interval.
+	if err := adaptive.Configure(ctx, StreamConfiguration{DisplayID: "primary", MaxWidth: 1920, MaxHeight: 1080, FPS: 45, BitrateKbps: 6000}); err != nil {
+		t.Fatal(err)
+	}
+	for range 30 {
+		m := waitFrame(func(FrameMetadata) bool { return true })
+		if m.Generation != first.Generation || m.KeyFrame || m.Width != 1920 || m.Height != 1080 {
+			t.Fatalf("bitrate/FPS-only update reset the hardware stream: %+v", m)
+		}
+	}
 	if err := adaptive.Configure(ctx, StreamConfiguration{DisplayID: "primary", MaxWidth: 1280, MaxHeight: 720, FPS: 15, BitrateKbps: 1500}); err != nil {
 		t.Fatal(err)
 	}

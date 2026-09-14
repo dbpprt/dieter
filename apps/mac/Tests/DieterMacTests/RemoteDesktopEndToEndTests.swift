@@ -49,7 +49,7 @@ private struct ScreenFixtureConnection: Decodable {
     let application = NSApplication.shared
     application.setActivationPolicy(.regular)
     let window = NSWindow(
-        contentRect: NSRect(x: 120, y: 140, width: 960, height: 540), styleMask: [.titled, .closable, .resizable],
+        contentRect: NSRect(x: 40, y: 30, width: 1440, height: 810), styleMask: [.titled, .closable, .resizable],
         backing: .buffered, defer: false)
     window.title = "Dieter screen end-to-end fixture"
     window.isReleasedWhenClosed = false
@@ -95,6 +95,32 @@ private struct ScreenFixtureConnection: Decodable {
         }
         #expect(controller.errorMessage == nil)
         print("Input acknowledgment observed within \(Date().timeIntervalSince(start) * 1000) ms")
+        // Keep moving native pixels flowing through real WebRTC feedback long
+        // enough to exercise both the reduction and recovery cooldowns.
+        let initialWidth = controller.sessionState.width
+        var previousFPS = controller.sessionState.fps
+        var cadenceChanges = 0
+        for _ in 0..<32 {
+            try await Task.sleep(for: .seconds(1))
+            let state = controller.sessionState
+            #expect(state.width >= initialWidth, "An uncongested local stream must preserve pixels")
+            #expect(state.displayGeneration == firstGeneration, "LAN adaptation must not restart capture")
+            #expect(controller.controlActive)
+            if state.fps != previousFPS { cadenceChanges += 1; previousFPS = state.fps }
+        }
+        #expect(cadenceChanges <= 2, "Steady local conditions must not oscillate cadence")
+        print("32-second LAN stability: \(initialWidth) pixels, \(cadenceChanges) cadence changes")
+        // Canceled resize tasks must not submit intermediate geometries.
+        for width in [640, 1120, 1280, 800] {
+            window.setContentSize(CGSize(width: width, height: width * 9 / 16))
+            surface.layoutSubtreeIfNeeded(); surface.layout()
+            await Task.yield()
+        }
+        try await screenWait("coalesced viewport resize", timeout: 5) {
+            controller.sessionState.configuration.maxWidth == 800
+                && controller.sessionState.width == 800
+        }
+        #expect(controller.sessionState.displayGeneration == firstGeneration + 1)
     }
     if real {
         let targetExecutable = try #require(environment["DIETER_TEST_INPUT_TARGET"])
