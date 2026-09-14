@@ -74,7 +74,7 @@ func VerifySignedPair(ctx context.Context, dir string) error {
 		}
 		requirement := fmt.Sprintf(`identifier %q and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = %q`, identifier, TeamID)
 		checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--strict", "-R", requirement, filepath.Join(dir, name)).CombinedOutput()
+		output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--strict", "-R", "="+requirement, filepath.Join(dir, name)).CombinedOutput()
 		cancel()
 		if err != nil {
 			return fmt.Errorf("verify signed %s: %w: %s", name, err, strings.TrimSpace(string(output)))

@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -302,6 +303,12 @@ func TestManagerCapabilityRequiresRealCaptureProbe(t *testing.T) {
 		return errors.New("macOS Screen Recording permission is not granted to Dieter's capture helper")
 	}
 	capabilities := manager.Capabilities(true, false)
+	if runtime.GOOS != "darwin" {
+		if capabilities.GetReady() || capabilities.GetCapturePermission() != "unknown" || !strings.Contains(capabilities.GetUnavailableReason(), "macOS only") {
+			t.Fatalf("unsupported native backend: %#v", capabilities)
+		}
+		return
+	}
 	if capabilities.GetReady() || capabilities.GetCapturePermission() != "denied" {
 		t.Fatalf("capabilities=%#v", capabilities)
 	}

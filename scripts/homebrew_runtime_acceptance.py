@@ -43,7 +43,7 @@ def verify_release(directory):
                        'certificate 1[field.1.2.840.113635.100.6.2.6] exists and '
                        'certificate leaf[field.1.2.840.113635.100.6.1.13] exists and '
                        f'certificate leaf[subject.OU] = "{TEAM}"')
-        run(["/usr/bin/codesign", "--verify", "--strict", "-R", requirement, binary])
+        run(["/usr/bin/codesign", "--verify", "--strict", "-R", "=" + requirement, binary])
         hashes[name] = digest(binary)
     run([directory / "dieter", "screen", "permissions", "--help"])
     return hashes

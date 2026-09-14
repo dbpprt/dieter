@@ -16,7 +16,7 @@ func executableIdentity(options SourceOptions) (string, string) {
 		daemon = resolved
 	}
 	helper, _, _ := CaptureExecutable(options)
-	if resolved, err := filepath.EvalSymlinks(helper); err == nil {
+	if resolved, err := filepath.EvalSymlinks(helper); helper != "" && err == nil {
 		helper = resolved
 	}
 	return daemon, helper

@@ -13,6 +13,32 @@ import (
 	"time"
 )
 
+// Also usable locally with an existing signed release: verifies production
+// requirements without requiring access to the Developer ID private key.
+func TestVerifySignedReference(t *testing.T) {
+	source := os.Getenv("DIETER_SIGNED_REFERENCE")
+	if source == "" {
+		t.Skip("no signed reference supplied")
+	}
+	r := fixtureRuntime(t)
+	r.Verify = nil
+	if err := r.Stage(context.Background(), source); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(r.path("bin/dieter"), os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = file.WriteAt([]byte("corrupt"), 8192)
+	file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifySignedPair(context.Background(), r.path("bin")); err == nil {
+		t.Fatal("accepted corrupted signed code")
+	}
+}
+
 // Release CI runs the actual Developer ID-signed executable in a disposable
 // runtime with synthetic pixels. This catches packaging/exec/CLI integration
 // failures without claiming to prove OS privacy consent on a CI runner.
