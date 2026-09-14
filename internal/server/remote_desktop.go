@@ -15,6 +15,18 @@ import (
 
 const operatorSubjectMetadata = "x-dieter-operator-subject"
 
+func (api *grpcAPI) ProbeRemoteDesktopPermissions(ctx context.Context, request *dieterv1.ProbeRemoteDesktopPermissionsRequest) (*dieterv1.RemoteDesktopPermissionProbe, error) {
+	value, err := api.server.remoteDesktop.ProbePermissions(ctx, request.GetRequestControl())
+	if err != nil {
+		return nil, remoteDesktopFailure(err)
+	}
+	return value, nil
+}
+
+func (api *connectAPI) ProbeRemoteDesktopPermissions(ctx context.Context, request *connect.Request[dieterv1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[dieterv1.RemoteDesktopPermissionProbe], error) {
+	return connectUnary(ctx, request, api.core.ProbeRemoteDesktopPermissions)
+}
+
 type remoteDesktopOperatorKey struct{}
 
 func (api *grpcAPI) GetRemoteDesktopCapabilities(context.Context, *emptypb.Empty) (*dieterv1.RemoteDesktopCapabilities, error) {

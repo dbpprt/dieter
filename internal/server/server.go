@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -279,18 +280,38 @@ func Listen(addr string, data *store.Store, runner harness.Runner, logger *slog.
 // Authentication for remote clients is enforced by the gateway or the
 // daemon's direct TLS listener, never by this loopback-only endpoint.
 func ListenDaemon(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop ...*remotedesktop.Manager) error {
+	var desktop *remotedesktop.Manager
+	if len(remoteDesktop) > 0 {
+		desktop = remoteDesktop[0]
+	}
+	return ListenDaemonReady(ctx, addr, data, runner, logger, desktop, nil)
+}
+
+// ListenDaemonReady acknowledges a runtime activation only after initialization
+// and successful listener binding, before any scheduled work is dispatched.
+func ListenDaemonReady(ctx context.Context, addr string, data *store.Store, runner harness.Runner, logger *slog.Logger, remoteDesktop *remotedesktop.Manager, ready func() error) error {
 	manager, err := newAuthManager(authConfig{}, data)
 	if err != nil {
 		return err
 	}
 	application := newWithAuth(data, logger, runner, manager)
-	if len(remoteDesktop) > 0 && remoteDesktop[0] != nil {
-		application.remoteDesktop = remoteDesktop[0]
+	if remoteDesktop != nil {
+		application.remoteDesktop = remoteDesktop
 	}
-	return run(ctx, addr, data, application, logger)
+	return run(ctx, addr, data, application, logger, ready)
 }
 
-func run(ctx context.Context, addr string, data *store.Store, application *Server, logger *slog.Logger) error {
+func run(ctx context.Context, addr string, data *store.Store, application *Server, logger *slog.Logger, ready ...func() error) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+	if len(ready) > 0 && ready[0] != nil {
+		if err := ready[0](); err != nil {
+			return fmt.Errorf("commit service runtime activation: %w", err)
+		}
+	}
 	reconcile := func() {
 		recovered, recoveryErr := application.app.ReconcileOrphanedTurns()
 		if recoveryErr != nil {
@@ -336,7 +357,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 	httpServer := &http.Server{Addr: addr, Handler: application.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", data.Root)
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- httpServer.ListenAndServe() }()
+	go func() { serveErr <- httpServer.Serve(listener) }()
 	select {
 	case err := <-serveErr:
 		return err

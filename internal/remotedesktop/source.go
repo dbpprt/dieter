@@ -183,7 +183,7 @@ func ProbeControl(ctx context.Context, options SourceOptions, request bool) erro
 		if message == "" {
 			message = err.Error()
 		}
-		return fmt.Errorf("macOS Accessibility permission is not granted to Dieter's capture helper: %s", message)
+		return fmt.Errorf("macOS Accessibility permission is not granted in the running Dieter daemon's capture context: %s", message)
 	}
 	return nil
 }
@@ -257,7 +257,7 @@ func nativeCaptureFailure(err error, diagnostic string) error {
 	if strings.Contains(lower, "not authorized") || strings.Contains(lower, "permission") ||
 		strings.Contains(lower, "denied") || strings.Contains(lower, "user declined") ||
 		strings.Contains(lower, "-3801") {
-		return fmt.Errorf("macOS Screen & System Audio Recording permission is not granted to Dieter's capture helper; run `dieter daemon permissions`: %w", err)
+		return fmt.Errorf("macOS Screen & System Audio Recording permission is not granted to the running Dieter daemon; run `dieter daemon permissions`: %w", err)
 	}
 	if diagnostic != "" {
 		return fmt.Errorf("%w: %s", err, diagnostic)

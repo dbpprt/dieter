@@ -53,6 +53,7 @@ configure-apple-signing *args:
 
 # Test release packaging, signing configuration, and notarization validation.
 test:
+    python3 -m unittest discover -s scripts -p 'homebrew_*_test.py'
     python3 -m unittest discover -s scripts -p '*signing_test.py'
     python3 -m unittest discover -s scripts -p 'macos_*_test.py'
     python3 -m unittest discover -s scripts -p 'ios_release_test.py'
@@ -166,16 +167,8 @@ homebrew:
     gh auth setup-git
     [[ ! -e tap ]] || { echo "tap already exists." >&2; exit 1; }
     git clone "https://github.com/$TAP_REPOSITORY.git" tap
-    ruby tap/scripts/update_formula.rb "$VERSION" "$daemon_sha256"
+    python3 scripts/homebrew_formula.py "$VERSION" "$daemon_sha256" tap/Formula/dieter.rb
     ruby tap/scripts/update_cask.rb "$VERSION" "$app_sha256"
-    ruby -e '
-        path = "tap/Formula/dieter.rb"
-        formula = File.read(path)
-        formula.sub!(/^  depends_on "ffmpeg"\n/, "")
-        formula.sub!(/^  def install$/, "  depends_on \"tmux\"\n\n  def install") unless formula.include?(%q{depends_on "tmux"})
-        formula.sub!(/^    bin\.install "dieter"$/, "    bin.install \"dieter\", \"dieter-capture\"")
-        File.write(path, formula)
-    '
     grep -Fq 'bin.install "dieter", "dieter-capture"' tap/Formula/dieter.rb
     grep -Fq 'depends_on "tmux"' tap/Formula/dieter.rb
     if ! git -C tap diff --quiet -- Formula/dieter.rb Casks/dieter-app.rb; then

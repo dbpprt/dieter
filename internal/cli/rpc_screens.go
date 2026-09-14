@@ -22,6 +22,7 @@ const screenHelp = `Usage: dieter screen <action>
 
 Actions:
   capabilities                 Inspect displays, codecs, permissions, and readiness
+  permissions [--request-control] Probe capture and input permission through the daemon
   settings                     Show screen-viewing and control policy
   update [options]             Enable/disable viewing and remote control
   start --request FILE         Start WebRTC signaling; stream daemon signals as JSON Lines
@@ -46,6 +47,8 @@ func (c *CLI) rpcScreen(args []string) error {
 	switch args[0] {
 	case "capabilities", "capability":
 		return c.rpcScreenCapabilities(args[1:])
+	case "permissions":
+		return c.rpcScreenPermissions(args[1:])
 	case "settings":
 		return c.rpcScreenSettings(args[1:])
 	case "update", "set":
@@ -61,6 +64,36 @@ func (c *CLI) rpcScreen(args []string) error {
 	default:
 		return fmt.Errorf("unknown screen action %q; run `dieter screen --help`", args[0])
 	}
+}
+
+func (c *CLI) rpcScreenPermissions(args []string) error {
+	const usage = `Usage: dieter screen permissions [--request-control]
+
+Ask the running daemon to discard one captured frame and check event-posting
+permission. Prints the daemon/helper paths and both results as JSON. Does not
+inject input or change settings. --request-control explicitly allows a macOS
+Accessibility prompt on the daemon host. Supports --machine ID|NAME.
+`
+	set := flags("screen permissions")
+	request := set.Bool("request-control", false, "allow a control-permission prompt on the daemon host")
+	help, err := parse(set, args, usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 0 {
+		return errors.New(usage)
+	}
+	value, err := c.probeRemoteDesktopPermissions(*request)
+	if err != nil {
+		return err
+	}
+	if err := protoJSONOut(c.Out, value); err != nil {
+		return err
+	}
+	if !value.GetCaptureVerified() || !value.GetControlVerified() {
+		return errors.New("running daemon screen-sharing permissions are not ready")
+	}
+	return nil
 }
 
 func (c *CLI) rpcScreenCapabilities(args []string) error {

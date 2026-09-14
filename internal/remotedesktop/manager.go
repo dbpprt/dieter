@@ -67,6 +67,7 @@ type Options struct {
 }
 
 type Manager struct {
+	permissionMu       sync.Mutex
 	capabilityMu       sync.Mutex
 	cachedCapabilities *dieterv1.RemoteDesktopCapabilities
 	capabilitiesAt     time.Time
@@ -129,7 +130,9 @@ func New(options Options) *Manager {
 }
 
 func (m *Manager) Capabilities(enabled, controlEnabled bool) *dieterv1.RemoteDesktopCapabilities {
-	return m.capabilities(enabled, controlEnabled, false)
+	value := m.capabilities(enabled, controlEnabled, false)
+	value.DaemonExecutable, value.CaptureExecutable = executableIdentity(m.options.Source)
+	return value
 }
 
 func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieterv1.RemoteDesktopCapabilities {
@@ -155,7 +158,7 @@ func (m *Manager) capabilities(enabled, controlEnabled, forceProbe bool) *dieter
 		case !enabled:
 			value.UnavailableReason = "Remote desktop is disabled on this machine"
 		case value.CapturePermission != "granted":
-			value.UnavailableReason = "Screen Recording permission is required for Dieter's capture helper"
+			value.UnavailableReason = "Screen Recording permission is required for the running Dieter daemon; run `dieter daemon permissions` on that machine"
 		case !value.GraphicalSessionActive:
 			value.UnavailableReason = "No graphical session is active"
 		case !value.HardwareEncoderAvailable:

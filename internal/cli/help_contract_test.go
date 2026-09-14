@@ -13,9 +13,10 @@ import (
 // RPC must have an equivalent, documented CLI entry point. Adding an RPC makes
 // this test fail until the feature team wires and documents its CLI operation.
 var rpcCommand = map[string]string{
-	"PresentConversationContent": "card present",
-	"UpdateBoardHostnames":       "board hostnames",
-	"Health":                     "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
+	"ProbeRemoteDesktopPermissions": "screen permissions",
+	"PresentConversationContent":    "card present",
+	"UpdateBoardHostnames":          "board hostnames",
+	"Health":                        "status", "GetRuntimeStatus": "status", "GetMachineInformation": "machine info", "PerformMachineOperation": "machine restart",
 	"GetState": "status", "WatchState": "watch state", "WatchSync": "watch sync", "GetHarnesses": "harness list",
 	"GetSettings": "settings show", "GetSettingsOptions": "settings options", "UpdateSettings": "settings update",
 	"GetPromptSettings": "prompt show", "UpdatePromptSettings": "prompt update", "SetProjectPromptTemplate": "prompt project", "SetBoardPromptTemplate": "prompt board", "PreviewPrompt": "prompt preview",
@@ -64,7 +65,7 @@ func TestEveryDaemonCLICommandHasOfflineHelp(t *testing.T) {
 		"file", "file list", "file read", "file save", "file create", "file move", "file delete",
 		"terminal", "terminal list", "terminal create", "terminal attach", "terminal watch", "terminal write", "terminal resize", "terminal rename", "terminal close",
 		"remote", "remote exec", "remote shell", "remote list", "remote show", "remote watch", "remote wait", "remote attach", "remote input", "remote signal", "remote resize", "remote cancel", "remote close",
-		"screen", "screen capabilities", "screen settings", "screen update", "screen start", "screen signal", "screen close", "screen status", "screen configure", "screen refresh",
+		"screen", "screen capabilities", "screen permissions", "screen settings", "screen update", "screen start", "screen signal", "screen close", "screen status", "screen configure", "screen refresh",
 		"schedule", "schedule create", "schedule list", "schedule show", "schedule preview", "schedule update", "schedule run", "schedule pause", "schedule resume", "schedule runs", "schedule delete",
 		"settings", "settings show", "settings options", "settings update",
 		"prompt", "prompt show", "prompt update", "prompt project", "prompt board", "prompt preview",

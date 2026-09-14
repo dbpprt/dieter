@@ -127,6 +127,9 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
         run: just --yes daemon sign-notarize-macos
+      - name: Verify signed fixed-runtime service
+        if: steps.signing.outputs.enabled == 'true'
+        run: just daemon test-signed-runtime
       - name: Build daemon installer
         if: steps.signing.outputs.enabled == 'true'
         env:

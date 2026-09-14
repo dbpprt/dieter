@@ -49,6 +49,14 @@ func (s *configurableScreenFixture) Configure(_ context.Context, c remotedesktop
 
 func assertScreenSessionCLI(t *testing.T, client *CLI, output *bytes.Buffer, configuration *gatewayv1.RTCConfiguration) {
 	t.Helper()
+	var permissions dieterv1.RemoteDesktopPermissionProbe
+	if err := protojson.Unmarshal([]byte(runDaemonCLI(t, client, output, "screen", "permissions")), &permissions); err != nil {
+		t.Fatal(err)
+	}
+	if !permissions.CaptureVerified || !permissions.ControlVerified || permissions.DaemonExecutable == "" {
+		t.Fatalf("route permission probe: %v", &permissions)
+	}
+	runDaemonCLI(t, client, output, "daemon", "permissions", "--check")
 	runDaemonCLI(t, client, output, "screen", "update", "--enabled=true")
 	if configuration == nil {
 		configuration = &gatewayv1.RTCConfiguration{}

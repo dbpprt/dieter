@@ -5145,11 +5145,58 @@ public nonisolated struct Dieter_V1_RemoteDesktopCapabilities: @unchecked Sendab
     set {_uniqueStorage()._encoder = newValue}
   }
 
+  public var daemonExecutable: String {
+    get {_storage._daemonExecutable}
+    set {_uniqueStorage()._daemonExecutable = newValue}
+  }
+
+  public var captureExecutable: String {
+    get {_storage._captureExecutable}
+    set {_uniqueStorage()._captureExecutable = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct Dieter_V1_ProbeRemoteDesktopPermissionsRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Only explicit interactive onboarding may request an OS permission prompt.
+  public var requestControl: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_RemoteDesktopPermissionProbe: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var platform: String = String()
+
+  public var daemonExecutable: String = String()
+
+  public var captureExecutable: String = String()
+
+  public var captureVerified: Bool = false
+
+  public var controlVerified: Bool = false
+
+  public var captureError: String = String()
+
+  public var controlError: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 public nonisolated struct Dieter_V1_RemoteDesktopDisplay: Sendable {
@@ -16320,7 +16367,7 @@ nonisolated extension Dieter_V1_ResizeExecutionRequest: SwiftProtobuf.Message, S
 
 nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopCapabilities"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}hardware_encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{1}enabled\0\u{1}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}hardware_encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0")
 
   fileprivate class _StorageClass {
     var _platform: String = String()
@@ -16344,6 +16391,8 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
     var _inputProtocolVersion: UInt32 = 0
     var _maxFps: Int32 = 0
     var _encoder: String = String()
+    var _daemonExecutable: String = String()
+    var _captureExecutable: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -16375,6 +16424,8 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       _inputProtocolVersion = source._inputProtocolVersion
       _maxFps = source._maxFps
       _encoder = source._encoder
+      _daemonExecutable = source._daemonExecutable
+      _captureExecutable = source._captureExecutable
     }
   }
 
@@ -16414,6 +16465,8 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         case 19: try { try decoder.decodeSingularUInt32Field(value: &_storage._inputProtocolVersion) }()
         case 20: try { try decoder.decodeSingularInt32Field(value: &_storage._maxFps) }()
         case 21: try { try decoder.decodeSingularStringField(value: &_storage._encoder) }()
+        case 22: try { try decoder.decodeSingularStringField(value: &_storage._daemonExecutable) }()
+        case 23: try { try decoder.decodeSingularStringField(value: &_storage._captureExecutable) }()
         default: break
         }
       }
@@ -16485,6 +16538,12 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       if !_storage._encoder.isEmpty {
         try visitor.visitSingularStringField(value: _storage._encoder, fieldNumber: 21)
       }
+      if !_storage._daemonExecutable.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._daemonExecutable, fieldNumber: 22)
+      }
+      if !_storage._captureExecutable.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._captureExecutable, fieldNumber: 23)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -16515,10 +16574,102 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         if _storage._inputProtocolVersion != rhs_storage._inputProtocolVersion {return false}
         if _storage._maxFps != rhs_storage._maxFps {return false}
         if _storage._encoder != rhs_storage._encoder {return false}
+        if _storage._daemonExecutable != rhs_storage._daemonExecutable {return false}
+        if _storage._captureExecutable != rhs_storage._captureExecutable {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_ProbeRemoteDesktopPermissionsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ProbeRemoteDesktopPermissionsRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}request_control\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.requestControl) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.requestControl != false {
+      try visitor.visitSingularBoolField(value: self.requestControl, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_ProbeRemoteDesktopPermissionsRequest, rhs: Dieter_V1_ProbeRemoteDesktopPermissionsRequest) -> Bool {
+    if lhs.requestControl != rhs.requestControl {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopPermissionProbe: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopPermissionProbe"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}capture_verified\0\u{3}control_verified\0\u{3}capture_error\0\u{3}control_error\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.platform) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.daemonExecutable) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.captureExecutable) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.captureVerified) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.controlVerified) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.captureError) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.controlError) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.platform.isEmpty {
+      try visitor.visitSingularStringField(value: self.platform, fieldNumber: 1)
+    }
+    if !self.daemonExecutable.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonExecutable, fieldNumber: 2)
+    }
+    if !self.captureExecutable.isEmpty {
+      try visitor.visitSingularStringField(value: self.captureExecutable, fieldNumber: 3)
+    }
+    if self.captureVerified != false {
+      try visitor.visitSingularBoolField(value: self.captureVerified, fieldNumber: 4)
+    }
+    if self.controlVerified != false {
+      try visitor.visitSingularBoolField(value: self.controlVerified, fieldNumber: 5)
+    }
+    if !self.captureError.isEmpty {
+      try visitor.visitSingularStringField(value: self.captureError, fieldNumber: 6)
+    }
+    if !self.controlError.isEmpty {
+      try visitor.visitSingularStringField(value: self.controlError, fieldNumber: 7)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopPermissionProbe, rhs: Dieter_V1_RemoteDesktopPermissionProbe) -> Bool {
+    if lhs.platform != rhs.platform {return false}
+    if lhs.daemonExecutable != rhs.daemonExecutable {return false}
+    if lhs.captureExecutable != rhs.captureExecutable {return false}
+    if lhs.captureVerified != rhs.captureVerified {return false}
+    if lhs.controlVerified != rhs.controlVerified {return false}
+    if lhs.captureError != rhs.captureError {return false}
+    if lhs.controlError != rhs.controlError {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

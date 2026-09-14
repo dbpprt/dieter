@@ -90,6 +90,10 @@ package-macos:
     cp LICENSE "{{ mac_package }}/LICENSE"
     cp scripts/install.sh "{{ mac_package }}/install.sh"
 
+# Run the signed daemon from a disposable fixed runtime before publishing it.
+test-signed-runtime:
+    DIETER_SIGNED_SERVICE_SOURCE="$PWD/{{ mac_package }}" go test ./internal/serviceruntime -run '^TestSignedServiceRuntimeSmoke$' -count=1 -v
+
 # Sign and notarize the staged macOS daemon and capture helper.
 [confirm]
 sign-notarize-macos:

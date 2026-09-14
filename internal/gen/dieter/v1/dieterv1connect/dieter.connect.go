@@ -287,6 +287,9 @@ const (
 	// DieterServiceGetRemoteDesktopCapabilitiesProcedure is the fully-qualified name of the
 	// DieterService's GetRemoteDesktopCapabilities RPC.
 	DieterServiceGetRemoteDesktopCapabilitiesProcedure = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
+	// DieterServiceProbeRemoteDesktopPermissionsProcedure is the fully-qualified name of the
+	// DieterService's ProbeRemoteDesktopPermissions RPC.
+	DieterServiceProbeRemoteDesktopPermissionsProcedure = "/dieter.v1.DieterService/ProbeRemoteDesktopPermissions"
 	// DieterServiceGetRemoteDesktopSettingsProcedure is the fully-qualified name of the DieterService's
 	// GetRemoteDesktopSettings RPC.
 	DieterServiceGetRemoteDesktopSettingsProcedure = "/dieter.v1.DieterService/GetRemoteDesktopSettings"
@@ -445,6 +448,9 @@ type DieterServiceClient interface {
 	CancelExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error)
 	CloseExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[emptypb.Empty], error)
 	GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error)
+	// Explicit, bounded permission test performed by the running daemon.
+	// Discards one encoded frame and never injects input or changes settings.
+	ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error)
 	GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest]) (*connect.ServerStreamForClient[v1.RemoteDesktopSignal], error)
@@ -1007,6 +1013,12 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopCapabilities")),
 			connect.WithClientOptions(opts...),
 		),
+		probeRemoteDesktopPermissions: connect.NewClient[v1.ProbeRemoteDesktopPermissionsRequest, v1.RemoteDesktopPermissionProbe](
+			httpClient,
+			baseURL+DieterServiceProbeRemoteDesktopPermissionsProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ProbeRemoteDesktopPermissions")),
+			connect.WithClientOptions(opts...),
+		),
 		getRemoteDesktopSettings: connect.NewClient[emptypb.Empty, v1.RemoteDesktopSettings](
 			httpClient,
 			baseURL+DieterServiceGetRemoteDesktopSettingsProcedure,
@@ -1191,6 +1203,7 @@ type dieterServiceClient struct {
 	cancelExecution                *connect.Client[v1.ExecutionRef, v1.Execution]
 	closeExecution                 *connect.Client[v1.ExecutionRef, emptypb.Empty]
 	getRemoteDesktopCapabilities   *connect.Client[emptypb.Empty, v1.RemoteDesktopCapabilities]
+	probeRemoteDesktopPermissions  *connect.Client[v1.ProbeRemoteDesktopPermissionsRequest, v1.RemoteDesktopPermissionProbe]
 	getRemoteDesktopSettings       *connect.Client[emptypb.Empty, v1.RemoteDesktopSettings]
 	updateRemoteDesktopSettings    *connect.Client[v1.UpdateRemoteDesktopSettingsRequest, v1.RemoteDesktopSettings]
 	startRemoteDesktop             *connect.Client[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal]
@@ -1653,6 +1666,11 @@ func (c *dieterServiceClient) GetRemoteDesktopCapabilities(ctx context.Context, 
 	return c.getRemoteDesktopCapabilities.CallUnary(ctx, req)
 }
 
+// ProbeRemoteDesktopPermissions calls dieter.v1.DieterService.ProbeRemoteDesktopPermissions.
+func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context, req *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error) {
+	return c.probeRemoteDesktopPermissions.CallUnary(ctx, req)
+}
+
 // GetRemoteDesktopSettings calls dieter.v1.DieterService.GetRemoteDesktopSettings.
 func (c *dieterServiceClient) GetRemoteDesktopSettings(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error) {
 	return c.getRemoteDesktopSettings.CallUnary(ctx, req)
@@ -1839,6 +1857,9 @@ type DieterServiceHandler interface {
 	CancelExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[v1.Execution], error)
 	CloseExecution(context.Context, *connect.Request[v1.ExecutionRef]) (*connect.Response[emptypb.Empty], error)
 	GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error)
+	// Explicit, bounded permission test performed by the running daemon.
+	// Discards one encoded frame and never injects input or changes settings.
+	ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error)
 	GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	UpdateRemoteDesktopSettings(context.Context, *connect.Request[v1.UpdateRemoteDesktopSettingsRequest]) (*connect.Response[v1.RemoteDesktopSettings], error)
 	StartRemoteDesktop(context.Context, *connect.Request[v1.StartRemoteDesktopRequest], *connect.ServerStream[v1.RemoteDesktopSignal]) error
@@ -2397,6 +2418,12 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopCapabilities")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceProbeRemoteDesktopPermissionsHandler := connect.NewUnaryHandler(
+		DieterServiceProbeRemoteDesktopPermissionsProcedure,
+		svc.ProbeRemoteDesktopPermissions,
+		connect.WithSchema(dieterServiceMethods.ByName("ProbeRemoteDesktopPermissions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceGetRemoteDesktopSettingsHandler := connect.NewUnaryHandler(
 		DieterServiceGetRemoteDesktopSettingsProcedure,
 		svc.GetRemoteDesktopSettings,
@@ -2667,6 +2694,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceCloseExecutionHandler.ServeHTTP(w, r)
 		case DieterServiceGetRemoteDesktopCapabilitiesProcedure:
 			dieterServiceGetRemoteDesktopCapabilitiesHandler.ServeHTTP(w, r)
+		case DieterServiceProbeRemoteDesktopPermissionsProcedure:
+			dieterServiceProbeRemoteDesktopPermissionsHandler.ServeHTTP(w, r)
 		case DieterServiceGetRemoteDesktopSettingsProcedure:
 			dieterServiceGetRemoteDesktopSettingsHandler.ServeHTTP(w, r)
 		case DieterServiceUpdateRemoteDesktopSettingsProcedure:
@@ -3060,6 +3089,10 @@ func (UnimplementedDieterServiceHandler) CloseExecution(context.Context, *connec
 
 func (UnimplementedDieterServiceHandler) GetRemoteDesktopCapabilities(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopCapabilities], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetRemoteDesktopCapabilities is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ProbeRemoteDesktopPermissions is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) GetRemoteDesktopSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.RemoteDesktopSettings], error) {

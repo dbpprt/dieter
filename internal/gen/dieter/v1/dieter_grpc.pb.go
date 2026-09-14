@@ -109,6 +109,7 @@ const (
 	DieterService_CancelExecution_FullMethodName                = "/dieter.v1.DieterService/CancelExecution"
 	DieterService_CloseExecution_FullMethodName                 = "/dieter.v1.DieterService/CloseExecution"
 	DieterService_GetRemoteDesktopCapabilities_FullMethodName   = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
+	DieterService_ProbeRemoteDesktopPermissions_FullMethodName  = "/dieter.v1.DieterService/ProbeRemoteDesktopPermissions"
 	DieterService_GetRemoteDesktopSettings_FullMethodName       = "/dieter.v1.DieterService/GetRemoteDesktopSettings"
 	DieterService_UpdateRemoteDesktopSettings_FullMethodName    = "/dieter.v1.DieterService/UpdateRemoteDesktopSettings"
 	DieterService_StartRemoteDesktop_FullMethodName             = "/dieter.v1.DieterService/StartRemoteDesktop"
@@ -239,6 +240,9 @@ type DieterServiceClient interface {
 	CancelExecution(ctx context.Context, in *ExecutionRef, opts ...grpc.CallOption) (*Execution, error)
 	CloseExecution(ctx context.Context, in *ExecutionRef, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	GetRemoteDesktopCapabilities(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoteDesktopCapabilities, error)
+	// Explicit, bounded permission test performed by the running daemon.
+	// Discards one encoded frame and never injects input or changes settings.
+	ProbeRemoteDesktopPermissions(ctx context.Context, in *ProbeRemoteDesktopPermissionsRequest, opts ...grpc.CallOption) (*RemoteDesktopPermissionProbe, error)
 	GetRemoteDesktopSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoteDesktopSettings, error)
 	UpdateRemoteDesktopSettings(ctx context.Context, in *UpdateRemoteDesktopSettingsRequest, opts ...grpc.CallOption) (*RemoteDesktopSettings, error)
 	StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error)
@@ -1208,6 +1212,16 @@ func (c *dieterServiceClient) GetRemoteDesktopCapabilities(ctx context.Context, 
 	return out, nil
 }
 
+func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context, in *ProbeRemoteDesktopPermissionsRequest, opts ...grpc.CallOption) (*RemoteDesktopPermissionProbe, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoteDesktopPermissionProbe)
+	err := c.cc.Invoke(ctx, DieterService_ProbeRemoteDesktopPermissions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dieterServiceClient) GetRemoteDesktopSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*RemoteDesktopSettings, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemoteDesktopSettings)
@@ -1480,6 +1494,9 @@ type DieterServiceServer interface {
 	CancelExecution(context.Context, *ExecutionRef) (*Execution, error)
 	CloseExecution(context.Context, *ExecutionRef) (*emptypb.Empty, error)
 	GetRemoteDesktopCapabilities(context.Context, *emptypb.Empty) (*RemoteDesktopCapabilities, error)
+	// Explicit, bounded permission test performed by the running daemon.
+	// Discards one encoded frame and never injects input or changes settings.
+	ProbeRemoteDesktopPermissions(context.Context, *ProbeRemoteDesktopPermissionsRequest) (*RemoteDesktopPermissionProbe, error)
 	GetRemoteDesktopSettings(context.Context, *emptypb.Empty) (*RemoteDesktopSettings, error)
 	UpdateRemoteDesktopSettings(context.Context, *UpdateRemoteDesktopSettingsRequest) (*RemoteDesktopSettings, error)
 	StartRemoteDesktop(*StartRemoteDesktopRequest, grpc.ServerStreamingServer[RemoteDesktopSignal]) error
@@ -1771,6 +1788,9 @@ func (UnimplementedDieterServiceServer) CloseExecution(context.Context, *Executi
 }
 func (UnimplementedDieterServiceServer) GetRemoteDesktopCapabilities(context.Context, *emptypb.Empty) (*RemoteDesktopCapabilities, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRemoteDesktopCapabilities not implemented")
+}
+func (UnimplementedDieterServiceServer) ProbeRemoteDesktopPermissions(context.Context, *ProbeRemoteDesktopPermissionsRequest) (*RemoteDesktopPermissionProbe, error) {
+	return nil, status.Error(codes.Unimplemented, "method ProbeRemoteDesktopPermissions not implemented")
 }
 func (UnimplementedDieterServiceServer) GetRemoteDesktopSettings(context.Context, *emptypb.Empty) (*RemoteDesktopSettings, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetRemoteDesktopSettings not implemented")
@@ -3398,6 +3418,24 @@ func _DieterService_GetRemoteDesktopCapabilities_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DieterService_ProbeRemoteDesktopPermissions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProbeRemoteDesktopPermissionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ProbeRemoteDesktopPermissions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ProbeRemoteDesktopPermissions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ProbeRemoteDesktopPermissions(ctx, req.(*ProbeRemoteDesktopPermissionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DieterService_GetRemoteDesktopSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
 	if err := dec(in); err != nil {
@@ -3999,6 +4037,10 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRemoteDesktopCapabilities",
 			Handler:    _DieterService_GetRemoteDesktopCapabilities_Handler,
+		},
+		{
+			MethodName: "ProbeRemoteDesktopPermissions",
+			Handler:    _DieterService_ProbeRemoteDesktopPermissions_Handler,
 		},
 		{
 			MethodName: "GetRemoteDesktopSettings",

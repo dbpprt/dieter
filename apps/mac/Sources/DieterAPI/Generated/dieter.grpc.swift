@@ -1178,6 +1178,19 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ProbeRemoteDesktopPermissions" metadata.
+        public enum ProbeRemoteDesktopPermissions: Sendable {
+            /// Request type for "ProbeRemoteDesktopPermissions".
+            public typealias Input = Dieter_V1_ProbeRemoteDesktopPermissionsRequest
+            /// Response type for "ProbeRemoteDesktopPermissions".
+            public typealias Output = Dieter_V1_RemoteDesktopPermissionProbe
+            /// Descriptor for "ProbeRemoteDesktopPermissions".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ProbeRemoteDesktopPermissions",
+                type: .unary
+            )
+        }
         /// Namespace for "GetRemoteDesktopSettings" metadata.
         public enum GetRemoteDesktopSettings: Sendable {
             /// Request type for "GetRemoteDesktopSettings".
@@ -1464,6 +1477,7 @@ public enum Dieter_V1_DieterService: Sendable {
             CancelExecution.descriptor,
             CloseExecution.descriptor,
             GetRemoteDesktopCapabilities.descriptor,
+            ProbeRemoteDesktopPermissions.descriptor,
             GetRemoteDesktopSettings.descriptor,
             UpdateRemoteDesktopSettings.descriptor,
             StartRemoteDesktop.descriptor,
@@ -3231,6 +3245,30 @@ extension Dieter_V1_DieterService {
             deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopCapabilities>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopCapabilities>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ProbeRemoteDesktopPermissions" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Explicit, bounded permission test performed by the running daemon.
+        /// > Discards one encoded frame and never injects input or changes settings.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopPermissionProbe` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func probeRemoteDesktopPermissions<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopPermissionProbe>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "GetRemoteDesktopSettings" method.
@@ -6237,6 +6275,41 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "ProbeRemoteDesktopPermissions" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Explicit, bounded permission test performed by the running daemon.
+        /// > Discards one encoded frame and never injects input or changes settings.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopPermissionProbe` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func probeRemoteDesktopPermissions<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopPermissionProbe>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ProbeRemoteDesktopPermissions.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "GetRemoteDesktopSettings" method.
         ///
         /// - Parameters:
@@ -8942,6 +9015,36 @@ extension Dieter_V1_DieterService.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<SwiftProtobuf.Google_Protobuf_Empty>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopCapabilities>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ProbeRemoteDesktopPermissions" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Explicit, bounded permission test performed by the running daemon.
+    /// > Discards one encoded frame and never injects input or changes settings.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ProbeRemoteDesktopPermissionsRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func probeRemoteDesktopPermissions<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.probeRemoteDesktopPermissions(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopPermissionProbe>(),
             options: options,
             onResponse: handleResponse
         )
@@ -11931,6 +12034,40 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.getRemoteDesktopCapabilities(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ProbeRemoteDesktopPermissions" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Explicit, bounded permission test performed by the running daemon.
+    /// > Discards one encoded frame and never injects input or changes settings.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func probeRemoteDesktopPermissions<Result>(
+        _ message: Dieter_V1_ProbeRemoteDesktopPermissionsRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopPermissionProbe>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ProbeRemoteDesktopPermissionsRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.probeRemoteDesktopPermissions(
             request: request,
             options: options,
             onResponse: handleResponse

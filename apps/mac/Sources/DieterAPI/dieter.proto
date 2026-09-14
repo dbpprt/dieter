@@ -128,6 +128,10 @@ service DieterService {
 
   rpc GetRemoteDesktopCapabilities(google.protobuf.Empty)
       returns (RemoteDesktopCapabilities);
+  // Explicit, bounded permission test performed by the running daemon.
+  // Discards one encoded frame and never injects input or changes settings.
+  rpc ProbeRemoteDesktopPermissions(ProbeRemoteDesktopPermissionsRequest)
+      returns (RemoteDesktopPermissionProbe);
   rpc GetRemoteDesktopSettings(google.protobuf.Empty)
       returns (RemoteDesktopSettings);
   rpc UpdateRemoteDesktopSettings(UpdateRemoteDesktopSettingsRequest)
@@ -1657,6 +1661,23 @@ message RemoteDesktopCapabilities {
   uint32 input_protocol_version = 19;
   int32 max_fps = 20;
   string encoder = 21;
+  string daemon_executable = 22;
+  string capture_executable = 23;
+}
+
+message ProbeRemoteDesktopPermissionsRequest {
+  // Only explicit interactive onboarding may request an OS permission prompt.
+  bool request_control = 1;
+}
+
+message RemoteDesktopPermissionProbe {
+  string platform = 1;
+  string daemon_executable = 2;
+  string capture_executable = 3;
+  bool capture_verified = 4;
+  bool control_verified = 5;
+  string capture_error = 6;
+  string control_error = 7;
 }
 
 message RemoteDesktopDisplay {

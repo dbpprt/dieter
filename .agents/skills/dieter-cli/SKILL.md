@@ -62,6 +62,13 @@ The update is detached, non-interactive, and logged on the target under
 `DIETER_HOME/logs/update.log`; a transport disconnect does not imply failure
 because the daemon service intentionally restarts and reconnects.
 
+Homebrew stages signed daemon/helper releases under
+`$(brew --prefix)/var/dieter/service`; the service runs real files at its fixed
+`bin` path. `brew upgrade` preserves the running pair. `brew services restart`
+activates the staged release; startup failure before listener readiness rolls
+back on the next service start. User data remains under `DIETER_HOME`. Never
+invoke the internal `__service-stage` packaging command during normal operation.
+
 The initial task should supply an exact card ID. Never guess one. Resolve names
 only for interactive discovery, then retain returned IDs for mutation.
 
@@ -380,6 +387,17 @@ Screen sharing uses explicit daemon policy plus WebRTC signaling. Check
 `dieter screen capabilities` and `dieter screen settings`; do not enable capture
 or control, start a session, restart/shut down a machine, revoke enrollment, or
 delete data without explicit authorization.
+
+For authorized permission diagnostics, `dieter screen permissions` returns JSON
+with the actual daemon/helper paths, capture verification, and input permission.
+It discards one encoded frame and never injects input. Exit is nonzero if either
+check fails. `--request-control` explicitly allows an Accessibility prompt on the
+daemon host. `dieter daemon permissions --check` provides the same service-side
+check as text. Both support global `--machine ID|NAME` and never fall back to a
+helper launched by the CLI. Interactive `dieter daemon permissions` guides the
+user and enables viewing/control via RPC only after verification. It does not
+restart the service. Old Cellar grants require a one-time grant to the new fixed
+daemon path; follow an OS-requested restart with another service-side check.
 
 ## Command discipline
 

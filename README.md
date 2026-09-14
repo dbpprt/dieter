@@ -63,9 +63,39 @@ brew install dbpprt/tap/dieter
 dieter setup ~/Development/my-project
 ```
 
-`dieter setup` enrolls the machine, registers the project, verifies optional
-screen-sharing permissions, and starts the daemon as a Homebrew service. Add
+`dieter setup` enrolls the machine, registers the project, starts the daemon as
+a Homebrew service, and verifies optional screen-sharing permissions through
+that running service. Add
 `--skip-screen-sharing` on hosts that should never capture their display.
+
+The Homebrew service runs signed, regular executable files at
+`$(brew --prefix)/var/dieter/service/bin/{dieter,dieter-capture}`. The CLI remains
+in the Cellar; all user data stays in `DIETER_HOME` (default `~/.dieter`).
+`brew upgrade dieter` verifies and stages a release without modifying the running
+pair. `brew services restart dieter` activates it at the same real paths, before
+workers or capture start. An activation that fails before the API listener binds
+is rolled back on the next service start. The installation lock and service
+lifetime lock prevent partial-pair activation and concurrent service ownership.
+
+When upgrading from the old Cellar service, restart it once to update its launch
+definition, then run `dieter daemon permissions`. Grant the fixed **daemon** path
+Screen & System Audio Recording and Accessibility access. Existing grants for
+versioned Cellar paths do not transfer. Signing requirements remain compatible
+across releases; grant retention must be verified with the signed upgrade
+acceptance procedure in [the runtime guide](docs/homebrew-service-runtime.md).
+
+`dieter daemon permissions --check` and `dieter screen permissions` always query
+the running daemon (also with global `--machine ID|NAME`). They discard a captured
+frame and check input permission without injecting input or changing settings.
+They fail when the daemon is unreachable; the caller's own permissions never
+substitute for the service's. Onboarding does not automatically restart a daemon.
+If macOS asks for a restart after granting access, restart the service explicitly
+and repeat the check. Keychain access is separate from these screen permissions.
+
+Stop the service before uninstalling with Homebrew. Homebrew preserves `var`, so
+the fixed runtime remains after uninstall alongside the separately preserved
+user data. Remove `$(brew --prefix)/var/dieter/service` only after stopping the
+service and deciding that this installation is no longer needed.
 
 Install the native Mac app separately:
 
@@ -767,6 +797,7 @@ The CLI works on local, verified direct TLS and authenticated relay routes:
 
 ```sh
 dieter screen capabilities
+dieter screen permissions
 dieter screen status SESSION
 dieter screen configure SESSION --quality detail --fps 30 --bitrate 8000
 dieter screen configure SESSION --display DISPLAY_ID
