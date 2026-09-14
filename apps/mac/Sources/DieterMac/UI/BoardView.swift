@@ -1138,7 +1138,7 @@ struct LaneColumn: View {
                 .accessibilityIdentifier("lane-sort.\(lane.id)")
                 .smokeTarget("lane-sort.\(lane.id)")
                 Button {
-                    store.createConversationPresented = true
+                    store.presentNewCard(in: lane.id)
                 } label: {
                     Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(DieterTheme.tertiary)
@@ -1146,23 +1146,28 @@ struct LaneColumn: View {
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
-                .quickHelp("New card")
-                .accessibilityLabel("New card")
+                .quickHelp("New card in \(lane.name)")
+                .accessibilityLabel("New card in \(lane.name)")
+                .accessibilityIdentifier("lane-new-card.\(lane.id)")
             }.padding(.horizontal, 6).padding(.top, 2)
-            if cards.isEmpty {
-                VStack(spacing: 7) {
-                    Image(systemName: isDropTargeted ? "arrow.down.circle.fill" : "arrow.down.circle").font(
-                        .system(size: 17))
-                    Text(isDropTargeted ? "Release to move" : "Drop cards here")
+            VStack(spacing: 0) {
+                if cards.isEmpty {
+                    VStack(spacing: 7) {
+                        Image(systemName: isDropTargeted ? "arrow.down.circle.fill" : "arrow.down.circle").font(
+                            .system(size: 17))
+                        Text(isDropTargeted ? "Release to move" : "Drop cards here")
+                    }
+                    .font(.caption).foregroundStyle(isDropTargeted ? DieterTheme.shell : DieterTheme.tertiary)
+                    .frame(maxWidth: .infinity).padding(.vertical, 28)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border, style: .init(dash: [5])))
+                    Spacer(minLength: 0)
+                } else {
+                    BoardLaneList(laneID: lane.id, cards: cards, sortDirection: sortDirection)
                 }
-                .font(.caption).foregroundStyle(isDropTargeted ? DieterTheme.shell : DieterTheme.tertiary)
-                .frame(maxWidth: .infinity).padding(.vertical, 28)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border, style: .init(dash: [5])))
-                Spacer(minLength: 0)
-            } else {
-                BoardLaneList(laneID: lane.id, cards: cards, sortDirection: sortDirection)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(BoardLaneDoubleClickHandler { store.presentNewCard(in: lane.id) })
         }
         .padding(10)
         .background(

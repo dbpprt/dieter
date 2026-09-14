@@ -40,6 +40,7 @@ struct DieterRootView: View {
     @Environment(DieterStore.self) private var store
     @AppStorage(SidebarSizing.storageKey, store: SidebarProjectNavigationPreferences.applicationDefaults())
     private var navigationWidth = Double(SidebarSizing.defaultWidth)
+    @State private var showsConnectionNotice = false
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
 
     private var showsSynchronizedWorkspace: Bool {
@@ -84,13 +85,6 @@ struct DieterRootView: View {
 
         } detail: {
             VStack(spacing: 0) {
-                if workspaceSurfaceTreatment.showsNotice {
-                    WorkspaceFreshnessBanner(
-                        freshness: store.workspaceFreshness,
-                        lastSyncedAt: store.lastSyncedAt
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
                 Group {
                     switch store.section {
                     case .board:
@@ -132,6 +126,24 @@ struct DieterRootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationSmokeDestination(store.section)
+            .overlay(alignment: .topTrailing) {
+                if showsConnectionNotice {
+                    WorkspaceFreshnessBanner(
+                        freshness: store.workspaceFreshness, lastSyncedAt: store.lastSyncedAt
+                    )
+                    .frame(maxWidth: 600)
+                    .dieterToastChrome()
+                    .padding(12)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+                }
+            }
+            .task(id: workspaceSurfaceTreatment) {
+                showsConnectionNotice = false
+                guard workspaceSurfaceTreatment.showsNotice else { return }
+                do { try await Task.sleep(for: .milliseconds(750)) } catch { return }
+                showsConnectionNotice = true
+            }
         }
         .navigationSplitViewStyle(.balanced)
         .background {
@@ -175,11 +187,6 @@ struct DieterRootView: View {
                     }
                 }
             }
-        }
-        .overlay(alignment: .topTrailing) {
-            MachineDeliveryToastStack()
-                .padding(.top, 14)
-                .padding(.trailing, 14)
         }
         .overlay {
             if !store.phase.isConnected && (!store.hasLoadedWorkspace || store.phase.needsConnectionOverlay) {
@@ -257,12 +264,13 @@ struct WorkspaceFreshnessBanner: View {
                         .accessibilityHidden(true)
                 }
             }
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-            Text(detail)
-                .font(.system(size: 10.5, weight: .regular))
-                .foregroundStyle(DieterTheme.tertiary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 11, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 12)
             Text(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: now))
                 .font(.system(size: 10, weight: .medium))

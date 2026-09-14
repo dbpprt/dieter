@@ -13,6 +13,7 @@ import UserNotifications
 // Application lifetime and feature composition. Window selection and feature
 // effects have dedicated owners; compatibility accessors live separately.
 final class AppSession {
+    @ObservationIgnored let remoteDocumentCopies = RemoteDocumentCopies()
     let quickTaskForm = QuickTaskFormState()
     var lastUsedChatID: String?
     let cardStartRPCOverride: (any DieterCardStartRPC)?
@@ -55,6 +56,7 @@ final class AppSession {
         }
     }
     var endpoints: [DieterEndpoint]
+    @ObservationIgnored var machineDirectoryRevision: UInt64 = 0
     var health = Dieter_V1_HealthResponse()
     var runtime = Dieter_V1_RuntimeStatus()
     let replica = WorkspaceReplica()

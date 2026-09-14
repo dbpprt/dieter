@@ -32,6 +32,10 @@ extension EnvironmentValues {
     var externalResolver: ConversationLinkExternalResolver?
     var openExternal: @MainActor (URL, URL?) -> Void = ConversationLinkExternalTarget.open
     var revealExternal: @MainActor (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) }
+    var reportError: @MainActor (String) -> Void = {
+        NSApp.presentError(NSError(domain: "Dieter.FileLink", code: 1, userInfo: [NSLocalizedDescriptionKey: $0]))
+    }
+    private(set) var openingTask: Task<Void, Never>?
     private var linkMenu: ConversationLinkMenuSession?
 
     func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
@@ -59,11 +63,20 @@ extension EnvironmentValues {
     }
 
     func activate(_ link: Any, modifiers: NSEvent.ModifierFlags = []) -> Bool {
-        guard !modifiers.contains(.command), let handler else { return false }
         guard let url = Self.url(link) else { return false }
-        // In particular, do not resolve relative file links against this Mac's
-        // process directory; the conversation knows its machine and worktree.
-        return handler(url)
+        if !modifiers.contains(.command), handler?(url) == true { return true }
+        guard let resolver = externalResolver else { return false }
+        // The pane may be disabled, and Command-click deliberately opens an
+        // external app. Both paths still need the owning machine's file bytes.
+        openingTask?.cancel()
+        openingTask = Task { [weak self] in
+            let target = await resolver(url)
+            guard let self, !Task.isCancelled else { return }
+            if let reason = target.unavailableReason { reportError(reason); return }
+            guard let destination = target.revalidate() else { return }
+            openExternal(destination, nil)
+        }
+        return true
     }
 
     private static func url(_ link: Any) -> URL? {

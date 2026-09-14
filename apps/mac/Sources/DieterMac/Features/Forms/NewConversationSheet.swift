@@ -304,7 +304,12 @@ struct NewConversationSheet: View {
         draftInitialized = true
         workspaceDraft.mode =
             ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults()).workspaceMode
-        if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
+        if lane.isEmpty {
+            lane =
+                store.window.newCardLaneID.flatMap { requested in
+                    store.selectedBoard?.lanes.first(where: { $0.id == requested })?.id
+                } ?? store.selectedBoard?.lanes.first?.id ?? "todo"
+        }
         if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
         if workspaceDraft.baseRemote.isEmpty {
             let boardRemote = store.selectedBoard?.baseRemote ?? ""

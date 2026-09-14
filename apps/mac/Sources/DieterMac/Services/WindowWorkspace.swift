@@ -11,6 +11,7 @@ final class WindowWorkspace {
     var newChatProjectID: String = ""
     var commandPalettePresented: Bool = false
     var createConversationPresented: Bool = false
+    var newCardLaneID: String?
     var createProjectPresented: Bool = false
     var createBoardPresented: Bool = false
     var renameProjectPresented: Bool = false

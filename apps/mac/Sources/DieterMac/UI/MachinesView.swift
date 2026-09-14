@@ -78,6 +78,8 @@ private enum MachineAction: String, Identifiable {
 
 struct MachinePopover: View {
     @Environment(DieterStore.self) private var store
+    @State private var pendingRename: DieterEndpoint?
+    @State private var pendingRemove: DieterEndpoint?
     @State private var pendingAction: MachineAction?
 
     private var machine: DieterEndpoint? {
@@ -107,6 +109,22 @@ struct MachinePopover: View {
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityIdentifier("machine.popover")
         .onExitCommand { store.dismissMachinePopover() }
+        .sheet(item: $pendingRename) { RenameMachineSheet(machine: $0).environment(store) }
+        .confirmationDialog(
+            "Remove \(pendingRemove?.name ?? "machine")?",
+            isPresented: Binding(get: { pendingRemove != nil }, set: { if !$0 { pendingRemove = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Remove machine", role: .destructive) {
+                if let machine = pendingRemove { Task { await store.revokeDaemon(machine) } }
+                pendingRemove = nil
+            }
+            Button("Cancel", role: .cancel) { pendingRemove = nil }
+        } message: {
+            Text(
+                "Removes this machine from the gateway. Its files and conversations stay on the machine. To connect again, enroll it again."
+            )
+        }
         .confirmationDialog(
             pendingAction?.title ?? "Machine operation",
             isPresented: Binding(
@@ -214,6 +232,11 @@ struct MachinePopover: View {
             .accessibilityIdentifier("machine.refresh")
 
             Menu {
+                Button("Rename…", systemImage: "pencil") { pendingRename = machine }
+                    .accessibilityIdentifier("machine.rename")
+                Button("Remove machine…", systemImage: "trash", role: .destructive) { pendingRemove = machine }
+                    .accessibilityIdentifier("machine.remove")
+                Divider()
                 Button("Update Dieter…", systemImage: "arrow.down.circle") { pendingAction = .update }
                     .disabled(!operationAvailable(.updateDaemon, machine: machine))
                     .accessibilityIdentifier("machine.update-daemon")

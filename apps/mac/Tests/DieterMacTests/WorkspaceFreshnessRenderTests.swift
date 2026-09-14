@@ -24,11 +24,11 @@ private func writeWorkspaceFreshnessPreview(_ image: NSImage, to path: String) t
                 lastSyncedAt: lastUpdate
             )
         }
-        .frame(width: 1_146, height: 40)
+        .frame(width: 600, height: 40)
         .environment(\.colorScheme, scheme)
 
         let renderer = ImageRenderer(content: preview)
-        renderer.proposedSize = .init(width: 1_146, height: 40)
+        renderer.proposedSize = .init(width: 600, height: 40)
         renderer.scale = 2
         guard let image = renderer.nsImage else {
             Issue.record("Could not render \(name) workspace freshness preview")

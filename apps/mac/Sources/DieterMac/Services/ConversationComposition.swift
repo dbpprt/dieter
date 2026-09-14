@@ -17,6 +17,14 @@ extension DieterStore {
             acceptedItem: { [weak self] in self?.isAcceptedOutboxItem($0) ?? false },
             failedItem: { [weak self] in self?.isFailedOutboxItem($0) ?? false },
             creationError: { [weak self] in self?.failedCreationError($0) })
+        context.deliveryStatus = { [weak self] in
+            guard let self, let id = self.selectedCardID ?? self.selectedChatID else { return nil }
+            let machineID = self.selectedCard.flatMap { self.projectEndpointIDs[$0.projectID] } ?? self.endpoint.id
+            let machine = self.machines.first { $0.id == machineID } ?? self.endpoint
+            return ConversationDeliveryStatus.resolve(
+                entries: self.outbox.entries, conversationID: id,
+                endpointID: machineID, machineName: machine.name, online: machine.online)
+        }
         context.onAddAttachments = { [weak self] urls in self?.addAttachments(urls) }
         context.onAddComment = { [weak self] in await self?.addComment() }
         context.onAddPastedAttachments = { [weak self] providers in self?.addPastedAttachments(providers) }
