@@ -112,7 +112,8 @@ private struct ScreenFixtureConnection: Decodable {
         print("32-second LAN stability: \(initialWidth) pixels, \(cadenceChanges) cadence changes")
         // Canceled resize tasks must not submit intermediate geometries.
         for width in [640, 1120, 1280, 800] {
-            window.setContentSize(CGSize(width: width, height: width * 9 / 16))
+            let scale = window.backingScaleFactor
+            window.setContentSize(CGSize(width: CGFloat(width) / scale, height: CGFloat(width) * 9 / 16 / scale))
             surface.layoutSubtreeIfNeeded(); surface.layout()
             await Task.yield()
         }
