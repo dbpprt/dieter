@@ -431,32 +431,45 @@ final class WorktreeChangesModel {
         let binding = bindingGeneration
         gitOperationTask = Task { [weak self] in
             guard let self, let rpc = self.rpc else { return }
-            do {
-                try await rpc.watchGitOperation(id: id, after: sequence) { [weak self] frame in
-                    if await self?.acceptGitOperationFrame(frame, operationID: id, binding: binding) == true {
-                        await self?.loadWorkspaceSurface()
+            var nextSequence = sequence
+            var consecutiveFailures = 0
+            while !Task.isCancelled, self.owns(binding), self.gitOperation?.id == id {
+                do {
+                    try await rpc.watchGitOperation(id: id, after: nextSequence) { [weak self] frame in
+                        if await self?.acceptGitOperationFrame(frame, operationID: id, binding: binding) == true {
+                            await self?.loadWorkspaceSurface()
+                        }
                     }
-                }
-                guard self.owns(binding), self.gitOperation?.id == id else { return }
-                let selectedConversationID = self.cardID
-                if self.gitOperation?.cardID == selectedConversationID {
-                    let removesWorkspace =
-                        ["cleanup", "discard", "adopt"].contains(self.gitOperation?.kind ?? "")
-                        && self.gitOperation?.status == "succeeded"
-                    if removesWorkspace {
-                        self.clearWorkspaceContentPreservingOperation()
-                    } else {
-                        await self.loadWorkspaceSurface()
+                    guard self.owns(binding), self.gitOperation?.id == id else { return }
+                    let selectedConversationID = self.cardID
+                    if self.gitOperation?.cardID == selectedConversationID {
+                        let removesWorkspace =
+                            ["cleanup", "discard", "adopt"].contains(self.gitOperation?.kind ?? "")
+                            && self.gitOperation?.status == "succeeded"
+                        if removesWorkspace {
+                            self.clearWorkspaceContentPreservingOperation()
+                        } else {
+                            await self.loadWorkspaceSurface()
+                        }
                     }
-                }
-                guard self.owns(binding) else { return }
-                await self.onOperationFinished(self.target)
-            } catch {
-                guard self.owns(binding), !DieterRPCFailure.isCancellation(error) else { return }
-                if DieterRPCFailure.isTransient(error) {
-                    self.onTransportFailure(error, rpc)
-                } else {
-                    self.workspaceError = DieterRPCFailure.message(for: error)
+                    guard self.owns(binding) else { return }
+                    await self.onOperationFinished(self.target)
+                    return
+                } catch {
+                    guard self.owns(binding), !Task.isCancelled else { return }
+                    if DieterRPCFailure.isAuthenticationFailure(error) {
+                        self.onTransportFailure(error, rpc)
+                        return
+                    }
+                    guard DieterRPCFailure.canRetryRead(error) else {
+                        self.workspaceError = DieterRPCFailure.message(for: error)
+                        return
+                    }
+                    nextSequence = self.gitOperationLogs.last?.sequence ?? nextSequence
+                    consecutiveFailures += 1
+                    let delay = DieterStreamRecoveryPolicy.delay(
+                        consecutiveFailures: consecutiveFailures)
+                    try? await DieterTaskSleep.seconds(delay)
                 }
             }
         }

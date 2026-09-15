@@ -205,6 +205,10 @@ final class AppSession {
     var connectionTask: Task<Void, Never>?
     var reconnectTask: Task<Void, Never>?
     var directRefreshTask: Task<Void, Never>?
+    var syncRecoveryEscalationTask: Task<Void, Never>?
+    var directCredential: DirectAccessCredential?
+    var connectionRecoveryStartedAt: Date?
+    var connectionRecoverySource = ""
     var machineDirectoryTask: Task<Void, Never>?
     var machinePresenceLeaseTask: Task<Void, Never>?
     var machineTelemetryTask: Task<Void, Never>?

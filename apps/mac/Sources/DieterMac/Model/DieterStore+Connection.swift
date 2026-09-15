@@ -194,6 +194,8 @@ extension DieterStore {
             gitOperationTask?.cancel()
             terminalWatchTask?.cancel()
             syncTask?.cancel()
+            syncRecoveryEscalationTask?.cancel()
+            syncRecoveryEscalationTask = nil
             syncLivenessTask?.cancel()
             outboxTask?.cancel()
             connectionTask?.cancel()
@@ -204,6 +206,7 @@ extension DieterStore {
             terminalStreamConnected = false
             rpc?.shutdown()
             rpc = prepared.plane.rpc
+            directCredential = prepared.plane.directCredential
             connectionTask = prepared.plane.task
             endpoint = prepared.target
             endpoints = (discoveredDirectory ?? []).map {
@@ -272,6 +275,7 @@ extension DieterStore {
             connectionTask = nil
             rpc?.shutdown()
             rpc = nil
+            directCredential = nil
             if let discoveredDirectory { endpoints = discoveredDirectory }
             if let connectionError = error as? DieterStoreConnectionError,
                 case .incompatible(let found) = connectionError
@@ -309,7 +313,7 @@ extension DieterStore {
     private func loadInitialConnectionState(from rpc: DieterRPC) async throws
         -> InitialConnectionState
     {
-        let health = try await rpc.health()
+        let health = try await loadInitialRead("health") { try await rpc.health() }
         guard health.status == "ok" else {
             throw NSError(
                 domain: "DieterDaemon", code: 1,
@@ -320,11 +324,11 @@ extension DieterStore {
         }
         // Do not use `async let` in this throwing scope. Swift 6.1–6.3 can
         // destroy failed child tasks out of allocation order (Swift #81771).
-        let runtimeTask = Task { try await rpc.runtimeStatus() }
-        let stateTask = Task { try await rpc.state() }
-        let harnessesTask = Task { try await rpc.harnesses() }
-        let settingsTask = Task { try await rpc.settings() }
-        let optionsTask = Task { try await rpc.settingsOptions() }
+        let runtimeTask = Task { try await self.loadInitialRead("runtime status") { try await rpc.runtimeStatus() } }
+        let stateTask = Task { try await self.loadInitialRead("state") { try await rpc.state() } }
+        let harnessesTask = Task { try await self.loadInitialRead("harness catalog") { try await rpc.harnesses() } }
+        let settingsTask = Task { try await self.loadInitialRead("settings") { try await rpc.settings() } }
+        let optionsTask = Task { try await self.loadInitialRead("settings options") { try await rpc.settingsOptions() } }
         defer {
             runtimeTask.cancel()
             stateTask.cancel()
@@ -340,6 +344,33 @@ extension DieterStore {
             settings: settingsTask.value,
             options: optionsTask.value
         )
+    }
+
+    private func loadInitialRead<Value>(
+        _ name: String,
+        operation: () async throws -> Value
+    ) async throws -> Value {
+        var failures = 0
+        while true {
+            do {
+                return try await operation()
+            } catch {
+                failures += 1
+                guard failures < 3, DieterRPCFailure.canRetryRead(error) else {
+                    throw NSError(
+                        domain: "DieterInitialConnection",
+                        code: 1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey:
+                                "Initial \(name) read failed: \(DieterRPCFailure.message(for: error))",
+                            NSUnderlyingErrorKey: error,
+                        ]
+                    )
+                }
+                let delay = DieterStreamRecoveryPolicy.delay(consecutiveFailures: failures)
+                try await DieterTaskSleep.seconds(delay)
+            }
+        }
     }
 
     func selectDataPlane(
@@ -403,29 +434,135 @@ extension DieterStore {
                         NSError(
                             domain: "DieterTransport", code: 1,
                             userInfo: [NSLocalizedDescriptionKey: "The Dieter connection closed."]),
-                        client: client
+                        client: client,
+                        source: "transport-ended"
                     )
                 }
             } catch {
                 // Only the owner cancelling this task is expected. A remote
                 // cancellation still means our active transport needs recovery.
-                self?.connectionStopped(error, client: client)
+                self?.connectionStopped(error, client: client, source: "transport-runner")
             }
         }
     }
 
     func scheduleDirectRefresh(expiresAt: String, target: DieterEndpoint) {
-        let expires = DieterTimestamp.date(from: expiresAt)
-        guard let expires else { return }
-        let delay = max(1, expires.timeIntervalSinceNow - 30)
+        guard let expires = DieterTimestamp.date(from: expiresAt),
+            let credential = directCredential,
+            let client = rpc
+        else { return }
+        let delay = DirectCredentialRefreshPolicy.renewalDelay(expiresAt: expires, now: Date())
+        scheduleDirectRefresh(
+            after: delay,
+            expiresAt: expires,
+            target: target,
+            credential: credential,
+            client: client,
+            attempt: 0
+        )
+    }
+
+    private func scheduleDirectRefresh(
+        after delay: TimeInterval,
+        expiresAt: Date,
+        target: DieterEndpoint,
+        credential: DirectAccessCredential,
+        client: DieterRPC,
+        attempt: Int
+    ) {
         directRefreshTask?.cancel()
         directRefreshTask = Task { [weak self] in
             try? await DieterTaskSleep.seconds(delay)
-            guard !Task.isCancelled, let self else { return }
-            // Do not let connect(to:) cancel the task that is currently
-            // performing the scheduled token refresh.
+            guard !Task.isCancelled, let self,
+                self.rpc === client,
+                self.directCredential === credential
+            else { return }
             self.directRefreshTask = nil
-            await self.connect(to: target, automatic: true)
+            await self.refreshDirectCredential(
+                expiresAt: expiresAt,
+                target: target,
+                credential: credential,
+                client: client,
+                attempt: attempt
+            )
+        }
+    }
+
+    private func refreshDirectCredential(
+        expiresAt: Date,
+        target: DieterEndpoint,
+        credential: DirectAccessCredential,
+        client: DieterRPC,
+        attempt: Int
+    ) async {
+        let origin =
+            gatewayOrigins.first(where: { $0.credentialID == target.credentialID })
+            ?? target.gatewayEndpoint
+        let startedAt = Date()
+        do {
+            let gatewayToken = await accessToken(for: origin)
+            let gateway = try environment.clients.client(endpoint: origin, accessToken: gatewayToken)
+            let gatewayTask = Task { try? await gateway.run() }
+            defer {
+                gatewayTask.cancel()
+                gateway.shutdown()
+            }
+            guard let daemonID = target.daemonID else {
+                throw NSError(
+                    domain: "DieterGateway", code: 5,
+                    userInfo: [NSLocalizedDescriptionKey: "No routed Dieter machine is available."])
+            }
+            let token = try await gateway.daemonAccessToken(daemonID: daemonID)
+            guard token.tokenType == "Bearer" else {
+                throw NSError(
+                    domain: "DieterGateway", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Gateway returned an unsupported daemon token."])
+            }
+            guard !Task.isCancelled, rpc === client, directCredential === credential else { return }
+            let current = credential.snapshot()
+            if DirectCredentialRefreshPolicy.requiresConnectionReplacement(
+                currentGeneration: current.daemonGeneration,
+                renewedGeneration: token.daemonGeneration
+            ) {
+                connectionLogger.notice(
+                    "Direct credential generation changed for \(target.id, privacy: .public); rebuilding the data plane")
+                connectionStopped(
+                    NSError(
+                        domain: "DieterTransport", code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "The daemon connection generation changed."]),
+                    client: client,
+                    source: "direct-token-generation"
+                )
+                return
+            }
+            credential.update(
+                token: token.accessToken,
+                expiresAt: token.expiresAt,
+                daemonGeneration: token.daemonGeneration
+            )
+            connectionLogger.debug(
+                "Renewed direct credential for \(target.id, privacy: .public) in \(Self.latencyMilliseconds(since: startedAt), privacy: .public) ms without replacing streams")
+            scheduleDirectRefresh(expiresAt: token.expiresAt, target: target)
+        } catch {
+            guard !Task.isCancelled, rpc === client, directCredential === credential else { return }
+            if let delay = DirectCredentialRefreshPolicy.retryDelay(
+                attempt: attempt,
+                expiresAt: expiresAt,
+                now: Date()
+            ) {
+                connectionLogger.warning(
+                    "Direct credential renewal for \(target.id, privacy: .public) failed; retrying in \(delay, privacy: .public)s: \(DieterRPCFailure.message(for: error), privacy: .public)")
+                scheduleDirectRefresh(
+                    after: delay,
+                    expiresAt: expiresAt,
+                    target: target,
+                    credential: credential,
+                    client: client,
+                    attempt: attempt + 1
+                )
+            } else {
+                connectionStopped(error, client: client, source: "direct-token-expired")
+            }
         }
     }
 
@@ -473,9 +610,11 @@ extension DieterStore {
         phase = endpoint.secure ? .authenticationRequired : .disconnected
     }
 
-    func connectionStopped(_ error: Error, client: DieterRPC) {
+    func connectionStopped(_ error: Error, client: DieterRPC, source: String = "rpc") {
         guard !Task.isCancelled else { return }
         guard rpc === client else { return }
+        syncRecoveryEscalationTask?.cancel()
+        syncRecoveryEscalationTask = nil
         guard hasLoadedWorkspace else {
             phase = .failed(Self.connectionFailureDescription(error))
             return
@@ -484,6 +623,12 @@ extension DieterStore {
         // the cached projection visible and let the workspace badge report the
         // interruption while the normal reconnect loop rebuilds the streams.
         errorMessage = nil
+        if connectionRecoveryStartedAt == nil {
+            connectionRecoveryStartedAt = Date()
+            connectionRecoverySource = source
+        }
+        connectionLogger.warning(
+            "Connection recovery requested by \(source, privacy: .public) on \(self.endpoint.id, privacy: .public): \(Self.connectionFailureDescription(error), privacy: .public)")
         phase = .connecting
         scheduleReconnect(to: endpoint)
     }
@@ -493,13 +638,13 @@ extension DieterStore {
         reconnectTask = Task { [weak self] in
             var delay = 1.0
             while !Task.isCancelled, let self {
-                try? await DieterTaskSleep.seconds(delay)
-                guard !Task.isCancelled else { return }
                 await self.connect(to: target, automatic: true)
                 if self.phase.isConnected {
                     self.reconnectTask = nil
                     return
                 }
+                try? await DieterTaskSleep.seconds(delay)
+                guard !Task.isCancelled else { return }
                 delay = min(15, delay * 1.8)
             }
         }
@@ -517,6 +662,9 @@ extension DieterStore {
         outboxTask?.cancel()
         connectionTask?.cancel()
         directRefreshTask?.cancel()
+        syncRecoveryEscalationTask?.cancel()
+        syncRecoveryEscalationTask = nil
+        directCredential = nil
         machineDirectoryTask?.cancel()
         machinePresenceLeaseTask?.cancel()
         machineTelemetryTask?.cancel()
@@ -526,6 +674,8 @@ extension DieterStore {
         rpc?.shutdown()
         rpc = nil
         lastSyncFrameAt = nil
+        connectionRecoveryStartedAt = nil
+        connectionRecoverySource = ""
         globalSyncing = false
         endpoints = endpoints.map { machine in
             var machine = machine
@@ -729,7 +879,8 @@ extension DieterStore {
                 return catalog
             } catch {
                 guard DieterRPCFailure.canRetryRead(error) else { throw error }
-                connectionStopped(error, client: rpc)
+                connectionLogger.info(
+                    "Active harness catalog read failed transiently; retrying on a temporary route without replacing the data plane")
             }
         }
         guard let machine = endpoints.first(where: { $0.id == endpointID }), machine.online else {
@@ -919,7 +1070,11 @@ extension DieterStore {
                 guard self.phase.isConnected, let rpc = self.rpc else { continue }
                 guard SyncStreamLiveness.requiresConnectionRecovery(lastFrameAt: self.lastSyncFrameAt)
                 else { continue }
-                self.connectionStopped(DieterStoreConnectionError.syncTimedOut, client: rpc)
+                self.connectionStopped(
+                    DieterStoreConnectionError.syncTimedOut,
+                    client: rpc,
+                    source: "watch-sync-liveness"
+                )
                 return
             }
         }
@@ -931,7 +1086,11 @@ extension DieterStore {
     func applicationDidBecomeActive() {
         guard phase.isConnected, let rpc else { return }
         if SyncStreamLiveness.requiresConnectionRecovery(lastFrameAt: lastSyncFrameAt) {
-            connectionStopped(DieterStoreConnectionError.syncTimedOut, client: rpc)
+            connectionStopped(
+                DieterStoreConnectionError.syncTimedOut,
+                client: rpc,
+                source: "activation-liveness"
+            )
             return
         }
         startGlobalSync()

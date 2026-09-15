@@ -2669,19 +2669,19 @@ private func terminalKeyEvent(
         DieterConversationOpenFailurePolicy.disposition(
             for: cancelled,
             selectionMatches: true,
-            cancellationRetries: 0
+            recoveryAttempts: 0
         ) == .retry)
     #expect(
         DieterConversationOpenFailurePolicy.disposition(
             for: cancelled,
             selectionMatches: true,
-            cancellationRetries: 1
+            recoveryAttempts: DieterConversationOpenFailurePolicy.maximumRecoveryAttempts
         ) == .report)
     #expect(
         DieterConversationOpenFailurePolicy.disposition(
             for: RPCError(code: .notFound, message: "missing"),
             selectionMatches: false,
-            cancellationRetries: 0
+            recoveryAttempts: 0
         ) == .ignore)
 }
 

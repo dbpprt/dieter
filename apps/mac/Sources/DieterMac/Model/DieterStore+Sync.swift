@@ -149,10 +149,72 @@ extension DieterStore {
 
     func startGlobalSync() {
         syncTask?.cancel()
+        syncRecoveryEscalationTask?.cancel()
+        syncRecoveryEscalationTask = nil
         guard let rpc else { return }
         globalSyncing = true
         lastSyncFrameAt = Date()
         let endpointID = endpoint.id
+        syncTask = Task { [weak self] in
+            var consecutiveFailures = 0
+            while !Task.isCancelled, let self,
+                self.rpc === rpc,
+                self.endpoint.id == endpointID
+            {
+                let request = self.syncRequestForCurrentCursor()
+                let attemptStartedAt = Date()
+                var failure: Error?
+                do {
+                    try await rpc.watchSync(request) { [weak self] frame in
+                        await self?.applySyncFrame(frame, endpointID: endpointID, client: rpc)
+                    }
+                    guard !Task.isCancelled else { return }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    failure = error
+                }
+                guard self.rpc === rpc, self.endpoint.id == endpointID else { return }
+                if let failure,
+                    !DieterRPCFailure.canRetryRead(failure)
+                {
+                    if DieterRPCFailure.isAuthenticationFailure(failure) {
+                        self.connectionStopped(failure, client: rpc, source: "watch-sync-auth")
+                    } else {
+                        self.show(failure)
+                    }
+                    return
+                }
+                let receivedFrame = self.lastSyncFrameAt.map { $0 >= attemptStartedAt } ?? false
+                consecutiveFailures = receivedFrame ? 1 : consecutiveFailures + 1
+                let delay = DieterStreamRecoveryPolicy.delay(consecutiveFailures: consecutiveFailures)
+                self.globalSyncing = true
+                self.scheduleSyncRecoveryEscalation(endpointID: endpointID, client: rpc)
+                connectionLogger.info(
+                    "WatchSync ended on \(endpointID, privacy: .public); resubscribing after \(delay, privacy: .public)s without replacing the data plane")
+                try? await DieterTaskSleep.seconds(delay)
+            }
+        }
+    }
+
+    private func scheduleSyncRecoveryEscalation(endpointID: String, client: DieterRPC) {
+        guard syncRecoveryEscalationTask == nil else { return }
+        syncRecoveryEscalationTask = Task { [weak self] in
+            try? await DieterTaskSleep.seconds(DieterStreamRecoveryPolicy.resubscriptionTimeout)
+            guard !Task.isCancelled, let self,
+                self.rpc === client,
+                self.endpoint.id == endpointID,
+                self.globalSyncing
+            else { return }
+            self.syncRecoveryEscalationTask = nil
+            self.connectionStopped(
+                DieterStoreConnectionError.syncTimedOut,
+                client: client,
+                source: "watch-sync-resubscription-timeout"
+            )
+        }
+    }
+
+    private func syncRequestForCurrentCursor() -> Dieter_V1_SyncRequest {
         var request = Dieter_V1_SyncRequest()
         request.conversationLimit = syncConversationMessageLimit
         request.recentConversationLimit = syncRecentConversationLimit
@@ -162,17 +224,7 @@ extension DieterStore {
         {
             request.after = cursor
         }
-        syncTask = Task { [weak self] in
-            do {
-                try await rpc.watchSync(request) { [weak self] frame in
-                    await self?.applySyncFrame(frame, endpointID: endpointID, client: rpc)
-                }
-                guard !Task.isCancelled else { return }
-                self?.connectionStopped(DieterStoreConnectionError.syncEnded, client: rpc)
-            } catch {
-                self?.connectionStopped(error, client: rpc)
-            }
-        }
+        return request
     }
 
     func applySyncFrame(_ frame: Dieter_V1_SyncFrame, endpointID: String, client: DieterRPC? = nil)
@@ -183,9 +235,18 @@ extension DieterStore {
         os_signpost(.begin, log: syncPerformanceLog, name: "Apply sync frame")
         defer { os_signpost(.end, log: syncPerformanceLog, name: "Apply sync frame") }
         let receivedAt = Date()
+        syncRecoveryEscalationTask?.cancel()
+        syncRecoveryEscalationTask = nil
         lastSyncFrameAt = receivedAt
         lastSyncedAt = receivedAt
         globalSyncing = false
+        if let recoveryStartedAt = connectionRecoveryStartedAt {
+            let duration = max(0, receivedAt.timeIntervalSince(recoveryStartedAt))
+            connectionLogger.notice(
+                "Connection recovery from \(self.connectionRecoverySource, privacy: .public) delivered its first sync frame after \(duration, privacy: .public)s")
+            connectionRecoveryStartedAt = nil
+            connectionRecoverySource = ""
+        }
         syncProjection.refreshedAt = receivedAt
         refreshIslandActivityDateBoundaryIfNeeded(now: receivedAt)
         var projectionChanged = false
@@ -809,7 +870,8 @@ extension DieterStore {
                 return
             }
             if DieterRPCFailure.isTransient(error) {
-                connectionStopped(error, client: rpc)
+                connectionLogger.info(
+                    "State refresh failed transiently on \(self.endpoint.id, privacy: .public); retaining the WatchSync projection")
             } else {
                 show(error)
             }

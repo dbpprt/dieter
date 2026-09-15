@@ -147,6 +147,10 @@ private final class RecoveryProbe: Sendable {
                 code: .unknown, message: "transport failed",
                 cause: RuntimeError(code: .transportError, message: "broken pipe"))))
     #expect(!DieterRPCFailure.isTransient(POSIXError(.EPERM)))
+    #expect(
+        DieterRPCFailure.canRetryRead(
+            RPCError(code: .unimplemented, message: "No messages received, exactly one was expected.")))
+    #expect(!DieterRPCFailure.canRetryRead(RPCError(code: .unimplemented, message: "unknown method")))
 }
 
 @Test @MainActor func synchronizedConversationClearsAStaleStreamFailure() {
@@ -179,4 +183,58 @@ private final class RecoveryProbe: Sendable {
     #expect(!(await task.value))
     #expect(probe.attempts.withLock { $0 } == 0)
     #expect(store.errorMessage == nil)
+}
+
+@Test func directCredentialRenewsInPlace() {
+    let credential = DirectAccessCredential(
+        token: "first",
+        expiresAt: "2026-09-15T12:05:00Z",
+        daemonGeneration: 7
+    )
+    #expect(credential.snapshot().token == "first")
+
+    credential.update(
+        token: "second",
+        expiresAt: "2026-09-15T12:10:00Z",
+        daemonGeneration: 7
+    )
+
+    #expect(
+        credential.snapshot()
+            == DirectAccessCredentialSnapshot(
+                token: "second",
+                expiresAt: "2026-09-15T12:10:00Z",
+                daemonGeneration: 7
+            ))
+}
+
+@Test func directCredentialRefreshPolicyRenewsBeforeExpiryAndEscalatesGenerationChanges() {
+    let now = Date(timeIntervalSince1970: 1_000)
+    let expires = now.addingTimeInterval(300)
+
+    #expect(DirectCredentialRefreshPolicy.renewalDelay(expiresAt: expires, now: now) == 270)
+    #expect(DirectCredentialRefreshPolicy.retryDelay(attempt: 0, expiresAt: expires, now: now) == 1)
+    #expect(
+        !DirectCredentialRefreshPolicy.requiresConnectionReplacement(
+            currentGeneration: 7,
+            renewedGeneration: 7
+        ))
+    #expect(
+        DirectCredentialRefreshPolicy.requiresConnectionReplacement(
+            currentGeneration: 7,
+            renewedGeneration: 8
+        ))
+    #expect(
+        DirectCredentialRefreshPolicy.retryDelay(
+            attempt: 3,
+            expiresAt: now.addingTimeInterval(0.5),
+            now: now
+        ) == nil)
+}
+
+@Test func streamRecoveryRetriesImmediatelyThenBacksOff() {
+    #expect(DieterStreamRecoveryPolicy.resubscriptionTimeout == 2)
+    #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 1) == 0)
+    #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 2) == 0.25)
+    #expect(DieterStreamRecoveryPolicy.delay(consecutiveFailures: 100) == 5)
 }

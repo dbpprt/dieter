@@ -22,6 +22,7 @@ package final class DieterRPC: Sendable {
     package let core: GRPCClient<Transport>
     package let service: Service
     package let gatewayService: GatewayService
+    package let directCredential: DirectAccessCredential?
 
     package static func attachmentCallOptions(bounded: Bool = false) -> CallOptions {
         var options = CallOptions.defaults
@@ -44,18 +45,30 @@ package final class DieterRPC: Sendable {
     }
 
     package struct DirectRoute: Sendable {
-        package init(host: String, port: Int, daemonID: String, daemonCAPEM: Data, accessToken: String) {
+        package init(
+            host: String,
+            port: Int,
+            daemonID: String,
+            daemonCAPEM: Data,
+            accessToken: String,
+            expiresAt: String = "",
+            daemonGeneration: UInt64 = 0
+        ) {
             self.host = host
             self.port = port
             self.daemonID = daemonID
             self.daemonCAPEM = daemonCAPEM
             self.accessToken = accessToken
+            self.expiresAt = expiresAt
+            self.daemonGeneration = daemonGeneration
         }
         let host: String
         let port: Int
         let daemonID: String
         let daemonCAPEM: Data
         let accessToken: String
+        let expiresAt: String
+        let daemonGeneration: UInt64
     }
 
     package enum Route: Equatable, Sendable {
@@ -106,10 +119,24 @@ package final class DieterRPC: Sendable {
             target: DieterTransportTarget.make(host: host, port: port),
             transportSecurity: security
         )
-        let token = direct?.accessToken ?? accessToken
+        let directCredential = direct.map {
+            DirectAccessCredential(
+                token: $0.accessToken,
+                expiresAt: $0.expiresAt,
+                daemonGeneration: $0.daemonGeneration
+            )
+        }
+        self.directCredential = directCredential
         let daemonID = direct == nil ? route.daemonID : nil
-        let interceptors: [any ClientInterceptor] =
-            token.map { [BearerInterceptor(token: $0, daemonID: daemonID)] } ?? []
+        let bearer: BearerInterceptor?
+        if let directCredential {
+            bearer = BearerInterceptor(source: .renewable(directCredential), daemonID: daemonID)
+        } else if let accessToken {
+            bearer = BearerInterceptor(source: .fixed(accessToken), daemonID: daemonID)
+        } else {
+            bearer = nil
+        }
+        let interceptors: [any ClientInterceptor] = bearer.map { [$0] } ?? []
         let core = GRPCClient(transport: transport, interceptors: interceptors)
         self.core = core
         self.service = Service(wrapping: core)
@@ -943,9 +970,21 @@ package enum DieterTransportTarget {
     }
 }
 
+private enum BearerSource: Sendable {
+    case fixed(String)
+    case renewable(DirectAccessCredential)
+
+    var token: String {
+        switch self {
+        case .fixed(let token): token
+        case .renewable(let credential): credential.snapshot().token
+        }
+    }
+}
+
 private struct BearerInterceptor: ClientInterceptor {
-    package let token: String
-    package let daemonID: String?
+    let source: BearerSource
+    let daemonID: String?
     package func intercept<Input: Sendable, Output: Sendable>(
         request: StreamingClientRequest<Input>, context: ClientContext,
         next: (StreamingClientRequest<Input>, ClientContext) async throws -> StreamingClientResponse<
@@ -953,7 +992,7 @@ private struct BearerInterceptor: ClientInterceptor {
         >
     ) async throws -> StreamingClientResponse<Output> {
         var request = request
-        request.metadata.addString("Bearer \(token)", forKey: "authorization")
+        request.metadata.addString("Bearer \(source.token)", forKey: "authorization")
         if let daemonID { request.metadata.addString(daemonID, forKey: "x-dieter-daemon-id") }
         return try await next(request, context)
     }

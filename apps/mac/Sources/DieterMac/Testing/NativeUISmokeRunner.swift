@@ -68,10 +68,17 @@
                             && store.projects.contains { !store.boards(for: $0.id).isEmpty }
                     })
             else {
+                let phaseDetail: String
+                if case .failed(let message) = store.phase {
+                    phaseDetail = message
+                } else {
+                    phaseDetail = store.phase.label
+                }
                 writeReport(
                     [
                         "connection": "failed: fixture workspace did not become ready",
                         "phase": store.phase.label,
+                        "phase-detail": phaseDetail,
                         "projects": "\(store.projects.count)",
                     ], to: output)
                 return

@@ -31,7 +31,7 @@ extension DieterStore {
         worktreeChanges.onCard = { [weak self] card in self?.acceptWorkspaceCard(card) }
         worktreeChanges.onTransportFailure = { [weak self] error, client in
             guard let rpc = client as? DieterRPC else { return }
-            self?.connectionStopped(error, client: rpc)
+            self?.connectionStopped(error, client: rpc, source: "worktree-operation-auth")
         }
         worktreeChanges.onOperationFinished = { [weak self] target in
             guard let self, self.endpoint.id == target.endpointID,

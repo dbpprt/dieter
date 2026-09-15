@@ -123,7 +123,7 @@ private actor ConversationRecoveryFixture: ConversationRPC {
     model.bind(client: nil, endpointID: "machine")
 }
 
-@Test @MainActor func remoteConversationCancellationRequestsTransportRecovery() async throws {
+@Test @MainActor func remoteConversationCancellationResubscribesWithoutTransportReplacement() async throws {
     let rpc = ConversationRecoveryFixture(behavior: .remoteCancellation)
     let model = ConversationModel()
     model.bind(client: rpc, endpointID: "machine")
@@ -133,11 +133,12 @@ private actor ConversationRecoveryFixture: ConversationRPC {
 
     await model.fetchConversation(cardID: "card", chat: true, rpc: rpc)
     for _ in 0..<1_000 {
-        if recoveryRequests == 1 { break }
+        if await rpc.watchCount >= 2 { break }
         try await Task.sleep(nanoseconds: 1_000_000)
     }
 
-    #expect(recoveryRequests == 1)
+    #expect(await rpc.watchCount >= 2)
+    #expect(recoveryRequests == 0)
     #expect(model.conversationError == nil)
     model.bind(client: nil, endpointID: "machine")
 }
