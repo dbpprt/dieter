@@ -328,7 +328,9 @@ extension DieterStore {
         let stateTask = Task { try await self.loadInitialRead("state") { try await rpc.state() } }
         let harnessesTask = Task { try await self.loadInitialRead("harness catalog") { try await rpc.harnesses() } }
         let settingsTask = Task { try await self.loadInitialRead("settings") { try await rpc.settings() } }
-        let optionsTask = Task { try await self.loadInitialRead("settings options") { try await rpc.settingsOptions() } }
+        let optionsTask = Task {
+            try await self.loadInitialRead("settings options") { try await rpc.settingsOptions() }
+        }
         defer {
             runtimeTask.cancel()
             stateTask.cancel()
@@ -525,7 +527,8 @@ extension DieterStore {
                 renewedGeneration: token.daemonGeneration
             ) {
                 connectionLogger.notice(
-                    "Direct credential generation changed for \(target.id, privacy: .public); rebuilding the data plane")
+                    "Direct credential generation changed for \(target.id, privacy: .public); rebuilding the data plane"
+                )
                 connectionStopped(
                     NSError(
                         domain: "DieterTransport", code: 2,
@@ -541,7 +544,8 @@ extension DieterStore {
                 daemonGeneration: token.daemonGeneration
             )
             connectionLogger.debug(
-                "Renewed direct credential for \(target.id, privacy: .public) in \(Self.latencyMilliseconds(since: startedAt), privacy: .public) ms without replacing streams")
+                "Renewed direct credential for \(target.id, privacy: .public) in \(Self.latencyMilliseconds(since: startedAt), privacy: .public) ms without replacing streams"
+            )
             scheduleDirectRefresh(expiresAt: token.expiresAt, target: target)
         } catch {
             guard !Task.isCancelled, rpc === client, directCredential === credential else { return }
@@ -551,7 +555,8 @@ extension DieterStore {
                 now: Date()
             ) {
                 connectionLogger.warning(
-                    "Direct credential renewal for \(target.id, privacy: .public) failed; retrying in \(delay, privacy: .public)s: \(DieterRPCFailure.message(for: error), privacy: .public)")
+                    "Direct credential renewal for \(target.id, privacy: .public) failed; retrying in \(delay, privacy: .public)s: \(DieterRPCFailure.message(for: error), privacy: .public)"
+                )
                 scheduleDirectRefresh(
                     after: delay,
                     expiresAt: expiresAt,
@@ -628,7 +633,8 @@ extension DieterStore {
             connectionRecoverySource = source
         }
         connectionLogger.warning(
-            "Connection recovery requested by \(source, privacy: .public) on \(self.endpoint.id, privacy: .public): \(Self.connectionFailureDescription(error), privacy: .public)")
+            "Connection recovery requested by \(source, privacy: .public) on \(self.endpoint.id, privacy: .public): \(Self.connectionFailureDescription(error), privacy: .public)"
+        )
         phase = .connecting
         scheduleReconnect(to: endpoint)
     }
@@ -880,7 +886,8 @@ extension DieterStore {
             } catch {
                 guard DieterRPCFailure.canRetryRead(error) else { throw error }
                 connectionLogger.info(
-                    "Active harness catalog read failed transiently; retrying on a temporary route without replacing the data plane")
+                    "Active harness catalog read failed transiently; retrying on a temporary route without replacing the data plane"
+                )
             }
         }
         guard let machine = endpoints.first(where: { $0.id == endpointID }), machine.online else {

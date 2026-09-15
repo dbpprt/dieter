@@ -190,7 +190,8 @@ extension DieterStore {
                 self.globalSyncing = true
                 self.scheduleSyncRecoveryEscalation(endpointID: endpointID, client: rpc)
                 connectionLogger.info(
-                    "WatchSync ended on \(endpointID, privacy: .public); resubscribing after \(delay, privacy: .public)s without replacing the data plane")
+                    "WatchSync ended on \(endpointID, privacy: .public); resubscribing after \(delay, privacy: .public)s without replacing the data plane"
+                )
                 try? await DieterTaskSleep.seconds(delay)
             }
         }
@@ -243,7 +244,8 @@ extension DieterStore {
         if let recoveryStartedAt = connectionRecoveryStartedAt {
             let duration = max(0, receivedAt.timeIntervalSince(recoveryStartedAt))
             connectionLogger.notice(
-                "Connection recovery from \(self.connectionRecoverySource, privacy: .public) delivered its first sync frame after \(duration, privacy: .public)s")
+                "Connection recovery from \(self.connectionRecoverySource, privacy: .public) delivered its first sync frame after \(duration, privacy: .public)s"
+            )
             connectionRecoveryStartedAt = nil
             connectionRecoverySource = ""
         }
@@ -871,7 +873,8 @@ extension DieterStore {
             }
             if DieterRPCFailure.isTransient(error) {
                 connectionLogger.info(
-                    "State refresh failed transiently on \(self.endpoint.id, privacy: .public); retaining the WatchSync projection")
+                    "State refresh failed transiently on \(self.endpoint.id, privacy: .public); retaining the WatchSync projection"
+                )
             } else {
                 show(error)
             }

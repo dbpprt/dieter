@@ -191,7 +191,8 @@ final class ConversationModel {
                 let delay = DieterStreamRecoveryPolicy.delay(consecutiveFailures: consecutiveFailures)
                 self.conversationSyncing = true
                 conversationConnectionLogger.info(
-                    "Conversation stream for \(cardID, privacy: .public) ended; resubscribing after \(delay, privacy: .public)s on the existing data plane")
+                    "Conversation stream for \(cardID, privacy: .public) ended; resubscribing after \(delay, privacy: .public)s on the existing data plane"
+                )
                 try? await DieterTaskSleep.seconds(delay)
             }
         }

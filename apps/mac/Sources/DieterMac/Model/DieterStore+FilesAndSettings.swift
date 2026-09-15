@@ -176,7 +176,8 @@ extension DieterStore {
             // this caller only reports its own unsuccessful operation. Ignore a
             // stale result after that data plane has already been released.
             connectionLogger.info(
-                "Operation failed transiently without replacing the data plane: \(DieterRPCFailure.message(for: error), privacy: .public)")
+                "Operation failed transiently without replacing the data plane: \(DieterRPCFailure.message(for: error), privacy: .public)"
+            )
             errorMessage = DieterRPCFailure.message(for: error)
             return
         }
