@@ -1,11 +1,13 @@
 package com.dbpprt.dieter.ui
 
+import android.util.Log
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dbpprt.dieter.connection.DieterConnectionManager
 import com.dbpprt.dieter.connection.DieterConnectionState
+import com.dbpprt.dieter.connection.BackgroundSyncMode
 import com.dbpprt.dieter.connection.ConnectionPhase
 import com.dbpprt.dieter.connection.EndpointConnection
 import com.dbpprt.dieter.connection.EndpointPhase
@@ -152,7 +154,7 @@ data class DieterUiState(
     val connectionDialogVisible: Boolean = false,
     val connectionError: String? = null,
     val desiredConnected: Boolean = true,
-    val backgroundSyncEnabled: Boolean = true,
+    val backgroundSyncMode: BackgroundSyncMode = BackgroundSyncMode.LIVE,
     val navigationStyle: NavigationStyle = NavigationStyle.CLASSIC,
     val palette: DieterPalette = DieterPalette.DEFAULT,
     val showReasoningTraces: Boolean = false,
@@ -249,6 +251,7 @@ data class DieterUiState(
     val workspaceReview: WorkspaceReviewState = WorkspaceReviewState(),
 ) {
     val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
+    val backgroundSyncEnabled: Boolean get() = backgroundSyncMode.usesBackgroundService
     val hasCachedWorkspace: Boolean
         get() = projects.isNotEmpty() || boards.isNotEmpty() || cards.isNotEmpty() || chats.isNotEmpty()
     val presentedProjectHosts: Map<String, ProjectHost>
@@ -520,8 +523,8 @@ class DieterViewModel internal constructor(
         }
     }
 
-    fun setBackgroundSyncEnabled(enabled: Boolean) {
-        connectionManager.setBackgroundSyncEnabled(enabled)
+    fun setBackgroundSyncMode(mode: BackgroundSyncMode) {
+        connectionManager.setBackgroundSyncMode(mode)
     }
 
     fun setNavigationStyle(style: NavigationStyle) {
@@ -679,7 +682,7 @@ class DieterViewModel internal constructor(
                 },
                 connectionError = connection.error,
                 desiredConnected = connection.desiredConnected,
-                backgroundSyncEnabled = connection.backgroundSyncEnabled,
+                backgroundSyncMode = connection.backgroundSyncMode,
                 configuredConnections = connection.configuredConnections,
                 activeGatewayId = connection.activeGatewayId,
                 endpointConnections = connection.endpointConnections,
@@ -1127,6 +1130,10 @@ class DieterViewModel internal constructor(
                 connection.conversationRefreshedAtMillis[cardId],
             )
         } ?: conversationCache[cardId]
+        Log.i(
+            DieterConnectionManager.SYNC_LOG_TAG,
+            "chatOpen cache=${cached != null} frameAgeMs=${connection.conversationRefreshedAtMillis[cardId]?.let { System.currentTimeMillis() - it } ?: -1}",
+        )
         val projectId = resolvedCard.projectId.ifBlank { _state.value.selectedProjectId }
         if (_state.value.workspaceReview.cardId != cardId) resetWorkspaceReview(cardId)
         _state.update {
@@ -1182,13 +1189,19 @@ class DieterViewModel internal constructor(
                 return@launch
             }
             var delivered = false
+            val openedAt = System.currentTimeMillis()
+            val initial = _state.value.conversation?.takeIf { it.detail.card.id == cardId }
             // Hedged unary fetch: on a healthy link the stream answers first;
             // on a dead-after-idle link this bounds time-to-fresh to seconds.
             val hedge = launch {
                 val snapshot = runCatching {
                     withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
                 }.getOrNull() ?: return@launch
-                if (!delivered) applyLiveConversation(cardId, snapshot)
+                if (!delivered) {
+                    delivered = true
+                    Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=unary elapsedMs=${System.currentTimeMillis() - openedAt}")
+                    applyLiveConversation(cardId, snapshot)
+                }
             }
             // First-frame watchdog: a stream that stays silent this long on an
             // allegedly healthy connection is riding a dead transport; rebuild
@@ -1198,7 +1211,7 @@ class DieterViewModel internal constructor(
                 if (!delivered) repository.reconnect()
             }
             try {
-                repository.watchConversation(cardId, CONVERSATION_PAGE_SIZE)
+                repository.watchConversation(cardId, CONVERSATION_PAGE_SIZE, initial = initial)
                     .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
                     .collectLatest { snapshot ->
                         if (_state.value.selectedCardId != cardId) return@collectLatest
@@ -1206,6 +1219,7 @@ class DieterViewModel internal constructor(
                             delivered = true
                             hedge.cancel()
                             watchdog.cancel()
+                            Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=stream elapsedMs=${System.currentTimeMillis() - openedAt}")
                         }
                         applyLiveConversation(cardId, snapshot)
                     }

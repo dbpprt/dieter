@@ -56,7 +56,6 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -212,7 +211,7 @@ fun DieterApp(container: DieterContainer) {
         if (request.cardId.isNotBlank()) model.openNotificationCard(request.cardId)
         container.consumeOpenRequest(request)
     }
-    LaunchedEffect(state.backgroundSyncEnabled, state.desiredConnected) {
+    LaunchedEffect(state.backgroundSyncMode, state.desiredConnected) {
         if (
             Build.VERSION.SDK_INT >= 33 &&
             state.backgroundSyncEnabled &&
@@ -771,13 +770,7 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
             if (!connectionError.isNullOrBlank() && !connected) {
                 Text(connectionError, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Stay connected in background", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Text("Persistent notification · polls chats & subagents", color = DieterMuted, fontSize = 11.sp)
-                }
-                Switch(checked = state.backgroundSyncEnabled, onCheckedChange = model::setBackgroundSyncEnabled)
-            }
+            BackgroundSyncModeSelector(state.backgroundSyncMode, model::setBackgroundSyncMode)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (state.desiredConnected) {
                     OutlinedButton(

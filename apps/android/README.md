@@ -33,11 +33,15 @@ Dieter session is encrypted with a device-bound Android Keystore key. GitHub
 credentials, GitHub access tokens, daemon certificates, and harness credentials
 are never persisted by the app.
 
-The connection is process-wide rather than screen-scoped. While **Stay
-connected in background** is enabled, a `remoteMessaging` foreground service
-keeps the automatically routed workspace stream and cross-project chat/card polling alive,
-and exposes a permanent connection notification with **Disconnect** and
-**Open** actions. Running standalone chats receive separate dismissible
+The connection is process-wide rather than screen-scoped. Background sync has
+three modes: **Live** keeps the stream and a partial wake lock active for
+immediate updates; **Smart** stays live while work is running, then performs
+best-effort checks about once a minute while Android permits background work;
+and **App only** sleeps until Dieter is opened. Existing enabled background-sync
+preferences migrate to Live so upgrades preserve their behavior. Android may
+defer Smart's idle checks during Doze. Live and Smart use a `remoteMessaging`
+foreground service and expose a permanent connection notification with
+**Disconnect** and **Open** actions. Running standalone chats receive separate dismissible
 notifications; dismissing one suppresses only that running session, and its
 terminal transition posts a fresh completion, failure, stopped, or needs-you
 notification. Running notifications are silent; terminal and board-card review
@@ -67,8 +71,10 @@ dedicated settings and command-center actions, swipe-up gesture, and expanded
 searchable command center. The preference is local to the Android device and
 survives process restarts.
 
-Chats open at the latest loaded message, retain a bounded local conversation
-cache, and expose an explicit **Force refresh** action in the conversation
+Chats render their cached tail immediately, refresh the newest 30 messages
+without waiting for the complete workspace projection, and load older history
+only when the user scrolls upward. They retain a bounded local conversation
+cache and expose an explicit **Force refresh** action in the conversation
 overflow menu. Project chat sections show the five most recent entries until
 expanded. Model reasoning traces are hidden by default and can be enabled
 globally under App Settings > Chat display.

@@ -239,7 +239,12 @@ interface DieterRepository {
     suspend fun chats(includeArchived: Boolean = true): ChatsResponse
     suspend fun card(cardId: String): CardDetail
     suspend fun conversation(cardId: String, limit: Int = 30, before: Int? = null): ConversationSnapshot
-    fun watchConversation(cardId: String, limit: Int = 30): Flow<ConversationSnapshot>
+    fun watchConversation(
+        cardId: String,
+        limit: Int = 30,
+        initial: ConversationSnapshot? = null,
+        afterSeq: Long = initial?.conversation?.lastSeq ?: 0,
+    ): Flow<ConversationSnapshot>
     suspend fun toolOutput(cardId: String, messageId: String, toolCallId: String, revision: String = ""): ToolOutput
     suspend fun sendMessage(
         cardId: String,
@@ -740,13 +745,19 @@ class GrpcDieterRepository(context: Context) : DieterRepository {
         return unary().getConversation(request.build())
     }
 
-    override fun watchConversation(cardId: String, limit: Int): Flow<ConversationSnapshot> = flow {
-        var snapshot: ConversationSnapshot? = null
+    override fun watchConversation(
+        cardId: String,
+        limit: Int,
+        initial: ConversationSnapshot?,
+        afterSeq: Long,
+    ): Flow<ConversationSnapshot> = flow {
+        var snapshot: ConversationSnapshot? = initial
         streaming().watchConversation(
             WatchConversationRequest.newBuilder()
                 .setCardId(cardId)
                 .setLimit(limit)
                 .setIntervalMs(250)
+                .setAfterSeq(afterSeq.coerceAtLeast(0L))
                 .build(),
         ).collect { update ->
             snapshot = ConversationReducer.apply(snapshot, update)

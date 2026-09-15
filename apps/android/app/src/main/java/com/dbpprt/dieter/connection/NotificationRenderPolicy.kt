@@ -28,6 +28,8 @@ internal fun connectionNotificationFingerprint(
     }?.hostname ?: state.projectHosts.values.firstOrNull { it.online }?.hostname
     return listOf(
         state.phase,
+        state.backgroundSyncMode,
+        state.periodicSyncWindowActive,
         state.endpoint?.id,
         state.endpoint?.label,
         state.endpoint?.address,
