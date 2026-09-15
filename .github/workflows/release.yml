@@ -174,7 +174,11 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
+        with:
+          # Dieter installs its exact SDK packages in the next step. The
+          # action's default still includes the retired `tools` package.
+          packages: ""
       - uses: extractions/setup-just@v3
         with:
           just-version: "1.58.0"
