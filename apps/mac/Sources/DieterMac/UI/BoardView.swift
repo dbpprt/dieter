@@ -768,6 +768,19 @@ struct QuickTaskPopover: View {
                 }
                 .accessibilityIdentifier("quick-task.story")
                 .smokeTarget("quick-task.story")
+                // Quick Task lives in a transient popover. Register the paste
+                // command on its focused editor so both ⌘V and Edit > Paste
+                // reach the responder chain instead of relying on a window-local
+                // key monitor that can miss popover commands.
+                .onPasteCommand(of: [.image, .fileURL]) { providers in
+                    let generation = formDraft.intakeGeneration
+                    Task {
+                        do {
+                            let parts = try await store.attachmentParts(providers)
+                            try formDraft.appendAttachments(parts, generation: generation)
+                        } catch { store.show(error) }
+                    }
+                }
                 .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                     let generation = formDraft.intakeGeneration
                     Task {
@@ -904,17 +917,6 @@ struct QuickTaskPopover: View {
         .frame(width: 430)
         .fixedSize(horizontal: false, vertical: true)
         .smokeTarget("quick-task.content")
-        .attachmentPasteCatcher { pasteboard in
-            guard let input = store.pasteboardAttachmentInput(pasteboard) else { return false }
-            let generation = formDraft.intakeGeneration
-            Task {
-                do {
-                    let parts = try await store.attachmentParts(input)
-                    try formDraft.appendAttachments(parts, generation: generation)
-                } catch { store.show(error) }
-            }
-            return true
-        }
         .task {
             if !initialized {
                 if !chooseDestination && (draftProjectID.isEmpty || capturedBrowser) {

@@ -539,16 +539,20 @@
                     let attached = await waitUntil(timeout: 8, intervalMilliseconds: 50) {
                         popover.contentView?.layoutSubtreeIfNeeded()
                         popover.displayIfNeeded()
-                        guard !store.quickTaskForm.attachments.isEmpty,
+                        guard store.quickTaskForm.attachments.count == 1,
+                            store.quickTaskForm.attachments[0].type == "image",
+                            store.quickTaskForm.attachments[0].mediaType == "image/png",
                             let preview = NativeUIAccessibility.find("quick-task.attachments", in: popover),
                             preview.recordedWindow === popover, let frame = preview.recordedFrame
                         else { return false }
                         return frame.width > 0 && frame.height > 0 && popover.isVisible
                     }
+                    let firstAttachmentType = store.quickTaskForm.attachments.first?.type ?? "none"
+                    let firstAttachmentMediaType = store.quickTaskForm.attachments.first?.mediaType ?? "none"
                     results["quick-task-paste-screenshot"] =
                         storyFocused && attached
                         ? "passed"
-                        : "failed: focus=\(storyFocused), attachments=\(store.quickTaskForm.attachments.count), rendered preview=\(attached), active=\(NSApp.isActive), key=\(popover.isKeyWindow)"
+                        : "failed: focus=\(storyFocused), attachments=\(store.quickTaskForm.attachments.count), first type=\(firstAttachmentType), first media=\(firstAttachmentMediaType), rendered preview=\(attached), active=\(NSApp.isActive), key=\(popover.isKeyWindow)"
                     capture(popover, to: output.appending(path: "quick-task-pasted-screenshot.png"))
                     pasteboard.clearContents()
                     let items = saved.map { values in
