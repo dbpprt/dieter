@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/dbpprt/dieter/internal/trust"
 )
 
 type Identity struct {
@@ -61,6 +63,10 @@ func LoadIdentity(boardHome string) (*Identity, error) {
 }
 
 func LoadOrCreateEnrollmentIdentity(boardHome, name, gatewayURL string) (*Identity, error) {
+	gatewayURL, err := trust.GatewayOrigin(gatewayURL)
+	if err != nil {
+		return nil, err
+	}
 	identity, err := LoadIdentity(boardHome)
 	if err == nil {
 		return identity, nil

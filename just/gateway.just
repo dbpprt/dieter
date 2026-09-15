@@ -36,6 +36,13 @@ test:
     )
     go test "${packages[@]}"
 
+# Check known gateway vulnerabilities with the image's pinned Go release.
+vulncheck:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    gateway_toolchain="$(sed -n 's/^go /go/p' go.mod)"
+    GOTOOLCHAIN="$gateway_toolchain" go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./cmd/dieter-gateway
+
 # Start the gateway in the foreground with its configured environment.
 run:
     #!/usr/bin/env bash

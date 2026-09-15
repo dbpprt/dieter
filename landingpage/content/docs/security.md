@@ -40,7 +40,10 @@ Revoking a daemon closes its relay immediately and invalidates direct access as
 its five-minute bearers expire. Unenrolling from the machine itself signs the
 request with the enrolled identity, revokes the gateway record, closes the
 relay, and removes the local gateway credential, without touching projects,
-conversations, schedules, or harness settings.
+conversations, schedules, or harness settings. Signing out or expiring a gateway
+session closes its existing gateway streams within approximately five seconds.
+Direct streams end when their five-minute bearer expires, allowing ten seconds
+of clock tolerance.
 
 ## What the gateway can and cannot see
 
@@ -58,6 +61,8 @@ relay calls. **All other paths, including `/`, return 404.**
 ## Transport hardening
 
 - TLS 1.3 is enforced on every external hop.
+- A reverse proxy must configure TLS 1.3 explicitly; the gateway cannot control
+  the proxy's public TLS policy.
 - Relay messages are capped at 16 MiB; queues, buffers, and concurrent streams
   are bounded.
 - A canceled relay RPC cancels only that transport RPC and never implicitly

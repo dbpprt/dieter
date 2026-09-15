@@ -42,6 +42,11 @@ store projects, transcripts, files, schedules, or harness credentials. Use
 inspect presence and advertised routes. Directory output includes the daemon's
 release `version` and compatibility `apiVersion`; use the latter when deciding
 whether a native client can safely target a machine in a mixed-version fleet.
+Gateway URLs require HTTPS. HTTP is allowed only for literal loopback addresses
+(for example, `http://127.0.0.1:8080`) used by isolated local gateways.
+Daemon enrollment requires explicit browser approval after GitHub sign-in.
+The operator checks the machine name and enrollment code; the page also shows
+the key fingerprint. Opening the verification URL alone does not grant enrollment.
 Use `dieter machine gateway` for the running gateway build identity and
 `dieter --machine <machine-id> machine info` for live CPU, memory, process, and
 optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a

@@ -54,3 +54,16 @@ func TestClientSessionValidityHonorsExpiryMargin(t *testing.T) {
 		t.Fatal("session without an access token should be invalid")
 	}
 }
+
+func TestClientGatewayURLRequiresEncryptedRemoteTransport(t *testing.T) {
+	for _, origin := range []string{"http://gateway.example", "http://192.168.1.2:8080", "http://localhost:8080", "https://user:password@gateway.example"} {
+		if _, err := normalizeGatewayURL(origin); err == nil {
+			t.Errorf("unsafe gateway URL %q was accepted", origin)
+		}
+	}
+	for _, origin := range []string{"https://gateway.example", "http://127.0.0.1:8080", "http://[::1]:8080"} {
+		if got, err := normalizeGatewayURL(origin + "/"); err != nil || got != origin {
+			t.Errorf("valid gateway URL %q = (%q, %v)", origin, got, err)
+		}
+	}
+}

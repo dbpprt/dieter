@@ -41,3 +41,31 @@ func TestChallengeBindsGatewayDaemonAndNonce(t *testing.T) {
 		t.Fatal("unenrollment proof was accepted as a daemon link proof")
 	}
 }
+
+func TestTunnelProofRejectsCertificateOutsideValidityWindow(t *testing.T) {
+	public, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for name, validity := range map[string][2]time.Time{
+		"expired": {now.Add(-2 * time.Hour), now.Add(-time.Hour)},
+		"future":  {now.Add(time.Hour), now.Add(2 * time.Hour)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			template := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: validity[0], NotAfter: validity[1]}
+			raw, err := x509.CreateCertificate(rand.Reader, template, template, public, private)
+			if err != nil {
+				t.Fatal(err)
+			}
+			certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: raw})
+			challenge := []byte("isolated-certificate-validity-test")
+			if err := VerifyCertificate(certificate, "https://dieter.example", "d_test", challenge, Sign(private, "https://dieter.example", "d_test", challenge)); err == nil {
+				t.Fatal("tunnel proof accepted a certificate outside its validity window")
+			}
+			if err := VerifyUnenrollment(certificate, "https://dieter.example", "d_test", challenge, SignUnenrollment(private, "https://dieter.example", "d_test", challenge)); err != nil {
+				t.Fatalf("expired enrollment owner cannot revoke its own key: %v", err)
+			}
+		})
+	}
+}
