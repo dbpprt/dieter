@@ -322,6 +322,11 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 		}
 	}
 	reconcile()
+	if cleaned, err := application.app.CleanupInactiveProviderBridges(); err != nil {
+		logger.Warn("could not clean inactive provider bridges", "error", err)
+	} else if len(cleaned) > 0 {
+		logger.Info("cleaned inactive provider bridges", "cards", cleaned)
+	}
 	// During a launchd/systemd replacement the previous owner PID can remain
 	// alive for a fraction of a second after the new process starts. Recheck
 	// once after handoff so that transiently-valid leases cannot strand a turn.

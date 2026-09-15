@@ -229,6 +229,7 @@ extension DieterStore {
             phase = .connected(version: prepared.initial.health.version)
             startGlobalSync()
             startSyncLivenessMonitor()
+            conversationModel.resumeSelectedConversation(client: prepared.plane.rpc)
             startOutboxWorker()
             // The selected machine is live as soon as WatchSync starts.
             // Refreshing auxiliary machines must not hold this connect attempt
@@ -934,17 +935,7 @@ extension DieterStore {
             return
         }
         startGlobalSync()
-        guard let cardID = selectedCardID ?? selectedChatID,
-            isConversationServerBacked(cardID)
-        else { return }
-        conversationSyncing = true
-        conversationTask?.cancel()
-        Task { @MainActor [weak self] in
-            guard let self, let rpc = self.rpc,
-                (self.selectedCardID ?? self.selectedChatID) == cardID
-            else { return }
-            await self.fetchConversation(cardID: cardID, chat: self.selectedChatID == cardID, rpc: rpc)
-        }
+        conversationModel.resumeSelectedConversation(client: rpc)
     }
 
     func refreshDaemonPresence() async {

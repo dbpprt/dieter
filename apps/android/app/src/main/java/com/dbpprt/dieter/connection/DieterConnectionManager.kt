@@ -812,11 +812,7 @@ class DieterConnectionManager(
                     _state.update { it.copy(phase = ConnectionPhase.AUTH_REQUIRED, error = "Sign in with GitHub to use ${repository.activeEndpoint.label}.") }
                     return
                 }
-                val transient = Status.fromThrowable(error).code in setOf(
-                    Status.Code.UNAVAILABLE,
-                    Status.Code.DEADLINE_EXCEEDED,
-                    Status.Code.UNKNOWN,
-                )
+                val transient = rpcReadFailureIsTransient(error)
                 _state.update {
                     it.copy(
                         phase = if (transient) ConnectionPhase.RECONNECTING else ConnectionPhase.UNAVAILABLE,

@@ -145,10 +145,55 @@ type interruptQueueRunner struct {
 type restartRunner struct {
 	mu          sync.Mutex
 	requests    []harness.Request
+	cleanups    int
 	started     chan struct{}
 	resumed     chan error
 	suspend     chan struct{}
 	suspendOnce sync.Once
+}
+
+type failedSuspendCleanerRunner struct {
+	started chan struct{}
+	cleaned chan struct{}
+	once    sync.Once
+}
+
+type recordingCleanerRunner struct {
+	fakeRunner
+	mu       sync.Mutex
+	cleaned  []string
+	metadata map[string]string
+}
+
+func (runner *recordingCleanerRunner) Cleanup(sessionID, runtimeRoot string) error {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	runner.cleaned = append(runner.cleaned, sessionID)
+	if path := runner.metadata[sessionID]; path != "" {
+		_ = os.Remove(path)
+	}
+	return nil
+}
+
+func (runner *recordingCleanerRunner) cleanedCards() []string {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	return append([]string(nil), runner.cleaned...)
+}
+
+func (runner *failedSuspendCleanerRunner) Run(ctx context.Context, _ harness.Request, _ func(harness.Output) error) error {
+	close(runner.started)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (*failedSuspendCleanerRunner) Suspend(_, _ string) error {
+	return errors.New("provider did not produce a continuation")
+}
+
+func (runner *failedSuspendCleanerRunner) Cleanup(_, _ string) error {
+	runner.once.Do(func() { close(runner.cleaned) })
+	return nil
 }
 
 func (runner *restartRunner) Run(ctx context.Context, request harness.Request, emit func(harness.Output) error) (runErr error) {
@@ -196,6 +241,19 @@ func (runner *restartRunner) Run(ctx context.Context, request harness.Request, e
 func (runner *restartRunner) Suspend(_, _ string) error {
 	runner.suspendOnce.Do(func() { close(runner.suspend) })
 	return nil
+}
+
+func (runner *restartRunner) Cleanup(_, _ string) error {
+	runner.mu.Lock()
+	runner.cleanups++
+	runner.mu.Unlock()
+	return nil
+}
+
+func (runner *restartRunner) cleanupCount() int {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	return runner.cleanups
 }
 
 func (runner *restartRunner) snapshotRequests() []harness.Request {
@@ -1737,6 +1795,9 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 			if err := service.SuspendActiveTurns(shutdownCtx); err != nil {
 				t.Fatal(err)
 			}
+			if runner.cleanupCount() != 0 {
+				t.Fatal("clean suspension terminated its resumable provider bridge")
+			}
 			parked, err := service.Store.Conversation(card.ID)
 			if err != nil || parked.Status != "running" || parked.ActiveTurn == nil || !hasTurnContinuation(parked.Session) {
 				t.Fatalf("parked conversation=%#v err=%v", parked, err)
@@ -1777,6 +1838,9 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 					t.Fatal("continued turn did not complete its durable lifecycle")
 				}
 			}
+			if runner.cleanupCount() != 1 {
+				t.Fatalf("completed continuation cleanup count=%d, want 1", runner.cleanupCount())
+			}
 			conversation, err := service.Store.Conversation(card.ID)
 			if err != nil || conversation.Status != "idle" || conversation.ActiveTurn != nil || len(conversation.Messages) != 2 || conversation.Messages[1].ID != responseMessageID || conversation.Messages[1].Parts[0].Text != "before restart after restart" {
 				t.Fatalf("continued conversation=%#v err=%v", conversation, err)
@@ -1799,6 +1863,95 @@ func TestGracefulRestartContinuesActiveTurnForEveryProvider(t *testing.T) {
 				t.Fatalf("instruction snapshot changed across restart: first=%q resumed=%q", requests[0].Instructions, requests[1].Instructions)
 			}
 		})
+	}
+}
+
+func TestFailedRestartSuspensionCleansProviderBridge(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	runner := &failedSuspendCleanerRunner{started: make(chan struct{}), cleaned: make(chan struct{})}
+	service.Runner = runner
+	card, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneRunning,
+		Title: "Restart", Prompt: "Keep working", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updates, err := service.StartCard(card.ID, "", card.Provider, card.Model, card.Effort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go drainTurnUpdates(updates)
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("turn did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := service.SuspendActiveTurns(ctx); err == nil || !strings.Contains(err.Error(), "provider did not produce a continuation") {
+		t.Fatalf("suspension error=%v", err)
+	}
+	select {
+	case <-runner.cleaned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("failed suspension did not clean its provider bridge")
+	}
+	conversation, err := service.Store.Conversation(card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conversation.Status == "running" || conversation.ActiveTurn != nil {
+		t.Fatalf("failed suspension remained active: %#v", conversation)
+	}
+}
+
+func TestStartupCleansOnlyInactiveProviderBridges(t *testing.T) {
+	service, _, project, board := appSetup(t)
+	idle, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Idle", Prompt: "Later", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := service.CreateCard(context.Background(), CardInput{
+		Project: project.ID, Board: board.ID, Lane: model.LaneTodo,
+		Title: "Active", Prompt: "Now", Provider: "codex", DeferStart: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeRoot := filepath.Join(service.Store.RuntimeDir(), "sessions", project.ID)
+	metadata := map[string]string{}
+	for _, cardID := range []string{idle.ID, active.ID} {
+		path := filepath.Join(runtimeRoot, ".agent-runs", cardID, "bridge", "bridge-meta.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(`{"pid":999999}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		metadata[cardID] = path
+	}
+	runner := &recordingCleanerRunner{metadata: metadata}
+	service.Runner = runner
+	service.mu.Lock()
+	service.active[active.ID] = &activeTurn{cardID: active.ID}
+	service.mu.Unlock()
+
+	cleaned, err := service.CleanupInactiveProviderBridges()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cleaned) != 1 || cleaned[0] != idle.ID {
+		t.Fatalf("cleaned=%v, want only %s", cleaned, idle.ID)
+	}
+	if got := runner.cleanedCards(); len(got) != 1 || got[0] != idle.ID {
+		t.Fatalf("cleanup calls=%v", got)
+	}
+	if _, err := os.Stat(metadata[active.ID]); err != nil {
+		t.Fatalf("active bridge metadata was removed: %v", err)
 	}
 }
 

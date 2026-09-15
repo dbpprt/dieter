@@ -62,10 +62,32 @@ func killHarnessProcess(pid int) error {
 	return nil
 }
 
+func terminateProviderBridgeProcess(pid int) error {
+	if pid <= 0 {
+		return errors.New("invalid provider bridge PID")
+	}
+	if err := syscall.Kill(-pid, syscall.SIGTERM); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	return nil
+}
+
 func workerProcessMatches(pid int, token string) bool {
 	if pid <= 0 || token == "" {
 		return false
 	}
 	output, err := exec.Command("ps", "-ww", "-p", strconv.Itoa(pid), "-o", "command=").Output()
 	return err == nil && strings.Contains(string(output), "--board-worker-token="+token)
+}
+
+func providerBridgeProcessMatches(pid int, stateDir string) bool {
+	if pid <= 0 || stateDir == "" {
+		return false
+	}
+	output, err := exec.Command("ps", "-ww", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+	command := string(output)
+	return err == nil && strings.Contains(command, "bridge.mjs") && strings.Contains(command, "--bridge-state-dir") && strings.Contains(command, stateDir)
 }

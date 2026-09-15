@@ -13,6 +13,7 @@ import com.dbpprt.dieter.connection.MachineOutboxSummary
 import com.dbpprt.dieter.connection.ProjectHost
 import com.dbpprt.dieter.connection.isServerConversationId
 import com.dbpprt.dieter.connection.resolveConversationId
+import com.dbpprt.dieter.connection.rpcReadFailureIsTransient
 import com.dbpprt.dieter.data.DIETER_ENDPOINTS
 import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
 import com.dbpprt.dieter.data.DieterEndpoint
@@ -339,8 +340,11 @@ internal fun DieterUiState.applyingScheduleRunPage(response: ScheduleRunsRespons
     )
 }
 
-internal fun conversationStreamNeedsRestart(activeCardId: String?, selectedCardId: String?): Boolean =
-    selectedCardId != null && activeCardId != selectedCardId
+internal fun conversationStreamNeedsRestart(
+    activeCardId: String?,
+    selectedCardId: String?,
+    streamActive: Boolean = true,
+): Boolean = selectedCardId != null && (activeCardId != selectedCardId || !streamActive)
 
 class DieterViewModel internal constructor(
     private val connectionManager: DieterConnectionManager,
@@ -706,7 +710,12 @@ class DieterViewModel internal constructor(
             )
         }
         val resolvedSelectedCardId = _state.value.selectedCardId
-        if (foreground && conversationStreamNeedsRestart(conversationStreamCardId, resolvedSelectedCardId)) {
+        if (foreground && conversationStreamNeedsRestart(
+                conversationStreamCardId,
+                resolvedSelectedCardId,
+                conversationJob?.isActive == true,
+            )
+        ) {
             startConversationStream(requireNotNull(resolvedSelectedCardId))
         }
         resolvedSelectedCardId?.let(::ensureConversationRecovery)
@@ -778,8 +787,7 @@ class DieterViewModel internal constructor(
     }
 
     private suspend fun retryStream(cause: Throwable, attempt: Long, label: String): Boolean {
-        val code = Status.fromThrowable(cause).code
-        val transient = foreground && (code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED)
+        val transient = foreground && rpcReadFailureIsTransient(cause)
         if (!transient) return false
         _state.update {
             it.copy(

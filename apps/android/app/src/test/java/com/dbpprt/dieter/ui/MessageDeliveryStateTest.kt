@@ -18,4 +18,10 @@ class MessageDeliveryStateTest {
         assertEquals(false, conversationStreamNeedsRestart("c_server", "c_server"))
         assertEquals(false, conversationStreamNeedsRestart(null, null))
     }
+
+    @Test
+    fun deadForegroundStreamRestartsEvenWhenItsRememberedCardStillMatches() {
+        assertEquals(true, conversationStreamNeedsRestart("c_server", "c_server", streamActive = false))
+        assertEquals(false, conversationStreamNeedsRestart("c_server", "c_server", streamActive = true))
+    }
 }

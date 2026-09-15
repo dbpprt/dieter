@@ -1304,6 +1304,8 @@
                 }
                 let canceledOfflineMessage =
                     "Canceled offline outbox smoke \(UUID().uuidString.lowercased())"
+                let offlineDeliveryMessage =
+                    "Offline delivery smoke \(UUID().uuidString.lowercased())"
                 if let liveCard, let machine = store.machine(forProjectID: liveCard.projectID) {
                     store.composerText = canceledOfflineMessage
                     await store.sendComposer()
@@ -1333,7 +1335,7 @@
                         : "failed: removed=\(removed), queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0)"
                     await captureAppearances(window, named: "17b-offline-message-canceled.png", in: output)
 
-                    store.composerText = "Offline delivery smoke \(UUID().uuidString.lowercased())"
+                    store.composerText = offlineDeliveryMessage
                     await store.sendComposer()
                     _ = await waitUntil(timeout: 5) {
                         store.outboxSummary(for: machine)?.messageCount == 1
@@ -1341,6 +1343,44 @@
                 } else {
                     results["17a-offline-message-queued"] = "failed: live card or owning machine missing"
                     results["17b-offline-message-canceled"] = "failed: live card or owning machine missing"
+                }
+
+                if let trigger = offlineTrigger(), let liveCard {
+                    try? FileManager.default.removeItem(at: trigger)
+                    let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
+                    let delivered = await waitUntil(timeout: 15) {
+                        guard let machine = store.machine(forProjectID: liveCard.projectID) else {
+                            return false
+                        }
+                        return store.outboxSummary(for: machine) == nil
+                    }
+                    let visible = await waitUntil(timeout: 10) {
+                        store.conversationMessages.contains { message in
+                            message.parts.contains {
+                                $0.type == "text" && $0.text == offlineDeliveryMessage
+                            }
+                        }
+                    }
+                    let selectionResumed =
+                        store.selectedCardID == liveCard.id && store.conversationError == nil
+                    let canceledStayedAbsent = !store.conversationMessages.contains { message in
+                        message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
+                    }
+                    results["17c-reconnected-message-delivered"] =
+                        reconnected && delivered && visible && selectionResumed && canceledStayedAbsent
+                        ? "passed"
+                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible), selected=\(store.selectedCardID ?? "none"), conversationError=\(store.conversationError ?? "none"), canceledAbsent=\(canceledStayedAbsent)"
+                    await captureAppearances(
+                        window, named: "17c-reconnected-message-delivered.png", in: output)
+                } else {
+                    results["17c-reconnected-message-delivered"] =
+                        "failed: reconnect trigger or live card missing"
+                }
+
+                if let trigger = offlineTrigger() {
+                    _ = FileManager.default.createFile(atPath: trigger.path, contents: Data())
+                    _ = await waitUntil(timeout: 10) { !store.phase.isConnected }
+                    try? await DieterTaskSleep.seconds(1)
                 }
                 await store.openBoard(cachedBoard.id, projectID: project.id)
                 try? await DieterTaskSleep.milliseconds(700)
@@ -1358,38 +1398,9 @@
                     : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.phase.label), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
                 await captureAppearances(
                     window, named: "17-offline-cached-board-navigation.png", in: output)
-
-                if let trigger = offlineTrigger(), let liveCard {
+                if let trigger = offlineTrigger() {
                     try? FileManager.default.removeItem(at: trigger)
-                    let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
-                    let delivered = await waitUntil(timeout: 15) {
-                        guard let machine = store.machine(forProjectID: liveCard.projectID) else {
-                            return false
-                        }
-                        return store.outboxSummary(for: machine) == nil
-                    }
-                    if reconnected && delivered {
-                        await store.openConversation(cardID: liveCard.id)
-                    }
-                    let visible = await waitUntil(timeout: 10) {
-                        store.conversationMessages.contains { message in
-                            message.parts.contains {
-                                $0.type == "text" && $0.text.hasPrefix("Offline delivery smoke ")
-                            }
-                        }
-                    }
-                    let canceledStayedAbsent = !store.conversationMessages.contains { message in
-                        message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
-                    }
-                    results["17c-reconnected-message-delivered"] =
-                        reconnected && delivered && visible && canceledStayedAbsent
-                        ? "passed"
-                        : "failed: reconnected=\(reconnected), delivered=\(delivered), visible=\(visible), canceledAbsent=\(canceledStayedAbsent)"
-                    await captureAppearances(
-                        window, named: "17c-reconnected-message-delivered.png", in: output)
-                } else {
-                    results["17c-reconnected-message-delivered"] =
-                        "failed: reconnect trigger or live card missing"
+                    _ = await waitUntil(timeout: 25) { store.phase.isConnected }
                 }
             } catch {
                 results["17-offline-cached-board-navigation"] =

@@ -43,6 +43,10 @@ type workerRecord struct {
 	Token    string `json:"token"`
 }
 
+type providerBridgeRecord struct {
+	PID int `json:"pid"`
+}
+
 func newWorkerToken() string {
 	value := make([]byte, 16)
 	if _, err := rand.Read(value); err != nil {
@@ -543,6 +547,13 @@ type Canceller interface {
 	Cancel(sessionID, runtimeRoot string) error
 }
 
+// Cleaner removes a provider bridge after its owning turn has reached a
+// terminal state. Clean restart suspension deliberately skips this operation:
+// the persisted continuation reconnects to that bridge in the next process.
+type Cleaner interface {
+	Cleanup(sessionID, runtimeRoot string) error
+}
+
 // Suspender parks a live turn without destroying its provider bridge. The
 // worker emits a continuation state before exiting so another Dieter process
 // can attach without replaying the prompt.
@@ -795,41 +806,91 @@ func (r *SubprocessRunner) Cancel(sessionID, runtimeRoot string) error {
 	if strings.ContainsAny(sessionID, `/\\`) {
 		return errors.New("invalid harness session ID")
 	}
-	raw, err := os.ReadFile(filepath.Join(runtimeRoot, ".dieter-worker-"+sessionID+".pid"))
-	if errors.Is(err, os.ErrNotExist) {
+	path := filepath.Join(runtimeRoot, ".dieter-worker-"+sessionID+".pid")
+	stopped := false
+	raw, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		var record workerRecord
+		if json.Unmarshal(raw, &record) != nil {
+			// Pre-token worker files cannot be verified safely after PID reuse.
+			_ = os.Remove(path)
+		} else if record.PID <= 0 || record.Token == "" {
+			return errors.New("active harness worker has an invalid PID")
+		} else if !workerProcessMatches(record.PID, record.Token) {
+			_ = os.Remove(path)
+		} else {
+			stopped = true
+			if err := interruptHarnessProcess(record.PID); err != nil && !errors.Is(err, os.ErrProcessDone) {
+				return err
+			}
+			deadline := time.Now().Add(9 * time.Second)
+			for workerProcessMatches(record.PID, record.Token) && time.Now().Before(deadline) {
+				time.Sleep(50 * time.Millisecond)
+			}
+			if workerProcessMatches(record.PID, record.Token) {
+				if err := killHarnessProcess(record.PID); err != nil && !errors.Is(err, os.ErrProcessDone) {
+					return err
+				}
+			}
+			_ = os.Remove(path)
+		}
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil:
+		return err
+	}
+	cleaned, cleanupErr := r.cleanupProviderBridge(sessionID, runtimeRoot)
+	if cleanupErr != nil {
+		return cleanupErr
+	}
+	if !stopped && !cleaned {
 		return ErrNoActiveTurn
+	}
+	return nil
+}
+
+func (r *SubprocessRunner) Cleanup(sessionID, runtimeRoot string) error {
+	if strings.ContainsAny(sessionID, `/\\`) {
+		return errors.New("invalid harness session ID")
+	}
+	_, err := r.cleanupProviderBridge(sessionID, runtimeRoot)
+	return err
+}
+
+func (r *SubprocessRunner) cleanupProviderBridge(sessionID, runtimeRoot string) (bool, error) {
+	stateDir := filepath.Join(runtimeRoot, ".agent-runs", sessionID, "bridge")
+	path := filepath.Join(stateDir, "bridge-meta.json")
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
-	path := filepath.Join(runtimeRoot, ".dieter-worker-"+sessionID+".pid")
-	var record workerRecord
-	if json.Unmarshal(raw, &record) != nil {
-		// Pre-token worker files cannot be verified safely after PID reuse.
+	var record providerBridgeRecord
+	if json.Unmarshal(raw, &record) != nil || record.PID <= 0 {
+		// An unverifiable record must never authorize signaling a PID.
 		_ = os.Remove(path)
-		return ErrNoActiveTurn
+		return false, nil
 	}
-	if record.PID <= 0 || record.Token == "" {
-		return errors.New("active harness worker has an invalid PID")
-	}
-	if !workerProcessMatches(record.PID, record.Token) {
+	if !providerBridgeProcessMatches(record.PID, stateDir) {
 		_ = os.Remove(path)
-		return ErrNoActiveTurn
+		return false, nil
 	}
-	if err := interruptHarnessProcess(record.PID); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
+	if err := terminateProviderBridgeProcess(record.PID); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return false, err
 	}
-	deadline := time.Now().Add(9 * time.Second)
-	for workerProcessMatches(record.PID, record.Token) && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
+	deadline := time.Now().Add(2 * time.Second)
+	for providerBridgeProcessMatches(record.PID, stateDir) && time.Now().Before(deadline) {
+		time.Sleep(25 * time.Millisecond)
 	}
-	if workerProcessMatches(record.PID, record.Token) {
+	if providerBridgeProcessMatches(record.PID, stateDir) {
 		if err := killHarnessProcess(record.PID); err != nil && !errors.Is(err, os.ErrProcessDone) {
-			return err
+			return false, err
 		}
 	}
 	_ = os.Remove(path)
-	return nil
+	return true, nil
 }
 
 func (r *SubprocessRunner) Suspend(sessionID, runtimeRoot string) error {

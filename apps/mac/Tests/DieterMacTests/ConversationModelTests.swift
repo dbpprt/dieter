@@ -1,5 +1,6 @@
 import DieterAPI
 import Foundation
+import GRPCCore
 import Testing
 @testable import DieterMac
 
@@ -64,6 +65,81 @@ private actor EarlierHistoryFixture: ConversationRPC {
     ) async throws {
         throw CancellationError()
     }
+}
+
+private actor ConversationRecoveryFixture: ConversationRPC {
+    enum WatchBehavior: Sendable {
+        case stayOpen
+        case remoteCancellation
+    }
+
+    let behavior: WatchBehavior
+    var readCount = 0
+    var watchCount = 0
+
+    init(behavior: WatchBehavior) { self.behavior = behavior }
+
+    func conversation(cardID: String, limit: Int32, before: Int32?) async throws
+        -> Dieter_V1_ConversationSnapshot
+    {
+        readCount += 1
+        var snapshot = Dieter_V1_ConversationSnapshot()
+        snapshot.detail.card.id = cardID
+        snapshot.conversation.cardID = cardID
+        return snapshot
+    }
+
+    func watchConversation(
+        cardID: String, after: Int64,
+        receive: @escaping @Sendable (Dieter_V1_ConversationUpdate) async -> Void
+    ) async throws {
+        watchCount += 1
+        switch behavior {
+        case .stayOpen:
+            try await Task.sleep(nanoseconds: 3_600_000_000_000)
+        case .remoteCancellation:
+            throw RPCError(code: .cancelled, message: "relay stream closed")
+        }
+    }
+}
+
+@Test @MainActor func replacementClientResumesTheSelectedConversation() async throws {
+    let rpc = ConversationRecoveryFixture(behavior: .stayOpen)
+    let model = ConversationModel()
+    model.bind(client: rpc, endpointID: "machine")
+    model.selectedChatID = "card"
+    model.conversationError = "Conversation updates paused"
+    model.resumeSelectedConversation(client: rpc)
+
+    for _ in 0..<1_000 {
+        if await rpc.readCount == 1, await rpc.watchCount == 1 { break }
+        try await Task.sleep(nanoseconds: 1_000_000)
+    }
+
+    #expect(await rpc.readCount == 1)
+    #expect(await rpc.watchCount == 1)
+    #expect(model.conversation?.detail.card.id == "card")
+    #expect(model.conversationError == nil)
+    model.bind(client: nil, endpointID: "machine")
+}
+
+@Test @MainActor func remoteConversationCancellationRequestsTransportRecovery() async throws {
+    let rpc = ConversationRecoveryFixture(behavior: .remoteCancellation)
+    let model = ConversationModel()
+    model.bind(client: rpc, endpointID: "machine")
+    model.selectedChatID = "card"
+    var recoveryRequests = 0
+    model.onTransportFailure = { _, _ in recoveryRequests += 1 }
+
+    await model.fetchConversation(cardID: "card", chat: true, rpc: rpc)
+    for _ in 0..<1_000 {
+        if recoveryRequests == 1 { break }
+        try await Task.sleep(nanoseconds: 1_000_000)
+    }
+
+    #expect(recoveryRequests == 1)
+    #expect(model.conversationError == nil)
+    model.bind(client: nil, endpointID: "machine")
 }
 
 @Test @MainActor func historyBudgetPagesBackWithoutJoiningAcrossAGapAndCanReturnToLive() async {

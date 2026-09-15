@@ -275,6 +275,8 @@ extension DieterStore {
         if conversation != projected { conversation = projected }
         if selectedDetail != projected.detail { selectedDetail = projected.detail }
         conversationLoading = false
+        conversationSyncing = false
+        conversationError = nil
         conversationLastRefreshedAt = conversationRefreshDate(
             cardID: selectedID, endpointID: endpointID)
     }

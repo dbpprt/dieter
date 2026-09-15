@@ -135,6 +135,39 @@ private final class RecoveryProbe: Sendable {
     #expect(!(await task.value))
 }
 
+@Test func lowLevelAndRuntimeTransportFailuresAreRecoverableReads() {
+    #expect(DieterRPCFailure.isTransient(POSIXError(.EPIPE)))
+    #expect(DieterRPCFailure.isTransient(POSIXError(.ECONNRESET)))
+    #expect(
+        DieterRPCFailure.isTransient(
+            RuntimeError(code: .transportError, message: "connection closed", cause: POSIXError(.EPIPE))))
+    #expect(
+        DieterRPCFailure.isTransient(
+            RPCError(
+                code: .unknown, message: "transport failed",
+                cause: RuntimeError(code: .transportError, message: "broken pipe"))))
+    #expect(!DieterRPCFailure.isTransient(POSIXError(.EPERM)))
+}
+
+@Test @MainActor func synchronizedConversationClearsAStaleStreamFailure() {
+    let store = recoveryStore(probe: RecoveryProbe())
+    defer { store.disconnect() }
+    store.selectedChatID = "card"
+    store.conversationError = "Conversation updates paused: broken pipe"
+    store.conversationSyncing = true
+    var snapshot = Dieter_V1_GlobalSnapshot()
+    var conversation = Dieter_V1_ConversationSnapshot()
+    conversation.detail.card.id = "card"
+    conversation.conversation.cardID = "card"
+    snapshot.conversations = [conversation]
+
+    store.applySelectedConversationProjection(snapshot, endpointID: store.endpoint.id)
+
+    #expect(store.conversation?.detail.card.id == "card")
+    #expect(store.conversationError == nil)
+    #expect(!store.conversationSyncing)
+}
+
 @Test @MainActor func cancelledActionsDoNotStartAnotherConnection() async {
     let probe = RecoveryProbe()
     let store = recoveryStore(probe: probe)

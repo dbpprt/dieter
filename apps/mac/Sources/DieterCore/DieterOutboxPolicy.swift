@@ -23,12 +23,38 @@ package enum DieterRPCFailure {
     }
 
     package static func isTransient(_ error: Error) -> Bool {
-        guard let rpcError = error as? RPCError else { return false }
-        return [
-            .cancelled,
-            .deadlineExceeded,
-            .unavailable,
-        ].contains(rpcError.code)
+        if let rpcError = error as? RPCError {
+            if [.cancelled, .deadlineExceeded, .unavailable].contains(rpcError.code) {
+                return true
+            }
+            if isPermanent(rpcError) { return false }
+            return rpcError.cause.map(isTransient) ?? false
+        }
+        if let runtimeError = error as? RuntimeError {
+            if runtimeError.code == .clientIsStopped || runtimeError.code == .transportError {
+                return true
+            }
+            return runtimeError.cause.map(isTransient) ?? false
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain {
+            return [
+                POSIXErrorCode.EPIPE,
+                .ECONNABORTED,
+                .ECONNRESET,
+                .ENOTCONN,
+                .ETIMEDOUT,
+                .ENETDOWN,
+                .ENETUNREACH,
+                .EHOSTDOWN,
+                .EHOSTUNREACH,
+                .ECONNREFUSED,
+            ].contains { Int($0.rawValue) == nsError.code }
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+            return isTransient(underlying)
+        }
+        return false
     }
 
     package static func isPermanent(_ error: Error) -> Bool {

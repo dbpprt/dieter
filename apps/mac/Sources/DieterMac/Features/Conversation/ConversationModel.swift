@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterCore
 import Foundation
 import Observation
 
@@ -92,12 +93,13 @@ final class ConversationModel {
                         await self?.applyConversationUpdate(
                             update, cardID: cardID, client: rpc, selectionGeneration: selectionGeneration)
                     }
-                } catch  where Self.isExpectedCancellation(error) {} catch {
+                } catch  where Task.isCancelled {
+                } catch {
                     guard let self, self.rpc === rpc, selectionGeneration == self.conversationSelectionGeneration,
                         (self.selectedCardID ?? self.selectedChatID) == cardID
                     else { return }
                     self.conversationSyncing = false
-                    if DieterRPCFailure.isTransient(error) {
+                    if DieterRPCFailure.canRetryRead(error) {
                         self.onTransportFailure(error, rpc)
                     } else {
                         self.conversationError = "Conversation updates paused: \(DieterRPCFailure.message(for: error))"
@@ -142,6 +144,27 @@ final class ConversationModel {
                     conversationError = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
                 }
             }
+        }
+    }
+
+    /// Rebuild the selected conversation read and stream after the store has
+    /// committed a replacement data-plane client. WatchSync only carries a
+    /// bounded set of recent conversations, so it cannot restore this stream.
+    func resumeSelectedConversation(client: any ConversationRPC) {
+        guard rpc === client, let cardID = selectedCardID ?? selectedChatID,
+            DieterConversationID.isServerBacked(cardID)
+        else { return }
+        conversationTask?.cancel()
+        conversationSyncing = true
+        conversationTask = Task { @MainActor [weak self] in
+            guard let self, self.rpc === client,
+                (self.selectedCardID ?? self.selectedChatID) == cardID
+            else { return }
+            await self.fetchConversation(
+                cardID: cardID,
+                chat: self.selectedChatID == cardID,
+                rpc: client
+            )
         }
     }
 
