@@ -166,6 +166,9 @@ class ScreenEndToEndTest {
             )).toString())
             compose.onNodeWithTag("screen-disconnect").performClick()
             assertEquals("idle", controller.state.value.phase)
+            // Drive Compose's test clock through the phase change and canvas-clear effect.
+            compose.onNodeWithTag("screen-connect").assertIsDisplayed()
+            compose.waitForIdle()
             SystemClock.sleep(200)
             val cleared = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
             assertEquals("Disconnect must clear remote pixels", android.graphics.Color.rgb(12, 15, 20),
