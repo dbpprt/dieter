@@ -76,6 +76,7 @@ class ScreenEndToEndTest {
             compose.waitUntil(45_000) { controller.state.value.phase == "streaming" || controller.state.value.phase == "failed" }
             assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
             compose.waitUntil(10_000) { controller.state.value.control }
+            compose.waitUntil(15_000) { opened.get() >= 2 && controller.state.value.control }
             compose.waitUntil(10_000) { controller.state.value.receivedFps > 5 }
             assertTrue(controller.state.value.session.width >= 640)
             // Capture the actual GPU output, not only a composable placeholder.
@@ -115,6 +116,7 @@ class ScreenEndToEndTest {
                 ime.finishComposingText()
                 canvas.pressKey(43); canvas.pressKey(80)
             }
+            compose.waitUntil(15_000) { controller.state.value.control && canvas.hasWindowFocus() }
             compose.onNodeWithContentDescription("Special keys").performClick()
             compose.onNodeWithText("Ctrl").performClick()
             compose.onNodeWithText("Ctrl").performClick()
@@ -122,6 +124,8 @@ class ScreenEndToEndTest {
             compose.onNodeWithContentDescription("Toggle keyboard").performClick()
             SystemClock.sleep(400)
             compose.onNodeWithContentDescription("Toggle keyboard").performClick()
+            // Wait for the IME window transition before dispatching remote gestures.
+            compose.waitUntil(15_000) { controller.state.value.control && canvas.hasWindowFocus() }
             // Two fingers change only the local canvas; they must never generate mouse input.
             SystemClock.sleep(200)
             val beforeZoom = controller.lastPointerOrdinal
@@ -162,10 +166,16 @@ class ScreenEndToEndTest {
             )).toString())
             compose.onNodeWithTag("screen-disconnect").performClick()
             assertEquals("idle", controller.state.value.phase)
+            SystemClock.sleep(200)
+            val cleared = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            assertEquals("Disconnect must clear remote pixels", android.graphics.Color.rgb(12, 15, 20),
+                cleared.getPixel(cleared.width / 2, cleared.height / 2))
             connect()
             compose.waitUntil(30_000) { controller.state.value.phase == "streaming" || controller.state.value.phase == "failed" }
             assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
             compose.waitUntil(10000) { controller.state.value.control }
+        } catch (failure: Throwable) {
+            throw AssertionError("Screen state: ${controller.state.value}; pointer ordinal=${controller.lastPointerOrdinal}; window focus=${canvas.hasWindowFocus()}", failure)
         } finally {
             compose.runOnIdle { canvas.release(); controller.close() }
         }

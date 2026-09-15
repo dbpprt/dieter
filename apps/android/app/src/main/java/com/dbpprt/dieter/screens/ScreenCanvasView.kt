@@ -37,6 +37,8 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
     })
     private var initialized = false
     @Volatile private var released = false
+    @Volatile private var paused = false
+    @Volatile private var visibleSession = -1L
     private var frameWidth = 1600
     private var frameHeight = 900
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -98,11 +100,16 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         controller.onCursor = cursorListener
     }
     private fun onFrame(frame: VideoFrame, token: Long) {
-        if (released) return
+        if (released || !controller.acceptsFrame(token)) return
+        if (visibleSession != token) {
+            visibleSession = token
+            post { if (!released && controller.acceptsFrame(token)) texture.visibility = VISIBLE }
+        }
         synchronized(frameSessions) {
             if (frameSessions.size >= 8) frameSessions.remove(frameSessions.keys.first())
             frameSessions[frame.timestampNs] = token to System.nanoTime()
         }
+        if (paused) { paused = false; renderer.disableFpsReduction() }
         renderer.onFrame(frame)
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); geometry() }
@@ -117,6 +124,13 @@ class ScreenCanvasView(context: Context, val controller: ScreenController) : Fra
         invalidate()
     }
     fun resetCanvas() { canvasModel.reset(); geometry() }
+    fun clearFrame() {
+        if (released) return
+        visibleSession = -1L; texture.visibility = INVISIBLE
+        paused = true; renderer.pauseVideo()
+        renderer.clearImage(12 / 255f, 15 / 255f, 20 / 255f, 1f)
+        cursorShapes.clear(); cursorBitmap = null; invalidate()
+    }
     fun release() {
         if (released) return
         cancelGesture(); controller.releaseInput()

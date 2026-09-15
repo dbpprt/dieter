@@ -75,6 +75,9 @@ internal fun ScreenWorkspace(
         }
     }
     BackHandler(active || keyboard) { if (keyboard) { canvas?.showKeyboard(false); keyboard = false } else disconnect() }
+    LaunchedEffect(screen.phase) {
+        if (screen.phase == "idle" || screen.phase == "failed") canvas?.clearFrame()
+    }
     LaunchedEffect(screen.control) { if (!screen.control) { modifiers = 0; canvas?.modifiers = 0 } }
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground) {

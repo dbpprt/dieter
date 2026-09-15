@@ -69,6 +69,7 @@ class ScreenController(context: Context) : AutoCloseable {
     var onCursor: ((RemoteDesktopCursor) -> Unit)? = null
     var lastPointerOrdinal = 0L; private set
     val id get() = sessionId
+    internal fun acceptsFrame(sessionToken: Long) = authorized && token == sessionToken
 
     init {
         initialize(context.applicationContext)
@@ -126,8 +127,9 @@ class ScreenController(context: Context) : AutoCloseable {
                     .setMaxWidth(start.maxWidth).setMaxHeight(start.maxHeight).setMaxFps(60).setMaxBitrateKbps(12000).build()
                 var attempts = 0
                 while (isActive && current == token) {
+                    val sourceRoute = requireNotNull(connection)
                     try {
-                        requireNotNull(connection).rpc.startRemoteDesktop(start).collect { signal ->
+                        sourceRoute.rpc.startRemoteDesktop(start).collect { signal ->
                             if (current != token) throw CancellationException()
                             receive(signal)
                             attempts = 0
@@ -135,6 +137,9 @@ class ScreenController(context: Context) : AutoCloseable {
                         error("Screen-sharing signaling ended")
                     } catch (e: CancellationException) { throw e
                     } catch (e: Exception) {
+                        // A planned credential refresh must resubscribe immediately, without
+                        // treating the retired route as a network failure or disabling input.
+                        if (sourceRoute !== connection && current == token) continue
                         if (++attempts > 2 || !authorized) throw e
                         releaseInput()
                         mutable.value = mutable.value.copy(phase = "reconnecting", control = false)
