@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -115,6 +116,7 @@ private data class NavItem(
 private val navigationItems = listOf(
     NavItem(Destination.CHATS, "Chats", Icons.Outlined.ChatBubbleOutline),
     NavItem(Destination.BOARD, "Boards", Icons.Outlined.ViewKanban),
+    NavItem(Destination.SCREENS, "Screens", Icons.Outlined.DesktopWindows),
     NavItem(Destination.TERMINALS, "Terminal", Icons.Outlined.Terminal),
     NavItem(Destination.FILES, "Files", Icons.Outlined.FolderOpen),
     NavItem(Destination.SCHEDULES, "Schedules", Icons.Outlined.CalendarMonth),
@@ -124,7 +126,7 @@ private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
     this == Destination.FILES || this == Destination.SCHEDULES
 
 private fun Destination.usesSynchronizedWorkspace(): Boolean =
-    this != Destination.TERMINALS
+    this != Destination.TERMINALS && this != Destination.SCREENS
 
 private fun Destination.supportsOfflineOutbox(): Boolean =
     this == Destination.CHATS || this == Destination.BOARD
@@ -294,6 +296,7 @@ fun DieterApp(container: DieterContainer) {
                                 Destination.BOARD -> model.openSurface(
                                     if (state.boardOverviewVisible) AppSurface.NEW_PROJECT else AppSurface.NEW_CARD,
                                 )
+                                Destination.SCREENS -> Unit
                                 Destination.TERMINALS -> model.showTerminalCreate()
                                 Destination.FILES -> fileCreateVisible = true
                                 Destination.SCHEDULES -> model.openSurface(AppSurface.SCHEDULE_EDITOR)
@@ -860,6 +863,7 @@ private fun DestinationContent(
                 when (destination) {
                     Destination.CHATS -> ChatsScreen(state, model, expanded, destinationPadding)
                     Destination.BOARD -> BoardScreen(state, model, expanded, destinationPadding)
+                    Destination.SCREENS -> ScreensScreen(state, model, destinationPadding)
                     Destination.TERMINALS -> TerminalsScreen(state, model, expanded, destinationPadding)
                     Destination.FILES -> FilesScreen(state, model, expanded, destinationPadding)
                     Destination.SCHEDULES -> SchedulesScreen(state, model, destinationPadding)

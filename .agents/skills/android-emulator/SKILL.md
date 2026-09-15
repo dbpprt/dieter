@@ -56,11 +56,13 @@ exit. `just android emulator-stop` returns to the launcher, stops the Dieter and
 Chrome processes used by this workflow, explicitly saves `default_boot`, checks
 its RAM/metadata/texture artifacts and save log, and then closes the emulator.
 
-Before a new process starts, the launcher requires at least 6 GiB of
-reclaimable host memory. This includes headroom above the emulator's 5 GiB
-host-renderer cutoff while graphics initializes. Use the launcher's
-conservative `vm_stat` page estimate: `memory_pressure -Q` can look healthy
-even when the emulator sees too little memory. The
+The 6 GiB `vm_stat` memory estimate is advisory, not a test prohibition.
+The recipe explicitly selects `-gpu host` on the supported Apple GPU: emulator
+37.1's `auto` mode otherwise silently switches to software rendering below its
+5 GiB estimate even when hardware rendering works. Do not kill unrelated apps
+to satisfy that estimate. Check the actual renderer and Android responsiveness.
+A renderer change can invalidate an older snapshot; preserve it in quarantine
+and follow the recovery cycle below without wiping userdata. The
 launcher then waits at most three minutes and requires completed boot, stopped
 boot animation, a host renderer, an unlocked launcher window, a launcher-owned
 UI hierarchy, and a full PNG screenshot. Logs and the health capture go under
@@ -87,11 +89,20 @@ just android install
 just android launch
 ```
 
-Installation retains device-bound credentials and app data. Never use
+Installation and connected tests retain device-bound credentials and app data.
+`gradle.properties` pins `android.injected.androidTest.leaveApksInstalledAfterRun=true`
+and disables uninstalling incompatible APKs; do not override these safeguards. Never use
 `adb uninstall` as a build workaround. The app connects through the configured
-gateway and authenticated routes; do not add `adb reverse`, expose the raw
-daemon loopback service, start a fixture server, replace the operator's daemon,
-or edit `DIETER_HOME`.
+gateway and authenticated routes. Never expose or replace the operator's raw
+loopback service or edit `DIETER_HOME`. Isolated integration fixtures are allowed
+and preferred for input, transport, and lifecycle tests. `just android screens-test`
+uses disposable storage, an enrolled test identity, a random loopback port and a
+one-run bearer token. Its temporary ADB reverse maps only that fixture port and
+is removed on exit. It never changes saved Android credentials or the live service.
+Use `DIETER_SCREEN_TEST_SOURCE=screen just android screens-test` to additionally
+exercise real ScreenCaptureKit; the default exercises native synthetic video and
+hardware H.264 with dry-run input. The real-screen mode injects input only into
+the owned macOS input window.
 
 The install and connected-test recipes pass `ANDROID_SERIAL=emulator-5554` to
 Gradle. Keep that pin on every Gradle task which can select a device; otherwise

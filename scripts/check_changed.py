@@ -207,6 +207,10 @@ def plan_checks(root, paths, packages=None):
         add("just", "mac", "smoke-suites", *mac_suites)
     if android_integration:
         add("just", "android", "connected-test")
+    if screens or any(p == "scripts/test-android-screens.sh" or
+                      (p.startswith("apps/android/") and ("/screens/" in p or p.endswith("/ScreensScreen.kt")))
+                      for p in code):
+        add("just", "android", "screens-test")
     if brand or any(p.startswith("landingpage/") or p == "just/site.just" for p in code):
         add("just", "site", "build")
     return commands

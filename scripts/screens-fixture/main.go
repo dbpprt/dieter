@@ -36,14 +36,15 @@ import (
 func main() {
 	helper := flag.String("helper", "", "signed macOS capture helper")
 	source := flag.String("source", "native-synthetic", "screen or native-synthetic")
+	authenticate := flag.Bool("authenticate", false, "require a disposable bearer token for emulator tests")
 	ready := flag.String("ready", "", "write connection JSON to this file")
 	flag.Parse()
-	if err := run(*helper, *source, *ready); err != nil {
+	if err := run(*helper, *source, *ready, *authenticate); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
-func run(helper, kind, ready string) error {
+func run(helper, kind, ready string, authenticate bool) error {
 	if helper == "" || ready == "" || (kind != "screen" && kind != "native-synthetic") {
 		return fmt.Errorf("helper, ready and a native source are required")
 	}
@@ -114,15 +115,24 @@ func run(helper, kind, ready string) error {
 		return err
 	}
 	defer listener.Close()
+	tokenBytes := make([]byte, 32)
+	if _, err = rand.Read(tokenBytes); err != nil {
+		return err
+	}
+	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
 	handler := api.Handler()
 	httpServer := &http.Server{Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authenticate && r.Header.Get("Authorization") != "Bearer "+token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		r.Header.Set("x-dieter-operator-subject", "github:1")
 		handler.ServeHTTP(w, r)
 	}), &http2.Server{})}
 	defer httpServer.Close()
 	go func() { _ = httpServer.Serve(listener) }()
 	configRaw, _ := proto.Marshal(config)
-	output, _ := json.Marshal(map[string]any{"url": "http://" + listener.Addr().String(), "certificate": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "rtc": configRaw})
+	output, _ := json.Marshal(map[string]any{"url": "http://" + listener.Addr().String(), "certificate": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "rtc": configRaw, "token": token})
 	if err = os.WriteFile(ready, output, 0600); err != nil {
 		return err
 	}

@@ -11,7 +11,8 @@ Launch it with its checked, working graphics configuration and saved snapshot:
 just android emulator-start
 ```
 
-Do not add `-gpu host`, `-gpu swiftshader*`, `-no-snapshot-load`, `-no-snapshot`,
+The recipe selects `-gpu host` to prevent automatic memory-based software fallback.
+Do not add `-gpu swiftshader*`, `-no-snapshot-load`, `-no-snapshot`,
 or cold-boot flags. Those overrides bypass the AVD's working graphics and
 snapshot configuration and can leave Android system services unresponsive. If
 the saved snapshot fails to load, stop and diagnose the AVD instead of silently
@@ -26,12 +27,12 @@ just android gradle-stop
 vm_stat
 ```
 
-The launcher calculates reclaimable host memory from the free, inactive,
-speculative, and purgeable page counts and requires 6 GiB. Keep that
-conservative gate: `memory_pressure -Q` may look healthy while the emulator
-still sees less than its 5 GiB host-renderer cutoff during graphics startup.
-The Pixel/API image enforces its 4 GiB guest RAM minimum, so a smaller
-command-line memory value does not provide a reliable workaround.
+The launcher reports a 6 GiB reclaimable-memory estimate as advice. It must not
+block testing solely on that estimate: emulator auto-selection can choose
+software GL unnecessarily below 5 GiB. The supported Apple GPU is selected
+explicitly, and renderer, boot, focus, UI hierarchy and screenshot checks decide
+whether it is usable. Never kill unrelated operator apps to free memory or
+reduce the guest below the API image's supported RAM minimum.
 
 The AVD registry entry under `~/.android/avd` may point to its data directory on
 an external APFS volume. Resolve the `path=` value instead of assuming userdata
@@ -105,15 +106,17 @@ repeatedly loading or overwriting broken graphics state.
 
 ## Start and connect
 
-1. Run an enrolled `dieter daemon start` normally so it uses the real
-   `DIETER_HOME`. Do not start a fixture server, mock Dieter, or edit Dieter's
-   central storage directly.
+1. Reuse the enrolled running daemon for authorized manual product checks.
+   For integration tests, use isolated real daemons with disposable identity and
+   `DIETER_HOME`; never restart or replace the operator service. Screen tests use
+   `just android screens-test` and the owned native input target.
 2. Confirm the emulator serial with `adb devices -l`. The usual serial is
    `emulator-5554`; pass `-s <serial>` to every command when multiple devices
    are attached.
 3. Sign in to the configured gateway. The app combines projects from every
    enrolled daemon and routes each request to the project owner automatically.
-   Do not use `adb reverse` or enter the raw loopback API as an endpoint. Route
+   Never map the live raw API through `adb reverse`. A temporary reverse of an
+   authenticated isolated fixture port is allowed and removed by its test script. Route
    discovery, authenticated direct probing, and relay fallback are automatic.
 4. Build, install, and launch the current app:
 

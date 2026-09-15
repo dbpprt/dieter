@@ -18,6 +18,8 @@ espresso = "3.7.0"
 testRules = "1.7.0"
 
 [libraries]
+webrtc = { module = "io.github.webrtc-sdk:android", version = "150.7871.01" }
+bouncycastle = { module = "org.bouncycastle:bcprov-jdk18on", version = "1.83" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "core" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }

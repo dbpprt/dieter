@@ -137,7 +137,7 @@ internal fun DieterUiState.preserveConnectionPresentation(previous: DieterUiStat
     connectionError = previous.connectionError,
 )
 
-enum class Destination { CHATS, BOARD, TERMINALS, FILES, SCHEDULES }
+enum class Destination { CHATS, BOARD, TERMINALS, SCREENS, FILES, SCHEDULES }
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
 
@@ -869,6 +869,8 @@ class DieterViewModel internal constructor(
         }
     }
 
+    suspend fun openScreenConnection(endpointId: String) = repository.openScreenConnection(endpointId)
+
     fun navigate(destination: Destination) {
         rememberConversation()
         if (destination != Destination.TERMINALS) stopTerminalWatch()
@@ -892,6 +894,7 @@ class DieterViewModel internal constructor(
             Destination.CHATS -> viewModelScope.launch { loadChats() }
             Destination.FILES -> viewModelScope.launch { loadFiles() }
             Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
+            Destination.SCREENS -> Unit
             Destination.TERMINALS -> loadTerminals()
             Destination.BOARD -> refreshSpaces()
         }

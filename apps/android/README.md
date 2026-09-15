@@ -51,7 +51,7 @@ board's overflow menu. Expanding either the connection notification or a
 running-chat notification shows a compact live preview of the main model and
 active subagents without exposing raw tool input.
 
-The classic five-destination Material navigation remains the default. Its
+The classic six-destination Material navigation remains the default. Its
 native Terminal workspace lists daemon-owned PTYs across projects, renders ANSI
 and VT sequences with the reusable Apache-2.0 Termux emulator/renderer modules,
 and forwards IME, hardware keys, clipboard paste, accessory keys, and live
@@ -61,6 +61,31 @@ closing the app never closes the shell. Only the explicit **Close terminal**
 confirmation ends the daemon session. The bundled Termux local-process JNI
 bridge is deliberately excluded because Dieter never starts a process on the
 phone.
+
+**Screens** connects to an enrolled machine through an independent authenticated
+route and verifies the daemon-signed WebRTC session before accepting video or
+input. H.264 uses Android MediaCodec and a shared EGL texture canvas; hardware
+decoding is preferred, with the platform decoder available on emulators. No
+FFmpeg process or bitmap video conversion is used. Receiver feedback drives the
+same adaptive sender as the Mac viewer. The bottom bar provides keyboard,
+modifier and special keys, right click, Fit screen, and refresh. Display and
+quality choices are in the header.
+
+- One finger moves the remote cursor relatively; tapping clicks at that cursor.
+- Double tap double-clicks; hold then move drags.
+- Two fingers zoom and pan the local canvas (1–6×).
+- Three fingers scroll the remote screen.
+
+IME composition stays local until committed, including Unicode input. Physical
+keyboards and mice also work. Held input is released on focus loss; leaving
+Screens or backgrounding the app closes its session. Screen capture and control
+must first be enabled on the host through its permission setup.
+
+Run `just android screens-test` on the visible emulator for the isolated native
+video/input check. Set `DIETER_SCREEN_TEST_SOURCE=screen` to exercise real display
+capture. The test creates a temporary authenticated loopback service and native
+input window, removes its ADB port mapping on exit, and preserves app credentials
+and the running operator daemon.
 
 App
 Settings opens from Board actions or the server-status sheet and follows the

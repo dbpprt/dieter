@@ -92,16 +92,16 @@ emulator-start:
         available_mb=$((available_pages * $(sysctl -n hw.pagesize) / 1024 / 1024))
         min_host_renderer_mb=6144
         if (( available_mb < min_host_renderer_mb )); then
-            echo "Host renderer preflight found about ${available_mb} MiB reclaimable; {{ avd }} requires a ${min_host_renderer_mb} MiB safety margin." >&2
-            echo "Free memory before launch so the emulator does not fall back to software GL." >&2
-            exit 1
+            echo "Host renderer preflight found about ${available_mb} MiB reclaimable; {{ avd }} recommended headroom is ${min_host_renderer_mb} MiB." >&2
+            echo "Host memory is advisory; the actual renderer health check decides whether this launch is usable." >&2
+            echo "Continuing with checked startup; renderer, boot, and UI health remain mandatory." >&2
         fi
         echo "Starting {{ avd }} with Apple host GLES."
         (
             cd "$emulator_dir"
             # Loading remains enabled, but shutdown saving is done explicitly
             # after GPU-heavy app processes have been quiesced below.
-            screen -L -dmS "{{ screen_session }}" "{{ emulator }}" @"{{ avd }}" -no-snapshot-save
+            screen -L -dmS "{{ screen_session }}" "{{ emulator }}" @"{{ avd }}" -gpu host -no-snapshot-save
         )
         launched=true
     fi
@@ -338,6 +338,10 @@ launch:
 app-stop:
     "{{ adb }}" -s "{{ serial }}" shell am force-stop com.dbpprt.dieter
     test -z "$("{{ adb }}" -s "{{ serial }}" shell pidof com.dbpprt.dieter | tr -d '\r')"
+
+# Exercise native H.264, GPU canvas gestures and host input using disposable credentials.
+screens-test:
+    ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" scripts/test-android-screens.sh
 
 # Run all connected tests, or one fully qualified test class.
 connected-test class="":

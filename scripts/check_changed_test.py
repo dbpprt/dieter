@@ -17,6 +17,12 @@ class CheckChangedTests(unittest.TestCase):
     def plan(self, *paths):
         return plan_checks(self.root, paths, packages=[])
 
+    def test_android_screen_changes_run_native_emulator_integration(self):
+        for path in ("apps/android/app/src/main/java/com/dbpprt/dieter/screens/ScreenController.kt",
+                     "apps/android/app/src/main/java/com/dbpprt/dieter/ui/ScreensScreen.kt",
+                     "scripts/test-android-screens.sh", "scripts/screens-fixture/main.go"):
+            self.assertIn(["just", "android", "screens-test"], self.plan(path))
+
     def test_no_changes_or_docs_need_no_checks(self):
         self.assertEqual(self.plan(), [])
         self.assertEqual(self.plan("README.md", "apps/mac/README.md", "AGENTS.md"), [])
