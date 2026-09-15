@@ -349,6 +349,26 @@ internal fun conversationStreamNeedsRestart(
     streamActive: Boolean = true,
 ): Boolean = selectedCardId != null && (activeCardId != selectedCardId || !streamActive)
 
+internal data class ConversationOpenSyncPlan(
+    val cacheIsCurrent: Boolean,
+    val afterSeq: Long,
+) {
+    val needsFreshFrame: Boolean get() = !cacheIsCurrent
+}
+
+internal fun conversationOpenSyncPlan(
+    cachedLastSeq: Long?,
+    coveredByHealthyLiveSync: Boolean,
+): ConversationOpenSyncPlan {
+    val cacheIsCurrent = cachedLastSeq != null && coveredByHealthyLiveSync
+    return ConversationOpenSyncPlan(
+        cacheIsCurrent = cacheIsCurrent,
+        // Cold, Smart, and App-only opens ask the server for its bounded latest
+        // tail immediately. History remains paged backwards on demand.
+        afterSeq = if (cacheIsCurrent) requireNotNull(cachedLastSeq) else 0L,
+    )
+}
+
 class DieterViewModel internal constructor(
     private val connectionManager: DieterConnectionManager,
     private val appPreferences: AppPreferences,
@@ -664,6 +684,9 @@ class DieterViewModel internal constructor(
         _state.update { current ->
             val selectedCardId = resolveConversationId(current.selectedCardId, connection.resolvedConversationIds)
             conversationDrafts.retarget(current.selectedCardId, selectedCardId)
+            val liveConversation = selectedCardId?.takeIf { cardId ->
+                connection.activeConversations.containsKey(cardId) && connectionManager.liveSyncCoversConversation(cardId)
+            }
             current.copy(
                 endpoint = connection.endpoint?.address
                     ?: connection.configuredConnections.firstOrNull { it.id == connection.activeGatewayId }?.address
@@ -702,9 +725,15 @@ class DieterViewModel internal constructor(
                 selectedCardId = selectedCardId,
                 composerDraft = conversationDrafts.draft(selectedCardId),
                 conversation = selectedCardId?.let(connection.activeConversations::get) ?: current.conversation,
-                conversationLastRefreshedAtMillis = selectedCardId
-                    ?.let(connection.conversationRefreshedAtMillis::get)
-                    ?: current.conversationLastRefreshedAtMillis,
+                conversationLastRefreshedAtMillis = if (liveConversation != null) {
+                    connection.lastConnectedAtMs
+                        ?: connection.conversationRefreshedAtMillis[liveConversation]
+                        ?: current.conversationLastRefreshedAtMillis
+                } else {
+                    selectedCardId?.let(connection.conversationRefreshedAtMillis::get)
+                        ?: current.conversationLastRefreshedAtMillis
+                },
+                conversationSyncing = if (liveConversation != null) false else current.conversationSyncing,
                 pendingCardIds = connection.pendingCardIds,
                 pendingMessageIds = connection.pendingMessageIds,
                 acceptedOutboxIds = connection.acceptedOutboxIds,
@@ -793,10 +822,12 @@ class DieterViewModel internal constructor(
         val transient = foreground && rpcReadFailureIsTransient(cause)
         if (!transient) return false
         _state.update {
+            val selectedCardId = it.selectedCardId
             it.copy(
                 connectionPhase = ConnectionPhase.RECONNECTING,
                 loading = false,
-                conversationSyncing = it.selectedCardId != null,
+                conversationSyncing = selectedCardId != null &&
+                    !connectionManager.liveSyncCoversConversation(selectedCardId),
                 connectionError = "$label connection interrupted; reconnecting…",
             )
         }
@@ -1130,9 +1161,10 @@ class DieterViewModel internal constructor(
                 connection.conversationRefreshedAtMillis[cardId],
             )
         } ?: conversationCache[cardId]
+        val liveCache = cached != null && connectionManager.liveSyncCoversConversation(cardId)
         Log.i(
             DieterConnectionManager.SYNC_LOG_TAG,
-            "chatOpen cache=${cached != null} frameAgeMs=${connection.conversationRefreshedAtMillis[cardId]?.let { System.currentTimeMillis() - it } ?: -1}",
+            "chatOpen cache=${cached != null} liveCache=$liveCache frameAgeMs=${connection.conversationRefreshedAtMillis[cardId]?.let { System.currentTimeMillis() - it } ?: -1}",
         )
         val projectId = resolvedCard.projectId.ifBlank { _state.value.selectedProjectId }
         if (_state.value.workspaceReview.cardId != cardId) resetWorkspaceReview(cardId)
@@ -1150,8 +1182,12 @@ class DieterViewModel internal constructor(
                 historyHasMore = cached?.historyHasMore ?: false,
                 historyLoading = false,
                 conversationRefreshing = false,
-                conversationSyncing = isServerConversationId(cardId),
-                conversationLastRefreshedAtMillis = cached?.refreshedAtMillis,
+                conversationSyncing = isServerConversationId(cardId) && !liveCache,
+                conversationLastRefreshedAtMillis = if (liveCache) {
+                    connection.lastConnectedAtMs ?: cached.refreshedAtMillis
+                } else {
+                    cached?.refreshedAtMillis
+                },
                 conversationScrollRequest = it.conversationScrollRequest + 1,
                 detailTab = 0,
                 error = connectionManager.outboxFailure(cardId),
@@ -1188,37 +1224,57 @@ class DieterViewModel internal constructor(
                 }
                 return@launch
             }
-            var delivered = false
             val openedAt = System.currentTimeMillis()
             val initial = _state.value.conversation?.takeIf { it.detail.card.id == cardId }
-            // Hedged unary fetch: on a healthy link the stream answers first;
-            // on a dead-after-idle link this bounds time-to-fresh to seconds.
-            val hedge = launch {
-                val snapshot = runCatching {
-                    withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
-                }.getOrNull() ?: return@launch
-                if (!delivered) {
-                    delivered = true
-                    Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=unary elapsedMs=${System.currentTimeMillis() - openedAt}")
-                    applyLiveConversation(cardId, snapshot)
-                }
+            val plan = conversationOpenSyncPlan(
+                cachedLastSeq = initial?.conversation?.lastSeq,
+                coveredByHealthyLiveSync = connectionManager.liveSyncCoversConversation(cardId),
+            )
+            var delivered = plan.cacheIsCurrent
+            if (_state.value.selectedCardId == cardId) {
+                _state.update { it.copy(conversationSyncing = plan.needsFreshFrame) }
             }
+            if (plan.cacheIsCurrent) {
+                Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatReady source=live-cache elapsedMs=${System.currentTimeMillis() - openedAt}")
+            }
+            // Cold, Smart, and App-only opens hedge the fresh stream with a
+            // unary fetch. A Live-projected tail is already authoritative and
+            // must not be mistaken for a dead stream when its resume is quiet.
+            val hedge = if (plan.needsFreshFrame) {
+                launch {
+                    val snapshot = runCatching {
+                        withTimeout(HEDGE_FETCH_TIMEOUT_MS) { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) }
+                    }.getOrNull() ?: return@launch
+                    if (!delivered) {
+                        delivered = true
+                        Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=unary elapsedMs=${System.currentTimeMillis() - openedAt}")
+                        applyLiveConversation(cardId, snapshot)
+                    }
+                }
+            } else null
             // First-frame watchdog: a stream that stays silent this long on an
             // allegedly healthy connection is riding a dead transport; rebuild
             // the channel instead of waiting for keepalive to notice.
-            val watchdog = launch {
-                delay(FIRST_FRAME_DEADLINE_MS)
-                if (!delivered) repository.reconnect()
-            }
+            val watchdog = if (plan.needsFreshFrame) {
+                launch {
+                    delay(FIRST_FRAME_DEADLINE_MS)
+                    if (!delivered) repository.reconnect()
+                }
+            } else null
             try {
-                repository.watchConversation(cardId, CONVERSATION_PAGE_SIZE, initial = initial)
+                repository.watchConversation(
+                    cardId,
+                    CONVERSATION_PAGE_SIZE,
+                    initial = initial,
+                    afterSeq = plan.afterSeq,
+                )
                     .retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") }
                     .collectLatest { snapshot ->
                         if (_state.value.selectedCardId != cardId) return@collectLatest
                         if (!delivered) {
                             delivered = true
-                            hedge.cancel()
-                            watchdog.cancel()
+                            hedge?.cancel()
+                            watchdog?.cancel()
                             Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFirstFrame source=stream elapsedMs=${System.currentTimeMillis() - openedAt}")
                         }
                         applyLiveConversation(cardId, snapshot)
@@ -1226,8 +1282,8 @@ class DieterViewModel internal constructor(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                hedge.cancel()
-                watchdog.cancel()
+                hedge?.cancel()
+                watchdog?.cancel()
                 if (_state.value.selectedCardId == cardId) {
                     _state.update { it.copy(conversationSyncing = false, error = readableError(error)) }
                 }

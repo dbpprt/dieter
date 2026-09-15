@@ -1,14 +1,20 @@
 package com.dbpprt.dieter.data
 
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.DieterApplication
+import com.dbpprt.dieter.connection.BackgroundSyncMode
 import com.dbpprt.dieter.connection.ConnectionPhase
+import com.dbpprt.dieter.settings.AppPreferences
+import com.dbpprt.dieter.ui.Destination
+import com.dbpprt.dieter.ui.DieterViewModel
 import com.dbpprt.dieter.v1.CreateConversationRequest
 import com.dbpprt.dieter.v1.MessagePart
 import com.dbpprt.dieter.v1.SendMessageRequest
 import com.dbpprt.dieter.v1.SyncFrame
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -128,8 +134,10 @@ class BackgroundTranscriptSyncIntegrationTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val application = context.applicationContext as DieterApplication
         val manager = application.container.connectionManager
+        val originalMode = manager.state.value.backgroundSyncMode
         val fixture = GrpcDieterRepository(context)
         var chatId: String? = null
+        var model: DieterViewModel? = null
         try {
             fixture.setAccessToken(origin, token)
             fixture.replaceEndpoints(listOf(origin))
@@ -161,6 +169,7 @@ class BackgroundTranscriptSyncIntegrationTest {
 
             manager.repository.setAccessToken(origin, token)
             manager.updateEndpoints(listOf(origin))
+            manager.setBackgroundSyncMode(BackgroundSyncMode.LIVE)
             manager.connect()
             manager.onAppForegrounded(project.id)
             val warmed = withTimeout(30_000) {
@@ -174,7 +183,28 @@ class BackgroundTranscriptSyncIntegrationTest {
                 "Warm transcript must contain the initial prompt turn",
                 transcript.conversation.messagesList.isNotEmpty(),
             )
+            assertTrue("The healthy Live projection must own the warmed chat", manager.liveSyncCoversConversation(chat.id))
+
+            model = DieterViewModel(manager, AppPreferences(context))
+            model.start()
+            withTimeout(5_000) { model.state.first { state -> state.chats.any { it.id == chat.id } } }
+            val openedAt = SystemClock.elapsedRealtime()
+            model.openCard(chat, Destination.CHATS)
+            val opened = withTimeout(1_000) {
+                model.state.first { state ->
+                    state.selectedCardId == chat.id && state.conversation?.detail?.card?.id == chat.id
+                }
+            }
+            assertTrue("The warmed transcript should be visible within one second", SystemClock.elapsedRealtime() - openedAt < 1_000)
+            assertFalse("Opening a Live-projected chat must not show a redundant sync", opened.conversationSyncing)
+
+            // The old implementation treated a correctly silent resumed
+            // stream as dead after 4.5 seconds and rebuilt the connection.
+            delay(6_000)
+            assertFalse(model.state.value.conversationSyncing)
+            assertEquals(ConnectionPhase.CONNECTED, manager.state.value.phase)
         } finally {
+            model?.stop()
             chatId?.let { id ->
                 runCatching { fixture.cancelCard(id) }
                 runCatching { fixture.archiveCard(id, true) }
@@ -182,6 +212,7 @@ class BackgroundTranscriptSyncIntegrationTest {
             fixture.close()
             runCatching {
                 manager.updateEndpoints(DIETER_ENDPOINTS)
+                manager.setBackgroundSyncMode(originalMode)
                 manager.disconnect()
             }
         }

@@ -51,6 +51,25 @@ emulator-start:
     emulator_dir="$PWD/{{ app_root }}/build/emulator"
     emulator_log="$emulator_dir/screenlog.0"
     log_start="$(stat -f '%z' "$emulator_log" 2>/dev/null || echo 0)"
+    snapshot_expected=true
+    avd_registry="${ANDROID_AVD_HOME:-${ANDROID_USER_HOME:-$HOME/.android}/avd}"
+    avd_ini="$avd_registry/{{ avd }}.ini"
+    [[ -r "$avd_ini" ]] || { echo "AVD registry entry is unreadable: $avd_ini" >&2; exit 1; }
+    avd_dir="$(awk -F= '$1 == "path" { print substr($0, index($0, "=") + 1); exit }' "$avd_ini")"
+    [[ -n "$avd_dir" && -d "$avd_dir" && -r "$avd_dir/config.ini" ]] || {
+        echo "Resolved AVD data is unavailable: ${avd_dir:-missing path in $avd_ini}" >&2
+        exit 1
+    }
+    avd_free_kb="$(df -Pk "$avd_dir" | awk 'NR == 2 { print $4 }')"
+    if [[ -z "$avd_free_kb" ]] || (( avd_free_kb < 10 * 1024 * 1024 )); then
+        echo "The volume holding $avd_dir needs at least 10 GiB free for safe snapshot operation." >&2
+        exit 1
+    fi
+    echo "Using AVD data at $avd_dir ($((avd_free_kb / 1024 / 1024)) GiB free)."
+    if [[ ! -d "$avd_dir/snapshots/default_boot" ]]; then
+        snapshot_expected=false
+        echo "No default_boot snapshot is present; using the documented recovery boot from preserved userdata."
+    fi
     state="$("{{ adb }}" -s "{{ serial }}" get-state 2>/dev/null || true)"
     if [[ "$state" == device ]]; then
         running_avd="$("{{ adb }}" -s "{{ serial }}" emu avd name 2>/dev/null | tr -d '\r' | head -n 1)"
@@ -71,14 +90,18 @@ emulator-start:
         available_pages="$(vm_stat | awk \
             '/Pages (free|inactive|speculative|purgeable):/ { gsub(/[.]/, "", $3); total += $3 } END { print total + 0 }')"
         available_mb=$((available_pages * $(sysctl -n hw.pagesize) / 1024 / 1024))
-        if (( available_mb < 6144 )); then
-            echo "Host renderer preflight found about ${available_mb} MiB reclaimable; {{ avd }} requires a 6144 MiB safety margin." >&2
+        min_host_renderer_mb=6144
+        if (( available_mb < min_host_renderer_mb )); then
+            echo "Host renderer preflight found about ${available_mb} MiB reclaimable; {{ avd }} requires a ${min_host_renderer_mb} MiB safety margin." >&2
             echo "Free memory before launch so the emulator does not fall back to software GL." >&2
             exit 1
         fi
+        echo "Starting {{ avd }} with Apple host GLES."
         (
             cd "$emulator_dir"
-            screen -L -dmS "{{ screen_session }}" "{{ emulator }}" @"{{ avd }}"
+            # Loading remains enabled, but shutdown saving is done explicitly
+            # after GPU-heavy app processes have been quiesced below.
+            screen -L -dmS "{{ screen_session }}" "{{ emulator }}" @"{{ avd }}" -no-snapshot-save
         )
         launched=true
     fi
@@ -87,36 +110,51 @@ emulator-start:
            [[ "$("{{ adb }}" -s "{{ serial }}" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]] && \
            [[ "$("{{ adb }}" -s "{{ serial }}" shell getprop init.svc.bootanim 2>/dev/null | tr -d '\r')" == stopped ]]; then
             sleep 3
-            loaded_snapshot="$("{{ adb }}" -s "{{ serial }}" emu avd snapshot get 2>/dev/null | tr -d '\r' | head -n 1)"
-            if [[ "$loaded_snapshot" != default_boot ]]; then
-                echo "{{ serial }} did not load default_boot (reported: ${loaded_snapshot:-none})." >&2
-                exit 1
+            if [[ "$snapshot_expected" == true ]]; then
+                snapshot_list="$("{{ adb }}" -s "{{ serial }}" emu avd snapshot list 2>/dev/null | tr -d '\r' || true)"
+                if ! rg -q '(^|[[:space:]])default_boot([[:space:]]|$)' <<<"$snapshot_list"; then
+                    echo "{{ serial }} has no default_boot snapshot:" >&2
+                    printf '%s\n' "$snapshot_list" >&2
+                    exit 1
+                fi
             fi
             if [[ "$launched" == true ]]; then
                 launch_log="$(tail -c "+$((log_start + 1))" "$emulator_log")"
                 if rg -qi \
-                    'software GL rendering|gles_mode_selected:swangle|failed to load snapshot|different renderer configured|failed to find ColorBuffer|bad color buffer handle' \
-                    <<<"$launch_log"; then
+                    'software GL rendering|gles_mode_selected:swangle|failed to find ColorBuffer|bad color buffer handle' \
+                    <<<"$launch_log" || \
+                   { [[ "$snapshot_expected" == true ]] && rg -qi \
+                       'failed to load snapshot|different renderer configured|snapshot restore error' <<<"$launch_log"; }; then
                     echo "{{ serial }} booted with an unsafe renderer or snapshot; see $emulator_log." >&2
                     exit 1
                 fi
-                if ! rg -q 'gles_mode_selected:host' <<<"$launch_log" || \
-                   ! rg -q 'Graphics Adapter .*Apple|OpenGL ES Translator \(Apple' <<<"$launch_log"; then
-                    echo "{{ serial }} launch log does not prove Apple host GLES; see $emulator_log." >&2
+                if [[ "$snapshot_expected" == true ]] && ! rg -q "Loading snapshot 'default_boot'" <<<"$launch_log"; then
+                    echo "{{ serial }} launch log does not prove that default_boot was restored; see $emulator_log." >&2
                     exit 1
                 fi
             fi
-            renderer_dump="$("{{ adb }}" -s "{{ serial }}" shell dumpsys SurfaceFlinger 2>/dev/null | \
-                rg '^GLES:' | head -n 1 || true)"
-            if [[ -z "$renderer_dump" ]] || rg -qi 'SwiftShader|llvmpipe|lavapipe' <<<"$renderer_dump"; then
-                echo "{{ serial }} is not using a healthy host renderer:" >&2
-                printf '%s\n' "$renderer_dump" >&2
+            gles_selection="$(rg 'gles_mode_selected:' "$emulator_log" | tail -n 1 || true)"
+            graphics_adapter="$(rg 'Graphics Adapter Android Emulator' "$emulator_log" | tail -n 1 || true)"
+            if ! rg -q 'gles_mode_selected:host' <<<"$gles_selection" || \
+               ! rg -q 'OpenGL ES Translator \(Apple' <<<"$graphics_adapter"; then
+                echo "{{ serial }} launch log does not prove Apple host GLES; see $emulator_log." >&2
                 exit 1
             fi
+            renderer_dump="$("{{ adb }}" -s "{{ serial }}" shell dumpsys SurfaceFlinger 2>/dev/null | \
+                rg '^GLES:' | head -n 1 || true)"
+            if [[ -z "$renderer_dump" ]]; then
+                echo "{{ serial }} did not return SurfaceFlinger renderer state." >&2
+                exit 1
+            fi
+            printf '%s\n' "$renderer_dump"
+            "{{ adb }}" -s "{{ serial }}" shell input keyevent KEYCODE_WAKEUP
+            "{{ adb }}" -s "{{ serial }}" shell wm dismiss-keyguard
+            "{{ adb }}" -s "{{ serial }}" shell input keyevent KEYCODE_HOME
+            sleep 2
             focus_dump="$("{{ adb }}" -s "{{ serial }}" shell dumpsys window 2>/dev/null | \
                 rg 'mCurrentFocus|mFocusedApp|topResumedActivity' || true)"
-            if ! rg -q 'Window\{|ActivityRecord\{' <<<"$focus_dump"; then
-                echo "{{ serial }} has no focused Android window:" >&2
+            if ! rg -q 'NexusLauncherActivity|launcher3' <<<"$focus_dump"; then
+                echo "{{ serial }} did not settle on the unlocked launcher:" >&2
                 printf '%s\n' "$focus_dump" >&2
                 exit 1
             fi
@@ -124,7 +162,8 @@ emulator-start:
                 uiautomator dump /sdcard/dieter-avd-health.xml 2>&1 || true)"
             hierarchy="$("{{ adb }}" -s "{{ serial }}" exec-out \
                 cat /sdcard/dieter-avd-health.xml 2>/dev/null || true)"
-            if ! rg -q '<hierarchy' <<<"$hierarchy"; then
+            if ! rg -q '<hierarchy' <<<"$hierarchy" || \
+               ! rg -q 'package="com[.]google[.]android[.]apps[.]nexuslauncher"' <<<"$hierarchy"; then
                 echo "{{ serial }} did not provide a usable accessibility hierarchy:" >&2
                 printf '%s\n' "$dump_output" >&2
                 exit 1
@@ -143,6 +182,11 @@ emulator-start:
 emulator-stop:
     #!/usr/bin/env bash
     set -euo pipefail
+    avd_registry="${ANDROID_AVD_HOME:-${ANDROID_USER_HOME:-$HOME/.android}/avd}"
+    avd_ini="$avd_registry/{{ avd }}.ini"
+    [[ -r "$avd_ini" ]] || { echo "AVD registry entry is unreadable: $avd_ini" >&2; exit 1; }
+    avd_dir="$(awk -F= '$1 == "path" { print substr($0, index($0, "=") + 1); exit }' "$avd_ini")"
+    [[ -n "$avd_dir" && -d "$avd_dir" ]] || { echo "Resolved AVD data is unavailable." >&2; exit 1; }
     state="$("{{ adb }}" -s "{{ serial }}" get-state 2>/dev/null || true)"
     if [[ -z "$state" ]]; then echo "{{ serial }} is not running."; exit 0; fi
     [[ "$state" == device ]] || { echo "{{ serial }} is $state; not safe to snapshot and stop." >&2; exit 1; }
@@ -154,24 +198,73 @@ emulator-stop:
         { echo "{{ serial }} is still animating; refusing to save its snapshot." >&2; exit 1; }
     renderer_dump="$("{{ adb }}" -s "{{ serial }}" shell dumpsys SurfaceFlinger 2>/dev/null | \
         rg '^GLES:' | head -n 1 || true)"
-    if [[ -z "$renderer_dump" ]] || rg -qi 'SwiftShader|llvmpipe|lavapipe' <<<"$renderer_dump"; then
-        echo "{{ serial }} is not using a healthy host renderer; refusing to save its snapshot." >&2
+    if [[ -z "$renderer_dump" ]]; then
+        echo "{{ serial }} did not return SurfaceFlinger renderer state; refusing to save its snapshot." >&2
+        exit 1
+    fi
+    emulator_log="$PWD/{{ app_root }}/build/emulator/screenlog.0"
+    gles_selection="$(rg 'gles_mode_selected:' "$emulator_log" | tail -n 1 || true)"
+    graphics_adapter="$(rg 'Graphics Adapter Android Emulator' "$emulator_log" | tail -n 1 || true)"
+    if ! rg -q 'gles_mode_selected:host' <<<"$gles_selection" || \
+       ! rg -q 'OpenGL ES Translator \(Apple' <<<"$graphics_adapter"; then
+        echo "{{ serial }} launch log does not prove Apple host GLES; refusing to save its snapshot." >&2
         exit 1
     fi
     focus_dump="$("{{ adb }}" -s "{{ serial }}" shell dumpsys window 2>/dev/null | \
         rg 'mCurrentFocus|mFocusedApp|topResumedActivity' || true)"
     rg -q 'Window\{|ActivityRecord\{' <<<"$focus_dump" || \
         { echo "{{ serial }} has no focused window; refusing to save its snapshot." >&2; exit 1; }
+
+    # Active Chromium/Compose GPU surfaces can make Emulator 37.1 emit missing
+    # ColorBuffer errors while auto-saving, leaving a snapshot directory that
+    # the next boot cannot load. Quiesce only the apps this workflow owns, save
+    # explicitly, and launch all future sessions with -no-snapshot-save.
+    "{{ adb }}" -s "{{ serial }}" shell input keyevent KEYCODE_WAKEUP
+    "{{ adb }}" -s "{{ serial }}" shell wm dismiss-keyguard
+    "{{ adb }}" -s "{{ serial }}" shell input keyevent KEYCODE_HOME
+    "{{ adb }}" -s "{{ serial }}" shell am force-stop com.dbpprt.dieter
+    "{{ adb }}" -s "{{ serial }}" shell am force-stop com.android.chrome
+    sleep 3
+    focus_dump="$("{{ adb }}" -s "{{ serial }}" shell dumpsys window 2>/dev/null | \
+        rg 'mCurrentFocus|mFocusedApp|topResumedActivity' || true)"
+    rg -q 'NexusLauncherActivity|launcher3' <<<"$focus_dump" || \
+        { echo "{{ serial }} did not settle on the launcher; refusing to save its snapshot." >&2; exit 1; }
+    snapshot_log_start="$(stat -f '%z' "$emulator_log" 2>/dev/null || echo 0)"
+    "{{ adb }}" -s "{{ serial }}" emu avd snapshot save default_boot
+    snapshot_list="$("{{ adb }}" -s "{{ serial }}" emu avd snapshot list 2>/dev/null | tr -d '\r' || true)"
+    rg -q '(^|[[:space:]])default_boot([[:space:]]|$)' <<<"$snapshot_list" || \
+        { echo "{{ serial }} did not register the saved default_boot snapshot." >&2; exit 1; }
+    for artifact in ram.bin snapshot.pb textures.bin; do
+        [[ -s "$avd_dir/snapshots/default_boot/$artifact" ]] || \
+            { echo "Saved default_boot has an empty $artifact; refusing shutdown." >&2; exit 1; }
+    done
+    snapshot_log="$(tail -c "+$((snapshot_log_start + 1))" "$emulator_log")"
+    if rg -qi 'failed to find ColorBuffer|bad color buffer handle|failed to save snapshot|snapshot save error' \
+        <<<"$snapshot_log"; then
+        echo "{{ serial }} emitted a snapshot-save error; see $emulator_log." >&2
+        exit 1
+    fi
     "{{ adb }}" -s "{{ serial }}" emu kill
-    for _ in {1..60}; do
-        if [[ -z "$("{{ adb }}" -s "{{ serial }}" get-state 2>/dev/null || true)" ]]; then
+    for _ in {1..120}; do
+        if [[ -z "$("{{ adb }}" -s "{{ serial }}" get-state 2>/dev/null || true)" ]] && \
+           ! pgrep -f '[e]mulator.*@{{ avd }}|[q]emu-system.*@{{ avd }}' >/dev/null; then
             screen -S "{{ screen_session }}" -X quit 2>/dev/null || true
+            shutdown_log="$(tail -c "+$((snapshot_log_start + 1))" "$emulator_log")"
+            if rg -qi 'failed to find ColorBuffer|bad color buffer handle|failed to save snapshot|snapshot save error' \
+                <<<"$shutdown_log"; then
+                echo "{{ avd }} stopped after a snapshot error; quarantine default_boot before relaunch." >&2
+                exit 1
+            fi
+            for artifact in ram.bin snapshot.pb textures.bin; do
+                [[ -s "$avd_dir/snapshots/default_boot/$artifact" ]] || \
+                    { echo "Stopped default_boot has an empty $artifact; quarantine it before relaunch." >&2; exit 1; }
+            done
             echo "{{ avd }} stopped cleanly."
             exit 0
         fi
         sleep 1
     done
-    echo "{{ serial }} remained visible after graceful shutdown." >&2
+    echo "{{ serial }} or its emulator process remained visible after graceful shutdown." >&2
     exit 1
 
 # Build the debug APK and run Android unit tests.
@@ -233,7 +326,7 @@ clean-release:
 
 # Install the current debug APK without clearing app data.
 install:
-    ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:installDebug
+    ANDROID_SERIAL="{{ serial }}" ANDROID_HOME="{{ sdk }}" JAVA_HOME="{{ java }}" {{ app_root }}/gradlew --project-dir "{{ app_root }}" :app:installDebug
 
 # Launch Dieter and require a running app process.
 launch:

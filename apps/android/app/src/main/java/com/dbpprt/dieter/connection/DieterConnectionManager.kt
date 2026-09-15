@@ -91,6 +91,18 @@ internal fun foregroundConnectionPhase(
     current
 }
 
+internal fun liveSyncCoversConversation(
+    mode: BackgroundSyncMode,
+    phase: ConnectionPhase,
+    lastFrameAtMs: Long,
+    nowMs: Long,
+    includedInProjection: Boolean,
+): Boolean = mode == BackgroundSyncMode.LIVE &&
+    phase == ConnectionPhase.CONNECTED &&
+    lastFrameAtMs > 0L &&
+    !syncStreamIsStale(lastFrameAtMs, nowMs) &&
+    includedInProjection
+
 @Suppress("DEPRECATION")
 private fun GlobalSnapshot.withoutScheduleProjection(): GlobalSnapshot =
     if (schedulesCount == 0 && scheduleRunsCount == 0) this
@@ -139,6 +151,7 @@ data class DieterConnectionState(
     val cards: List<Card> = emptyList(),
     val chats: List<Card> = emptyList(),
     val activeConversations: Map<String, ConversationSnapshot> = emptyMap(),
+    val liveSyncedConversationIds: Set<String> = emptySet(),
     val conversationRefreshedAtMillis: Map<String, Long> = emptyMap(),
     val pendingCardIds: Set<String> = emptySet(),
     val pendingMessageIds: Set<String> = emptySet(),
@@ -407,6 +420,20 @@ class DieterConnectionManager(
         }
     }
 
+    /** A conversation carried by a healthy Live projection is already current.
+     * Opening it should resume after its sequence instead of waiting for a
+     * redundant bootstrap response. */
+    fun liveSyncCoversConversation(cardId: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val current = _state.value
+        return liveSyncCoversConversation(
+            mode = current.backgroundSyncMode,
+            phase = current.phase,
+            lastFrameAtMs = lastSyncFrameAtMs,
+            nowMs = nowMs,
+            includedInProjection = cardId in current.liveSyncedConversationIds,
+        )
+    }
+
     /** Makes a newly created remote project routable before its daemon's next
      * global sync frame arrives. This updates only the combined directory; the
      * foreground connection is switched by [selectProject] afterwards. */
@@ -491,6 +518,7 @@ class DieterConnectionManager(
                     cards = emptyList(),
                     chats = emptyList(),
                     activeConversations = emptyMap(),
+                    liveSyncedConversationIds = emptySet(),
                     conversationRefreshedAtMillis = emptyMap(),
                     error = null,
                 )
@@ -594,6 +622,7 @@ class DieterConnectionManager(
                 cards = if (gatewayChanged) emptyList() else it.cards,
                 chats = if (gatewayChanged) emptyList() else it.chats,
                 activeConversations = if (gatewayChanged) emptyMap() else it.activeConversations,
+                liveSyncedConversationIds = if (gatewayChanged) emptySet() else it.liveSyncedConversationIds,
                 conversationRefreshedAtMillis = if (gatewayChanged) emptyMap() else it.conversationRefreshedAtMillis,
                 error = null,
             )
@@ -639,6 +668,7 @@ class DieterConnectionManager(
                 cards = emptyList(),
                 chats = emptyList(),
                 activeConversations = emptyMap(),
+                liveSyncedConversationIds = emptySet(),
                 conversationRefreshedAtMillis = emptyMap(),
                 error = null,
             )
@@ -698,6 +728,7 @@ class DieterConnectionManager(
                 endpoint = null,
                 endpointConnections = configuredEndpointRows(),
                 activeConversations = emptyMap(),
+                liveSyncedConversationIds = emptySet(),
                 conversationRefreshedAtMillis = emptyMap(),
                 error = null,
             )
@@ -1411,6 +1442,7 @@ class DieterConnectionManager(
                 cards = cards,
                 chats = chats.sortedByDescending { it.lastActivityAt.ifBlank { it.updatedAt } },
                 activeConversations = conversations,
+                liveSyncedConversationIds = snapshot.conversationsList.mapTo(hashSetOf()) { it.detail.card.id },
                 conversationRefreshedAtMillis = conversationRefreshes,
                 pendingCardIds = pendingCardIds(entries),
                 pendingMessageIds = pendingMessageIds(entries),
@@ -1616,6 +1648,11 @@ class DieterConnectionManager(
                 cards = update(current.cards, !isChat),
                 chats = update(current.chats, isChat),
                 activeConversations = activeConversations,
+                liveSyncedConversationIds = if (card.archived) {
+                    current.liveSyncedConversationIds - card.id
+                } else {
+                    current.liveSyncedConversationIds
+                },
             )
             combined.copy(selectedState = selectedState(combined))
         }

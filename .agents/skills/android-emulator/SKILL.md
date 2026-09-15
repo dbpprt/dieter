@@ -41,23 +41,42 @@ just android emulator-start
 ```
 
 The recipe reuses the selected AVD when present or starts its normal visible
-configuration. Before a new process starts, it requires at least 6 GiB of
-reclaimable host memory, including headroom above the emulator's 5 GiB cutoff,
-so the emulator will not select software GL while it initializes. It then
-waits at most three minutes and requires completed boot, stopped boot animation,
-a host renderer, a focused window, a valid UI hierarchy, and a full PNG
-screenshot. Logs and the health capture go under
+configuration. The AVD registry entry may point to a data directory on an
+external volume. The launcher resolves that pointer, requires readable AVD
+configuration and 10 GiB free on the resolved volume, and reports the path it
+will use. Keep that volume mounted until a graceful emulator shutdown finishes.
+If `default_boot` has deliberately been quarantined during repair, the same
+recipe identifies the missing snapshot and permits exactly that normal recovery
+boot from preserved userdata; it still rejects an unexpected snapshot-load
+failure.
+
+The launcher uses `-no-snapshot-save`: it still restores `default_boot`, but it
+does not let an arbitrary active GPU surface overwrite that snapshot during
+exit. `just android emulator-stop` returns to the launcher, stops the Dieter and
+Chrome processes used by this workflow, explicitly saves `default_boot`, checks
+its RAM/metadata/texture artifacts and save log, and then closes the emulator.
+
+Before a new process starts, the launcher requires at least 6 GiB of
+reclaimable host memory. This includes headroom above the emulator's 5 GiB
+host-renderer cutoff while graphics initializes. Use the launcher's
+conservative `vm_stat` page estimate: `memory_pressure -Q` can look healthy
+even when the emulator sees too little memory. The
+launcher then waits at most three minutes and requires completed boot, stopped
+boot animation, a host renderer, an unlocked launcher window, a launcher-owned
+UI hierarchy, and a full PNG screenshot. Logs and the health capture go under
 `apps/android/build/emulator`.
 
 Do not install while ADB is offline or boot remains incomplete. Reject software
 rendering, snapshot load errors, bad color-buffer errors, an absent focused
 window, a null hierarchy, or a corrupt screenshot.
 
-Recent emulator builds may report `lavapipe` or `llvmpipe` for a separate
-Vulkan compatibility path even when GLES correctly uses the Apple GPU. Judge
-the UI renderer by `gles_mode_selected:host` in the launch log and the `GLES:`
-line from `SurfaceFlinger`; do not reject host GLES based only on the Vulkan
-device line.
+Emulator 37.1 on API 37 may report `lavapipe` for its Vulkan compatibility path
+and an ANGLE/SwiftShader-backed `GLES:` line from the guest `SurfaceFlinger`
+even when emulator GLES correctly uses the Apple GPU. Judge host acceleration
+by the latest `gles_mode_selected:host` and `OpenGL ES Translator (Apple ...)`
+lines in the emulator launch log. Use `SurfaceFlinger` only as a guest-renderer
+responsiveness check; do not treat its API 37 ANGLE string as the emulator's
+host GLES selection.
 
 ## Build, install, and launch
 
@@ -73,6 +92,11 @@ Installation retains device-bound credentials and app data. Never use
 gateway and authenticated routes; do not add `adb reverse`, expose the raw
 daemon loopback service, start a fixture server, replace the operator's daemon,
 or edit `DIETER_HOME`.
+
+The install and connected-test recipes pass `ANDROID_SERIAL=emulator-5554` to
+Gradle. Keep that pin on every Gradle task which can select a device; otherwise
+Gradle may silently choose an attached physical phone even when every separate
+ADB command is correctly pinned.
 
 Release CI uses the module's `install-sdk`, `restore-release-keystore`,
 `build-release`, `package-release`, and `verify-release` recipes. Keystore
@@ -138,6 +162,13 @@ instead of deleting them, preserve userdata, require 10 GiB free, and accept a
 repair only after a normal host-GLES launch, healthy saved snapshot, normal
 reload, UI dump, and screenshot. Do not improvise a cold boot.
 
+If startup stops before QEMU or ADB appears, inspect the new section of the
+emulator log and verify that the resolved AVD `config.ini` can be read promptly.
+For an external AVD, a mounted but stalled volume can block the emulator before
+it emits a useful error. Stop the single launcher attempt, leave userdata and
+snapshots untouched, restore volume responsiveness, and retry once. Do not
+create a replacement AVD on the internal disk as a shortcut.
+
 ## Close cleanly
 
 Stop only the app while retaining the AVD:
@@ -154,10 +185,11 @@ just android emulator-stop
 just android emulator-status
 ```
 
-The stop recipe verifies the selected AVD identity, uses `adb emu kill`, and
-waits for the serial to disappear so snapshot saving can finish. Never send
-`SIGKILL` during normal close. If graceful shutdown is unsafe, preserve
-diagnostics and ask before risking the snapshot.
+The stop recipe verifies the selected AVD identity, explicitly saves and
+validates `default_boot`, uses `adb emu kill`, and waits for both the serial and
+QEMU process to disappear. Never send `SIGKILL` during normal close. If
+graceful shutdown is unsafe, preserve diagnostics and ask before risking the
+snapshot.
 
 Report the AVD and serial, build/install results, observed journey, evidence
 paths, mutations, diagnostics, and whether the app/emulator was reused, left

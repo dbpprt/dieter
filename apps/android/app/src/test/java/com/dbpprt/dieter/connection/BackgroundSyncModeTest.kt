@@ -41,6 +41,46 @@ class BackgroundSyncModeTest {
         assertEquals(30_000L, DieterSyncService.BACKGROUND_SYNC_WINDOW_TIMEOUT_MS)
     }
 
+    @Test
+    fun onlyARecentProjectedLiveConversationIsAlreadyCurrent() {
+        assertTrue(
+            liveSyncCoversConversation(
+                BackgroundSyncMode.LIVE,
+                ConnectionPhase.CONNECTED,
+                lastFrameAtMs = 100_000L,
+                nowMs = 110_000L,
+                includedInProjection = true,
+            ),
+        )
+        assertFalse(
+            liveSyncCoversConversation(
+                BackgroundSyncMode.PERIODIC,
+                ConnectionPhase.CONNECTED,
+                lastFrameAtMs = 100_000L,
+                nowMs = 110_000L,
+                includedInProjection = true,
+            ),
+        )
+        assertFalse(
+            liveSyncCoversConversation(
+                BackgroundSyncMode.LIVE,
+                ConnectionPhase.CONNECTED,
+                lastFrameAtMs = 100_000L,
+                nowMs = 145_000L,
+                includedInProjection = true,
+            ),
+        )
+        assertFalse(
+            liveSyncCoversConversation(
+                BackgroundSyncMode.LIVE,
+                ConnectionPhase.CONNECTED,
+                lastFrameAtMs = 100_000L,
+                nowMs = 110_000L,
+                includedInProjection = false,
+            ),
+        )
+    }
+
     private fun state(card: Card) = DieterConnectionState(
         desiredConnected = true,
         backgroundSyncMode = BackgroundSyncMode.PERIODIC,

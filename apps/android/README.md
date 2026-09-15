@@ -71,13 +71,16 @@ dedicated settings and command-center actions, swipe-up gesture, and expanded
 searchable command center. The preference is local to the Android device and
 survives process restarts.
 
-Chats render their cached tail immediately, refresh the newest 30 messages
-without waiting for the complete workspace projection, and load older history
-only when the user scrolls upward. They retain a bounded local conversation
-cache and expose an explicit **Force refresh** action in the conversation
-overflow menu. Project chat sections show the five most recent entries until
-expanded. Model reasoning traces are hidden by default and can be enabled
-globally under App Settings > Chat display.
+Chats render their cached tail immediately. A tail already covered by the
+healthy Live projection is current on open and resumes from its sequence
+without waiting for a duplicate frame. Smart, App-only, and uncached opens
+request the newest 30 messages first, without waiting for the complete
+workspace projection, and load older history only when the user scrolls
+upward. They retain a bounded local conversation cache and expose an explicit
+**Force refresh** action in the conversation overflow menu. Project chat
+sections show the five most recent entries until expanded. Model reasoning
+traces are hidden by default and can be enabled globally under App Settings >
+Chat display.
 
 Each conversation also owns a bounded in-memory composer draft, including
 attachments and model/provider selection, so switching conversations or
@@ -150,7 +153,8 @@ authenticated route or the gateway relay as documented in the root README.
 
 `just android emulator-start` launches `Pixel_9_API_37_1` in a detached owner
 session while keeping its emulator window visible. It refuses to launch when
-host memory would force software rendering, and it accepts the AVD only after
+host memory would force software rendering, resolves AVD data located on either
+the internal disk or a mounted external volume, and accepts the AVD only after
 renderer, snapshot, focus, accessibility, and screenshot health checks pass.
 Run a real enrolled daemon, install the app, and exercise it through the
 gateway. There is intentionally no mock server or coordinate-driven shell

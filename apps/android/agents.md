@@ -23,27 +23,44 @@ emulator's host GLES renderer:
 
 ```sh
 just android gradle-stop
-memory_pressure -Q
+vm_stat
 ```
 
-The start recipe requires at least 6 GiB of reclaimable memory, leaving
-headroom above the emulator's 5 GiB software-renderer cutoff while graphics
-initialization allocates memory.
+The launcher calculates reclaimable host memory from the free, inactive,
+speculative, and purgeable page counts and requires 6 GiB. Keep that
+conservative gate: `memory_pressure -Q` may look healthy while the emulator
+still sees less than its 5 GiB host-renderer cutoff during graphics startup.
+The Pixel/API image enforces its 4 GiB guest RAM minimum, so a smaller
+command-line memory value does not provide a reliable workaround.
+
+The AVD registry entry under `~/.android/avd` may point to its data directory on
+an external APFS volume. Resolve the `path=` value instead of assuming userdata
+is on the internal disk. Free-space checks, snapshot diagnosis, and lock-file
+inspection apply to that resolved volume. Keep it mounted through graceful
+shutdown and snapshot saving. If ordinary reads of its `config.ini` stall, stop
+the launcher attempt and restore volume responsiveness before retrying; do not
+copy, recreate, or cold-boot the AVD on another volume as a workaround.
 
 The startup log must report `gles_mode_selected:host` and identify the Apple
 GPU. If it instead says that software GL will be used due to system memory
 pressure, free memory and restart the emulator before using or saving its
-state. Recent emulator builds can still select `lavapipe` for their separate
-Vulkan compatibility path while GLES uses the Apple GPU; treat the
-`gles_mode_selected` line and `SurfaceFlinger`'s `GLES:` renderer as
-authoritative. A software-rendered GLES fallback snapshot is not a healthy
-replacement for the standard AVD snapshot.
+state. Emulator 37.1 on API 37 can still select `lavapipe` for its separate
+Vulkan compatibility path, while the guest `SurfaceFlinger` reports an
+ANGLE/SwiftShader `GLES:` string. Treat the latest `gles_mode_selected:host`
+and `OpenGL ES Translator (Apple ...)` launch-log lines as authoritative; use
+the `SurfaceFlinger` dump only to prove guest renderer responsiveness. A launch
+whose selected emulator GLES mode is `swangle` remains unhealthy.
 
 Never stop or snapshot the emulator while ADB is offline, boot animation is
-running, or Android has no focused window. A normal emulator shutdown saves
-`default_boot` automatically, including after a failed snapshot load; stopping
-an incomplete fallback boot can therefore replace a missing snapshot with a
-corrupt one. Before a deliberate shutdown, require all of the following:
+running, or Android has no focused window. The launcher uses
+`-no-snapshot-save`; the stop recipe returns to the launcher, stops the Dieter
+and Chrome processes used by this workflow, explicitly saves `default_boot`,
+checks its required artifacts and save log, and only then closes the emulator.
+Stopping an incomplete fallback boot can still replace a missing snapshot with
+a corrupt one. The start and stop recipes wake and dismiss the keyguard before
+requiring the real launcher; a wallpaper-only or black health image is not an
+acceptable focused state. Before a deliberate shutdown require all of the
+following:
 
 ```sh
 adb -s emulator-5554 shell getprop sys.boot_completed        # 1
@@ -71,11 +88,12 @@ working space, it may be deleted only after confirming its replacement is not
 needed for user-data recovery.
 
 Launch once with the standard command above and no override flags. Because the
-bad snapshot has been quarantined, this one recovery launch intentionally boots
-from preserved userdata. Let it reach every health condition above; do not
-interrupt the fallback boot. Once Android is responsive and screenshots plus
-accessibility work, shut it down gracefully with `adb -s emulator-5554 emu
-kill` and wait for snapshot saving and the emulator process to finish.
+bad snapshot has been quarantined, the launcher identifies the missing
+`default_boot` and this one recovery launch intentionally boots from preserved
+userdata. Let it reach every health condition above; do not interrupt the
+fallback boot. Once Android is responsive and screenshots plus accessibility
+work, shut it down gracefully with `just android emulator-stop` and wait for
+snapshot saving and the emulator process to finish.
 
 Relaunch with the same standard command. A repaired AVD is not accepted until
 the emulator reports that `default_boot` loaded successfully and the second
@@ -103,6 +121,10 @@ repeatedly loading or overwriting broken graphics state.
    just android install
    just android launch
    ```
+
+   Keep `ANDROID_SERIAL=emulator-5554` on every Gradle install or
+   instrumentation task. Gradle does not inherit the serial embedded in
+   separate ADB commands and can otherwise choose an attached physical phone.
 
 The Android Just module detects Android Studio's JDK and the local SDK when the
 shell environment does not already expose them.
