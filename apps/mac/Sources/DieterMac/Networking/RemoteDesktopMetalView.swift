@@ -9,12 +9,15 @@ import CoreVideo
 final class RemoteDesktopMetalView: NSView, RTCVideoRenderer, MTKViewDelegate {
     weak var delegate: (any RTCVideoViewDelegate)?
     var onFramePresented: (@MainActor (RTCVideoFrame) -> Void)?
+    var onPresentationTiming: (@MainActor (RTCVideoFrame, Double) -> Void)?
+    private(set) var totalRenderMilliseconds: Double = 0
+    private(set) var timedPresentations: UInt64 = 0
     var onFailure: (@MainActor (String) -> Void)?
     private(set) var initializationFailure: String?
     private(set) var framesPresented: UInt64 = 0
     private(set) var drawSubmissions: UInt64 = 0
     private(set) var lastPixelFormat: OSType = 0
-    private var lastPresentedTimestamp: Int64?
+    private var lastPresentedTimestamp: Int32?
     private let metal = MTKView(frame: .zero)
     private var commandQueue: (any MTLCommandQueue)?
     private var nv12Pipeline: (any MTLRenderPipelineState)?
@@ -39,7 +42,10 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer, MTKViewDelegate {
         metal.enableSetNeedsDisplay = false
         metal.framebufferOnly = true
         metal.delegate = self
-        if let layer = metal.layer as? CAMetalLayer { layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB) }
+        if let layer = metal.layer as? CAMetalLayer {
+            layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+            layer.maximumDrawableCount = 2
+        }
         addSubview(metal)
         do {
             commandQueue = device.makeCommandQueue()
@@ -77,6 +83,7 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer, MTKViewDelegate {
         lastFrame = nil
         lastPresentedTimestamp = nil
         framesPresented = 0
+        totalRenderMilliseconds = 0; timedPresentations = 0
         drawSubmissions = 0
         videoSize = .zero
         // Hide the previous session's retained drawable immediately.
@@ -114,7 +121,7 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer, MTKViewDelegate {
     }
 
     func draw(in view: MTKView) {
-        guard let (frame, token) = mailbox.take() else { completeDraw(); return }
+        guard let (frame, token, arrivedAt) = mailbox.take() else { completeDraw(); return }
         guard initializationFailure == nil, let queue = commandQueue, let cache = textureCache,
             let native = frame.buffer as? RTCCVPixelBuffer
         else {
@@ -184,12 +191,20 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer, MTKViewDelegate {
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
         let submission = RemoteDesktopMetalSubmission(frame: frame, textures: retained, token: token)
-        drawable.addPresentedHandler { [weak self, submission] _ in
+        drawable.addPresentedHandler { [weak self, submission] drawable in
+            // Read the hardware presentation timestamp before hopping to MainActor;
+            // callback scheduling delay is not display latency.
+            let presentedAt = drawable.presentedTime
             Task { @MainActor [weak self] in
                 guard let self, self.mailbox.isCurrent(submission.token) else { return }
-                if self.lastPresentedTimestamp != submission.frame.timeStampNs {
+                if self.lastPresentedTimestamp != submission.frame.timeStamp {
                     self.framesPresented &+= 1
-                    self.lastPresentedTimestamp = submission.frame.timeStampNs
+                    self.lastPresentedTimestamp = submission.frame.timeStamp
+                    if presentedAt >= arrivedAt && presentedAt > 0 {
+                        self.totalRenderMilliseconds += (presentedAt - arrivedAt) * 1000
+                        self.timedPresentations &+= 1
+                        self.onPresentationTiming?(submission.frame, presentedAt)
+                    }
                 }
                 self.onFramePresented?(submission.frame)
             }
@@ -256,19 +271,21 @@ private final class RemoteDesktopMetalSubmission: @unchecked Sendable {
 private final class RemoteDesktopRenderMailbox: @unchecked Sendable {
     private let lock = NSLock()
     private var pending: RTCVideoFrame?
+    private var arrivedAt: Double = 0
     private var busy = false
     private var token: UInt64 = 0
     var hasPending: Bool { lock.lock(); defer { lock.unlock() }; return pending != nil }
     func offer(_ frame: RTCVideoFrame) -> Bool {
         lock.lock(); defer { lock.unlock() }
         pending = frame
+        arrivedAt = CACurrentMediaTime()
         if busy { return false }
         busy = true; return true
     }
-    func take() -> (RTCVideoFrame, UInt64)? {
+    func take() -> (RTCVideoFrame, UInt64, Double)? {
         lock.lock(); defer { lock.unlock() }
         guard let pending else { return nil }
-        self.pending = nil; return (pending, token)
+        self.pending = nil; return (pending, token, arrivedAt)
     }
     func complete() -> Bool {
         lock.lock(); defer { lock.unlock() }

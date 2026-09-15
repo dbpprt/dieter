@@ -789,7 +789,12 @@ and fresh receiver decode/loss measurements. It smooths estimates, lowers cadenc
 before pixels, and requires sustained pressure before resizing (at least 12 seconds
 between reductions). Recovery requires sustained headroom. Idle screens preserve
 their established geometry; deliberate packet pacing is not counted as congestion.
-Bitrate and cadence updates keep the native encoder session alive. The daemon log
+Bitrate and cadence updates keep the native encoder session alive. Transport returns
+one frame credit after sending a complete H.264 access unit; while it waits, capture
+retains only the newest raw surface. Pipe writes run independently of capture and
+input. Compatible receivers negotiate immediate playout. After idle, a healthy
+recent route may probe its previous rate for at most 64 KiB / 250 ms, at most once
+per five seconds; congestion feedback cancels probing. The daemon log
 records each quality transition and its cause. Screen options select a display,
 prefer sharp text or smooth motion, or request an idle-screen refresh. Cursor shape,
 hotspot and position travel separately from video, with embedded-cursor fallback.
@@ -811,7 +816,15 @@ dieter screen refresh SESSION
 
 Configuration flags preserve unspecified values. Width, height, FPS and bitrate
 are ceilings, not promises. `status` reports active dimensions, frame rate, bitrate,
-encoder time, frame drops, display generation and input acknowledgments. `start`
+encoder time, frame drops, display generation and input acknowledgments. Timing
+fields separate socket work (`queueMs`), total paced send (`sendMs`), approximate
+capture-to-send age (`captureToSendMs`, including encoder/pipe delivery), receiver
+jitter-buffer residence (`jitterBufferMs`), and decoded-frame-to-Metal presentation
+(`renderMs`). `pacingBitrateKbps` includes packet pacing headroom. Receiver timings require an updated Mac client and use interval means;
+zero may mean no new timed frame. These overlapping stages must not be summed as a
+physical glass-to-glass measurement. The native fixture reports same-host capture
+to actual Metal presentation median/p95 and idle recovery using the shared host
+clock; measuring display scanout/photons still requires an external camera. `start`
 accepts a protobuf JSON WebRTC offer; media and input use the encrypted peer
 connection. Session input protocol v2 requires matching daemon and Mac client builds.
 

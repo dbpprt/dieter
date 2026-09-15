@@ -78,6 +78,7 @@ type nativeInputPayload struct {
 }
 
 type nativeCommand struct {
+	FrameID       uint64               `json:"frame_id,omitempty"`
 	Version       int                  `json:"version"`
 	ID            uint64               `json:"id"`
 	Kind          string               `json:"kind"`
@@ -258,7 +259,7 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	s.mu.Lock()
 	config := s.currentConfigurationLocked()
 	s.mu.Unlock()
-	args := []string{"--display-id", config.DisplayID, "--fps", strconv.Itoa(config.FPS), "--bitrate-kbps", strconv.Itoa(config.BitrateKbps), "--max-width", strconv.Itoa(config.MaxWidth), "--max-height", strconv.Itoa(config.MaxHeight), "--event-fd", "3", "--profile", s.profile, "--embedded-cursor", strconv.FormatBool(config.EmbeddedCursor), "--allow-input", strconv.FormatBool(s.inputAllowed)}
+	args := []string{"--frame-credits", "true", "--display-id", config.DisplayID, "--fps", strconv.Itoa(config.FPS), "--bitrate-kbps", strconv.Itoa(config.BitrateKbps), "--max-width", strconv.Itoa(config.MaxWidth), "--max-height", strconv.Itoa(config.MaxHeight), "--event-fd", "3", "--profile", s.profile, "--embedded-cursor", strconv.FormatBool(config.EmbeddedCursor), "--allow-input", strconv.FormatBool(s.inputAllowed)}
 	if s.synthetic {
 		args = append(args, "--synthetic", "true")
 	}
@@ -391,55 +392,27 @@ func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample)
 	if string(magic) != nativeCaptureMagic {
 		return fmt.Errorf("native helper protocol mismatch: %q", magic)
 	}
-	// Drain the helper independently of network pacing. Retain at most one
-	// queued access unit plus the one being sent. Replacing an encoded frame
-	// marks the reference chain broken so the sender waits for an IDR.
-	frames := make(chan media.Sample, 1)
-	readDone := make(chan error, 1)
-	go func() {
-		var replaced uint64
-		discontinuity := false
-		for {
-			sample, _, _, readErr := readNativeCaptureSample(stdout, s.fps)
-			if readErr != nil {
-				readDone <- readErr
-				return
-			}
-			first.Stop()
-			metadata := sample.Metadata.(FrameMetadata)
-			select {
-			case <-frames:
-				replaced++
-				discontinuity = true
-			default:
-			}
-			metadata.Dropped += replaced
-			metadata.Discontinuity = discontinuity
-			sample.Metadata = metadata
-			select {
-			case frames <- sample:
-				discontinuity = false
-			case <-processCtx.Done():
-				return
-			}
-		}
-	}()
+	// Return the single encoder credit only after the whole access unit has
+	// passed transport pacing. The helper keeps the latest raw surface, so no
+	// encoded reference frame is replaced and congestion cannot trigger IDR storms.
 	for {
-		select {
-		case sample := <-frames:
-			if err = emit(sample); err != nil {
-				return err
-			}
-		case readErr := <-readDone:
+		sample, _, _, readErr := readNativeCaptureSample(stdout, s.fps)
+		if readErr != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
 			return nativeCaptureFailure(readErr, stderr.String())
-		case <-processCtx.Done():
+		}
+		first.Stop()
+		if err = emit(sample); err != nil {
+			return err
+		}
+		metadata := sample.Metadata.(FrameMetadata)
+		if err = s.send(processCtx, nativeCommand{Kind: "frame_consumed", FrameID: metadata.ID}, true); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			return nativeCaptureFailure(errors.New("capture helper stopped"), stderr.String())
+			return err
 		}
 	}
 }

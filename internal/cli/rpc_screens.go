@@ -309,6 +309,9 @@ func (c *CLI) rpcScreenClose(args []string) error {
 
 func (c *CLI) rpcScreenSession(action string, args []string) error {
 	usage := "Usage: dieter screen " + action + " SESSION\n"
+	if action == "status" {
+		usage += "JSON includes paced sendMs, approximate captureToSendMs, receiver jitterBufferMs and renderMs; queueMs measures socket work only. Stages overlap and are not a glass-to-glass total.\n"
+	}
 	if action == "configure" {
 		usage = "Usage: dieter screen configure SESSION [--display ID] [--quality auto|detail|motion] [--width N] [--height N] [--fps N] [--bitrate N] [--embedded-cursor=true|false]\nCeilings are adaptive; unspecified values retain the current session configuration.\n"
 	}

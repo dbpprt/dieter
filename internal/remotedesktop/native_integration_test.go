@@ -3,6 +3,7 @@ package remotedesktop
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -12,6 +13,34 @@ import (
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/pion/webrtc/v4/pkg/media"
 )
+
+func TestNativeHelperBaselineUsesLowLatencyHardware(t *testing.T) {
+	path := os.Getenv("DIETER_TEST_CAPTURE_HELPER")
+	if path == "" {
+		t.Skip("native helper not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	source, err := NewFrameSource(SourceOptions{Kind: "native-synthetic", HelperPath: path, Profile: "baseline", FPS: 60, MaxWidth: 1280, MaxHeight: 720, Bitrate: 4000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	complete := errors.New("baseline frames verified")
+	frames := 0
+	err = source.Stream(ctx, func(sample media.Sample) error {
+		if frames == 0 && (len(sample.Data) < 7 || !bytes.Equal(sample.Data[:4], []byte{0, 0, 0, 1}) || sample.Data[4]&0x1f != 7 || sample.Data[5] != 66 || sample.Data[6]&0x40 == 0) {
+			t.Errorf("baseline negotiation produced a different SPS profile: %x", sample.Data[:min(64, len(sample.Data))])
+		}
+		frames++
+		if frames == 12 {
+			return complete
+		}
+		return nil
+	})
+	if !errors.Is(err, complete) {
+		t.Fatalf("baseline capture failed after %d frames: %v", frames, err)
+	}
+}
 
 // Runs the real signed helper and hardware VideoToolbox encoder. Synthetic
 // pixels and dry-run injection keep this test independent of desktop permissions.
@@ -166,8 +195,11 @@ func TestNativeHelperKeepsInputResponsiveUnderMediaBackpressure(t *testing.T) {
 	close(resume)
 	select {
 	case metadata := <-observed:
-		if !metadata.Discontinuity || metadata.Dropped == 0 {
-			t.Fatalf("replacement lost reference discontinuity: %+v", metadata)
+		if metadata.Discontinuity || metadata.KeyFrame || metadata.ID != 2 || metadata.Dropped == 0 {
+			t.Fatalf("backpressure must replace raw frames without breaking H.264 references: %+v", metadata)
+		}
+		if metadata.CaptureDelay > 100*time.Millisecond {
+			t.Fatalf("resumed encoder used a stale raw frame: %+v", metadata)
 		}
 	case <-ctx.Done():
 		t.Fatal("replacement frame missing")

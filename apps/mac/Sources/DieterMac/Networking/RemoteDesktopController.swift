@@ -189,6 +189,9 @@ final class RemoteDesktopController {
     private var request: Dieter_V1_StartRemoteDesktopRequest?
     private var binding: Dieter_V1_RemoteDesktopSessionBinding?
     private var answerSDP: String?
+    var immediatePlayoutNegotiated: Bool {
+        answerSDP?.contains("http://www.webrtc.org/experiments/rtp-hdrext/playout-delay") == true
+    }
     private var remoteDescriptionApplied = false
     private var pendingLocalCandidates: [RTCIceCandidate] = []
     private var pendingRemoteCandidates: [RTCIceCandidate] = []
@@ -849,7 +852,8 @@ final class RemoteDesktopController {
         viewportTask = Task { [weak self] in
             try? await DieterTaskSleep.seconds(0.35)
             guard !Task.isCancelled, let self, self.owns(token), self.viewport == value,
-                !self.sessionID.isEmpty, let connection = self.connection else { return }
+                !self.sessionID.isEmpty, let connection = self.connection
+            else { return }
             self.desiredConfiguration.maxWidth = Int32(value.width)
             self.desiredConfiguration.maxHeight = Int32(value.height)
             self.configurationPending = true
@@ -922,6 +926,8 @@ final class RemoteDesktopController {
                 }
                 let previous = self.previousStatistics
                 current["framesPresented"] = Double(self.renderer.framesPresented)
+                current["renderMilliseconds"] = self.renderer.totalRenderMilliseconds
+                current["timedPresentations"] = Double(self.renderer.timedPresentations)
                 func delta(_ key: String) -> Double { max(0, (current[key] ?? 0) - (previous[key] ?? 0)) }
                 let frames = delta("framesDecoded")
                 var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
@@ -929,6 +935,9 @@ final class RemoteDesktopController {
                 self.feedbackSequence &+= 1; feedback.sequence = self.feedbackSequence
                 feedback.framesPerSecond = delta("framesPresented") / elapsed
                 feedback.decodeMs = frames > 0 ? delta("totalDecodeTime") * 1000 / frames : 0
+                let emitted = delta("jitterBufferEmittedCount"), presented = delta("timedPresentations")
+                feedback.jitterBufferMs = emitted > 0 ? delta("jitterBufferDelay") * 1000 / emitted : 0
+                feedback.renderMs = presented > 0 ? delta("renderMilliseconds") / presented : 0
                 feedback.jitterMs = ((inbound["jitter"] as? NSNumber)?.doubleValue ?? 0) * 1000
                 feedback.rttMs = ((candidate["currentRoundTripTime"] as? NSNumber)?.doubleValue ?? 0) * 1000
                 feedback.lossFraction = delta("packetsLost") / max(1, delta("packetsLost") + delta("packetsReceived"))

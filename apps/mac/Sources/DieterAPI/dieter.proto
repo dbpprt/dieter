@@ -1859,6 +1859,12 @@ message RemoteDesktopSessionState {
   // First transmitted keyframe of the active display generation (90 kHz RTP).
   uint64 media_generation = 23;
   uint32 media_timestamp = 24;
+  // Sender stages include intentional packet pacing; queue_ms is socket work only.
+  double send_ms = 25;
+  double capture_to_send_ms = 26;
+  double jitter_buffer_ms = 27;
+  double render_ms = 28;
+  uint32 pacing_bitrate_kbps = 29;
 }
 
 // Encrypted on the authenticated session DataChannel; never persisted.
@@ -1873,6 +1879,10 @@ message RemoteDesktopReceiverFeedback {
   double loss_fraction = 8;
   bool input_active = 9;
   uint32 rendered_frames = 10;
+  // Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
+  double jitter_buffer_ms = 11;
+  // Mean decoded-frame arrival to actual Metal presentation in this interval.
+  double render_ms = 12;
 }
 message RemoteDesktopCursor {
   string shape_id = 1;

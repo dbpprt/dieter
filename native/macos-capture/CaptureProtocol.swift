@@ -44,6 +44,7 @@ struct NativeCommand: Decodable {
     let kind: String
     let input: NativeInput?
     let configuration: StreamConfiguration?
+    let frameId: UInt64?
 }
 
 struct NativeCursor: Encodable {

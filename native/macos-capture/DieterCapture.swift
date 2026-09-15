@@ -21,6 +21,7 @@ struct CaptureOptions {
     var embeddedCursor = false
     var allowInput = false
     var synthetic = false
+    var frameCredits = false
 
     static func parse() throws -> CaptureOptions {
         var value = CaptureOptions()
@@ -40,6 +41,7 @@ struct CaptureOptions {
             case "--embedded-cursor": value.embeddedCursor = raw == "true"
             case "--allow-input": value.allowInput = raw == "true"
             case "--synthetic": value.synthetic = raw == "true"
+            case "--frame-credits": value.frameCredits = raw == "true"
             default: throw CaptureError.invalidArgument(name)
             }
         }
@@ -98,6 +100,10 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
     private var stream: SCStream?
     private var encoder: VTCompressionSession?
     private var encoding = false
+    // One encoded frame may be in the pipe/transport. Capture keeps replacing
+    // the raw pending surface until the daemon returns this exact frame credit.
+    private var outstandingFrame: UInt64?
+    private var outputBusy = false
     private var pendingFrame: CapturedFrame?
     private var forceKeyFrame = true
     private var stopped = false
@@ -128,6 +134,8 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
     private var lastCursorSentAt: UInt64 = 0
     private var syntheticTimer: DispatchSourceTimer?
     private var syntheticCounter: UInt64 = 0
+    private let syntheticStarted = DispatchTime.now().uptimeNanoseconds
+    private let syntheticIdleCycle = ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_IDLE_CYCLE"] == "1"
 
     init(options: CaptureOptions) {
         self.options = options
@@ -307,7 +315,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
                 bitrateKbps: configuration.bitrateKbps,
                 displayId: options.synthetic ? "synthetic" : String(selectedDisplayID), displayGeneration: generation,
                 encoder: options.profile == "high"
-                    ? "VideoToolbox H.264 High / low latency" : "VideoToolbox H.264 Baseline / hardware",
+                    ? "VideoToolbox H.264 High / low latency" : "VideoToolbox H.264 Baseline / low latency",
                 embeddedCursor: configuration.embeddedCursor)
         }
         if !events.send(NativeEvent(state: state)) { stop() }
@@ -380,13 +388,20 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
         let frame = CapturedFrame(
             sampleBuffer: sampleBuffer,
             capturedAtNanoseconds: Int64(CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds * 1_000_000_000))
+        offer(frame)
+    }
+
+    private func offer(_ frame: CapturedFrame) {
         lastFrame = frame
-        if encoding {
-            dropped += 1
-            pendingFrame = frame
-            return
-        }
-        encode(frame)
+        if pendingFrame != nil { dropped += 1 }
+        pendingFrame = frame
+        admitPendingFrame()
+    }
+
+    private func admitPendingFrame() {
+        guard !paused, !encoding, !outputBusy, outstandingFrame == nil, let next = pendingFrame else { return }
+        pendingFrame = nil
+        encode(next)
     }
 
     private func selectedDisplay(_ displays: [SCDisplay]) -> SCDisplay? {
@@ -408,8 +423,10 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
 
     private func createEncoder(width: Int, height: Int) throws {
         var session: VTCompressionSession?
-        var spec: [String: Any] = [kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true]
-        if options.profile == "high" { spec[kVTVideoEncoderSpecification_EnableLowLatencyRateControl as String] = true }
+        let spec: [String: Any] = [
+            kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true,
+            kVTVideoEncoderSpecification_EnableLowLatencyRateControl as String: true,
+        ]
         let specification = spec as CFDictionary
         let attributes =
             [
@@ -521,9 +538,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
 
     private func encodingCompleted() {
         encoding = false
-        guard !paused, let next = pendingFrame else { return }
-        pendingFrame = nil
-        encode(next)
+        admitPendingFrame()
     }
 
     private func isKeyFrame(_ sampleBuffer: CMSampleBuffer) -> Bool {
@@ -614,26 +629,33 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
         header.appendBigEndian(UInt32(outputWidth))
         header.appendBigEndian(UInt32(outputHeight))
         header.appendBigEndian(dropped)
-        if !writeMedia(header + payload) { stop() }
+        if options.frameCredits { outstandingFrame = frameID }
+        outputBusy = true
+        let data = header + payload
+        outputQueue.async { [self] in
+            let success = writeMedia(data)
+            stateQueue.async { [self] in
+                outputBusy = false
+                if success { admitPendingFrame() } else { stop() }
+            }
+        }
     }
 
     private func writeMedia(_ data: Data) -> Bool {
-        outputQueue.sync {
-            data.withUnsafeBytes { bytes in
-                var offset = 0
-                let deadline = DispatchTime.now().uptimeNanoseconds + 750_000_000
-                while offset < bytes.count {
-                    let count = Darwin.write(
-                        STDOUT_FILENO, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
-                    if count > 0 { offset += count; continue }
-                    guard errno == EINTR || errno == EAGAIN, DispatchTime.now().uptimeNanoseconds < deadline else {
-                        return false
-                    }
-                    var descriptor = pollfd(fd: STDOUT_FILENO, events: Int16(POLLOUT), revents: 0)
-                    _ = poll(&descriptor, 1, 10)
+        data.withUnsafeBytes { bytes in
+            var offset = 0
+            let deadline = DispatchTime.now().uptimeNanoseconds + 750_000_000
+            while offset < bytes.count {
+                let count = Darwin.write(
+                    STDOUT_FILENO, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+                if count > 0 { offset += count; continue }
+                guard errno == EINTR || errno == EAGAIN, DispatchTime.now().uptimeNanoseconds < deadline else {
+                    return false
                 }
-                return true
+                var descriptor = pollfd(fd: STDOUT_FILENO, events: Int16(POLLOUT), revents: 0)
+                _ = poll(&descriptor, 1, 10)
             }
+            return true
         }
     }
 
@@ -677,6 +699,13 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
                                     throw CaptureError.invalidArgument("configuration")
                                 }
                                 try await self.reconfigure(config)
+                            case "frame_consumed":
+                                self.stateQueue.sync {
+                                    if let frameID = command.frameId, self.outstandingFrame == frameID {
+                                        self.outstandingFrame = nil
+                                        self.admitPendingFrame()
+                                    }
+                                }
                             case "refresh": self.stateQueue.sync { self.refresh() }
                             case "stop": self.inputQueue.sync { self.inputInjector?.releaseAll() }; self.stop()
                             default: throw CaptureError.invalidArgument("command kind")
@@ -699,15 +728,19 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
         guard now - lastRefresh > 200_000_000 else { return }
         lastRefresh = now
         forceKeyFrame = true
-        if !encoding, let lastFrame {
+        if let lastFrame {
             // A refresh is a new presentation of retained pixels, not an old RTP time.
             let time = Int64(CMClockGetTime(CMClockGetHostTimeClock()).seconds * 1_000_000_000)
-            encode(CapturedFrame(sampleBuffer: lastFrame.sampleBuffer, capturedAtNanoseconds: time))
+            offer(CapturedFrame(sampleBuffer: lastFrame.sampleBuffer, capturedAtNanoseconds: time))
         }
     }
 
     private func syntheticFrame() {
-        guard !paused, !encoding else { return }
+        guard !paused else { return }
+        if syntheticIdleCycle {
+            let elapsed = (DispatchTime.now().uptimeNanoseconds - syntheticStarted) / 1_000_000_000
+            if (8..<13).contains(elapsed % 18) { return }
+        }
         var pixel: CVPixelBuffer?
         guard
             CVPixelBufferCreate(
@@ -741,8 +774,7 @@ private final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @
                 sampleBufferOut: &sample) == noErr, let sample
         else { return }
         let frame = CapturedFrame(sampleBuffer: sample, capturedAtNanoseconds: Int64(pts.seconds * 1_000_000_000))
-        lastFrame = frame
-        encode(frame)
+        offer(frame)
     }
 
     private func cursorPNG(_ cursor: NSCursor) -> Data? {

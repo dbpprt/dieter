@@ -15196,8 +15196,14 @@ type RemoteDesktopSessionState struct {
 	// First transmitted keyframe of the active display generation (90 kHz RTP).
 	MediaGeneration uint64 `protobuf:"varint,23,opt,name=media_generation,json=mediaGeneration,proto3" json:"media_generation,omitempty"`
 	MediaTimestamp  uint32 `protobuf:"varint,24,opt,name=media_timestamp,json=mediaTimestamp,proto3" json:"media_timestamp,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Sender stages include intentional packet pacing; queue_ms is socket work only.
+	SendMs            float64 `protobuf:"fixed64,25,opt,name=send_ms,json=sendMs,proto3" json:"send_ms,omitempty"`
+	CaptureToSendMs   float64 `protobuf:"fixed64,26,opt,name=capture_to_send_ms,json=captureToSendMs,proto3" json:"capture_to_send_ms,omitempty"`
+	JitterBufferMs    float64 `protobuf:"fixed64,27,opt,name=jitter_buffer_ms,json=jitterBufferMs,proto3" json:"jitter_buffer_ms,omitempty"`
+	RenderMs          float64 `protobuf:"fixed64,28,opt,name=render_ms,json=renderMs,proto3" json:"render_ms,omitempty"`
+	PacingBitrateKbps uint32  `protobuf:"varint,29,opt,name=pacing_bitrate_kbps,json=pacingBitrateKbps,proto3" json:"pacing_bitrate_kbps,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *RemoteDesktopSessionState) Reset() {
@@ -15398,6 +15404,41 @@ func (x *RemoteDesktopSessionState) GetMediaTimestamp() uint32 {
 	return 0
 }
 
+func (x *RemoteDesktopSessionState) GetSendMs() float64 {
+	if x != nil {
+		return x.SendMs
+	}
+	return 0
+}
+
+func (x *RemoteDesktopSessionState) GetCaptureToSendMs() float64 {
+	if x != nil {
+		return x.CaptureToSendMs
+	}
+	return 0
+}
+
+func (x *RemoteDesktopSessionState) GetJitterBufferMs() float64 {
+	if x != nil {
+		return x.JitterBufferMs
+	}
+	return 0
+}
+
+func (x *RemoteDesktopSessionState) GetRenderMs() float64 {
+	if x != nil {
+		return x.RenderMs
+	}
+	return 0
+}
+
+func (x *RemoteDesktopSessionState) GetPacingBitrateKbps() uint32 {
+	if x != nil {
+		return x.PacingBitrateKbps
+	}
+	return 0
+}
+
 // Encrypted on the authenticated session DataChannel; never persisted.
 type RemoteDesktopReceiverFeedback struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -15411,8 +15452,12 @@ type RemoteDesktopReceiverFeedback struct {
 	LossFraction    float64                `protobuf:"fixed64,8,opt,name=loss_fraction,json=lossFraction,proto3" json:"loss_fraction,omitempty"`
 	InputActive     bool                   `protobuf:"varint,9,opt,name=input_active,json=inputActive,proto3" json:"input_active,omitempty"`
 	RenderedFrames  uint32                 `protobuf:"varint,10,opt,name=rendered_frames,json=renderedFrames,proto3" json:"rendered_frames,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Mean residence in WebRTC's jitter buffer, distinct from RTP jitter.
+	JitterBufferMs float64 `protobuf:"fixed64,11,opt,name=jitter_buffer_ms,json=jitterBufferMs,proto3" json:"jitter_buffer_ms,omitempty"`
+	// Mean decoded-frame arrival to actual Metal presentation in this interval.
+	RenderMs      float64 `protobuf:"fixed64,12,opt,name=render_ms,json=renderMs,proto3" json:"render_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RemoteDesktopReceiverFeedback) Reset() {
@@ -15511,6 +15556,20 @@ func (x *RemoteDesktopReceiverFeedback) GetInputActive() bool {
 func (x *RemoteDesktopReceiverFeedback) GetRenderedFrames() uint32 {
 	if x != nil {
 		return x.RenderedFrames
+	}
+	return 0
+}
+
+func (x *RemoteDesktopReceiverFeedback) GetJitterBufferMs() float64 {
+	if x != nil {
+		return x.JitterBufferMs
+	}
+	return 0
+}
+
+func (x *RemoteDesktopReceiverFeedback) GetRenderMs() float64 {
+	if x != nil {
+		return x.RenderMs
 	}
 	return 0
 }
@@ -19023,7 +19082,7 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\revent_ordinal\x18\n" +
 	" \x01(\x04R\feventOrdinal\x12#\n" +
 	"\rstate_barrier\x18\v \x01(\x04R\fstateBarrierB\t\n" +
-	"\apayload\"\xc6\x06\n" +
+	"\apayload\"\x83\b\n" +
 	"\x19RemoteDesktopSessionState\x12\x14\n" +
 	"\x05phase\x18\x01 \x01(\tR\x05phase\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x14\n" +
@@ -19051,7 +19110,12 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\freceiver_fps\x18\x15 \x01(\x01R\vreceiverFps\x12\x15\n" +
 	"\x06rtt_ms\x18\x16 \x01(\x01R\x05rttMs\x12)\n" +
 	"\x10media_generation\x18\x17 \x01(\x04R\x0fmediaGeneration\x12'\n" +
-	"\x0fmedia_timestamp\x18\x18 \x01(\rR\x0emediaTimestamp\"\xf5\x02\n" +
+	"\x0fmedia_timestamp\x18\x18 \x01(\rR\x0emediaTimestamp\x12\x17\n" +
+	"\asend_ms\x18\x19 \x01(\x01R\x06sendMs\x12+\n" +
+	"\x12capture_to_send_ms\x18\x1a \x01(\x01R\x0fcaptureToSendMs\x12(\n" +
+	"\x10jitter_buffer_ms\x18\x1b \x01(\x01R\x0ejitterBufferMs\x12\x1b\n" +
+	"\trender_ms\x18\x1c \x01(\x01R\brenderMs\x12.\n" +
+	"\x13pacing_bitrate_kbps\x18\x1d \x01(\rR\x11pacingBitrateKbps\"\xbc\x03\n" +
 	"\x1dRemoteDesktopReceiverFeedback\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12\x1f\n" +
 	"\vinput_epoch\x18\x02 \x01(\fR\n" +
@@ -19064,7 +19128,9 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\rloss_fraction\x18\b \x01(\x01R\flossFraction\x12!\n" +
 	"\finput_active\x18\t \x01(\bR\vinputActive\x12'\n" +
 	"\x0frendered_frames\x18\n" +
-	" \x01(\rR\x0erenderedFrames\"\xe7\x02\n" +
+	" \x01(\rR\x0erenderedFrames\x12(\n" +
+	"\x10jitter_buffer_ms\x18\v \x01(\x01R\x0ejitterBufferMs\x12\x1b\n" +
+	"\trender_ms\x18\f \x01(\x01R\brenderMs\"\xe7\x02\n" +
 	"\x13RemoteDesktopCursor\x12\x19\n" +
 	"\bshape_id\x18\x01 \x01(\tR\ashapeId\x12\x10\n" +
 	"\x03png\x18\x02 \x01(\fR\x03png\x12\x1b\n" +

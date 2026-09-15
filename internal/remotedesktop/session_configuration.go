@@ -116,7 +116,11 @@ func newMediaAPI(settings webrtc.SettingEngine, source FrameSource) (*webrtc.API
 	if err := engine.RegisterCodec(webrtc.RTPCodecParameters{RTPCodecCapability: capability, PayloadType: 102}, webrtc.RTPCodecTypeVideo); err != nil {
 		return nil, nil, nil, err
 	}
+	if err := engine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{URI: playoutDelayURI}, webrtc.RTPCodecTypeVideo); err != nil {
+		return nil, nil, nil, err
+	}
 	registry := &interceptor.Registry{}
+	registry.Add(immediatePlayoutFactory{})
 	pacer := newPacketPacer(4_000_000)
 	var estimator cc.BandwidthEstimator
 	controller, err := cc.NewInterceptor(func() (cc.BandwidthEstimator, error) {
@@ -220,6 +224,14 @@ func (s *Session) adapt() {
 			s.close("receiver input heartbeat expired")
 			return
 		}
+		if s.estimator != nil {
+			stats := s.estimator.GetStats()
+			loss, _ := stats["averageLoss"].(float64)
+			healthy := feedback != nil && now.Sub(lastFeedback) < time.Second &&
+				feedback.LossFraction < 0.02 && feedback.RttMs < 100 &&
+				stats["usage"] == "normal" && loss < 0.02
+			s.pacer.ObserveNetwork(now, healthy)
+		}
 		source, ok := s.source.(AdaptiveFrameSource)
 		if !ok || state.Configuration == nil {
 			continue
@@ -246,7 +258,7 @@ func (s *Session) adapt() {
 		s.mu.Unlock()
 		estimate := 0
 		if s.estimator != nil {
-			estimate = s.estimator.GetTargetBitrate()
+			estimate = s.pacer.TargetBitrate()
 		}
 		budget := receiverBudget(now, int(state.Configuration.MaxBitrateKbps), estimate, int(s.remb.Load()), s.rembAt.Load())
 		drops := uint64(0)
@@ -327,17 +339,6 @@ func (s *Session) streamMedia(sample media.Sample) error {
 	if metadata.KeyFrame {
 		s.waitKeyframe = false
 	}
-	// Discard only at access-unit boundaries. After a discard, discard dependents
-	// until a requested IDR arrives. No unbounded encoded-frame or packet queue.
-	age := metadata.CaptureDelay + time.Since(metadata.ReceivedAt)
-	if age > 100*time.Millisecond && !metadata.KeyFrame {
-		s.waitKeyframe = true
-		s.transportDrops++
-		if source, ok := s.source.(ControlledFrameSource); ok {
-			source.RequestKeyFrame()
-		}
-		return nil
-	}
 	if s.packetizer == nil {
 		s.packetizer = rtp.NewPacketizerWithOptions(1180, &codecs.H264Payloader{}, rtp.NewRandomSequencer(), 90000)
 	}
@@ -354,6 +355,9 @@ func (s *Session) streamMedia(sample media.Sample) error {
 	if boundary != nil {
 		s.sendHost(&dieterv1.RemoteDesktopHostEvent{Payload: &dieterv1.RemoteDesktopHostEvent_State{State: boundary}})
 	}
+	sendStarted := time.Now()
+	s.pacer.BeginFrame(sendStarted)
+	defer func() { s.pacer.EndFrame(time.Now()) }()
 	writeBefore := s.pacer.writeNanoseconds.Load()
 	for _, packet := range packets {
 		packet.Timestamp = timestamp
@@ -363,6 +367,9 @@ func (s *Session) streamMedia(sample media.Sample) error {
 	}
 	s.mu.Lock()
 	s.status.FramesSent++
+	s.status.SendMs = float64(time.Since(sendStarted)) / float64(time.Millisecond)
+	s.status.CaptureToSendMs = float64(metadata.CaptureDelay+time.Since(metadata.ReceivedAt)) / float64(time.Millisecond)
+	s.status.PacingBitrateKbps = uint32(s.pacer.TargetBitrate() * 5 / 2 / 1000)
 	s.status.QueueMs = float64(s.pacer.writeNanoseconds.Load()-writeBefore) / float64(time.Millisecond)
 	s.measurements.frames++
 	s.measurements.bytes += uint64(len(sample.Data))

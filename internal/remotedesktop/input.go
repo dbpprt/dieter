@@ -296,7 +296,7 @@ func (s *Session) receiveFeedback(raw []byte) {
 	if proto.Unmarshal(raw, &value) != nil || value.ProtocolVersion != inputProtocolVersion || !bytes.Equal(value.InputEpoch, s.inputEpoch) || value.Sequence == 0 {
 		return
 	}
-	if !finiteBound(value.FramesPerSecond, 240) || !finiteBound(value.DecodeMs, 10000) || !finiteBound(value.JitterMs, 10000) || !finiteBound(value.RttMs, 60000) || !finiteBound(value.LossFraction, 1) {
+	if !finiteBound(value.FramesPerSecond, 240) || !finiteBound(value.DecodeMs, 10000) || !finiteBound(value.JitterMs, 10000) || !finiteBound(value.RttMs, 60000) || !finiteBound(value.LossFraction, 1) || !finiteBound(value.JitterBufferMs, 10000) || !finiteBound(value.RenderMs, 10000) || value.JitterBufferMs < 0 || value.RenderMs < 0 {
 		return
 	}
 	previous := s.feedbackSequence.Load()
@@ -310,6 +310,8 @@ func (s *Session) receiveFeedback(raw []byte) {
 	if s.status != nil {
 		s.status.ReceiverFps = value.FramesPerSecond
 		s.status.RttMs = value.RttMs
+		s.status.JitterBufferMs = value.JitterBufferMs
+		s.status.RenderMs = value.RenderMs
 	}
 	s.mu.Unlock()
 	if wasActive && !value.InputActive {

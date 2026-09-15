@@ -383,6 +383,12 @@ capture and hardware H.264. Input protocol v2 requires matching client and daemo
 Adaptation preserves idle-screen geometry, reduces cadence before resolution,
 and requires sustained pressure or recovery headroom before resizing. The daemon
 log records session IDs and quality changes with the measured cause.
+`status` separates socket work (`queueMs`), paced sending (`sendMs`), approximate
+capture-to-send age (`captureToSendMs`), jitter-buffer residence (`jitterBufferMs`),
+and decoded-frame-to-Metal presentation (`renderMs`). Receiver timing is available
+with updated Mac viewers; zero can mean no fresh sample. These stages overlap and
+are not a physical glass-to-glass total. Capture admits one encoded frame at a time
+and replaces pending raw surfaces; compatible peers request immediate playout.
 All screen commands support global `--machine ID|NAME` with verified direct TLS
 and authenticated relay fallback.
 

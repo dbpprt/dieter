@@ -28,6 +28,11 @@ private struct ScreenFixtureConnection: Decodable {
     let process = Process(); process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = ["--helper", helper, "--source", real ? "screen" : "native-synthetic", "--ready", ready.path]
     process.standardOutput = logHandle; process.standardError = logHandle
+    if !real {
+        var fixtureEnvironment = environment
+        fixtureEnvironment["DIETER_TEST_CAPTURE_IDLE_CYCLE"] = "1"
+        process.environment = fixtureEnvironment
+    }
     try process.run()
     defer {
         if process.isRunning { process.terminate() }
@@ -58,6 +63,19 @@ private struct ScreenFixtureConnection: Decodable {
     surface.layoutSubtreeIfNeeded(); surface.layout()
     defer { controller.disconnect(); window.close() }
     try await verifyNativeScreenRenderer(controller.renderer)
+    var presentationAges: [Double] = [], resumedAges: [Double] = []
+    var previousPresentation: Double?
+    controller.renderer.onPresentationTiming = { frame, presentedAt in
+        // This fixture captures and presents on the SAME Mac. Its RTP timeline
+        // is the host clock at 90 kHz; modular subtraction also tests RTP wrap.
+        // Never apply this subtraction to unrelated clocks on remote machines.
+        let presentationTicks = UInt32(truncatingIfNeeded: UInt64(presentedAt * 90000))
+        let captureTicks = UInt32(bitPattern: frame.timeStamp)
+        let age = Double(Int32(bitPattern: presentationTicks &- captureTicks)) / 90
+        if presentationAges.count < 4096 { presentationAges.append(age) }
+        if let previousPresentation, presentedAt - previousPresentation > 2 { resumedAges.append(age) }
+        previousPresentation = presentedAt
+    }
     await controller.connect(machineName: "Isolated native fixture") { connection }.value
     try await screenWait("hardware video decode: \(controller.phase)", timeout: 20) {
         (controller.sessionState.receiverFps > 0 && controller.controlActive) || controller.errorMessage != nil
@@ -66,6 +84,7 @@ private struct ScreenFixtureConnection: Decodable {
     #expect(controller.sessionState.receiverFps > 0)
     #expect(controller.sessionState.width > 0)
     #expect(controller.sessionState.encoder.contains("VideoToolbox"))
+    #expect(controller.immediatePlayoutNegotiated, "Bundled WebRTC must negotiate interactive playout")
     #expect(controller.controlActive)
     if real {
         try await screenWait("separate native cursor", timeout: 4) { !controller.remoteCursorState.shapeID.isEmpty }
@@ -110,6 +129,18 @@ private struct ScreenFixtureConnection: Decodable {
         }
         #expect(cadenceChanges <= 2, "Steady local conditions must not oscillate cadence")
         print("32-second LAN stability: \(initialWidth) pixels, \(cadenceChanges) cadence changes")
+        let sortedAges = presentationAges.sorted()
+        try #require(sortedAges.count > 120)
+        let median = sortedAges[sortedAges.count / 2], p95 = sortedAges[sortedAges.count * 95 / 100]
+        print(
+            "Same-host capture → actual Metal presentation: median \(median) ms, p95 \(p95) ms; idle resumes \(resumedAges) ms"
+        )
+        #expect(sortedAges.first! >= 0, "Fixture clocks must match")
+        #expect(p95 < 150, "Local motion must not accumulate stale frames")
+        #expect(!resumedAges.isEmpty, "Exercise a real capture-idle gap")
+        #expect(resumedAges.allSatisfy { $0 < 200 }, "Motion must resume without a slow keyframe drain")
+        #expect(controller.sessionState.captureToSendMs > 0)
+        #expect(controller.sessionState.renderMs >= 0)
         // Canceled resize tasks must not submit intermediate geometries.
         for width in [640, 1120, 1280, 800] {
             let scale = window.backingScaleFactor
@@ -184,7 +215,7 @@ private struct ScreenFixtureConnection: Decodable {
         #expect(capture.terminationStatus == 0)
     }
     print(
-        "Cursor embedded=\(controller.sessionState.embeddedCursor) shape=\(controller.remoteCursorState.shapeID); displayed \(controller.sessionState.width)x\(controller.sessionState.height), \(controller.sessionState.receiverFps) fps, encode \(controller.sessionState.encodeMs) ms, RTT \(controller.sessionState.rttMs) ms, \(controller.mediaRouteLabel)"
+        "Latency stages: capture→send \(controller.sessionState.captureToSendMs) ms, paced send \(controller.sessionState.sendMs) ms, jitter buffer \(controller.sessionState.jitterBufferMs) ms, render \(controller.sessionState.renderMs) ms. Cursor embedded=\(controller.sessionState.embeddedCursor) shape=\(controller.remoteCursorState.shapeID); displayed \(controller.sessionState.width)x\(controller.sessionState.height), \(controller.sessionState.receiverFps) fps, encode \(controller.sessionState.encodeMs) ms, RTT \(controller.sessionState.rttMs) ms, \(controller.mediaRouteLabel)"
     )
     controller.disconnect()
     try await screenWait("session teardown", timeout: 4) { !controller.controlActive }
@@ -240,6 +271,15 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer {
     try await Task.sleep(for: .milliseconds(100))
     #expect(renderer.drawSubmissions == 0, "Disconnect must invalidate queued draws")
     #expect(renderer.framesPresented == 0)
+    // Immediate playout can give every decoded frame the same render time.
+    // Only the RTP timestamp identifies a new video presentation.
+    for timestamp: Int32 in [1, 2] {
+        let frame = RTCVideoFrame(buffer: probe, rotation: ._0, timeStampNs: 0)
+        frame.timeStamp = timestamp
+        renderer.renderFrame(frame)
+        try await screenWait("distinct RTP presentation", timeout: 2) { renderer.framesPresented == UInt64(timestamp) }
+    }
+    renderer.reset()
 }
 
 @MainActor private func screenWait(_ label: String, timeout: Double, condition: () -> Bool) async throws {
