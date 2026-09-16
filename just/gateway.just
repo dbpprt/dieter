@@ -32,7 +32,7 @@ test:
     set -euo pipefail
     packages=()
     while IFS= read -r package; do packages+=("$package"); done < <(
-        go list -deps "{{ target }}" | rg '^github[.]com/dbpprt/dieter/'
+        go list -deps "{{ target }}" | grep -E '^github[.]com/dbpprt/dieter/'
     )
     go test "${packages[@]}"
 
@@ -47,7 +47,7 @@ vulncheck:
 run:
     #!/usr/bin/env bash
     set -euo pipefail
-    if command -v lsof >/dev/null && lsof -nP -iTCP:4243 -sTCP:LISTEN | rg -q .; then
+    if command -v lsof >/dev/null && lsof -nP -iTCP:4243 -sTCP:LISTEN | grep -q .; then
         echo "Port 4243 already has a listener; refusing to start a second default gateway." >&2
         exit 1
     fi
